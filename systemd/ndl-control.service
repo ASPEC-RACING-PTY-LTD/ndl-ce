@@ -1,0 +1,15 @@
+[Unit]
+Description=No-dal control plane
+After=network.target
+Documentation=https://no-dal.com
+
+[Service]
+Type=simple
+User=ndl-control
+Group=ndl-control
+ExecStart=/usr/sbin/ndl-control
+Restart=on-failure
+# Workloads must not be bound to this unit.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package nodal.agent.v1;
+
+option go_package = "github.com/no-dal/ndl-ce/gen/nodal/agent/v1;agentv1";
+
+// AgentService is the typed southbound RPC. There is no generic host
+// command execution. Unknown methods are hard errors.
+service AgentService {
+  rpc Hello(HelloRequest) returns (HelloResponse);
+  rpc Observe(ObserveRequest) returns (ObserveResponse);
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+  // OpenSession is reserved for later remote-node sessions. Phase 0
+  // clients must not depend on a working implementation.
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+}
+
+message HostPlatform {
+  string id = 1;
+  string version_id = 2;
+  string family = 3;
+  string architecture = 4;
+  string support_tier = 5;
+  repeated string capabilities = 6;
+}
+
+message HelloRequest {}
+
+message HelloResponse {
+  string agent_version = 1;
+  HostPlatform host_platform = 2;
+  // Feature flags are empty in Phase 0. Add names here later;
+  // do not overload HostPlatform.capabilities for CP features.
+  repeated string feature_flags = 3;
+}
+
+message ObserveRequest {}
+
+message ObserveResponse {
+  // Phase 0: empty observation. Phase 2 fills inventory.
+}
+
+// ExecuteRequest is a typed method table. Add new methods as oneof
+// members. Do not add a string command field or a generic exec RPC.
+message ExecuteRequest {
+  string operation_id = 1;
+  oneof method {
+    Ping ping = 10;
+  }
+}
+
+message Ping {}
+
+message ExecuteResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message OpenSessionRequest {}
+
+message OpenSessionResponse {}

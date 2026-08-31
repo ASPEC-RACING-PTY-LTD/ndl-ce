@@ -1,0 +1,19 @@
+[Unit]
+Description=No-dal node agent
+After=ndl-agent.socket
+Requires=ndl-agent.socket
+Documentation=https://no-dal.com
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/sbin/ndl-agent
+Restart=on-failure
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+DevicePolicy=closed
+# Device allowlist is added when inventory and KVM land.
+# ExecStop must not stop guest workload units.
+
+[Install]
+WantedBy=multi-user.target

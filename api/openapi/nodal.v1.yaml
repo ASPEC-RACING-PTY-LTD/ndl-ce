@@ -1,0 +1,36 @@
+openapi: 3.1.0
+info:
+  title: No-dal Community Edition API
+  version: 0.0.0
+  description: Phase 0 skeleton. Product routes arrive in later phases.
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Process health
+      responses:
+        "200":
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        service:
+          type: string
+          enum:
+            - ndl-control

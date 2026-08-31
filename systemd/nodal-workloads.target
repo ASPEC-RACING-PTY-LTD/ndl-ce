@@ -1,0 +1,4 @@
+[Unit]
+Description=No-dal supervised workloads
+# Workload units join this target. They must not use BindsTo,
+# PartOf, or Requires against ndl-control or ndl-agent.

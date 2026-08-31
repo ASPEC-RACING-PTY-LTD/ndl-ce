@@ -1,0 +1,39 @@
+Source: nodal
+Section: admin
+Priority: optional
+Maintainer: No-dal <dev@no-dal.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.0
+Homepage: https://no-dal.com
+Rules-Requires-Root: no
+
+Package: nodal
+Architecture: amd64
+Depends: ndl-control, ndl-agent, ndl-ui, nodalctl
+Description: No-dal Community Edition metapackage
+ Pulls in the control plane, node agent, web UI, and CLI.
+ Phase 0 is a packaging stub. Phase 1 performs installation.
+
+Package: ndl-control
+Architecture: amd64
+Depends: ${misc:Depends}
+Description: No-dal unprivileged control plane
+ HTTP API and static UI host. Must not run as root.
+
+Package: ndl-agent
+Architecture: amd64
+Depends: ${misc:Depends}
+Description: No-dal privileged node agent
+ Typed host operations only. No generic command execution.
+
+Package: ndl-ui
+Architecture: all
+Depends: ndl-control, ${misc:Depends}
+Description: No-dal web UI static files
+ Served by ndl-control. Not a standalone Node process.
+
+Package: nodalctl
+Architecture: amd64
+Depends: ${misc:Depends}
+Description: No-dal command-line client
+ Uses the same supported API as the web UI.

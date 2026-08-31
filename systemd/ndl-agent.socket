@@ -1,0 +1,11 @@
+[Unit]
+Description=No-dal node agent socket
+
+[Socket]
+ListenStream=/run/ndl/agent.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=ndl-control
+
+[Install]
+WantedBy=sockets.target

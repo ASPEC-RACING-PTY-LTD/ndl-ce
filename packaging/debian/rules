@@ -1,0 +1,5 @@
+#!/usr/bin/make -f
+
+# Phase 0 packaging stub. Phase 1 fills install paths.
+%:
+	dh $@

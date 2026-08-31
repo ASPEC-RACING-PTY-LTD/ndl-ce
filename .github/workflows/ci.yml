@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.24"
+  NODE_VERSION: "24"
+
+jobs:
+  policy:
+    name: Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Em dash policy
+        run: node scripts/ci/check-em-dashes.mjs
+      - name: Bootstrap size
+        run: node scripts/ci/check-bootstrap-size.mjs
+      - name: Package structure
+        run: node scripts/ci/check-package-structure.mjs
+      - name: CI policy
+        run: node scripts/ci/check-ci-policy.mjs
+      - name: ShellCheck
+        run: shellcheck packaging/bootstrap/get-nodal.sh
+      - name: Go format
+        run: test -z "$(gofmt -l .)"
+      - name: GitHub Actions YAML
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          actionlint -color
+
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test ./...
+
+  ui:
+    name: UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Install
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Lint, types, tests
+        working-directory: ui
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+
+  schema:
+    name: Schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: "1.54.0"
+          github_token: ${{ github.token }}
+      - name: Install protoc plugins
+        run: go install tool
+      - name: Codegen drift
+        run: node scripts/ci/check-codegen.mjs
+      - name: Buf lint
+        run: buf lint
+      - name: Buf breaking
+        if: github.base_ref != ''
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          if git cat-file -e "origin/${{ github.base_ref }}:buf.yaml" 2>/dev/null; then
+            buf breaking --against ".git#branch=origin/${{ github.base_ref }}"
+          else
+            echo "No buf.yaml on ${{ github.base_ref }}; skipping breaking check."
+          fi
