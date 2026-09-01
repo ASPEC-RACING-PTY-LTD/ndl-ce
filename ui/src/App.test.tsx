@@ -383,4 +383,71 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /generate self-signed/i })).toBeVisible();
     expect(screen.queryByRole("button", { name: /download.*key/i })).not.toBeInTheDocument();
   });
+
+  it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {
+    window.history.replaceState({}, "", "/workloads/vm-1/snapshots");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/vm-1": {
+        status: 200,
+        body: { id: "vm-1", name: "web", kind: "vm", status: "running" },
+      },
+      "/api/v1/workloads/vm-1/snapshots": {
+        status: 200,
+        body: {
+          items: [],
+          capability: {
+            supported: true,
+            mechanism: "qcow2-overlay",
+            chain_max: 32,
+            chain_depth: 0,
+            reason: "",
+          },
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^snapshots$/i })).toBeVisible();
+    expect(screen.getByText(/point-in-time restore on the same pool\. this is not a backup\./i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^create snapshot$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^flatten chain$/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\/backups$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows Unsupported / not ZFS for Directory system container snapshots", async () => {
+    window.history.replaceState({}, "", "/workloads/ct-1/snapshots");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/ct-1": {
+        status: 200,
+        body: { id: "ct-1", name: "accept-ct", kind: "system-container", status: "running" },
+      },
+      "/api/v1/workloads/ct-1/snapshots": {
+        status: 200,
+        body: {
+          items: [],
+          capability: {
+            supported: false,
+            mechanism: "",
+            chain_max: 0,
+            chain_depth: 0,
+            reason: "Directory system containers do not support snapshots; this is not ZFS.",
+          },
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^snapshots$/i })).toBeVisible();
+    expect(await screen.findByText(/unsupported/i)).toBeVisible();
+    expect(screen.getByText(/not zfs/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
+  });
 });

@@ -437,6 +437,37 @@ export interface AcmeCertRequest {
   domain: string;
 }
 
+export interface Snapshot {
+  id: string;
+  workload_id: string;
+  volume_id: string;
+  name: string;
+  purpose_tag: string;
+  mechanism: string;
+  backend_ref: string;
+  parent_id: string;
+  chain_depth: number;
+  status: string;
+  created_at: string;
+}
+
+export interface SnapshotCapability {
+  supported: boolean;
+  mechanism: "qcow2-overlay" | "";
+  chain_max: number;
+  chain_depth: number;
+  reason: string;
+}
+
+export interface SnapshotListResponse {
+  items: Snapshot[];
+  capability: SnapshotCapability;
+}
+
+export interface CreateSnapshotRequest {
+  name: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -548,6 +579,12 @@ export type GetLabQemuProtoPath = "/api/v1/lab/qemu-proto";
 export type StopLabQemuProtoPath = "/api/v1/lab/qemu-proto/stop";
 
 export type KillLabQemuProtoPath = "/api/v1/lab/qemu-proto/kill";
+
+export type ListWorkloadSnapshotsPath = "/api/v1/workloads/{id}/snapshots";
+
+export type FlattenWorkloadSnapshotsPath = "/api/v1/workloads/{id}/snapshots/flatten";
+
+export type RollbackSnapshotPath = "/api/v1/snapshots/{id}/rollback";
 
 export type GetCertsPath = "/api/v1/certs";
 

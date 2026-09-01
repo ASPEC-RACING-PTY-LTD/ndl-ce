@@ -474,3 +474,51 @@ export async function acmeCert(
     }),
   );
 }
+
+export async function listWorkloadSnapshots(
+  id: string,
+): Promise<import("../generated/openapi").SnapshotListResponse> {
+  return readJson(await request(`/workloads/${id}/snapshots`));
+}
+
+export async function createWorkloadSnapshot(
+  id: string,
+  body: import("../generated/openapi").CreateSnapshotRequest,
+): Promise<import("../generated/openapi").Snapshot> {
+  return readJson(
+    await request(`/workloads/${id}/snapshots`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function rollbackSnapshot(
+  id: string,
+  confirm = "rollback",
+): Promise<import("../generated/openapi").Snapshot> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request(`/snapshots/${id}/rollback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function flattenWorkloadSnapshots(
+  id: string,
+  confirm = "flatten",
+): Promise<import("../generated/openapi").SnapshotListResponse> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request(`/workloads/${id}/snapshots/flatten`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}

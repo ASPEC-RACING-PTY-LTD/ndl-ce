@@ -1111,6 +1111,123 @@ paths:
                 $ref: "#/components/schemas/LabQemuProtoResponse"
         "403":
           description: Forbidden
+  /workloads/{id}/snapshots:
+    get:
+      operationId: listWorkloadSnapshots
+      summary: List snapshots and capability for a workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Snapshot list and capability. Directory system containers return supported=false with an honest reason.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotListResponse"
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Workload not found
+    post:
+      operationId: createWorkloadSnapshot
+      summary: Create a point-in-time snapshot on the same pool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSnapshotRequest"
+      responses:
+        "201":
+          description: Snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Snapshots not supported for this workload (for example Directory system containers are not ZFS)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /workloads/{id}/snapshots/flatten:
+    post:
+      operationId: flattenWorkloadSnapshots
+      summary: Flatten the qcow2 overlay snapshot chain for a workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - flatten
+      responses:
+        "200":
+          description: Chain flattened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotListResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Flatten not supported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /snapshots/{id}/rollback:
+    post:
+      operationId: rollbackSnapshot
+      summary: Roll a workload back to a snapshot on the same pool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - rollback
+      responses:
+        "200":
+          description: Rolled back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Snapshot not found
   /certs:
     get:
       operationId: getCerts
@@ -2180,5 +2297,87 @@ components:
         email:
           type: string
         domain:
+          type: string
+    Snapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - workload_id
+        - volume_id
+        - name
+        - purpose_tag
+        - mechanism
+        - backend_ref
+        - parent_id
+        - chain_depth
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+        workload_id:
+          type: string
+        volume_id:
+          type: string
+        name:
+          type: string
+        purpose_tag:
+          type: string
+        mechanism:
+          type: string
+        backend_ref:
+          type: string
+        parent_id:
+          type: string
+        chain_depth:
+          type: integer
+        status:
+          type: string
+        created_at:
+          type: string
+    SnapshotCapability:
+      type: object
+      additionalProperties: false
+      required:
+        - supported
+        - mechanism
+        - chain_max
+        - chain_depth
+        - reason
+      properties:
+        supported:
+          type: boolean
+        mechanism:
+          type: string
+          enum:
+            - qcow2-overlay
+            - ""
+        chain_max:
+          type: integer
+        chain_depth:
+          type: integer
+        reason:
+          type: string
+    SnapshotListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - capability
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Snapshot"
+        capability:
+          $ref: "#/components/schemas/SnapshotCapability"
+    CreateSnapshotRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
           type: string
 
