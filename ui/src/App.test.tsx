@@ -342,12 +342,21 @@ describe("App", () => {
         status: 200,
         body: { id: "vm-1", name: "win", kind: "vm", status: "stopped" },
       },
+      "/api/v1/workloads/vm-1/guest": {
+        status: 200,
+        body: {
+          workload_id: "vm-1",
+          qemu_ga: { state: "unavailable" },
+          nodal_ga: { state: "not_installed", reason: "nodal guest is not connected" },
+          observed_at: "2026-09-01T00:00:00Z",
+        },
+      },
     });
 
     render(<App />);
 
-    expect(await screen.findByText(/guest agent required/i)).toBeVisible();
-    expect(screen.queryByText(/connected/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/nodal guest is not connected/i)).toBeVisible();
+    expect(screen.queryByText(/^connected$/i)).not.toBeInTheDocument();
   });
 
   it("renders the create VM wizard", async () => {
@@ -389,7 +398,7 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /console/i })).toBeVisible();
     expect(screen.getByRole("heading", { name: /guest agent/i })).toBeVisible();
     expect(screen.getByText(/not_installed/i)).toBeVisible();
-    expect(screen.getByText(/nodal guest is not connected/i)).toBeVisible();
+    expect(screen.getAllByText(/nodal guest is not connected/i).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: /^terminal$/i })).not.toBeInTheDocument();
   });
 

@@ -98,3 +98,37 @@ func TestGuestStatusMissingIsNotInstalled(t *testing.T) {
 		t.Fatal("must not fake qemu-ga")
 	}
 }
+
+func TestPhase20VMKindGuestJailMux(t *testing.T) {
+	root := t.TempDir()
+	sock := filepath.Join(t.TempDir(), "guest.sock")
+	host := &guest.Host{Root: root, FakePTY: true, OS: "linux"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) { _ = host.ServeConn(ctx, conn) }(c)
+		}
+	}()
+	id := "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+	h := &Handler{GuestSocketFn: func(string) string { return sock }}
+	if _, err := h.FilesOp(ctx, connect.NewRequest(&agentv1.FilesOpRequest{
+		TargetKind: "vm", TargetId: id, JailRoot: guest.JailRoot, Action: "mkdir", Path: "upload-here",
+	})); err != nil {
+		t.Fatalf("vm + guest:/ must mux to guest files: %v", err)
+	}
+	sess, err := startTermSession(ctx, h, termRequest{TargetKind: "vm", TargetID: id, JailRoot: guest.JailRoot, CWD: "/upload-here"})
+	if err != nil {
+		t.Fatalf("vm + guest:/ must mux to guest PTY: %v", err)
+	}
+	defer sess.Close()
+}

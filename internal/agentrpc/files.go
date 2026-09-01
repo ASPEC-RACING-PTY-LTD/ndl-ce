@@ -59,10 +59,12 @@ func (h *Handler) resolveJail(targetKind, targetID, requested string) (string, e
 		if err := qemu.ValidateWorkloadID(id); err != nil {
 			return "", err
 		}
-		p := filepath.Clean(strings.TrimSpace(requested))
-		if requested == "" || p == "/" || p == "guest" || p == guestJailRoot {
+		requested = strings.TrimSpace(requested)
+		cleaned := filepath.Clean(requested)
+		if requested == "" || isGuestJail(requested) || isGuestJail(cleaned) || cleaned == "/" || cleaned == "guest" {
 			return guestJailRoot, nil
 		}
+		p := cleaned
 		prefix := filepath.Join("/var/lib/ndl/runtime/qemu", id) + string(filepath.Separator)
 		if !strings.HasPrefix(p, prefix) || strings.Contains(p, "..") {
 			return "", fmt.Errorf("console socket is invalid")

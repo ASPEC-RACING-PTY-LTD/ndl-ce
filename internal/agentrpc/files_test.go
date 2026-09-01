@@ -144,6 +144,21 @@ func TestWritePartThenRenameSHA(t *testing.T) {
 	}
 }
 
+func TestResolveJailVMGuestToken(t *testing.T) {
+	h := &Handler{}
+	id := "11111111-1111-4111-8111-111111111111"
+	for _, jail := range []string{"guest:/", "guest:", "guest", "/", ""} {
+		got, err := h.resolveJail("vm", id, jail)
+		if err != nil || got != guestJailRoot {
+			t.Fatalf("jail %q -> %q %v", jail, got, err)
+		}
+	}
+	ok := filepath.Join("/var/lib/ndl/runtime/qemu", id, "serial.sock")
+	if got, err := h.resolveJail("vm", id, ok); err != nil || got != ok {
+		t.Fatalf("serial sock still required: %s %v", got, err)
+	}
+}
+
 func TestResolveJailVMConsoleRejectsTraversal(t *testing.T) {
 	h := &Handler{}
 	id := "11111111-1111-4111-8111-111111111111"
