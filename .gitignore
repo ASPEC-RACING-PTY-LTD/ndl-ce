@@ -10,8 +10,9 @@ ui/dist/
 ui/dist-ssr/
 ui/*.local
 
-# Local Phase 1 e2e artifacts (signing keys, debs, Go cache)
+# Local e2e artifacts (persistent signing key, debs, Go cache)
 packaging/e2e/out/
+packaging/e2e/signing/
 packaging/e2e/gocache/
 
 # Editor

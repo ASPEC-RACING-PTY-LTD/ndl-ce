@@ -15,10 +15,8 @@ if [ ! -d "$SRC/ui/dist" ]; then
   echo "ui/dist is missing" >&2
   exit 1
 fi
-if [ ! -d "$OUT/gnupg" ]; then
-  echo "existing GNUPGHOME $OUT/gnupg is required" >&2
-  exit 1
-fi
+# shellcheck source=lib/sign-repo.sh
+. "$SRC/packaging/e2e/lib/sign-repo.sh"
 
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -Eq 'go1\.(2[4-9]|[3-9][0-9])'; then
   if [ -x /usr/local/go/bin/go ]; then
@@ -106,11 +104,7 @@ SHA256:
  ${all_gz_sha} ${all_gz} main/binary-all/Packages.gz
 EOF
 
-export GNUPGHOME="$OUT/gnupg"
-chmod 700 "$GNUPGHOME" || true
-rm -f dists/trixie/InRelease dists/trixie/Release.gpg
-gpg --batch --yes --clearsign -o dists/trixie/InRelease dists/trixie/Release
-gpg --batch --yes --detach-sign -o dists/trixie/Release.gpg dists/trixie/Release
-chmod -R a+rX "$OUT/debian" "$OUT/debs"
+sign_release dists/trixie
+chmod -R a+rX "$OUT/debian" "$OUT/debs" "$OUT/gpg"
 echo "Rebuilt packages:"
 ls -l "$OUT/debs"

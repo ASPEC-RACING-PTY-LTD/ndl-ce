@@ -11,6 +11,7 @@ const SKIP_DIRS = new Set([
   "bin",
   "gen",
   "packaging/e2e/out",
+  "packaging/e2e/signing",
   "packaging/e2e/gocache",
 ]);
 

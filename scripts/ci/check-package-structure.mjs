@@ -138,6 +138,22 @@ if (existsSync(unitDir)) {
   }
 }
 
+const buildRepo = existsSync("packaging/e2e/build-repo.sh")
+  ? readFileSync("packaging/e2e/build-repo.sh", "utf8")
+  : "";
+if (buildRepo.includes("quick-gen-key")) {
+  errors.push("build-repo.sh must not generate a new signing key; use packaging/e2e/lib/sign-repo.sh");
+}
+if (buildRepo && !buildRepo.includes("sign_release")) {
+  errors.push("build-repo.sh must sign with the persistent key helper");
+}
+const rebuildRepo = existsSync("packaging/e2e/rebuild-packages.sh")
+  ? readFileSync("packaging/e2e/rebuild-packages.sh", "utf8")
+  : "";
+if (rebuildRepo.includes("quick-gen-key")) {
+  errors.push("rebuild-packages.sh must not generate a new signing key; use packaging/e2e/lib/sign-repo.sh");
+}
+
 if (errors.length) {
   console.error("Package structure failed:");
   for (const e of errors) console.error(`  ${e}`);

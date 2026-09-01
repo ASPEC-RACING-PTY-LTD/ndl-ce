@@ -1,5 +1,6 @@
 #!/bin/sh
-# Build binary Debian packages and a GPG-signed APT repo for Phase 1 e2e.
+# Build binary Debian packages and a GPG-signed APT repo for local e2e.
+# Uses the persistent development signing key. Does not rotate it.
 set -eu
 
 SRC=${SRC:-/src}
@@ -107,36 +108,34 @@ SHA256:
  ${all_gz_sha} ${all_gz} main/binary-all/Packages.gz
 EOF
 
-GNUPGHOME=$(mktemp -d)
-export GNUPGHOME
-chmod 700 "$GNUPGHOME"
-gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key \
-  "No-dal Test Repo <dev@no-dal.com>" rsa2048 default never
-gpg --export --armor > "$OUT/gpg"
-gpg --batch --yes --clearsign -o dists/trixie/InRelease dists/trixie/Release
-gpg --batch --yes --detach-sign -o dists/trixie/Release.gpg dists/trixie/Release
-cp -a "$GNUPGHOME" "$OUT/gnupg"
+# shellcheck source=lib/sign-repo.sh
+. "$SRC/packaging/e2e/lib/sign-repo.sh"
+sign_release dists/trixie
 chmod -R a+rX "$OUT/debian" "$OUT/gpg" "$OUT/debs"
 
 cp -a "$SRC/packaging/bootstrap/get-nodal.sh" "$OUT/get-nodal.sh"
 sed -i 's/\r$//' "$OUT/get-nodal.sh"
 
-# Test HTTPS CA so the appliance can run curl -fsSL https://get.no-dal.com
-openssl req -x509 -newkey rsa:2048 -sha256 -days 7 -nodes \
-  -subj "/CN=No-dal E2E CA" \
-  -keyout "$OUT/ca.key" -out "$OUT/ca.crt"
-openssl req -newkey rsa:2048 -nodes \
-  -subj "/CN=packages.no-dal.com" \
-  -keyout "$OUT/server.key" -out "$OUT/server.csr"
-cat > "$OUT/server.ext" <<'EOF'
+# Reuse the development TLS material. Rotating it breaks an already-installed guest.
+if [ -f "$OUT/ca.crt" ] && [ -f "$OUT/server.crt" ] && [ -f "$OUT/server.key" ]; then
+  echo "Reusing existing e2e TLS certificates in $OUT"
+else
+  openssl req -x509 -newkey rsa:2048 -sha256 -days 7 -nodes \
+    -subj "/CN=No-dal E2E CA" \
+    -keyout "$OUT/ca.key" -out "$OUT/ca.crt"
+  openssl req -newkey rsa:2048 -nodes \
+    -subj "/CN=packages.no-dal.com" \
+    -keyout "$OUT/server.key" -out "$OUT/server.csr"
+  cat > "$OUT/server.ext" <<'EOF'
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
 keyUsage = digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
 subjectAltName = DNS:get.no-dal.com,DNS:packages.no-dal.com
 EOF
-openssl x509 -req -in "$OUT/server.csr" -CA "$OUT/ca.crt" -CAkey "$OUT/ca.key" \
-  -CAcreateserial -out "$OUT/server.crt" -days 7 -sha256 -extfile "$OUT/server.ext"
+  openssl x509 -req -in "$OUT/server.csr" -CA "$OUT/ca.crt" -CAkey "$OUT/ca.key" \
+    -CAcreateserial -out "$OUT/server.crt" -days 7 -sha256 -extfile "$OUT/server.ext"
+fi
 
 cat > "$OUT/nginx.conf" <<'EOF'
 events { worker_connections 64; }
