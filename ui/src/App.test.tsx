@@ -513,12 +513,13 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /^backups$/i })).toBeVisible();
     expect(screen.getByText(/backups are independent copies\. snapshots are not backups\./i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/^running$/i)).toBeVisible();
+    expect(await screen.findByText(/^Running$/)).toBeVisible();
     expect(
       screen.getByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^restore as new$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^restore replace$/i })).toBeVisible();
-    expect(screen.queryByText(/password/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText("local-disk").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
   });
 });
