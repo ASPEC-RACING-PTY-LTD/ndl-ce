@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.30
-  description: Phase 31 placement and maintenance, plus prior northbound API.
+  version: 0.1.34
+  description: Phase 35 feature modules, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -858,6 +858,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RollingPlan"
+  /features:
+    get:
+      operationId: listFeatures
+      summary: Feature modules. Fresh install is light. GPU and Kubernetes stay optional.
+      responses:
+        "200":
+          description: Feature catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureList"
+  /features/{id}/enable:
+    post:
+      operationId: enableFeature
+      summary: Enable an optional feature package. Kubernetes on a tiny node needs confirm and does not start kubelet.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - enable-k8s
+      responses:
+        "200":
+          description: Feature state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+  /features/{id}/disable:
+    post:
+      operationId: disableFeature
+      summary: Disable a feature. Workloads are not deleted. Confirm is required when workloads exist.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - disable-feature
+      responses:
+        "200":
+          description: Feature state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -3928,6 +3987,82 @@ components:
           type: string
         plan:
           $ref: "#/components/schemas/RollingPlan"
+    Feature:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - enabled
+        - core
+        - package_status
+        - runtime_status
+        - starts_runtime
+        - kubelet_started
+        - workload_count
+      properties:
+        id:
+          type: string
+          enum:
+            - vm
+            - ct
+            - oci
+            - gpu
+            - k8s
+            - distributed_storage
+            - ai
+        title:
+          type: string
+        enabled:
+          type: boolean
+        core:
+          type: boolean
+        package:
+          type: string
+        package_status:
+          type: string
+          enum:
+            - not_configured
+            - unavailable
+            - installed
+            - removed
+        runtime_status:
+          type: string
+          enum:
+            - not_started
+            - installed
+        starts_runtime:
+          type: boolean
+        kubelet_started:
+          type: boolean
+        workload_count:
+          type: integer
+        tiny_node:
+          type: boolean
+        confirm:
+          type: string
+        reason:
+          type: string
+    FeatureList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - base_install
+        - gpu_optional
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Feature"
+        base_install:
+          type: string
+          enum:
+            - light
+        gpu_optional:
+          type: boolean
+        reason:
+          type: string
     JoinTokenCreateRequest:
       type: object
       additionalProperties: false

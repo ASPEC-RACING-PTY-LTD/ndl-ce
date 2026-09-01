@@ -539,6 +539,67 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /run rolling update/i })).toBeVisible();
   });
 
+  it("renders the features page with optional GPU and Kubernetes install", async () => {
+    window.history.replaceState({}, "", "/settings/features");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/features": {
+        status: 200,
+        body: {
+          base_install: "light",
+          gpu_optional: true,
+          items: [
+            {
+              id: "vm",
+              title: "Virtual Machines",
+              enabled: true,
+              core: true,
+              package_status: "installed",
+              runtime_status: "installed",
+              starts_runtime: true,
+              kubelet_started: false,
+              workload_count: 0,
+            },
+            {
+              id: "gpu",
+              title: "GPU Services",
+              enabled: false,
+              core: false,
+              package: "nodal-feature-gpu",
+              package_status: "not_configured",
+              runtime_status: "not_started",
+              starts_runtime: false,
+              kubelet_started: false,
+              workload_count: 0,
+            },
+            {
+              id: "k8s",
+              title: "Kubernetes",
+              enabled: false,
+              core: false,
+              package: "nodal-feature-k8s",
+              package_status: "not_configured",
+              runtime_status: "not_started",
+              starts_runtime: false,
+              kubelet_started: false,
+              workload_count: 0,
+              tiny_node: true,
+            },
+          ],
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^features$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^features$/i })).toBeVisible();
+    expect(screen.getByText(/base install light/i)).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^gpu services$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: /^install$/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
+  });
+
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {
     window.history.replaceState({}, "", "/workloads/vm-1/snapshots");
     mockApi({

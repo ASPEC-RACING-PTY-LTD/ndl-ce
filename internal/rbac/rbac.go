@@ -65,6 +65,8 @@ const (
 	FilesOwnership      = "files.ownership"
 	SettingsTLSRead     = "settings.tls.read"
 	SettingsTLSManage   = "settings.tls.manage"
+	FeatureRead         = "feature.read"
+	FeatureManage       = "feature.manage"
 	All                 = "*"
 )
 
@@ -89,10 +91,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot, ComputeGPUAssign, ComputeMigrate,
 			BackupRead, BackupCreate, BackupRestore, NodeUpdate, ClusterJoin, NodeRevoke,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
-			SettingsTLSRead,
+			SettingsTLSRead, FeatureRead, FeatureManage,
 		}
 	case Viewer:
-		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead}
+		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead}
 	default:
 		return nil
 	}

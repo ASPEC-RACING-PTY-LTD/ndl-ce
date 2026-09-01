@@ -62,3 +62,10 @@ Package postinst does that.
 
 Result matches the one-line path: same packages, same units, same
 `/setup` flow. No factory password is created.
+
+Optional feature packages (`nodal-feature-oci`, `nodal-feature-gpu`,
+`nodal-feature-k8s`, `nodal-feature-distributed-storage`,
+`nodal-feature-ai`) are not installed by `apt-get install nodal`. Enable
+them later from Settings, Features or `nodalctl feature enable oci`.
+Kubernetes enable does not start kubelet.
+

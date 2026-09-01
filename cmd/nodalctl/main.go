@@ -41,8 +41,11 @@ func run(args []string) error {
   cluster ha
   cluster ha replica --endpoint HOST [--dsn DSN]
   cluster fence --confirm fence
-  cluster promote --confirm promote
+	cluster promote --confirm promote
   cluster update [--confirm cluster-update]
+  feature list
+  feature enable NAME [--confirm enable-k8s]
+  feature disable NAME [--confirm disable-feature]
   cluster join-token create
   cluster join --token TOKEN [--url URL] [--hostname HOST]
   cluster node revoke --id ID
@@ -170,6 +173,8 @@ func run(args []string) error {
 		}
 	case "cluster":
 		return cmdCluster(args[1:])
+	case "feature":
+		return cmdFeature(args[1:])
 	case "task":
 		if len(args) < 2 || args[1] != "list" {
 			return fmt.Errorf("usage: nodalctl task list")
@@ -699,6 +704,36 @@ func cmdCluster(args []string) error {
 		}
 	default:
 		return fmt.Errorf("usage: nodalctl cluster show|ha|fence|promote|update|join-token create|join|node revoke|wg show|peer add")
+	}
+}
+
+func cmdFeature(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl feature list|enable NAME|disable NAME")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/features")
+	case "enable":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl feature enable oci|gpu|k8s|distributed_storage|ai [--confirm enable-k8s]")
+		}
+		f := parseFlags(args[2:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/features/"+args[1]+"/enable", map[string]any{}, true)
+	case "disable":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl feature disable NAME [--confirm disable-feature]")
+		}
+		f := parseFlags(args[2:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/features/"+args[1]+"/disable", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl feature list|enable NAME|disable NAME")
 	}
 }
 

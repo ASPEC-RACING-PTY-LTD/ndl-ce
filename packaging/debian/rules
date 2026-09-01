@@ -70,6 +70,12 @@ override_dh_auto_install:
 	install -m 0644 $(MODROOT)/systemd/nodal-oci@.service debian/tmp/lib/systemd/system/nodal-oci@.service
 	install -m 0644 $(MODROOT)/systemd/ndl-guest.service debian/tmp/lib/systemd/system/ndl-guest.service
 	install -m 0644 $(MODROOT)/packaging/apparmor/usr.bin.qemu-system-x86_64.local debian/tmp/etc/apparmor.d/local/usr.bin.qemu-system-x86_64
+	mkdir -p debian/tmp/usr/share/ndl/features
+	install -m 0644 $(MODROOT)/packaging/share/ndl/features/oci debian/tmp/usr/share/ndl/features/oci
+	install -m 0644 $(MODROOT)/packaging/share/ndl/features/gpu debian/tmp/usr/share/ndl/features/gpu
+	install -m 0644 $(MODROOT)/packaging/share/ndl/features/k8s debian/tmp/usr/share/ndl/features/k8s
+	install -m 0644 $(MODROOT)/packaging/share/ndl/features/distributed-storage debian/tmp/usr/share/ndl/features/distributed-storage
+	install -m 0644 $(MODROOT)/packaging/share/ndl/features/ai debian/tmp/usr/share/ndl/features/ai
 
 override_dh_install:
 	dh_install

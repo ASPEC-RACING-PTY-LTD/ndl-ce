@@ -92,6 +92,9 @@ export function Shell({ children }: ShellProps) {
           <Link href="/settings/cluster" aria-current={path === "/settings/cluster" ? "page" : undefined}>
             Cluster
           </Link>
+          <Link href="/settings/features" aria-current={path === "/settings/features" ? "page" : undefined}>
+            Features
+          </Link>
           <Link href="/tasks" aria-current={path === "/tasks" ? "page" : undefined}>
             Tasks
           </Link>

@@ -240,6 +240,23 @@ apply stays unavailable until the dest agent is connected.
 4. Worker update steps stay unavailable when dest agent is not connected.
 5. Replica DSN never appears in HA JSON.
 
+## Feature modules (Phase 35)
+
+The `nodal` metapackage stays light. GPU, Kubernetes, distributed
+storage, and AI are extra packages. `GET /api/v1/features` lists core
+VM/CT as installed and optional modules as off.
+
+`nodalctl feature enable oci` installs `nodal-feature-oci` through the
+typed HostUpdate path. Enabling Kubernetes on a node at or below 8 GiB
+RAM needs `X-Nodal-Confirm: enable-k8s`. Kubelet is not started.
+Disable needs confirm when workloads exist and does not delete them.
+
+### Recovery matrix (features)
+
+1. Fresh `apt-get install nodal` does not pull GPU, Kubernetes, Ceph, or AI.
+2. Tiny-node Kubernetes enable without confirm is refused. Kubelet stays down.
+3. Disable with confirm leaves OCI workloads running.
+
 ## Identity completion (Phase 13)
 
 TOTP is the working MFA method. WebAuthn is not implemented. Login returns

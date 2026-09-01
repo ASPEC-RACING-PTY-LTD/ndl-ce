@@ -225,6 +225,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. STONITH is not implemented. Why not blocking: fence is an operator isolation record that expires the lease; the architecture names fencing as defined, not automatic kill.
 - LOW. Worker Phase 12 apply is not wired. Why not blocking: rolling records unavailable rather than running apt on the control node for the wrong host.
 
+## Phase 35
+
+- MEDIUM. Feature package apt apply is not run on this Ubuntu Cloud host. Why not blocking: HostUpdate returns unavailable and the catalog still records opt-in; Debian 13 signed-repo install is the product path.
+- LOW. Kubernetes runtime is not started. Why not blocking: Phase 38 owns kubelet; this phase is installer UX and the tiny-node confirm gate.
+
+
 
 
 

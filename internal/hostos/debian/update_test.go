@@ -46,6 +46,24 @@ func TestUpdateArgvNeverShell(t *testing.T) {
 	if contains(GRUBPreviousArgv(), "install") {
 		t.Fatal("grub must stay a kernel rollback argv")
 	}
+	feat, err := FeatureInstallArgv("nodal-feature-k8s", true)
+	if err != nil || !contains(feat, "nodal-feature-k8s") || contains(feat, "kubelet") || contains(feat, "kubeadm") {
+		t.Fatalf("%v %v", feat, err)
+	}
+	if _, err := FeatureInstallArgv("kubeadm", false); err == nil {
+		t.Fatal("kubeadm must not be a feature package")
+	}
+	if _, err := FeatureInstallArgv("bash", false); err == nil {
+		t.Fatal("bash package")
+	}
+	rm, err := FeatureRemoveArgv("nodal-feature-oci", false)
+	if err != nil || contains(rm, "purge") || contains(rm, "kubelet") {
+		t.Fatalf("%v %v", rm, err)
+	}
+	joinedFeat := strings.Join(feat, " ")
+	if strings.Contains(joinedFeat, "systemctl") || strings.Contains(joinedFeat, "kubelet") {
+		t.Fatalf("feature install must not start k8s: %s", joinedFeat)
+	}
 }
 
 func contains(argv []string, want string) bool {

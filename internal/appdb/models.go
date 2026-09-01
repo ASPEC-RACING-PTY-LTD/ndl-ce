@@ -301,6 +301,10 @@ type Store interface {
 	GetMigrateJob(ctx context.Context, clusterID, id string) (*MigrateJob, error)
 	UpdateMigrateJob(ctx context.Context, j MigrateJob) error
 	ListMigrateJobs(ctx context.Context, clusterID string, limit int) ([]MigrateJob, error)
+
+	ListFeatures(ctx context.Context, clusterID string) ([]Feature, error)
+	GetFeature(ctx context.Context, clusterID, id string) (*Feature, error)
+	UpsertFeature(ctx context.Context, f Feature) error
 }
 
 // Cluster is the appliance cluster of one.

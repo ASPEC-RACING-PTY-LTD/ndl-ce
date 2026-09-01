@@ -83,6 +83,7 @@ type Memory struct {
 	haReplicaDSN      map[string]string
 	rollingPlans      map[string]RollingPlan
 	rollingSteps      map[string]RollingStep
+	features          map[string]Feature
 	nodeGroups        map[string]NodeGroup
 	nodeGroupMembers  map[string][]string
 	nodeMaint         map[string]NodeMaintenance

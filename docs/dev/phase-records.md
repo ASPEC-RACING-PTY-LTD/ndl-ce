@@ -254,6 +254,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: dest agent rolling apply; live replica probe; STONITH remains out of CE
 - Audit follow-up: promotion is admin-only; STONITH is not implemented
 
+## Phase 35
+
+- Package: 0.1.34
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (fresh list is light, tiny-node k8s enable without confirm is 422 and does not call HostUpdate, confirm enable records kubelet_started false, disable without confirm leaves OCI workloads, disable with confirm still leaves workloads, viewer cannot enable, GPU enable on unsupported host stays unavailable). FIXTURE: Memory plus fakeUpdate. NOT PHYSICALLY VALIDATED: apt-get install of nodal-feature-* on Debian 13; kubeadm
+- Follow-up: Kubernetes runtime Phase 38; Store Phase 36 must not grow a root script runner
+- Audit follow-up: no Store root helper; feature install is typed HostUpdate only
+
 
 
 

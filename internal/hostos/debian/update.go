@@ -6,18 +6,29 @@ import (
 )
 
 const (
-	UpdateCheck      = "check"
-	UpdateStatus     = "status"
-	UpdatePreflight  = "preflight"
-	UpdateCheckpoint = "checkpoint"
-	UpdateApply      = "apply"
-	UpdateRollback   = "rollback"
-	ChannelStable    = "stable"
-	UnsupportedHost  = "Platform updates use the Debian 13 adapter and the signed nodal repository. This host is not Debian 13 amd64."
+	UpdateCheck          = "check"
+	UpdateStatus         = "status"
+	UpdatePreflight      = "preflight"
+	UpdateCheckpoint     = "checkpoint"
+	UpdateApply          = "apply"
+	UpdateRollback       = "rollback"
+	UpdateFeatureInstall = "feature-install"
+	UpdateFeatureRemove  = "feature-remove"
+	ChannelStable        = "stable"
+	UnsupportedHost      = "Platform updates use the Debian 13 adapter and the signed nodal repository. This host is not Debian 13 amd64."
 )
 
-// PackageNames are the only packages the update adapter may mention.
+// PackageNames are the only packages the Phase 12 update adapter may mention.
 var PackageNames = []string{"ndl-control", "ndl-agent", "ndl-ui", "nodal", "nodalctl"}
+
+// FeaturePackageNames are optional Phase 35 modules. They are not Depends of nodal.
+var FeaturePackageNames = []string{
+	"nodal-feature-oci",
+	"nodal-feature-gpu",
+	"nodal-feature-k8s",
+	"nodal-feature-distributed-storage",
+	"nodal-feature-ai",
+}
 
 // AllowedPackage reports whether name is a No-dal package, never a package-manager verb.
 func AllowedPackage(name string) bool {
@@ -27,7 +38,42 @@ func AllowedPackage(name string) bool {
 			return true
 		}
 	}
+	return AllowedFeaturePackage(n)
+}
+
+// AllowedFeaturePackage reports whether name is an optional feature metapackage.
+func AllowedFeaturePackage(name string) bool {
+	n := strings.TrimSpace(name)
+	for _, p := range FeaturePackageNames {
+		if p == n {
+			return true
+		}
+	}
 	return false
+}
+
+// FeatureInstallArgv installs one allowlisted feature package. It never names kubelet.
+func FeatureInstallArgv(pkg string, dryRun bool) ([]string, error) {
+	if !AllowedFeaturePackage(pkg) {
+		return nil, fmt.Errorf("package is not a No-dal feature package")
+	}
+	argv := []string{"/usr/bin/apt-get", "-o", "APT::Get::AllowUnauthenticated=false", "-y", "--no-install-recommends"}
+	if dryRun {
+		argv = append(argv, "--dry-run")
+	}
+	return append(argv, "install", pkg), nil
+}
+
+// FeatureRemoveArgv removes one allowlisted feature package. It does not purge or stop guests.
+func FeatureRemoveArgv(pkg string, dryRun bool) ([]string, error) {
+	if !AllowedFeaturePackage(pkg) {
+		return nil, fmt.Errorf("package is not a No-dal feature package")
+	}
+	argv := []string{"/usr/bin/apt-get", "-o", "APT::Get::AllowUnauthenticated=false", "-y"}
+	if dryRun {
+		argv = append(argv, "--dry-run")
+	}
+	return append(argv, "remove", pkg), nil
 }
 
 // CheckArgv refreshes signed package indexes. It does not install.

@@ -1,3 +1,9 @@
+nodal (0.1.34) UNRELEASED; urgency=medium
+
+  * Phase 35 feature modules: optional OCI, GPU, Kubernetes, distributed storage, and AI packages stay out of the nodal metapackage, typed feature-install update, Kubernetes on a tiny node needs confirm and does not start kubelet, disable leaves workloads
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.33) UNRELEASED; urgency=medium
 
   * Phase 34 HA foundations and rolling updates: single writer lease, operator fence then promote, replica DSN never returned, rolling drain plus Phase 12 apply on this control node, guests are not stopped

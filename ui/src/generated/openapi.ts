@@ -399,6 +399,29 @@ export interface RollingUpdatePreview {
   plan?: RollingPlan;
 }
 
+export interface Feature {
+  id: "vm" | "ct" | "oci" | "gpu" | "k8s" | "distributed_storage" | "ai";
+  title: string;
+  enabled: boolean;
+  core: boolean;
+  package?: string;
+  package_status: "not_configured" | "unavailable" | "installed" | "removed";
+  runtime_status: "not_started" | "installed";
+  starts_runtime: boolean;
+  kubelet_started: boolean;
+  workload_count: number;
+  tiny_node?: boolean;
+  confirm?: string;
+  reason?: string;
+}
+
+export interface FeatureList {
+  items: Feature[];
+  base_install: "light";
+  gpu_optional: boolean;
+  reason?: string;
+}
+
 export interface JoinTokenCreateRequest {
   ttl_seconds?: number;
 }
@@ -1582,6 +1605,12 @@ export type FenceClusterHAPath = "/api/v1/cluster/ha/fence";
 export type PromoteClusterHAPath = "/api/v1/cluster/ha/promote";
 
 export type GetClusterUpdatePath = "/api/v1/cluster/update";
+
+export type ListFeaturesPath = "/api/v1/features";
+
+export type EnableFeaturePath = "/api/v1/features/{id}/enable";
+
+export type DisableFeaturePath = "/api/v1/features/{id}/disable";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

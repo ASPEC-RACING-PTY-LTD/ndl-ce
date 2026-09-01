@@ -239,6 +239,44 @@ export async function runClusterUpdate(): Promise<import("../generated/openapi")
   );
 }
 
+export async function listFeatures(): Promise<import("../generated/openapi").FeatureList> {
+  return readJson(await request("/features"));
+}
+
+export async function enableFeature(
+  id: string,
+  confirm?: string,
+): Promise<import("../generated/openapi").Feature> {
+  const headers: Record<string, string> = {};
+  if (confirm) {
+    headers["X-Nodal-Confirm"] = confirm;
+  }
+  return readJson(
+    await request(`/features/${id}/enable`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function disableFeature(
+  id: string,
+  confirm?: string,
+): Promise<import("../generated/openapi").Feature> {
+  const headers: Record<string, string> = {};
+  if (confirm) {
+    headers["X-Nodal-Confirm"] = confirm;
+  }
+  return readJson(
+    await request(`/features/${id}/disable`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

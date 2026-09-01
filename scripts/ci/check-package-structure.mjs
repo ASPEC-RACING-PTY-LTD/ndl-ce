@@ -13,6 +13,11 @@ const required = [
   "packaging/debian/ndl-ui.install",
   "packaging/debian/nodalctl.install",
   "packaging/debian/ndl-guest.install",
+  "packaging/debian/nodal-feature-oci.install",
+  "packaging/debian/nodal-feature-gpu.install",
+  "packaging/debian/nodal-feature-k8s.install",
+  "packaging/debian/nodal-feature-distributed-storage.install",
+  "packaging/debian/nodal-feature-ai.install",
   "packaging/debian/ndl-control.postinst",
   "packaging/debian/ndl-control.postrm",
   "packaging/debian/ndl-agent.postinst",
@@ -70,6 +75,14 @@ if (!existsSync("migrations/0030_phase33.sql")) {
 }
 if (!existsSync("migrations/0031_phase34.sql")) {
   errors.push("missing migrations/0031_phase34.sql HA state and rolling plans");
+}
+if (!existsSync("migrations/0032_phase35.sql")) {
+  errors.push("missing migrations/0032_phase35.sql feature modules");
+} else {
+  const featSql = readFileSync("migrations/0032_phase35.sql", "utf8");
+  if (!featSql.includes("CREATE TABLE IF NOT EXISTS features") || !featSql.includes("kubelet")) {
+    errors.push("phase 35 migration must add features and document that kubelet is not started");
+  }
 }
 if (!existsSync("packaging/iso/mkosi.conf")) {
   errors.push("missing packaging/iso/mkosi.conf Debian installer ISO contract");
@@ -167,6 +180,9 @@ if (!changelog.includes("nodal (0.1.32)") || !changelog.includes("Phase 33 clust
 if (!changelog.includes("nodal (0.1.33)") || !changelog.includes("Phase 34 HA foundations")) {
   errors.push("changelog must include nodal (0.1.33) Phase 34 HA foundations");
 }
+if (!changelog.includes("nodal (0.1.34)") || !changelog.includes("Phase 35 feature modules")) {
+  errors.push("changelog must include nodal (0.1.34) Phase 35 feature modules");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")
@@ -177,16 +193,35 @@ for (const pkg of ["Package: nodal", "Package: ndl-control", "Package: ndl-agent
 if (!control.includes("Package: ndl-guest")) {
   errors.push("debian/control missing Package: ndl-guest");
 }
+for (const feat of [
+  "Package: nodal-feature-oci",
+  "Package: nodal-feature-gpu",
+  "Package: nodal-feature-k8s",
+  "Package: nodal-feature-distributed-storage",
+  "Package: nodal-feature-ai",
+]) {
+  if (!control.includes(feat)) errors.push(`debian/control missing ${feat}`);
+}
 if (!/Depends:\s*ndl-control,\s*ndl-agent,\s*ndl-ui,\s*nodalctl/.test(control)) {
   errors.push("nodal metapackage must depend on ndl-control, ndl-agent, ndl-ui, nodalctl");
 }
+if (/^Package: nodal\n(?:(?!\nPackage:)[\s\S])*Depends:[^\n]*nodal-feature/m.test(control)) {
+  errors.push("nodal metapackage must not Depend on feature packages");
+}
+function stanza(src, name) {
+  const parts = src.split(/\n(?=Package: )/);
+  return parts.find((p) => new RegExp(`^Package: ${name}\\b`).test(p)) ?? "";
+}
+const coreControl = ["nodal", "ndl-control", "ndl-agent", "ndl-ui", "nodalctl", "ndl-guest"]
+  .map((n) => stanza(control, n))
+  .join("\n");
 if (!/postgresql-16\s*\|\s*postgresql/.test(control)) {
   errors.push("ndl-control must Depend on postgresql-16 | postgresql");
 }
 if (!/^Package: ndl-control[\s\S]*?adduser/m.test(control)) {
   errors.push("ndl-control must Depend on adduser");
 }
-const dependLines = control
+const dependLines = coreControl
   .split(/\r?\n/)
   .filter((line) => /^\s*Depends:/.test(line))
   .join("\n");
@@ -309,6 +344,9 @@ if (!rules.includes("./cmd/ndl-oci-launch")) {
 }
 if (!rules.includes("usr/sbin/ndl-oci-launch")) {
   errors.push("debian/rules must install ndl-oci-launch to usr/sbin/ndl-oci-launch");
+}
+if (!rules.includes("usr/share/ndl/features")) {
+  errors.push("debian/rules must install optional feature markers");
 }
 if (!rules.includes("nodal-oci@.service")) {
   errors.push("debian/rules must install nodal-oci@.service");

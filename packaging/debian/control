@@ -10,9 +10,11 @@ Rules-Requires-Root: no
 Package: nodal
 Architecture: amd64
 Depends: ndl-control, ndl-agent, ndl-ui, nodalctl
+Suggests: nodal-feature-oci, nodal-feature-gpu, nodal-feature-k8s, nodal-feature-distributed-storage, nodal-feature-ai
 Description: No-dal Community Edition metapackage
  Pulls in the control plane, node agent, web UI, and CLI.
  Phase 1 first-boot install. Core packages only.
+ GPU, Kubernetes, distributed storage, and AI stay optional feature packages.
 
 Package: ndl-control
 Architecture: amd64
@@ -49,3 +51,43 @@ Depends: ${misc:Depends}
 Description: No-dal Guest Agent for Linux VMs
  Optional in-guest daemon for Files and PTY over org.nodal.guest.0.
  Not required to create or start a VM. Not a host package dependency.
+
+Package: nodal-feature-oci
+Architecture: all
+Depends: ndl-agent, ${misc:Depends}
+Suggests: containerd
+Description: Optional OCI extras for No-dal
+ Not a Phase 1 dependency. Enable with nodalctl feature enable oci.
+ Does not add containerd to the nodal metapackage.
+
+Package: nodal-feature-gpu
+Architecture: all
+Depends: ndl-agent, ${misc:Depends}
+Suggests: nvidia-driver, nvidia-container-toolkit
+Description: Optional GPU services package set for No-dal
+ Not a Phase 1 dependency. Enable with nodalctl feature enable gpu.
+ Does not install NVIDIA drivers until the operator enables this package.
+
+Package: nodal-feature-k8s
+Architecture: all
+Depends: ndl-agent, ${misc:Depends}
+Suggests: kubeadm, kubelet
+Description: Optional Kubernetes package set for No-dal
+ Not a Phase 1 dependency. Enable with nodalctl feature enable k8s.
+ Does not start kubelet. Kubernetes runtime is a later optional phase.
+
+Package: nodal-feature-distributed-storage
+Architecture: all
+Depends: ndl-agent, ${misc:Depends}
+Suggests: ceph
+Description: Optional distributed storage package set for No-dal
+ Not a Phase 1 dependency. Enable with nodalctl feature enable distributed_storage.
+ Does not start Ceph.
+
+Package: nodal-feature-ai
+Architecture: all
+Depends: ndl-agent, ${misc:Depends}
+Description: Optional AI services package set for No-dal
+ Not a Phase 1 dependency. Enable with nodalctl feature enable ai.
+ Does not start model runtimes.
+

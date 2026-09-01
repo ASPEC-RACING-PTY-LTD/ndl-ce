@@ -9,7 +9,9 @@ import (
 )
 
 const (
-	ChannelStable = debian.ChannelStable
+	ChannelStable        = debian.ChannelStable
+	UpdateFeatureInstall = debian.UpdateFeatureInstall
+	UpdateFeatureRemove  = debian.UpdateFeatureRemove
 	// UpdateUnsupportedReason is the honest public reason when the host adapter cannot run.
 	UpdateUnsupportedReason = debian.UnsupportedHost
 	// StoreCompatDetail is the Phase 12 hook. Real Store compatibility is Phase 36.
@@ -18,6 +20,9 @@ const (
 
 // PackageNames are the only names the public update contract may mention.
 var PackageNames = debian.PackageNames
+
+// FeaturePackageNames are optional Phase 35 modules, never core Depends.
+var FeaturePackageNames = debian.FeaturePackageNames
 
 // UpdateRequest is a typed host-platform update action. It is not a shell string.
 type UpdateRequest struct {
@@ -163,6 +168,10 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 		return runApply(ctx, req, res, exec)
 	case debian.UpdateRollback:
 		return runRollback(ctx, req, res, exec)
+	case debian.UpdateFeatureInstall:
+		return runFeaturePackage(ctx, req, res, exec, false)
+	case debian.UpdateFeatureRemove:
+		return runFeaturePackage(ctx, req, res, exec, true)
 	default:
 		res.Supported = false
 		res.Status = "failed"
@@ -368,6 +377,42 @@ func runRollback(ctx context.Context, req UpdateRequest, res UpdateResult, exec 
 	}
 	res.Status = "succeeded"
 	res.Reason = "ndl-control was rolled back through the signed repository."
+	return res, nil
+}
+
+func runFeaturePackage(ctx context.Context, req UpdateRequest, res UpdateResult, exec ExecFunc, remove bool) (UpdateResult, error) {
+	pkg := strings.TrimSpace(req.PackageName)
+	var argv []string
+	var err error
+	if remove {
+		argv, err = debian.FeatureRemoveArgv(pkg, req.DryRun)
+	} else {
+		argv, err = debian.FeatureInstallArgv(pkg, req.DryRun)
+	}
+	if err != nil {
+		res.Supported = false
+		res.Status = "failed"
+		res.Reason = "feature package is not allowlisted"
+		return res, nil
+	}
+	res.DryRun = req.DryRun
+	res.Packages = []PackageStatus{{Name: pkg, Status: "not_reported"}}
+	if exec == nil {
+		res.Status = "succeeded"
+		res.Reason = "Feature package argv was planned. Host commands were not run."
+		return res, nil
+	}
+	if _, err := exec(ctx, argv); err != nil {
+		res.Status = "failed"
+		res.Reason = "feature package apply failed"
+		return res, nil
+	}
+	res.Status = "succeeded"
+	if remove {
+		res.Reason = "Optional feature package removed through the signed repository."
+	} else {
+		res.Reason = "Optional feature package applied through the signed repository."
+	}
 	return res, nil
 }
 
