@@ -110,7 +110,7 @@ func DirectoryCapabilities(xattr, shared bool) Capabilities {
 	return Capabilities{
 		VolumeCreate:    true,
 		SparseFiles:     true,
-		Snapshots:       false,
+		Snapshots:       true,
 		IncrementalSend: false,
 		XattrIdentity:   xattr,
 		SharedWarning:   shared,

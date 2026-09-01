@@ -35,6 +35,8 @@ const (
 	ComputeStop         = "compute.stop"
 	ComputeDelete       = "compute.delete"
 	ComputeConsole      = "compute.console"
+	ComputeSnapshot     = "compute.snapshot"
+	StorageSnapshot     = "storage.snapshot"
 	TerminalOpen        = "terminal.open"
 	FilesRead           = "files.read"
 	FilesDownload       = "files.download"
@@ -67,7 +69,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
-			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole,
+			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
 			SettingsTLSRead,
 		}

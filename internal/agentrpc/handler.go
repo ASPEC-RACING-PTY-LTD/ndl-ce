@@ -160,6 +160,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execVMLifecycle(ctx, req.Msg.GetVmLifecycle())
 	case req.Msg.GetVmQueryPci() != nil:
 		return h.execVMQueryPCI(ctx, req.Msg.GetVmQueryPci())
+	case req.Msg.GetVmSnapshot() != nil:
+		return h.execVMSnapshot(ctx, req.Msg.GetVmSnapshot())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

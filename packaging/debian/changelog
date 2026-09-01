@@ -1,3 +1,9 @@
+nodal (0.1.9) UNRELEASED; urgency=medium
+
+  * Phase 10 Directory qcow2 overlay snapshots
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.8) UNRELEASED; urgency=medium
 
   * Phase 9 HTTPS and certificates for the management plane

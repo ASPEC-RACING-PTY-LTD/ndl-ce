@@ -64,4 +64,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(view, SettingsTLSRead) || !Authorize(op, SettingsTLSRead) {
 		t.Fatal("tls status is readable")
 	}
+	if !Authorize(op, ComputeSnapshot) || !Authorize(op, StorageSnapshot) {
+		t.Fatal("operator snapshots")
+	}
+	if Authorize(view, ComputeSnapshot) || Authorize(view, StorageSnapshot) {
+		t.Fatal("viewer must not snapshot")
+	}
 }

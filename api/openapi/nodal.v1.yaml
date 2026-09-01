@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.8
+  version: 0.1.9
   description: Phase 9 HTTPS certificates plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, virtual machines, and TLS settings.
 servers:
   - url: /api/v1

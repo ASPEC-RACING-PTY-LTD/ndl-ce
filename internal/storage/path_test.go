@@ -63,7 +63,7 @@ func TestDirectoryCapabilitiesNoIncrementalSend(t *testing.T) {
 	if c.IncrementalSend {
 		t.Fatal("Directory must not advertise incremental send")
 	}
-	if c.Snapshots {
-		t.Fatal("Directory snapshots are Phase 10")
+	if !c.Snapshots {
+		t.Fatal("Directory VM disks support external qcow2 overlay snapshots")
 	}
 }

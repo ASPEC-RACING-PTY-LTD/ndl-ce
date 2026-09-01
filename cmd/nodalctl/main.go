@@ -66,6 +66,9 @@ func run(args []string) error {
   cert generate --cn NAME [--san HOST] --confirm enable-tls
   cert import --cert FILE --key FILE --confirm enable-tls
   cert acme --directory URL --email EMAIL --domain NAME --confirm enable-tls
+  snapshot list --workload ID
+  snapshot create --workload ID --name NAME
+  snapshot rollback --id ID --confirm rollback
 `)
 		return nil
 	}
@@ -120,6 +123,8 @@ func run(args []string) error {
 		return cmdLab(args[1:])
 	case "cert":
 		return cmdCert(args[1:])
+	case "snapshot":
+		return cmdSnapshot(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -675,6 +680,37 @@ func cmdCert(args []string) error {
 		}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl cert status|generate|import|acme")
+	}
+}
+
+func cmdSnapshot(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: nodalctl snapshot create|rollback|list")
+	}
+	switch args[0] {
+	case "list":
+		f := parseFlags(args[1:])
+		if f["workload"] == "" {
+			return fmt.Errorf("usage: nodalctl snapshot list --workload ID")
+		}
+		return cmdGet("/api/v1/workloads/" + f["workload"] + "/snapshots")
+	case "create":
+		f := parseFlags(args[1:])
+		if f["workload"] == "" || f["name"] == "" {
+			return fmt.Errorf("usage: nodalctl snapshot create --workload ID --name NAME")
+		}
+		return postJSON("/api/v1/workloads/"+f["workload"]+"/snapshots", map[string]any{"name": f["name"]}, true)
+	case "rollback":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl snapshot rollback --id ID --confirm rollback")
+		}
+		return postJSON("/api/v1/snapshots/"+f["id"]+"/rollback", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl snapshot create|rollback|list")
 	}
 }
 

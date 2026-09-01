@@ -150,7 +150,17 @@ message ExecuteRequest {
     VMPrepare vm_prepare = 20;
     VMLifecycle vm_lifecycle = 21;
     VMQueryPCI vm_query_pci = 22;
+    VMSnapshot vm_snapshot = 23;
   }
+}
+
+message VMSnapshot {
+  string workload_id = 1;
+  string action = 2;
+  string overlay_path = 3;
+  string backing_path = 4;
+  int32 chain_depth = 5;
+  int32 chain_max = 6;
 }
 
 message VMPrepare {

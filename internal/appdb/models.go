@@ -110,6 +110,11 @@ type Store interface {
 
 	GetCertificate(ctx context.Context, clusterID string) (*Certificate, error)
 	UpsertCertificate(ctx context.Context, c Certificate) error
+
+	CreateSnapshot(ctx context.Context, s Snapshot) error
+	ListSnapshots(ctx context.Context, clusterID, workloadID string) ([]Snapshot, error)
+	GetSnapshot(ctx context.Context, clusterID, id string) (*Snapshot, error)
+	UpdateVolumeLocator(ctx context.Context, clusterID, id, backendRef string) error
 }
 
 // Cluster is the appliance cluster of one.

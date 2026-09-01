@@ -1,6 +1,9 @@
 package storage
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const sampleMounts = `
 36 1 8:1 / / rw - ext4 /dev/sda1 rw,uuid=ROOTFS
@@ -50,5 +53,19 @@ func TestQEMUCreateArgvTyped(t *testing.T) {
 	}
 	if _, err := QEMUCreateArgv("/usr/bin/qemu-img", FormatQCOW2, "/x", 0); err == nil {
 		t.Fatal("zero size")
+	}
+}
+
+func TestQEMUCreateBackingArgvTyped(t *testing.T) {
+	argv, err := QEMUCreateBackingArgv("/usr/bin/qemu-img", "/pool/overlay.qcow2", "/pool/base.qcow2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(argv, " ")
+	if !strings.Contains(joined, "-b /pool/base.qcow2") || strings.Contains(joined, ";") {
+		t.Fatal(joined)
+	}
+	if _, err := QEMUCreateBackingArgv("/usr/bin/qemu-img", "/pool/../etc/passwd", "/pool/base.qcow2"); err == nil {
+		t.Fatal("traversal")
 	}
 }

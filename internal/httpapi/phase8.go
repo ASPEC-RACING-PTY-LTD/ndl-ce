@@ -27,6 +27,7 @@ type VMRPC interface {
 	PrepareVM(ctx context.Context, req agentrpc.VMPrepareRequest) (qemu.Result, error)
 	LifecycleVM(ctx context.Context, id, action string, autostart bool) (qemu.Observed, error)
 	QueryPCIVM(ctx context.Context, id string) (qemu.Observed, error)
+	SnapshotVM(ctx context.Context, req qemu.OverlayRequest) (qemu.OverlayResult, error)
 }
 
 type vmUnavailable struct{}
@@ -39,6 +40,10 @@ func (vmUnavailable) LifecycleVM(context.Context, string, string, bool) (qemu.Ob
 }
 func (vmUnavailable) QueryPCIVM(context.Context, string) (qemu.Observed, error) {
 	return qemu.Observed{}, errUnavailable("vm agent is unavailable")
+}
+
+func (vmUnavailable) SnapshotVM(context.Context, qemu.OverlayRequest) (qemu.OverlayResult, error) {
+	return qemu.OverlayResult{}, errUnavailable("vm agent is unavailable")
 }
 
 func AdaptVM(client any) VMRPC {

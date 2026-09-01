@@ -92,6 +92,23 @@ Console uses `compute.console` and a short-lived ticket. It does not grant
 12. Autostart is systemd enablement of `nodal-vm@`. That is not the same proof as a live host reboot.
 13. PCI addresses in last-applied are compared to live `query-pci` when QMP is up.
 14. NIC MAC values persist across restart and non-replacing spec edits.
+
+## Snapshots (Phase 10)
+
+Snapshot is not backup. Directory VM snapshots are external qcow2 overlays
+with a chain cap of 16. `qemu-img` is refused while the disk is attached to
+a running unit; live overlay uses QMP. Directory system containers do not
+pretend to be ZFS.
+
+Rollback requires `X-Nodal-Confirm: rollback` and a stopped disk for
+Directory overlays. Flatten is an offline convert of the current tip.
+
+### Recovery matrix (snapshot)
+
+1. Create a VM overlay snapshot while the guest is stopped, or via QMP if running.
+2. Make a change inside the guest.
+3. Stop if needed, rollback to the snapshot, start.
+4. The workload UUID is unchanged. This is not a backup restore.
 15. Unavailable storage refuses start and records an honest unavailable status.
 16. qemu-img against a live attached disk is refused.
 17. Failed prepare cleans TAP devices that No-dal can prove belong to that VM.

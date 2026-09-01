@@ -68,6 +68,13 @@ func (f *fakeVM) QueryPCIVM(_ context.Context, id string) (qemu.Observed, error)
 	return obs, f.err
 }
 
+func (f *fakeVM) SnapshotVM(_ context.Context, req qemu.OverlayRequest) (qemu.OverlayResult, error) {
+	if f.err != nil {
+		return qemu.OverlayResult{}, f.err
+	}
+	return qemu.OverlayResult{WorkloadID: req.WorkloadID, OverlayPath: req.OverlayPath, BackingPath: req.BackingPath, Mechanism: "qcow2-overlay"}, nil
+}
+
 func TestVMCreateLifecycleDeletePreservesVolume(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

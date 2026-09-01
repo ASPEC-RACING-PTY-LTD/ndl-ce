@@ -82,3 +82,18 @@ func (h *Handler) execVMQueryPCI(ctx context.Context, m *agentv1.VMQueryPCI) (*c
 	obs := h.qemu().Observe(ctx, strings.TrimSpace(m.GetWorkloadId()))
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "query-pci", ResultJson: mustJSON(obs)}), nil
 }
+
+func (h *Handler) execVMSnapshot(ctx context.Context, m *agentv1.VMSnapshot) (*connect.Response[agentv1.ExecuteResponse], error) {
+	if err := requireWorkloadUUID(m.GetWorkloadId()); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	res, err := h.qemu().OverlayDisk(ctx, qemu.OverlayRequest{
+		Action: m.GetAction(), WorkloadID: strings.TrimSpace(m.GetWorkloadId()),
+		OverlayPath: m.GetOverlayPath(), BackingPath: m.GetBackingPath(),
+		ChainDepth: int(m.GetChainDepth()), ChainMax: int(m.GetChainMax()),
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: m.GetAction(), ResultJson: mustJSON(res)}), nil
+}

@@ -29,4 +29,11 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Coverage: generate/import, Secure cookies, cleartext WS refuse, ACME directory probe, UI certificates page, last-good keep on mismatch, confirm header
 - Not physically validated here: Let's Encrypt HTTP-01 on a public name, step-ca issuance, binding :443 on Debian
 - Honest ACME: directory probe only; status is pending or failed, never a fake issued certificate
-- Follow-up: completed ACME issuance (Let's Encrypt / step-ca HTTP-01) remains documented debt
+## Phase 10
+
+- Package: 0.1.9
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: overlay create/live qemu-img refuse/chain cap, API VM snapshot, Directory CT hidden, viewer deny
+- Coverage: Directory qcow2 external overlay, rollback, flatten, Snapshots UI (not labeled Backup)
+- Not physically validated: live QMP blockdev-snapshot-sync, qemu-ga freeze, rollback of a guest that installed a bad package
+

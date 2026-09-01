@@ -71,3 +71,21 @@ func (c Client) QueryPCIVM(ctx context.Context, id string) (qemu.Observed, error
 	}
 	return out, nil
 }
+
+func (c Client) SnapshotVM(ctx context.Context, req qemu.OverlayRequest) (qemu.OverlayResult, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_VmSnapshot{VmSnapshot: &agentv1.VMSnapshot{
+			WorkloadId: req.WorkloadID, Action: req.Action,
+			OverlayPath: req.OverlayPath, BackingPath: req.BackingPath,
+			ChainDepth: int32(req.ChainDepth), ChainMax: int32(req.ChainMax),
+		}},
+	}))
+	if err != nil {
+		return qemu.OverlayResult{}, err
+	}
+	var out qemu.OverlayResult
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return qemu.OverlayResult{}, err
+	}
+	return out, nil
+}

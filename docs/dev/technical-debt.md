@@ -61,3 +61,9 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. After generate/import, HTTPS redirect starts on ndl-control restart (`restart_required`), not in the same process. Why not blocking: confirm is required, cookies/WS harden immediately, and the UI tells the operator to restart.
 - LOW. Binding :443 requires CAP_NET_BIND_SERVICE on ndl-control. Why not blocking: the unit is still non-root.
 
+## Phase 10
+
+- MEDIUM. Live overlay uses QMP `blockdev-snapshot-sync`; Cloud tests prove the stopped qemu-img overlay path and that live qemu-img is refused. Why not blocking: the product path is typed QMP or offline overlay, never live qemu-img.
+- LOW. qemu-ga fsfreeze is best-effort and does not block snapshot. Why not blocking: roadmap calls freeze best-effort.
+
+
