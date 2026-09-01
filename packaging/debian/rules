@@ -1,5 +1,64 @@
 #!/usr/bin/make -f
 
-# Phase 0 packaging stub. Phase 1 fills install paths.
+# Build from the Go module root. debian/ lives at packaging/debian.
+export DH_VERBOSE = 1
+export GO111MODULE = on
+export CGO_ENABLED = 0
+
+MODROOT := $(abspath $(dir $(firstword $(MAKEFILE_LIST)))/../..)
+ifeq ($(wildcard $(MODROOT)/cmd/ndl-control),)
+MODROOT := $(CURDIR)
+endif
+ifeq ($(wildcard $(MODROOT)/cmd/ndl-control),)
+MODROOT := $(abspath $(CURDIR)/..)
+endif
+
+ifeq ($(wildcard $(CURDIR)/cmd/ndl-control),$(CURDIR)/cmd/ndl-control)
+GO_CD :=
+GO_OUT :=
+else
+GO_CD := cd $(MODROOT) &&
+GO_OUT := $(CURDIR)/
+endif
+
+HELPER := $(MODROOT)/packaging/lib/ndl/postinst-control.sh
+
 %:
 	dh $@
+
+override_dh_auto_clean:
+	rm -rf debian/tmp
+	rm -f debian/ndl-control.service debian/ndl-agent.service debian/ndl-agent.socket
+
+override_dh_auto_build:
+	mkdir -p debian/tmp/usr/sbin debian/tmp/usr/bin debian/tmp/usr/lib/ndl
+	mkdir -p debian/tmp/lib/systemd/system
+	$(GO_CD) go build -o $(GO_OUT)debian/tmp/usr/sbin/ndl-control ./cmd/ndl-control
+	$(GO_CD) go build -o $(GO_OUT)debian/tmp/usr/sbin/ndl-agent ./cmd/ndl-agent
+	$(GO_CD) go build -o $(GO_OUT)debian/tmp/usr/bin/nodalctl ./cmd/nodalctl
+	if [ -d $(MODROOT)/ui/dist ]; then \
+		mkdir -p debian/tmp/usr/share/ndl/ui; \
+		cp -a $(MODROOT)/ui/dist/. debian/tmp/usr/share/ndl/ui/; \
+	fi
+	install -m 0755 $(HELPER) debian/tmp/usr/lib/ndl/postinst-control.sh
+	install -m 0644 $(MODROOT)/systemd/ndl-control.service debian/tmp/lib/systemd/system/ndl-control.service
+	install -m 0644 $(MODROOT)/systemd/ndl-agent.service debian/tmp/lib/systemd/system/ndl-agent.service
+	install -m 0644 $(MODROOT)/systemd/ndl-agent.socket debian/tmp/lib/systemd/system/ndl-agent.socket
+	install -m 0644 $(MODROOT)/systemd/nodal-workloads.target debian/tmp/lib/systemd/system/nodal-workloads.target
+
+override_dh_auto_test:
+	true
+
+override_dh_install:
+	dh_install
+	if [ -d debian/tmp/usr/share/ndl/ui ]; then \
+		mkdir -p debian/ndl-ui/usr/share/ndl/ui; \
+		cp -a debian/tmp/usr/share/ndl/ui/. debian/ndl-ui/usr/share/ndl/ui/; \
+	fi
+
+override_dh_installsystemd:
+	cp -f $(MODROOT)/systemd/ndl-control.service debian/ndl-control.service
+	cp -f $(MODROOT)/systemd/ndl-agent.service debian/ndl-agent.service
+	cp -f $(MODROOT)/systemd/ndl-agent.socket debian/ndl-agent.socket
+	dh_installsystemd -pndl-control --name=ndl-control
+	dh_installsystemd -pndl-agent --name=ndl-agent

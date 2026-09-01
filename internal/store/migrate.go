@@ -48,15 +48,38 @@ func List(fsys fs.FS, dir string) ([]File, error) {
 	return out, nil
 }
 
-// Apply runs every file in order. Tracking of applied migrations is
-// Phase 1. Phase 0 ships no product tables.
+// AppliedReader looks up recorded migrations.
+type AppliedReader interface {
+	QueryApplied(ctx context.Context) (map[string]struct{}, error)
+}
+
+// Apply runs every file in order. If db implements AppliedReader,
+// already-recorded names are skipped and then recorded.
 func Apply(ctx context.Context, db DB, files []File) error {
+	applied := map[string]struct{}{}
+	if r, ok := db.(AppliedReader); ok {
+		got, err := r.QueryApplied(ctx)
+		if err != nil {
+			return err
+		}
+		applied = got
+	}
 	for _, f := range files {
 		if strings.TrimSpace(f.SQL) == "" {
 			return fmt.Errorf("migration %s is empty", f.Name)
 		}
+		if _, ok := applied[f.Name]; ok {
+			continue
+		}
 		if err := db.ExecContext(ctx, f.SQL); err != nil {
 			return fmt.Errorf("migration %s: %w", f.Name, err)
+		}
+		if rec, ok := db.(interface {
+			RecordApplied(ctx context.Context, name string) error
+		}); ok {
+			if err := rec.RecordApplied(ctx, f.Name); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

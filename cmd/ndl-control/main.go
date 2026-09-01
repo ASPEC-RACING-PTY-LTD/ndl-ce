@@ -1,10 +1,13 @@
 package main
 
 import (
-	"fmt"
-	"os"
+	"log"
+
+	"github.com/no-dal/ndl-ce/internal/control"
 )
 
 func main() {
-	fmt.Fprintln(os.Stdout, "ndl-control")
+	if err := control.Run(control.LoadConfig()); err != nil {
+		log.Fatal(err)
+	}
 }

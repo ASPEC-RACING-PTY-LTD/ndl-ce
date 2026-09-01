@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.0.0
-  description: Phase 0 skeleton. Product routes arrive in later phases.
+  version: 0.1.0
+  description: Phase 1 northbound API. No inventory or workload routes.
 servers:
   - url: /api/v1
 paths:
@@ -17,6 +17,99 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /setup/status:
+    get:
+      operationId: getSetupStatus
+      summary: Whether first-run setup is still open
+      responses:
+        "200":
+          description: Setup state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStatusResponse"
+  /setup/claim:
+    post:
+      operationId: claimSetup
+      summary: Claim the one-time setup token and create the first admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupClaimRequest"
+      responses:
+        "200":
+          description: First administrator created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+  /auth/login:
+    post:
+      operationId: login
+      summary: Create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: End the current session
+      responses:
+        "204":
+          description: Logged out
+  /me:
+    get:
+      operationId: getMe
+      summary: Current principal
+      responses:
+        "200":
+          description: Identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+  /tokens:
+    post:
+      operationId: createToken
+      summary: Create an API token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: Token shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTokenResponse"
+  /tokens/revoke:
+    post:
+      operationId: revokeToken
+      summary: Revoke an API token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeTokenRequest"
+      responses:
+        "204":
+          description: Revoked
 components:
   schemas:
     HealthResponse:
@@ -30,7 +123,102 @@ components:
           type: string
           enum:
             - ok
+            - starting
         service:
           type: string
           enum:
             - ndl-control
+        setup_open:
+          type: boolean
+    SetupStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - open
+      properties:
+        open:
+          type: boolean
+    SetupClaimRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - token
+        - username
+        - password
+      properties:
+        token:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    MeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - username
+        - roles
+        - edition
+      properties:
+        user_id:
+          type: string
+        username:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        edition:
+          type: string
+        cluster_id:
+          type: string
+    CreateTokenRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    CreateTokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - prefix
+        - token
+      properties:
+        id:
+          type: string
+        prefix:
+          type: string
+        token:
+          type: string
+    RevokeTokenRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: string

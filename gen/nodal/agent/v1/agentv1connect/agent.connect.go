@@ -39,6 +39,8 @@ const (
 	AgentServiceObserveProcedure = "/nodal.agent.v1.AgentService/Observe"
 	// AgentServiceExecuteProcedure is the fully-qualified name of the AgentService's Execute RPC.
 	AgentServiceExecuteProcedure = "/nodal.agent.v1.AgentService/Execute"
+	// AgentServiceEnrollProcedure is the fully-qualified name of the AgentService's Enroll RPC.
+	AgentServiceEnrollProcedure = "/nodal.agent.v1.AgentService/Enroll"
 	// AgentServiceOpenSessionProcedure is the fully-qualified name of the AgentService's OpenSession
 	// RPC.
 	AgentServiceOpenSessionProcedure = "/nodal.agent.v1.AgentService/OpenSession"
@@ -49,8 +51,9 @@ type AgentServiceClient interface {
 	Hello(context.Context, *connect.Request[v1.HelloRequest]) (*connect.Response[v1.HelloResponse], error)
 	Observe(context.Context, *connect.Request[v1.ObserveRequest]) (*connect.Response[v1.ObserveResponse], error)
 	Execute(context.Context, *connect.Request[v1.ExecuteRequest]) (*connect.Response[v1.ExecuteResponse], error)
-	// OpenSession is reserved for later remote-node sessions. Phase 0
-	// clients must not depend on a working implementation.
+	// Local first-node enroll. Join tokens are empty on a single node.
+	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
+	// OpenSession is reserved for later remote-node sessions.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
 }
 
@@ -83,6 +86,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("Execute")),
 			connect.WithClientOptions(opts...),
 		),
+		enroll: connect.NewClient[v1.EnrollRequest, v1.EnrollResponse](
+			httpClient,
+			baseURL+AgentServiceEnrollProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("Enroll")),
+			connect.WithClientOptions(opts...),
+		),
 		openSession: connect.NewClient[v1.OpenSessionRequest, v1.OpenSessionResponse](
 			httpClient,
 			baseURL+AgentServiceOpenSessionProcedure,
@@ -97,6 +106,7 @@ type agentServiceClient struct {
 	hello       *connect.Client[v1.HelloRequest, v1.HelloResponse]
 	observe     *connect.Client[v1.ObserveRequest, v1.ObserveResponse]
 	execute     *connect.Client[v1.ExecuteRequest, v1.ExecuteResponse]
+	enroll      *connect.Client[v1.EnrollRequest, v1.EnrollResponse]
 	openSession *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
 }
 
@@ -115,6 +125,11 @@ func (c *agentServiceClient) Execute(ctx context.Context, req *connect.Request[v
 	return c.execute.CallUnary(ctx, req)
 }
 
+// Enroll calls nodal.agent.v1.AgentService.Enroll.
+func (c *agentServiceClient) Enroll(ctx context.Context, req *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error) {
+	return c.enroll.CallUnary(ctx, req)
+}
+
 // OpenSession calls nodal.agent.v1.AgentService.OpenSession.
 func (c *agentServiceClient) OpenSession(ctx context.Context, req *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error) {
 	return c.openSession.CallUnary(ctx, req)
@@ -125,8 +140,9 @@ type AgentServiceHandler interface {
 	Hello(context.Context, *connect.Request[v1.HelloRequest]) (*connect.Response[v1.HelloResponse], error)
 	Observe(context.Context, *connect.Request[v1.ObserveRequest]) (*connect.Response[v1.ObserveResponse], error)
 	Execute(context.Context, *connect.Request[v1.ExecuteRequest]) (*connect.Response[v1.ExecuteResponse], error)
-	// OpenSession is reserved for later remote-node sessions. Phase 0
-	// clients must not depend on a working implementation.
+	// Local first-node enroll. Join tokens are empty on a single node.
+	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
+	// OpenSession is reserved for later remote-node sessions.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
 }
 
@@ -155,6 +171,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("Execute")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceEnrollHandler := connect.NewUnaryHandler(
+		AgentServiceEnrollProcedure,
+		svc.Enroll,
+		connect.WithSchema(agentServiceMethods.ByName("Enroll")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceOpenSessionHandler := connect.NewUnaryHandler(
 		AgentServiceOpenSessionProcedure,
 		svc.OpenSession,
@@ -169,6 +191,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceObserveHandler.ServeHTTP(w, r)
 		case AgentServiceExecuteProcedure:
 			agentServiceExecuteHandler.ServeHTTP(w, r)
+		case AgentServiceEnrollProcedure:
+			agentServiceEnrollHandler.ServeHTTP(w, r)
 		case AgentServiceOpenSessionProcedure:
 			agentServiceOpenSessionHandler.ServeHTTP(w, r)
 		default:
@@ -190,6 +214,10 @@ func (UnimplementedAgentServiceHandler) Observe(context.Context, *connect.Reques
 
 func (UnimplementedAgentServiceHandler) Execute(context.Context, *connect.Request[v1.ExecuteRequest]) (*connect.Response[v1.ExecuteResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.Execute is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.Enroll is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error) {

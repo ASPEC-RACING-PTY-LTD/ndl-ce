@@ -63,8 +63,14 @@ function emitInterface(name, schema) {
 }
 
 function tsType(prop) {
+  if (prop.$ref) {
+    return String(prop.$ref).split("/").pop();
+  }
   if (prop.enum) {
     return prop.enum.map((v) => JSON.stringify(v)).join(" | ");
+  }
+  if (prop.type === "array") {
+    return `${tsType(prop.items ?? { type: "string" })}[]`;
   }
   switch (prop.type) {
     case "string":
@@ -75,7 +81,7 @@ function tsType(prop) {
     case "boolean":
       return "boolean";
     default:
-      throw new Error(`unsupported OpenAPI type ${prop.type}`);
+      throw new Error(`unsupported OpenAPI type ${JSON.stringify(prop)}`);
   }
 }
 

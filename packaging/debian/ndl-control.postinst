@@ -1,0 +1,40 @@
+#!/bin/sh
+set -e
+
+# Prefer the Go host-prepare path when it exists. The current nodalctl
+# skeleton prints a placeholder and exits 0, so only call it when help
+# lists host-prepare. Otherwise use the packaged helper.
+prepare_host() {
+  if [ -x /usr/lib/ndl/postinst-control.sh ]; then
+    /usr/lib/ndl/postinst-control.sh
+  else
+    echo "ndl-control: postinst-control.sh is missing" >&2
+    exit 1
+  fi
+  if [ -x /usr/lib/ndl/host-prepare ]; then
+    /usr/lib/ndl/host-prepare || true
+  elif command -v nodalctl >/dev/null 2>&1; then
+    if nodalctl help 2>/dev/null | grep -q host-prepare; then
+      nodalctl host-prepare || true
+    fi
+  fi
+}
+
+start_units() {
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable ndl-agent.socket ndl-agent.service ndl-control.service >/dev/null 2>&1 || true
+    systemctl start ndl-agent.socket ndl-agent.service ndl-control.service >/dev/null 2>&1 || true
+  fi
+}
+
+case "$1" in
+  configure)
+    prepare_host
+    start_units
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

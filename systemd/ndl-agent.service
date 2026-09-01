@@ -3,15 +3,20 @@ Description=No-dal node agent
 After=ndl-agent.socket
 Requires=ndl-agent.socket
 Documentation=https://no-dal.com
+# Workloads must not use BindsTo, PartOf, or Requires against this unit.
 
 [Service]
+# Type=simple until the agent calls sd_notify READY=1 from Go.
+# Switch to Type=notify when that lands.
 Type=simple
 User=root
 ExecStart=/usr/sbin/ndl-agent
 Restart=on-failure
+RuntimeDirectory=ndl
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 DevicePolicy=closed
+# Phase 1 needs files and the unix socket only.
 # Device allowlist is added when inventory and KVM land.
 # ExecStop must not stop guest workload units.
 

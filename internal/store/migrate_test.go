@@ -59,7 +59,7 @@ func TestListMissingDir(t *testing.T) {
 	}
 }
 
-func TestRepoHasNoProductSQL(t *testing.T) {
+func TestRepoHasNumberedPhase1SQL(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("caller")
@@ -69,9 +69,17 @@ func TestRepoHasNoProductSQL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	found := false
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
-			t.Fatalf("Phase 0 must not ship product SQL: %s", e.Name())
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
 		}
+		if !strings.HasPrefix(e.Name(), "0001_") && !strings.HasPrefix(e.Name(), "000") {
+			t.Fatalf("unexpected migration name %s", e.Name())
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("expected Phase 1 SQL migrations")
 	}
 }

@@ -45,7 +45,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 	if strings.Count(oneof, "=") != 1 {
 		t.Fatalf("Phase 0 Execute oneof must only contain Ping:\n%s", oneof)
 	}
-	for _, need := range []string{"rpc Hello(", "rpc Observe(", "rpc Execute(", "rpc OpenSession("} {
+	for _, need := range []string{"rpc Hello(", "rpc Observe(", "rpc Execute(", "rpc Enroll(", "rpc OpenSession("} {
 		if !strings.Contains(text, need) {
 			t.Fatalf("proto missing %s", need)
 		}

@@ -1,1 +1,1 @@
-# Phase 0 stub. Phase 1 installs binaries and units.
+# Metapackage. Runtime files live in ndl-control, ndl-agent, ndl-ui, and nodalctl.

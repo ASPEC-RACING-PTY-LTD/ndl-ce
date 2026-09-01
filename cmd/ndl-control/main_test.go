@@ -1,13 +1,11 @@
 package main
 
-import "testing"
+import (
+	"testing"
 
-func TestMainCompiles(t *testing.T) {
-	if len(osArgsStub()) == 0 {
-		t.Fatal("args")
-	}
-}
+	"github.com/no-dal/ndl-ce/internal/control"
+)
 
-func osArgsStub() []string {
-	return []string{"ndl-control"}
+func TestRefuseRootSymbolExists(t *testing.T) {
+	_ = control.RefuseRoot
 }

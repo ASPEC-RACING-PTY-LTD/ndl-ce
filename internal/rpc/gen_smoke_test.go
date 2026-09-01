@@ -18,6 +18,7 @@ func TestGeneratedHelloTypesExist(t *testing.T) {
 	}
 	_ = &agentv1.ObserveRequest{}
 	_ = &agentv1.OpenSessionRequest{}
+	_ = &agentv1.EnrollRequest{ClusterId: "phase-1"}
 	_ = &agentv1.ExecuteRequest{
 		OperationId: "phase-0",
 		Method:      &agentv1.ExecuteRequest_Ping{Ping: &agentv1.Ping{}},

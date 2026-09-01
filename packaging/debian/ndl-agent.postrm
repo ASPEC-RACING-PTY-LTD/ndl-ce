@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+# apt remove stops the agent and its socket. It does not delete
+# /var/lib/ndl or workload data.
+
+stop_units() {
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl stop ndl-agent.service ndl-agent.socket >/dev/null 2>&1 || true
+  fi
+}
+
+case "$1" in
+  remove|upgrade|deconfigure)
+    stop_units
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -89,6 +89,20 @@ jobs:
     name: Schema
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nodal
+          POSTGRES_PASSWORD: nodal
+          POSTGRES_DB: nodal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nodal"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -108,6 +122,10 @@ jobs:
         run: node scripts/ci/check-codegen.mjs
       - name: Buf lint
         run: buf lint
+      - name: Apply migrations
+        env:
+          NODAL_TEST_PG: postgresql://nodal:nodal@localhost:5432/nodal
+        run: go test ./internal/store/ -count=1 -run TestApplyOnPostgres
       - name: Buf breaking
         if: github.base_ref != ''
         run: |

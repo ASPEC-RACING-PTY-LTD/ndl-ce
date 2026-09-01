@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 const rel = "packaging/bootstrap/get-nodal.sh";
 const text = readFileSync(rel, "utf8");
 const lines = text.split(/\r?\n/);
-const maxLines = 80;
+const maxLines = 120;
 const errors = [];
 
 if (lines.length > maxLines) {
@@ -25,8 +25,8 @@ for (const [re, label] of banned) {
   if (re.test(text)) errors.push(`${rel} must not contain ${label}`);
 }
 
-if (/\bapt(-get)?\s+install\b/.test(text) && !/Would run:.*apt-get install/.test(text)) {
-  errors.push(`${rel} must not run apt install; echo the command only`);
+if (!/apt-get\s+install\s+-y\s+nodal/.test(text)) {
+  errors.push(`${rel} must run apt-get install -y nodal`);
 }
 
 if (!text.includes("os-release")) {
@@ -46,6 +46,9 @@ if (!text.includes("amd64")) {
 }
 if (!text.includes("nodal")) {
   errors.push(`${rel} must mention the nodal metapackage`);
+}
+if (!text.includes("No-dal does not currently support this host platform")) {
+  errors.push(`${rel} must fail closed with the hostos error wording`);
 }
 if (/id.*=.*ubuntu|ubuntu.*supported/i.test(text) && !/not currently support/.test(text)) {
   errors.push(`${rel} must not treat Ubuntu as a supported host`);

@@ -1,14 +1,17 @@
 [Unit]
 Description=No-dal control plane
-After=network.target
+After=network.target postgresql.service
 Documentation=https://no-dal.com
+# Workloads must not use BindsTo, PartOf, or Requires against this unit.
 
 [Service]
 Type=simple
 User=ndl-control
 Group=ndl-control
+EnvironmentFile=-/etc/ndl/control.env
 ExecStart=/usr/sbin/ndl-control
 Restart=on-failure
+# Do not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl.
 # Workloads must not be bound to this unit.
 
 [Install]

@@ -2,7 +2,7 @@ Source: nodal
 Section: admin
 Priority: optional
 Maintainer: No-dal <dev@no-dal.com>
-Build-Depends: debhelper-compat (= 13)
+Build-Depends: debhelper-compat (= 13), golang-go
 Standards-Version: 4.7.0
 Homepage: https://no-dal.com
 Rules-Requires-Root: no
@@ -12,19 +12,21 @@ Architecture: amd64
 Depends: ndl-control, ndl-agent, ndl-ui, nodalctl
 Description: No-dal Community Edition metapackage
  Pulls in the control plane, node agent, web UI, and CLI.
- Phase 0 is a packaging stub. Phase 1 performs installation.
+ Phase 1 first-boot install. Core packages only.
 
 Package: ndl-control
 Architecture: amd64
-Depends: ${misc:Depends}
+Depends: postgresql-16 | postgresql, adduser, ${misc:Depends}
 Description: No-dal unprivileged control plane
  HTTP API and static UI host. Must not run as root.
+ Prepares local PostgreSQL 16 and the ndl-control service user.
 
 Package: ndl-agent
 Architecture: amd64
 Depends: ${misc:Depends}
 Description: No-dal privileged node agent
  Typed host operations only. No generic command execution.
+ Core package only.
 
 Package: ndl-ui
 Architecture: all
@@ -37,3 +39,4 @@ Architecture: amd64
 Depends: ${misc:Depends}
 Description: No-dal command-line client
  Uses the same supported API as the web UI.
+ Core package only.

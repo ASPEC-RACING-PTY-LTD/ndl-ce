@@ -1,0 +1,2 @@
+# Static UI is copied from ui/dist into debian/tmp by debian/rules when present.
+# If ui/dist is missing, this package stays empty and install still succeeds.

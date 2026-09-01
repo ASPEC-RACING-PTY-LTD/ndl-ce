@@ -1,0 +1,34 @@
+#!/bin/sh
+set -e
+
+# Socket ListenStream is owned by group ndl-control. Create the group
+# here so this package can be configured before ndl-control.
+ensure_group() {
+  if getent group ndl-control >/dev/null; then
+    return
+  fi
+  if command -v addgroup >/dev/null 2>&1; then
+    addgroup --system ndl-control
+    return
+  fi
+  groupadd --system ndl-control
+}
+
+start_units() {
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
+    systemctl start ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
+  fi
+}
+
+case "$1" in
+  configure)
+    ensure_group
+    start_units
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

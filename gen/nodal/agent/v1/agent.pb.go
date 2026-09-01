@@ -439,6 +439,119 @@ func (x *ExecuteResponse) GetMessage() string {
 	return ""
 }
 
+type EnrollRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Empty on the local appliance. Remote join tokens are later phases.
+	JoinToken     string `protobuf:"bytes,1,opt,name=join_token,json=joinToken,proto3" json:"join_token,omitempty"`
+	ClusterId     string `protobuf:"bytes,2,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnrollRequest) Reset() {
+	*x = EnrollRequest{}
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollRequest) ProtoMessage() {}
+
+func (x *EnrollRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollRequest.ProtoReflect.Descriptor instead.
+func (*EnrollRequest) Descriptor() ([]byte, []int) {
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *EnrollRequest) GetJoinToken() string {
+	if x != nil {
+		return x.JoinToken
+	}
+	return ""
+}
+
+func (x *EnrollRequest) GetClusterId() string {
+	if x != nil {
+		return x.ClusterId
+	}
+	return ""
+}
+
+type EnrollResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClusterId     string                 `protobuf:"bytes,1,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	HostPlatform  *HostPlatform          `protobuf:"bytes,3,opt,name=host_platform,json=hostPlatform,proto3" json:"host_platform,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnrollResponse) Reset() {
+	*x = EnrollResponse{}
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnrollResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnrollResponse) ProtoMessage() {}
+
+func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnrollResponse.ProtoReflect.Descriptor instead.
+func (*EnrollResponse) Descriptor() ([]byte, []int) {
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *EnrollResponse) GetClusterId() string {
+	if x != nil {
+		return x.ClusterId
+	}
+	return ""
+}
+
+func (x *EnrollResponse) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *EnrollResponse) GetHostPlatform() *HostPlatform {
+	if x != nil {
+		return x.HostPlatform
+	}
+	return nil
+}
+
 type OpenSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -447,7 +560,7 @@ type OpenSessionRequest struct {
 
 func (x *OpenSessionRequest) Reset() {
 	*x = OpenSessionRequest{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -459,7 +572,7 @@ func (x *OpenSessionRequest) String() string {
 func (*OpenSessionRequest) ProtoMessage() {}
 
 func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -472,7 +585,7 @@ func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionRequest.ProtoReflect.Descriptor instead.
 func (*OpenSessionRequest) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{10}
 }
 
 type OpenSessionResponse struct {
@@ -483,7 +596,7 @@ type OpenSessionResponse struct {
 
 func (x *OpenSessionResponse) Reset() {
 	*x = OpenSessionResponse{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -495,7 +608,7 @@ func (x *OpenSessionResponse) String() string {
 func (*OpenSessionResponse) ProtoMessage() {}
 
 func (x *OpenSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,7 +621,7 @@ func (x *OpenSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionResponse.ProtoReflect.Descriptor instead.
 func (*OpenSessionResponse) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 var File_nodal_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -539,13 +652,24 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\x04Ping\";\n" +
 	"\x0fExecuteResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x14\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"M\n" +
+	"\rEnrollRequest\x12\x1d\n" +
+	"\n" +
+	"join_token\x18\x01 \x01(\tR\tjoinToken\x12\x1d\n" +
+	"\n" +
+	"cluster_id\x18\x02 \x01(\tR\tclusterId\"\x8b\x01\n" +
+	"\x0eEnrollResponse\x12\x1d\n" +
+	"\n" +
+	"cluster_id\x18\x01 \x01(\tR\tclusterId\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12A\n" +
+	"\rhost_platform\x18\x03 \x01(\v2\x1c.nodal.agent.v1.HostPlatformR\fhostPlatform\"\x14\n" +
 	"\x12OpenSessionRequest\"\x15\n" +
-	"\x13OpenSessionResponse2\xc4\x02\n" +
+	"\x13OpenSessionResponse2\x8d\x03\n" +
 	"\fAgentService\x12D\n" +
 	"\x05Hello\x12\x1c.nodal.agent.v1.HelloRequest\x1a\x1d.nodal.agent.v1.HelloResponse\x12J\n" +
 	"\aObserve\x12\x1e.nodal.agent.v1.ObserveRequest\x1a\x1f.nodal.agent.v1.ObserveResponse\x12J\n" +
-	"\aExecute\x12\x1e.nodal.agent.v1.ExecuteRequest\x1a\x1f.nodal.agent.v1.ExecuteResponse\x12V\n" +
+	"\aExecute\x12\x1e.nodal.agent.v1.ExecuteRequest\x1a\x1f.nodal.agent.v1.ExecuteResponse\x12G\n" +
+	"\x06Enroll\x12\x1d.nodal.agent.v1.EnrollRequest\x1a\x1e.nodal.agent.v1.EnrollResponse\x12V\n" +
 	"\vOpenSession\x12\".nodal.agent.v1.OpenSessionRequest\x1a#.nodal.agent.v1.OpenSessionResponseB5Z3github.com/no-dal/ndl-ce/gen/nodal/agent/v1;agentv1b\x06proto3"
 
 var (
@@ -560,7 +684,7 @@ func file_nodal_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_nodal_agent_v1_agent_proto_rawDescData
 }
 
-var file_nodal_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_nodal_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_nodal_agent_v1_agent_proto_goTypes = []any{
 	(*HostPlatform)(nil),        // 0: nodal.agent.v1.HostPlatform
 	(*HelloRequest)(nil),        // 1: nodal.agent.v1.HelloRequest
@@ -570,25 +694,30 @@ var file_nodal_agent_v1_agent_proto_goTypes = []any{
 	(*ExecuteRequest)(nil),      // 5: nodal.agent.v1.ExecuteRequest
 	(*Ping)(nil),                // 6: nodal.agent.v1.Ping
 	(*ExecuteResponse)(nil),     // 7: nodal.agent.v1.ExecuteResponse
-	(*OpenSessionRequest)(nil),  // 8: nodal.agent.v1.OpenSessionRequest
-	(*OpenSessionResponse)(nil), // 9: nodal.agent.v1.OpenSessionResponse
+	(*EnrollRequest)(nil),       // 8: nodal.agent.v1.EnrollRequest
+	(*EnrollResponse)(nil),      // 9: nodal.agent.v1.EnrollResponse
+	(*OpenSessionRequest)(nil),  // 10: nodal.agent.v1.OpenSessionRequest
+	(*OpenSessionResponse)(nil), // 11: nodal.agent.v1.OpenSessionResponse
 }
 var file_nodal_agent_v1_agent_proto_depIdxs = []int32{
-	0, // 0: nodal.agent.v1.HelloResponse.host_platform:type_name -> nodal.agent.v1.HostPlatform
-	6, // 1: nodal.agent.v1.ExecuteRequest.ping:type_name -> nodal.agent.v1.Ping
-	1, // 2: nodal.agent.v1.AgentService.Hello:input_type -> nodal.agent.v1.HelloRequest
-	3, // 3: nodal.agent.v1.AgentService.Observe:input_type -> nodal.agent.v1.ObserveRequest
-	5, // 4: nodal.agent.v1.AgentService.Execute:input_type -> nodal.agent.v1.ExecuteRequest
-	8, // 5: nodal.agent.v1.AgentService.OpenSession:input_type -> nodal.agent.v1.OpenSessionRequest
-	2, // 6: nodal.agent.v1.AgentService.Hello:output_type -> nodal.agent.v1.HelloResponse
-	4, // 7: nodal.agent.v1.AgentService.Observe:output_type -> nodal.agent.v1.ObserveResponse
-	7, // 8: nodal.agent.v1.AgentService.Execute:output_type -> nodal.agent.v1.ExecuteResponse
-	9, // 9: nodal.agent.v1.AgentService.OpenSession:output_type -> nodal.agent.v1.OpenSessionResponse
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: nodal.agent.v1.HelloResponse.host_platform:type_name -> nodal.agent.v1.HostPlatform
+	6,  // 1: nodal.agent.v1.ExecuteRequest.ping:type_name -> nodal.agent.v1.Ping
+	0,  // 2: nodal.agent.v1.EnrollResponse.host_platform:type_name -> nodal.agent.v1.HostPlatform
+	1,  // 3: nodal.agent.v1.AgentService.Hello:input_type -> nodal.agent.v1.HelloRequest
+	3,  // 4: nodal.agent.v1.AgentService.Observe:input_type -> nodal.agent.v1.ObserveRequest
+	5,  // 5: nodal.agent.v1.AgentService.Execute:input_type -> nodal.agent.v1.ExecuteRequest
+	8,  // 6: nodal.agent.v1.AgentService.Enroll:input_type -> nodal.agent.v1.EnrollRequest
+	10, // 7: nodal.agent.v1.AgentService.OpenSession:input_type -> nodal.agent.v1.OpenSessionRequest
+	2,  // 8: nodal.agent.v1.AgentService.Hello:output_type -> nodal.agent.v1.HelloResponse
+	4,  // 9: nodal.agent.v1.AgentService.Observe:output_type -> nodal.agent.v1.ObserveResponse
+	7,  // 10: nodal.agent.v1.AgentService.Execute:output_type -> nodal.agent.v1.ExecuteResponse
+	9,  // 11: nodal.agent.v1.AgentService.Enroll:output_type -> nodal.agent.v1.EnrollResponse
+	11, // 12: nodal.agent.v1.AgentService.OpenSession:output_type -> nodal.agent.v1.OpenSessionResponse
+	8,  // [8:13] is the sub-list for method output_type
+	3,  // [3:8] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_nodal_agent_v1_agent_proto_init() }
@@ -605,7 +734,7 @@ func file_nodal_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nodal_agent_v1_agent_proto_rawDesc), len(file_nodal_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
