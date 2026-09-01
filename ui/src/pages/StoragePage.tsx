@@ -169,6 +169,20 @@ export function StoragePage() {
     }
   }
 
+  async function onCreateLVM() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createLVM({ name: lvmName, disks: [lvmDisk] });
+      setSelected(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "LVM create failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onCreateNFS() {
     setBusy(true);
     setError(null);

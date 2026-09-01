@@ -139,7 +139,7 @@ func TestISCSICreatesRawLUNAndRefusesSnapshot(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Datastore = &fakeDatastore{}
 	cluster, _ := mem.GetCluster(context.Background())
-	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	seedNode(t, mem, cluster.ID, debianInv(), false)
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
