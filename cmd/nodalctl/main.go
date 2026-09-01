@@ -45,6 +45,8 @@ func run(args []string) error {
   storage zfs import --guid GUID [--name NAME]
   storage zfs create --name NAME --disk PATH
   storage zfs runtime
+  storage lvm create --name NAME --disk PATH
+  storage lvm runtime
   network list
   network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
   network apply --id ID [--dry-run] [--confirm-ifname IF]
@@ -361,7 +363,7 @@ func sessionFile() string {
 
 func cmdStorage(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: nodalctl storage pool|volume|image ...")
+		return fmt.Errorf("usage: nodalctl storage pool|volume|image|zfs|lvm ...")
 	}
 	switch args[0] + " " + args[1] {
 	case "pool list":
@@ -400,6 +402,14 @@ func cmdStorage(args []string) error {
 		return postJSON("/api/v1/storage/zfs/create", map[string]any{"name": f["name"], "disks": []string{f["disk"]}}, true)
 	case "zfs runtime":
 		return cmdGet("/api/v1/storage/zfs")
+	case "lvm create":
+		f := parseFlags(args[2:])
+		if f["name"] == "" || f["disk"] == "" {
+			return fmt.Errorf("usage: nodalctl storage lvm create --name NAME --disk PATH")
+		}
+		return postJSON("/api/v1/storage/lvm/create", map[string]any{"name": f["name"], "disks": []string{f["disk"]}}, true)
+	case "lvm runtime":
+		return cmdGet("/api/v1/storage/lvm")
 	default:
 		return fmt.Errorf("unknown storage command")
 	}

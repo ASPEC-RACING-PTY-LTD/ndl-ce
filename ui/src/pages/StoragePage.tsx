@@ -2,15 +2,17 @@ import { useEffect, useState } from "react";
 import {
   createPool,
   createVolume,
+  createLVM,
   createZFS,
   importZFS,
   listImages,
   listPools,
   listVolumes,
+  lvmRuntime,
   uploadImage,
   zfsRuntime,
 } from "../api/client";
-import type { LibraryItem, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
+import type { LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
 import { Field } from "../components/Field";
 import { formatBytes } from "../format";
 import { useSession } from "../session";
@@ -50,6 +52,9 @@ export function StoragePage() {
   const [zfsName, setZfsName] = useState("tank");
   const [zfsGUID, setZfsGUID] = useState("");
   const [zfsDisk, setZfsDisk] = useState("");
+  const [lvm, setLvm] = useState<LVMRuntime | null>(null);
+  const [lvmName, setLvmName] = useState("ndlvg");
+  const [lvmDisk, setLvmDisk] = useState("");
 
   async function reload() {
     const listed = await listPools();
@@ -65,14 +70,16 @@ export function StoragePage() {
       setSelected(first);
     }
     const poolId = first;
-    const [vols, imgs, runtime] = await Promise.all([
+    const [vols, imgs, runtime, lvmStatus] = await Promise.all([
       listVolumes(poolId),
       listImages(poolId),
       zfsRuntime().catch(() => null),
+      lvmRuntime().catch(() => null),
     ]);
     setVolumes(vols);
     setImages(imgs);
     setZfs(runtime);
+    setLvm(lvmStatus);
   }
 
   useEffect(() => {
@@ -146,6 +153,20 @@ export function StoragePage() {
     }
   }
 
+  async function onCreateLVM() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createLVM({ name: lvmName, disks: [lvmDisk] });
+      setSelected(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "LVM create failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onCreateVolume() {
     if (!pool) {
       return;
@@ -188,8 +209,8 @@ export function StoragePage() {
       <header className="page-header">
         <h1 id="storage-heading">Storage</h1>
         <p className="page-kicker">
-          Directory remains the default. ZFS is optional first-class storage. Hosts without ZFS keep
-          Directory. zpool import -f is refused.
+          Directory remains the default. ZFS and LVM-thin are optional first-class storage. Hosts
+          without ZFS or LVM keep Directory. zpool import -f and vgexport are refused.
         </p>
       </header>
       {error ? (
@@ -293,6 +314,45 @@ export function StoragePage() {
           </form>
         </article>
       ) : null}
+      {mutate ? (
+        <article className="panel">
+          <h2>LVM-thin</h2>
+          <p className="lede">
+            Create a volume group and thin pool on extra disks. The host root disk is refused.
+            Incremental send is not an LVM capability. vgexport is refused.
+          </p>
+          {lvm?.host_supported === false ? (
+            <p className="banner banner-warn" role="status">
+              {lvm.reason || "LVM runtime install uses the Debian 13 adapter. Directory remains first-class."}
+            </p>
+          ) : null}
+          {lvm?.status === "not_installed" ? (
+            <p className="banner" role="status">
+              LVM userland is not installed. Directory storage remains the default. Optional package:{" "}
+              {(lvm.packages ?? []).join(", ") || "lvm2"}.
+            </p>
+          ) : null}
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateLVM();
+            }}
+          >
+            <Field id="lvm-name" label="Volume group name" value={lvmName} onChange={(e) => setLvmName(e.target.value)} />
+            <Field
+              id="lvm-disk"
+              label="Extra disk"
+              value={lvmDisk}
+              onChange={(e) => setLvmDisk(e.target.value)}
+              hint="A by-id or extra-disk path such as /dev/disk/by-id/.... Not the host root disk."
+            />
+            <button className="btn btn-primary" type="submit" disabled={busy || !lvmDisk}>
+              Create LVM-thin pool
+            </button>
+          </form>
+        </article>
+      ) : null}
       <article className="panel">
         <h2>Pools</h2>
         {pools.length === 0 ? (
@@ -362,6 +422,12 @@ export function StoragePage() {
               <dt>Incremental send</dt>
               <dd>{pool.capabilities?.incremental_send ? "Yes" : "No"}</dd>
             </div>
+            {pool.backend_type === "lvm" ? (
+              <div>
+                <dt>Thin pool metadata</dt>
+                <dd>{pool.metadata_percent != null ? `${pool.metadata_percent.toFixed(1)}%` : "Not reported"}</dd>
+              </div>
+            ) : null}
           </dl>
           {(pool.warning_text ?? []).map((text) => (
             <p key={text} className="banner banner-warn" role="status">

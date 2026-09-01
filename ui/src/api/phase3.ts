@@ -20,6 +20,7 @@ export type StoragePool = {
   allocated_bytes?: number | null;
   provisioned_bytes?: number | null;
   total_bytes?: number | null;
+  metadata_percent?: number | null;
   storage_classes?: string[];
   adopted?: boolean;
 };
@@ -61,6 +62,18 @@ export type ZFSRuntime = {
   snapshots?: boolean;
   directory_default?: boolean;
   force_import?: string;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+};
+
+export type LVMRuntime = {
+  backend?: string;
+  incremental_send?: boolean;
+  snapshots?: boolean;
+  directory_default?: boolean;
+  vgexport?: string;
   host_supported?: boolean;
   status?: string;
   reason?: string;

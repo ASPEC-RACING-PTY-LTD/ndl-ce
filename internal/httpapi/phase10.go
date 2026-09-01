@@ -40,6 +40,12 @@ func (s *Server) snapshotCapability(kind string, depth int, backend string) map[
 			"chain_depth": depth, "reason": "",
 		}
 	}
+	if backend == storage.BackendLVM {
+		return map[string]any{
+			"supported": true, "mechanism": appdb.MechanismLVM, "chain_max": 0,
+			"chain_depth": depth, "reason": "",
+		}
+	}
 	if kind != vmspec.KindVM {
 		return map[string]any{
 			"supported": false, "mechanism": "", "chain_max": qemu.ChainMax,
@@ -76,7 +82,7 @@ func (s *Server) listSnapshots(w http.ResponseWriter, r *http.Request) {
 	backend := ""
 	if vol, pool, _, locErr := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row); locErr == nil {
 		backend = pool.BackendType
-		if backend != storage.BackendZFS {
+		if backend != storage.BackendZFS && backend != storage.BackendLVM {
 			depth = overlayChainDepth(vol.BackendRef, items)
 		}
 	}
@@ -116,6 +122,10 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	if pool.BackendType == storage.BackendZFS {
 		s.createZFSSnapshot(w, r, p, *row, *vol, *pool, strings.TrimSpace(req.Name), existing)
+		return
+	}
+	if pool.BackendType == storage.BackendLVM {
+		s.createLVMSnapshot(w, r, p, *row, *vol, *pool, strings.TrimSpace(req.Name), existing)
 		return
 	}
 	if row.Kind == lxc.KindSystemContainer || row.Kind != vmspec.KindVM {
@@ -217,6 +227,31 @@ func (s *Server) rollbackSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, snapshotJSON(*snap))
 		return
 	}
+	if pool.BackendType == storage.BackendLVM {
+		if row.UnitActive || row.Status == qemu.StatusRunning || row.Status == qemu.StatusStarting {
+			writeErr(w, http.StatusUnprocessableEntity, lvmRollbackRun)
+			return
+		}
+		tag := snap.PurposeTag
+		if tag == "" {
+			tag = s.snapshotTag(snap.BackendRef)
+		}
+		res, lerr := s.lvm().LVMPool(r.Context(), storage.LVMOp{
+			Action: "rollback", PoolID: pool.ID, Name: s.lvmVGName(r.Context(), *pool),
+			VolumeID: vol.ID, Snapshot: tag,
+		})
+		if lerr != nil {
+			writeErr(w, http.StatusBadRequest, lerr.Error())
+			return
+		}
+		if res.Status != storage.StatusAvailable {
+			writeErr(w, http.StatusConflict, firstNonEmpty(res.Reason, "lvm rollback failed"))
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "snapshot.rollback", "ok", snap.ID)
+		writeJSON(w, http.StatusOK, snapshotJSON(*snap))
+		return
+	}
 	newID := uuid.NewString()
 	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"--rb-"+newID+".qcow2")
 	overlay, jerr := storage.JoinUnder(pool.RootPath, overlayRel)
@@ -270,6 +305,10 @@ func (s *Server) flattenSnapshots(w http.ResponseWriter, r *http.Request) {
 	}
 	if pool.BackendType == storage.BackendZFS {
 		writeErr(w, http.StatusUnprocessableEntity, zfsFlattenReason)
+		return
+	}
+	if pool.BackendType == storage.BackendLVM {
+		writeErr(w, http.StatusUnprocessableEntity, lvmFlattenReason)
 		return
 	}
 	if row.Kind != vmspec.KindVM {

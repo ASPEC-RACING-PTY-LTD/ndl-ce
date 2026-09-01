@@ -68,6 +68,7 @@ type Server struct {
 	Update      UpdateRPC
 	GPU         GPURPC
 	ZFS         ZFSRPC
+	LVM         LVMRPC
 	Hub         *EventHub
 	UI          fs.FS
 	Now         func() time.Time
@@ -247,6 +248,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/storage/zfs", s.zfsRuntime)
 	mux.HandleFunc("POST /api/v1/storage/zfs/import", s.importZFS)
 	mux.HandleFunc("POST /api/v1/storage/zfs/create", s.createZFS)
+	mux.HandleFunc("GET /api/v1/storage/lvm", s.lvmRuntime)
+	mux.HandleFunc("POST /api/v1/storage/lvm/create", s.createLVM)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

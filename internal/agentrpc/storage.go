@@ -50,15 +50,17 @@ func (h *Handler) GetStorage(ctx context.Context, req *connect.Request[agentv1.G
 	}
 	obs := h.driver().Observe(dirHints(decodeHints(req.Msg.GetStoragePools())))
 	obs.Pools = append(obs.Pools, h.zfs().ObserveHints(ctx, zfsHints(decodeHints(req.Msg.GetStoragePools())))...)
+	obs.Pools = append(obs.Pools, h.lvm().ObserveHints(ctx, lvmHints(decodeHints(req.Msg.GetStoragePools())))...)
 	return connect.NewResponse(&agentv1.GetStorageResponse{StorageJson: mustJSON(obs)}), nil
 }
 
 func dirHints(in []storage.PoolHint) []storage.PoolHint {
 	var out []storage.PoolHint
 	for _, h := range in {
-		if h.BackendType != storage.BackendZFS {
-			out = append(out, h)
+		if h.BackendType == storage.BackendZFS || h.BackendType == storage.BackendLVM {
+			continue
 		}
+		out = append(out, h)
 	}
 	return out
 }
@@ -73,17 +75,31 @@ func zfsHints(in []storage.PoolHint) []storage.PoolHint {
 	return out
 }
 
-func (h *Handler) observeStorage(hints []storage.PoolHint) []byte {
-	var dir, zfs []storage.PoolHint
-	for _, hint := range hints {
-		if hint.BackendType == storage.BackendZFS {
-			zfs = append(zfs, hint)
-			continue
+func lvmHints(in []storage.PoolHint) []storage.PoolHint {
+	var out []storage.PoolHint
+	for _, h := range in {
+		if h.BackendType == storage.BackendLVM {
+			out = append(out, h)
 		}
-		dir = append(dir, hint)
+	}
+	return out
+}
+
+func (h *Handler) observeStorage(hints []storage.PoolHint) []byte {
+	var dir, zfs, lvm []storage.PoolHint
+	for _, hint := range hints {
+		switch hint.BackendType {
+		case storage.BackendZFS:
+			zfs = append(zfs, hint)
+		case storage.BackendLVM:
+			lvm = append(lvm, hint)
+		default:
+			dir = append(dir, hint)
+		}
 	}
 	obs := h.driver().Observe(dir)
 	obs.Pools = append(obs.Pools, h.zfs().ObserveHints(context.Background(), zfs)...)
+	obs.Pools = append(obs.Pools, h.lvm().ObserveHints(context.Background(), lvm)...)
 	return mustJSON(obs)
 }
 

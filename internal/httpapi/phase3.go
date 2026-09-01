@@ -63,12 +63,16 @@ func (s *Server) createPool(w http.ResponseWriter, r *http.Request) {
 	if req.Path == "" {
 		req.Path = storage.DefaultPoolPath
 	}
-	if req.Backend != "" && req.Backend != storage.BackendDirectory && req.Backend != storage.BackendZFS {
+	if req.Backend != "" && req.Backend != storage.BackendDirectory && req.Backend != storage.BackendZFS && req.Backend != storage.BackendLVM {
 		writeErr(w, http.StatusBadRequest, "unsupported storage backend")
 		return
 	}
 	if req.Backend == storage.BackendZFS {
 		writeErr(w, http.StatusBadRequest, "create a ZFS pool with POST /api/v1/storage/zfs/create or import with POST /api/v1/storage/zfs/import")
+		return
+	}
+	if req.Backend == storage.BackendLVM {
+		writeErr(w, http.StatusBadRequest, "create an LVM-thin pool with POST /api/v1/storage/lvm/create")
 		return
 	}
 	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
@@ -178,6 +182,16 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	if pool.BackendType == storage.BackendZFS {
 		row, err := s.createZFSVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, volumeJSON(row))
+		return
+	}
+	if pool.BackendType == storage.BackendLVM {
+		row, err := s.createLVMVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
@@ -372,13 +386,16 @@ func (s *Server) refreshStorage(ctx context.Context, clusterID string) {
 	if err != nil || len(pools) == 0 {
 		return
 	}
-	var dir, zfs []appdb.StoragePool
+	var dir, zfs, lvm []appdb.StoragePool
 	for _, p := range pools {
-		if p.BackendType == storage.BackendZFS {
+		switch p.BackendType {
+		case storage.BackendZFS:
 			zfs = append(zfs, p)
-			continue
+		case storage.BackendLVM:
+			lvm = append(lvm, p)
+		default:
+			dir = append(dir, p)
 		}
-		dir = append(dir, p)
 	}
 	if s.Storage != nil && len(dir) > 0 {
 		obs, err := s.Storage.GetStorage(ctx, appdb.PoolHints(dir))
@@ -388,6 +405,9 @@ func (s *Server) refreshStorage(ctx context.Context, clusterID string) {
 	}
 	if len(zfs) > 0 {
 		s.refreshZFS(ctx, clusterID, zfs)
+	}
+	if len(lvm) > 0 {
+		s.refreshLVM(ctx, clusterID, lvm)
 	}
 }
 
@@ -471,7 +491,7 @@ func poolJSON(p appdb.StoragePool) map[string]any {
 	if len(p.Capabilities) > 0 {
 		caps = json.RawMessage(p.Capabilities)
 	}
-	return map[string]any{
+	out := map[string]any{
 		"id": p.ID, "node_id": p.NodeID, "name": p.Name, "backend_type": p.BackendType,
 		"status": p.Status, "reason": p.Reason, "locator": p.RootPath,
 		"warnings": p.Warnings, "warning_text": p.WarningText, "capabilities": caps,
@@ -483,6 +503,14 @@ func poolJSON(p appdb.StoragePool) map[string]any {
 			storage.ClassTemplate, storage.ClassBackupStaging,
 		},
 	}
+	var backing storage.BackingIdentity
+	if len(p.Backing) > 0 {
+		_ = json.Unmarshal(p.Backing, &backing)
+	}
+	if backing.MetadataPercent != nil {
+		out["metadata_percent"] = *backing.MetadataPercent
+	}
+	return out
 }
 
 func volumeJSON(v appdb.Volume) map[string]any {

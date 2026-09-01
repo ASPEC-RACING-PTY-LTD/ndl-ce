@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.23
-  description: Phase 24 backup verification and file restore, plus prior northbound API.
+  version: 0.1.24
+  description: Phase 25 LVM-thin storage, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -2242,6 +2242,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StoragePool"
+  /storage/lvm:
+    get:
+      operationId: getLvmRuntime
+      summary: LVM-thin runtime status. Directory remains default. Incremental send is false. vgexport is refused.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LVMRuntime"
+  /storage/lvm/create:
+    post:
+      operationId: createLvm
+      summary: Create an LVM-thin pool on extra disks. The host root disk is refused. vgexport is never issued.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LVMCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
   /registries:
     get:
       operationId: listRegistries
@@ -2927,6 +2955,10 @@ components:
           type: integer
         provisioned_bytes:
           type: integer
+        total_bytes:
+          type: integer
+        metadata_percent:
+          type: number
     CreateStoragePoolRequest:
       type: object
       additionalProperties: false
@@ -4948,6 +4980,47 @@ components:
             type: string
         force:
           type: boolean
+    LVMRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          type: string
+        incremental_send:
+          type: boolean
+        snapshots:
+          type: boolean
+        directory_default:
+          type: boolean
+        vgexport:
+          type: string
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+    LVMCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - disks
+      properties:
+        name:
+          type: string
+        disks:
+          type: array
+          items:
+            type: string
     LogsResponse:
       type: object
       additionalProperties: false

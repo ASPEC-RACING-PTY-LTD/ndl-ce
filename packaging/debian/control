@@ -25,6 +25,7 @@ Package: ndl-agent
 Architecture: amd64
 Depends: adduser, qemu-utils, qemu-system-x86, dnsmasq-base, nftables, lxc, lxcfs, uidmap, gpgv, iproute2, ${misc:Depends}
 Recommends: ovmf
+Suggests: lvm2
 Description: No-dal privileged node agent
  Typed host operations only. No generic command execution.
  Phase 5 adds liblxc system containers started by nodal-ct@.service.

@@ -164,5 +164,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: LVM-thin remains Phase 25; scheduled nightly throwaway; live guestfish extract
 - Audit follow-up: SkipHostCmds and missing libguestfs stay unavailable/unverified and never invent verified
 
+## Phase 25
+
+- Package: 0.1.24
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (LVM capabilities incremental_send false, vgexport never in argv, host root disk refused, missing PV stays unavailable with nil capacity, thin snap mechanism=lvm, metadata percent visible, Directory pool create refuses backend_type=lvm). FIXTURE: FakeLVM + SkipHostCmds. NOT PHYSICALLY VALIDATED: live lvm2 pvcreate/vgcreate/lvcreate on extra disks; thin snap of a running guest; live qemu-img convert from a thin LV
+- Follow-up: NFS/SMB/iSCSI datastores remain Phase 26; live LVM appliance job; lvconvert --merge of a running origin
+- Audit follow-up: SkipHostCmds and missing lvm2 stay unavailable and never invent capacity or incremental send
+
 
 

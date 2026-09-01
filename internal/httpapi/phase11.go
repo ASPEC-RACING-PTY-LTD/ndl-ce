@@ -490,8 +490,8 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		return appdb.BackupRun{}, errNotFound("workload not found")
 	}
 	_, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
-	zfs := locErr == nil && pool != nil && pool.BackendType == storage.BackendZFS
-	if !zfs && (wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM) {
+	native := locErr == nil && pool != nil && (pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM)
+	if !native && (wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM) {
 		return appdb.BackupRun{}, errUnprocessable(ctBackupReason)
 	}
 	tgt, err := s.Store.GetBackupTarget(ctx, clusterID, targetID)
@@ -510,7 +510,7 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if s.Backup == nil {
 		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
 	}
-	if !zfs && s.VM == nil {
+	if !native && s.VM == nil {
 		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
 	}
 	run := appdb.BackupRun{
@@ -670,6 +670,28 @@ func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row ap
 		snap := appdb.Snapshot{
 			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, VolumeID: vol.ID,
 			Name: tag, PurposeTag: tag, Mechanism: appdb.MechanismZFS, BackendRef: res.BackendRef,
+			Status: appdb.SnapshotAvailable,
+		}
+		if err := s.Store.CreateSnapshot(ctx, snap); err != nil {
+			return appdb.Snapshot{}, "", err
+		}
+		return snap, res.BackendRef, nil
+	}
+	if pool.BackendType == storage.BackendLVM {
+		tag := "backup-" + runID[:8]
+		res, err := s.lvm().LVMPool(ctx, storage.LVMOp{
+			Action: "snapshot", PoolID: pool.ID, Name: s.lvmVGName(ctx, *pool),
+			VolumeID: vol.ID, Snapshot: tag,
+		})
+		if err != nil {
+			return appdb.Snapshot{}, "", err
+		}
+		if res.Status != storage.StatusAvailable {
+			return appdb.Snapshot{}, "", errUnprocessable(firstNonEmpty(res.Reason, storage.LVMMissing))
+		}
+		snap := appdb.Snapshot{
+			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, VolumeID: vol.ID,
+			Name: tag, PurposeTag: tag, Mechanism: appdb.MechanismLVM, BackendRef: res.BackendRef,
 			Status: appdb.SnapshotAvailable,
 		}
 		if err := s.Store.CreateSnapshot(ctx, snap); err != nil {

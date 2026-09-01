@@ -180,6 +180,12 @@ type Store interface {
 	UpsertZFSDataset(ctx context.Context, d ZFSDataset) error
 	GetZFSDataset(ctx context.Context, volumeID string) (*ZFSDataset, error)
 
+	UpsertLVMVG(ctx context.Context, v LVMVG) error
+	GetLVMVG(ctx context.Context, poolID string) (*LVMVG, error)
+	GetLVMVGByUUID(ctx context.Context, vgUUID string) (*LVMVG, error)
+	UpsertLVMLV(ctx context.Context, lv LVMLV) error
+	GetLVMLV(ctx context.Context, volumeID string) (*LVMLV, error)
+
 	CreateAlertRule(ctx context.Context, r AlertRule) error
 	ListAlertRules(ctx context.Context, clusterID string) ([]AlertRule, error)
 	GetAlertRule(ctx context.Context, clusterID, id string) (*AlertRule, error)

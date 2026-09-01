@@ -41,6 +41,7 @@ type Handler struct {
 	QEMU          *qemu.Engine
 	OCI           *oci.Engine
 	ZFS           *storage.ZFSEngine
+	LVM           *storage.LVMEngine
 	Journal       *journald.Engine
 	SkipHostCmds  bool
 	GuestSocketFn func(id string) string
@@ -190,6 +191,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execBackupVerify(ctx, req.Msg.GetBackupVerify())
 	case req.Msg.GetBackupExtract() != nil:
 		return h.execBackupExtract(ctx, req.Msg.GetBackupExtract())
+	case req.Msg.GetLvmPool() != nil:
+		return h.execLVMPool(ctx, req.Msg.GetLvmPool())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

@@ -325,6 +325,17 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		}
 		return pool, netw, loc, &row, nil
 	}
+	if pool.BackendType == storage.BackendLVM {
+		row, err := s.createLVMVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, lxc.DefaultRootSize)
+		if err != nil {
+			return nil, nil, "", nil, err
+		}
+		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, row.BackendRef)
+		if err != nil {
+			return nil, nil, "", nil, errConflict("volume locator is invalid")
+		}
+		return pool, netw, loc, &row, nil
+	}
 	if s.Storage == nil {
 		return nil, nil, "", nil, errUnavailable("storage agent is unavailable")
 	}
@@ -539,6 +550,9 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	}
 	if pool.BackendType == storage.BackendZFS {
 		return lxc.LifecycleRequest{}, errUnprocessable("ZFS system container clone is not implemented")
+	}
+	if pool.BackendType == storage.BackendLVM {
+		return lxc.LifecycleRequest{}, errUnprocessable("LVM-thin system container clone is not implemented")
 	}
 	cloneID := uuid.NewString()
 	cloneVol := uuid.NewString()

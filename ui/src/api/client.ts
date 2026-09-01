@@ -225,6 +225,19 @@ export async function createZFS(body: { name: string; disks: string[] }): Promis
   );
 }
 
+export async function lvmRuntime(): Promise<import("./phase3").LVMRuntime> {
+  return readJson(await request("/storage/lvm"));
+}
+
+export async function createLVM(body: { name: string; disks: string[] }): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/lvm/create", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getPool(id: string): Promise<import("./phase3").StoragePool> {
   return readJson(await request(`/storage/pools/${id}`));
 }

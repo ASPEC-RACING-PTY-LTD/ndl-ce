@@ -112,6 +112,7 @@ func Run(cfg Config) error {
 		Update:     httpapi.AdaptUpdate(agent),
 		GPU:        httpapi.AdaptGPU(agent),
 		ZFS:        httpapi.AdaptZFS(agent),
+		LVM:        httpapi.AdaptLVM(agent),
 		Hub:        hub,
 		UI:         ui,
 		SetupHash:  cfg.SetupHash,

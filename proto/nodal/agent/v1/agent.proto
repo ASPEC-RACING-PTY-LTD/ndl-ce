@@ -176,6 +176,7 @@ message ExecuteRequest {
     BackupObject backup_object = 31;
     BackupVerify backup_verify = 32;
     BackupExtract backup_extract = 33;
+    LVMPool lvm_pool = 34;
   }
 }
 
@@ -268,6 +269,18 @@ message BackupExtract {
   string source_path = 1;
   string guest_path = 2;
   string dest_path = 3;
+}
+
+message LVMPool {
+  string action = 1;
+  string pool_id = 2;
+  string name = 3;
+  string vg_uuid = 4;
+  repeated string disks = 5;
+  string volume_id = 6;
+  string class = 7;
+  int64 size_bytes = 8;
+  string snapshot = 9;
 }
 
 message VMSnapshot {

@@ -262,6 +262,8 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /create directory pool/i })).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^zfs$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /import zfs pool/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /lvm-thin/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /create lvm-thin pool/i })).toBeVisible();
     expect(screen.getByText(/directory remains the default/i)).toBeVisible();
   });
 

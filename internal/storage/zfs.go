@@ -254,12 +254,28 @@ func HostVolumePath(backendType, rootPath, backendRef string) (string, error) {
 			return "", fmt.Errorf("volume locator is invalid")
 		}
 	}
+	if backendType == BackendLVM {
+		if strings.HasPrefix(backendRef, LVMMountRoot+"/") {
+			cleaned := path.Clean(backendRef)
+			if cleaned != backendRef || strings.Contains(backendRef, "..") {
+				return "", fmt.Errorf("volume locator is invalid")
+			}
+			return cleaned, nil
+		}
+		if err := ValidateLVMDevice(backendRef); err != nil {
+			return "", err
+		}
+		return backendRef, nil
+	}
 	return JoinUnder(rootPath, backendRef)
 }
 
-// QEMUFormat maps volume format to a QEMU driver. zvol is raw, never user argv.
+// QEMUFormat maps volume format to a QEMU driver. zvol and thin LV are raw, never user argv.
 func QEMUFormat(backendType, format string) string {
 	if backendType == BackendZFS || format == FormatZvol {
+		return "raw"
+	}
+	if backendType == BackendLVM || format == FormatThinLV {
 		return "raw"
 	}
 	if format == "" {

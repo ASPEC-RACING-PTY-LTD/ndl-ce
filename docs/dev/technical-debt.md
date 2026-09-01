@@ -165,6 +165,13 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Nightly scheduled throwaway verify is not ticked yet. Why not blocking: on-demand open and throwaway verify exist; operators can prove a backup before disaster.
 - LOW. File restore is capped at 1MiB and returns base64. Why not blocking: the picker is for config files; large extract can wait for a streaming download.
 
+## Phase 25
+
+- MEDIUM. Live lvm2 is not in this Cloud job. Why not blocking: SkipHostCmds plus FakeLVM prove no incremental send, vgexport refuse, missing PV unavailable, and thin snap recording; extra-disk appliance is the intended live job.
+- LOW. Filesystem classes mkfs.ext4+mount on thin LVs are SkipHostCmds in Cloud. Why not blocking: VM disks are thin LVs (raw); CT mount is typed argv when lvm2 is present.
+- LOW. LVM backup is a full qemu-img convert of the snapshot LV, not a send stream. Why not blocking: IncrementalSend stays false; inventing zfs-send-equivalent would violate the phase.
+- LOW. lvconvert --merge rollback is not proven against a live origin. Why not blocking: snapshot create is the acceptance gate; merge refuses a running workload.
+
 
 
 

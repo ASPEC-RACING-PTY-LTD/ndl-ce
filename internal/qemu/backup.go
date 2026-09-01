@@ -70,6 +70,13 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 		if err := e.AssertDiskOffline(ctx, dest); err != nil {
 			return storage.CopyResult{}, err
 		}
+		srcFmt := "qcow2"
+		if strings.HasPrefix(src, "/dev/") {
+			if err := storage.ValidateLVMDevice(src); err != nil {
+				return storage.CopyResult{}, err
+			}
+			srcFmt = "raw"
+		}
 		if e.SkipHostCmds {
 			return storage.CopyResult{Dest: dest, SHA256: "fixture", Size: 1, Format: "qcow2"}, nil
 		}
@@ -77,7 +84,7 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			_ = os.Remove(dest)
 		}
 		if err := e.ConvertOffline(ctx, ConvertRequest{
-			SourcePath: src, DestPath: dest, SourceFormat: "qcow2", DestFormat: "qcow2",
+			SourcePath: src, DestPath: dest, SourceFormat: srcFmt, DestFormat: "qcow2",
 		}); err != nil {
 			return storage.CopyResult{}, fmt.Errorf("backup convert: %w", err)
 		}

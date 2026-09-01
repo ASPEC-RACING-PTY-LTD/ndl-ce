@@ -173,6 +173,8 @@ export interface StoragePool {
   usable_bytes?: number;
   allocated_bytes?: number;
   provisioned_bytes?: number;
+  total_bytes?: number;
+  metadata_percent?: number;
 }
 
 export interface CreateStoragePoolRequest {
@@ -998,6 +1000,24 @@ export interface ZFSCreateRequest {
   force?: boolean;
 }
 
+export interface LVMRuntime {
+  backend?: string;
+  incremental_send?: boolean;
+  snapshots?: boolean;
+  directory_default?: boolean;
+  vgexport?: string;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+  argv?: string[];
+}
+
+export interface LVMCreateRequest {
+  name: string;
+  disks: string[];
+}
+
 export interface LogsResponse {
   status: string;
   unit?: string;
@@ -1306,6 +1326,10 @@ export type GetZfsRuntimePath = "/api/v1/storage/zfs";
 export type ImportZfsPath = "/api/v1/storage/zfs/import";
 
 export type CreateZfsPath = "/api/v1/storage/zfs/create";
+
+export type GetLvmRuntimePath = "/api/v1/storage/lvm";
+
+export type CreateLvmPath = "/api/v1/storage/lvm/create";
 
 export type ListRegistriesPath = "/api/v1/registries";
 
