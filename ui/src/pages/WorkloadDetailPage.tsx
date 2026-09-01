@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, getWorkloadGuest, getWorkloadLogs, listNodeUSB, patchWorkload, workloadAction } from "../api/client";
+import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, getWorkloadGuest, getWorkloadLogs, listNodeUSB, migrateWorkload, patchWorkload, workloadAction } from "../api/client";
 import type { USBDeviceRow, WorkloadGuest } from "../api/client";
 import type { Workload } from "../api/phase5";
 import { Field } from "../components/Field";
@@ -30,6 +30,8 @@ export function WorkloadDetailPage() {
   const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
   const [usbAddr, setUsbAddr] = useState("");
   const [guest, setGuest] = useState<WorkloadGuest | null>(null);
+  const [destNode, setDestNode] = useState("");
+  const [migrateMode, setMigrateMode] = useState<"live" | "offline">("live");
   const [logLines, setLogLines] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<string>("");
   const [logMessage, setLogMessage] = useState<string>("");
@@ -93,6 +95,24 @@ export function WorkloadDetailPage() {
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onMigrate() {
+    if (!destNode.trim()) {
+      setError("Dest node id is required");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const mode = item?.kind === "vm" ? migrateMode : "offline";
+      await migrateWorkload(id, { dest_node_id: destNode.trim(), mode });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Migrate failed");
     } finally {
       setBusy(false);
     }
@@ -388,6 +408,31 @@ export function WorkloadDetailPage() {
               Delete
             </button>
           </div>
+        </article>
+      ) : null}
+      {mutate ? (
+        <article className="panel">
+          <h2>Migrate</h2>
+          <p className="page-kicker">
+            Live is VM-only over QMP. A failed live migrate leaves the source running. CT and OCI use offline. Dest agent is required; this page does not start a second copy on the current node.
+          </p>
+          <Field id="wl-dest" label="Dest node id" value={destNode} onChange={(e) => setDestNode(e.target.value)} />
+          {item.kind === "vm" ? (
+            <fieldset className="field">
+              <legend>Mode</legend>
+              <label>
+                <input type="radio" name="migrate-mode" checked={migrateMode === "live"} onChange={() => setMigrateMode("live")} /> Live
+              </label>
+              <label>
+                <input type="radio" name="migrate-mode" checked={migrateMode === "offline"} onChange={() => setMigrateMode("offline")} /> Offline
+              </label>
+            </fieldset>
+          ) : (
+            <p>Offline only</p>
+          )}
+          <button className="btn" type="button" disabled={busy || !destNode.trim()} onClick={() => void onMigrate()}>
+            Migrate
+          </button>
         </article>
       ) : null}
       {mutate && item.kind === "vm" ? (

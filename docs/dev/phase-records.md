@@ -227,5 +227,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: migrate engine remains Phase 32; remote Execute apply
 - Audit follow-up: placement never starts a second copy on the wrong node; queued migrate jobs do not run until Phase 32
 
+## Phase 32
+
+- Package: 0.1.31
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (fake live migrate transfers ownership epoch, failed live leaves source running and aborts dest, CT live is refused and offline succeeds, missing dest agent does not start a second copy, dest ABI is source plus incoming defer, tcp incoming is refused). FIXTURE: Memory two-node plus migrate.Fake and QMP unix fixture. NOT PHYSICALLY VALIDATED: live VM ping between two appliances
+- Follow-up: dest Execute over WireGuard/mTLS; CRIU CT live post-1.0
+- Audit follow-up: failed live migrate leaves source running; dest is not started as a second copy on the control unix agent; cpu host does not live-migrate
+
 
 

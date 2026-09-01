@@ -271,7 +271,7 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 		Status: res.Status, DesiredPower: req.DesiredPower, ImagePin: req.ImagePin,
 		CPUs: req.CPUs, MemoryBytes: req.MemoryBytes, Privileged: req.Privileged,
 		IdempotencyKey: key, SpecJSON: specJSON, AppliedJSON: applied,
-		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["OCI recreate migrate is Phase 32"]`),
+		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["OCI migrate recreates the container; live is not supported"]`),
 		CreatedAt: s.now(), UpdatedAt: s.now(),
 	}
 	if row.Status == "" {

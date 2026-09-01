@@ -97,7 +97,7 @@ func TestPhase31MaintainQueuesMigrateAndSkipsNode(t *testing.T) {
 	res, _ := ts.Client().Do(req)
 	raw, _ := io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), "drain-me") || !strings.Contains(string(raw), "Phase 32") {
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), "drain-me") || !strings.Contains(string(raw), "migrate_operation_id") {
 		t.Fatalf("maintain %d %s", res.StatusCode, raw)
 	}
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/placement/preview", strings.NewReader(`{"placement":"automatic"}`))

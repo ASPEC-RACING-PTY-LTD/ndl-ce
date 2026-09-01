@@ -202,6 +202,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execNetAdvanced(ctx, req.Msg.GetNetAdvanced())
 	case req.Msg.GetWireguard() != nil:
 		return h.execWireGuard(ctx, req.Msg.GetWireguard())
+	case req.Msg.GetComputeMigrate() != nil:
+		return h.execComputeMigrate(ctx, req.Msg.GetComputeMigrate())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

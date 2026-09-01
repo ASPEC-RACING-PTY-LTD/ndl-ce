@@ -14,6 +14,7 @@ var allowedLaunchFlags = map[string]struct{}{
 	"-smp": {}, "-m": {}, "-nodefaults": {}, "-no-user-config": {},
 	"-display": {}, "-blockdev": {}, "-device": {}, "-chardev": {},
 	"-mon": {}, "-serial": {}, "-vnc": {}, "-netdev": {}, "-boot": {}, "-drive": {},
+	"-incoming": {},
 }
 
 // ValidateDiskPath requires an absolute VolumeHandle locator under the
@@ -136,6 +137,14 @@ func ValidateFrozenArgv(id string, argv []string) error {
 			if _, ok := allowedLaunchFlags[a]; !ok {
 				return fmt.Errorf("frozen argv flag %s is not allowed", a)
 			}
+		}
+	}
+	for i, a := range argv {
+		if a != "-incoming" {
+			continue
+		}
+		if i+1 >= len(argv) || argv[i+1] != IncomingDefer {
+			return fmt.Errorf("incoming must be defer")
 		}
 	}
 	return nil

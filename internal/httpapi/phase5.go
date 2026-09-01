@@ -234,7 +234,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		Status: res.Status, DesiredPower: req.DesiredPower, ImagePin: req.ImagePin,
 		ImageVerified: res.ImageVerified, CPUs: req.CPUs, MemoryBytes: req.MemoryBytes,
 		Privileged: req.Privileged, UIDMap: lxc.DefaultUIDMap, GIDMap: lxc.DefaultGIDMap,
-		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["offline migrate is Phase 32"]`),
+		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["live migrate of system containers is post-1.0"]`),
 		IdempotencyKey: key,
 	}
 	if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
@@ -680,7 +680,8 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"autostart": w.Autostart, "pending_restart": w.PendingRestart, "firmware": w.Firmware,
 		"spec": specJSON(w), "applied": appliedJSON(w),
 		"desired_node_id": w.DesiredNodeID, "owner_node_id": w.OwnerNodeID,
-		"created_at": w.CreatedAt.UTC().Format(time.RFC3339),
+		"ownership_epoch": w.OwnershipEpoch,
+		"created_at":      w.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if w.Kind == oci.KindOCI {
 		out["health"] = ociHealthFromWorkload(w)

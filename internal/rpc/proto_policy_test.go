@@ -71,6 +71,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"Datastore datastore =",
 		"NetAdvanced net_advanced =",
 		"WireGuard wireguard =",
+		"ComputeMigrate compute_migrate =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

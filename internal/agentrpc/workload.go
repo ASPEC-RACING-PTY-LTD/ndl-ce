@@ -36,14 +36,19 @@ func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
 	for _, hint := range hints {
 		if hint.Kind == qemu.KindVM {
 			obs := h.qemu().Observe(context.Background(), hint.WorkloadID)
+			ready := false
+			blockers := []string{"frozen argv is missing"}
+			if applied, err := h.qemu().ReadApplied(hint.WorkloadID); err == nil {
+				ready, blockers = qemu.MigrateReadiness(applied.Argv)
+			}
 			vms = append(vms, lxc.Observed{
 				WorkloadID:      obs.WorkloadID,
 				Kind:            qemu.KindVM,
 				Status:          obs.Status,
 				Reason:          obs.Reason,
 				UnitActive:      obs.UnitActive,
-				MigrateReady:    false,
-				MigrateBlockers: []string{"QEMU live migrate is not implemented"},
+				MigrateReady:    ready,
+				MigrateBlockers: blockers,
 			})
 			continue
 		}
@@ -68,7 +73,7 @@ func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
 				obs.Workloads = append(obs.Workloads, lxc.Observed{
 					WorkloadID: w.WorkloadID, Kind: oci.KindOCI, Status: w.Status,
 					Reason: w.Reason, UnitActive: w.UnitActive, Warnings: w.Warnings,
-					MigrateReady: false, MigrateBlockers: []string{"OCI recreate migrate is Phase 32"},
+					MigrateReady: false, MigrateBlockers: []string{"OCI migrate recreates the container; live is not supported"},
 					ObservedAt: w.ObservedAt,
 				})
 			}

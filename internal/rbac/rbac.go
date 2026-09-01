@@ -45,6 +45,7 @@ const (
 	ComputeDelete       = "compute.delete"
 	ComputeConsole      = "compute.console"
 	ComputeSnapshot     = "compute.snapshot"
+	ComputeMigrate      = "compute.migrate"
 	StorageSnapshot     = "storage.snapshot"
 	BackupRead          = "backup.read"
 	BackupCreate        = "backup.create"
@@ -84,7 +85,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
-			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot, ComputeGPUAssign,
+			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot, ComputeGPUAssign, ComputeMigrate,
 			BackupRead, BackupCreate, BackupRestore, NodeUpdate, ClusterJoin, NodeRevoke,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
 			SettingsTLSRead,

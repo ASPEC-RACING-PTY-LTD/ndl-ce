@@ -204,8 +204,14 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 
 ## Phase 31
 
-- MEDIUM. Worker apply still is not wired; placement records DesiredNodeID and refuses local start. Why not blocking: that is the recovery gate against a second copy on the control node; migrate remains Phase 32.
-- LOW. Maintenance queues migrate operations that do not move guests. Why not blocking: the roadmap says this phase can enqueue migrate jobs.
+- MEDIUM. Worker apply still is not wired; placement records DesiredNodeID and refuses local start. Why not blocking: that is the recovery gate against a second copy on the control node.
+- LOW. Maintenance queues migrate operations when dest agent is missing. Why not blocking: Phase 32 runs queued jobs when a dest runtime is present.
+
+## Phase 32
+
+- MEDIUM. Dest agent Execute over the WireGuard tunnel is not wired in this Cloud job. Why not blocking: fake migrate proves ownership transfer and the live-fail recovery gate; using the control unix agent as dest would start a second copy.
+- LOW. Live migrate of VMs compiled with -cpu host is refused. Why not blocking: the architecture records host CPU as a single-node default; offline migrate still moves the guest.
+- LOW. Physical two-box live ping is not in this Cloud job. Why not blocking: QMP migrate and incoming defer are unit-tested; the roadmap names fake migrate as the Cloud test.
 
 
 

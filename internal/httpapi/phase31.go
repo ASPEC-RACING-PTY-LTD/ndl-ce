@@ -12,7 +12,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
-const remoteApplyReason = "placement recorded; remote apply is not wired; migrate is Phase 32"
+const remoteApplyReason = "placement recorded; remote apply is not wired; migrate dest agent is required"
 
 func (s *Server) placeCreate(ctx context.Context, clusterID string, req createWorkloadRequest) (*appdb.Node, bool, error) {
 	nodes, err := s.Store.ListClusterNodes(ctx, clusterID)
@@ -96,7 +96,7 @@ func (s *Server) guardLocalApply(w http.ResponseWriter, r *http.Request, cluster
 		return true
 	}
 	if maint, _ := s.Store.GetNodeMaintenance(r.Context(), clusterID, nodeID); maint != nil {
-		writeErr(w, http.StatusConflict, "node is in maintenance; migrate is Phase 32")
+		writeErr(w, http.StatusConflict, "node is in maintenance; drain with migrate first")
 		return false
 	}
 	if s.applyLocal(r.Context(), clusterID, nodeID) {
@@ -208,17 +208,29 @@ func (s *Server) maintainNode(w http.ResponseWriter, r *http.Request) {
 	toMove := []map[string]any{}
 	for _, wl := range workloads {
 		if wl.NodeID == id || wl.DesiredNodeID == id {
-			op := s.startOp(r.Context(), p.User.ClusterID, id, "migrate", "queued", 0)
+			op := s.startOp(r.Context(), p.User.ClusterID, id, "workload.migrate", "queued", 0)
 			op.State = "queued"
-			op.Message = "Migrate engine is Phase 32"
+			op.Message = "queued until dest is chosen"
 			_ = s.Store.UpsertOperation(r.Context(), op)
-			toMove = append(toMove, map[string]any{"id": wl.ID, "name": wl.Name, "kind": wl.Kind, "migrate_operation_id": op.ID})
+			item := map[string]any{"id": wl.ID, "name": wl.Name, "kind": wl.Kind, "migrate_operation_id": op.ID}
+			if s.Migrate != nil {
+				dest, err := s.migrateDest(r.Context(), p.User.ClusterID, wl, "")
+				if err == nil && dest != nil {
+					out, code, msg := s.runMigrate(r.Context(), wl, dest, migrateModeFor(wl))
+					item["migrate"] = out
+					item["migrate_status"] = code
+					if msg != "" {
+						item["migrate_error"] = msg
+					}
+				}
+			}
+			toMove = append(toMove, item)
 		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "node.maintain", "ok", id)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "maintenance": true, "workloads": toMove,
-		"warning": "Workloads are listed and migrate jobs are queued. The migrate engine is Phase 32.",
+		"warning": "Workloads are listed and migrate jobs are queued. Dest agent is required to empty the node.",
 	})
 }
 
@@ -245,6 +257,6 @@ func remotePlacedWorkload(clusterID string, node *appdb.Node, req createWorkload
 		ID: id, ClusterID: clusterID, NodeID: node.ID, OwnerNodeID: node.ID, DesiredNodeID: node.ID,
 		Name: req.Name, Kind: kind, Status: "unavailable", Reason: remoteApplyReason,
 		DesiredPower: power, ImagePin: req.ImagePin, CPUs: req.CPUs, MemoryBytes: req.MemoryBytes,
-		Privileged: req.Privileged, MigrateBlockers: json.RawMessage(`["remote apply is not wired","migrate is Phase 32"]`),
+		Privileged: req.Privileged, MigrateBlockers: json.RawMessage(`["remote apply is not wired","dest agent is required"]`),
 	}
 }

@@ -95,6 +95,9 @@ func (e *Engine) compile(spec Spec) ([]string, error) {
 		"-chardev", "socket,id=nga0,path=" + nga + ",server=on,wait=off",
 		"-device", "virtserialport,chardev=nga0,name=" + NodalGuestName,
 	}
+	if spec.IncomingDefer {
+		argv = append(argv, "-incoming", IncomingDefer)
+	}
 	for _, a := range argv {
 		if strings.ContainsAny(a, "\n\r\x00") {
 			return nil, fmt.Errorf("argv contains a banned character")

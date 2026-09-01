@@ -17,6 +17,7 @@ const (
 	BinQEMU           = "/usr/bin/qemu-system-x86_64"
 	BinSystemctl      = "/usr/bin/systemctl"
 	LaunchBin         = "/usr/sbin/ndl-qemu-launch"
+	IncomingDefer     = "defer"
 	DefaultMachine    = "pc-q35-10.0"
 	DefaultMemory     = 128 << 20
 	QEMUUser          = "ndl-qemu"
@@ -47,6 +48,7 @@ type Spec struct {
 	Autostart     bool   `json:"autostart"`
 	PCIDiskAddr   string `json:"pci_disk_addr"`
 	PCISerialAddr string `json:"pci_serial_addr"`
+	IncomingDefer bool   `json:"incoming_defer,omitempty"`
 }
 
 // ArgvFile is the frozen argv artifact read by ndl-qemu-launch.

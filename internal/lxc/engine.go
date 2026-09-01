@@ -420,7 +420,7 @@ func (e *Engine) observeOne(ctx context.Context, h Hint) Observed {
 		Status:          StatusUnavailable,
 		Reason:          "workload was not observed",
 		MigrateReady:    false,
-		MigrateBlockers: []string{"offline migrate is Phase 32"},
+		MigrateBlockers: []string{"live migrate of system containers is post-1.0"},
 		ObservedAt:      e.now(),
 	}
 	if out.Kind == "" {

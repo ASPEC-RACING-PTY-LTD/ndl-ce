@@ -280,6 +280,13 @@ type Store interface {
 
 	UpsertWorkloadPlacement(ctx context.Context, p WorkloadPlacement) error
 	GetWorkloadPlacement(ctx context.Context, clusterID, workloadID string) (*WorkloadPlacement, error)
+
+	SetWorkloadDesiredNode(ctx context.Context, clusterID, workloadID, destNodeID string) error
+	TransferWorkloadOwnership(ctx context.Context, clusterID, workloadID, destNodeID string, expectedEpoch int) (int, error)
+	CreateMigrateJob(ctx context.Context, j MigrateJob) error
+	GetMigrateJob(ctx context.Context, clusterID, id string) (*MigrateJob, error)
+	UpdateMigrateJob(ctx context.Context, j MigrateJob) error
+	ListMigrateJobs(ctx context.Context, clusterID string, limit int) ([]MigrateJob, error)
 }
 
 // Cluster is the appliance cluster of one.

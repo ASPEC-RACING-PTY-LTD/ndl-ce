@@ -38,6 +38,7 @@ export type Workload = {
   firmware?: string;
   spec?: unknown;
   node_id?: string;
+  ownership_epoch?: number;
   health?: { status?: string; message?: string };
   unit?: string;
 };

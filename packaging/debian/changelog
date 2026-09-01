@@ -1,3 +1,9 @@
+nodal (0.1.31) UNRELEASED; urgency=medium
+
+  * Phase 32 workload migration: dest builds identical ABI plus incoming defer, offline stop/copy/start, live QMP migrate, failed live leaves source running, CT/OCI offline only, ownership epoch, compute.migrate
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.30) UNRELEASED; urgency=medium
 
   * Phase 31 placement and maintenance: automatic/specific/group placement, GPU/class scheduler fixtures, drain lists workloads and queues migrate jobs, remote apply never starts a second copy on the control node

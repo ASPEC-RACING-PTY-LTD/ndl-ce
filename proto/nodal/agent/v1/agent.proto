@@ -181,6 +181,7 @@ message ExecuteRequest {
     Datastore datastore = 35;
     NetAdvanced net_advanced = 36;
     WireGuard wireguard = 37;
+    ComputeMigrate compute_migrate = 38;
   }
 }
 
@@ -331,6 +332,23 @@ message WireGuardPeer {
   string endpoint = 2;
   string allowed_ips = 3;
   uint32 persistent_keepalive = 4;
+}
+
+message ComputeMigrate {
+  string action = 1;
+  string workload_id = 2;
+  string uri = 3;
+  string source_path = 4;
+  string dest_path = 5;
+  bytes launch_json = 6;
+  string volume_id = 7;
+  bool incoming = 8;
+  string disk_path = 9;
+  string disk_format = 10;
+  int32 cpus = 11;
+  int64 memory_bytes = 12;
+  string machine = 13;
+  string accel = 14;
 }
 
 message VMSnapshot {

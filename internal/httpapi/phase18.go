@@ -130,7 +130,7 @@ func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Wor
 		Name: spec.Name, Kind: vmspec.KindVM, Status: qemu.StatusStopped, DesiredPower: "stopped",
 		CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, SpecJSON: vmspec.MustJSON(spec),
 		Autostart: spec.Autostart, Firmware: spec.Firmware,
-		MigrateBlockers: json.RawMessage(`["QEMU live migrate is not implemented"]`),
+		MigrateBlockers: json.RawMessage(`[]`),
 	}
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
 		s.rollbackAdoptedVM(ctx, clusterID, "", newVolID, dest)
@@ -287,7 +287,7 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 		ID: newID, ClusterID: clusterID, NodeID: node.ID, OwnerNodeID: node.ID, DesiredNodeID: node.ID,
 		Name: spec.Name, Kind: vmspec.KindVM, Status: qemu.StatusStopped, DesiredPower: "stopped",
 		CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, SpecJSON: vmspec.MustJSON(spec),
-		Firmware: spec.Firmware, MigrateBlockers: json.RawMessage(`["QEMU live migrate is not implemented"]`),
+		Firmware: spec.Firmware, MigrateBlockers: json.RawMessage(`[]`),
 	}
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
 		s.rollbackAdoptedVM(ctx, clusterID, "", newVolID, dest)

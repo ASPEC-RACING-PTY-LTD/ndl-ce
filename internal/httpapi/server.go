@@ -22,6 +22,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
@@ -72,6 +73,7 @@ type Server struct {
 	LVM         LVMRPC
 	Datastore   DatastoreRPC
 	Hub         *EventHub
+	Migrate     migrate.Runtime
 	UI          fs.FS
 	Now         func() time.Time
 	SetupHash   string
@@ -183,6 +185,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/force-stop", s.lifecycleWorkload("force-stop"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/delete", s.lifecycleWorkload("delete"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/clone", s.lifecycleWorkload("clone"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/migrate", s.migrateWorkload)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/migrate", s.getWorkloadMigrate)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/export", s.exportVM)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/usb", s.attachUSB)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/pci", s.attachPCI)

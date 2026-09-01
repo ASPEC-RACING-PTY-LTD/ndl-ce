@@ -85,6 +85,7 @@ func run(args []string) error {
   workload update --id ID [--cpus N] [--memory-bytes N] [--autostart true|false]
   workload delete --id ID
   workload clone --id ID [--name NAME]
+  workload migrate --id ID --dest-node-id ID [--mode live|offline]
   workload import --library-id ID --network-id ID [--name NAME] [--pool-id ID] [--firmware bios|uefi]
   workload export --id ID [--display-name NAME]
   node terminal [--id ID] [--cwd PATH]
@@ -752,7 +753,7 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 
 func cmdWorkload(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|import|export|files|terminal")
+		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|migrate|import|export|files|terminal")
 	}
 	switch args[0] {
 	case "list":
@@ -862,6 +863,16 @@ func cmdWorkload(args []string) error {
 			return fmt.Errorf("usage: nodalctl workload clone --id ID [--name NAME]")
 		}
 		return postJSON("/api/v1/workloads/"+f["id"]+"/clone", map[string]any{"name": f["name"]}, true)
+	case "migrate":
+		f := parseFlags(args[1:])
+		if f["id"] == "" || f["dest-node-id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload migrate --id ID --dest-node-id ID [--mode live|offline]")
+		}
+		body := map[string]any{"dest_node_id": f["dest-node-id"]}
+		if f["mode"] != "" {
+			body["mode"] = f["mode"]
+		}
+		return postJSON("/api/v1/workloads/"+f["id"]+"/migrate", body, true)
 	case "import":
 		f := parseFlags(args[1:])
 		if f["library-id"] == "" || f["network-id"] == "" {

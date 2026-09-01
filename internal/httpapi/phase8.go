@@ -193,7 +193,7 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		Status: qemu.StatusStopped, DesiredPower: req.DesiredPower, CPUs: spec.CPUs,
 		MemoryBytes: spec.MemoryBytes, SpecJSON: vmspec.MustJSON(spec), AppliedJSON: applied,
 		Autostart: spec.Autostart, Firmware: spec.Firmware,
-		MigrateBlockers: json.RawMessage(`["QEMU live migrate is not implemented"]`),
+		MigrateBlockers: json.RawMessage(`[]`),
 		IdempotencyKey:  key,
 	}
 	if err := s.Store.CreateWorkload(r.Context(), row); err != nil {

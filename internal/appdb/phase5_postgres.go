@@ -66,14 +66,14 @@ INSERT INTO workloads (
   id, cluster_id, node_id, owner_node_id, desired_node_id, name, kind, status, reason,
   desired_power, image_pin, image_verified, cpus, memory_bytes, privileged, uid_map, gid_map,
   pid, unit_active, migrate_ready, migrate_blockers, devices, warnings, created_at, updated_at,
-  spec_json, applied_json, autostart, pending_restart, firmware
+  spec_json, applied_json, autostart, pending_restart, firmware, ownership_epoch
 ) VALUES (
-  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
+  $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
 )`,
 		w.ID, w.ClusterID, w.NodeID, w.OwnerNodeID, w.DesiredNodeID, w.Name, w.Kind, w.Status, w.Reason,
 		w.DesiredPower, w.ImagePin, w.ImageVerified, w.CPUs, w.MemoryBytes, w.Privileged, w.UIDMap, w.GIDMap,
 		w.PID, w.UnitActive, w.MigrateReady, w.MigrateBlockers, w.Devices, warn, w.CreatedAt, w.UpdatedAt,
-		w.SpecJSON, w.AppliedJSON, w.Autostart, w.PendingRestart, w.Firmware)
+		w.SpecJSON, w.AppliedJSON, w.Autostart, w.PendingRestart, w.Firmware, w.OwnershipEpoch)
 	return err
 }
 
@@ -244,7 +244,8 @@ SELECT id::text, cluster_id::text, node_id::text, owner_node_id::text, desired_n
        name, kind, status, reason, desired_power, image_pin, image_verified, cpus, memory_bytes,
        privileged, uid_map, gid_map, pid, unit_active, migrate_ready, migrate_blockers, devices,
        warnings, created_at, updated_at,
-       COALESCE(spec_json, '{}'::jsonb), COALESCE(applied_json, '{}'::jsonb), autostart, pending_restart, COALESCE(firmware, 'bios')
+       COALESCE(spec_json, '{}'::jsonb), COALESCE(applied_json, '{}'::jsonb), autostart, pending_restart, COALESCE(firmware, 'bios'),
+       COALESCE(ownership_epoch, 0)
 FROM workloads`
 
 func scanWorkload(row rowScanner) (Workload, error) {
@@ -255,7 +256,7 @@ func scanWorkload(row rowScanner) (Workload, error) {
 		&w.Name, &w.Kind, &w.Status, &w.Reason, &w.DesiredPower, &w.ImagePin, &w.ImageVerified,
 		&w.CPUs, &w.MemoryBytes, &w.Privileged, &w.UIDMap, &w.GIDMap, &pid, &w.UnitActive,
 		&w.MigrateReady, &blockers, &devices, &warn, &w.CreatedAt, &w.UpdatedAt,
-		&specJSON, &appliedJSON, &w.Autostart, &w.PendingRestart, &w.Firmware)
+		&specJSON, &appliedJSON, &w.Autostart, &w.PendingRestart, &w.Firmware, &w.OwnershipEpoch)
 	if err != nil {
 		return w, err
 	}

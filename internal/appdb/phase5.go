@@ -30,6 +30,7 @@ type Workload struct {
 	GIDMap          string
 	PID             *int
 	UnitActive      bool
+	OwnershipEpoch  int
 	MigrateReady    bool
 	MigrateBlockers json.RawMessage
 	Devices         json.RawMessage

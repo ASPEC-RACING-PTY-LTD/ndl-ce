@@ -653,6 +653,25 @@ export interface CloneWorkloadRequest {
   name?: string;
 }
 
+export interface MigrateWorkloadRequest {
+  dest_node_id?: string;
+  mode?: "live" | "offline";
+}
+
+export interface MigrateWorkloadResponse {
+  id?: string;
+  workload_id?: string;
+  operation_id?: string;
+  source_node_id?: string;
+  dest_node_id?: string;
+  mode?: string;
+  state?: string;
+  source_running?: boolean;
+  dest_running?: boolean;
+  reason?: string;
+  epoch?: number;
+}
+
 export interface ImportWorkloadRequest {
   name?: string;
   library_id: string;
@@ -1491,6 +1510,8 @@ export type RestartWorkloadPath = "/api/v1/workloads/{id}/restart";
 export type ForceStopWorkloadPath = "/api/v1/workloads/{id}/force-stop";
 
 export type DeleteWorkloadPath = "/api/v1/workloads/{id}/delete";
+
+export type GetWorkloadMigratePath = "/api/v1/workloads/{id}/migrate";
 
 export type CloneWorkloadPath = "/api/v1/workloads/{id}/clone";
 

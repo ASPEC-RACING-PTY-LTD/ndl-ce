@@ -113,7 +113,10 @@ func TestValidateFrozenArgvRejectsBashMissingControlUnknownFlagsNonUUID(t *testi
 		t.Fatal("missing mode=control must be rejected")
 	}
 	if err := ValidateFrozenArgv(id, []string{BinQEMU, "-incoming", "tcp:0:4444", "-mon", "chardev=qmp0,mode=control"}); err == nil {
-		t.Fatal("unknown flag must be rejected")
+		t.Fatal("tcp incoming must be rejected")
+	}
+	if err := ValidateFrozenArgv(id, []string{BinQEMU, "-incoming", IncomingDefer, "-mon", "chardev=qmp0,mode=control"}); err != nil {
+		t.Fatalf("defer incoming must be allowed: %v", err)
 	}
 	if err := ValidateFrozenArgv(id, []string{BinQEMU, "-sandbox", "on", "-mon", "chardev=qmp0,mode=control"}); err == nil {
 		t.Fatal("unknown flag -sandbox must be rejected")

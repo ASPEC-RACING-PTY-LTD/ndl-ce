@@ -778,6 +778,26 @@ export async function createConsoleSession(id: string, mode: "serial" | "vnc"): 
   );
 }
 
+export async function migrateWorkload(
+  id: string,
+  body: { dest_node_id: string; mode?: "live" | "offline" },
+): Promise<{
+  id?: string;
+  state?: string;
+  reason?: string;
+  dest_node_id?: string;
+  source_running?: boolean;
+  dest_running?: boolean;
+  epoch?: number;
+}> {
+  return readJson(
+    await request(`/workloads/${id}/migrate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function workloadAction(
   id: string,
   action: "start" | "stop" | "restart" | "delete" | "clone" | "force-stop",

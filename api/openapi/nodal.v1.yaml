@@ -1088,6 +1088,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/{id}/migrate:
+    post:
+      operationId: migrateWorkload
+      summary: Offline or live migrate a workload to another node
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrateWorkloadRequest"
+      responses:
+        "200":
+          description: Migrate job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrateWorkloadResponse"
+        "409":
+          description: Failed live migrate left the source running
+    get:
+      operationId: getWorkloadMigrate
+      summary: Latest migrate job for a workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Migrate job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrateWorkloadResponse"
   /workloads/{id}/clone:
     post:
       operationId: cloneWorkload
@@ -4326,6 +4366,43 @@ components:
       properties:
         name:
           type: string
+    MigrateWorkloadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        dest_node_id:
+          type: string
+        mode:
+          type: string
+          enum:
+            - live
+            - offline
+    MigrateWorkloadResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        workload_id:
+          type: string
+        operation_id:
+          type: string
+        source_node_id:
+          type: string
+        dest_node_id:
+          type: string
+        mode:
+          type: string
+        state:
+          type: string
+        source_running:
+          type: boolean
+        dest_running:
+          type: boolean
+        reason:
+          type: string
+        epoch:
+          type: integer
     ImportWorkloadRequest:
       type: object
       additionalProperties: false

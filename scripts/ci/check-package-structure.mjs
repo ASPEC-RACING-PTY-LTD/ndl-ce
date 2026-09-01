@@ -62,6 +62,9 @@ if (!existsSync("migrations/0027_phase30.sql")) {
 if (!existsSync("migrations/0028_phase31.sql")) {
   errors.push("missing migrations/0028_phase31.sql placement groups and maintenance");
 }
+if (!existsSync("migrations/0029_phase32.sql")) {
+  errors.push("missing migrations/0029_phase32.sql migrate jobs and ownership epoch");
+}
 if (!existsSync("packaging/iso/mkosi.conf")) {
   errors.push("missing packaging/iso/mkosi.conf Debian installer ISO contract");
 } else {
@@ -148,6 +151,9 @@ if (!changelog.includes("nodal (0.1.29)") || !changelog.includes("Phase 30 clust
 }
 if (!changelog.includes("nodal (0.1.30)") || !changelog.includes("Phase 31 placement")) {
   errors.push("changelog must include nodal (0.1.30) Phase 31 placement");
+}
+if (!changelog.includes("nodal (0.1.31)") || !changelog.includes("Phase 32 workload migration")) {
+  errors.push("changelog must include nodal (0.1.31) Phase 32 workload migration");
 }
 
 const control = existsSync("packaging/debian/control")

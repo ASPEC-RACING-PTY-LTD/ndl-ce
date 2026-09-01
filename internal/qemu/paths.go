@@ -9,10 +9,11 @@ import (
 
 // Engine writes frozen argv and supervises nodal-vm@ via systemd.
 type Engine struct {
-	DataDir      string
-	SkipHostCmds bool
-	Now          func() time.Time
-	LiveUnits    map[string]bool
+	DataDir         string
+	SkipHostCmds    bool
+	Now             func() time.Time
+	LiveUnits       map[string]bool
+	FailLiveMigrate bool
 }
 
 func (e *Engine) dataDir() string {
