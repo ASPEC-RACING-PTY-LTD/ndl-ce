@@ -113,7 +113,7 @@ func (s *Server) verifyBackupArtifact(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusUnprocessableEntity, "throwaway restore requires the original workload catalog row")
 			return
 		}
-		tid, err := s.restoreNewVM(r.Context(), p.User.ClusterID, *src, *art, true)
+		tid, err := s.restoreNewVM(r.Context(), p.User.ClusterID, *src, *art, true, nil)
 		if err != nil {
 			art.VerifyStatus = appdb.BackupUnverified
 			art.VerifyError = err.Error()

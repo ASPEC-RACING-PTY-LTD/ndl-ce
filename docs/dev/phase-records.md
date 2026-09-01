@@ -236,5 +236,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: dest Execute over WireGuard/mTLS; CRIU CT live post-1.0
 - Audit follow-up: failed live migrate leaves source running; dest is not started as a second copy on the control unix agent; cpu host does not live-migrate
 
+## Phase 33
+
+- Package: 0.1.32
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (restore `--node` onto control after source worker is revoked, restore onto a worker does not start a second copy on the control unix agent, DR export omits passwords). FIXTURE: Memory two-node plus local backup target. NOT PHYSICALLY VALIDATED: dest agent pull of an object artifact; lose a physical box and restore from live R2
+- Follow-up: dest Execute restore/pull; ZFS recv restore of send artifacts
+- Audit follow-up: dest secret.use only when this node materializes an object artifact; DR export has no credentials
+
 
 

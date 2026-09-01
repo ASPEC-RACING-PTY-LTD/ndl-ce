@@ -155,6 +155,35 @@ storage backend.
 6. Restore `replace` without confirm is refused.
 7. An NFS locator that is not a local directory remains unavailable. That is not a successful backup.
 
+## Cluster disaster recovery (Phase 33)
+
+Cross-node restore is a normal workflow. `POST /api/v1/backups/artifacts/{id}/restore`
+accepts `target_node_id`. Empty dest is this control node. Restore `new` onto a
+worker records the catalog (`DesiredNodeID` / `NodeID`) and does not start a
+second copy on the control unix agent when that dest agent is not connected.
+Restore `replace` stays on the current node.
+
+Artifact rows store locality (`local`, `object`, or `pull`) and an optional
+pull URL. The pull URL is a locator without credentials. Dest `secret.use`
+is audited only when this control node materializes an object artifact.
+
+`GET /api/v1/backups/dr-export` writes the backup catalog plus node and
+workload identity. It never includes target passwords or encryption keys.
+Shared NFS/iSCSI volumes already have IDs; ZFS send artifacts still restore
+with `zfs recv` in a later path, not qemu-img.
+
+`nodalctl backup restore --artifact ID --mode new --node ID` and
+`nodalctl backup dr-export` are the CLI paths.
+
+### Recovery matrix (cluster DR)
+
+1. Node A holds a VM. A backup artifact exists on local disk or object storage (R2/S3).
+2. Node A is down or revoked. The catalog and artifacts remain.
+3. Restore `new` with `--node` set to node B (this control node in the Cloud fixture).
+4. The restored workload UUID is new. Disks are not copied onto the wrong node.
+5. Restore onto a worker whose agent is not connected stays `unavailable` with that reason.
+6. DR export JSON has locators and object keys and does not contain passwords.
+
 ## Platform updates (Phase 12)
 
 Control-plane package updates use the signed No-dal Debian repository that

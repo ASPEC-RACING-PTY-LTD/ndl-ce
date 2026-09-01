@@ -145,6 +145,11 @@ func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
 	if a.ThrowawayWorkloadID != "" {
 		out["throwaway_workload_id"] = a.ThrowawayWorkloadID
 	}
+	appdb.FillArtifactLocality(&a)
+	out["locality"] = a.Locality
+	if a.PullURL != "" {
+		out["pull_url"] = a.PullURL
+	}
 	return out
 }
 
@@ -805,6 +810,30 @@ func retainBackupIDs(arts []appdb.BackupArtifact, keepDaily, keepWeekly, keepMon
 	return keep
 }
 
+func (s *Server) resolveRestoreDest(ctx context.Context, clusterID, targetNodeID string) (*appdb.Node, error) {
+	if strings.TrimSpace(targetNodeID) == "" {
+		n, err := s.Store.GetNode(ctx, clusterID)
+		if err != nil || n == nil {
+			return nil, errUnprocessable("local node is not enrolled")
+		}
+		return n, nil
+	}
+	n, err := s.Store.GetNodeByID(ctx, clusterID, targetNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, errNotFound("target node not found")
+	}
+	if n.RevokedAt != nil {
+		return nil, errUnprocessable("target node is revoked")
+	}
+	if maint, _ := s.Store.GetNodeMaintenance(ctx, clusterID, n.ID); maint != nil {
+		return nil, errUnprocessable("target node is in maintenance")
+	}
+	return n, nil
+}
+
 func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	p, err := s.require(w, r, rbac.BackupRestore)
 	if err != nil {
@@ -812,7 +841,8 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	var req struct {
-		Mode string `json:"mode"`
+		Mode         string `json:"mode"`
+		TargetNodeID string `json:"target_node_id"`
 	}
 	if err := readJSON(r, &req); err != nil || (req.Mode != "new" && req.Mode != "replace") {
 		writeErr(w, http.StatusBadRequest, "mode must be new or replace")
@@ -836,6 +866,15 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "replace requires the original workload to still exist")
 		return
 	}
+	dest, err := s.resolveRestoreDest(r.Context(), p.User.ClusterID, strings.TrimSpace(req.TargetNodeID))
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	if req.Mode == "replace" && src != nil && dest.ID != src.NodeID && dest.ID != src.DesiredNodeID {
+		writeErr(w, http.StatusUnprocessableEntity, "replace stays on the current node; use mode new to restore onto another node")
+		return
+	}
 	origRun, _ := s.Store.GetBackupRun(r.Context(), p.User.ClusterID, art.RunID)
 	if origRun == nil || origRun.TargetID == "" {
 		writeErr(w, http.StatusUnprocessableEntity, "restore cannot locate the original backup target")
@@ -856,9 +895,9 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	var restoredID string
 	if req.Mode == "new" {
 		if src == nil {
-			restoredID, err = s.restoreOrphanVM(r.Context(), p.User.ClusterID, *art)
+			restoredID, err = s.restoreOrphanVM(r.Context(), p.User.ClusterID, *art, dest)
 		} else {
-			restoredID, err = s.restoreNewVM(r.Context(), p.User.ClusterID, *src, *art, false)
+			restoredID, err = s.restoreNewVM(r.Context(), p.User.ClusterID, *src, *art, false, dest)
 		}
 	} else {
 		err = s.restoreReplaceVM(r.Context(), p.User.ClusterID, *src, *art)
@@ -877,16 +916,23 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	run.Status = appdb.BackupSucceeded
 	_ = s.Store.UpdateBackupRun(r.Context(), run)
 	s.audit(r, p.User.ClusterID, p.User.ID, "backup.restore."+req.Mode, "ok", restoredID)
+	if s.applyLocal(r.Context(), p.User.ClusterID, dest.ID) && (art.ObjectKey != "" || strings.HasPrefix(art.Locator, "s3://")) {
+		s.audit(r, p.User.ClusterID, p.User.ID, "secret.use", "ok", dest.ID)
+	}
 	writeJSON(w, http.StatusAccepted, backupRunJSON(run))
 }
 
-func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.Workload, art appdb.BackupArtifact, isolated bool) (string, error) {
-	if s.VM == nil || s.Backup == nil || s.Storage == nil {
-		return "", errUnavailable("backup agent is unavailable")
+func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.Workload, art appdb.BackupArtifact, isolated bool, dest *appdb.Node) (string, error) {
+	if dest == nil {
+		node, err := s.Store.GetNode(ctx, clusterID)
+		if err != nil || node == nil {
+			return "", errUnprocessable("local node is not enrolled")
+		}
+		dest = node
 	}
-	node, err := s.Store.GetNode(ctx, clusterID)
-	if err != nil || node == nil {
-		return "", errUnprocessable("local node is not enrolled")
+	local := s.applyLocal(ctx, clusterID, dest.ID)
+	if local && (s.VM == nil || s.Backup == nil || s.Storage == nil) {
+		return "", errUnavailable("backup agent is unavailable")
 	}
 	vol, pool, _, err := s.bootVolumeLocator(ctx, clusterID, src)
 	if err != nil {
@@ -895,36 +941,48 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	newID := uuid.NewString()
 	newVolID := uuid.NewString()
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
-	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
-		VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
-		Class: storage.ClassVMDisk, Size: vol.SizeBytes, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
-	}, hint)
-	if err != nil && !strings.Contains(err.Error(), "duplicate") {
-		return "", err
-	}
-	backend := res.Handle.BackendRef
-	if backend == "" {
-		backend = path.Join("volumes", storage.ClassVMDisk, newVolID+".qcow2")
-	}
-	newVol := appdb.Volume{
-		ID: newVolID, ClusterID: clusterID, NodeID: node.ID, PoolID: pool.ID,
-		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
-		SizeBytes: vol.SizeBytes, Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: backend,
-	}
-	if err := s.Store.CreateVolume(ctx, newVol); err != nil {
-		return "", err
-	}
-	dest, err := storage.JoinUnder(pool.RootPath, newVol.BackendRef)
-	if err != nil {
-		return "", errConflict("volume locator is invalid")
-	}
-	srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, srcPath, dest); err != nil {
-		return "", err
+	if local {
+		res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
+			VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
+			Class: storage.ClassVMDisk, Size: vol.SizeBytes, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
+		}, hint)
+		if err != nil && !strings.Contains(err.Error(), "duplicate") {
+			return "", err
+		}
+		backend := res.Handle.BackendRef
+		if backend == "" {
+			backend = path.Join("volumes", storage.ClassVMDisk, newVolID+".qcow2")
+		}
+		newVol := appdb.Volume{
+			ID: newVolID, ClusterID: clusterID, NodeID: dest.ID, PoolID: pool.ID,
+			Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
+			SizeBytes: vol.SizeBytes, Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: backend,
+		}
+		if err := s.Store.CreateVolume(ctx, newVol); err != nil {
+			return "", err
+		}
+		diskPath, err := storage.JoinUnder(pool.RootPath, newVol.BackendRef)
+		if err != nil {
+			return "", errConflict("volume locator is invalid")
+		}
+		srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
+		if err != nil {
+			return "", err
+		}
+		defer cleanup()
+		if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, srcPath, diskPath); err != nil {
+			return "", err
+		}
+	} else {
+		newVol := appdb.Volume{
+			ID: newVolID, ClusterID: clusterID, NodeID: dest.ID, PoolID: pool.ID,
+			Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
+			SizeBytes: vol.SizeBytes, Status: storage.StatusUnavailable, BackendType: storage.BackendDirectory,
+			BackendRef: path.Join("volumes", storage.ClassVMDisk, newVolID+".qcow2"),
+		}
+		if err := s.Store.CreateVolume(ctx, newVol); err != nil {
+			return "", err
+		}
 	}
 	spec, err := vmspec.Parse(src.SpecJSON)
 	if err != nil {
@@ -960,11 +1018,15 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 		return "", err
 	}
 	row := appdb.Workload{
-		ID: newID, ClusterID: clusterID, NodeID: node.ID, OwnerNodeID: node.ID, DesiredNodeID: node.ID,
+		ID: newID, ClusterID: clusterID, NodeID: dest.ID, OwnerNodeID: dest.ID, DesiredNodeID: dest.ID,
 		Name: spec.Name, Kind: vmspec.KindVM, Status: qemu.StatusStopped, DesiredPower: "running",
 		CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, SpecJSON: vmspec.MustJSON(spec),
 		Autostart: spec.Autostart, Firmware: spec.Firmware,
 		MigrateBlockers: json.RawMessage(`[]`),
+	}
+	if !local {
+		row.Status = "unavailable"
+		row.Reason = "cross-node restore recorded; dest agent is not connected"
 	}
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
 		return "", err
@@ -988,6 +1050,9 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 				NetworkID: n.NetworkID, Model: n.Model,
 			})
 		}
+	}
+	if !local {
+		return newID, nil
 	}
 	if _, err := s.reprepareVM(ctx, clusterID, row); err != nil {
 		return "", err
@@ -1041,13 +1106,17 @@ func uniqueRestoredName(base, id string) string {
 	return base + "-restore-" + short
 }
 
-func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appdb.BackupArtifact) (string, error) {
-	if s.VM == nil || s.Backup == nil || s.Storage == nil {
-		return "", errUnavailable("backup agent is unavailable")
+func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appdb.BackupArtifact, dest *appdb.Node) (string, error) {
+	if dest == nil {
+		node, err := s.Store.GetNode(ctx, clusterID)
+		if err != nil || node == nil {
+			return "", errUnprocessable("local node is not enrolled")
+		}
+		dest = node
 	}
-	node, err := s.Store.GetNode(ctx, clusterID)
-	if err != nil || node == nil {
-		return "", errUnprocessable("local node is not enrolled")
+	local := s.applyLocal(ctx, clusterID, dest.ID)
+	if local && (s.VM == nil || s.Backup == nil || s.Storage == nil) {
+		return "", errUnavailable("backup agent is unavailable")
 	}
 	pools, err := s.Store.ListStoragePools(ctx, clusterID)
 	if err != nil || len(pools) == 0 {
@@ -1060,36 +1129,40 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 	}
 	newID := uuid.NewString()
 	newVolID := uuid.NewString()
-	hint := appdb.PoolHints([]appdb.StoragePool{pool})[0]
-	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
-		VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
-		Class: storage.ClassVMDisk, Size: vmspec.DefaultDiskBytes, Format: storage.FormatQCOW2,
-	}, hint)
-	if err != nil && !strings.Contains(err.Error(), "duplicate") {
-		return "", err
-	}
-	backend := res.Handle.BackendRef
-	if backend == "" {
-		backend = path.Join("volumes", storage.ClassVMDisk, newVolID+".qcow2")
+	backend := path.Join("volumes", storage.ClassVMDisk, newVolID+".qcow2")
+	volStatus := storage.StatusUnavailable
+	if local {
+		hint := appdb.PoolHints([]appdb.StoragePool{pool})[0]
+		res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
+			VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
+			Class: storage.ClassVMDisk, Size: vmspec.DefaultDiskBytes, Format: storage.FormatQCOW2,
+		}, hint)
+		if err != nil && !strings.Contains(err.Error(), "duplicate") {
+			return "", err
+		}
+		if res.Handle.BackendRef != "" {
+			backend = res.Handle.BackendRef
+		}
+		diskPath, err := storage.JoinUnder(pool.RootPath, backend)
+		if err != nil {
+			return "", errConflict("volume locator is invalid")
+		}
+		srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
+		if err != nil {
+			return "", err
+		}
+		defer cleanup()
+		if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, srcPath, diskPath); err != nil {
+			return "", err
+		}
+		volStatus = storage.StatusAvailable
 	}
 	newVol := appdb.Volume{
-		ID: newVolID, ClusterID: clusterID, NodeID: node.ID, PoolID: pool.ID,
+		ID: newVolID, ClusterID: clusterID, NodeID: dest.ID, PoolID: pool.ID,
 		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
-		SizeBytes: vmspec.DefaultDiskBytes, Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: backend,
+		SizeBytes: vmspec.DefaultDiskBytes, Status: volStatus, BackendType: storage.BackendDirectory, BackendRef: backend,
 	}
 	if err := s.Store.CreateVolume(ctx, newVol); err != nil {
-		return "", err
-	}
-	dest, err := storage.JoinUnder(pool.RootPath, newVol.BackendRef)
-	if err != nil {
-		return "", errConflict("volume locator is invalid")
-	}
-	srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
-	if err != nil {
-		return "", err
-	}
-	defer cleanup()
-	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, srcPath, dest); err != nil {
 		return "", err
 	}
 	spec := vmspec.Spec{
@@ -1104,10 +1177,14 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 		return "", err
 	}
 	row := appdb.Workload{
-		ID: newID, ClusterID: clusterID, NodeID: node.ID, OwnerNodeID: node.ID, DesiredNodeID: node.ID,
+		ID: newID, ClusterID: clusterID, NodeID: dest.ID, OwnerNodeID: dest.ID, DesiredNodeID: dest.ID,
 		Name: spec.Name, Kind: vmspec.KindVM, Status: qemu.StatusStopped, DesiredPower: "running",
 		CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, SpecJSON: vmspec.MustJSON(spec), Firmware: spec.Firmware,
 		MigrateBlockers: json.RawMessage(`[]`),
+	}
+	if !local {
+		row.Status = "unavailable"
+		row.Reason = "cross-node restore recorded; dest agent is not connected"
 	}
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
 		return "", err
@@ -1119,6 +1196,9 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 	_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, NetworkID: nets[0].ID, Model: vmspec.NICModelVirtio,
 	})
+	if !local {
+		return newID, nil
+	}
 	if _, err := s.reprepareVM(ctx, clusterID, row); err != nil {
 		return "", err
 	}

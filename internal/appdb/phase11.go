@@ -4,27 +4,31 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
 const (
-	BackupRunning       = "running"
-	BackupSucceeded     = "succeeded"
-	BackupFailed        = "failed"
-	BackupLocal         = "local"
-	BackupNFS           = "nfs"
-	BackupSMB           = "smb"
-	BackupS3            = "s3"
-	BackupR2            = "r2"
-	BackupAWS           = "aws"
-	BackupB2            = "b2"
-	BackupMinIO         = "minio"
-	BackupAvailable     = "available"
-	BackupUnavailable   = "unavailable"
-	BackupNotConfigured = "not_configured"
-	BackupNightly       = "nightly"
-	BackupUnverified    = "unverified"
-	BackupVerified      = "verified"
+	BackupRunning          = "running"
+	BackupSucceeded        = "succeeded"
+	BackupFailed           = "failed"
+	BackupLocal            = "local"
+	BackupNFS              = "nfs"
+	BackupSMB              = "smb"
+	BackupS3               = "s3"
+	BackupR2               = "r2"
+	BackupAWS              = "aws"
+	BackupB2               = "b2"
+	BackupMinIO            = "minio"
+	BackupAvailable        = "available"
+	BackupUnavailable      = "unavailable"
+	BackupNotConfigured    = "not_configured"
+	BackupNightly          = "nightly"
+	BackupUnverified       = "unverified"
+	BackupVerified         = "verified"
+	ArtifactLocalityLocal  = "local"
+	ArtifactLocalityObject = "object"
+	ArtifactLocalityPull   = "pull"
 )
 
 // BackupTarget is a destination for independent copies. Password and encryption keys are never stored on this row.
@@ -91,11 +95,34 @@ type BackupArtifact struct {
 	TransferredBytes    int64
 	ParentArtifactID    string
 	ObjectKey           string
+	Locality            string
+	PullURL             string
 	VerifyStatus        string
 	VerifyError         string
 	LastTestedAt        *time.Time
 	ThrowawayWorkloadID string
 	CreatedAt           time.Time
+}
+
+// FillArtifactLocality sets locality and pull URL from locator or object key.
+// Pull URL is a locator without credentials. Dest agents pull later; this row is not a secret.
+func FillArtifactLocality(a *BackupArtifact) {
+	if a == nil {
+		return
+	}
+	if a.Locality == "" {
+		switch {
+		case a.ObjectKey != "" || strings.HasPrefix(a.Locator, "s3://"):
+			a.Locality = ArtifactLocalityObject
+		case a.PullURL != "":
+			a.Locality = ArtifactLocalityPull
+		default:
+			a.Locality = ArtifactLocalityLocal
+		}
+	}
+	if a.PullURL == "" && a.Locality != ArtifactLocalityLocal && a.Locator != "" {
+		a.PullURL = a.Locator
+	}
 }
 
 func (m *Memory) CreateBackupTarget(_ context.Context, t BackupTarget, password, encryptionKey string) error {
@@ -273,6 +300,7 @@ func (m *Memory) CreateBackupArtifact(_ context.Context, a BackupArtifact) error
 	if a.VerifyStatus == "" {
 		a.VerifyStatus = BackupUnverified
 	}
+	FillArtifactLocality(&a)
 	m.backupArtifacts[a.ID] = a
 	return nil
 }
@@ -297,6 +325,7 @@ func (m *Memory) ListBackupArtifacts(_ context.Context, clusterID string) ([]Bac
 	var out []BackupArtifact
 	for _, a := range m.backupArtifacts {
 		if a.ClusterID == clusterID {
+			FillArtifactLocality(&a)
 			out = append(out, a)
 		}
 	}
@@ -321,6 +350,9 @@ func (m *Memory) ListBackupArtifactsForWorkload(_ context.Context, clusterID, wo
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	for i := range out {
+		FillArtifactLocality(&out[i])
+	}
 	return out, nil
 }
 
@@ -332,6 +364,7 @@ func (m *Memory) GetBackupArtifact(_ context.Context, clusterID, id string) (*Ba
 		return nil, nil
 	}
 	cp := a
+	FillArtifactLocality(&cp)
 	return &cp, nil
 }
 

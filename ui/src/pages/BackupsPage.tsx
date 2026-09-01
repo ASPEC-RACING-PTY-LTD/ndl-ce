@@ -3,16 +3,19 @@ import {
   ApiError,
   createBackupPolicy,
   createBackupTarget,
+  exportBackupDR,
   listBackupArtifacts,
   listBackupPolicies,
   listBackupRuns,
   listBackupTargets,
+  listNodes,
   listWorkloads,
   restoreBackupArtifact,
   restoreBackupFile,
   runBackup,
   verifyBackupArtifact,
 } from "../api/client";
+import type { NodeSummary } from "../api/phase2";
 import type { Workload } from "../api/phase5";
 import type {
   BackupArtifact,
@@ -21,6 +24,7 @@ import type {
   BackupTarget,
   CreateBackupPolicyRequest,
   CreateBackupTargetRequest,
+  RestoreBackupRequest,
 } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { formatBytes, formatWhen, honestStatus } from "../format";
@@ -90,6 +94,7 @@ export function BackupsPage() {
   const [runs, setRuns] = useState<BackupRun[] | null>(null);
   const [artifacts, setArtifacts] = useState<BackupArtifact[] | null>(null);
   const [workloads, setWorkloads] = useState<Workload[]>([]);
+  const [nodes, setNodes] = useState<NodeSummary[]>([]);
   const [loadState, setLoadState] = useState<"collecting" | "ready" | "unavailable">("collecting");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -117,20 +122,23 @@ export function BackupsPage() {
   const [runPolicyId, setRunPolicyId] = useState("");
   const [filePath, setFilePath] = useState("/etc/hostname");
   const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [restoreNodeId, setRestoreNodeId] = useState("");
 
   async function reload() {
-    const [t, p, r, a, w] = await Promise.all([
+    const [t, p, r, a, w, n] = await Promise.all([
       listBackupTargets(),
       listBackupPolicies(),
       listBackupRuns(),
       listBackupArtifacts(),
       listWorkloads(),
+      listNodes(),
     ]);
     setTargets(t.items ?? []);
     setPolicies(p.items ?? []);
     setRuns(r.items ?? []);
     setArtifacts(a.items ?? []);
     setWorkloads(w.items ?? []);
+    setNodes(n ?? []);
     setLoadState("ready");
   }
 
@@ -293,10 +301,33 @@ export function BackupsPage() {
     setBusy(true);
     setError(null);
     try {
-      await restoreBackupArtifact(artifact.id, { mode });
+      const body: RestoreBackupRequest = { mode };
+      if (restoreNodeId) {
+        body.target_node_id = restoreNodeId;
+      }
+      await restoreBackupArtifact(artifact.id, body);
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Restore failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDRExport() {
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await exportBackupDR();
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ndl-dr-export-${out.cluster_id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "DR export failed");
     } finally {
       setBusy(false);
     }
@@ -766,17 +797,45 @@ export function BackupsPage() {
             <p className="muted">
               Restore as new creates a new workload UUID. Restore replace overwrites the existing workload and requires
               confirmation. Catalog without verify stays Unverified. Throwaway restore tests must not touch the source
-              workload.
+              workload. Dest node is the control node unless a worker is selected. Restore onto a worker records the
+              catalog and does not start a second copy on this control node.
             </p>
             {mutate ? (
-              <Field
-                id="backup-restore-file-path"
-                label="Guest file path"
-                value={filePath}
-                onChange={(e) => setFilePath(e.target.value)}
-                autoComplete="off"
-                hint="Used by Restore file. Traversal is refused. libguestfs must be installed on the agent."
-              />
+              <>
+                <div className="field">
+                  <label className="field-label" htmlFor="backup-restore-node">
+                    Restore dest node
+                  </label>
+                  <select
+                    id="backup-restore-node"
+                    className="field-input"
+                    value={restoreNodeId}
+                    onChange={(e) => setRestoreNodeId(e.target.value)}
+                  >
+                    <option value="">This control node</option>
+                    {nodes
+                      .filter((n) => n.status !== "revoked")
+                      .map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.name || n.id} ({n.role || "node"})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div className="btn-row">
+                  <button className="btn" type="button" disabled={busy} onClick={() => void onDRExport()}>
+                    Export DR metadata
+                  </button>
+                </div>
+                <Field
+                  id="backup-restore-file-path"
+                  label="Guest file path"
+                  value={filePath}
+                  onChange={(e) => setFilePath(e.target.value)}
+                  autoComplete="off"
+                  hint="Used by Restore file. Traversal is refused. libguestfs must be installed on the agent."
+                />
+              </>
             ) : null}
             {filePreview ? (
               <pre className="mono" aria-live="polite">
@@ -798,6 +857,7 @@ export function BackupsPage() {
                       <th>Transferred</th>
                       <th>Encrypted</th>
                       <th>Format</th>
+                      <th>Locality</th>
                       <th>Checksum</th>
                       <th>Verify</th>
                       <th>Last tested</th>
@@ -814,6 +874,7 @@ export function BackupsPage() {
                         <td>{art.transferred_bytes != null ? formatBytes(art.transferred_bytes) : "None"}</td>
                         <td>{art.encrypted ? "Client-side" : "No"}</td>
                         <td>{art.format}</td>
+                        <td>{art.locality || "local"}</td>
                         <td className="mono">{art.checksum_sha256}</td>
                         <td>{verifyStatusLabel(art.verify_status)}</td>
                         <td>{formatWhen(art.last_tested_at)}</td>

@@ -973,6 +973,8 @@ export interface BackupArtifact {
   verify_error?: string;
   last_tested_at?: string;
   throwaway_workload_id?: string;
+  locality?: "local" | "object" | "pull";
+  pull_url?: string;
 }
 
 export interface BackupArtifactListResponse {
@@ -981,6 +983,47 @@ export interface BackupArtifactListResponse {
 
 export interface RestoreBackupRequest {
   mode: "new" | "replace";
+  target_node_id?: string;
+}
+
+export interface DRExportNode {
+  id: string;
+  name: string;
+  role: string;
+  hostname?: string;
+  revoked?: boolean;
+  revoked_at?: string;
+}
+
+export interface DRExportWorkload {
+  id: string;
+  name: string;
+  kind: string;
+  node_id: string;
+  owner_node_id?: string;
+  desired_node_id?: string;
+  status?: string;
+}
+
+export interface DRExportTarget {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  locator?: string;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  prefix?: string;
+}
+
+export interface DRExportResponse {
+  cluster_id: string;
+  exported_at: string;
+  nodes: DRExportNode[];
+  workloads: DRExportWorkload[];
+  artifacts: BackupArtifact[];
+  targets: DRExportTarget[];
 }
 
 export interface VerifyBackupRequest {
@@ -1588,6 +1631,8 @@ export type ListBackupPoliciesPath = "/api/v1/backups/policies";
 export type ListBackupRunsPath = "/api/v1/backups/runs";
 
 export type ListBackupArtifactsPath = "/api/v1/backups/artifacts";
+
+export type ExportBackupDRPath = "/api/v1/backups/dr-export";
 
 export type RunBackupPath = "/api/v1/backups/run";
 

@@ -714,6 +714,8 @@ describe("App", () => {
     expect(
       screen.getByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
     ).toBeVisible();
+    expect(screen.getByLabelText(/^restore dest node$/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^export dr metadata$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^restore as new$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^restore replace$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^verify$/i })).toBeVisible();

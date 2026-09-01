@@ -980,6 +980,10 @@ export async function restoreBackupArtifact(
   );
 }
 
+export async function exportBackupDR(): Promise<import("../generated/openapi").DRExportResponse> {
+  return readJson(await request("/backups/dr-export"));
+}
+
 export async function verifyBackupArtifact(
   id: string,
   body: import("../generated/openapi").VerifyBackupRequest,

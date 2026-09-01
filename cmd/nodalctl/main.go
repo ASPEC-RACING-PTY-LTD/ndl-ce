@@ -105,7 +105,8 @@ func run(args []string) error {
   backup target list
   backup target create --kind r2 --name NAME --endpoint URL --bucket BUCKET --username KEY --password SECRET [--prefix PREFIX] [--region REGION] [--no-check-bucket]
   backup run --workload ID --target ID [--policy ID]
-  backup restore --artifact ID --mode new|replace [--confirm restore]
+  backup restore --artifact ID --mode new|replace [--node ID] [--confirm restore]
+  backup dr-export
   backup verify --artifact ID [--mode open|throwaway]
   backup restore-file --artifact ID --path PATH
   update check
@@ -1164,7 +1165,7 @@ func cmdSnapshot(args []string) error {
 
 func cmdBackup(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: nodalctl backup target|run|restore|verify|restore-file")
+		return fmt.Errorf("usage: nodalctl backup target|run|restore|dr-export|verify|restore-file")
 	}
 	switch args[0] {
 	case "target":
@@ -1185,9 +1186,15 @@ func cmdBackup(args []string) error {
 			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
 		}
 		if f["artifact"] == "" || (f["mode"] != "new" && f["mode"] != "replace") {
-			return fmt.Errorf("usage: nodalctl backup restore --artifact ID --mode new|replace [--confirm restore]")
+			return fmt.Errorf("usage: nodalctl backup restore --artifact ID --mode new|replace [--node ID] [--confirm restore]")
 		}
-		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore", map[string]any{"mode": f["mode"]}, true)
+		body := map[string]any{"mode": f["mode"]}
+		if f["node"] != "" {
+			body["target_node_id"] = f["node"]
+		}
+		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore", body, true)
+	case "dr-export":
+		return cmdGet("/api/v1/backups/dr-export")
 	case "verify":
 		f := parseFlags(args[1:])
 		if f["artifact"] == "" {
@@ -1208,7 +1215,7 @@ func cmdBackup(args []string) error {
 		}
 		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore-file", map[string]any{"path": f["path"]}, true)
 	default:
-		return fmt.Errorf("usage: nodalctl backup target|run|restore|verify|restore-file")
+		return fmt.Errorf("usage: nodalctl backup target|run|restore|dr-export|verify|restore-file")
 	}
 }
 

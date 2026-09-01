@@ -226,6 +226,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/backups/policies", s.createBackupPolicy)
 	mux.HandleFunc("GET /api/v1/backups/runs", s.listBackupRuns)
 	mux.HandleFunc("GET /api/v1/backups/artifacts", s.listBackupArtifacts)
+	mux.HandleFunc("GET /api/v1/backups/dr-export", s.exportBackupDR)
 	mux.HandleFunc("POST /api/v1/backups/run", s.runBackup)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore", s.restoreBackup)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/verify", s.verifyBackupArtifact)

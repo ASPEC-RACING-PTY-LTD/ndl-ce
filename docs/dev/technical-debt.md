@@ -213,6 +213,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Live migrate of VMs compiled with -cpu host is refused. Why not blocking: the architecture records host CPU as a single-node default; offline migrate still moves the guest.
 - LOW. Physical two-box live ping is not in this Cloud job. Why not blocking: QMP migrate and incoming defer are unit-tested; the roadmap names fake migrate as the Cloud test.
 
+## Phase 33
+
+- MEDIUM. Dest agent pull of object artifacts is not wired. Why not blocking: restore onto a worker records the catalog and refuses to copy disks onto the control node; dest Execute remains the same honesty gate as migrate.
+- LOW. ZFS send artifacts still refuse qemu-img restore. Why not blocking: Phase 23 already stores send streams; zfs recv restore is a later storage path.
+- LOW. Live R2 restore after losing a physical node is not in this Cloud job. Why not blocking: source-down restore onto the control fixture plus DR export without credentials cover the documented runbook.
+
 
 
 

@@ -1964,6 +1964,19 @@ paths:
                 $ref: "#/components/schemas/BackupArtifactListResponse"
         "401":
           description: Unauthenticated
+  /backups/dr-export:
+    get:
+      operationId: exportBackupDR
+      summary: Export backup catalog metadata for disaster recovery without credentials
+      responses:
+        "200":
+          description: Cluster backup catalog without secrets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DRExportResponse"
+        "401":
+          description: Unauthenticated
   /backups/run:
     post:
       operationId: runBackup
@@ -1994,7 +2007,7 @@ paths:
   /backups/artifacts/{id}/restore:
     post:
       operationId: restoreBackupArtifact
-      summary: Restore a backup artifact as a new workload or replace an existing one
+      summary: Restore a backup artifact as a new workload or replace an existing one. Dest is target_node_id.
       parameters:
         - name: id
           in: path
@@ -5141,6 +5154,16 @@ components:
           type: string
         throwaway_workload_id:
           type: string
+        locality:
+          type: string
+          enum:
+            - local
+            - object
+            - pull
+          description: local path, object key, or dest pull URL. Credentials are never stored here.
+        pull_url:
+          type: string
+          description: Locator dest can pull. No access keys. Dest agent pull is not wired in this phase.
     BackupArtifactListResponse:
       type: object
       additionalProperties: false
@@ -5163,6 +5186,110 @@ components:
             - new
             - replace
           description: new creates a new workload UUID. replace overwrites the existing workload and requires X-Nodal-Confirm restore.
+        target_node_id:
+          type: string
+          description: Dest node for restore new. Empty is the control node. Replace stays on the current node.
+    DRExportNode:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - role
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        hostname:
+          type: string
+        revoked:
+          type: boolean
+        revoked_at:
+          type: string
+    DRExportWorkload:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - node_id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        node_id:
+          type: string
+        owner_node_id:
+          type: string
+        desired_node_id:
+          type: string
+        status:
+          type: string
+    DRExportTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        locator:
+          type: string
+        endpoint:
+          type: string
+        region:
+          type: string
+        bucket:
+          type: string
+        prefix:
+          type: string
+    DRExportResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - cluster_id
+        - exported_at
+        - nodes
+        - workloads
+        - artifacts
+        - targets
+      properties:
+        cluster_id:
+          type: string
+        exported_at:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DRExportNode"
+        workloads:
+          type: array
+          items:
+            $ref: "#/components/schemas/DRExportWorkload"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupArtifact"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/DRExportTarget"
     VerifyBackupRequest:
       type: object
       additionalProperties: false
