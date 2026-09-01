@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
+	"github.com/no-dal/ndl-ce/internal/guest"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
@@ -152,4 +153,20 @@ func (c Client) ApplyVFIO(ctx context.Context, id string, hosts []string) error 
 		}},
 	}))
 	return err
+}
+
+func (c Client) GuestStatus(ctx context.Context, id string) (guest.Status, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_VmGuest{VmGuest: &agentv1.VMGuest{
+			WorkloadId: id, Action: "status",
+		}},
+	}))
+	if err != nil {
+		return guest.Status{}, err
+	}
+	var out guest.Status
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return guest.Status{}, err
+	}
+	return out, nil
 }

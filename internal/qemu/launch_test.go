@@ -50,6 +50,9 @@ func TestCompileLaunchDeterministicAndPinsABI(t *testing.T) {
 	if !strings.Contains(joined, GuestAgentName) || !strings.Contains(joined, "mode=control") {
 		t.Fatal(joined)
 	}
+	if !strings.Contains(joined, NodalGuestName) || !strings.Contains(joined, "id=nga0") {
+		t.Fatal(joined)
+	}
 	if !strings.Contains(joined, "script=no") || !strings.Contains(joined, launch.NICs[0].MAC) {
 		t.Fatal(joined)
 	}

@@ -21,6 +21,7 @@ const (
 	DefaultMemory     = 128 << 20
 	QEMUUser          = "ndl-qemu"
 	GuestAgentName    = "org.qemu.guest_agent.0"
+	NodalGuestName    = "org.nodal.guest.0"
 )
 
 const (
@@ -77,6 +78,7 @@ type Observed struct {
 	SerialSocket string            `json:"serial_socket"`
 	VNCSocket    string            `json:"vnc_socket"`
 	QGASocket    string            `json:"qga_socket"`
+	GuestSocket  string            `json:"guest_socket"`
 	RunningAs    string            `json:"running_as"`
 	PCI          map[string]string `json:"pci,omitempty"`
 	PCILiveMatch *bool             `json:"pci_live_match,omitempty"`

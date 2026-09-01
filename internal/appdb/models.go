@@ -200,6 +200,9 @@ type Store interface {
 	CreateUSBAttachment(ctx context.Context, a USBAttachment) error
 	ListUSBAttachments(ctx context.Context, clusterID, workloadID string) ([]USBAttachment, error)
 	DeleteUSBAttachment(ctx context.Context, clusterID, id string) error
+
+	UpsertGuestObservation(ctx context.Context, g GuestObservation) error
+	GetGuestObservation(ctx context.Context, clusterID, workloadID string) (*GuestObservation, error)
 }
 
 // Cluster is the appliance cluster of one.

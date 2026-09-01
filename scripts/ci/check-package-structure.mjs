@@ -12,6 +12,7 @@ const required = [
   "packaging/debian/ndl-agent.install",
   "packaging/debian/ndl-ui.install",
   "packaging/debian/nodalctl.install",
+  "packaging/debian/ndl-guest.install",
   "packaging/debian/ndl-control.postinst",
   "packaging/debian/ndl-control.postrm",
   "packaging/debian/ndl-agent.postinst",
@@ -82,12 +83,18 @@ if (!changelog.includes("nodal (0.1.16)") || !changelog.includes("Phase 17 opera
 if (!changelog.includes("nodal (0.1.17)") || !changelog.includes("Phase 18 VM advanced")) {
   errors.push("changelog must include nodal (0.1.17) Phase 18 VM advanced");
 }
+if (!changelog.includes("nodal (0.1.18)") || !changelog.includes("Phase 19 No-dal Guest Agent")) {
+  errors.push("changelog must include nodal (0.1.18) Phase 19 No-dal Guest Agent");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")
   : "";
 for (const pkg of ["Package: nodal", "Package: ndl-control", "Package: ndl-agent", "Package: ndl-ui", "Package: nodalctl"]) {
   if (!control.includes(pkg)) errors.push(`debian/control missing ${pkg}`);
+}
+if (!control.includes("Package: ndl-guest")) {
+  errors.push("debian/control missing Package: ndl-guest");
 }
 if (!/Depends:\s*ndl-control,\s*ndl-agent,\s*ndl-ui,\s*nodalctl/.test(control)) {
   errors.push("nodal metapackage must depend on ndl-control, ndl-agent, ndl-ui, nodalctl");
@@ -209,6 +216,25 @@ if (!rules.includes("nodal-ct@.service")) {
 }
 if (!rules.includes("./cmd/ndl-qemu-launch")) {
   errors.push("debian/rules must build ndl-qemu-launch");
+}
+if (!rules.includes("./cmd/ndl-guest")) {
+  errors.push("debian/rules must build ndl-guest");
+}
+if (!rules.includes("usr/sbin/ndl-guest")) {
+  errors.push("debian/rules must install ndl-guest");
+}
+if (!existsSync("cmd/ndl-guest/main.go")) {
+  errors.push("missing cmd/ndl-guest/main.go");
+}
+if (!existsSync("systemd/ndl-guest.service")) {
+  errors.push("missing systemd/ndl-guest.service");
+}
+const qemuGo =
+  (existsSync("internal/qemu/launch.go") ? readFileSync("internal/qemu/launch.go", "utf8") : "") +
+  (existsSync("internal/qemu/types.go") ? readFileSync("internal/qemu/types.go", "utf8") : "") +
+  (existsSync("internal/qemu/argv.go") ? readFileSync("internal/qemu/argv.go", "utf8") : "");
+if (!qemuGo.includes("org.nodal.guest.0")) {
+  errors.push("CompileLaunch must attach org.nodal.guest.0");
 }
 if (!rules.includes("usr/sbin/ndl-qemu-launch")) {
   errors.push("debian/rules must install ndl-qemu-launch to usr/sbin/ndl-qemu-launch");

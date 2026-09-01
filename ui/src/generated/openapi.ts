@@ -949,6 +949,28 @@ export interface ChannelCreateRequest {
   smtp_password?: string;
 }
 
+export interface WorkloadGuestResponse {
+  workload_id: string;
+  qemu_ga: GuestChannelState;
+  nodal_ga: GuestChannelState;
+  guest_os?: string;
+  guest_arch?: string;
+  ipv4?: string[];
+  observed_at: string;
+  install?: GuestInstallHints;
+}
+
+export interface GuestChannelState {
+  state: "ok" | "not_installed" | "stale" | "unavailable";
+  version?: string;
+  reason?: string;
+}
+
+export interface GuestInstallHints {
+  linux?: string;
+  windows?: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -1018,6 +1040,8 @@ export type ListNetworkReservationsPath = "/api/v1/networks/{id}/reservations";
 export type ListWorkloadsPath = "/api/v1/workloads";
 
 export type GetWorkloadPath = "/api/v1/workloads/{id}";
+
+export type GetWorkloadGuestPath = "/api/v1/workloads/{id}/guest";
 
 export type StartWorkloadPath = "/api/v1/workloads/{id}/start";
 

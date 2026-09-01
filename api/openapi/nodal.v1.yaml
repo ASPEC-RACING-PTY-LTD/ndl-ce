@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.17
-  description: Phase 18 VM advanced plus prior northbound API. Templates, clone, import/export, USB and generic PCI passthrough.
+  version: 0.1.18
+  description: Phase 19 No-dal Guest Agent plus prior northbound API. qemu-ga freeze/shutdown plus optional nodal_ga for Files and PTY.
 servers:
   - url: /api/v1
 paths:
@@ -716,6 +716,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/{id}/guest:
+    get:
+      operationId: getWorkloadGuest
+      summary: qemu-ga and nodal_ga status for a VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Honest guest agent states
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadGuestResponse"
   /workloads/{id}/start:
     post:
       operationId: startWorkload
@@ -4546,5 +4563,57 @@ components:
         smtp_username:
           type: string
         smtp_password:
+          type: string
+    WorkloadGuestResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+        - qemu_ga
+        - nodal_ga
+        - observed_at
+      properties:
+        workload_id:
+          type: string
+        qemu_ga:
+          $ref: "#/components/schemas/GuestChannelState"
+        nodal_ga:
+          $ref: "#/components/schemas/GuestChannelState"
+        guest_os:
+          type: string
+        guest_arch:
+          type: string
+        ipv4:
+          type: array
+          items:
+            type: string
+        observed_at:
+          type: string
+        install:
+          $ref: "#/components/schemas/GuestInstallHints"
+    GuestChannelState:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+      properties:
+        state:
+          type: string
+          enum:
+            - ok
+            - not_installed
+            - stale
+            - unavailable
+        version:
+          type: string
+        reason:
+          type: string
+    GuestInstallHints:
+      type: object
+      additionalProperties: false
+      properties:
+        linux:
+          type: string
+        windows:
           type: string
 

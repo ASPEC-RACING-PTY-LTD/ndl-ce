@@ -28,11 +28,18 @@ type termSession interface {
 	Close()
 }
 
-func startTermSession(ctx context.Context, req termRequest) (termSession, error) {
-	if req.TargetKind == "vm" {
+func startTermSession(ctx context.Context, h *Handler, req termRequest) (termSession, error) {
+	switch strings.TrimSpace(req.TargetKind) {
+	case "vm-guest":
+		return startGuestPTY(ctx, h, req)
+	case "vm":
+		if isGuestJail(req.JailRoot) {
+			return startGuestPTY(ctx, h, req)
+		}
 		return startVMConsole(ctx, req)
+	default:
+		return startPTYSession(ctx, req)
 	}
-	return startPTYSession(ctx, req)
 }
 
 func hostShellArgv() []string {

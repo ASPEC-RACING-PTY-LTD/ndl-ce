@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/guest"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -31,6 +32,7 @@ type VMRPC interface {
 	ApplyUSB(ctx context.Context, id string, usbs []vmspec.LaunchUSB) error
 	HotplugUSB(ctx context.Context, id string, add bool, usb vmspec.LaunchUSB) error
 	ApplyVFIO(ctx context.Context, id string, hosts []string) error
+	GuestStatus(ctx context.Context, id string) (guest.Status, error)
 }
 
 type vmUnavailable struct{}
@@ -56,6 +58,9 @@ func (vmUnavailable) HotplugUSB(context.Context, string, bool, vmspec.LaunchUSB)
 }
 func (vmUnavailable) ApplyVFIO(context.Context, string, []string) error {
 	return errUnavailable("vm agent is unavailable")
+}
+func (vmUnavailable) GuestStatus(context.Context, string) (guest.Status, error) {
+	return guest.Status{}, errUnavailable("vm agent is unavailable")
 }
 
 func AdaptVM(client any) VMRPC {

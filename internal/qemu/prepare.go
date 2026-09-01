@@ -194,7 +194,7 @@ func (e *Engine) DeleteRuntime(ctx context.Context, id string) error {
 		e.runtimeDir(id) + "/vars.fd",
 		e.runtimeDir(id) + "/cidata-user-data",
 		e.runtimeDir(id) + "/cidata-network-config",
-		e.vncPath(id), e.serialPath(id), e.qmpPath(id), e.qgaPath(id),
+		e.vncPath(id), e.serialPath(id), e.qmpPath(id), e.qgaPath(id), e.guestPath(id),
 	}
 	if launch.NoCloud != nil && launch.NoCloud.ImagePath != "" {
 		known = append(known, launch.NoCloud.ImagePath)

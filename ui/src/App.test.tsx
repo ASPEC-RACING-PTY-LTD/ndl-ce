@@ -370,11 +370,26 @@ describe("App", () => {
         status: 200,
         body: { id: "vm-1", name: "web", kind: "vm", status: "running", firmware: "bios", pending_restart: false },
       },
+      "/api/v1/workloads/vm-1/guest": {
+        status: 200,
+        body: {
+          workload_id: "vm-1",
+          qemu_ga: { state: "unavailable", reason: "vm is stopped" },
+          nodal_ga: { state: "not_installed", reason: "nodal guest is not connected" },
+          observed_at: "2026-09-01T00:00:00Z",
+          install: {
+            linux: "Install the ndl-guest package inside the guest and enable ndl-guest.service.",
+            windows: "Install ndl-guest.exe inside the guest.",
+          },
+        },
+      },
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^web$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /console/i })).toBeVisible();
-    expect(screen.getByText(/no-dal guest agent required/i)).toBeVisible();
+    expect(screen.getByRole("heading", { name: /guest agent/i })).toBeVisible();
+    expect(screen.getByText(/not_installed/i)).toBeVisible();
+    expect(screen.getByText(/vm terminal and files stay disabled/i)).toBeVisible();
   });
 
   it("renders the certificates settings page for admin", async () => {

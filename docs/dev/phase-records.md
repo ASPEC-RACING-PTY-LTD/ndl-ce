@@ -110,5 +110,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest USB/PCI: none detected stays none detected. Secure Boot without host firmware is conflict, not a fake OVMF.
 - Follow-up: template deploy from frozen snapshot when the source VM is deleted; live QMP USB on appliance; physical VFIO of non-GPU PCI
 
+## Phase 19
+
+- Package: 0.1.18
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (org.nodal.guest.0 in frozen argv, fake Linux guest PTY banner, Windows subset shutdown/IP/files and no PTY, missing agent is not_installed not healthy, product VM Terminal/Files stay 422, Console still creates a ticket). FIXTURE: unix guest channel. NOT PHYSICALLY VALIDATED: virtio-serial in a real Linux/Windows guest, qemu-ga ping on hardware, Debian APT of ndl-guest
+- Honest guest state: missing sockets are unavailable; no reply is not_installed; qemu-ga remains freeze/shutdown
+- Follow-up: live virtio-serial on Debian 13; Windows PTY if a later subset lands in this phase on hardware
+
+
 
 

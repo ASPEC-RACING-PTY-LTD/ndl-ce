@@ -15,6 +15,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/guest"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -28,6 +29,7 @@ type fakeVM struct {
 	actions  []string
 	launch   vmspec.Launch
 	userData string
+	guest    guest.Status
 }
 
 func (f *fakeVM) PrepareVM(_ context.Context, req agentrpc.VMPrepareRequest) (qemu.Result, error) {
@@ -99,6 +101,26 @@ func (f *fakeVM) ApplyVFIO(_ context.Context, _ string, hosts []string) error {
 	}
 	f.launch.GPUs = gpus
 	return nil
+}
+
+func (f *fakeVM) GuestStatus(_ context.Context, id string) (guest.Status, error) {
+	if f.err != nil {
+		return guest.Status{}, f.err
+	}
+	st := f.guest
+	st.WorkloadID = id
+	if st.QEMUGA.State == "" {
+		st.QEMUGA.State = guest.StateUnavailable
+		st.QEMUGA.Reason = "vm is stopped"
+	}
+	if st.NodalGA.State == "" {
+		st.NodalGA.State = guest.StateNotInstalled
+		st.NodalGA.Reason = "nodal guest is not connected"
+	}
+	if st.ObservedAt.IsZero() {
+		st.ObservedAt = time.Now().UTC()
+	}
+	return st, nil
 }
 
 func TestVMCreateLifecycleDeletePreservesVolume(t *testing.T) {

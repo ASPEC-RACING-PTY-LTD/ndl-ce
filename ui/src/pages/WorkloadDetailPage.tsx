@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, listNodeUSB, patchWorkload, workloadAction } from "../api/client";
-import type { USBDeviceRow } from "../api/client";
+import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, getWorkloadGuest, listNodeUSB, patchWorkload, workloadAction } from "../api/client";
+import type { USBDeviceRow, WorkloadGuest } from "../api/client";
 import type { Workload } from "../api/phase5";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
@@ -29,12 +29,22 @@ export function WorkloadDetailPage() {
   const [busy, setBusy] = useState(false);
   const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
   const [usbAddr, setUsbAddr] = useState("");
+  const [guest, setGuest] = useState<WorkloadGuest | null>(null);
 
   async function reload() {
     const w = await getWorkload(id);
     setItem(w);
     setCpus(String(w.cpus ?? 1));
     setMemoryMiB(String(Math.round((w.memory_bytes ?? 256 * 1024 * 1024) / (1024 * 1024))));
+    if (w.kind === "vm") {
+      try {
+        setGuest(await getWorkloadGuest(w.id));
+      } catch {
+        setGuest(null);
+      }
+    } else {
+      setGuest(null);
+    }
     if (w.kind === "vm" && w.node_id) {
       const listed = await listNodeUSB(w.node_id);
       setUsbs(listed.items ?? []);
@@ -137,8 +147,37 @@ export function WorkloadDetailPage() {
             {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
           </nav>
           <p className="banner banner-warn" role="status">
-            No-dal Guest Agent required. VM Terminal and Files are introduced in a later platform phase.
+            VM Terminal and Files stay disabled until the Guest Agent is installed and a later platform phase enables those tabs.
           </p>
+          <article className="panel">
+            <h2>Guest Agent</h2>
+            <dl className="definition-list">
+              <div>
+                <dt>qemu-ga</dt>
+                <dd>{guest?.qemu_ga.state ?? "Collecting"}{guest?.qemu_ga.reason ? ` (${guest.qemu_ga.reason})` : ""}</dd>
+              </div>
+              <div>
+                <dt>No-dal Guest Agent</dt>
+                <dd>{guest?.nodal_ga.state ?? "Collecting"}{guest?.nodal_ga.version ? ` ${guest.nodal_ga.version}` : ""}{guest?.nodal_ga.reason ? ` (${guest.nodal_ga.reason})` : ""}</dd>
+              </div>
+              <div>
+                <dt>Guest OS</dt>
+                <dd>{guest?.guest_os || "Not reported"}</dd>
+              </div>
+              <div>
+                <dt>Guest IPv4</dt>
+                <dd>{guest?.ipv4?.length ? guest.ipv4.join(", ") : "Not reported"}</dd>
+              </div>
+            </dl>
+            {guest?.nodal_ga.state === "not_installed" || guest?.nodal_ga.state === "unavailable" || !guest ? (
+              <div>
+                <h3>Install inside the guest</h3>
+                <p>{guest?.install?.linux || "Install the ndl-guest package inside the Linux guest and enable ndl-guest.service. The virtio-serial channel org.nodal.guest.0 is attached to every No-dal VM."}</p>
+                <p>{guest?.install?.windows || "Install ndl-guest.exe inside Windows guests for shutdown, IP, and Files. PTY stays on Console."}</p>
+                <pre className="code-block">sudo apt install ndl-guest && sudo systemctl enable --now ndl-guest</pre>
+              </div>
+            ) : null}
+          </article>
         </>
       )}
       {error ? (

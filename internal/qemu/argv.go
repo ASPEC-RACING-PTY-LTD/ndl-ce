@@ -64,7 +64,8 @@ func (e *Engine) compile(spec Spec) ([]string, error) {
 	serial := e.serialPath(spec.WorkloadID)
 	vnc := e.vncPath(spec.WorkloadID)
 	qga := e.qgaPath(spec.WorkloadID)
-	for _, sock := range []string{qmp, serial, vnc, qga} {
+	nga := e.guestPath(spec.WorkloadID)
+	for _, sock := range []string{qmp, serial, vnc, qga, nga} {
 		if err := validateInterpolated("socket", sock); err != nil {
 			return nil, err
 		}
@@ -91,6 +92,8 @@ func (e *Engine) compile(spec Spec) ([]string, error) {
 		"-chardev", "socket,id=qga0,path=" + qga + ",server=on,wait=off",
 		"-device", "virtio-serial-pci,addr=" + serialAddr,
 		"-device", "virtserialport,chardev=qga0,name=" + GuestAgentName,
+		"-chardev", "socket,id=nga0,path=" + nga + ",server=on,wait=off",
+		"-device", "virtserialport,chardev=nga0,name=" + NodalGuestName,
 	}
 	for _, a := range argv {
 		if strings.ContainsAny(a, "\n\r\x00") {

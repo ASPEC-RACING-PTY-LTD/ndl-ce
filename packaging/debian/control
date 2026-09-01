@@ -41,3 +41,10 @@ Depends: ${misc:Depends}
 Description: No-dal command-line client
  Uses the same supported API as the web UI.
  Core package only.
+
+Package: ndl-guest
+Architecture: amd64
+Depends: ${misc:Depends}
+Description: No-dal Guest Agent for Linux VMs
+ Optional in-guest daemon for Files and PTY over org.nodal.guest.0.
+ Not required to create or start a VM. Not a host package dependency.

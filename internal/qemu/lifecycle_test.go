@@ -57,7 +57,7 @@ func TestCleanupFailedLaunchKeepsDiskAndLastApplied(t *testing.T) {
 	if err := os.MkdirAll(e.runtimeDir(id), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{e.qmpPath(id), e.serialPath(id), e.vncPath(id), e.qgaPath(id)} {
+	for _, p := range []string{e.qmpPath(id), e.serialPath(id), e.vncPath(id), e.qgaPath(id), e.guestPath(id)} {
 		if err := os.WriteFile(p, []byte("stale"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +74,7 @@ func TestCleanupFailedLaunchKeepsDiskAndLastApplied(t *testing.T) {
 	if _, err := os.Stat(e.argvPath(id)); err != nil {
 		t.Fatalf("frozen argv must remain: %v", err)
 	}
-	for _, p := range []string{e.qmpPath(id), e.serialPath(id), e.vncPath(id), e.qgaPath(id)} {
+	for _, p := range []string{e.qmpPath(id), e.serialPath(id), e.vncPath(id), e.qgaPath(id), e.guestPath(id)} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("stale socket %s must be removed", p)
 		}

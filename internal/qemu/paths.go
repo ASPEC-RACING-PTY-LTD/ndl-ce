@@ -54,6 +54,28 @@ func (e *Engine) qgaPath(id string) string {
 	return filepath.Join(e.runtimeDir(id), "qga.sock")
 }
 
+func (e *Engine) guestPath(id string) string {
+	return filepath.Join(e.runtimeDir(id), "guest.sock")
+}
+
+// GuestPath is the unix locator for org.nodal.guest.0.
+func (e *Engine) GuestPath(id string) string {
+	return e.guestPath(id)
+}
+
+// QGAPath is the unix locator for org.qemu.guest_agent.0.
+func (e *Engine) QGAPath(id string) string {
+	return e.qgaPath(id)
+}
+
+// GuestSocket is the unix locator for org.nodal.guest.0.
+func (e *Engine) GuestSocket(id string) (string, error) {
+	if err := ValidateWorkloadID(id); err != nil {
+		return "", err
+	}
+	return e.guestPath(id), nil
+}
+
 func (e *Engine) now() time.Time {
 	if e.Now != nil {
 		return e.Now()

@@ -28,6 +28,7 @@ const (
 	ApplyStop         = "stop"
 	ApplyUnsupported  = "unsupported"
 	GuestAgentChannel = "org.qemu.guest_agent.0"
+	NodalGuestChannel = "org.nodal.guest.0"
 )
 
 // Spec is user-facing desired VM intent. Paths, TAP names, unit names,

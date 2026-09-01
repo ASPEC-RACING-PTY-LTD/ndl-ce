@@ -122,6 +122,14 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Generic PCI attach reuses exclusive GPU assignment rows for IOMMU claims. Why not blocking: ParseGPUID and group listing still apply; GPU inventory remains on the GPU API.
 - LOW. Clone boot of a guest OS is not proven here. Why not blocking: clone materializes a new volume via qemu-img convert and starts the systemd unit through the existing VM lifecycle path.
 
+## Phase 19
+
+- MEDIUM. Live virtio-serial org.nodal.guest.0 is proven with a unix fixture, not a booted guest. Why not blocking: Cloud has no KVM guest OS; the protocol, agent mux, and Linux PTY banner are covered.
+- LOW. Windows PTY is honestly unimplemented. Why not blocking: roadmap allows a Files/shutdown/IP subset; product VM Terminal tabs remain Phase 20.
+- LOW. ndl-guest is an optional guest package and is not a host metapackage dependency. Why not blocking: VMs start without it.
+- LOW. GET /guest never emits stale in Cloud tests. Why not blocking: missing reply is not_installed and missing socket is unavailable; stale is for later observation aging.
+
+
 
 
 

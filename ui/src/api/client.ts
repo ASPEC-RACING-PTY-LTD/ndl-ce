@@ -350,6 +350,27 @@ export async function getWorkload(id: string): Promise<import("./phase5").Worklo
   return readJson(await request(`/workloads/${id}`));
 }
 
+export type GuestChannelState = {
+  state: "ok" | "not_installed" | "stale" | "unavailable";
+  version?: string;
+  reason?: string;
+};
+
+export type WorkloadGuest = {
+  workload_id: string;
+  qemu_ga: GuestChannelState;
+  nodal_ga: GuestChannelState;
+  guest_os?: string | null;
+  guest_arch?: string | null;
+  ipv4?: string[];
+  observed_at: string;
+  install?: { linux?: string; windows?: string };
+};
+
+export async function getWorkloadGuest(id: string): Promise<WorkloadGuest> {
+  return readJson(await request(`/workloads/${id}/guest`));
+}
+
 export async function createWorkload(
   body: {
     name: string;

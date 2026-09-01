@@ -171,7 +171,13 @@ message ExecuteRequest {
     GPUAssign gpu_assign = 26;
     ZFSPool zfs_pool = 27;
     VMHotplug vm_hotplug = 28;
+    VMGuest vm_guest = 29;
   }
+}
+
+message VMGuest {
+  string workload_id = 1;
+  string action = 2;
 }
 
 message HostUpdate {

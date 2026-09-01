@@ -36,7 +36,8 @@ func (e *Engine) CompileLaunch(launch vmspec.Launch) ([]string, error) {
 	serial := e.serialPath(launch.WorkloadID)
 	vnc := e.vncPath(launch.WorkloadID)
 	qga := e.qgaPath(launch.WorkloadID)
-	for _, sock := range []string{qmp, serial, vnc, qga} {
+	nga := e.guestPath(launch.WorkloadID)
+	for _, sock := range []string{qmp, serial, vnc, qga, nga} {
 		if err := validateInterpolated("socket", sock); err != nil {
 			return nil, err
 		}
@@ -90,6 +91,8 @@ func (e *Engine) CompileLaunch(launch vmspec.Launch) ([]string, error) {
 		"-chardev", "socket,id=qga0,path="+qga+",server=on,wait=off",
 		"-device", "virtio-serial-pci,id=virtio-serial0,addr="+serialPCI,
 		"-device", "virtserialport,chardev=qga0,name="+GuestAgentName,
+		"-chardev", "socket,id=nga0,path="+nga+",server=on,wait=off",
+		"-device", "virtserialport,chardev=nga0,name="+NodalGuestName,
 	)
 	if launch.Balloon {
 		addr := launch.PCI["balloon"]

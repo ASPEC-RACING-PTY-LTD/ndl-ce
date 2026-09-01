@@ -61,6 +61,7 @@ type Memory struct {
 	userPrefs         map[string]UserPrefs
 	vmTemplates       map[string]VMTemplate
 	usbAttachments    map[string]USBAttachment
+	guestObs          map[string]GuestObservation
 }
 
 // NewMemory returns an empty store.

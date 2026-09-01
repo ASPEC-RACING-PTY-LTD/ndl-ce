@@ -20,6 +20,13 @@ func (h *Handler) FilesOp(ctx context.Context, req *connect.Request[agentv1.File
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	if isGuestJail(root) {
+		raw, err := h.guestFilesOp(ctx, req.Msg.GetTargetId(), req.Msg.GetAction(), req.Msg.GetPath(), req.Msg.GetDestPath(), req.Msg.GetMode())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.FilesOpResponse{Ok: true, Message: "ok", ResultJson: raw}), nil
+	}
 	raw, err := runFilesOp(root, req.Msg.GetAction(), req.Msg.GetPath(), req.Msg.GetDestPath(), req.Msg.GetMode())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
@@ -44,6 +51,34 @@ func (h *Handler) FilesPut(ctx context.Context, stream *connect.ClientStream[age
 	root, err := h.resolveJail(begin.GetTargetKind(), begin.GetTargetId(), begin.GetJailRoot())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if isGuestJail(root) {
+		var buf []byte
+		var expected string
+		for stream.Receive() {
+			msg := stream.Msg()
+			if chunk := msg.GetChunk(); len(chunk) > 0 {
+				if len(chunk) > filesChunk || len(buf)+len(chunk) > filesChunk {
+					return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("chunk exceeds 8 MiB"))
+				}
+				buf = append(buf, chunk...)
+			}
+			if fin := msg.GetFinish(); fin != nil {
+				expected = fin.GetExpectedSha256()
+			}
+		}
+		if err := stream.Err(); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		raw, err := h.guestFilesPut(ctx, begin.GetTargetId(), begin.GetPath(), begin.GetMode(), buf)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		if expected != "" && !shaMatches(raw, expected) {
+			_, _ = h.guestFilesOp(ctx, begin.GetTargetId(), "delete", begin.GetPath(), "", 0)
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("sha256 mismatch"))
+		}
+		return connect.NewResponse(&agentv1.FilesOpResponse{Ok: true, Message: "ok", ResultJson: raw}), nil
 	}
 	pr, pw := io.Pipe()
 	type putFinish struct {
@@ -113,6 +148,13 @@ func (h *Handler) FilesGet(ctx context.Context, req *connect.Request[agentv1.Fil
 	if err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	if isGuestJail(root) {
+		data, sha, err := h.guestFilesGet(ctx, req.Msg.GetTargetId(), req.Msg.GetPath())
+		if err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return stream.Send(&agentv1.FilesGetResponse{Chunk: data, Sha256: sha})
+	}
 	err = readFileSHA(root, req.Msg.GetPath(), func(chunk []byte, sha string) error {
 		return stream.Send(&agentv1.FilesGetResponse{Chunk: chunk, Sha256: sha})
 	})
@@ -134,7 +176,7 @@ func (h *Handler) AttachTerminal(ctx context.Context, stream *connect.BidiStream
 	if err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	sess, err := startTermSession(ctx, termRequest{
+	sess, err := startTermSession(ctx, h, termRequest{
 		TargetKind: first.GetTargetKind(),
 		TargetID:   first.GetTargetId(),
 		JailRoot:   root,

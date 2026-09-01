@@ -47,7 +47,7 @@ func (e *Engine) ForceStop(ctx context.Context, id string) error {
 	return nil
 }
 
-// CleanupFailedLaunch removes stale QMP/serial/VNC/qga sockets when the unit
+// CleanupFailedLaunch removes stale QMP/serial/VNC/qga/guest sockets when the unit
 // is not running. It never deletes the VolumeHandle qcow2 and never deletes
 // qemu-last-applied.json (that file is identity).
 func (e *Engine) CleanupFailedLaunch(id string) error {
@@ -64,7 +64,7 @@ func (e *Engine) CleanupFailedLaunch(id string) error {
 			return nil
 		}
 	}
-	for _, p := range []string{e.qmpPath(id), e.serialPath(id), e.vncPath(id), e.qgaPath(id)} {
+	for _, p := range []string{e.qmpPath(id), e.serialPath(id), e.vncPath(id), e.qgaPath(id), e.guestPath(id)} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			return err
 		}

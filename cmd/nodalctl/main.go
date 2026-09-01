@@ -48,6 +48,7 @@ func run(args []string) error {
   network list
   network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
   network apply --id ID [--dry-run] [--confirm-ifname IF]
+  guest status --id ID
   workload list
   workload create --kind system-container --name NAME --image-pin PIN --pool-id ID --network-id ID [--cpus N] [--memory-bytes N] [--privileged]
   workload create --kind vm --name NAME --network-id ID [--pool-id ID] [--cpus N] [--memory-bytes N] [--firmware bios|uefi] [--cloud-image-id ID] [--iso-library-id ID] [--autostart] [--nocloud-user USER] [--nocloud-host HOST]
@@ -142,6 +143,11 @@ func run(args []string) error {
 		return cmdStorage(args[1:])
 	case "network":
 		return cmdNetwork(args[1:])
+	case "guest":
+		if len(args) < 2 || args[1] != "status" {
+			return fmt.Errorf("usage: nodalctl guest status --id ID")
+		}
+		return cmdGuestStatus(args[2:])
 	case "workload":
 		return cmdWorkload(args[1:])
 	case "lab":
@@ -236,6 +242,15 @@ func cmdGet(path string) error {
 	}
 	fmt.Println(string(resp))
 	return nil
+}
+
+func cmdGuestStatus(args []string) error {
+	f := parseFlags(args)
+	id := strings.TrimSpace(f["id"])
+	if id == "" {
+		return fmt.Errorf("usage: nodalctl guest status --id ID")
+	}
+	return cmdGet("/api/v1/workloads/" + id + "/guest")
 }
 
 func cmdRecover(args []string) error {

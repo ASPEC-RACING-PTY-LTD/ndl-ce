@@ -37,6 +37,9 @@ func TestCompilePinsMachineAndVolumeHandle(t *testing.T) {
 	if !strings.Contains(joined, GuestAgentName) {
 		t.Fatal(joined)
 	}
+	if !strings.Contains(joined, NodalGuestName) {
+		t.Fatal(joined)
+	}
 	if !strings.Contains(joined, "mode=control") {
 		t.Fatal("qmp control monitor required")
 	}

@@ -37,6 +37,7 @@ override_dh_auto_build:
 	$(GO_CD) go build -o $(GO_OUT)build/nodalctl ./cmd/nodalctl
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-network-rollback ./cmd/ndl-network-rollback
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-qemu-launch ./cmd/ndl-qemu-launch
+	$(GO_CD) go build -o $(GO_OUT)build/ndl-guest ./cmd/ndl-guest
 
 override_dh_auto_test:
 	true
@@ -48,6 +49,7 @@ override_dh_auto_install:
 	install -m 0755 build/ndl-control debian/tmp/usr/sbin/ndl-control
 	install -m 0755 build/ndl-agent debian/tmp/usr/sbin/ndl-agent
 	install -m 0755 build/ndl-qemu-launch debian/tmp/usr/sbin/ndl-qemu-launch
+	install -m 0755 build/ndl-guest debian/tmp/usr/sbin/ndl-guest
 	install -m 0755 build/ndl-network-rollback debian/tmp/usr/lib/ndl/ndl-network-rollback
 	install -m 0755 build/nodalctl debian/tmp/usr/bin/nodalctl
 	if [ -d $(MODROOT)/ui/dist ]; then \
@@ -63,6 +65,7 @@ override_dh_auto_install:
 	install -m 0644 $(MODROOT)/systemd/ndl-dnsmasq@.service debian/tmp/lib/systemd/system/ndl-dnsmasq@.service
 	install -m 0644 $(MODROOT)/systemd/nodal-ct@.service debian/tmp/lib/systemd/system/nodal-ct@.service
 	install -m 0644 $(MODROOT)/systemd/nodal-vm@.service debian/tmp/lib/systemd/system/nodal-vm@.service
+	install -m 0644 $(MODROOT)/systemd/ndl-guest.service debian/tmp/lib/systemd/system/ndl-guest.service
 	install -m 0644 $(MODROOT)/packaging/apparmor/usr.bin.qemu-system-x86_64.local debian/tmp/etc/apparmor.d/local/usr.bin.qemu-system-x86_64
 
 override_dh_install:

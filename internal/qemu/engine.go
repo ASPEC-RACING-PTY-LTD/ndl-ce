@@ -237,6 +237,7 @@ func (e *Engine) Observe(ctx context.Context, id string) Observed {
 		SerialSocket: e.serialPath(id),
 		VNCSocket:    e.vncPath(id),
 		QGASocket:    e.qgaPath(id),
+		GuestSocket:  e.guestPath(id),
 	}
 	if applied, err := e.ReadApplied(id); err == nil {
 		obs.Machine = applied.Spec.Machine

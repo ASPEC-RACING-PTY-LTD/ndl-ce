@@ -149,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/import", s.importVM)
 	mux.HandleFunc("GET /api/v1/workloads/{id}", s.getWorkload)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/guest", s.getWorkloadGuest)
 	mux.HandleFunc("PATCH /api/v1/workloads/{id}", s.patchWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/{id}", s.patchWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/start", s.lifecycleWorkload("start"))
