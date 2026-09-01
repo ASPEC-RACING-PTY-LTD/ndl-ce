@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.10
-  description: Phase 11 backup engine plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, virtual machines, TLS settings, snapshots, and backups.
+  version: 0.1.11
+  description: Phase 12 platform updates plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, virtual machines, TLS settings, snapshots, backups, and control-plane package updates.
 servers:
   - url: /api/v1
 paths:
@@ -1490,6 +1490,142 @@ paths:
           description: Unauthenticated
         "403":
           description: Forbidden
+  /updates:
+    get:
+      operationId: getUpdates
+      summary: Platform update status for this appliance
+      responses:
+        "200":
+          description: Current update channel, packages, and last operation. Host support is reported honestly.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateStatus"
+        "401":
+          description: Unauthenticated
+  /updates/check:
+    post:
+      operationId: checkUpdates
+      summary: Dry-run preview of available control-plane package updates
+      responses:
+        "200":
+          description: Update preview. Always dry_run true. Does not apply packages.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdatePreview"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Host unsupported or check not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/preflight:
+    post:
+      operationId: preflightUpdates
+      summary: Preflight checks before applying a platform update
+      responses:
+        "200":
+          description: Preflight result. Unsupported checks stay honest on non-Debian hosts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdatePreflight"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Host unsupported or preflight not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/checkpoint:
+    post:
+      operationId: checkpointUpdates
+      summary: Create a control-plane checkpoint before apply
+      responses:
+        "200":
+          description: Checkpoint result. Status may be succeeded, failed, or unsupported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateCheckpoint"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Host unsupported or checkpoint not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/apply:
+    post:
+      operationId: applyUpdates
+      summary: Apply control-plane package updates without stopping guests
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          description: Required confirmation. Value must be apply-update.
+          schema:
+            type: string
+            enum:
+              - apply-update
+      responses:
+        "200":
+          description: Apply operation accepted or completed. Status stays honest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateOperation"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Confirm header missing, host unsupported, or apply not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/rollback:
+    post:
+      operationId: rollbackUpdates
+      summary: Roll back the last control-plane package update
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          description: Required confirmation. Value must be rollback-update.
+          schema:
+            type: string
+            enum:
+              - rollback-update
+      responses:
+        "200":
+          description: Rollback operation accepted or completed. Status stays honest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateOperation"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Confirm header missing, host unsupported, or rollback not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthResponse:
@@ -2785,4 +2921,212 @@ components:
             - new
             - replace
           description: new creates a new workload UUID. replace overwrites the existing workload and requires X-Nodal-Confirm restore.
+    UpdatePackage:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - version
+        - status
+      properties:
+        name:
+          type: string
+          enum:
+            - ndl-control
+            - ndl-agent
+            - ndl-ui
+            - nodal
+            - nodalctl
+        version:
+          type: string
+        status:
+          type: string
+          enum:
+            - current
+            - update_available
+            - unsupported
+            - not_configured
+            - not_reported
+    UpdateOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - action
+        - status
+        - dry_run
+        - started_at
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+          enum:
+            - check
+            - preflight
+            - checkpoint
+            - apply
+            - rollback
+        status:
+          type: string
+          enum:
+            - running
+            - succeeded
+            - failed
+            - unsupported
+        dry_run:
+          type: boolean
+        error:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+            enum:
+              - ndl-control
+              - ndl-agent
+              - ndl-ui
+              - nodal
+              - nodalctl
+          description: Control-plane package names only. Never package-manager verbs.
+    UpdateStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - host_supported
+        - host_reason
+        - packages
+      properties:
+        channel:
+          type: string
+          enum:
+            - stable
+        host_supported:
+          type: boolean
+        host_reason:
+          type: string
+        packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdatePackage"
+        last_operation:
+          $ref: "#/components/schemas/UpdateOperation"
+    UpdatePreviewItem:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - current_version
+        - candidate_version
+        - action
+      properties:
+        name:
+          type: string
+          enum:
+            - ndl-control
+            - ndl-agent
+            - ndl-ui
+            - nodal
+            - nodalctl
+        current_version:
+          type: string
+        candidate_version:
+          type: string
+        action:
+          type: string
+          enum:
+            - hold
+            - upgrade
+            - unsupported
+    UpdatePreview:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - items
+        - changelog
+        - dry_run
+      properties:
+        channel:
+          type: string
+          enum:
+            - stable
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdatePreviewItem"
+        changelog:
+          type: string
+        dry_run:
+          type: boolean
+          enum:
+            - true
+          description: Always true. Check never applies packages.
+    UpdatePreflightCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - status
+        - detail
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - ok
+            - warning
+            - failed
+            - unsupported
+        detail:
+          type: string
+    UpdatePreflight:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - checks
+        - kernel_ok
+        - zfs_ok
+        - nvidia_ok
+      properties:
+        ok:
+          type: boolean
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdatePreflightCheck"
+        kernel_ok:
+          type: boolean
+        zfs_ok:
+          type: boolean
+        nvidia_ok:
+          type: boolean
+    UpdateCheckpoint:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - locator
+        - postgres_dump
+        - status
+      properties:
+        id:
+          type: string
+        locator:
+          type: string
+        postgres_dump:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - succeeded
+            - failed
+            - unsupported
 

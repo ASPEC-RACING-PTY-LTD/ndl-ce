@@ -451,6 +451,65 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
   });
 
+  it("renders /settings/updates and keeps snapshot actions off this page", async () => {
+    window.history.replaceState({}, "", "/settings/updates");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/updates": {
+        status: 200,
+        body: {
+          channel: "stable",
+          host_supported: true,
+          host_reason: "Debian 13 amd64",
+          packages: [
+            { name: "ndl-control", version: "0.1.10", status: "current" },
+            { name: "ndl-agent", version: "0.1.10", status: "current" },
+            { name: "ndl-ui", version: "0.1.10", status: "current" },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^updates$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^updates$/i })).toBeVisible();
+    expect(
+      screen.getByText(/control-plane package bumps must not stop guests/i),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(await screen.findByText("ndl-control")).toBeVisible();
+    expect(screen.getByRole("button", { name: /^check for updates$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^apply update$/i })).toBeVisible();
+  });
+
+  it("shows Unsupported host honestly on /settings/updates", async () => {
+    window.history.replaceState({}, "", "/settings/updates");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/updates": {
+        status: 200,
+        body: {
+          channel: "stable",
+          host_supported: false,
+          host_reason: "Host platform is not Debian 13 amd64.",
+          packages: [],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^updates$/i })).toBeVisible();
+    expect(await screen.findByText(/Unsupported/i)).toBeVisible();
+    expect(screen.getByText(/Host platform is not Debian 13 amd64\./i)).toBeVisible();
+    expect(screen.getByText(/will not pretend an upgrade succeeded/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^apply update$/i })).toBeDisabled();
+  });
+
   it("renders /backups with honest restore copy and no Create snapshot button", async () => {
     window.history.replaceState({}, "", "/backups");
     mockApi({

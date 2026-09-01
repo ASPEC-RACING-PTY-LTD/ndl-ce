@@ -588,3 +588,62 @@ export async function restoreBackupArtifact(
     }),
   );
 }
+
+export async function getUpdates(): Promise<import("../generated/openapi").UpdateStatus> {
+  return readJson(await request("/updates"));
+}
+
+export async function checkUpdates(): Promise<import("../generated/openapi").UpdatePreview> {
+  return readJson(
+    await request("/updates/check", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function preflightUpdates(): Promise<import("../generated/openapi").UpdatePreflight> {
+  return readJson(
+    await request("/updates/preflight", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function checkpointUpdates(): Promise<import("../generated/openapi").UpdateCheckpoint> {
+  return readJson(
+    await request("/updates/checkpoint", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function applyUpdates(
+  confirm = "apply-update",
+): Promise<import("../generated/openapi").UpdateOperation> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request("/updates/apply", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function rollbackUpdates(
+  confirm = "rollback-update",
+): Promise<import("../generated/openapi").UpdateOperation> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request("/updates/rollback", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}

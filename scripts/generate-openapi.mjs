@@ -70,7 +70,9 @@ function tsType(prop) {
     return prop.enum.map((v) => JSON.stringify(v)).join(" | ");
   }
   if (prop.type === "array") {
-    return `${tsType(prop.items ?? { type: "string" })}[]`;
+    const inner = tsType(prop.items ?? { type: "string" });
+    const needsParens = inner.includes("|");
+    return `${needsParens ? `(${inner})` : inner}[]`;
   }
   switch (prop.type) {
     case "string":

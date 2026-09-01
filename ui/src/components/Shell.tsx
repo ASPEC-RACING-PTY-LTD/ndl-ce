@@ -81,6 +81,12 @@ export function Shell({ children }: ShellProps) {
           >
             Certificates
           </Link>
+          <Link
+            href="/settings/updates"
+            aria-current={path === "/settings/updates" ? "page" : undefined}
+          >
+            Updates
+          </Link>
           <Link href="/backups" aria-current={path === "/backups" ? "page" : undefined}>
             Backups
           </Link>

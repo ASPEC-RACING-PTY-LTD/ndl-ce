@@ -557,6 +557,66 @@ export interface RestoreBackupRequest {
   mode: "new" | "replace";
 }
 
+export interface UpdatePackage {
+  name: "ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl";
+  version: string;
+  status: "current" | "update_available" | "unsupported" | "not_configured" | "not_reported";
+}
+
+export interface UpdateOperation {
+  id: string;
+  action: "check" | "preflight" | "checkpoint" | "apply" | "rollback";
+  status: "running" | "succeeded" | "failed" | "unsupported";
+  dry_run: boolean;
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+  packages?: ("ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl")[];
+}
+
+export interface UpdateStatus {
+  channel: "stable";
+  host_supported: boolean;
+  host_reason: string;
+  packages: UpdatePackage[];
+  last_operation?: UpdateOperation;
+}
+
+export interface UpdatePreviewItem {
+  name: "ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl";
+  current_version: string;
+  candidate_version: string;
+  action: "hold" | "upgrade" | "unsupported";
+}
+
+export interface UpdatePreview {
+  channel: "stable";
+  items: UpdatePreviewItem[];
+  changelog: string;
+  dry_run: true;
+}
+
+export interface UpdatePreflightCheck {
+  name: string;
+  status: "ok" | "warning" | "failed" | "unsupported";
+  detail: string;
+}
+
+export interface UpdatePreflight {
+  ok: boolean;
+  checks: UpdatePreflightCheck[];
+  kernel_ok: boolean;
+  zfs_ok: boolean;
+  nvidia_ok: boolean;
+}
+
+export interface UpdateCheckpoint {
+  id: string;
+  locator: string;
+  postgres_dump: boolean;
+  status: "succeeded" | "failed" | "unsupported";
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -694,3 +754,15 @@ export type GenerateCertPath = "/api/v1/certs/generate";
 export type ImportCertPath = "/api/v1/certs/import";
 
 export type AcmeCertPath = "/api/v1/certs/acme";
+
+export type GetUpdatesPath = "/api/v1/updates";
+
+export type CheckUpdatesPath = "/api/v1/updates/check";
+
+export type PreflightUpdatesPath = "/api/v1/updates/preflight";
+
+export type CheckpointUpdatesPath = "/api/v1/updates/checkpoint";
+
+export type ApplyUpdatesPath = "/api/v1/updates/apply";
+
+export type RollbackUpdatesPath = "/api/v1/updates/rollback";
