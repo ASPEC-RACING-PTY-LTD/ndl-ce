@@ -92,4 +92,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest observability: missing samples stay collecting/unavailable/stale. Webhook URLs are secrets. SMTP is optional and local.
 - Follow-up: appliance journald, SMTP send, per-workload cgroup traffic identity beyond TAP iface names
 
+## Phase 17
+
+- Package: 0.1.16
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (PATCH /me ux_level, expert ack one-time, viewer plus Expert still 403 on create, palette hides Create VM for viewer, Guided/Advanced share VM create body). FIXTURE: none required (no agent). NOT PHYSICALLY VALIDATED: tablet/phone layout on hardware, live operator walkthrough on Debian 13 appliance
+- Honest UX: Expert does not grant permissions. Missing health stays unavailable. Empty workloads stay empty.
+- Follow-up: folder archive download still needs a typed Files RPC (Agent: None in this phase), physical tablet polish
+
+
 

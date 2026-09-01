@@ -3,6 +3,7 @@ import { getHealth } from "../api/client";
 import type { HealthResponse } from "../api/types";
 import { navigate, usePath } from "../router";
 import { useSession } from "../session";
+import { CommandPalette } from "./CommandPalette";
 import { Link } from "./Link";
 
 type ShellProps = {
@@ -14,23 +15,39 @@ export function Shell({ children }: ShellProps) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void getHealth()
-      .then((value) => {
+    async function tick() {
+      try {
+        const value = await getHealth();
         if (!cancelled) {
           setHealth(value);
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setHealth(null);
         }
-      });
+      }
+    }
+    void tick();
+    const id = window.setInterval(() => void tick(), 15000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
+  }, []);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   async function onLogout() {
@@ -104,6 +121,14 @@ export function Shell({ children }: ShellProps) {
           </Link>
         </nav>
         <div className="shell-session">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-keyshortcuts="Control+K Meta+K"
+            onClick={() => setPaletteOpen(true)}
+          >
+            Search
+          </button>
           {user ? (
             <p className="shell-user">
               Signed in as <strong>{user.username}</strong>
@@ -114,12 +139,13 @@ export function Shell({ children }: ShellProps) {
           </button>
         </div>
       </header>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <main id="main" className="shell-main">
         {children}
       </main>
       <footer className="shell-footer">
         <p>Community Edition. License activation is not required.</p>
-        <p className="shell-health">
+        <p className="shell-health" aria-live="polite">
           {health
             ? `${health.service} is ${health.status}.`
             : "Control plane health is unavailable."}

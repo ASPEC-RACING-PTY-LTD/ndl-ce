@@ -5,6 +5,7 @@ import type { StoragePool } from "../api/phase3";
 import { Field } from "../components/Field";
 import { navigate } from "../router";
 import { useSession } from "../session";
+import { canMutate, uxLevel } from "../ux";
 
 const PINS = [
   "alpine/3.21/amd64/default",
@@ -13,15 +14,12 @@ const PINS = [
   "debian/bookworm/amd64/default",
 ];
 
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
-
 export function WorkloadCreatePage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const admin = Boolean(roles?.includes("admin"));
   const mutate = canMutate(roles);
+  const level = uxLevel(session.status === "ready" ? session.user : null);
   const [pools, setPools] = useState<StoragePool[]>([]);
   const [nets, setNets] = useState<Network[]>([]);
   const [name, setName] = useState("alpine");
@@ -31,7 +29,7 @@ export function WorkloadCreatePage() {
   const [poolID, setPoolID] = useState("");
   const [networkID, setNetworkID] = useState("");
   const [privileged, setPrivileged] = useState(false);
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState(level !== "guided");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -93,7 +91,9 @@ export function WorkloadCreatePage() {
     <section className="page page-wide" aria-labelledby="create-ct-heading">
       <header className="page-header">
         <h1 id="create-ct-heading">Create system container</h1>
-        <p className="page-kicker">Official LXC images. Unprivileged is the default.</p>
+        <p className="page-kicker">
+          Official LXC images. Unprivileged is the default. Guided, Advanced, and Expert post the same body.
+        </p>
       </header>
       {error ? (
         <p className="banner banner-error" role="alert">

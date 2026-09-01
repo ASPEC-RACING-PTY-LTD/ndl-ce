@@ -58,6 +58,7 @@ type Memory struct {
 	alertRules        map[string]AlertRule
 	notifyChannels    map[string]NotificationChannel
 	notifySecrets     map[string][2]string
+	userPrefs         map[string]UserPrefs
 }
 
 // NewMemory returns an empty store.

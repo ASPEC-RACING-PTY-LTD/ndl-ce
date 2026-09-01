@@ -187,6 +187,9 @@ type Store interface {
 	ListNotificationChannels(ctx context.Context, clusterID string) ([]NotificationChannel, error)
 	GetNotificationChannel(ctx context.Context, clusterID, id string) (*NotificationChannel, error)
 	NotificationSecrets(ctx context.Context, clusterID, id string) (webhookURL, smtpPassword string, err error)
+
+	GetUserPrefs(ctx context.Context, userID string) (*UserPrefs, error)
+	UpsertUserPrefs(ctx context.Context, p UserPrefs) error
 }
 
 // Cluster is the appliance cluster of one.

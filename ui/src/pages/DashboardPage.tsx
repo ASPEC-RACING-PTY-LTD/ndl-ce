@@ -5,10 +5,12 @@ import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
+import { canMutate } from "../ux";
 
 export function DashboardPage() {
   const session = useSession();
   const username = session.status === "ready" ? session.user?.username : undefined;
+  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
   const [node, setNode] = useState<NodeSummary | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -85,9 +87,9 @@ export function DashboardPage() {
           <Link href="/network">Network</Link> page.
         </p>
       ) : null}
-      {needWorkload ? (
+      {needWorkload && mutate ? (
         <p className="banner banner-warn" role="status">
-          Storage and network are ready. Create a system container on the{" "}
+          Storage and network are ready. Create a VM or system container on the{" "}
           <Link href="/workloads">Workloads</Link> page.
         </p>
       ) : null}

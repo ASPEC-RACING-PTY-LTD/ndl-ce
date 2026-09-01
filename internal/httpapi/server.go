@@ -108,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/v1/me", s.me)
+	mux.HandleFunc("PATCH /api/v1/me", s.patchMe)
 	mux.HandleFunc("POST /api/v1/tokens", s.createToken)
 	mux.HandleFunc("POST /api/v1/tokens/revoke", s.revokeToken)
 	mux.HandleFunc("GET /api/v1/nodes", s.listNodes)
@@ -640,7 +641,9 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	if aal <= 0 {
 		aal = 1
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	prefs, _ := s.Store.GetUserPrefs(r.Context(), user.ID)
+	level, ack, ackAt := prefsJSON(prefs)
+	out := map[string]any{
 		"user_id":     user.ID,
 		"username":    user.Username,
 		"roles":       roles,
@@ -649,7 +652,13 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 		"aal":         aal,
 		"mfa_enabled": mfaEnabled,
 		"kind":        firstNonEmpty(user.Kind, appdb.UserKindPerson),
-	})
+		"ux_level":    level,
+		"expert_ack":  ack,
+	}
+	if ackAt != "" {
+		out["expert_ack_at"] = ackAt
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) ensureCluster(ctx context.Context) error {

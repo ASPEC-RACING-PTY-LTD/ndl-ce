@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.15
-  description: Phase 16 observability complete plus prior northbound API. Historical metrics, typed logs, local alerts, timeline, capacity, SMART.
+  version: 0.1.16
+  description: Phase 17 operator UX plus prior northbound API. Presentation prefs on /me. Same create APIs for Guided, Advanced, and Expert.
 servers:
   - url: /api/v1
 paths:
@@ -82,6 +82,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MeResponse"
+    patch:
+      operationId: patchMe
+      summary: Update presentation preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MePatchRequest"
+      responses:
+        "200":
+          description: Identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "422":
+          description: Expert requires a one-time acknowledgement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /tokens:
     post:
       operationId: createToken
@@ -2130,6 +2152,8 @@ components:
         - username
         - roles
         - edition
+        - ux_level
+        - expert_ack
       properties:
         user_id:
           type: string
@@ -2152,6 +2176,28 @@ components:
           enum:
             - person
             - service
+        ux_level:
+          type: string
+          enum:
+            - guided
+            - advanced
+            - expert
+        expert_ack:
+          type: boolean
+        expert_ack_at:
+          type: string
+    MePatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ux_level:
+          type: string
+          enum:
+            - guided
+            - advanced
+            - expert
+        expert_ack:
+          type: boolean
     MFAChallengeResponse:
       type: object
       additionalProperties: false

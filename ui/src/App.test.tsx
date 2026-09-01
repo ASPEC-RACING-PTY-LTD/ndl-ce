@@ -9,6 +9,17 @@ const admin: MeResponse = {
   username: "admin",
   roles: ["admin"],
   edition: "ce",
+  ux_level: "guided",
+  expert_ack: false,
+};
+
+const viewer: MeResponse = {
+  user_id: "user-2",
+  username: "view",
+  roles: ["viewer"],
+  edition: "ce",
+  ux_level: "expert",
+  expert_ack: true,
 };
 
 function jsonResponse(status: number, body?: unknown): Response {
@@ -22,7 +33,7 @@ function jsonResponse(status: number, body?: unknown): Response {
 }
 
 function mockApi(routes: Record<string, { status: number; body?: unknown }>) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
       typeof input === "string"
         ? input
@@ -30,7 +41,8 @@ function mockApi(routes: Record<string, { status: number; body?: unknown }>) {
           ? input.href
           : input.url;
     const path = new URL(url, "http://localhost").pathname;
-    const hit = routes[path];
+    const method = (init?.method ?? "GET").toUpperCase();
+    const hit = routes[`${method} ${path}`] ?? routes[path];
     if (!hit) {
       return jsonResponse(404, { error: `unmocked ${path}` });
     }
@@ -160,6 +172,8 @@ describe("App", () => {
     expect(screen.getByText("user-1")).toBeVisible();
     expect(screen.getByText("ce")).toBeVisible();
     expect(screen.getAllByText("admin").length).toBeGreaterThan(0);
+    expect(screen.getByRole("radio", { name: /^guided$/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^expert$/i })).toBeVisible();
   });
 
   it("posts setup claim JSON and opens the dashboard", async () => {
@@ -740,5 +754,34 @@ describe("App", () => {
     expect(await screen.findByText(/no alert rules yet/i)).toBeVisible();
     expect(screen.getByText(/^Not configured$/i)).toBeVisible();
     expect(screen.queryByText(/^firing$/i)).not.toBeInTheDocument();
+  });
+
+  it("hides Create VM in the command palette for a viewer", async () => {
+    window.history.replaceState({}, "", "/");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: viewer },
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeVisible();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: /command palette/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create vm$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /jump to tasks/i })).toBeVisible();
+  });
+
+  it("lists Create VM in the command palette for an admin", async () => {
+    window.history.replaceState({}, "", "/");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("button", { name: /^search$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+    expect(await screen.findByRole("dialog", { name: /command palette/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^create vm$/i })).toBeVisible();
   });
 });

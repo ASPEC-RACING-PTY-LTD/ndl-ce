@@ -5,17 +5,17 @@ import type { Network } from "../api/phase4";
 import { Field } from "../components/Field";
 import { navigate } from "../router";
 import { useSession } from "../session";
+import { canMutate, uxLevel } from "../ux";
+import { buildVmCreateBody } from "../vmCreate";
 
 const STEPS = ["Basics", "Compute", "Storage", "Network", "Boot", "Cloud-init", "Review"] as const;
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
 
 export function VmCreatePage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
+  const level = uxLevel(session.status === "ready" ? session.user : null);
+  const guided = level === "guided";
   const [step, setStep] = useState(0);
   const [pools, setPools] = useState<StoragePool[]>([]);
   const [nets, setNets] = useState<Network[]>([]);
@@ -63,31 +63,26 @@ export function VmCreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const body = buildVmCreateBody({
+    name,
+    cpus,
+    memoryMiB,
+    networkID,
+    poolID,
+    firmware,
+    autostart,
+    cloudImageID,
+    isoID,
+    hostname,
+    username,
+    sshKeys,
+  });
+
   async function onCreate() {
     setBusy(true);
     setError(null);
     try {
-      const created = await createWorkload({
-        name,
-        kind: "vm",
-        network_id: networkID,
-        pool_id: poolID || undefined,
-        cpus: Number(cpus) || 2,
-        memory_bytes: (Number(memoryMiB) || 2048) * 1024 * 1024,
-        firmware,
-        autostart,
-        cloud_image_id: cloudImageID || undefined,
-        iso_library_id: isoID || undefined,
-        nocloud: {
-          enable: true,
-          hostname: hostname || name,
-          username,
-          ssh_authorized_keys: sshKeys
-            .split("\n")
-            .map((line) => line.trim())
-            .filter(Boolean),
-        },
-      });
+      const created = await createWorkload(body);
       navigate(`/workloads/${created.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
@@ -107,13 +102,24 @@ export function VmCreatePage() {
 
   const clouds = images.filter((item) => item.kind === "cloud-image");
   const isos = images.filter((item) => item.kind === "iso");
+  const showBasics = !guided || step === 0 || step === 6;
+  const showCompute = !guided || step === 1 || step === 6;
+  const showStorage = !guided || step === 2 || step === 6;
+  const showNetwork = !guided || step === 3 || step === 6;
+  const showBoot = !guided || step === 4 || step === 6;
+  const showCloud = !guided || step === 5 || step === 6;
+  const reviewOnly = guided && step === 6;
 
   return (
     <section className="page page-wide" aria-labelledby="vm-create-heading">
       <header className="page-header">
         <h1 id="vm-create-heading">Create VM</h1>
         <p className="page-kicker">
-          Step {step + 1} of {STEPS.length}: {STEPS[step]}
+          {guided
+            ? `Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`
+            : level === "expert"
+              ? "Expert view. Same create API as Guided and Advanced."
+              : "All fields on one form. Same create API as Guided."}
         </p>
       </header>
       {error ? (
@@ -121,12 +127,12 @@ export function VmCreatePage() {
           {error}
         </p>
       ) : null}
-      {step === 0 ? (
+      {showBasics && !reviewOnly ? (
         <article className="panel">
           <Field id="vm-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
         </article>
       ) : null}
-      {step === 1 ? (
+      {showCompute && !reviewOnly ? (
         <article className="panel">
           <Field id="vm-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
           <Field
@@ -139,7 +145,7 @@ export function VmCreatePage() {
           />
         </article>
       ) : null}
-      {step === 2 ? (
+      {showStorage && !reviewOnly ? (
         <article className="panel">
           <label htmlFor="vm-pool">
             Storage pool
@@ -164,7 +170,7 @@ export function VmCreatePage() {
           </label>
         </article>
       ) : null}
-      {step === 3 ? (
+      {showNetwork && !reviewOnly ? (
         <article className="panel">
           <label htmlFor="vm-net">
             Network
@@ -178,7 +184,7 @@ export function VmCreatePage() {
           </label>
         </article>
       ) : null}
-      {step === 4 ? (
+      {showBoot && !reviewOnly ? (
         <article className="panel">
           <label htmlFor="vm-fw">
             Firmware
@@ -204,7 +210,7 @@ export function VmCreatePage() {
           </label>
         </article>
       ) : null}
-      {step === 5 ? (
+      {showCloud && !reviewOnly ? (
         <article className="panel">
           <Field id="vm-host" label="Hostname" value={hostname} onChange={(e) => setHostname(e.target.value)} />
           <Field id="vm-user" label="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
@@ -214,7 +220,7 @@ export function VmCreatePage() {
           </label>
         </article>
       ) : null}
-      {step === 6 ? (
+      {reviewOnly || !guided ? (
         <article className="panel">
           <h2>Review</h2>
           <dl className="definition-list">
@@ -241,14 +247,29 @@ export function VmCreatePage() {
           </dl>
         </article>
       ) : null}
+      {level === "expert" ? (
+        <article className="panel">
+          <h2>Request body</h2>
+          <p className="field-hint">Read-only preview of the same POST /workloads body Guided and Advanced send.</p>
+          <pre className="code-block">{JSON.stringify(body, null, 2)}</pre>
+        </article>
+      ) : null}
       <div className="btn-row">
-        <button className="btn" type="button" disabled={step === 0 || busy} onClick={() => setStep((n) => n - 1)}>
-          Back
-        </button>
-        {step < STEPS.length - 1 ? (
-          <button className="btn btn-primary" type="button" disabled={busy} onClick={() => setStep((n) => n + 1)}>
-            Next
-          </button>
+        {guided ? (
+          <>
+            <button className="btn" type="button" disabled={step === 0 || busy} onClick={() => setStep((n) => n - 1)}>
+              Back
+            </button>
+            {step < STEPS.length - 1 ? (
+              <button className="btn btn-primary" type="button" disabled={busy} onClick={() => setStep((n) => n + 1)}>
+                Next
+              </button>
+            ) : (
+              <button className="btn btn-primary" type="button" disabled={busy || !networkID} onClick={() => void onCreate()}>
+                Create VM
+              </button>
+            )}
+          </>
         ) : (
           <button className="btn btn-primary" type="button" disabled={busy || !networkID} onClick={() => void onCreate()}>
             Create VM

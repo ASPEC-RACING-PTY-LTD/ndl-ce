@@ -28,7 +28,7 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Agent CapabilityBoundingSet now includes CAP_SYS_ADMIN for typed lxc-attach setns only.
   Why not blocking: there is still no generic host execution RPC; DevicePolicy remains closed.
 - LOW. Browser tickets use the `ndl.ticket.` WebSocket subprotocol because browsers cannot set `X-Nodal-Ticket`. Query-string tickets are rejected.
-- LOW. Folder archive download was left for Phase 17.
+- LOW. Folder archive download was left for Phase 17 and remains deferred: Phase 17 Agent is None, so no new zip RPC.
 - LOW. VM Terminal and Files remain Phase 20 and return 422.
 - LOW. Docker Desktop overlay backing identity changes across host reboot, so Directory pools on this e2e guest can show unavailable. Real disk UUIDs are the product path.
 
@@ -107,6 +107,13 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Live journald follow and local SMTP delivery are not executed in this Cloud VM. Why not blocking: typed argv, SkipHostCmds, and webhook delivery are proven; appliance journald and SMTP remain physical/local validation.
 - LOW. Per-workload traffic is TAP/iface counters (`net.iface.*`), not cgroup netcls identity. Why not blocking: host net plus TAP names are honest; cgroup accounting can land later.
 - LOW. Capacity forecast is a linear fit of `storage.avail_bytes` samples. Why not blocking: fewer than four points stays Collecting and does not invent hours-to-zero.
+
+## Phase 17
+
+- LOW. Folder archive download is still not implemented. Why not blocking: Phase 17 Agent is None; zip would need a typed Files RPC, not a UI fake.
+- LOW. Tablet/phone layout is CSS-only in Cloud. Why not blocking: chrome wraps and tap targets grow at 64rem; physical devices are not in this environment.
+- LOW. Expert JSON is a read-only preview of the same create body. Why not blocking: a free-form editor that posts extra keys would violate the same-API contract and Host.Exec ban.
+
 
 
 

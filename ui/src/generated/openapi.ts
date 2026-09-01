@@ -31,6 +31,14 @@ export interface MeResponse {
   aal?: number;
   mfa_enabled?: boolean;
   kind?: "person" | "service";
+  ux_level: "guided" | "advanced" | "expert";
+  expert_ack: boolean;
+  expert_ack_at?: string;
+}
+
+export interface MePatchRequest {
+  ux_level?: "guided" | "advanced" | "expert";
+  expert_ack?: boolean;
 }
 
 export interface MFAChallengeResponse {

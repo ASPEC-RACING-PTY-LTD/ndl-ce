@@ -4,10 +4,7 @@ import type { Workload } from "../api/phase5";
 import { Link } from "../components/Link";
 import { honestStatus } from "../format";
 import { useSession } from "../session";
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
+import { canMutate } from "../ux";
 
 export function WorkloadsPage() {
   const session = useSession();
@@ -54,7 +51,16 @@ export function WorkloadsPage() {
       <article className="panel">
         <h2>On this node</h2>
         {items.length === 0 ? (
-          <p>No workloads yet.</p>
+          <div className="empty-panel">
+            <p className="empty-title">No workloads yet</p>
+            {mutate ? (
+              <p>
+                Create a VM or system container when a usable storage pool and guest network are available.
+              </p>
+            ) : (
+              <p>No workloads are visible yet. Creating them requires operator or admin.</p>
+            )}
+          </div>
         ) : (
           <ul className="plain-list">
             {items.map((w) => (

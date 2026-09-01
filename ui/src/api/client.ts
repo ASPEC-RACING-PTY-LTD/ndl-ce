@@ -96,6 +96,18 @@ export async function getMe(): Promise<MeResponse | null> {
   return readJson<MeResponse>(res);
 }
 
+export async function patchMe(body: {
+  ux_level?: "guided" | "advanced" | "expert";
+  expert_ack?: boolean;
+}): Promise<MeResponse> {
+  return readJson<MeResponse>(
+    await request("/me", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function listNodes(): Promise<import("./phase2").NodeSummary[]> {
   const body = await readJson<{ items: import("./phase2").NodeSummary[] }>(await request("/nodes"));
   return body.items ?? [];

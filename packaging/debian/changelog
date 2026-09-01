@@ -1,3 +1,9 @@
+nodal (0.1.16) UNRELEASED; urgency=medium
+
+  * Phase 17 operator UX: Guided/Advanced/Expert prefs, command palette, tablet chrome
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.15) UNRELEASED; urgency=medium
 
   * Phase 16 observability complete: historical metrics downsample, typed logs, local alerts, timeline, capacity, SMART

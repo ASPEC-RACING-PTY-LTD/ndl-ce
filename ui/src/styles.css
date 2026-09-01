@@ -285,6 +285,7 @@ code {
 
 .shell-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
 }
 
@@ -476,6 +477,88 @@ th {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  padding: 12vh var(--space-4) var(--space-4);
+  background: oklch(0.12 0.02 var(--ndl-hue) / 0.62);
+}
+
+.palette {
+  width: min(36rem, 100%);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.palette-heading {
+  font-size: 1.05rem;
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow: auto;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.palette-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.palette-item-active,
+.palette-item:hover {
+  background: var(--bg-canvas);
+  border-color: var(--line);
+}
+
+@media (max-width: 64rem) {
+  .shell-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .shell-nav {
+    gap: var(--space-2);
+  }
+
+  .shell-nav a {
+    min-height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.6rem;
+  }
+
+  .shell-session {
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+
+  .shell-main {
+    padding: var(--space-5) var(--space-4);
+  }
 }
 
 @media (max-width: 40rem) {
