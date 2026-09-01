@@ -11,6 +11,7 @@ import (
 
 const (
 	ChannelName = "org.nodal.guest.0"
+	JailRoot    = "guest:/"
 	Version     = "0.1.18"
 
 	StateOK           = "ok"

@@ -21,10 +21,22 @@ import (
 )
 
 type fakeIO struct {
-	root string
+	root     string
+	lastKind string
+	lastJail string
+	lastPath string
+	lastAct  string
 }
 
-func (f fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMessage, error) {
+func (f *fakeIO) record(kind, jail, path, action string) {
+	f.lastKind = kind
+	f.lastJail = jail
+	f.lastPath = path
+	f.lastAct = action
+}
+
+func (f *fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMessage, error) {
+	f.record(call.TargetKind, call.JailRoot, call.Path, call.Action)
 	p := filepath.Join(f.root, filepath.FromSlash(strings.TrimPrefix(call.Path, "/")))
 	if call.Path == "" || call.Path == "." {
 		p = f.root
@@ -80,7 +92,8 @@ func (f fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMes
 	}
 }
 
-func (f fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Reader, _ string) (json.RawMessage, error) {
+func (f *fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Reader, _ string) (json.RawMessage, error) {
+	f.record(call.TargetKind, call.JailRoot, call.Path, "upload")
 	dest := filepath.Join(f.root, filepath.FromSlash(strings.TrimPrefix(call.Path, "/")))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return nil, err
@@ -95,12 +108,14 @@ func (f fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Rea
 	return json.Marshal(map[string]any{"ok": true, "path": call.Path, "size": len(b)})
 }
 
-func (f fakeIO) FilesGet(_ context.Context, call agentrpc.FilesGetCall) (io.ReadCloser, error) {
+func (f *fakeIO) FilesGet(_ context.Context, call agentrpc.FilesGetCall) (io.ReadCloser, error) {
+	f.record(call.TargetKind, call.JailRoot, call.Path, "download")
 	dest := filepath.Join(f.root, filepath.FromSlash(strings.TrimPrefix(call.Path, "/")))
 	return os.Open(dest)
 }
 
-func (f fakeIO) OpenTerminal(context.Context, agentrpc.TermOpen) (agentrpc.TermConn, error) {
+func (f *fakeIO) OpenTerminal(_ context.Context, open agentrpc.TermOpen) (agentrpc.TermConn, error) {
+	f.record(open.TargetKind, open.JailRoot, open.CWD, "terminal")
 	return &loopTerm{ch: make(chan []byte, 8)}, nil
 }
 
@@ -145,7 +160,7 @@ func seedPhase6(t *testing.T) (*Server, *appdb.Memory, *httptest.Server, string,
 	})
 	_ = netID
 	root := t.TempDir()
-	s.IO = fakeIO{root: root}
+	s.IO = &fakeIO{root: root}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	adminCookie := claimAdmin(t, ts, token)
@@ -251,7 +266,7 @@ func TestCTTerminalOperatorAndViewer(t *testing.T) {
 func TestViewerFilesReadNoDownload(t *testing.T) {
 	s, mem, ts, admin, _, wlID := seedPhase6(t)
 	view := loginRole(t, ts, mem, "view", rbac.Viewer)
-	_ = os.WriteFile(filepath.Join(s.IO.(fakeIO).root, "hello.txt"), []byte("hi"), 0o644)
+	_ = os.WriteFile(filepath.Join(s.IO.(*fakeIO).root, "hello.txt"), []byte("hi"), 0o644)
 	res := doCookie(t, ts, view, "GET", "/api/v1/workloads/"+wlID+"/files?path=.", "")
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusBadGateway {
 		b, _ := io.ReadAll(res.Body)
@@ -286,7 +301,8 @@ func TestOperatorHostFilesDenied(t *testing.T) {
 }
 
 func TestVMFilesUnsupported(t *testing.T) {
-	_, mem, ts, admin, _, _ := seedPhase6(t)
+	s, mem, ts, admin, _, _ := seedPhase6(t)
+	s.VM = &fakeVM{}
 	cluster, _ := mem.GetCluster(context.Background())
 	id := uuid.NewString()
 	_ = mem.CreateWorkload(context.Background(), appdb.Workload{

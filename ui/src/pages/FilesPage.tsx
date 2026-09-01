@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   deleteFile,
   downloadFile,
-  getWorkload,
   listFiles,
   mkdirFile,
   uploadFile,
@@ -11,6 +10,7 @@ import type { FileEntry } from "../api/phase6";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { formatBytes } from "../format";
+import { workloadGuestIOReason } from "../guestIO";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
 
@@ -41,25 +41,40 @@ export function FilesPage() {
   const [mkdirName, setMkdirName] = useState("");
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ioReady, setIoReady] = useState(kind === "node");
 
   useEffect(() => {
     if (kind !== "workload") {
+      setIoReady(true);
       return;
     }
     let cancelled = false;
-    void getWorkload(id)
-      .then((w) => {
-        if (!cancelled && w.kind !== "system-container") {
-          setUnsupported("No-dal Guest Agent required. VM Terminal and Files are introduced in a later platform phase.");
+    async function check() {
+      try {
+        const reason = await workloadGuestIOReason(id);
+        if (cancelled) {
+          return;
         }
-      })
-      .catch((err) => {
+        if (reason) {
+          setUnsupported(reason);
+          setIoReady(false);
+          return;
+        }
+        setUnsupported(null);
+        setIoReady(true);
+      } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
         }
-      });
+      }
+    }
+    void check();
+    const timer = window.setInterval(() => {
+      void check();
+    }, 4000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [kind, id]);
 
@@ -70,7 +85,7 @@ export function FilesPage() {
   }
 
   useEffect(() => {
-    if (!canRead || unsupported) {
+    if (!canRead || unsupported || !ioReady) {
       return;
     }
     let cancelled = false;
@@ -83,7 +98,7 @@ export function FilesPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRead, unsupported, kind, id]);
+  }, [canRead, unsupported, ioReady, kind, id]);
 
   async function onUpload(files: FileList | null) {
     if (!files?.[0]) {
@@ -163,6 +178,7 @@ export function FilesPage() {
   }
 
   const termHref = host ? `/nodes/${id}/terminal` : `/workloads/${id}/terminal`;
+  const termHereHref = `${termHref}?cwd=${encodeURIComponent(path)}`;
   const backHref = host ? "/node" : `/workloads/${id}`;
 
   return (
@@ -195,7 +211,7 @@ export function FilesPage() {
                 disabled={busy}
               />
             </label>
-            <button className="btn" type="button" onClick={() => navigate(termHref)}>
+            <button className="btn" type="button" onClick={() => navigate(termHereHref)}>
               Terminal Here
             </button>
           </>

@@ -119,6 +119,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest guest state: missing sockets are unavailable; no reply is not_installed; qemu-ga remains freeze/shutdown
 - Follow-up: live virtio-serial on Debian 13; Windows PTY if a later subset lands in this phase on hardware
 
+## Phase 20
+
+- Package: 0.1.19
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (VM Terminal/Files when nodal_ga is ok, 422 when not_installed, permission split, disconnect disables with a reason, console still works, audit vm:/, jail guest:/). FIXTURE: unix guest channel / fake IO. NOT PHYSICALLY VALIDATED: Terminal Here / Upload Here inside a booted Linux guest on virtio-serial
+- Honest IO: tabs stay disabled until nodal_ga is ok; agent down is unavailable, not healthy
+- Follow-up: live virtio-serial Terminal/Files on Debian 13; Windows PTY remains unimplemented
+
 
 
 

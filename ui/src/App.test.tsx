@@ -389,7 +389,34 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /console/i })).toBeVisible();
     expect(screen.getByRole("heading", { name: /guest agent/i })).toBeVisible();
     expect(screen.getByText(/not_installed/i)).toBeVisible();
-    expect(screen.getByText(/vm terminal and files stay disabled/i)).toBeVisible();
+    expect(screen.getByText(/nodal guest is not connected/i)).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^terminal$/i })).not.toBeInTheDocument();
+  });
+
+  it("enables VM Terminal and Files when the guest agent is ok", async () => {
+    window.history.replaceState({}, "", "/workloads/vm-1");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/vm-1": {
+        status: 200,
+        body: { id: "vm-1", name: "web", kind: "vm", status: "running", firmware: "bios", pending_restart: false },
+      },
+      "/api/v1/workloads/vm-1/guest": {
+        status: 200,
+        body: {
+          workload_id: "vm-1",
+          qemu_ga: { state: "ok" },
+          nodal_ga: { state: "ok", version: "0.1.18" },
+          guest_os: "linux",
+          observed_at: "2026-09-01T00:00:00Z",
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^web$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^terminal$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^files$/i })).toBeVisible();
   });
 
   it("renders the certificates settings page for admin", async () => {

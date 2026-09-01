@@ -14,7 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
-const guestJailRoot = "guest:/"
+const guestJailRoot = guest.JailRoot
 
 func (h *Handler) execVMGuest(ctx context.Context, msg *agentv1.VMGuest) (*connect.Response[agentv1.ExecuteResponse], error) {
 	id := strings.TrimSpace(msg.GetWorkloadId())
@@ -162,6 +162,7 @@ func isGuestJail(root string) bool {
 type guestPTY struct {
 	conn    *guest.Conn
 	session string
+	cwd     string
 	done    chan struct{}
 	pending []byte
 }
@@ -176,7 +177,11 @@ func startGuestPTY(ctx context.Context, h *Handler, req termRequest) (termSessio
 		_ = c.Close()
 		return nil, err
 	}
-	s := &guestPTY{conn: c, session: sess, done: make(chan struct{})}
+	cwd := strings.TrimSpace(req.CWD)
+	if cwd == "" {
+		cwd = "/"
+	}
+	s := &guestPTY{conn: c, session: sess, cwd: cwd, done: make(chan struct{})}
 	go func() {
 		<-ctx.Done()
 		s.Close()
@@ -219,7 +224,12 @@ func (s *guestPTY) Resize(rows, cols uint16) error {
 	return s.conn.PTYResize(s.session, cols, rows)
 }
 
-func (s *guestPTY) CWD() (string, bool) { return "/", true }
+func (s *guestPTY) CWD() (string, bool) {
+	if strings.TrimSpace(s.cwd) == "" {
+		return "/", true
+	}
+	return s.cwd, true
+}
 
 func (s *guestPTY) Pong() error { return nil }
 

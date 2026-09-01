@@ -61,8 +61,12 @@ export function WorkloadDetailPage() {
         setError(err instanceof Error ? err.message : "Unavailable");
       }
     });
+    const timer = window.setInterval(() => {
+      void reload().catch(() => undefined);
+    }, 4000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -141,14 +145,25 @@ export function WorkloadDetailPage() {
         <>
           <nav className="subnav" aria-label="VM IO">
             <Link href={`/workloads/${item.id}/console`}>Console</Link>
-            <span>Terminal (unavailable)</span>
-            <span>Files (unavailable)</span>
+            {guest?.nodal_ga.state === "ok" ? (
+              <>
+                <Link href={`/workloads/${item.id}/terminal`}>Terminal</Link>
+                <Link href={`/workloads/${item.id}/files`}>Files</Link>
+              </>
+            ) : (
+              <>
+                <span>Terminal (unavailable)</span>
+                <span>Files (unavailable)</span>
+              </>
+            )}
             <Link href={`/workloads/${item.id}/snapshots`}>Snapshots</Link>
             {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
           </nav>
-          <p className="banner banner-warn" role="status">
-            VM Terminal and Files stay disabled until the Guest Agent is installed and a later platform phase enables those tabs.
-          </p>
+          {guest?.nodal_ga.state === "ok" ? null : (
+            <p className="banner banner-warn" role="status">
+              {guest?.nodal_ga.reason || "VM Terminal and Files stay disabled until the Guest Agent is installed and connected."}
+            </p>
+          )}
           <article className="panel">
             <h2>Guest Agent</h2>
             <dl className="definition-list">

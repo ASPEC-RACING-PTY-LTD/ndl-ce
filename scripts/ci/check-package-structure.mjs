@@ -86,6 +86,9 @@ if (!changelog.includes("nodal (0.1.17)") || !changelog.includes("Phase 18 VM ad
 if (!changelog.includes("nodal (0.1.18)") || !changelog.includes("Phase 19 No-dal Guest Agent")) {
   errors.push("changelog must include nodal (0.1.18) Phase 19 No-dal Guest Agent");
 }
+if (!changelog.includes("nodal (0.1.19)") || !changelog.includes("Phase 20 guest Terminal and Files")) {
+  errors.push("changelog must include nodal (0.1.19) Phase 20 guest Terminal and Files");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

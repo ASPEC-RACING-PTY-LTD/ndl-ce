@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.18
-  description: Phase 19 No-dal Guest Agent plus prior northbound API. qemu-ga freeze/shutdown plus optional nodal_ga for Files and PTY.
+  version: 0.1.19
+  description: Phase 20 guest Terminal and Files plus prior northbound API. VM tabs require nodal_ga ok. qemu-ga remains freeze/shutdown.
 servers:
   - url: /api/v1
 paths:
@@ -1048,7 +1048,7 @@ paths:
   /workloads/{id}/terminal/sessions:
     post:
       operationId: createWorkloadTerminalSession
-      summary: Create a CT terminal ticket
+      summary: Create a CT or VM guest terminal ticket
       parameters:
         - name: id
           in: path
@@ -1242,7 +1242,7 @@ paths:
   /workloads/{id}/files:
     get:
       operationId: listWorkloadFiles
-      summary: List CT files
+      summary: List CT or VM guest files
       parameters:
         - name: id
           in: path
@@ -1263,7 +1263,7 @@ paths:
   /workloads/{id}/files/stat:
     get:
       operationId: statWorkloadFile
-      summary: Stat a CT path
+      summary: Stat a CT or VM guest path
       parameters:
         - name: id
           in: path
@@ -1284,7 +1284,7 @@ paths:
   /workloads/{id}/files/download:
     get:
       operationId: downloadWorkloadFile
-      summary: Download a CT file
+      summary: Download a CT or VM guest file
       parameters:
         - name: id
           in: path
@@ -1301,7 +1301,7 @@ paths:
   /workloads/{id}/files/upload:
     post:
       operationId: uploadWorkloadFile
-      summary: Upload a CT file
+      summary: Upload a CT or VM guest file
       parameters:
         - name: id
           in: path
@@ -1318,7 +1318,7 @@ paths:
   /workloads/{id}/files/mkdir:
     post:
       operationId: mkdirWorkloadFile
-      summary: Create a CT directory
+      summary: Create a CT or VM guest directory
       parameters:
         - name: id
           in: path
@@ -1340,7 +1340,7 @@ paths:
   /workloads/{id}/files/delete:
     post:
       operationId: deleteWorkloadFile
-      summary: Delete a CT path
+      summary: Delete a CT or VM guest path
       parameters:
         - name: id
           in: path
@@ -1362,7 +1362,7 @@ paths:
   /workloads/{id}/files/move:
     post:
       operationId: moveWorkloadFile
-      summary: Rename a CT path
+      summary: Rename a CT or VM guest path
       parameters:
         - name: id
           in: path

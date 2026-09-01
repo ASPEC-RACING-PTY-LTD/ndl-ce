@@ -64,6 +64,7 @@ func run(args []string) error {
   workload export --id ID [--display-name NAME]
   node terminal [--id ID] [--cwd PATH]
   workload files ls --id ID [--path PATH]
+  workload terminal --id ID [--cwd PATH]
   lab qemu-proto start [--pool-id ID] [--volume-id ID] [--size-bytes N] [--autostart]
   lab qemu-proto status
   lab qemu-proto stop
@@ -523,7 +524,7 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 
 func cmdWorkload(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|import|export|files")
+		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|import|export|files|terminal")
 	}
 	switch args[0] {
 	case "list":
@@ -642,6 +643,8 @@ func cmdWorkload(args []string) error {
 		return postJSON("/api/v1/workloads/"+f["id"]+"/export", map[string]any{"display_name": f["display-name"]}, true)
 	case "files":
 		return cmdWorkloadFiles(args[1:])
+	case "terminal":
+		return cmdWorkloadTerminal(args[1:])
 	default:
 		return fmt.Errorf("unknown workload command")
 	}
@@ -685,6 +688,18 @@ func cmdWorkloadFiles(args []string) error {
 		p = "/"
 	}
 	return cmdGet("/api/v1/workloads/" + f["id"] + "/files?path=" + strings.ReplaceAll(p, " ", "%20"))
+}
+
+func cmdWorkloadTerminal(args []string) error {
+	f := parseFlags(args)
+	if f["id"] == "" {
+		return fmt.Errorf("usage: nodalctl workload terminal --id ID [--cwd PATH]")
+	}
+	cwd := f["cwd"]
+	if cwd == "" {
+		cwd = "/"
+	}
+	return postJSON("/api/v1/workloads/"+f["id"]+"/terminal/sessions", map[string]any{"cwd": cwd}, true)
 }
 
 func cmdLab(args []string) error {

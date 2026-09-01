@@ -29,7 +29,7 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
   Why not blocking: there is still no generic host execution RPC; DevicePolicy remains closed.
 - LOW. Browser tickets use the `ndl.ticket.` WebSocket subprotocol because browsers cannot set `X-Nodal-Ticket`. Query-string tickets are rejected.
 - LOW. Folder archive download was left for Phase 17 and remains deferred: Phase 17 Agent is None, so no new zip RPC.
-- LOW. VM Terminal and Files remain Phase 20 and return 422.
+- LOW. VM Terminal and Files were deferred to Phase 20. Why not blocking: Phase 20 now enables those tabs when nodal_ga is ok.
 - LOW. Docker Desktop overlay backing identity changes across host reboot, so Directory pools on this e2e guest can show unavailable. Real disk UUIDs are the product path.
 
 ## Phase 7
@@ -125,9 +125,14 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 ## Phase 19
 
 - MEDIUM. Live virtio-serial org.nodal.guest.0 is proven with a unix fixture, not a booted guest. Why not blocking: Cloud has no KVM guest OS; the protocol, agent mux, and Linux PTY banner are covered.
-- LOW. Windows PTY is honestly unimplemented. Why not blocking: roadmap allows a Files/shutdown/IP subset; product VM Terminal tabs remain Phase 20.
+- LOW. Windows PTY is honestly unimplemented. Why not blocking: roadmap allows a Files/shutdown/IP subset; Linux Terminal is the Phase 20 acceptance path.
 - LOW. ndl-guest is an optional guest package and is not a host metapackage dependency. Why not blocking: VMs start without it.
 - LOW. GET /guest never emits stale in Cloud tests. Why not blocking: missing reply is not_installed and missing socket is unavailable; stale is for later observation aging.
+
+## Phase 20
+
+- MEDIUM. Terminal Here / Upload Here are proven through HTTP plus a fake guest/IO, not a booted virtio-serial guest. Why not blocking: Cloud has no KVM guest OS; jail is guest:/ and product tabs stay off unless nodal_ga is ok.
+- LOW. Windows PTY remains unimplemented, so a Windows VM with nodal_ga ok can still fail Terminal honestly. Why not blocking: Files still work; Console remains the Windows shell path.
 
 
 

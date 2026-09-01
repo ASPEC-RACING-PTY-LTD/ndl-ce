@@ -77,7 +77,20 @@ Self-signed trust is the SHA-256 fingerprint shown in the UI. It is not a
 public CA.
 
 Console uses `compute.console` and a short-lived ticket. It does not grant
-`terminal.open`. VM Terminal and Files remain Phase 20.
+`terminal.open`. VM Terminal and Files require `nodal_ga` state `ok`. Missing
+or disconnected guest agents disable those tabs with a reason. Console remains
+usable without a guest agent.
+
+### Recovery matrix (guest Terminal and Files)
+
+1. Install the No-dal Guest Agent inside a Linux VM (or use a fixture guest channel).
+2. `nodal_ga` reports `ok`.
+3. Terminal Here opens a guest PTY at the Files cwd.
+4. Upload Here writes inside guest `/`, not the host qcow2.
+5. Audit records `vm:/...`.
+6. Agent or guest disconnect disables Terminal and Files with a reason.
+7. Serial console still works.
+8. `not_installed` and `unavailable` do not enable the tabs.
 
 ### Recovery matrix (product VM)
 

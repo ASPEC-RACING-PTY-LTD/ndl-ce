@@ -55,7 +55,7 @@ func TestPhase19GuestStatusHonestAndVMIOStill422(t *testing.T) {
 	defer tres.Body.Close()
 	if tres.StatusCode != http.StatusUnprocessableEntity {
 		b, _ := io.ReadAll(tres.Body)
-		t.Fatalf("product VM terminal must stay 422 until Phase 20: %d %s", tres.StatusCode, b)
+		t.Fatalf("product VM terminal stays 422 until nodal_ga is ok: %d %s", tres.StatusCode, b)
 	}
 	files, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id+"/files?path=.", nil)
 	files.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
@@ -66,7 +66,7 @@ func TestPhase19GuestStatusHonestAndVMIOStill422(t *testing.T) {
 	defer fres.Body.Close()
 	if fres.StatusCode != http.StatusUnprocessableEntity {
 		b, _ := io.ReadAll(fres.Body)
-		t.Fatalf("product VM files must stay 422 until Phase 20: %d %s", fres.StatusCode, b)
+		t.Fatalf("product VM files stay 422 until nodal_ga is ok: %d %s", fres.StatusCode, b)
 	}
 
 	cons, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/console/sessions", strings.NewReader(`{"mode":"serial"}`))
