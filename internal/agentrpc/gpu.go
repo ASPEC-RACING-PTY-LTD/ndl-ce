@@ -86,9 +86,18 @@ func (h *Handler) execGPUAssign(ctx context.Context, m *agentv1.GPUAssign) (*con
 			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
 		}
 		res.Argv = h.vfioArgv(req.PCIDevices, false)
-	} else if h.Workloads != nil {
-		if err := h.Workloads.ApplyGPUDevices(req.WorkloadID, req.DeviceNodes); err != nil {
+	} else if h.Workloads != nil || h.OCI != nil {
+		var err error
+		if h.Workloads != nil {
+			err = h.Workloads.ApplyGPUDevices(req.WorkloadID, req.DeviceNodes)
+		}
+		if h.OCI != nil && (h.Workloads == nil || err != nil) {
+			err = h.OCI.ApplyGPUDevices(req.WorkloadID, req.DeviceNodes)
+		}
+		if err != nil {
+			res.Status = gpu.StatusFailed
 			res.Reason = err.Error()
+			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
 		}
 	}
 	if h.SkipHostCmds {

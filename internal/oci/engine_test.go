@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestEngineCreateSkipHostWritesApplied(t *testing.T) {
 		DataDir: root, Runtime: fake, SkipHostCmds: true,
 		Now: func() time.Time { return time.Unix(1, 0).UTC() },
 		Creds: func(string) (*RegistryCreds, error) {
-			return &RegistryCreds{Username: "u", Password: "p"}, nil
+			return &RegistryCreds{Username: "u", Password: "s3cret-pull"}, nil
 		},
 	}
 	id := uuid.NewString()
@@ -78,8 +79,15 @@ func TestEngineCreateSkipHostWritesApplied(t *testing.T) {
 		t.Fatal("image")
 	}
 	creds := fake.LastPullCreds("reg.example/app:2")
-	if creds == nil || creds.Password != "p" {
+	if creds == nil || creds.Password != "s3cret-pull" {
 		t.Fatal("expected pull with stored creds")
+	}
+	raw, err := os.ReadFile(e.lastAppliedPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "s3cret-pull") || strings.Contains(string(raw), "pull_password") {
+		t.Fatalf("last-applied leaked pull password: %s", raw)
 	}
 }
 
@@ -107,6 +115,19 @@ func TestPullArgvNoExtraUserArgs(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--user u:p") {
 		t.Fatalf("creds argv: %v", argv)
+	}
+}
+
+func TestTaskStartArgvRejectsRootLocator(t *testing.T) {
+	id := uuid.NewString()
+	vol := uuid.NewString()
+	_, err := TaskStartArgv("nodal", Spec{
+		WorkloadID: id, Name: "x", ImagePin: "busybox:latest",
+		Volumes:     []VolumeMount{{VolumeID: vol, ContainerPath: "/data"}},
+		VolumePaths: map[string]string{vol: "/"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "/") {
+		t.Fatalf("expected root bind reject, got %v", err)
 	}
 }
 
@@ -140,5 +161,24 @@ func TestContainerdSkipHostNoFakeHealth(t *testing.T) {
 	}
 	if obs.Health.Status != StatusUnavailable {
 		t.Fatalf("health %s", obs.Health.Status)
+	}
+}
+
+func TestApplyGPUDevicesWritesLastApplied(t *testing.T) {
+	root := t.TempDir()
+	e := &Engine{DataDir: root, Runtime: &FakeRuntime{}, SkipHostCmds: true}
+	id := uuid.NewString()
+	if _, err := e.Create(context.Background(), Spec{WorkloadID: id, Name: "g", ImagePin: "busybox:latest"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.ApplyGPUDevices(id, []string{"/dev/dri/renderD128"}); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := e.LastApplied(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.Spec.GPUDevices) != 1 || applied.Spec.GPUDevices[0] != "/dev/dri/renderD128" {
+		t.Fatalf("%v", applied.Spec.GPUDevices)
 	}
 }

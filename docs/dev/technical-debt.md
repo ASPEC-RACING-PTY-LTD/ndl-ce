@@ -137,6 +137,8 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 ## Phase 21
 
 - MEDIUM. containerd pull/run is proven with FakeRuntime and SkipHostCmds, not a live ctr on this Cloud VM. Why not blocking: Cloud has no containerd; unavailable health stays honest; Debian 13 appliance validation remains.
+- MEDIUM. `ctr image pull --user user:pass` puts registry password on argv. Why not blocking: that is the typed ctr interface; last-applied and API JSON redact passwords.
+- MEDIUM. Port publish, CNI/bridge attach, cgroup limits, and SecretRefs are stored as desired state and not applied by `ctr run` in this runtime. Why not blocking: faking published ports would invent connectivity; Compose/CNI can land with Phase 22 stacks.
 - LOW. Health HTTP probe is configured and visible as collecting/not_configured; live probe against a running task is not executed here. Why not blocking: inventing healthy would violate honesty.
 - LOW. OCI clone is refused. Why not blocking: recreate-from-image plus volume move belongs with migrate phases.
 

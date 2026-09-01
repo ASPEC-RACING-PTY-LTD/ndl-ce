@@ -211,6 +211,11 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	if res.Status == gpu.StatusFailed {
+		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
+		writeErr(w, http.StatusBadGateway, res.Reason)
+		return
+	}
 	if res.Status != "" {
 		a.Status = res.Status
 		a.Reason = res.Reason

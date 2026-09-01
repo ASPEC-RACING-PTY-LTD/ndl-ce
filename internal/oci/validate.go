@@ -117,6 +117,9 @@ func ValidateVolumeMount(v VolumeMount) error {
 	if path.Clean(cp) == "/" {
 		return fmt.Errorf("container_path must not be /")
 	}
+	if strings.ContainsAny(cp, ",=\n\r\x00") {
+		return fmt.Errorf("container_path contains banned characters")
+	}
 	return nil
 }
 

@@ -107,11 +107,21 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	if err := e.Start(ctx, spec.WorkloadID); err != nil {
 		return Result{}, err
 	}
+	status := StatusCollecting
+	if e.SkipHostCmds {
+		status = StatusUnavailable
+	}
 	health := Health{Status: StatusNotConfigured, Message: "healthcheck not configured"}
 	if spec.Health != nil && (spec.Health.HTTPPath != "" || spec.Health.Port > 0) {
 		health = Health{Status: StatusCollecting, Message: "healthcheck configured; awaiting observation"}
 	}
-	return Result{WorkloadID: spec.WorkloadID, ImageDigest: digest, Status: StatusRunning, Health: health}, nil
+	if e.SkipHostCmds {
+		health = Health{Status: StatusUnavailable, Message: "host commands skipped; containerd not observed"}
+		if spec.Health != nil && (spec.Health.HTTPPath != "" || spec.Health.Port > 0) {
+			health = Health{Status: StatusCollecting, Message: "healthcheck configured; awaiting observation"}
+		}
+	}
+	return Result{WorkloadID: spec.WorkloadID, ImageDigest: digest, Status: status, Health: health}, nil
 }
 
 // Start starts nodal-oci@<uuid> via systemd.
@@ -163,6 +173,27 @@ func (e *Engine) runHost(ctx context.Context, name string, args ...string) ([]by
 	}
 	c := &Containerd{SkipHostCmds: e.SkipHostCmds}
 	return c.run(ctx, name, args...)
+}
+
+// ApplyGPUDevices rewrites last-applied OCI spec with allowlisted device nodes.
+func (e *Engine) ApplyGPUDevices(id string, devices []string) error {
+	applied, err := e.readApplied(id)
+	if err != nil {
+		return fmt.Errorf("oci last-applied is missing: %w", err)
+	}
+	clean := make([]string, 0, len(devices))
+	for _, d := range devices {
+		d = strings.TrimSpace(d)
+		if d == "" {
+			continue
+		}
+		if !strings.HasPrefix(d, "/dev/") || strings.Contains(d, "..") || strings.ContainsAny(d, ",=\n\r\x00") {
+			return fmt.Errorf("device node is not allowlisted")
+		}
+		clean = append(clean, d)
+	}
+	applied.Spec.GPUDevices = clean
+	return e.writeApplied(applied.Spec, applied.ImageDigest, applied.Pulled)
 }
 
 // Lifecycle dispatches a typed action.

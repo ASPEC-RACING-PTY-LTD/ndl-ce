@@ -261,7 +261,7 @@ func (s *Server) createOCIWorkload(w http.ResponseWriter, r *http.Request, p *pr
 		CreatedAt: s.now(), UpdatedAt: s.now(),
 	}
 	if row.Status == "" {
-		row.Status = oci.StatusRunning
+		row.Status = oci.StatusCollecting
 	}
 	if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
 		s.finishOp(r.Context(), op, "failed", err.Error(), 0)

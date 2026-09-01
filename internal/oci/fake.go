@@ -93,7 +93,7 @@ func (f *FakeRuntime) Observe(_ context.Context, workloadID string) (Observed, e
 	if f.Running[workloadID] {
 		obs.Status = StatusRunning
 		obs.UnitActive = true
-		obs.Health = Health{Status: StatusRunning, Message: "fake runtime healthy"}
+		obs.Health = Health{Status: StatusCollecting, Message: "fixture runtime; health probe not executed"}
 		return obs, nil
 	}
 	if _, known := f.Running[workloadID]; known {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
 )
@@ -137,6 +138,12 @@ func TaskStartArgv(ns string, spec Spec) ([]string, error) {
 		}
 		if host == "" {
 			return nil, fmt.Errorf("volume %s has no host locator", m.VolumeID)
+		}
+		if path.Clean(host) == "/" {
+			return nil, fmt.Errorf("host bind to / is not allowed")
+		}
+		if strings.ContainsAny(host, ",=\n\r\x00") || strings.ContainsAny(m.ContainerPath, ",=\n\r\x00") {
+			return nil, fmt.Errorf("bind path contains banned characters")
 		}
 		opts := "rbind"
 		if m.ReadOnly {
