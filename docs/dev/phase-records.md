@@ -218,5 +218,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: placement remains Phase 31; live two-box appliance job; mTLS on Execute over the tunnel
 - Audit follow-up: pairing tokens are not join tokens; two control-plane processes cannot both hold the writer lease; hostname is not identity
 
+## Phase 31
+
+- Package: 0.1.30
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (automatic placement lands on the GPU node, specific-node does not fall through, maintenance skips the draining node and queues migrate ops, start on a worker placement is refused so a second copy is not started on the control node). FIXTURE: two Memory nodes plus GPU inventory. NOT PHYSICALLY VALIDATED: placing onto a live worker agent
+- Follow-up: migrate engine remains Phase 32; remote Execute apply
+- Audit follow-up: placement never starts a second copy on the wrong node; queued migrate jobs do not run until Phase 32
+
 
 

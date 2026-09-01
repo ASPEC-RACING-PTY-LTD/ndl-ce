@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.29
-  description: Phase 30 cluster join, single-use tokens, worker nodes, and a single Postgres writer lease, plus prior northbound API.
+  version: 0.1.30
+  description: Phase 31 placement and maintenance, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -814,6 +814,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClusterNodeRevokeResponse"
+  /placement/preview:
+    post:
+      operationId: previewPlacement
+      summary: Preview the node a create would land on. Does not start a guest.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlacementPreviewRequest"
+      responses:
+        "200":
+          description: Chosen node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementPreviewResponse"
+  /node-groups:
+    get:
+      operationId: listNodeGroups
+      summary: List CE placement groups
+      responses:
+        "200":
+          description: Groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeGroupListResponse"
+    post:
+      operationId: createNodeGroup
+      summary: Create a placement group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeGroupCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeGroup"
+  /nodes/{id}/maintain:
+    post:
+      operationId: maintainNode
+      summary: Drain a node. Lists workloads and queues migrate jobs. Migrate engine is Phase 32.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Maintenance started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeMaintainResponse"
+  /nodes/{id}/maintain/exit:
+    post:
+      operationId: exitNodeMaintenance
+      summary: Clear maintenance mode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Maintenance cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeMaintainExitResponse"
   /workloads:
     get:
       operationId: listWorkloads
@@ -3658,6 +3736,89 @@ components:
           type: string
         revoked:
           type: boolean
+    PlacementPreviewRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        placement:
+          type: string
+        node_id:
+          type: string
+        require_gpu:
+          type: boolean
+    PlacementPreviewResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - node_id
+      properties:
+        node_id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        apply_local:
+          type: boolean
+    NodeGroupListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeGroup"
+    NodeGroupCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        node_ids:
+          type: array
+          items:
+            type: string
+    NodeGroup:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        members:
+          type: array
+          items:
+            type: string
+    NodeMaintainResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        maintenance:
+          type: boolean
+        warning:
+          type: string
+    NodeMaintainExitResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        maintenance:
+          type: boolean
     OpenClusterSessionRequest:
       type: object
       additionalProperties: false
@@ -3934,6 +4095,20 @@ components:
         nocloud:
           type: object
           additionalProperties: true
+        placement:
+          type: string
+        node_id:
+          type: string
+        node_group_id:
+          type: string
+        require_gpu:
+          type: boolean
+        require_storage_class:
+          type: string
+        affinity_workload_id:
+          type: string
+        anti_affinity_workload_id:
+          type: string
     Registry:
       type: object
       additionalProperties: false

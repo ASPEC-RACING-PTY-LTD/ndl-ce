@@ -266,6 +266,20 @@ type Store interface {
 	UpdateRemoteNodeSession(ctx context.Context, n RemoteNode) error
 
 	CreateRemoteSession(ctx context.Context, s RemoteSession) error
+
+	CreateNodeGroup(ctx context.Context, g NodeGroup) error
+	ListNodeGroups(ctx context.Context, clusterID string) ([]NodeGroup, error)
+	GetNodeGroup(ctx context.Context, clusterID, id string) (*NodeGroup, error)
+	AddNodeGroupMember(ctx context.Context, clusterID, groupID, nodeID string) error
+	ListNodeGroupMembers(ctx context.Context, clusterID, groupID string) ([]string, error)
+
+	SetNodeMaintenance(ctx context.Context, m NodeMaintenance) error
+	ClearNodeMaintenance(ctx context.Context, clusterID, nodeID string) error
+	GetNodeMaintenance(ctx context.Context, clusterID, nodeID string) (*NodeMaintenance, error)
+	ListNodeMaintenance(ctx context.Context, clusterID string) ([]NodeMaintenance, error)
+
+	UpsertWorkloadPlacement(ctx context.Context, p WorkloadPlacement) error
+	GetWorkloadPlacement(ctx context.Context, clusterID, workloadID string) (*WorkloadPlacement, error)
 }
 
 // Cluster is the appliance cluster of one.

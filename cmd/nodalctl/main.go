@@ -35,6 +35,8 @@ func run(args []string) error {
   recover-admin --username USER --password PASS
   host-prepare
   node show
+  node maintain --id ID [--reason TEXT]
+  node maintain exit --id ID
   cluster show
   cluster join-token create
   cluster join --token TOKEN [--url URL] [--hostname HOST]
@@ -147,15 +149,17 @@ func run(args []string) error {
 		return install.HostPrepare()
 	case "node":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: nodalctl node show|terminal")
+			return fmt.Errorf("usage: nodalctl node show|terminal|maintain")
 		}
 		switch args[1] {
 		case "show":
 			return cmdGet("/api/v1/nodes")
 		case "terminal":
 			return cmdNodeTerminal(args[2:])
+		case "maintain":
+			return cmdNodeMaintain(args[2:])
 		default:
-			return fmt.Errorf("usage: nodalctl node show|terminal")
+			return fmt.Errorf("usage: nodalctl node show|terminal|maintain")
 		}
 	case "cluster":
 		return cmdCluster(args[1:])
@@ -276,6 +280,21 @@ func cmdGet(path string) error {
 	}
 	fmt.Println(string(resp))
 	return nil
+}
+
+func cmdNodeMaintain(args []string) error {
+	if len(args) > 0 && args[0] == "exit" {
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl node maintain exit --id ID")
+		}
+		return postJSON("/api/v1/nodes/"+f["id"]+"/maintain/exit", map[string]any{}, true)
+	}
+	f := parseFlags(args)
+	if f["id"] == "" {
+		return fmt.Errorf("usage: nodalctl node maintain --id ID [--reason TEXT]")
+	}
+	return postJSON("/api/v1/nodes/"+f["id"]+"/maintain", map[string]any{"reason": f["reason"]}, true)
 }
 
 func cmdGuestStatus(args []string) error {

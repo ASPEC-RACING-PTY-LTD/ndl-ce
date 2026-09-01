@@ -27,35 +27,42 @@ type WorkloadRPC interface {
 }
 
 type createWorkloadRequest struct {
-	Name         string            `json:"name"`
-	Kind         string            `json:"kind"`
-	ImagePin     string            `json:"image_pin"`
-	CPUs         int               `json:"cpus"`
-	MemoryBytes  int64             `json:"memory_bytes"`
-	PoolID       string            `json:"pool_id"`
-	NetworkID    string            `json:"network_id"`
-	VolumeID     string            `json:"volume_id"`
-	VolumeIDs    []string          `json:"volume_ids"`
-	RegistryID   string            `json:"registry_id"`
-	Ports        []oci.Port        `json:"ports"`
-	Env          []oci.EnvVar      `json:"env"`
-	SecretRefs   []oci.SecretRef   `json:"secret_refs"`
-	Volumes      []oci.VolumeMount `json:"volumes"`
-	Health       *oci.Healthcheck  `json:"health"`
-	HostPath     string            `json:"host_path"`
-	Privileged   bool              `json:"privileged"`
-	DesiredPower string            `json:"desired_power"`
-	Firmware     string            `json:"firmware"`
-	Autostart    bool              `json:"autostart"`
-	Balloon      bool              `json:"balloon"`
-	ISOLibraryID string            `json:"iso_library_id"`
-	CloudImageID string            `json:"cloud_image_id"`
-	NoCloud      vmspec.NoCloud    `json:"nocloud"`
-	Spec         json.RawMessage   `json:"spec"`
-	QEMUArgs     []string          `json:"qemu_args"`
-	Command      string            `json:"command"`
-	CommandSlice []string          `json:"-"`
-	SecureBoot   bool              `json:"secure_boot"`
+	Name                   string            `json:"name"`
+	Kind                   string            `json:"kind"`
+	ImagePin               string            `json:"image_pin"`
+	CPUs                   int               `json:"cpus"`
+	MemoryBytes            int64             `json:"memory_bytes"`
+	PoolID                 string            `json:"pool_id"`
+	NetworkID              string            `json:"network_id"`
+	VolumeID               string            `json:"volume_id"`
+	VolumeIDs              []string          `json:"volume_ids"`
+	RegistryID             string            `json:"registry_id"`
+	Ports                  []oci.Port        `json:"ports"`
+	Env                    []oci.EnvVar      `json:"env"`
+	SecretRefs             []oci.SecretRef   `json:"secret_refs"`
+	Volumes                []oci.VolumeMount `json:"volumes"`
+	Health                 *oci.Healthcheck  `json:"health"`
+	HostPath               string            `json:"host_path"`
+	Privileged             bool              `json:"privileged"`
+	DesiredPower           string            `json:"desired_power"`
+	Firmware               string            `json:"firmware"`
+	Autostart              bool              `json:"autostart"`
+	Balloon                bool              `json:"balloon"`
+	ISOLibraryID           string            `json:"iso_library_id"`
+	CloudImageID           string            `json:"cloud_image_id"`
+	NoCloud                vmspec.NoCloud    `json:"nocloud"`
+	Spec                   json.RawMessage   `json:"spec"`
+	QEMUArgs               []string          `json:"qemu_args"`
+	Command                string            `json:"command"`
+	CommandSlice           []string          `json:"-"`
+	SecureBoot             bool              `json:"secure_boot"`
+	Placement              string            `json:"placement"`
+	NodeID                 string            `json:"node_id"`
+	NodeGroupID            string            `json:"node_group_id"`
+	RequireGPU             bool              `json:"require_gpu"`
+	RequireStorageClass    string            `json:"require_storage_class"`
+	AffinityWorkloadID     string            `json:"affinity_workload_id"`
+	AntiAffinityWorkloadID string            `json:"anti_affinity_workload_id"`
 }
 
 type patchWorkloadRequest struct {
@@ -152,9 +159,21 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "only admin may create privileged containers")
 		return
 	}
-	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
-	if err != nil || node == nil {
-		writeErr(w, http.StatusFailedDependency, "local node is not enrolled")
+	node, local, err := s.placeCreate(r.Context(), p.User.ClusterID, req)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	if !local {
+		id := uuid.NewString()
+		row := remotePlacedWorkload(p.User.ClusterID, node, req, id, lxc.KindSystemContainer)
+		if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
+			writeErr(w, http.StatusConflict, "could not record workload")
+			return
+		}
+		s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
+		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
 		return
 	}
 	if s.Workloads == nil {
@@ -228,6 +247,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not record workload")
 		return
 	}
+	s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
 	if volRow != nil {
 		_ = s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: volRow.ID, Role: "root",
@@ -391,6 +411,9 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 		}
 		if s.Workloads == nil {
 			writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
+			return
+		}
+		if !s.guardLocalApply(w, r, p.User.ClusterID, firstNonEmpty(row.DesiredNodeID, row.NodeID), action) {
 			return
 		}
 		req := lxc.LifecycleRequest{WorkloadID: row.ID, Action: action}
@@ -656,6 +679,7 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"warnings": w.Warnings, "disks": diskOut, "nics": nicOut,
 		"autostart": w.Autostart, "pending_restart": w.PendingRestart, "firmware": w.Firmware,
 		"spec": specJSON(w), "applied": appliedJSON(w),
+		"desired_node_id": w.DesiredNodeID, "owner_node_id": w.OwnerNodeID,
 		"created_at": w.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if w.Kind == oci.KindOCI {

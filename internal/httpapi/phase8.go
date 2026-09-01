@@ -108,9 +108,21 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
-	if err != nil || node == nil {
-		writeErr(w, http.StatusFailedDependency, "local node is not enrolled")
+	node, local, err := s.placeCreate(r.Context(), p.User.ClusterID, req)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	if !local {
+		id := uuid.NewString()
+		row := remotePlacedWorkload(p.User.ClusterID, node, req, id, vmspec.KindVM)
+		if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
+			writeErr(w, http.StatusConflict, "could not record workload")
+			return
+		}
+		s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
+		s.audit(r, p.User.ClusterID, p.User.ID, "vm.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
 		return
 	}
 	if s.VM == nil || s.Storage == nil {
@@ -189,6 +201,7 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		writeErr(w, http.StatusConflict, "could not record workload")
 		return
 	}
+	s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
 	_ = s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 		VolumeID: vol.ID, Role: vmspec.DiskRoleBoot, Slot: 0, BusAddr: launch.Disks[0].PCIAddr,
@@ -555,6 +568,9 @@ func (s *Server) vmLifecycle(w http.ResponseWriter, r *http.Request, p *principa
 	}
 	if !rbac.Authorize(p.Grants, perm) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
 		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if !s.guardLocalApply(w, r, p.User.ClusterID, firstNonEmpty(row.DesiredNodeID, row.NodeID), action) {
 		return
 	}
 	if s.VM == nil {

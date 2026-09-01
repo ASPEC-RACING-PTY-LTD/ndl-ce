@@ -79,6 +79,10 @@ type Memory struct {
 	remoteSessions    map[string]RemoteSession
 	joinTokens        map[string]JoinToken
 	clusterLease      *ClusterLease
+	nodeGroups        map[string]NodeGroup
+	nodeGroupMembers  map[string][]string
+	nodeMaint         map[string]NodeMaintenance
+	placements        map[string]WorkloadPlacement
 }
 
 // NewMemory returns an empty store.

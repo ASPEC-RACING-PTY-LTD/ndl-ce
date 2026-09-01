@@ -385,6 +385,45 @@ export interface ClusterNodeRevokeResponse {
   revoked: boolean;
 }
 
+export interface PlacementPreviewRequest {
+  placement?: string;
+  node_id?: string;
+  require_gpu?: boolean;
+}
+
+export interface PlacementPreviewResponse {
+  node_id: string;
+  name?: string;
+  role?: string;
+  apply_local?: boolean;
+}
+
+export interface NodeGroupListResponse {
+  items: NodeGroup[];
+}
+
+export interface NodeGroupCreateRequest {
+  name: string;
+  node_ids?: string[];
+}
+
+export interface NodeGroup {
+  id: string;
+  name: string;
+  members?: string[];
+}
+
+export interface NodeMaintainResponse {
+  id: string;
+  maintenance?: boolean;
+  warning?: string;
+}
+
+export interface NodeMaintainExitResponse {
+  id: string;
+  maintenance?: boolean;
+}
+
 export interface OpenClusterSessionRequest {
   peer_id: string;
   node_id?: string;
@@ -511,6 +550,13 @@ export interface CreateWorkloadRequest {
   cloud_image_id?: string;
   iso_library_id?: string;
   nocloud?: Record<string, unknown>;
+  placement?: string;
+  node_id?: string;
+  node_group_id?: string;
+  require_gpu?: boolean;
+  require_storage_class?: string;
+  affinity_workload_id?: string;
+  anti_affinity_workload_id?: string;
 }
 
 export interface Registry {
@@ -1421,6 +1467,14 @@ export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 export type JoinClusterPath = "/api/v1/cluster/join";
 
 export type RevokeClusterNodePath = "/api/v1/cluster/nodes/{id}/revoke";
+
+export type PreviewPlacementPath = "/api/v1/placement/preview";
+
+export type ListNodeGroupsPath = "/api/v1/node-groups";
+
+export type MaintainNodePath = "/api/v1/nodes/{id}/maintain";
+
+export type ExitNodeMaintenancePath = "/api/v1/nodes/{id}/maintain/exit";
 
 export type ListWorkloadsPath = "/api/v1/workloads";
 

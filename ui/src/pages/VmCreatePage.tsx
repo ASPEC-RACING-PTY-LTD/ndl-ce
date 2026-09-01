@@ -29,6 +29,8 @@ export function VmCreatePage() {
   const [cloudImageID, setCloudImageID] = useState("");
   const [isoID, setIsoID] = useState("");
   const [autostart, setAutostart] = useState(false);
+  const [placement, setPlacement] = useState("automatic");
+  const [requireGPU, setRequireGPU] = useState(false);
   const [hostname, setHostname] = useState("vm-1");
   const [username, setUsername] = useState("debian");
   const [sshKeys, setSshKeys] = useState("");
@@ -76,6 +78,8 @@ export function VmCreatePage() {
     hostname,
     username,
     sshKeys,
+    placement,
+    requireGPU,
   });
 
   async function onCreate() {
@@ -143,6 +147,20 @@ export function VmCreatePage() {
             value={memoryMiB}
             onChange={(e) => setMemoryMiB(e.target.value)}
           />
+          <fieldset>
+            <legend className="field-label">Placement</legend>
+            <label className="field-label">
+              <input type="radio" name="vm-placement" checked={placement === "automatic"} onChange={() => setPlacement("automatic")} />{" "}
+              Automatic
+            </label>
+            <label className="field-label">
+              <input type="radio" name="vm-placement" checked={placement === "node"} onChange={() => setPlacement("node")} /> Specific
+              node
+            </label>
+          </fieldset>
+          <label className="field-label">
+            <input type="checkbox" checked={requireGPU} onChange={(e) => setRequireGPU(e.target.checked)} /> Require GPU
+          </label>
         </article>
       ) : null}
       {showStorage && !reviewOnly ? (

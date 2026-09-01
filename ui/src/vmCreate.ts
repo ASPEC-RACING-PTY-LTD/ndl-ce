@@ -11,6 +11,9 @@ export type VmCreateFields = {
   hostname: string;
   username: string;
   sshKeys: string;
+  placement?: string;
+  nodeID?: string;
+  requireGPU?: boolean;
 };
 
 export function buildVmCreateBody(fields: VmCreateFields) {
@@ -25,6 +28,9 @@ export function buildVmCreateBody(fields: VmCreateFields) {
     autostart: fields.autostart,
     cloud_image_id: fields.cloudImageID || undefined,
     iso_library_id: fields.isoID || undefined,
+    placement: fields.placement || "automatic",
+    node_id: fields.nodeID || undefined,
+    require_gpu: Boolean(fields.requireGPU),
     nocloud: {
       enable: true,
       hostname: fields.hostname || fields.name,

@@ -144,9 +144,19 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 	if strings.TrimSpace(req.HostPath) != "" {
 		return appdb.Workload{}, false, errBadRequest("host_path mounts are not allowed; use volume_ids")
 	}
-	node, err := s.Store.GetNode(ctx, p.User.ClusterID)
-	if err != nil || node == nil {
-		return appdb.Workload{}, false, errFailedDependency("local node is not enrolled")
+	node, local, err := s.placeCreate(ctx, p.User.ClusterID, req)
+	if err != nil {
+		return appdb.Workload{}, false, err
+	}
+	if !local {
+		id := uuid.NewString()
+		row := remotePlacedWorkload(p.User.ClusterID, node, req, id, oci.KindOCI)
+		if err := s.Store.CreateWorkload(ctx, row); err != nil {
+			return appdb.Workload{}, false, errConflict("could not record workload")
+		}
+		s.recordPlacement(ctx, p.User.ClusterID, row.ID, req)
+		audit("workload.create", "ok", row.ID)
+		return row, true, nil
 	}
 	rpc := s.ociRPC()
 	if existing, _ := s.Store.GetWorkloadByName(ctx, p.User.ClusterID, req.Name); existing != nil {
@@ -291,6 +301,9 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 func (s *Server) ociLifecycle(w http.ResponseWriter, r *http.Request, p *principal, row appdb.Workload, action string) {
 	if action == "clone" {
 		writeErr(w, http.StatusUnprocessableEntity, "OCI clone is not implemented")
+		return
+	}
+	if !s.guardLocalApply(w, r, p.User.ClusterID, firstNonEmpty(row.DesiredNodeID, row.NodeID), action) {
 		return
 	}
 	rpc := s.ociRPC()

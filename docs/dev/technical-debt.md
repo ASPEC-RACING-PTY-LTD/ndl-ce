@@ -202,6 +202,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Worker Execute still uses the local unix agent on the control node. Why not blocking: placement and remote apply remain Phase 31.
 - LOW. Cluster CA is issued and stored on disk; northbound HTTPS is still the existing appliance certificate. Why not blocking: join returns node mTLS material; wrapping Execute in mTLS is follow-up.
 
+## Phase 31
+
+- MEDIUM. Worker apply still is not wired; placement records DesiredNodeID and refuses local start. Why not blocking: that is the recovery gate against a second copy on the control node; migrate remains Phase 32.
+- LOW. Maintenance queues migrate operations that do not move guests. Why not blocking: the roadmap says this phase can enqueue migrate jobs.
+
 
 
 
