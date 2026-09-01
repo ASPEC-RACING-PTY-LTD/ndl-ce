@@ -151,6 +151,14 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Named compose volumes always allocate Directory volumes even if the selected pool is ZFS. Why not blocking: Directory is the documented compose volume class; ZFS dataset mounts can wait for a later storage pass.
 - LOW. Apply is create-once per member; later desired edits do not recreate the OCI unit. Why not blocking: the linked workload remains the running object and is editable through the workload API.
 
+## Phase 23
+
+- MEDIUM. Live MinIO/R2 is not in this Cloud job. Why not blocking: FakeObject plus MemoryTransport prove encrypt-before-upload, restore to a new UUID, and no_check_bucket honesty; virt MinIO is the intended live job.
+- MEDIUM. Multipart resume does not persist a partial MPU upload id to disk. Why not blocking: objects above 8MiB still complete in one agent call; a sidecar resume file can land without changing the destination model.
+- LOW. qcow2 dirty-bitmap incrementals are not implemented. Why not blocking: ZFS send -i is wired and transfers less when the prior snapshot exists; qcow2 remains a full encrypted copy.
+- LOW. ZFS object restore still returns 422 (zfs recv is a later backup phase). Why not blocking: qcow2 object restore to a new UUID is the proven boot path.
+- LOW. Dedup across artifacts is not a second product UX. Why not blocking: compression plus ZFS incrementals are the CE engines; a dedicated dedup product would violate the phase.
+
 
 
 

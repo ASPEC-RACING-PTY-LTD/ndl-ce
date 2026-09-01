@@ -1,3 +1,9 @@
+nodal (0.1.22) UNRELEASED; urgency=medium
+
+  * Phase 23 object-storage backup: S3/R2/AWS/B2/MinIO encrypt-before-upload, no_check_bucket, ZFS send -i incrementals, restore to a new UUID
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.21) UNRELEASED; urgency=medium
 
   * Phase 22 application stacks and Compose import: stacks/stack_members, inspectable No-dal objects, member PATCH, storage.volume.create on named-volume import, OCI apply with partial resume

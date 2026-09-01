@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.21
-  description: Phase 22 application stacks and Compose import plus prior northbound API. Compose is import only; stacks are the desired-state objects.
+  version: 0.1.22
+  description: Phase 23 object-storage backup (S3, R2, B2, MinIO) with encrypt-before-upload, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -3886,6 +3886,11 @@ components:
             - local
             - nfs
             - smb
+            - s3
+            - r2
+            - aws
+            - b2
+            - minio
         locator:
           type: string
         status:
@@ -3896,7 +3901,21 @@ components:
             - not_configured
         username:
           type: string
-          description: Optional. Password is write-only and never returned.
+          description: Optional. Password is write-only and never returned. For object targets this is the access key id.
+        endpoint:
+          type: string
+        region:
+          type: string
+        bucket:
+          type: string
+        prefix:
+          type: string
+        no_check_bucket:
+          type: boolean
+          description: Skip HeadBucket/ListBuckets. Status stays not_configured until a successful upload.
+        has_encryption_key:
+          type: boolean
+          description: Client-side encryption key is stored in secrets. Never returned.
     BackupTargetListResponse:
       type: object
       additionalProperties: false
@@ -3913,7 +3932,6 @@ components:
       required:
         - name
         - kind
-        - locator
       properties:
         name:
           type: string
@@ -3923,13 +3941,31 @@ components:
             - local
             - nfs
             - smb
+            - s3
+            - r2
+            - aws
+            - b2
+            - minio
         locator:
           type: string
         username:
           type: string
         password:
           type: string
-          description: Write-only. Never returned after save.
+          description: Write-only. Never returned after save. For object targets this is the secret access key.
+        endpoint:
+          type: string
+        region:
+          type: string
+        bucket:
+          type: string
+        prefix:
+          type: string
+        no_check_bucket:
+          type: boolean
+        encryption_key:
+          type: string
+          description: Write-only 32-byte key or 64 hex chars. Generated if omitted for object targets. Bucket SSE is not sufficient.
     BackupPolicy:
       type: object
       additionalProperties: false
@@ -4035,6 +4071,12 @@ components:
           type: string
         finished_at:
           type: string
+        transferred_bytes:
+          type: integer
+          description: Ciphertext bytes uploaded for object targets. Omitted for local copies.
+        incremental:
+          type: boolean
+          description: True when this run used ZFS send -i (or a smaller stream) against a prior artifact.
     BackupRunListResponse:
       type: object
       additionalProperties: false
@@ -4086,6 +4128,15 @@ components:
         format:
           type: string
         created_at:
+          type: string
+        encrypted:
+          type: boolean
+          description: True when the stored object is No-dal NDLE ciphertext. Bucket SSE is extra, not sufficient.
+        transferred_bytes:
+          type: integer
+        object_key:
+          type: string
+        parent_artifact_id:
           type: string
     BackupArtifactListResponse:
       type: object

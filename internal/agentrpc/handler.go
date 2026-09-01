@@ -184,6 +184,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execVMGuest(ctx, req.Msg.GetVmGuest())
 	case req.Msg.GetOciRuntime() != nil:
 		return h.execOCIRuntime(ctx, req.Msg.GetOciRuntime())
+	case req.Msg.GetBackupObject() != nil:
+		return h.execBackupObject(ctx, req.Msg.GetBackupObject())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

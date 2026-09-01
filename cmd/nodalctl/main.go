@@ -83,6 +83,8 @@ func run(args []string) error {
   snapshot list --workload ID
   snapshot create --workload ID --name NAME
   snapshot rollback --id ID --confirm rollback
+  backup target list
+  backup target create --kind r2 --name NAME --endpoint URL --bucket BUCKET --username KEY --password SECRET [--prefix PREFIX] [--region REGION] [--no-check-bucket]
   backup run --workload ID --target ID [--policy ID]
   backup restore --artifact ID --mode new|replace [--confirm restore]
   update check
@@ -936,9 +938,11 @@ func cmdSnapshot(args []string) error {
 
 func cmdBackup(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: nodalctl backup run|restore")
+		return fmt.Errorf("usage: nodalctl backup target|run|restore")
 	}
 	switch args[0] {
+	case "target":
+		return cmdBackupTarget(args[1:])
 	case "run":
 		f := parseFlags(args[1:])
 		if f["workload"] == "" || f["target"] == "" {
@@ -959,7 +963,64 @@ func cmdBackup(args []string) error {
 		}
 		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore", map[string]any{"mode": f["mode"]}, true)
 	default:
-		return fmt.Errorf("usage: nodalctl backup run|restore")
+		return fmt.Errorf("usage: nodalctl backup target|run|restore")
+	}
+}
+
+func cmdBackupTarget(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: nodalctl backup target create|list")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/backups/targets")
+	case "create":
+		f := parseFlags(args[1:])
+		kind := strings.ToLower(strings.TrimSpace(f["kind"]))
+		if f["name"] == "" || kind == "" {
+			return fmt.Errorf("usage: nodalctl backup target create --kind r2 --name NAME --endpoint URL --bucket BUCKET --username KEY --password SECRET [--prefix PREFIX] [--region REGION] [--no-check-bucket]")
+		}
+		body := map[string]any{"name": f["name"], "kind": kind}
+		if f["locator"] != "" {
+			body["locator"] = f["locator"]
+		}
+		if f["endpoint"] != "" {
+			body["endpoint"] = f["endpoint"]
+		}
+		if f["bucket"] != "" {
+			body["bucket"] = f["bucket"]
+		}
+		if f["prefix"] != "" {
+			body["prefix"] = f["prefix"]
+		}
+		if f["region"] != "" {
+			body["region"] = f["region"]
+		}
+		if f["username"] != "" {
+			body["username"] = f["username"]
+		}
+		if f["password"] != "" {
+			body["password"] = f["password"]
+		}
+		if f["encryption-key"] != "" {
+			body["encryption_key"] = f["encryption-key"]
+		}
+		if f["no-check-bucket"] == "true" || f["no-check-bucket"] == "1" {
+			body["no_check_bucket"] = true
+		}
+		switch kind {
+		case "s3", "r2", "aws", "b2", "minio":
+			if f["endpoint"] == "" || f["bucket"] == "" || f["username"] == "" || f["password"] == "" {
+				return fmt.Errorf("usage: nodalctl backup target create --kind r2 --name NAME --endpoint URL --bucket BUCKET --username KEY --password SECRET [--prefix PREFIX] [--region REGION] [--no-check-bucket]")
+			}
+		default:
+			if f["locator"] == "" {
+				return fmt.Errorf("usage: nodalctl backup target create --kind local --name NAME --locator PATH")
+			}
+		}
+		return postJSON("/api/v1/backups/targets", body, true)
+	default:
+		return fmt.Errorf("usage: nodalctl backup target create|list")
 	}
 }
 

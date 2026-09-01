@@ -28,6 +28,12 @@ function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
 }
 
+const OBJECT_KINDS = ["s3", "r2", "aws", "b2", "minio"] as const;
+
+function isObjectKind(kind: string): boolean {
+  return (OBJECT_KINDS as readonly string[]).includes(kind);
+}
+
 function targetStatusLabel(status: BackupTarget["status"]): string {
   switch (status) {
     case "available":
@@ -39,6 +45,13 @@ function targetStatusLabel(status: BackupTarget["status"]): string {
     default:
       return honestStatus(status);
   }
+}
+
+function targetAllowsRun(t: BackupTarget): boolean {
+  if (t.status === "available") {
+    return true;
+  }
+  return isObjectKind(t.kind) && Boolean(t.no_check_bucket) && t.status === "not_configured";
 }
 
 function runStatusLabel(status: BackupRun["status"]): string {
@@ -73,6 +86,11 @@ export function BackupsPage() {
   const [targetLocator, setTargetLocator] = useState("");
   const [targetUsername, setTargetUsername] = useState("");
   const [targetPassword, setTargetPassword] = useState("");
+  const [targetEndpoint, setTargetEndpoint] = useState("");
+  const [targetBucket, setTargetBucket] = useState("");
+  const [targetPrefix, setTargetPrefix] = useState("");
+  const [targetRegion, setTargetRegion] = useState("");
+  const [targetNoCheckBucket, setTargetNoCheckBucket] = useState(true);
 
   const [policyName, setPolicyName] = useState("");
   const [policyWorkloadId, setPolicyWorkloadId] = useState("");
@@ -122,8 +140,17 @@ export function BackupsPage() {
 
   async function onCreateTarget() {
     const name = targetName.trim();
-    const locator = targetLocator.trim();
-    if (!name || !locator) {
+    const object = isObjectKind(targetKind);
+    if (!name) {
+      setError("Target name is required");
+      return;
+    }
+    if (object) {
+      if (!targetEndpoint.trim() || !targetBucket.trim() || !targetUsername.trim() || !targetPassword) {
+        setError("Object targets need endpoint, bucket, access key id, and secret access key");
+        return;
+      }
+    } else if (!targetLocator.trim()) {
       setError("Target name and locator are required");
       return;
     }
@@ -133,20 +160,41 @@ export function BackupsPage() {
       const body: CreateBackupTargetRequest = {
         name,
         kind: targetKind,
-        locator,
       };
-      const username = targetUsername.trim();
-      if (username) {
-        body.username = username;
-      }
-      if (targetPassword) {
+      if (object) {
+        body.endpoint = targetEndpoint.trim();
+        body.bucket = targetBucket.trim();
+        const prefix = targetPrefix.trim();
+        if (prefix) {
+          body.prefix = prefix;
+        }
+        const region = targetRegion.trim();
+        if (region) {
+          body.region = region;
+        }
+        body.username = targetUsername.trim();
         body.password = targetPassword;
+        body.no_check_bucket = targetNoCheckBucket;
+      } else {
+        body.locator = targetLocator.trim();
+        const username = targetUsername.trim();
+        if (username) {
+          body.username = username;
+        }
+        if (targetPassword) {
+          body.password = targetPassword;
+        }
       }
       await createBackupTarget(body);
       setTargetName("");
       setTargetLocator("");
       setTargetUsername("");
       setTargetPassword("");
+      setTargetEndpoint("");
+      setTargetBucket("");
+      setTargetPrefix("");
+      setTargetRegion("");
+      setTargetNoCheckBucket(true);
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Create target failed");
@@ -239,7 +287,8 @@ export function BackupsPage() {
     }
   }
 
-  const availableTargets = (targets ?? []).filter((t) => t.status === "available");
+  const runnableTargets = (targets ?? []).filter(targetAllowsRun);
+  const objectForm = isObjectKind(targetKind);
 
   return (
     <section className="page page-wide" aria-labelledby="backups-heading">
@@ -282,6 +331,7 @@ export function BackupsPage() {
                       <th>Name</th>
                       <th>Kind</th>
                       <th>Locator</th>
+                      <th>Bucket</th>
                       <th>Status</th>
                       <th>Username</th>
                     </tr>
@@ -292,6 +342,7 @@ export function BackupsPage() {
                         <td>{t.name}</td>
                         <td>{t.kind}</td>
                         <td>{t.locator}</td>
+                        <td>{t.bucket || "None"}</td>
                         <td>{targetStatusLabel(t.status)}</td>
                         <td>{t.username || "None"}</td>
                       </tr>
@@ -323,34 +374,102 @@ export function BackupsPage() {
                     <option value="local">local</option>
                     <option value="nfs">nfs</option>
                     <option value="smb">smb</option>
+                    <option value="s3">s3</option>
+                    <option value="r2">r2</option>
+                    <option value="aws">aws</option>
+                    <option value="b2">b2</option>
+                    <option value="minio">minio</option>
                   </select>
                 </div>
-                <Field
-                  id="backup-target-locator"
-                  label="Locator"
-                  value={targetLocator}
-                  onChange={(e) => setTargetLocator(e.target.value)}
-                  autoComplete="off"
-                  hint="Path or share location for the destination."
-                />
-                {(targetKind === "nfs" || targetKind === "smb") && (
+                {objectForm ? (
                   <>
                     <Field
+                      id="backup-target-endpoint"
+                      label="Endpoint"
+                      value={targetEndpoint}
+                      onChange={(e) => setTargetEndpoint(e.target.value)}
+                      autoComplete="off"
+                      hint="HTTPS URL. HTTP is allowed only for MinIO fixtures."
+                    />
+                    <Field
+                      id="backup-target-bucket"
+                      label="Bucket"
+                      value={targetBucket}
+                      onChange={(e) => setTargetBucket(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <Field
+                      id="backup-target-prefix"
+                      label="Prefix"
+                      value={targetPrefix}
+                      onChange={(e) => setTargetPrefix(e.target.value)}
+                      autoComplete="off"
+                      hint="Optional object key prefix."
+                    />
+                    <Field
+                      id="backup-target-region"
+                      label="Region"
+                      value={targetRegion}
+                      onChange={(e) => setTargetRegion(e.target.value)}
+                      autoComplete="off"
+                      hint="Optional. R2 defaults to auto."
+                    />
+                    <Field
                       id="backup-target-username"
-                      label="Username"
+                      label="Access key id"
                       value={targetUsername}
                       onChange={(e) => setTargetUsername(e.target.value)}
                       autoComplete="off"
                     />
                     <Field
                       id="backup-target-password"
-                      label="Password"
+                      label="Secret access key"
                       type="password"
                       value={targetPassword}
                       onChange={(e) => setTargetPassword(e.target.value)}
                       autoComplete="new-password"
-                      hint="Write-only. Never shown after save."
+                      hint="Write-only. Never shown after save. Client-side encryption is generated if you omit a key. Bucket SSE is extra, not sufficient."
                     />
+                    <label className="field-check">
+                      <input
+                        id="backup-target-no-check-bucket"
+                        type="checkbox"
+                        checked={targetNoCheckBucket}
+                        onChange={(e) => setTargetNoCheckBucket(e.target.checked)}
+                      />
+                      Skip bucket probe (no_check_bucket). Status stays Not configured until a successful upload.
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <Field
+                      id="backup-target-locator"
+                      label="Locator"
+                      value={targetLocator}
+                      onChange={(e) => setTargetLocator(e.target.value)}
+                      autoComplete="off"
+                      hint="Path or share location for the destination."
+                    />
+                    {(targetKind === "nfs" || targetKind === "smb") && (
+                      <>
+                        <Field
+                          id="backup-target-username"
+                          label="Username"
+                          value={targetUsername}
+                          onChange={(e) => setTargetUsername(e.target.value)}
+                          autoComplete="off"
+                        />
+                        <Field
+                          id="backup-target-password"
+                          label="Password"
+                          type="password"
+                          value={targetPassword}
+                          onChange={(e) => setTargetPassword(e.target.value)}
+                          autoComplete="new-password"
+                          hint="Write-only. Never shown after save."
+                        />
+                      </>
+                    )}
                   </>
                 )}
                 <div className="btn-row">
@@ -512,9 +631,9 @@ export function BackupsPage() {
                     onChange={(e) => setRunTargetId(e.target.value)}
                   >
                     <option value="">Select target</option>
-                    {availableTargets.map((t) => (
+                    {runnableTargets.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name}
+                        {t.name} ({targetStatusLabel(t.status)})
                       </option>
                     ))}
                   </select>
@@ -563,6 +682,8 @@ export function BackupsPage() {
                       <th>Workload</th>
                       <th>Target</th>
                       <th>Status</th>
+                      <th>Transferred</th>
+                      <th>Incremental</th>
                       <th>Started</th>
                       <th>Finished</th>
                       <th>Error</th>
@@ -575,6 +696,8 @@ export function BackupsPage() {
                         <td>{r.workload_id}</td>
                         <td>{r.target_id}</td>
                         <td>{runStatusLabel(r.status)}</td>
+                        <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
+                        <td>{r.incremental ? "Yes" : "No"}</td>
                         <td>{formatWhen(r.started_at)}</td>
                         <td>{formatWhen(r.finished_at)}</td>
                         <td>{r.error || "None"}</td>
@@ -604,6 +727,8 @@ export function BackupsPage() {
                       <th>ID</th>
                       <th>Workload</th>
                       <th>Size</th>
+                      <th>Transferred</th>
+                      <th>Encrypted</th>
                       <th>Format</th>
                       <th>Checksum</th>
                       <th>Created</th>
@@ -616,6 +741,8 @@ export function BackupsPage() {
                         <td>{art.id}</td>
                         <td>{art.workload_id}</td>
                         <td>{formatBytes(art.size_bytes)}</td>
+                        <td>{art.transferred_bytes != null ? formatBytes(art.transferred_bytes) : "None"}</td>
+                        <td>{art.encrypted ? "Client-side" : "No"}</td>
                         <td>{art.format}</td>
                         <td className="mono">{art.checksum_sha256}</td>
                         <td>{formatWhen(art.created_at)}</td>

@@ -14,23 +14,33 @@ const (
 	BackupLocal         = "local"
 	BackupNFS           = "nfs"
 	BackupSMB           = "smb"
+	BackupS3            = "s3"
+	BackupR2            = "r2"
+	BackupAWS           = "aws"
+	BackupB2            = "b2"
+	BackupMinIO         = "minio"
 	BackupAvailable     = "available"
 	BackupUnavailable   = "unavailable"
 	BackupNotConfigured = "not_configured"
 	BackupNightly       = "nightly"
 )
 
-// BackupTarget is a destination for independent copies. Password is never stored on this row.
+// BackupTarget is a destination for independent copies. Password and encryption keys are never stored on this row.
 type BackupTarget struct {
-	ID        string
-	ClusterID string
-	Name      string
-	Kind      string
-	Locator   string
-	Status    string
-	Username  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID            string
+	ClusterID     string
+	Name          string
+	Kind          string
+	Locator       string
+	Status        string
+	Username      string
+	Endpoint      string
+	Region        string
+	Bucket        string
+	Prefix        string
+	NoCheckBucket bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // BackupPolicy is a scheduled backup of one workload to one target.
@@ -59,38 +69,44 @@ type BackupRun struct {
 	Status             string
 	Error              string
 	RestoredWorkloadID string
+	TransferredBytes   int64
+	Incremental        bool
 	StartedAt          time.Time
 	FinishedAt         *time.Time
 }
 
 // BackupArtifact is a catalogued independent copy.
 type BackupArtifact struct {
-	ID             string
-	ClusterID      string
-	RunID          string
-	WorkloadID     string
-	ChecksumSHA256 string
-	SizeBytes      int64
-	Locator        string
-	Format         string
-	CreatedAt      time.Time
+	ID               string
+	ClusterID        string
+	RunID            string
+	WorkloadID       string
+	ChecksumSHA256   string
+	SizeBytes        int64
+	Locator          string
+	Format           string
+	Encrypted        bool
+	TransferredBytes int64
+	ParentArtifactID string
+	ObjectKey        string
+	CreatedAt        time.Time
 }
 
-func (m *Memory) CreateBackupTarget(_ context.Context, t BackupTarget, password string) error {
+func (m *Memory) CreateBackupTarget(_ context.Context, t BackupTarget, password, encryptionKey string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.backupTargets == nil {
 		m.backupTargets = map[string]BackupTarget{}
 	}
 	if m.backupCreds == nil {
-		m.backupCreds = map[string]string{}
+		m.backupCreds = map[string][2]string{}
 	}
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now().UTC()
 	}
 	t.UpdatedAt = t.CreatedAt
 	m.backupTargets[t.ID] = t
-	m.backupCreds[t.ID] = password
+	m.backupCreds[t.ID] = [2]string{password, encryptionKey}
 	return nil
 }
 
@@ -129,6 +145,17 @@ func (m *Memory) UpdateBackupTargetStatus(_ context.Context, clusterID, id, stat
 	t.UpdatedAt = time.Now().UTC()
 	m.backupTargets[id] = t
 	return nil
+}
+
+func (m *Memory) BackupCredentials(_ context.Context, clusterID, id string) (string, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.backupTargets[id]
+	if !ok || t.ClusterID != clusterID {
+		return "", "", fmt.Errorf("backup target not found")
+	}
+	pair := m.backupCreds[id]
+	return pair[0], pair[1], nil
 }
 
 func (m *Memory) CreateBackupPolicy(_ context.Context, p BackupPolicy) error {

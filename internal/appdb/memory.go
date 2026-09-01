@@ -38,7 +38,7 @@ type Memory struct {
 	certificate       *Certificate
 	snapshots         map[string]Snapshot
 	backupTargets     map[string]BackupTarget
-	backupCreds       map[string]string
+	backupCreds       map[string][2]string
 	backupPolicies    map[string]BackupPolicy
 	backupRuns        map[string]BackupRun
 	backupArtifacts   map[string]BackupArtifact

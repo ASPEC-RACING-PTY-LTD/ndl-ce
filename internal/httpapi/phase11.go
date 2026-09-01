@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/objstore"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -51,6 +53,22 @@ func backupTargetJSON(t appdb.BackupTarget) map[string]any {
 	if t.Username != "" {
 		out["username"] = t.Username
 	}
+	if t.Endpoint != "" {
+		out["endpoint"] = t.Endpoint
+	}
+	if t.Region != "" {
+		out["region"] = t.Region
+	}
+	if t.Bucket != "" {
+		out["bucket"] = t.Bucket
+	}
+	if t.Prefix != "" {
+		out["prefix"] = t.Prefix
+	}
+	if isObjectBackupKind(t.Kind) {
+		out["no_check_bucket"] = t.NoCheckBucket
+		out["has_encryption_key"] = true
+	}
 	return out
 }
 
@@ -85,16 +103,35 @@ func backupRunJSON(r appdb.BackupRun) map[string]any {
 	if r.RestoredWorkloadID != "" {
 		out["restored_workload_id"] = r.RestoredWorkloadID
 	}
+	if r.TransferredBytes > 0 {
+		out["transferred_bytes"] = r.TransferredBytes
+	}
+	if r.Incremental {
+		out["incremental"] = true
+	}
 	return out
 }
 
 func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"id": a.ID, "run_id": a.RunID, "workload_id": a.WorkloadID,
 		"checksum_sha256": a.ChecksumSHA256, "size_bytes": a.SizeBytes,
 		"locator": a.Locator, "format": a.Format,
 		"created_at": a.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 	}
+	if a.Encrypted {
+		out["encrypted"] = true
+	}
+	if a.TransferredBytes > 0 {
+		out["transferred_bytes"] = a.TransferredBytes
+	}
+	if a.ObjectKey != "" {
+		out["object_key"] = a.ObjectKey
+	}
+	if a.ParentArtifactID != "" {
+		out["parent_artifact_id"] = a.ParentArtifactID
+	}
+	return out
 }
 
 func (s *Server) probeBackupTarget(ctx context.Context, kind, locator string) string {
@@ -115,6 +152,9 @@ func (s *Server) probeBackupTarget(ctx context.Context, kind, locator string) st
 		}
 		return appdb.BackupUnavailable
 	default:
+		if isObjectBackupKind(kind) {
+			return appdb.BackupNotConfigured
+		}
 		return appdb.BackupUnavailable
 	}
 }
@@ -131,7 +171,12 @@ func (s *Server) listBackupTargets(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, t := range items {
-		status := s.probeBackupTarget(r.Context(), t.Kind, t.Locator)
+		status := t.Status
+		if isObjectBackupKind(t.Kind) {
+			status = s.probeObjectTarget(r.Context(), t)
+		} else {
+			status = s.probeBackupTarget(r.Context(), t.Kind, t.Locator)
+		}
 		if status != t.Status {
 			_ = s.Store.UpdateBackupTargetStatus(r.Context(), p.User.ClusterID, t.ID, status)
 			t.Status = status
@@ -147,19 +192,74 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name     string `json:"name"`
-		Kind     string `json:"kind"`
-		Locator  string `json:"locator"`
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Name          string `json:"name"`
+		Kind          string `json:"kind"`
+		Locator       string `json:"locator"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		Endpoint      string `json:"endpoint"`
+		Region        string `json:"region"`
+		Bucket        string `json:"bucket"`
+		Prefix        string `json:"prefix"`
+		NoCheckBucket bool   `json:"no_check_bucket"`
+		EncryptionKey string `json:"encryption_key"`
 	}
-	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Locator) == "" {
-		writeErr(w, http.StatusBadRequest, "name, kind, and locator are required")
+	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
+		writeErr(w, http.StatusBadRequest, "name and kind are required")
 		return
 	}
 	kind := strings.ToLower(strings.TrimSpace(req.Kind))
+	if isObjectBackupKind(kind) {
+		if err := validateObjectTarget(kind, req.Endpoint, req.Bucket); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		if strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Password) == "" {
+			writeErr(w, http.StatusBadRequest, "access key id and secret access key are required")
+			return
+		}
+		encHex := strings.TrimSpace(req.EncryptionKey)
+		if encHex == "" {
+			generated, _, err := objstore.GenerateKey()
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			encHex = generated
+		} else if _, err := objstore.ParseKey(encHex); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		region := strings.TrimSpace(req.Region)
+		if region == "" {
+			region = objstore.DefaultRegion(kind)
+		}
+		prefix := strings.Trim(strings.TrimSpace(req.Prefix), "/")
+		row := appdb.BackupTarget{
+			ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name),
+			Kind: kind, Locator: objstore.Locator(req.Bucket, prefix), Status: appdb.BackupNotConfigured,
+			Username: strings.TrimSpace(req.Username), Endpoint: strings.TrimSpace(req.Endpoint),
+			Region: region, Bucket: strings.TrimSpace(req.Bucket), Prefix: prefix, NoCheckBucket: req.NoCheckBucket,
+		}
+		if err := s.Store.CreateBackupTarget(r.Context(), row, req.Password, encHex); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		status := s.probeObjectTarget(r.Context(), row)
+		if status != row.Status {
+			_ = s.Store.UpdateBackupTargetStatus(r.Context(), p.User.ClusterID, row.ID, status)
+			row.Status = status
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "backup.target.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, backupTargetJSON(row))
+		return
+	}
+	if strings.TrimSpace(req.Locator) == "" {
+		writeErr(w, http.StatusBadRequest, "name, kind, and locator are required")
+		return
+	}
 	if kind != appdb.BackupLocal && kind != appdb.BackupNFS && kind != appdb.BackupSMB {
-		writeErr(w, http.StatusBadRequest, "kind must be local, nfs, or smb")
+		writeErr(w, http.StatusBadRequest, "kind must be local, nfs, smb, s3, r2, aws, b2, or minio")
 		return
 	}
 	locator := strings.TrimSpace(req.Locator)
@@ -192,7 +292,7 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name),
 		Kind: kind, Locator: locator, Status: status, Username: strings.TrimSpace(req.Username),
 	}
-	if err := s.Store.CreateBackupTarget(r.Context(), row, req.Password); err != nil {
+	if err := s.Store.CreateBackupTarget(r.Context(), row, req.Password, ""); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -385,9 +485,12 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		return appdb.BackupRun{}, errNotFound("backup target not found")
 	}
 	status := s.probeBackupTarget(ctx, tgt.Kind, tgt.Locator)
+	if isObjectBackupKind(tgt.Kind) {
+		status = s.probeObjectTarget(ctx, *tgt)
+	}
 	_ = s.Store.UpdateBackupTargetStatus(ctx, clusterID, tgt.ID, status)
 	tgt.Status = status
-	if tgt.Status != appdb.BackupAvailable {
+	if !backupTargetAllowsRun(*tgt) {
 		return appdb.BackupRun{}, errUnprocessable("backup target is unavailable")
 	}
 	if s.Backup == nil {
@@ -417,11 +520,43 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	}
 	run.SnapshotID = snap.ID
 	artifactID := uuid.NewString()
+	objectKind := isObjectBackupKind(tgt.Kind)
+	stageDir := tgt.Locator
+	if objectKind {
+		tmp, err := os.MkdirTemp("", "ndl-backup-")
+		if err != nil {
+			return fail(err.Error())
+		}
+		defer func() { _ = os.RemoveAll(tmp) }()
+		stageDir = tmp
+	}
+	format := "qcow2"
+	dest := filepath.Join(stageDir, artifactID+".qcow2")
+	var parentID string
+	incremental := false
+	fromSnap := ""
 	if snap.Mechanism == appdb.MechanismZFS {
-		dest := filepath.Join(tgt.Locator, artifactID+".zfs")
+		format = "zfs"
+		dest = filepath.Join(stageDir, artifactID+".zfs")
+		if objectKind {
+			prev, _ := s.Store.ListBackupArtifactsForWorkload(ctx, clusterID, workloadID, targetID)
+			for _, a := range prev {
+				if a.Format != "zfs" {
+					continue
+				}
+				parentID = a.ID
+				if pr, _ := s.Store.GetBackupRun(ctx, clusterID, a.RunID); pr != nil && pr.SnapshotID != "" {
+					if ps, _ := s.Store.GetSnapshot(ctx, clusterID, pr.SnapshotID); ps != nil {
+						fromSnap = s.snapshotTag(ps.BackendRef)
+						incremental = fromSnap != ""
+					}
+				}
+				break
+			}
+		}
 		res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
 			Action: "send", PoolID: pool.ID, Name: s.zfsPoolName(ctx, *pool),
-			VolumeID: snap.VolumeID, Snapshot: s.snapshotTag(snap.BackendRef), DestPath: dest,
+			VolumeID: snap.VolumeID, Snapshot: s.snapshotTag(snap.BackendRef), DestPath: dest, FromSnap: fromSnap,
 		})
 		if err != nil {
 			return fail(err.Error())
@@ -431,13 +566,30 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		}
 		art := appdb.BackupArtifact{
 			ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: workloadID,
-			Locator: dest, Format: "zfs",
+			Locator: dest, Format: "zfs", ParentArtifactID: parentID,
+		}
+		if objectKind {
+			put, err := s.putObjectArtifact(ctx, *tgt, artifactID, dest, format)
+			if err != nil {
+				return fail(err.Error())
+			}
+			if put.Status == appdb.BackupUnavailable || strings.EqualFold(put.Status, "unavailable") {
+				return fail(firstNonEmpty(put.Reason, "object upload is unavailable"))
+			}
+			art.Locator = objstore.Locator(tgt.Bucket, put.Key)
+			art.ObjectKey = put.Key
+			art.Encrypted = true
+			art.ChecksumSHA256 = put.PlaintextSHA256
+			art.SizeBytes = put.PlaintextSize
+			art.TransferredBytes = put.TransferredBytes
+			run.TransferredBytes = put.TransferredBytes
+			run.Incremental = incremental && put.TransferredBytes > 0
+			_ = s.Store.UpdateBackupTargetStatus(ctx, clusterID, tgt.ID, appdb.BackupAvailable)
 		}
 		if err := s.Store.CreateBackupArtifact(ctx, art); err != nil {
 			return fail(err.Error())
 		}
 	} else {
-		dest := filepath.Join(tgt.Locator, artifactID+".qcow2")
 		res, err := s.Backup.CopyBackup(ctx, qemu.BackupCopy, frozen, dest)
 		if err != nil {
 			return fail(err.Error())
@@ -445,6 +597,23 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		art := appdb.BackupArtifact{
 			ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: workloadID,
 			ChecksumSHA256: res.SHA256, SizeBytes: res.Size, Locator: dest, Format: firstNonEmpty(res.Format, "qcow2"),
+		}
+		if objectKind {
+			put, err := s.putObjectArtifact(ctx, *tgt, artifactID, dest, firstNonEmpty(res.Format, "qcow2"))
+			if err != nil {
+				return fail(err.Error())
+			}
+			if put.Status == appdb.BackupUnavailable || strings.EqualFold(put.Status, "unavailable") {
+				return fail(firstNonEmpty(put.Reason, "object upload is unavailable"))
+			}
+			art.Locator = objstore.Locator(tgt.Bucket, put.Key)
+			art.ObjectKey = put.Key
+			art.Encrypted = true
+			art.ChecksumSHA256 = put.PlaintextSHA256
+			art.SizeBytes = put.PlaintextSize
+			art.TransferredBytes = put.TransferredBytes
+			run.TransferredBytes = put.TransferredBytes
+			_ = s.Store.UpdateBackupTargetStatus(ctx, clusterID, tgt.ID, appdb.BackupAvailable)
 		}
 		if err := s.Store.CreateBackupArtifact(ctx, art); err != nil {
 			return fail(err.Error())
@@ -544,8 +713,19 @@ func (s *Server) pruneBackupArtifacts(ctx context.Context, clusterID, workloadID
 		if _, ok := keep[a.ID]; ok {
 			continue
 		}
-		if s.Backup != nil {
+		if s.Backup != nil && !strings.HasPrefix(a.Locator, "s3://") && a.ObjectKey == "" {
 			_, _ = s.Backup.CopyBackup(ctx, qemu.BackupDelete, "", a.Locator)
+		}
+		if a.ObjectKey != "" {
+			if tgt, _ := s.Store.GetBackupTarget(ctx, clusterID, targetID); tgt != nil {
+				pass, enc, _ := s.Store.BackupCredentials(ctx, clusterID, tgt.ID)
+				if key, err := objstore.ParseKey(enc); err == nil {
+					_, _ = s.objectRPC().ObjectBackup(ctx, objstore.Request{
+						Action: objstore.ActionDel, Provider: tgt.Kind, Endpoint: tgt.Endpoint, Region: tgt.Region,
+						Bucket: tgt.Bucket, Key: a.ObjectKey, AccessKeyID: tgt.Username, SecretAccessKey: pass, EncryptionKey: key,
+					})
+				}
+			}
 		}
 		_ = s.Store.DeleteBackupArtifact(ctx, clusterID, a.ID)
 	}
@@ -702,7 +882,12 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	if err != nil {
 		return "", errConflict("volume locator is invalid")
 	}
-	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, art.Locator, dest); err != nil {
+	srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, srcPath, dest); err != nil {
 		return "", err
 	}
 	spec, err := vmspec.Parse(src.SpecJSON)
@@ -770,7 +955,12 @@ func (s *Server) restoreReplaceVM(ctx context.Context, clusterID string, src app
 	if _, err := s.VM.LifecycleVM(ctx, src.ID, "stop", false); err != nil {
 		return err
 	}
-	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, art.Locator, tip); err != nil {
+	srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, srcPath, tip); err != nil {
 		return err
 	}
 	if _, err := s.reprepareVM(ctx, clusterID, src); err != nil {
@@ -839,7 +1029,12 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 	if err != nil {
 		return "", errConflict("volume locator is invalid")
 	}
-	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, art.Locator, dest); err != nil {
+	srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupReplace, srcPath, dest); err != nil {
 		return "", err
 	}
 	spec := vmspec.Spec{

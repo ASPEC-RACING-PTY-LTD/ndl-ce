@@ -107,6 +107,7 @@ func Run(cfg Config) error {
 		VM:         httpapi.AdaptVM(agent),
 		OCI:        httpapi.AdaptOCI(agent),
 		Backup:     httpapi.AdaptBackup(agent),
+		Object:     httpapi.AdaptObject(agent),
 		Update:     httpapi.AdaptUpdate(agent),
 		GPU:        httpapi.AdaptGPU(agent),
 		ZFS:        httpapi.AdaptZFS(agent),

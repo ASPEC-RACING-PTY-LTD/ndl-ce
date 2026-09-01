@@ -63,6 +63,7 @@ type Server struct {
 	VM          VMRPC
 	OCI         OCIRPC
 	Backup      BackupRPC
+	Object      ObjectRPC
 	Update      UpdateRPC
 	GPU         GPURPC
 	ZFS         ZFSRPC

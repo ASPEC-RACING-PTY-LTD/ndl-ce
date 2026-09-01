@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (p *Postgres) CreateBackupTarget(ctx context.Context, t BackupTarget, password string) error {
+func (p *Postgres) CreateBackupTarget(ctx context.Context, t BackupTarget, password, encryptionKey string) error {
 	if t.ID == "" {
 		t.ID = uuid.NewString()
 	}
@@ -22,15 +22,16 @@ func (p *Postgres) CreateBackupTarget(ctx context.Context, t BackupTarget, passw
 	}
 	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `
-INSERT INTO backup_targets (id, cluster_id, name, kind, locator, status, username, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
-		t.ID, t.ClusterID, t.Name, t.Kind, t.Locator, t.Status, t.Username, t.CreatedAt)
+INSERT INTO backup_targets (id, cluster_id, name, kind, locator, status, username, endpoint, region, bucket, prefix, no_check_bucket, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,
+		t.ID, t.ClusterID, t.Name, t.Kind, t.Locator, t.Status, t.Username,
+		t.Endpoint, t.Region, t.Bucket, t.Prefix, t.NoCheckBucket, t.CreatedAt)
 	if err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `
-INSERT INTO secrets.backup_credentials (target_id, cluster_id, password, updated_at)
-VALUES ($1,$2,$3,$4)`, t.ID, t.ClusterID, password, t.CreatedAt)
+INSERT INTO secrets.backup_credentials (target_id, cluster_id, password, encryption_key, updated_at)
+VALUES ($1,$2,$3,$4,$5)`, t.ID, t.ClusterID, password, encryptionKey, t.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -39,7 +40,8 @@ VALUES ($1,$2,$3,$4)`, t.ID, t.ClusterID, password, t.CreatedAt)
 
 func (p *Postgres) ListBackupTargets(ctx context.Context, clusterID string) ([]BackupTarget, error) {
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, name, kind, locator, status, username, created_at, updated_at
+SELECT id::text, cluster_id::text, name, kind, locator, status, username, COALESCE(endpoint, ''), COALESCE(region, ''),
+       COALESCE(bucket, ''), COALESCE(prefix, ''), COALESCE(no_check_bucket, false), created_at, updated_at
 FROM backup_targets WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -58,7 +60,8 @@ FROM backup_targets WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 
 func (p *Postgres) GetBackupTarget(ctx context.Context, clusterID, id string) (*BackupTarget, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, name, kind, locator, status, username, created_at, updated_at
+SELECT id::text, cluster_id::text, name, kind, locator, status, username, COALESCE(endpoint, ''), COALESCE(region, ''),
+       COALESCE(bucket, ''), COALESCE(prefix, ''), COALESCE(no_check_bucket, false), created_at, updated_at
 FROM backup_targets WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	t, err := scanBackupTarget(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -80,6 +83,17 @@ func (p *Postgres) UpdateBackupTargetStatus(ctx context.Context, clusterID, id, 
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (p *Postgres) BackupCredentials(ctx context.Context, clusterID, id string) (string, string, error) {
+	var password, enc string
+	err := p.DB.QueryRowContext(ctx, `
+SELECT COALESCE(password, ''), COALESCE(encryption_key, '')
+FROM secrets.backup_credentials WHERE cluster_id=$1 AND target_id=$2`, clusterID, id).Scan(&password, &enc)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	return password, enc, err
 }
 
 func (p *Postgres) CreateBackupPolicy(ctx context.Context, pol BackupPolicy) error {
@@ -157,16 +171,16 @@ func (p *Postgres) CreateBackupRun(ctx context.Context, r BackupRun) error {
 		snap = r.SnapshotID
 	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_runs (id, cluster_id, policy_id, target_id, workload_id, snapshot_id, status, error, restored_workload_id, started_at, finished_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		r.ID, r.ClusterID, policy, r.TargetID, r.WorkloadID, snap, r.Status, r.Error, r.RestoredWorkloadID, r.StartedAt, r.FinishedAt)
+INSERT INTO backup_runs (id, cluster_id, policy_id, target_id, workload_id, snapshot_id, status, error, restored_workload_id, transferred_bytes, incremental, started_at, finished_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		r.ID, r.ClusterID, policy, r.TargetID, r.WorkloadID, snap, r.Status, r.Error, r.RestoredWorkloadID, r.TransferredBytes, r.Incremental, r.StartedAt, r.FinishedAt)
 	return err
 }
 
 func (p *Postgres) ListBackupRuns(ctx context.Context, clusterID string) ([]BackupRun, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, COALESCE(policy_id::text, ''), target_id::text, workload_id::text,
-       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, started_at, finished_at
+       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, COALESCE(transferred_bytes, 0), COALESCE(incremental, false), started_at, finished_at
 FROM backup_runs WHERE cluster_id=$1 ORDER BY started_at DESC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -186,7 +200,7 @@ FROM backup_runs WHERE cluster_id=$1 ORDER BY started_at DESC`, clusterID)
 func (p *Postgres) GetBackupRun(ctx context.Context, clusterID, id string) (*BackupRun, error) {
 	row := p.DB.QueryRowContext(ctx, `
 SELECT id::text, cluster_id::text, COALESCE(policy_id::text, ''), target_id::text, workload_id::text,
-       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, started_at, finished_at
+       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, COALESCE(transferred_bytes, 0), COALESCE(incremental, false), started_at, finished_at
 FROM backup_runs WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	r, err := scanBackupRun(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -208,9 +222,9 @@ func (p *Postgres) UpdateBackupRun(ctx context.Context, r BackupRun) error {
 		snap = r.SnapshotID
 	}
 	res, err := p.DB.ExecContext(ctx, `
-UPDATE backup_runs SET policy_id=$3, snapshot_id=$4, status=$5, error=$6, restored_workload_id=$7, finished_at=$8
+UPDATE backup_runs SET policy_id=$3, snapshot_id=$4, status=$5, error=$6, restored_workload_id=$7, transferred_bytes=$8, incremental=$9, finished_at=$10
 WHERE cluster_id=$1 AND id=$2`,
-		r.ClusterID, r.ID, policy, snap, r.Status, r.Error, r.RestoredWorkloadID, r.FinishedAt)
+		r.ClusterID, r.ID, policy, snap, r.Status, r.Error, r.RestoredWorkloadID, r.TransferredBytes, r.Incremental, r.FinishedAt)
 	if err != nil {
 		return err
 	}
@@ -229,15 +243,16 @@ func (p *Postgres) CreateBackupArtifact(ctx context.Context, a BackupArtifact) e
 		a.CreatedAt = time.Now().UTC()
 	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_artifacts (id, cluster_id, run_id, workload_id, checksum_sha256, size_bytes, locator, format, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		a.ID, a.ClusterID, a.RunID, a.WorkloadID, a.ChecksumSHA256, a.SizeBytes, a.Locator, a.Format, a.CreatedAt)
+INSERT INTO backup_artifacts (id, cluster_id, run_id, workload_id, checksum_sha256, size_bytes, locator, format, created_at, encrypted, transferred_bytes, parent_artifact_id, object_key)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		a.ID, a.ClusterID, a.RunID, a.WorkloadID, a.ChecksumSHA256, a.SizeBytes, a.Locator, a.Format, a.CreatedAt, a.Encrypted, a.TransferredBytes, nullIfEmpty(a.ParentArtifactID), a.ObjectKey)
 	return err
 }
 
 func (p *Postgres) ListBackupArtifacts(ctx context.Context, clusterID string) ([]BackupArtifact, error) {
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at
+SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at,
+       COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, '')
 FROM backup_artifacts WHERE cluster_id=$1 ORDER BY created_at DESC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -256,7 +271,8 @@ FROM backup_artifacts WHERE cluster_id=$1 ORDER BY created_at DESC`, clusterID)
 
 func (p *Postgres) ListBackupArtifactsForWorkload(ctx context.Context, clusterID, workloadID, targetID string) ([]BackupArtifact, error) {
 	q := `
-SELECT a.id::text, a.cluster_id::text, a.run_id::text, a.workload_id::text, a.checksum_sha256, a.size_bytes, a.locator, a.format, a.created_at
+SELECT a.id::text, a.cluster_id::text, a.run_id::text, a.workload_id::text, a.checksum_sha256, a.size_bytes, a.locator, a.format, a.created_at,
+       COALESCE(a.encrypted, false), COALESCE(a.transferred_bytes, 0), COALESCE(a.parent_artifact_id::text, ''), COALESCE(a.object_key, '')
 FROM backup_artifacts a
 JOIN backup_runs r ON r.id = a.run_id
 WHERE a.cluster_id=$1 AND a.workload_id=$2`
@@ -284,7 +300,8 @@ WHERE a.cluster_id=$1 AND a.workload_id=$2`
 
 func (p *Postgres) GetBackupArtifact(ctx context.Context, clusterID, id string) (*BackupArtifact, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at
+SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at,
+       COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, '')
 FROM backup_artifacts WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	a, err := scanBackupArtifact(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -310,7 +327,8 @@ func (p *Postgres) DeleteBackupArtifact(ctx context.Context, clusterID, id strin
 
 func scanBackupTarget(row rowScanner) (BackupTarget, error) {
 	var t BackupTarget
-	err := row.Scan(&t.ID, &t.ClusterID, &t.Name, &t.Kind, &t.Locator, &t.Status, &t.Username, &t.CreatedAt, &t.UpdatedAt)
+	err := row.Scan(&t.ID, &t.ClusterID, &t.Name, &t.Kind, &t.Locator, &t.Status, &t.Username,
+		&t.Endpoint, &t.Region, &t.Bucket, &t.Prefix, &t.NoCheckBucket, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 
@@ -328,7 +346,7 @@ func scanBackupPolicy(row rowScanner) (BackupPolicy, error) {
 func scanBackupRun(row rowScanner) (BackupRun, error) {
 	var r BackupRun
 	var finished sql.NullTime
-	err := row.Scan(&r.ID, &r.ClusterID, &r.PolicyID, &r.TargetID, &r.WorkloadID, &r.SnapshotID, &r.Status, &r.Error, &r.RestoredWorkloadID, &r.StartedAt, &finished)
+	err := row.Scan(&r.ID, &r.ClusterID, &r.PolicyID, &r.TargetID, &r.WorkloadID, &r.SnapshotID, &r.Status, &r.Error, &r.RestoredWorkloadID, &r.TransferredBytes, &r.Incremental, &r.StartedAt, &finished)
 	if finished.Valid {
 		t := finished.Time
 		r.FinishedAt = &t
@@ -338,6 +356,7 @@ func scanBackupRun(row rowScanner) (BackupRun, error) {
 
 func scanBackupArtifact(row rowScanner) (BackupArtifact, error) {
 	var a BackupArtifact
-	err := row.Scan(&a.ID, &a.ClusterID, &a.RunID, &a.WorkloadID, &a.ChecksumSHA256, &a.SizeBytes, &a.Locator, &a.Format, &a.CreatedAt)
+	err := row.Scan(&a.ID, &a.ClusterID, &a.RunID, &a.WorkloadID, &a.ChecksumSHA256, &a.SizeBytes, &a.Locator, &a.Format, &a.CreatedAt,
+		&a.Encrypted, &a.TransferredBytes, &a.ParentArtifactID, &a.ObjectKey)
 	return a, err
 }

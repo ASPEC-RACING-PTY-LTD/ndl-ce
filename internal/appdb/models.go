@@ -118,10 +118,11 @@ type Store interface {
 	GetSnapshot(ctx context.Context, clusterID, id string) (*Snapshot, error)
 	UpdateVolumeLocator(ctx context.Context, clusterID, id, backendRef string) error
 
-	CreateBackupTarget(ctx context.Context, t BackupTarget, password string) error
+	CreateBackupTarget(ctx context.Context, t BackupTarget, password, encryptionKey string) error
 	ListBackupTargets(ctx context.Context, clusterID string) ([]BackupTarget, error)
 	GetBackupTarget(ctx context.Context, clusterID, id string) (*BackupTarget, error)
 	UpdateBackupTargetStatus(ctx context.Context, clusterID, id, status string) error
+	BackupCredentials(ctx context.Context, clusterID, id string) (password, encryptionKey string, err error)
 
 	CreateBackupPolicy(ctx context.Context, p BackupPolicy) error
 	ListBackupPolicies(ctx context.Context, clusterID string) ([]BackupPolicy, error)

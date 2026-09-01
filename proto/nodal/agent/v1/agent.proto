@@ -173,6 +173,7 @@ message ExecuteRequest {
     VMHotplug vm_hotplug = 28;
     VMGuest vm_guest = 29;
     OCIRuntime oci_runtime = 30;
+    BackupObject backup_object = 31;
   }
 }
 
@@ -238,6 +239,22 @@ message BackupCopy {
   string action = 1;
   string source_path = 2;
   string dest_path = 3;
+}
+
+message BackupObject {
+  string action = 1;
+  string provider = 2;
+  string endpoint = 3;
+  string region = 4;
+  string bucket = 5;
+  string object_key = 6;
+  string source_path = 7;
+  string dest_path = 8;
+  string access_key_id = 9;
+  string secret_access_key = 10;
+  bytes encryption_key = 11;
+  bool no_check_bucket = 12;
+  string resume_upload_id = 13;
 }
 
 message VMSnapshot {

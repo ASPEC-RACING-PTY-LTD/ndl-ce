@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -44,6 +45,11 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 	}
 	if action == qemu.BackupDelete {
 		return storage.CopyResult{Dest: dest, Format: "qcow2"}, nil
+	}
+	if dest != "" {
+		if err := os.MkdirAll(filepath.Dir(dest), 0o750); err == nil {
+			_ = os.WriteFile(dest, []byte("qcow"), 0o640)
+		}
 	}
 	res := f.res
 	if res.SHA256 == "" {

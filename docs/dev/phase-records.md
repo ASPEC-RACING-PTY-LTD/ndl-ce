@@ -146,5 +146,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: shared stack networks beyond existing network_id attach; live containerd stack apply on appliance; S3 backups remain Phase 23
 - Audit follow-up: storage.volume.create is required when import creates named volumes; stack members are PATCH-editable No-dal objects before apply
 
+## Phase 23
+
+- Package: 0.1.22
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (R2/S3/MinIO fixture encrypt-before-upload, ciphertext is NDLE not plaintext, secrets never returned, no_check_bucket does not invent available, HTTPS required except MinIO fixtures, restore mints a new UUID, ZFS send -i second run transfers less). FIXTURE: FakeObject + MemoryTransport + fakeZFS. NOT PHYSICALLY VALIDATED: live MinIO/R2 multipart against a real bucket; qcow2 dirty-bitmap incrementals; live QEMU boot after object restore
+- Follow-up: backup verification remains Phase 24; live MinIO virt job; multipart resume sidecar; qcow2 bitmap incrementals
+- Audit follow-up: client-side encryption is required; bucket SSE is extra, not sufficient; SkipNetwork without transport stays unavailable
+
 
 

@@ -625,10 +625,16 @@ export interface CreateSnapshotRequest {
 export interface BackupTarget {
   id: string;
   name: string;
-  kind: "local" | "nfs" | "smb";
+  kind: "local" | "nfs" | "smb" | "s3" | "r2" | "aws" | "b2" | "minio";
   locator: string;
   status: "available" | "unavailable" | "not_configured";
   username?: string;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  prefix?: string;
+  no_check_bucket?: boolean;
+  has_encryption_key?: boolean;
 }
 
 export interface BackupTargetListResponse {
@@ -637,10 +643,16 @@ export interface BackupTargetListResponse {
 
 export interface CreateBackupTargetRequest {
   name: string;
-  kind: "local" | "nfs" | "smb";
-  locator: string;
+  kind: "local" | "nfs" | "smb" | "s3" | "r2" | "aws" | "b2" | "minio";
+  locator?: string;
   username?: string;
   password?: string;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  prefix?: string;
+  no_check_bucket?: boolean;
+  encryption_key?: string;
 }
 
 export interface BackupPolicy {
@@ -680,6 +692,8 @@ export interface BackupRun {
   restored_workload_id?: string;
   started_at: string;
   finished_at?: string;
+  transferred_bytes?: number;
+  incremental?: boolean;
 }
 
 export interface BackupRunListResponse {
@@ -701,6 +715,10 @@ export interface BackupArtifact {
   locator: string;
   format: string;
   created_at: string;
+  encrypted?: boolean;
+  transferred_bytes?: number;
+  object_key?: string;
+  parent_artifact_id?: string;
 }
 
 export interface BackupArtifactListResponse {

@@ -653,6 +653,85 @@ describe("App", () => {
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
   });
 
+  it("renders R2 object target fields and last-run transferred bytes", async () => {
+    window.history.replaceState({}, "", "/backups");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/backups/targets": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "tgt-r2",
+              name: "r2-offsite",
+              kind: "r2",
+              locator: "s3://ndl-backups/node1",
+              status: "not_configured",
+              endpoint: "https://account.r2.cloudflarestorage.com",
+              bucket: "ndl-backups",
+              no_check_bucket: true,
+              has_encryption_key: true,
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "/api/v1/backups/runs": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "run-r2",
+              target_id: "tgt-r2",
+              workload_id: "wl-1",
+              status: "succeeded",
+              started_at: "2026-09-01T12:00:00Z",
+              finished_at: "2026-09-01T12:01:00Z",
+              transferred_bytes: 2048,
+              incremental: true,
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/artifacts": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "art-r2",
+              run_id: "run-r2",
+              workload_id: "wl-1",
+              checksum_sha256: "abc123",
+              size_bytes: 1024,
+              transferred_bytes: 2048,
+              locator: "s3://ndl-backups/art-r2.qcow2.ndl",
+              format: "qcow2",
+              encrypted: true,
+              created_at: "2026-09-01T12:01:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^backups$/i })).toBeVisible();
+    expect(await screen.findByText("r2-offsite")).toBeVisible();
+    expect(screen.getByText("ndl-backups")).toBeVisible();
+    expect(screen.getByText("Client-side")).toBeVisible();
+    expect(screen.getByText("Yes")).toBeVisible();
+    fireEvent.change(screen.getByLabelText(/^kind$/i), { target: { value: "r2" } });
+    expect(screen.getByLabelText(/^endpoint$/i)).toBeVisible();
+    expect(screen.getByLabelText(/^bucket$/i)).toBeVisible();
+    expect(screen.getByLabelText(/^access key id$/i)).toBeVisible();
+    expect(screen.getByLabelText(/^secret access key$/i)).toBeVisible();
+    expect(screen.getByLabelText(/skip bucket probe/i)).toBeVisible();
+    expect(screen.queryByLabelText(/^locator$/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option", { name: /r2-offsite \(not configured\)/i }).length).toBeGreaterThan(0);
+  });
+
   it("renders MFA, groups, and audit pages from the shell", async () => {
     window.history.replaceState({}, "", "/settings/mfa");
     mockApi({
