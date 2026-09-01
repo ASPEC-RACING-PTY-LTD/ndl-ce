@@ -297,7 +297,13 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 	if err != nil {
 		return vmspec.Resolved{}, nil, nil, convert, err
 	}
-	vol, diskPath, err := s.ensureVMBootVolume(ctx, clusterID, nodeID, pool, ids.VolumeID, spec)
+	mustExist := strings.TrimSpace(req.VolumeID) != ""
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleBoot && strings.TrimSpace(d.VolumeID) != "" {
+			mustExist = true
+		}
+	}
+	vol, diskPath, err := s.ensureVMBootVolume(ctx, clusterID, nodeID, pool, ids.VolumeID, spec, mustExist)
 	if err != nil {
 		return vmspec.Resolved{}, nil, nil, convert, err
 	}
@@ -316,7 +322,10 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 			continue
 		}
 		extra, eerr := s.Store.GetVolume(ctx, clusterID, d.VolumeID)
-		if eerr != nil || extra == nil {
+		if eerr != nil {
+			return vmspec.Resolved{}, nil, nil, convert, eerr
+		}
+		if extra == nil {
 			return vmspec.Resolved{}, nil, nil, convert, errNotFound("data volume is not found")
 		}
 		if extra.Class != storage.ClassVMDisk {
@@ -394,7 +403,7 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 	return resolved, vol, netw, convert, nil
 }
 
-func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID string, pool *appdb.StoragePool, volumeID string, spec vmspec.Spec) (*appdb.Volume, string, error) {
+func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID string, pool *appdb.StoragePool, volumeID string, spec vmspec.Spec, mustExist bool) (*appdb.Volume, string, error) {
 	size := int64(vmspec.DefaultDiskBytes)
 	format := storage.FormatQCOW2
 	for _, d := range spec.Disks {
@@ -413,7 +422,14 @@ func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID strin
 	if volumeID == "" {
 		volumeID = uuid.NewString()
 	}
-	if existing, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existing != nil {
+	existing, err := s.Store.GetVolume(ctx, clusterID, volumeID)
+	if err != nil {
+		return nil, "", err
+	}
+	if existing == nil && mustExist {
+		return nil, "", errNotFound("volume is not found")
+	}
+	if existing != nil {
 		if existing.Class != storage.ClassVMDisk {
 			return nil, "", errConflict("volume is not a vm-disk")
 		}
@@ -445,7 +461,11 @@ func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID strin
 		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: backend,
 	}
 	if err := s.Store.CreateVolume(ctx, row); err != nil {
-		if existing, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existing != nil {
+		existing, gerr := s.Store.GetVolume(ctx, clusterID, volumeID)
+		if gerr != nil {
+			return nil, "", gerr
+		}
+		if existing != nil {
 			row = *existing
 		} else {
 			return nil, "", err
@@ -643,6 +663,25 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 	if req.DesiredPower != "" {
 		desired = req.DesiredPower
 	}
+	if req.NoCloud != nil && s.VM != nil {
+		if seed, serr := nocloudSeedForWrite(next); serr != nil {
+			writeErr(w, http.StatusBadRequest, serr.Error())
+			return
+		} else if seed != "" {
+			appliedLaunch, lerr := jsonToLaunch(row.AppliedJSON)
+			if lerr != nil {
+				writeErr(w, http.StatusBadRequest, "frozen launch config is invalid")
+				return
+			}
+			if appliedLaunch.WorkloadID == "" {
+				appliedLaunch.WorkloadID = row.ID
+			}
+			if _, perr := s.VM.PrepareVM(r.Context(), agentrpc.VMPrepareRequest{Launch: appliedLaunch, UserData: seed}); perr != nil && !errors.Is(perr, qemu.ErrAlreadyRunning) {
+				writeErr(w, statusFor(perr), perr.Error())
+				return
+			}
+		}
+	}
 	_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
 		ID: row.ID, CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, DesiredPower: desired,
 		SpecJSON: vmspec.MustJSON(next), AppliedJSON: row.AppliedJSON, Autostart: next.Autostart,
@@ -707,7 +746,10 @@ func (s *Server) reprepareVM(ctx context.Context, clusterID string, row appdb.Wo
 	if err != nil {
 		return vmspec.Launch{}, err
 	}
-	userData, _ := vmspec.RenderUserData(spec.NoCloud)
+	userData, err := nocloudSeedForReprepare(spec)
+	if err != nil {
+		return vmspec.Launch{}, err
+	}
 	if _, err := s.VM.PrepareVM(ctx, agentrpc.VMPrepareRequest{Launch: launch, UserData: userData}); err != nil {
 		return vmspec.Launch{}, err
 	}
@@ -887,4 +929,29 @@ func (s *Server) createVMConsole(w http.ResponseWriter, r *http.Request) {
 		"note":       "backend socket paths are locators, not credentials",
 	})
 	_ = sock
+}
+
+// nocloudSeedForWrite returns user-data only when the spec still carries a
+// password or raw user-data. Persisted specs are redacted, so start/restart
+// must not overwrite the private cidata seed with a password-less render.
+func nocloudSeedForWrite(spec vmspec.Spec) (string, error) {
+	if spec.NoCloud.Password == "" && strings.TrimSpace(spec.NoCloud.UserData) == "" {
+		return "", nil
+	}
+	return vmspec.RenderUserData(spec.NoCloud)
+}
+
+func nocloudSeedForReprepare(spec vmspec.Spec) (string, error) {
+	return nocloudSeedForWrite(spec)
+}
+
+func jsonToLaunch(raw json.RawMessage) (vmspec.Launch, error) {
+	var launch vmspec.Launch
+	if len(raw) == 0 {
+		return launch, nil
+	}
+	if err := json.Unmarshal(raw, &launch); err != nil {
+		return vmspec.Launch{}, err
+	}
+	return launch, nil
 }

@@ -49,8 +49,9 @@ Delete removes VM configuration, TAP devices, cidata, and per-VM UEFI vars.
 Attached persistent volumes are preserved unless a later phase adds an
 explicit destructive confirm.
 
-qemu-img convert is refused while the destination disk is attached to a
-running unit. Live disk mutation is an error, not a warning.
+qemu-img convert is refused while the source or destination disk is attached
+to a running unit, and when applied or unit state cannot be proven stopped.
+Live disk mutation is an error, not a warning.
 
 Console uses `compute.console` and a short-lived ticket. It does not grant
 `terminal.open`. VM Terminal and Files remain Phase 20.

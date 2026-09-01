@@ -2,6 +2,7 @@ package qemu
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -92,6 +93,30 @@ func TestAssertDiskOfflineBlocksRunning(t *testing.T) {
 	e.LiveUnits = map[string]bool{id: true}
 	if err := e.AssertDiskOffline(context.Background(), disk); err == nil {
 		t.Fatal("live disk must be refused")
+	}
+}
+
+func TestConvertOfflineAssertsSourceAndCorruptApplied(t *testing.T) {
+	root := t.TempDir()
+	e := &Engine{DataDir: root, SkipHostCmds: true, LiveUnits: map[string]bool{}}
+	id := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	disk := "/var/lib/ndl/storage/p/volumes/vm-disk/" + id + ".qcow2"
+	if _, err := e.Prepare(Spec{WorkloadID: id, VolumeID: "v", DiskPath: disk, Accel: "tcg", Machine: DefaultMachine}); err != nil {
+		t.Fatal(err)
+	}
+	e.LiveUnits[id] = true
+	dest := "/var/lib/ndl/storage/p/volumes/vm-disk/other.qcow2"
+	if err := e.ConvertOffline(context.Background(), ConvertRequest{
+		SourcePath: disk, DestPath: dest, SourceFormat: "qcow2", DestFormat: "qcow2",
+	}); err == nil {
+		t.Fatal("live source disk must be refused")
+	}
+	e.LiveUnits[id] = false
+	if err := os.WriteFile(e.appliedPath(id), []byte("{"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.AssertDiskOffline(context.Background(), dest); err == nil {
+		t.Fatal("corrupt applied state must refuse qemu-img")
 	}
 }
 

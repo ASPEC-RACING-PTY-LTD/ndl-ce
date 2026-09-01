@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/no-dal/ndl-ce/internal/vmspec"
@@ -147,6 +148,9 @@ func (e *Engine) ConvertOffline(ctx context.Context, req ConvertRequest) error {
 	if err := e.AssertDiskOffline(ctx, req.DestPath); err != nil {
 		return err
 	}
+	if err := e.AssertDiskOffline(ctx, req.SourcePath); err != nil {
+		return err
+	}
 	if e.SkipHostCmds {
 		return nil
 	}
@@ -160,32 +164,78 @@ func (e *Engine) ConvertOffline(ctx context.Context, req ConvertRequest) error {
 }
 
 // AssertDiskOffline refuses qemu-img mutation of a disk attached to a live VM.
+// Unknown applied state or unknown unit state is a refusal, not a pass.
 func (e *Engine) AssertDiskOffline(ctx context.Context, diskPath string) error {
 	if diskPath == "" {
 		return fmt.Errorf("disk path is required")
 	}
-	for _, id := range e.ListAppliedIDs() {
+	want := filepath.Clean(diskPath)
+	entries, err := os.ReadDir(filepath.Join(e.dataDir(), "workloads"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("qemu-img refused: cannot list applied VMs: %w", err)
+	}
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		id := ent.Name()
+		if err := ValidateWorkloadID(id); err != nil {
+			continue
+		}
+		if _, statErr := os.Stat(e.appliedPath(id)); os.IsNotExist(statErr) {
+			continue
+		}
 		applied, err := e.ReadApplied(id)
 		if err != nil {
+			return fmt.Errorf("qemu-img refused: cannot prove disk is offline (workload %s): %w", id, err)
+		}
+		if !appliedContainsDisk(applied, want) {
 			continue
 		}
-		paths := []string{applied.Spec.DiskPath}
-		for _, d := range applied.Launch.Disks {
-			paths = append(paths, d.Path)
+		if err := e.unitProvenStopped(ctx, id); err != nil {
+			return err
 		}
-		hit := false
-		for _, p := range paths {
-			if p == diskPath {
-				hit = true
-				break
-			}
-		}
-		if !hit {
+	}
+	return nil
+}
+
+func appliedContainsDisk(applied Applied, want string) bool {
+	paths := []string{applied.Spec.DiskPath}
+	for _, d := range applied.Launch.Disks {
+		paths = append(paths, d.Path)
+	}
+	for _, p := range paths {
+		if p == "" {
 			continue
 		}
-		if e.AlreadyRunning(ctx, id) {
+		if filepath.Clean(p) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// unitProvenStopped fails closed when systemd cannot prove the unit is down.
+func (e *Engine) unitProvenStopped(ctx context.Context, id string) error {
+	if e.LiveUnits != nil {
+		if e.LiveUnits[id] {
 			return fmt.Errorf("qemu-img refused: volume is attached to a running VM")
 		}
+		return nil
+	}
+	if e.SkipHostCmds {
+		return nil
+	}
+	state, err := e.unitState(ctx, id)
+	if err != nil {
+		return fmt.Errorf("qemu-img refused: cannot prove VM %s is stopped: %w", id, err)
+	}
+	switch strings.TrimSpace(state) {
+	case "activating", "active", "reloading":
+		return fmt.Errorf("qemu-img refused: volume is attached to a running VM")
 	}
 	return nil
 }

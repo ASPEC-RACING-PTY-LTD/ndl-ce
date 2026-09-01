@@ -27,12 +27,18 @@ service AgentService {
   // UploadLibrary streams ISO or cloud-image bytes to the agent.
   rpc UploadLibrary(stream UploadLibraryRequest) returns (UploadLibraryResponse);
   // FilesOp is a typed jail operation. Path is relative to the jail root.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc FilesOp(FilesOpRequest) returns (FilesOpResponse);
   // FilesPut writes one file in chunks beneath the jail.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc FilesPut(stream FilesPutRequest) returns (FilesOpResponse);
   // FilesGet reads one file in chunks beneath the jail.
   rpc FilesGet(FilesGetRequest) returns (stream FilesGetResponse);
   // AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc AttachTerminal(stream TermFrame) returns (stream TermFrame);
 }
 

@@ -249,14 +249,35 @@ func Normalize(spec Spec) Spec {
 	return spec
 }
 
-// Redact removes secrets from API responses and logs.
+// Redact removes secrets from API responses, logs, and persisted spec JSON.
 func Redact(spec Spec) Spec {
 	out := spec
+	if out.NoCloud.Password != "" {
+		out.NoCloud.HasPassword = true
+	}
 	out.NoCloud.Password = ""
-	if out.NoCloud.HasPassword && strings.Contains(strings.ToLower(out.NoCloud.UserData), "password") {
+	if userDataLooksSecret(out.NoCloud.UserData) {
 		out.NoCloud.UserData = ""
+		out.NoCloud.HasPassword = true
 	}
 	return out
+}
+
+func userDataLooksSecret(s string) bool {
+	lower := strings.ToLower(s)
+	if strings.Contains(lower, "chpasswd") || strings.Contains(lower, "hashed_passwd") {
+		return true
+	}
+	for _, line := range strings.Split(lower, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "password:") || strings.HasPrefix(line, "passwd:") {
+			return true
+		}
+		if strings.Contains(line, " password:") {
+			return true
+		}
+	}
+	return false
 }
 
 func Parse(raw json.RawMessage) (Spec, error) {

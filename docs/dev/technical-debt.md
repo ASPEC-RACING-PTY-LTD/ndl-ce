@@ -52,4 +52,6 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Browser graphical console confirms a ticketed VNC unix session and does not decode a full RFB framebuffer. Serial is the interactive compatibility console. Why not blocking: console works without a guest agent; a richer VNC client can land later.
 - LOW. PCI live match compares persisted slot addresses to `query-pci` slots. QEMU may also show bridges and implicit devices. Why not blocking: assigned virtio/VGA/serial slots are still pinned.
 - LOW. Cloud-image validation beyond qcow2 magic remains best-effort from Phase 3. Why not blocking: QEMU start fails honestly if the artifact is not usable; the library file is not mutated.
+- MEDIUM. TAP devices are created at prepare and not always deleted on a clean stop; cleanup runs on failed prepare and VM delete. Why not blocking: names are `nv` plus hex and stay on the VM bridge; leaked TAPs do not attach a second QEMU. Later lifecycle polish can delete on stop.
+- LOW. `ip link delete` allowlist still accepts any `nv*` name if last-applied is tampered. Why not blocking: TAP names are compiled, and delete already refuses unmanaged names that are not derived.
 

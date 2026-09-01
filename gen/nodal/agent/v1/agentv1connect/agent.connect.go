@@ -93,12 +93,18 @@ type AgentServiceClient interface {
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context) *connect.ClientStreamForClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
 	// FilesOp is a typed jail operation. Path is relative to the jail root.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	FilesOp(context.Context, *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error)
 	// FilesPut writes one file in chunks beneath the jail.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	FilesPut(context.Context) *connect.ClientStreamForClient[v1.FilesPutRequest, v1.FilesOpResponse]
 	// FilesGet reads one file in chunks beneath the jail.
 	FilesGet(context.Context, *connect.Request[v1.FilesGetRequest]) (*connect.ServerStreamForClient[v1.FilesGetResponse], error)
 	// AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	AttachTerminal(context.Context) *connect.BidiStreamForClient[v1.TermFrame, v1.TermFrame]
 }
 
@@ -322,12 +328,18 @@ type AgentServiceHandler interface {
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error)
 	// FilesOp is a typed jail operation. Path is relative to the jail root.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	FilesOp(context.Context, *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error)
 	// FilesPut writes one file in chunks beneath the jail.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	FilesPut(context.Context, *connect.ClientStream[v1.FilesPutRequest]) (*connect.Response[v1.FilesOpResponse], error)
 	// FilesGet reads one file in chunks beneath the jail.
 	FilesGet(context.Context, *connect.Request[v1.FilesGetRequest], *connect.ServerStream[v1.FilesGetResponse]) error
 	// AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	AttachTerminal(context.Context, *connect.BidiStream[v1.TermFrame, v1.TermFrame]) error
 }
 

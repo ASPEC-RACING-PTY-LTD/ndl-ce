@@ -63,6 +63,11 @@ func (e *Engine) chownRuntime(id string) error {
 			return err
 		}
 	}
+	// Per-VM runtime is 0750 so world cannot connect to QEMU unix sockets
+	// even when parent dirs are traversable by ndl-qemu.
+	if err := os.Chmod(e.runtimeDir(id), 0o750); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
 }
 

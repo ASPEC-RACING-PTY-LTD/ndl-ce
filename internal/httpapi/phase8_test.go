@@ -21,15 +21,17 @@ import (
 )
 
 type fakeVM struct {
-	prep    qemu.Result
-	obs     qemu.Observed
-	err     error
-	actions []string
-	launch  vmspec.Launch
+	prep     qemu.Result
+	obs      qemu.Observed
+	err      error
+	actions  []string
+	launch   vmspec.Launch
+	userData string
 }
 
 func (f *fakeVM) PrepareVM(_ context.Context, req agentrpc.VMPrepareRequest) (qemu.Result, error) {
 	f.launch = req.Launch
+	f.userData = req.UserData
 	res := f.prep
 	if res.WorkloadID == "" {
 		res.WorkloadID = req.Launch.WorkloadID
@@ -384,4 +386,89 @@ func TestLiveQemuImgRefused(t *testing.T) {
 	if err := e.AssertDiskOffline(context.Background(), disk); err == nil {
 		t.Fatal("live qemu-img must be refused")
 	}
+}
+
+func TestMissingVolumeIDRefused(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	missing := uuid.NewString()
+	body := `{"name":"ghost","kind":"vm","network_id":"` + netID + `","pool_id":"` + poolID + `","volume_id":"` + missing + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusNotFound {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("missing volume %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	vols, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	for _, v := range vols {
+		if v.ID == missing {
+			t.Fatal("missing volume_id must not allocate a blank disk")
+		}
+	}
+}
+
+func TestPasswordSeedSurvivesReprepare(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","network_id":"` + netID + `","pool_id":"` + poolID + `","nocloud":{"enable":true,"username":"debian","password":"hunter2"}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("create %d %s", res.StatusCode, b)
+	}
+	var created map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&created)
+	_ = res.Body.Close()
+	if strings.Contains(string(mustSpecJSON(created)), "hunter2") {
+		t.Fatal("password leaked in API spec")
+	}
+	if !strings.Contains(vm.userData, "hunter2") {
+		t.Fatal("create must write password into the private seed")
+	}
+	id := created["id"].(string)
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader(`{}`))
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	out, _ := ts.Client().Do(start)
+	if out.StatusCode != 200 {
+		b, _ := io.ReadAll(out.Body)
+		t.Fatalf("start %d %s", out.StatusCode, b)
+	}
+	_ = out.Body.Close()
+	if vm.userData != "" {
+		t.Fatalf("reprepare must not overwrite the private seed, got %q", vm.userData)
+	}
+}
+
+func mustSpecJSON(m map[string]any) json.RawMessage {
+	raw, _ := json.Marshal(m["spec"])
+	return raw
 }

@@ -2,6 +2,7 @@ package vmspec
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -93,6 +94,14 @@ func TestRedactHidesPassword(t *testing.T) {
 	}
 	if !out.NoCloud.HasPassword {
 		t.Fatal("has_password")
+	}
+	raw := Normalize(Spec{Name: "x", NoCloud: NoCloud{Enable: true, UserData: "#cloud-config\nchpasswd:\n  list: |\n    debian:hunter2\n"}})
+	stripped := Redact(raw)
+	if strings.Contains(stripped.NoCloud.UserData, "hunter2") {
+		t.Fatal("chpasswd user-data leaked")
+	}
+	if !stripped.NoCloud.HasPassword {
+		t.Fatal("raw secret must set has_password")
 	}
 }
 
