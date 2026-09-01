@@ -9,7 +9,9 @@ import {
   listBackupTargets,
   listWorkloads,
   restoreBackupArtifact,
+  restoreBackupFile,
   runBackup,
+  verifyBackupArtifact,
 } from "../api/client";
 import type { Workload } from "../api/phase5";
 import type {
@@ -67,6 +69,17 @@ function runStatusLabel(status: BackupRun["status"]): string {
   }
 }
 
+function verifyStatusLabel(status: BackupArtifact["verify_status"] | undefined): string {
+  switch (status) {
+    case "verified":
+      return "Verified";
+    case "failed":
+      return "Failed";
+    default:
+      return "Unverified";
+  }
+}
+
 export function BackupsPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
@@ -102,6 +115,8 @@ export function BackupsPage() {
   const [runWorkloadId, setRunWorkloadId] = useState("");
   const [runTargetId, setRunTargetId] = useState("");
   const [runPolicyId, setRunPolicyId] = useState("");
+  const [filePath, setFilePath] = useState("/etc/hostname");
+  const [filePreview, setFilePreview] = useState<string | null>(null);
 
   async function reload() {
     const [t, p, r, a, w] = await Promise.all([
@@ -282,6 +297,43 @@ export function BackupsPage() {
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Restore failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onVerify(artifact: BackupArtifact, mode: "open" | "throwaway") {
+    setBusy(true);
+    setError(null);
+    try {
+      await verifyBackupArtifact(artifact.id, { mode });
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Verify failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRestoreFile(artifact: BackupArtifact) {
+    const path = filePath.trim();
+    if (!path.startsWith("/") || path.includes("..")) {
+      setError("Guest path must be absolute without traversal");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setFilePreview(null);
+    try {
+      const out = await restoreBackupFile(artifact.id, { path });
+      try {
+        setFilePreview(atob(out.content_base64));
+      } catch {
+        setFilePreview("(binary)");
+      }
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "File restore failed");
     } finally {
       setBusy(false);
     }
@@ -713,8 +765,24 @@ export function BackupsPage() {
             <h2>Artifacts</h2>
             <p className="muted">
               Restore as new creates a new workload UUID. Restore replace overwrites the existing workload and requires
-              confirmation.
+              confirmation. Catalog without verify stays Unverified. Throwaway restore tests must not touch the source
+              workload.
             </p>
+            {mutate ? (
+              <Field
+                id="backup-restore-file-path"
+                label="Guest file path"
+                value={filePath}
+                onChange={(e) => setFilePath(e.target.value)}
+                autoComplete="off"
+                hint="Used by Restore file. Traversal is refused. libguestfs must be installed on the agent."
+              />
+            ) : null}
+            {filePreview ? (
+              <pre className="mono" aria-live="polite">
+                {filePreview}
+              </pre>
+            ) : null}
             {artifacts == null ? (
               <p>Collecting</p>
             ) : artifacts.length === 0 ? (
@@ -731,6 +799,8 @@ export function BackupsPage() {
                       <th>Encrypted</th>
                       <th>Format</th>
                       <th>Checksum</th>
+                      <th>Verify</th>
+                      <th>Last tested</th>
                       <th>Created</th>
                       <th>Actions</th>
                     </tr>
@@ -745,10 +815,36 @@ export function BackupsPage() {
                         <td>{art.encrypted ? "Client-side" : "No"}</td>
                         <td>{art.format}</td>
                         <td className="mono">{art.checksum_sha256}</td>
+                        <td>{verifyStatusLabel(art.verify_status)}</td>
+                        <td>{formatWhen(art.last_tested_at)}</td>
                         <td>{formatWhen(art.created_at)}</td>
                         <td>
                           {mutate ? (
                             <div className="btn-row">
+                              <button
+                                className="btn"
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void onVerify(art, "open")}
+                              >
+                                Verify
+                              </button>
+                              <button
+                                className="btn"
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void onVerify(art, "throwaway")}
+                              >
+                                Verify throwaway
+                              </button>
+                              <button
+                                className="btn"
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void onRestoreFile(art)}
+                              >
+                                Restore file
+                              </button>
                               <button
                                 className="btn"
                                 type="button"

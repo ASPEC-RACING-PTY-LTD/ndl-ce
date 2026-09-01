@@ -719,6 +719,10 @@ export interface BackupArtifact {
   transferred_bytes?: number;
   object_key?: string;
   parent_artifact_id?: string;
+  verify_status?: "unverified" | "verified" | "failed";
+  verify_error?: string;
+  last_tested_at?: string;
+  throwaway_workload_id?: string;
 }
 
 export interface BackupArtifactListResponse {
@@ -727,6 +731,22 @@ export interface BackupArtifactListResponse {
 
 export interface RestoreBackupRequest {
   mode: "new" | "replace";
+}
+
+export interface VerifyBackupRequest {
+  mode?: "open" | "throwaway";
+}
+
+export interface RestoreBackupFileRequest {
+  path: string;
+}
+
+export interface RestoreBackupFileResponse {
+  artifact_id: string;
+  path: string;
+  size_bytes: number;
+  sha256: string;
+  content_base64: string;
 }
 
 export interface UpdatePackage {
@@ -1238,6 +1258,10 @@ export type ListBackupArtifactsPath = "/api/v1/backups/artifacts";
 export type RunBackupPath = "/api/v1/backups/run";
 
 export type RestoreBackupArtifactPath = "/api/v1/backups/artifacts/{id}/restore";
+
+export type VerifyBackupArtifactPath = "/api/v1/backups/artifacts/{id}/verify";
+
+export type RestoreBackupFilePath = "/api/v1/backups/artifacts/{id}/restore-file";
 
 export type GetCertsPath = "/api/v1/certs";
 

@@ -138,6 +138,7 @@ type Store interface {
 	ListBackupArtifacts(ctx context.Context, clusterID string) ([]BackupArtifact, error)
 	ListBackupArtifactsForWorkload(ctx context.Context, clusterID, workloadID, targetID string) ([]BackupArtifact, error)
 	GetBackupArtifact(ctx context.Context, clusterID, id string) (*BackupArtifact, error)
+	UpdateBackupArtifactVerify(ctx context.Context, a BackupArtifact) error
 	DeleteBackupArtifact(ctx context.Context, clusterID, id string) error
 
 	CreateUpdateOperation(ctx context.Context, op UpdateOperation) error

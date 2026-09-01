@@ -795,6 +795,30 @@ export async function restoreBackupArtifact(
   );
 }
 
+export async function verifyBackupArtifact(
+  id: string,
+  body: import("../generated/openapi").VerifyBackupRequest,
+): Promise<import("../generated/openapi").BackupArtifact> {
+  return readJson(
+    await request(`/backups/artifacts/${id}/verify`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
+  );
+}
+
+export async function restoreBackupFile(
+  id: string,
+  body: import("../generated/openapi").RestoreBackupFileRequest,
+): Promise<import("../generated/openapi").RestoreBackupFileResponse> {
+  return readJson(
+    await request(`/backups/artifacts/${id}/restore-file`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getUpdates(): Promise<import("../generated/openapi").UpdateStatus> {
   return readJson(await request("/updates"));
 }

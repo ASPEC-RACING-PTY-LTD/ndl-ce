@@ -64,6 +64,7 @@ type Server struct {
 	OCI         OCIRPC
 	Backup      BackupRPC
 	Object      ObjectRPC
+	Verify      VerifyRPC
 	Update      UpdateRPC
 	GPU         GPURPC
 	ZFS         ZFSRPC
@@ -201,6 +202,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/backups/artifacts", s.listBackupArtifacts)
 	mux.HandleFunc("POST /api/v1/backups/run", s.runBackup)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore", s.restoreBackup)
+	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/verify", s.verifyBackupArtifact)
+	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore-file", s.restoreBackupFile)
 	mux.HandleFunc("GET /api/v1/certs", s.getCerts)
 	mux.HandleFunc("POST /api/v1/certs/generate", s.generateCert)
 	mux.HandleFunc("POST /api/v1/certs/import", s.importCert)

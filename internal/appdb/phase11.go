@@ -23,6 +23,8 @@ const (
 	BackupUnavailable   = "unavailable"
 	BackupNotConfigured = "not_configured"
 	BackupNightly       = "nightly"
+	BackupUnverified    = "unverified"
+	BackupVerified      = "verified"
 )
 
 // BackupTarget is a destination for independent copies. Password and encryption keys are never stored on this row.
@@ -77,19 +79,23 @@ type BackupRun struct {
 
 // BackupArtifact is a catalogued independent copy.
 type BackupArtifact struct {
-	ID               string
-	ClusterID        string
-	RunID            string
-	WorkloadID       string
-	ChecksumSHA256   string
-	SizeBytes        int64
-	Locator          string
-	Format           string
-	Encrypted        bool
-	TransferredBytes int64
-	ParentArtifactID string
-	ObjectKey        string
-	CreatedAt        time.Time
+	ID                  string
+	ClusterID           string
+	RunID               string
+	WorkloadID          string
+	ChecksumSHA256      string
+	SizeBytes           int64
+	Locator             string
+	Format              string
+	Encrypted           bool
+	TransferredBytes    int64
+	ParentArtifactID    string
+	ObjectKey           string
+	VerifyStatus        string
+	VerifyError         string
+	LastTestedAt        *time.Time
+	ThrowawayWorkloadID string
+	CreatedAt           time.Time
 }
 
 func (m *Memory) CreateBackupTarget(_ context.Context, t BackupTarget, password, encryptionKey string) error {
@@ -263,6 +269,23 @@ func (m *Memory) CreateBackupArtifact(_ context.Context, a BackupArtifact) error
 	}
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now().UTC()
+	}
+	if a.VerifyStatus == "" {
+		a.VerifyStatus = BackupUnverified
+	}
+	m.backupArtifacts[a.ID] = a
+	return nil
+}
+
+func (m *Memory) UpdateBackupArtifactVerify(_ context.Context, a BackupArtifact) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.backupArtifacts[a.ID]
+	if !ok || cur.ClusterID != a.ClusterID {
+		return fmt.Errorf("backup artifact not found")
+	}
+	if a.VerifyStatus == "" {
+		a.VerifyStatus = BackupUnverified
 	}
 	m.backupArtifacts[a.ID] = a
 	return nil

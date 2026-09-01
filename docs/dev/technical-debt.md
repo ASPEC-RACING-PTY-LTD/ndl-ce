@@ -159,6 +159,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. ZFS object restore still returns 422 (zfs recv is a later backup phase). Why not blocking: qcow2 object restore to a new UUID is the proven boot path.
 - LOW. Dedup across artifacts is not a second product UX. Why not blocking: compression plus ZFS incrementals are the CE engines; a dedicated dedup product would violate the phase.
 
+## Phase 24
+
+- MEDIUM. Live qemu-img check and libguestfs/nbd extract are not proven on this Cloud VM. Why not blocking: SkipHostCmds and missing guestfish stay unverified/unavailable; FakeVerify covers checksum mismatch and throwaway isolation.
+- LOW. Nightly scheduled throwaway verify is not ticked yet. Why not blocking: on-demand open and throwaway verify exist; operators can prove a backup before disaster.
+- LOW. File restore is capped at 1MiB and returns base64. Why not blocking: the picker is for config files; large extract can wait for a streaming download.
+
 
 
 

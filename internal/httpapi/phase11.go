@@ -113,11 +113,16 @@ func backupRunJSON(r appdb.BackupRun) map[string]any {
 }
 
 func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
+	status := a.VerifyStatus
+	if status == "" {
+		status = appdb.BackupUnverified
+	}
 	out := map[string]any{
 		"id": a.ID, "run_id": a.RunID, "workload_id": a.WorkloadID,
 		"checksum_sha256": a.ChecksumSHA256, "size_bytes": a.SizeBytes,
 		"locator": a.Locator, "format": a.Format,
-		"created_at": a.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		"created_at":    a.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		"verify_status": status,
 	}
 	if a.Encrypted {
 		out["encrypted"] = true
@@ -130,6 +135,15 @@ func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
 	}
 	if a.ParentArtifactID != "" {
 		out["parent_artifact_id"] = a.ParentArtifactID
+	}
+	if a.VerifyError != "" {
+		out["verify_error"] = a.VerifyError
+	}
+	if a.LastTestedAt != nil {
+		out["last_tested_at"] = a.LastTestedAt.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	if a.ThrowawayWorkloadID != "" {
+		out["throwaway_workload_id"] = a.ThrowawayWorkloadID
 	}
 	return out
 }
@@ -822,7 +836,7 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		if src == nil {
 			restoredID, err = s.restoreOrphanVM(r.Context(), p.User.ClusterID, *art)
 		} else {
-			restoredID, err = s.restoreNewVM(r.Context(), p.User.ClusterID, *src, *art)
+			restoredID, err = s.restoreNewVM(r.Context(), p.User.ClusterID, *src, *art, false)
 		}
 	} else {
 		err = s.restoreReplaceVM(r.Context(), p.User.ClusterID, *src, *art)
@@ -844,7 +858,7 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, backupRunJSON(run))
 }
 
-func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.Workload, art appdb.BackupArtifact) (string, error) {
+func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.Workload, art appdb.BackupArtifact, isolated bool) (string, error) {
 	if s.VM == nil || s.Backup == nil || s.Storage == nil {
 		return "", errUnavailable("backup agent is unavailable")
 	}
@@ -896,6 +910,16 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	}
 	spec.Name = uniqueRestoredName(spec.Name, newID)
 	spec.CloudImageID = ""
+	if isolated {
+		spec.Name = "verify-" + newID[:8]
+		spec.USBs = nil
+		spec.PCIHosts = nil
+		isoID, err := s.isolatedNetworkID(ctx, clusterID)
+		if err != nil {
+			return "", err
+		}
+		spec.NICs = []vmspec.NIC{{Model: "virtio", NetworkID: isoID}}
+	}
 	for i := range spec.Disks {
 		if spec.Disks[i].Role == vmspec.DiskRoleBoot || spec.Disks[i].VolumeID == vol.ID {
 			spec.Disks[i].VolumeID = newVolID
@@ -928,11 +952,20 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 		Role: vmspec.DiskRoleBoot, Slot: 0, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
 	})
 	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID)
-	for _, n := range nics {
-		_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
-			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID,
-			NetworkID: n.NetworkID, Model: n.Model,
-		})
+	if isolated {
+		if isoID, err := s.isolatedNetworkID(ctx, clusterID); err == nil {
+			_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+				ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID,
+				NetworkID: isoID, Model: "virtio",
+			})
+		}
+	} else {
+		for _, n := range nics {
+			_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+				ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID,
+				NetworkID: n.NetworkID, Model: n.Model,
+			})
+		}
 	}
 	if _, err := s.reprepareVM(ctx, clusterID, row); err != nil {
 		return "", err

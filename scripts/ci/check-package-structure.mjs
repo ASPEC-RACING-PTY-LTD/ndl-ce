@@ -100,6 +100,9 @@ if (!changelog.includes("nodal (0.1.21)") || !changelog.includes("Phase 22 appli
 if (!changelog.includes("nodal (0.1.22)") || !changelog.includes("Phase 23 object-storage backup")) {
   errors.push("changelog must include nodal (0.1.22) Phase 23 object-storage backup");
 }
+if (!changelog.includes("nodal (0.1.23)") || !changelog.includes("Phase 24 backup verification")) {
+  errors.push("changelog must include nodal (0.1.23) Phase 24 backup verification");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

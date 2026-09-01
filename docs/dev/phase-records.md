@@ -155,5 +155,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: backup verification remains Phase 24; live MinIO virt job; multipart resume sidecar; qcow2 bitmap incrementals
 - Audit follow-up: client-side encryption is required; bucket SSE is extra, not sufficient; SkipNetwork without transport stays unavailable
 
+## Phase 24
+
+- Package: 0.1.23
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (catalog without verify stays unverified, checksum mismatch stays unverified, throwaway restore mints a new isolated UUID and does not change the source workload, restore-file returns guest path bytes, viewer 403). FIXTURE: fakeVerify. NOT PHYSICALLY VALIDATED: live qemu-img check against a real qcow2; libguestfs/nbd file extract on Debian 13
+- Follow-up: LVM-thin remains Phase 25; scheduled nightly throwaway; live guestfish extract
+- Audit follow-up: SkipHostCmds and missing libguestfs stay unavailable/unverified and never invent verified
+
 
 

@@ -1,3 +1,9 @@
+nodal (0.1.23) UNRELEASED; urgency=medium
+
+  * Phase 24 backup verification and file restore: open-verify, throwaway isolated restore tests, restore-file, unverified until catalog plus verify
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.22) UNRELEASED; urgency=medium
 
   * Phase 23 object-storage backup: S3/R2/AWS/B2/MinIO encrypt-before-upload, no_check_bucket, ZFS send -i incrementals, restore to a new UUID

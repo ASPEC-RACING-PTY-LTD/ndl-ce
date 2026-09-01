@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.22
-  description: Phase 23 object-storage backup (S3, R2, B2, MinIO) with encrypt-before-upload, plus prior northbound API.
+  version: 0.1.23
+  description: Phase 24 backup verification and file restore, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -1720,6 +1720,76 @@ paths:
           description: Artifact not found
         "422":
           description: Confirm header missing for replace, or restore not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /backups/artifacts/{id}/verify:
+    post:
+      operationId: verifyBackupArtifact
+      summary: Open-verify an artifact or restore it to an isolated throwaway workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyBackupRequest"
+      responses:
+        "202":
+          description: Verify accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupArtifact"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Artifact not found
+        "422":
+          description: Verify not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /backups/artifacts/{id}/restore-file:
+    post:
+      operationId: restoreBackupFile
+      summary: Extract one guest path from a received backup artifact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreBackupFileRequest"
+      responses:
+        "200":
+          description: Extracted file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreBackupFileResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Artifact not found
+        "422":
+          description: Extract unavailable or path invalid
           content:
             application/json:
               schema:
@@ -4138,6 +4208,19 @@ components:
           type: string
         parent_artifact_id:
           type: string
+        verify_status:
+          type: string
+          enum:
+            - unverified
+            - verified
+            - failed
+          description: Catalog without a successful verify stays unverified. Checksum mismatch is unverified.
+        verify_error:
+          type: string
+        last_tested_at:
+          type: string
+        throwaway_workload_id:
+          type: string
     BackupArtifactListResponse:
       type: object
       additionalProperties: false
@@ -4160,6 +4243,45 @@ components:
             - new
             - replace
           description: new creates a new workload UUID. replace overwrites the existing workload and requires X-Nodal-Confirm restore.
+    VerifyBackupRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum:
+            - open
+            - throwaway
+          description: open is checksum plus qemu-img check. throwaway restores to a new isolated UUID and must not touch the source.
+    RestoreBackupFileRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          description: Absolute guest path. Traversal is refused.
+    RestoreBackupFileResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - artifact_id
+        - path
+        - size_bytes
+        - sha256
+        - content_base64
+      properties:
+        artifact_id:
+          type: string
+        path:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        content_base64:
+          type: string
     UpdatePackage:
       type: object
       additionalProperties: false

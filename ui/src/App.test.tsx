@@ -649,6 +649,8 @@ describe("App", () => {
     ).toBeVisible();
     expect(screen.getByRole("button", { name: /^restore as new$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^restore replace$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^verify$/i })).toBeVisible();
+    expect(screen.getByText(/^Unverified$/)).toBeVisible();
     expect(screen.getAllByText("local-disk").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
   });

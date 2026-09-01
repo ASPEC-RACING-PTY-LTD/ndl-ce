@@ -65,6 +65,8 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"VMGuest vm_guest =",
 		"OCIRuntime oci_runtime =",
 		"BackupObject backup_object =",
+		"BackupVerify backup_verify =",
+		"BackupExtract backup_extract =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

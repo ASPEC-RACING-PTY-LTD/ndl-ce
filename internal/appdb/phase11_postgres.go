@@ -242,17 +242,34 @@ func (p *Postgres) CreateBackupArtifact(ctx context.Context, a BackupArtifact) e
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now().UTC()
 	}
+	status := a.VerifyStatus
+	if status == "" {
+		status = BackupUnverified
+	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_artifacts (id, cluster_id, run_id, workload_id, checksum_sha256, size_bytes, locator, format, created_at, encrypted, transferred_bytes, parent_artifact_id, object_key)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		a.ID, a.ClusterID, a.RunID, a.WorkloadID, a.ChecksumSHA256, a.SizeBytes, a.Locator, a.Format, a.CreatedAt, a.Encrypted, a.TransferredBytes, nullIfEmpty(a.ParentArtifactID), a.ObjectKey)
+INSERT INTO backup_artifacts (id, cluster_id, run_id, workload_id, checksum_sha256, size_bytes, locator, format, created_at, encrypted, transferred_bytes, parent_artifact_id, object_key, verify_status, verify_error, last_tested_at, throwaway_workload_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+		a.ID, a.ClusterID, a.RunID, a.WorkloadID, a.ChecksumSHA256, a.SizeBytes, a.Locator, a.Format, a.CreatedAt, a.Encrypted, a.TransferredBytes, nullIfEmpty(a.ParentArtifactID), a.ObjectKey, status, a.VerifyError, a.LastTestedAt, nullIfEmpty(a.ThrowawayWorkloadID))
+	return err
+}
+
+func (p *Postgres) UpdateBackupArtifactVerify(ctx context.Context, a BackupArtifact) error {
+	status := a.VerifyStatus
+	if status == "" {
+		status = BackupUnverified
+	}
+	_, err := p.DB.ExecContext(ctx, `
+UPDATE backup_artifacts SET verify_status=$3, verify_error=$4, last_tested_at=$5, throwaway_workload_id=$6
+WHERE cluster_id=$1 AND id=$2`,
+		a.ClusterID, a.ID, status, a.VerifyError, a.LastTestedAt, nullIfEmpty(a.ThrowawayWorkloadID))
 	return err
 }
 
 func (p *Postgres) ListBackupArtifacts(ctx context.Context, clusterID string) ([]BackupArtifact, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at,
-       COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, '')
+       COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, ''),
+       COALESCE(verify_status, 'unverified'), COALESCE(verify_error, ''), last_tested_at, COALESCE(throwaway_workload_id::text, '')
 FROM backup_artifacts WHERE cluster_id=$1 ORDER BY created_at DESC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -272,7 +289,8 @@ FROM backup_artifacts WHERE cluster_id=$1 ORDER BY created_at DESC`, clusterID)
 func (p *Postgres) ListBackupArtifactsForWorkload(ctx context.Context, clusterID, workloadID, targetID string) ([]BackupArtifact, error) {
 	q := `
 SELECT a.id::text, a.cluster_id::text, a.run_id::text, a.workload_id::text, a.checksum_sha256, a.size_bytes, a.locator, a.format, a.created_at,
-       COALESCE(a.encrypted, false), COALESCE(a.transferred_bytes, 0), COALESCE(a.parent_artifact_id::text, ''), COALESCE(a.object_key, '')
+       COALESCE(a.encrypted, false), COALESCE(a.transferred_bytes, 0), COALESCE(a.parent_artifact_id::text, ''), COALESCE(a.object_key, ''),
+       COALESCE(a.verify_status, 'unverified'), COALESCE(a.verify_error, ''), a.last_tested_at, COALESCE(a.throwaway_workload_id::text, '')
 FROM backup_artifacts a
 JOIN backup_runs r ON r.id = a.run_id
 WHERE a.cluster_id=$1 AND a.workload_id=$2`
@@ -301,7 +319,8 @@ WHERE a.cluster_id=$1 AND a.workload_id=$2`
 func (p *Postgres) GetBackupArtifact(ctx context.Context, clusterID, id string) (*BackupArtifact, error) {
 	row := p.DB.QueryRowContext(ctx, `
 SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at,
-       COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, '')
+       COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, ''),
+       COALESCE(verify_status, 'unverified'), COALESCE(verify_error, ''), last_tested_at, COALESCE(throwaway_workload_id::text, '')
 FROM backup_artifacts WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	a, err := scanBackupArtifact(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -356,7 +375,16 @@ func scanBackupRun(row rowScanner) (BackupRun, error) {
 
 func scanBackupArtifact(row rowScanner) (BackupArtifact, error) {
 	var a BackupArtifact
+	var tested sql.NullTime
 	err := row.Scan(&a.ID, &a.ClusterID, &a.RunID, &a.WorkloadID, &a.ChecksumSHA256, &a.SizeBytes, &a.Locator, &a.Format, &a.CreatedAt,
-		&a.Encrypted, &a.TransferredBytes, &a.ParentArtifactID, &a.ObjectKey)
+		&a.Encrypted, &a.TransferredBytes, &a.ParentArtifactID, &a.ObjectKey,
+		&a.VerifyStatus, &a.VerifyError, &tested, &a.ThrowawayWorkloadID)
+	if tested.Valid {
+		t := tested.Time
+		a.LastTestedAt = &t
+	}
+	if a.VerifyStatus == "" {
+		a.VerifyStatus = BackupUnverified
+	}
 	return a, err
 }

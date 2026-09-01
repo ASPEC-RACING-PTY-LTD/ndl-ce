@@ -87,6 +87,8 @@ func run(args []string) error {
   backup target create --kind r2 --name NAME --endpoint URL --bucket BUCKET --username KEY --password SECRET [--prefix PREFIX] [--region REGION] [--no-check-bucket]
   backup run --workload ID --target ID [--policy ID]
   backup restore --artifact ID --mode new|replace [--confirm restore]
+  backup verify --artifact ID [--mode open|throwaway]
+  backup restore-file --artifact ID --path PATH
   update check
   update apply --confirm apply-update
   update preflight
@@ -938,7 +940,7 @@ func cmdSnapshot(args []string) error {
 
 func cmdBackup(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: nodalctl backup target|run|restore")
+		return fmt.Errorf("usage: nodalctl backup target|run|restore|verify|restore-file")
 	}
 	switch args[0] {
 	case "target":
@@ -962,8 +964,27 @@ func cmdBackup(args []string) error {
 			return fmt.Errorf("usage: nodalctl backup restore --artifact ID --mode new|replace [--confirm restore]")
 		}
 		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore", map[string]any{"mode": f["mode"]}, true)
+	case "verify":
+		f := parseFlags(args[1:])
+		if f["artifact"] == "" {
+			return fmt.Errorf("usage: nodalctl backup verify --artifact ID [--mode open|throwaway]")
+		}
+		mode := f["mode"]
+		if mode == "" {
+			mode = "open"
+		}
+		if mode != "open" && mode != "throwaway" {
+			return fmt.Errorf("usage: nodalctl backup verify --artifact ID [--mode open|throwaway]")
+		}
+		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/verify", map[string]any{"mode": mode}, true)
+	case "restore-file":
+		f := parseFlags(args[1:])
+		if f["artifact"] == "" || f["path"] == "" {
+			return fmt.Errorf("usage: nodalctl backup restore-file --artifact ID --path PATH")
+		}
+		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore-file", map[string]any{"path": f["path"]}, true)
 	default:
-		return fmt.Errorf("usage: nodalctl backup target|run|restore")
+		return fmt.Errorf("usage: nodalctl backup target|run|restore|verify|restore-file")
 	}
 }
 
