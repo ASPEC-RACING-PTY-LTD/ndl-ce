@@ -17,6 +17,7 @@ import { VmCreatePage } from "./pages/VmCreatePage";
 import { ConsolePage } from "./pages/ConsolePage";
 import { CertificatePage } from "./pages/CertificatePage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
+import { BackupsPage } from "./pages/BackupsPage";
 import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
@@ -116,6 +117,8 @@ function AppRoutes() {
     page = <NodePage />;
   } else if (path === "/settings/certificates") {
     page = <CertificatePage />;
+  } else if (path === "/backups") {
+    page = <BackupsPage />;
   }
 
   return <Shell>{page}</Shell>;

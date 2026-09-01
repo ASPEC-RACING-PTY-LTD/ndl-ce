@@ -450,4 +450,75 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
   });
+
+  it("renders /backups with honest restore copy and no Create snapshot button", async () => {
+    window.history.replaceState({}, "", "/backups");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/backups/targets": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "tgt-1",
+              name: "local-disk",
+              kind: "local",
+              locator: "/var/lib/ndl/backups",
+              status: "available",
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "/api/v1/backups/runs": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "run-1",
+              policy_id: "",
+              target_id: "tgt-1",
+              workload_id: "wl-1",
+              snapshot_id: "snap-1",
+              status: "running",
+              error: "",
+              started_at: "2026-09-01T12:00:00Z",
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/artifacts": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "art-1",
+              run_id: "run-0",
+              workload_id: "wl-1",
+              checksum_sha256: "abc123",
+              size_bytes: 1024,
+              locator: "/var/lib/ndl/backups/art-1",
+              format: "full",
+              created_at: "2026-08-31T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^backups$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^backups$/i })).toBeVisible();
+    expect(screen.getByText(/backups are independent copies\. snapshots are not backups\./i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/^running$/i)).toBeVisible();
+    expect(
+      screen.getByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /^restore as new$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^restore replace$/i })).toBeVisible();
+    expect(screen.queryByText(/password/i)).not.toBeInTheDocument();
+  });
 });

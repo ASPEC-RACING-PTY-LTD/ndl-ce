@@ -468,6 +468,94 @@ export interface CreateSnapshotRequest {
   name: string;
 }
 
+export interface BackupTarget {
+  id: string;
+  name: string;
+  kind: "local" | "nfs" | "smb";
+  locator: string;
+  status: "available" | "unavailable" | "not_configured";
+  username?: string;
+}
+
+export interface BackupTargetListResponse {
+  items: BackupTarget[];
+}
+
+export interface CreateBackupTargetRequest {
+  name: string;
+  kind: "local" | "nfs" | "smb";
+  locator: string;
+  username?: string;
+  password?: string;
+}
+
+export interface BackupPolicy {
+  id: string;
+  name: string;
+  workload_id: string;
+  target_id: string;
+  schedule: "nightly";
+  keep_daily: number;
+  keep_weekly: number;
+  keep_monthly: number;
+  last_run_at?: string;
+}
+
+export interface BackupPolicyListResponse {
+  items: BackupPolicy[];
+}
+
+export interface CreateBackupPolicyRequest {
+  name: string;
+  workload_id: string;
+  target_id: string;
+  schedule: "nightly";
+  keep_daily: number;
+  keep_weekly: number;
+  keep_monthly: number;
+}
+
+export interface BackupRun {
+  id: string;
+  policy_id?: string;
+  target_id: string;
+  workload_id: string;
+  snapshot_id?: string;
+  status: "running" | "succeeded" | "failed";
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+}
+
+export interface BackupRunListResponse {
+  items: BackupRun[];
+}
+
+export interface RunBackupRequest {
+  workload_id: string;
+  target_id: string;
+  policy_id?: string;
+}
+
+export interface BackupArtifact {
+  id: string;
+  run_id: string;
+  workload_id: string;
+  checksum_sha256: string;
+  size_bytes: number;
+  locator: string;
+  format: string;
+  created_at: string;
+}
+
+export interface BackupArtifactListResponse {
+  items: BackupArtifact[];
+}
+
+export interface RestoreBackupRequest {
+  mode: "new" | "replace";
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -585,6 +673,18 @@ export type ListWorkloadSnapshotsPath = "/api/v1/workloads/{id}/snapshots";
 export type FlattenWorkloadSnapshotsPath = "/api/v1/workloads/{id}/snapshots/flatten";
 
 export type RollbackSnapshotPath = "/api/v1/snapshots/{id}/rollback";
+
+export type ListBackupTargetsPath = "/api/v1/backups/targets";
+
+export type ListBackupPoliciesPath = "/api/v1/backups/policies";
+
+export type ListBackupRunsPath = "/api/v1/backups/runs";
+
+export type ListBackupArtifactsPath = "/api/v1/backups/artifacts";
+
+export type RunBackupPath = "/api/v1/backups/run";
+
+export type RestoreBackupArtifactPath = "/api/v1/backups/artifacts/{id}/restore";
 
 export type GetCertsPath = "/api/v1/certs";
 

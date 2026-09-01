@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.9
-  description: Phase 9 HTTPS certificates plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, virtual machines, and TLS settings.
+  version: 0.1.10
+  description: Phase 11 backup engine plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, virtual machines, TLS settings, snapshots, and backups.
 servers:
   - url: /api/v1
 paths:
@@ -1228,6 +1228,168 @@ paths:
           description: Forbidden
         "404":
           description: Snapshot not found
+  /backups/targets:
+    get:
+      operationId: listBackupTargets
+      summary: List backup destinations
+      responses:
+        "200":
+          description: Backup targets. Passwords are never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTargetListResponse"
+        "401":
+          description: Unauthenticated
+    post:
+      operationId: createBackupTarget
+      summary: Create a backup destination (local, NFS, or SMB)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBackupTargetRequest"
+      responses:
+        "201":
+          description: Target created. Password is write-only and never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTarget"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /backups/policies:
+    get:
+      operationId: listBackupPolicies
+      summary: List backup policies
+      responses:
+        "200":
+          description: Backup policies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupPolicyListResponse"
+        "401":
+          description: Unauthenticated
+    post:
+      operationId: createBackupPolicy
+      summary: Create a scheduled backup policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBackupPolicyRequest"
+      responses:
+        "201":
+          description: Policy created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupPolicy"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /backups/runs:
+    get:
+      operationId: listBackupRuns
+      summary: List backup runs
+      responses:
+        "200":
+          description: Backup runs. Status is honest (running, succeeded, or failed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRunListResponse"
+        "401":
+          description: Unauthenticated
+  /backups/artifacts:
+    get:
+      operationId: listBackupArtifacts
+      summary: List backup artifacts in the catalog
+      responses:
+        "200":
+          description: Backup artifacts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupArtifactListResponse"
+        "401":
+          description: Unauthenticated
+  /backups/run:
+    post:
+      operationId: runBackup
+      summary: Start a backup run for a workload to a target
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunBackupRequest"
+      responses:
+        "202":
+          description: Backup run accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRun"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Target unavailable or request invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /backups/artifacts/{id}/restore:
+    post:
+      operationId: restoreBackupArtifact
+      summary: Restore a backup artifact as a new workload or replace an existing one
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          description: Required when mode is replace. Value must be restore.
+          schema:
+            type: string
+            enum:
+              - restore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreBackupRequest"
+      responses:
+        "202":
+          description: Restore accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRun"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Artifact not found
+        "422":
+          description: Confirm header missing for replace, or restore not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /certs:
     get:
       operationId: getCerts
@@ -2380,4 +2542,245 @@ components:
       properties:
         name:
           type: string
+    BackupTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - locator
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - local
+            - nfs
+            - smb
+        locator:
+          type: string
+        status:
+          type: string
+          enum:
+            - available
+            - unavailable
+            - not_configured
+        username:
+          type: string
+          description: Optional. Password is write-only and never returned.
+    BackupTargetListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupTarget"
+    CreateBackupTargetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - kind
+        - locator
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - local
+            - nfs
+            - smb
+        locator:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+          description: Write-only. Never returned after save.
+    BackupPolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - workload_id
+        - target_id
+        - schedule
+        - keep_daily
+        - keep_weekly
+        - keep_monthly
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        workload_id:
+          type: string
+        target_id:
+          type: string
+        schedule:
+          type: string
+          enum:
+            - nightly
+        keep_daily:
+          type: integer
+        keep_weekly:
+          type: integer
+        keep_monthly:
+          type: integer
+        last_run_at:
+          type: string
+    BackupPolicyListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupPolicy"
+    CreateBackupPolicyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - workload_id
+        - target_id
+        - schedule
+        - keep_daily
+        - keep_weekly
+        - keep_monthly
+      properties:
+        name:
+          type: string
+        workload_id:
+          type: string
+        target_id:
+          type: string
+        schedule:
+          type: string
+          enum:
+            - nightly
+        keep_daily:
+          type: integer
+        keep_weekly:
+          type: integer
+        keep_monthly:
+          type: integer
+    BackupRun:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - target_id
+        - workload_id
+        - status
+        - started_at
+      properties:
+        id:
+          type: string
+        policy_id:
+          type: string
+        target_id:
+          type: string
+        workload_id:
+          type: string
+        snapshot_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+            - succeeded
+            - failed
+        error:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+    BackupRunListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupRun"
+    RunBackupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+        - target_id
+      properties:
+        workload_id:
+          type: string
+        target_id:
+          type: string
+        policy_id:
+          type: string
+    BackupArtifact:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - run_id
+        - workload_id
+        - checksum_sha256
+        - size_bytes
+        - locator
+        - format
+        - created_at
+      properties:
+        id:
+          type: string
+        run_id:
+          type: string
+        workload_id:
+          type: string
+        checksum_sha256:
+          type: string
+        size_bytes:
+          type: integer
+        locator:
+          type: string
+        format:
+          type: string
+        created_at:
+          type: string
+    BackupArtifactListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupArtifact"
+    RestoreBackupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          enum:
+            - new
+            - replace
+          description: new creates a new workload UUID. replace overwrites the existing workload and requires X-Nodal-Confirm restore.
 

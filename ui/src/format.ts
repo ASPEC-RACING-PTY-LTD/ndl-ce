@@ -22,10 +22,14 @@ export function honestStatus(value?: string): string {
       return "Stopped";
     case "failed":
       return "Failed";
+    case "succeeded":
+      return "Succeeded";
     case "warning":
       return "Warning";
     case "unavailable":
       return "Unavailable";
+    case "not_configured":
+      return "Not configured";
     case "not_reported":
       return "Not reported";
     case "collecting":

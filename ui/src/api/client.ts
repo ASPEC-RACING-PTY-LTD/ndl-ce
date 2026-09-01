@@ -522,3 +522,69 @@ export async function flattenWorkloadSnapshots(
     }),
   );
 }
+
+export async function listBackupTargets(): Promise<import("../generated/openapi").BackupTargetListResponse> {
+  return readJson(await request("/backups/targets"));
+}
+
+export async function createBackupTarget(
+  body: import("../generated/openapi").CreateBackupTargetRequest,
+): Promise<import("../generated/openapi").BackupTarget> {
+  return readJson(
+    await request("/backups/targets", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function listBackupPolicies(): Promise<import("../generated/openapi").BackupPolicyListResponse> {
+  return readJson(await request("/backups/policies"));
+}
+
+export async function createBackupPolicy(
+  body: import("../generated/openapi").CreateBackupPolicyRequest,
+): Promise<import("../generated/openapi").BackupPolicy> {
+  return readJson(
+    await request("/backups/policies", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function listBackupRuns(): Promise<import("../generated/openapi").BackupRunListResponse> {
+  return readJson(await request("/backups/runs"));
+}
+
+export async function listBackupArtifacts(): Promise<import("../generated/openapi").BackupArtifactListResponse> {
+  return readJson(await request("/backups/artifacts"));
+}
+
+export async function runBackup(
+  body: import("../generated/openapi").RunBackupRequest,
+): Promise<import("../generated/openapi").BackupRun> {
+  return readJson(
+    await request("/backups/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function restoreBackupArtifact(
+  id: string,
+  body: import("../generated/openapi").RestoreBackupRequest,
+): Promise<import("../generated/openapi").BackupRun> {
+  const headers = new Headers();
+  if (body.mode === "replace") {
+    headers.set("X-Nodal-Confirm", "restore");
+  }
+  return readJson(
+    await request(`/backups/artifacts/${id}/restore`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+  );
+}
