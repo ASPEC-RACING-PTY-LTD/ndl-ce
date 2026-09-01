@@ -24,6 +24,7 @@ import { GroupsPage } from "./pages/GroupsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { TasksPage } from "./pages/TasksPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
 
@@ -94,6 +95,8 @@ function AppRoutes() {
     page = <TasksPage />;
   } else if (path === "/events" || path === "/node/events") {
     page = <EventsPage />;
+  } else if (path === "/alerts") {
+    page = <AlertsPage />;
   } else if (path === "/storage") {
     page = <StoragePage />;
   } else if (path === "/network") {

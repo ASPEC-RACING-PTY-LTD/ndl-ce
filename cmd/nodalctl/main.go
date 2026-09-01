@@ -89,7 +89,9 @@ func run(args []string) error {
   group role bind --id ID --role operator|viewer
   gpu list
   gpu assign --gpu-id BDF --workload-id ID --mode render|compute|encode|vfio [--exclusive]
-  gpu unassign --id ID
+  logs [--unit UNIT] [--lines N]
+  metrics query [--from RFC3339] [--to RFC3339]
+  alert list
 `)
 		return nil
 	}
@@ -156,6 +158,18 @@ func run(args []string) error {
 		return cmdGroup(args[1:])
 	case "gpu":
 		return cmdGPU(args[1:])
+	case "logs":
+		return cmdLogs(args[1:])
+	case "metrics":
+		if len(args) < 2 || args[1] != "query" {
+			return fmt.Errorf("usage: nodalctl metrics query [--from RFC3339] [--to RFC3339]")
+		}
+		return cmdMetricsQuery(args[2:])
+	case "alert":
+		if len(args) < 2 || args[1] != "list" {
+			return fmt.Errorf("usage: nodalctl alert list")
+		}
+		return cmdGet("/api/v1/alerts")
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -920,6 +934,62 @@ func cmdGPU(args []string) error {
 	default:
 		return fmt.Errorf("usage: nodalctl gpu list|assign|unassign")
 	}
+}
+
+func cmdLogs(args []string) error {
+	f := parseFlags(args)
+	id, err := defaultNodeID(f["id"])
+	if err != nil {
+		return err
+	}
+	unit := f["unit"]
+	if unit == "" {
+		unit = "ndl-agent.service"
+	}
+	path := "/api/v1/nodes/" + id + "/logs?unit=" + unit
+	if f["lines"] != "" {
+		path += "&lines=" + f["lines"]
+	}
+	return cmdGet(path)
+}
+
+func cmdMetricsQuery(args []string) error {
+	f := parseFlags(args)
+	id, err := defaultNodeID(f["id"])
+	if err != nil {
+		return err
+	}
+	path := "/api/v1/nodes/" + id + "/metrics"
+	var q []string
+	if f["from"] != "" {
+		q = append(q, "from="+f["from"])
+	}
+	if f["to"] != "" {
+		q = append(q, "to="+f["to"])
+	}
+	if len(q) > 0 {
+		path += "?" + strings.Join(q, "&")
+	}
+	return cmdGet(path)
+}
+
+func defaultNodeID(id string) (string, error) {
+	if id != "" {
+		return id, nil
+	}
+	raw, err := do("GET", "/api/v1/nodes", nil, true)
+	if err != nil {
+		return "", err
+	}
+	var listed struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil || len(listed.Items) == 0 {
+		return "", fmt.Errorf("no local node is enrolled")
+	}
+	return listed.Items[0].ID, nil
 }
 
 func parseFlags(args []string) map[string]string {

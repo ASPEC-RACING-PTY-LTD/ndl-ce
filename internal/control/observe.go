@@ -19,6 +19,7 @@ type observer struct {
 	Hub     *httpapi.EventHub
 	Period  time.Duration
 	Nightly func(context.Context)
+	Alerts  func(context.Context)
 }
 
 func (o observer) run(ctx context.Context) {
@@ -84,6 +85,9 @@ func (o observer) run(ctx context.Context) {
 		o.reconcileWorkloads(cctx, cluster.ID, node.ID)
 		if o.Nightly != nil {
 			go o.Nightly(context.Background())
+		}
+		if o.Alerts != nil {
+			go o.Alerts(context.Background())
 		}
 		changed := prev == nil || inventoryFingerprint(prev.Payload) != inventoryFingerprint(payload)
 		if !changed {

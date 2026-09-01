@@ -83,4 +83,13 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest ZFS: hosts without ZFS keep Directory as default. Missing userland is Unavailable/not installed, not a fake Available pool. zpool import -f is refused.
 - Follow-up: physical zvol+dataset acceptance, zfs recv restore, native encryption
 
+## Phase 16
+
+- Package: 0.1.15
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (empty/stale series not zeros, typed journalctl argv, force-refuse of non-allowlisted units, webhook URL redaction, viewer cannot create alerts, viewer timeline omits audit, SMTP not_configured without host, SMART not_reported, capacity collecting without samples, hourly downsample without invented buckets). FIXTURE for journalctl execution (SkipHostCmds). NOT PHYSICALLY VALIDATED: live journald follow on Debian appliance, local SMTP delivery, real disk latency histograms, SMART from smartctl on hardware
+- Honest observability: missing samples stay collecting/unavailable/stale. Webhook URLs are secrets. SMTP is optional and local.
+- Follow-up: appliance journald, SMTP send, per-workload cgroup traffic identity beyond TAP iface names
+
 

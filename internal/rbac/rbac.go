@@ -22,6 +22,8 @@ const (
 	SecretUse           = "secret.use"
 	ClusterDestroy      = "cluster.destroy"
 	AuditRead           = "audit.read"
+	AlertRead           = "alert.read"
+	AlertManage         = "alert.manage"
 	ClusterRead         = "cluster.read"
 	NodeRead            = "node.read"
 	EventsRead          = "events.read"
@@ -76,7 +78,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 	case Operator:
 		return []string{
 			IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, IdentityMFA, IdentityGroupManage, ClusterRead,
-			NodeRead, EventsRead, MetricsRead,
+			NodeRead, EventsRead, MetricsRead, AlertRead, AlertManage,
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
@@ -86,7 +88,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			SettingsTLSRead,
 		}
 	case Viewer:
-		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead}
+		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead}
 	default:
 		return nil
 	}

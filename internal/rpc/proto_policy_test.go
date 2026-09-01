@@ -78,6 +78,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"rpc OpenSession(",
 		"rpc GetInventory(",
 		"rpc GetMetrics(",
+		"rpc GetLogs(",
 		"rpc GetStorage(",
 		"rpc GetNetworks(",
 		"rpc GetWorkloads(",

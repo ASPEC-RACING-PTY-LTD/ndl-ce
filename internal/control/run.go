@@ -98,6 +98,7 @@ func Run(cfg Config) error {
 		Lockout:    auth.NewLockout(),
 		Agent:      agent,
 		Observer:   agent,
+		Logs:       agent,
 		Storage:    agent,
 		Network:    agent,
 		Workloads:  agent,
@@ -123,7 +124,7 @@ func Run(cfg Config) error {
 	if enabled {
 		srv.TLSRequired = true
 	}
-	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups}.run(context.Background())
+	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups, Alerts: srv.TickAlerts}.run(context.Background())
 	handler := srv.Handler()
 	if srv.TLSRequired {
 		mat, err := loadEnabledMaterial(cfg.CertDir)

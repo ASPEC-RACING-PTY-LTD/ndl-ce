@@ -73,6 +73,9 @@ if (!changelog.includes("nodal (0.1.13)") || !changelog.includes("Phase 14 GPU r
 if (!changelog.includes("nodal (0.1.14)") || !changelog.includes("Phase 15 ZFS storage")) {
   errors.push("changelog must include nodal (0.1.14) Phase 15 ZFS storage");
 }
+if (!changelog.includes("nodal (0.1.15)") || !changelog.includes("Phase 16 observability complete")) {
+  errors.push("changelog must include nodal (0.1.15) Phase 16 observability complete");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

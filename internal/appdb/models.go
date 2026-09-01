@@ -177,6 +177,16 @@ type Store interface {
 	GetZFSPoolByGUID(ctx context.Context, guid string) (*ZFSPool, error)
 	UpsertZFSDataset(ctx context.Context, d ZFSDataset) error
 	GetZFSDataset(ctx context.Context, volumeID string) (*ZFSDataset, error)
+
+	CreateAlertRule(ctx context.Context, r AlertRule) error
+	ListAlertRules(ctx context.Context, clusterID string) ([]AlertRule, error)
+	GetAlertRule(ctx context.Context, clusterID, id string) (*AlertRule, error)
+	UpdateAlertRuleFired(ctx context.Context, clusterID, id string, at time.Time) error
+
+	CreateNotificationChannel(ctx context.Context, c NotificationChannel, webhookURL, smtpPassword string) error
+	ListNotificationChannels(ctx context.Context, clusterID string) ([]NotificationChannel, error)
+	GetNotificationChannel(ctx context.Context, clusterID, id string) (*NotificationChannel, error)
+	NotificationSecrets(ctx context.Context, clusterID, id string) (webhookURL, smtpPassword string, err error)
 }
 
 // Cluster is the appliance cluster of one.

@@ -85,6 +85,17 @@ func TestHelloObservePing(t *testing.T) {
 	if _, err := h.GetMetrics(context.Background(), connect.NewRequest(&agentv1.GetMetricsRequest{})); err != nil {
 		t.Fatal(err)
 	}
+	h.SkipHostCmds = true
+	logs, err := h.GetLogs(context.Background(), connect.NewRequest(&agentv1.GetLogsRequest{Unit: "ndl-agent.service"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logs.Msg.GetStatus() != "unavailable" || len(logs.Msg.GetLines()) != 0 {
+		t.Fatalf("skip must not invent logs: %+v", logs.Msg)
+	}
+	if _, err := h.GetLogs(context.Background(), connect.NewRequest(&agentv1.GetLogsRequest{Unit: "syslog.service"})); err == nil {
+		t.Fatal("host syslog must be refused")
+	}
 	ping, err := h.Execute(context.Background(), connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_Ping{Ping: &agentv1.Ping{}},
 	}))

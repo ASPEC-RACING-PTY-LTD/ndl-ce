@@ -13,6 +13,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/inventory"
+	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
@@ -38,6 +39,7 @@ type Handler struct {
 	Workloads    *lxc.Engine
 	QEMU         *qemu.Engine
 	ZFS          *storage.ZFSEngine
+	Journal      *journald.Engine
 	SkipHostCmds bool
 
 	mu         sync.Mutex

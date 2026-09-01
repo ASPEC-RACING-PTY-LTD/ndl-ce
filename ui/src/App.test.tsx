@@ -49,6 +49,9 @@ const defaultRoutes = {
   "/api/v1/me": { status: 401 },
   "/api/v1/nodes": { status: 200, body: { items: [] } },
   "/api/v1/events": { status: 200, body: { items: [] } },
+  "/api/v1/timeline": { status: 200, body: { items: [] } },
+  "/api/v1/alerts": { status: 200, body: { items: [] } },
+  "/api/v1/alerts/channels": { status: 200, body: { items: [] } },
   "/api/v1/tasks": { status: 200, body: { items: [] } },
   "/api/v1/storage/pools": { status: 200, body: { items: [] } },
   "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
@@ -722,5 +725,20 @@ describe("App", () => {
     expect(screen.getByText(/0000:02:00.1 audio/i)).toBeVisible();
     expect(screen.getByText(/creating a workload without a gpu does not attach \/dev\/dri/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^assign gpu$/i })).not.toBeInTheDocument();
+  });
+
+  it("renders alert settings without inventing a firing state", async () => {
+    window.history.replaceState({}, "", "/alerts");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^alerts$/i })).toBeVisible();
+    expect(await screen.findByText(/no alert rules yet/i)).toBeVisible();
+    expect(screen.getByText(/^Not configured$/i)).toBeVisible();
+    expect(screen.queryByText(/^firing$/i)).not.toBeInTheDocument();
   });
 });

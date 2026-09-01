@@ -221,5 +221,14 @@ remain. Capacity is not reported as zero.
 Directory remains the default for hosts without ZFS. Missing ZFS userland is not a fake
 Available pool.
 
+## Observability (Phase 16)
+
+Metrics live in agent SQLite, not PostgreSQL. Empty or stale series are not filled with zeros.
+Logs use typed journalctl argv for allowlisted units only.
+
+If the agent is down, the UI shows Stale or Unavailable, not invented charts.
+Local webhook URLs are secrets. Optional SMTP stays not_configured until a host is set.
+
+
 
 

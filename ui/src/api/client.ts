@@ -116,8 +116,56 @@ export async function getNodeCapabilities(id: string): Promise<{
   return readJson(await request(`/nodes/${id}/capabilities`));
 }
 
-export async function getNodeMetrics(id: string): Promise<import("./phase2").MetricsResponse> {
-  return readJson(await request(`/nodes/${id}/metrics`));
+export async function getNodeMetrics(id: string, params?: { from?: string; to?: string; minutes?: number }): Promise<import("./phase2").MetricsResponse> {
+  const q = new URLSearchParams();
+  if (params?.from) q.set("from", params.from);
+  if (params?.to) q.set("to", params.to);
+  if (params?.minutes) q.set("minutes", String(params.minutes));
+  const suffix = q.size ? `?${q.toString()}` : "";
+  return readJson(await request(`/nodes/${id}/metrics${suffix}`));
+}
+
+export async function getNodeLogs(id: string, unit = "ndl-agent.service"): Promise<{
+  status: string;
+  unit?: string;
+  lines: string[];
+  message?: string;
+}> {
+  return readJson(await request(`/nodes/${id}/logs?unit=${encodeURIComponent(unit)}`));
+}
+
+export async function getNodeSmart(id: string): Promise<{ status: string; items: { name: string; smart_status: string }[] }> {
+  return readJson(await request(`/nodes/${id}/smart`));
+}
+
+export async function getNodeCapacity(id: string): Promise<{
+  status: string;
+  message?: string;
+  samples?: number;
+  last_bytes?: number;
+  hours_to_zero?: number;
+}> {
+  return readJson(await request(`/nodes/${id}/capacity`));
+}
+
+export async function getTimeline(): Promise<{ items: { kind: string; id: string; title: string; created_at: string; result?: string; state?: string; message?: string }[] }> {
+  return readJson(await request("/timeline"));
+}
+
+export async function listAlerts(): Promise<{ items: import("../generated/openapi").AlertRule[] }> {
+  return readJson(await request("/alerts"));
+}
+
+export async function createAlert(body: { name: string; metric: string; op: string; threshold: number }): Promise<import("../generated/openapi").AlertRule> {
+  return readJson(await request("/alerts", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function listAlertChannels(): Promise<{ items: import("../generated/openapi").NotificationChannel[] }> {
+  return readJson(await request("/alerts/channels"));
+}
+
+export async function createAlertChannel(body: Record<string, unknown>): Promise<import("../generated/openapi").NotificationChannel> {
+  return readJson(await request("/alerts/channels", { method: "POST", body: JSON.stringify(body) }));
 }
 
 export async function listTasks(): Promise<import("./phase2").TaskItem[]> {

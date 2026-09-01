@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.14
-  description: Phase 15 ZFS storage plus prior northbound API. Import by GUID, no zpool import -f, zvol VM disks, dataset CT roots, Directory remains default.
+  version: 0.1.15
+  description: Phase 16 observability complete plus prior northbound API. Historical metrics, typed logs, local alerts, timeline, capacity, SMART.
 servers:
   - url: /api/v1
 paths:
@@ -191,6 +191,139 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MetricsResponse"
+  /nodes/{id}/logs:
+    get:
+      operationId: getNodeLogs
+      summary: Typed journalctl for allowlisted units
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+  /nodes/{id}/smart:
+    get:
+      operationId: getNodeSmart
+      summary: Honest SMART status from inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SMART
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartResponse"
+  /nodes/{id}/capacity:
+    get:
+      operationId: getNodeCapacity
+      summary: Capacity forecast from storage samples
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Forecast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityResponse"
+  /workloads/{id}/logs:
+    get:
+      operationId: getWorkloadLogs
+      summary: Typed journalctl for a workload unit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+  /timeline:
+    get:
+      operationId: getTimeline
+      summary: Events, tasks, and authorized audit in one window
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineResponse"
+  /alerts:
+    get:
+      operationId: listAlerts
+      summary: Alert rules
+      responses:
+        "200":
+          description: Rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertListResponse"
+    post:
+      operationId: createAlert
+      summary: Create an alert rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertRule"
+  /alerts/channels:
+    get:
+      operationId: listAlertChannels
+      summary: Notification channels with webhook URLs redacted
+      responses:
+        "200":
+          description: Channels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelListResponse"
+    post:
+      operationId: createAlertChannel
+      summary: Create a local webhook or SMTP channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
   /tasks:
     get:
       operationId: listTasks
@@ -3925,4 +4058,182 @@ components:
             type: string
         force:
           type: boolean
+    LogsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - lines
+      properties:
+        status:
+          type: string
+        unit:
+          type: string
+        lines:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+    SmartResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - items
+      properties:
+        status:
+          type: string
+        stale:
+          type: boolean
+        items:
+          type: array
+          items:
+            type: object
+    CapacityResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+        samples:
+          type: integer
+        last_bytes:
+          type: number
+        hours_to_zero:
+          type: number
+    TimelineResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        from:
+          type: string
+        to:
+          type: string
+    AlertListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertRule"
+    AlertRule:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - metric
+        - op
+        - threshold
+        - enabled
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        metric:
+          type: string
+        op:
+          type: string
+        threshold:
+          type: number
+        for_minutes:
+          type: integer
+        enabled:
+          type: boolean
+        last_fired_at:
+          type: string
+        created_at:
+          type: string
+    AlertCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - metric
+        - op
+        - threshold
+      properties:
+        name:
+          type: string
+        metric:
+          type: string
+        op:
+          type: string
+        threshold:
+          type: number
+        for_minutes:
+          type: integer
+    ChannelListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+    NotificationChannel:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        webhook_configured:
+          type: boolean
+        smtp_host:
+          type: string
+        smtp_port:
+          type: integer
+        created_at:
+          type: string
+    ChannelCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - kind
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        url:
+          type: string
+        smtp_host:
+          type: string
+        smtp_port:
+          type: integer
+        smtp_from:
+          type: string
+        smtp_username:
+          type: string
+        smtp_password:
+          type: string
 

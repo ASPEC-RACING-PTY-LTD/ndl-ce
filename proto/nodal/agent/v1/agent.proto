@@ -18,6 +18,8 @@ service AgentService {
   rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse);
   // GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
   rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+  // GetLogs returns typed journalctl output. There is no generic journal filter.
+  rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
   // GetStorage observes known Directory pools. It does not delete objects.
   rpc GetStorage(GetStorageRequest) returns (GetStorageResponse);
   // GetNetworks observes known network objects. It does not delete objects.
@@ -114,6 +116,19 @@ message GetMetricsRequest {
 message GetMetricsResponse {
   string status = 1;
   bytes series_json = 2;
+}
+
+message GetLogsRequest {
+  string unit = 1;
+  int32 lines = 2;
+  string since = 3;
+}
+
+message GetLogsResponse {
+  string status = 1;
+  string unit = 2;
+  repeated string lines = 3;
+  string message = 4;
 }
 
 message GetStorageRequest {

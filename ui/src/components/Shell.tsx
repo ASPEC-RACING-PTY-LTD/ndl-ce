@@ -72,6 +72,9 @@ export function Shell({ children }: ShellProps) {
           <Link href="/events" aria-current={path === "/events" ? "page" : undefined}>
             Events
           </Link>
+          <Link href="/alerts" aria-current={path === "/alerts" ? "page" : undefined}>
+            Alerts
+          </Link>
           <Link href="/me" aria-current={path === "/me" ? "page" : undefined}>
             Account
           </Link>

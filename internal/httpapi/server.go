@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -41,12 +42,19 @@ type Observer interface {
 	GetMetrics(ctx context.Context, from, to time.Time) (metrics.QueryResult, error)
 }
 
+// LogsRPC reads typed journalctl output from the agent.
+type LogsRPC interface {
+	GetLogs(ctx context.Context, unit string, lines int, since time.Time) (journald.Result, error)
+}
+
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
 	Store       appdb.Store
 	Lockout     *auth.Lockout
 	Agent       Agent
 	Observer    Observer
+	Logs        LogsRPC
+	HTTPClient  *http.Client
 	Storage     StorageRPC
 	Network     NetworkRPC
 	Workloads   WorkloadRPC
@@ -72,6 +80,7 @@ type Server struct {
 	Challenges  *ndltls.ChallengeMem
 	backupMu    sync.Mutex
 	nightlyBusy atomic.Bool
+	alertBusy   atomic.Bool
 }
 
 type principal struct {
@@ -106,6 +115,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/nodes/{id}/hardware", s.nodeHardware)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/capabilities", s.nodeCapabilities)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/metrics", s.nodeMetrics)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/logs", s.nodeLogs)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/smart", s.nodeSMART)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/capacity", s.nodeCapacity)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/logs", s.workloadLogs)
+	mux.HandleFunc("GET /api/v1/timeline", s.timeline)
+	mux.HandleFunc("GET /api/v1/alerts", s.listAlerts)
+	mux.HandleFunc("POST /api/v1/alerts", s.createAlert)
+	mux.HandleFunc("GET /api/v1/alerts/channels", s.listChannels)
+	mux.HandleFunc("POST /api/v1/alerts/channels", s.createChannel)
 	mux.HandleFunc("GET /api/v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /api/v1/events", s.listEvents)
 	mux.HandleFunc("GET /api/v1/events/stream", s.streamEvents)

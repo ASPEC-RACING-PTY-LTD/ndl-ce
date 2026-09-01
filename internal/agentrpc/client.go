@@ -11,6 +11,7 @@ import (
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/inventory"
+	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
@@ -77,6 +78,28 @@ func (c Client) GetMetrics(ctx context.Context, from, to time.Time) (metrics.Que
 		return metrics.QueryResult{Status: metrics.StatusUnavailable}, err
 	}
 	return out, nil
+}
+
+// GetLogs reads typed journalctl output over RPC.
+func (c Client) GetLogs(ctx context.Context, unit string, lines int, since time.Time) (journald.Result, error) {
+	req := &agentv1.GetLogsRequest{Unit: unit, Lines: int32(lines)}
+	if !since.IsZero() {
+		req.Since = since.UTC().Format(time.RFC3339)
+	}
+	res, err := c.rpc().GetLogs(ctx, connect.NewRequest(req))
+	if err != nil {
+		return journald.Result{Status: journald.StatusUnavailable, Lines: []string{}}, err
+	}
+	linesOut := res.Msg.GetLines()
+	if linesOut == nil {
+		linesOut = []string{}
+	}
+	return journald.Result{
+		Status:  res.Msg.GetStatus(),
+		Unit:    res.Msg.GetUnit(),
+		Lines:   linesOut,
+		Message: res.Msg.GetMessage(),
+	}, nil
 }
 
 func encodeHints(hints []storage.PoolHint) []*agentv1.StoragePoolHint {

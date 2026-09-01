@@ -55,6 +55,9 @@ type Memory struct {
 	gpuAssignments    map[string]GPUAssignment
 	zfsPools          map[string]ZFSPool
 	zfsDatasets       map[string]ZFSDataset
+	alertRules        map[string]AlertRule
+	notifyChannels    map[string]NotificationChannel
+	notifySecrets     map[string][2]string
 }
 
 // NewMemory returns an empty store.

@@ -7,16 +7,16 @@ import (
 
 // ZFSPool is the GUID locator for a ZFS pool. Pool UUID remains desired identity.
 type ZFSPool struct {
-	PoolID     string
-	ZPoolGUID  string
-	ZPoolName  string
+	PoolID    string
+	ZPoolGUID string
+	ZPoolName string
 }
 
 // ZFSDataset is the dataset/zvol locator for a volume UUID.
 type ZFSDataset struct {
-	VolumeID     string
-	DatasetGUID  string
-	DatasetName  string
+	VolumeID    string
+	DatasetGUID string
+	DatasetName string
 }
 
 func (m *Memory) UpsertZFSPool(_ context.Context, p ZFSPool) error {

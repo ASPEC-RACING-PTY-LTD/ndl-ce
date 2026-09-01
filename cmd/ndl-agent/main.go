@@ -32,7 +32,7 @@ func main() {
 		QEMU:      &qemu.Engine{DataDir: dir},
 	}
 	recoverStaleNetwork(dir)
-	go scrapeMetrics(ms)
+	go scrapeMetrics(ms, dir)
 	go h.RefreshLoop(30 * time.Second)
 	go reattachQEMU(h.QEMU)
 	if err := agentrpc.Serve(h); err != nil {
@@ -52,8 +52,8 @@ func recoverStaleNetwork(dataDir string) {
 	_ = eng.RecoverStale(time.Now().UTC())
 }
 
-func scrapeMetrics(ms *metrics.Store) {
-	col := &metrics.Collector{FSRoot: "/", Store: ms}
+func scrapeMetrics(ms *metrics.Store, dataDir string) {
+	col := &metrics.Collector{FSRoot: "/", Store: ms, StorageRoot: filepath.Join(dataDir, "storage")}
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
 	_ = col.Scrape(time.Now().UTC())

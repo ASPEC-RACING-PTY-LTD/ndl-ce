@@ -3,7 +3,10 @@ import {
   getNode,
   getNodeCapabilities,
   getNodeHardware,
+  getNodeLogs,
   getNodeMetrics,
+  getNodeCapacity,
+  getNodeSmart,
   listNodes,
 } from "../api/client";
 import type { Capability, HardwareResponse, MetricsResponse, NodeSummary } from "../api/phase2";
@@ -78,6 +81,8 @@ export function NodePage() {
     ? "hardware"
     : path.startsWith("/node/metrics")
       ? "metrics"
+      : path.startsWith("/node/logs")
+        ? "logs"
       : path.startsWith("/node/events")
         ? "events"
       : path.startsWith("/node/gpu")
@@ -106,6 +111,9 @@ export function NodePage() {
         <Link href="/node/metrics" aria-current={tab === "metrics" ? "page" : undefined}>
           Metrics
         </Link>
+        <Link href="/node/logs" aria-current={tab === "logs" ? "page" : undefined}>
+          Logs
+        </Link>
         <Link href="/events" aria-current={tab === "events" ? "page" : undefined}>
           Events
         </Link>
@@ -116,6 +124,7 @@ export function NodePage() {
       {tab === "hardware" ? <NodeHardwareView id={id} /> : null}
       {tab === "gpu" ? <GpuPage /> : null}
       {tab === "metrics" ? <NodeMetricsView id={id} /> : null}
+      {tab === "logs" ? <NodeLogsView id={id} /> : null}
     </section>
   );
 }
@@ -244,42 +253,123 @@ function NodeHardwareView({ id }: { id: string }) {
 
 function NodeMetricsView({ id }: { id: string }) {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  const [range, setRange] = useState("60");
+  const [capacity, setCapacity] = useState<string>("Collecting");
+  const [smart, setSmart] = useState<string>("Collecting");
 
   useEffect(() => {
     let cancelled = false;
-    void getNodeMetrics(id)
+    void getNodeMetrics(id, { minutes: Number(range) || 60 })
       .then((value) => {
         if (!cancelled) {
           setMetrics(value);
         }
       })
       .catch(() => undefined);
+    void getNodeCapacity(id)
+      .then((value) => {
+        if (cancelled) return;
+        if (value.hours_to_zero != null) {
+          setCapacity(`${Math.round(value.hours_to_zero)} hours to zero usable bytes`);
+        } else {
+          setCapacity(value.message || value.status);
+        }
+      })
+      .catch(() => undefined);
+    void getNodeSmart(id)
+      .then((value) => {
+        if (cancelled) return;
+        if (!value.items?.length) {
+          setSmart(value.status);
+          return;
+        }
+        setSmart(value.items.map((d) => `${d.name}: ${d.smart_status}`).join(", "));
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, range]);
 
-  if (!metrics) {
-    return <p>Collecting data</p>;
-  }
-  if (metrics.status === "stale") {
-    return <p className="chart-empty">Stale</p>;
-  }
-  if (metrics.status === "unavailable") {
-    return <p className="chart-empty">Unavailable</p>;
-  }
-  if (!metrics.series.length) {
-    return <p className="chart-empty">Collecting data</p>;
-  }
   return (
-    <div className="card-grid">
-      {metrics.series.map((series) => (
-        <article className="panel" key={series.name}>
-          <h2>{series.name}</h2>
-          <MetricChart series={series} />
-        </article>
-      ))}
+    <div className="stack">
+      <label>
+        Range
+        <select value={range} onChange={(e) => setRange(e.target.value)}>
+          <option value="60">Last hour</option>
+          <option value="360">Last 6 hours</option>
+          <option value="1440">Last day</option>
+          <option value="10080">Last week</option>
+        </select>
+      </label>
+      <p className="muted">Capacity: {capacity}</p>
+      <p className="muted">SMART: {smart}</p>
+      {!metrics ? (
+        <p>Collecting data</p>
+      ) : metrics.status === "stale" ? (
+        <p className="chart-empty">Stale</p>
+      ) : metrics.status === "unavailable" ? (
+        <p className="chart-empty">Unavailable</p>
+      ) : !metrics.series.length ? (
+        <p className="chart-empty">Collecting data</p>
+      ) : (
+        <div className="card-grid">
+          {metrics.series.map((series) => (
+            <article className="panel" key={series.name}>
+              <h2>{series.name}</h2>
+              <MetricChart series={series} />
+            </article>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function NodeLogsView({ id }: { id: string }) {
+  const [unit, setUnit] = useState("ndl-agent.service");
+  const [status, setStatus] = useState("collecting");
+  const [lines, setLines] = useState<string[]>([]);
+  const [message, setMessage] = useState<string | undefined>();
+
+  useEffect(() => {
+    let cancelled = false;
+    void getNodeLogs(id, unit)
+      .then((value) => {
+        if (cancelled) return;
+        setStatus(value.status);
+        setLines(value.lines ?? []);
+        setMessage(value.message);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStatus("unavailable");
+          setLines([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, unit]);
+
+  return (
+    <article className="panel">
+      <label>
+        Unit
+        <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+          <option value="ndl-agent.service">ndl-agent</option>
+          <option value="ndl-control.service">ndl-control</option>
+        </select>
+      </label>
+      {status === "unavailable" ? <p className="chart-empty">Unavailable</p> : null}
+      {message ? <p className="muted">{message}</p> : null}
+      {lines.length === 0 && status !== "unavailable" ? <p>No log lines in this window</p> : null}
+      {lines.length > 0 ? (
+        <pre className="log-view">
+          {lines.join("\n")}
+        </pre>
+      ) : null}
+    </article>
   );
 }
 

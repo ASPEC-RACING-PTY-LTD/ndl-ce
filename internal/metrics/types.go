@@ -1,6 +1,9 @@
 package metrics
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Status is an honest series state. Never invent a zero sample.
 type Status string
@@ -25,13 +28,27 @@ const (
 )
 
 const (
-	MetricCPUBusyRatio     = "cpu.busy_ratio"
-	MetricMemoryUsedBytes  = "memory.used_bytes"
-	MetricMemoryTotalBytes = "memory.total_bytes"
-	MetricMemoryAvailBytes = "memory.available_bytes"
-	MetricNetRxBytes       = "net.rx_bytes"
-	MetricNetTxBytes       = "net.tx_bytes"
+	MetricCPUBusyRatio       = "cpu.busy_ratio"
+	MetricMemoryUsedBytes    = "memory.used_bytes"
+	MetricMemoryTotalBytes   = "memory.total_bytes"
+	MetricMemoryAvailBytes   = "memory.available_bytes"
+	MetricNetRxBytes         = "net.rx_bytes"
+	MetricNetTxBytes         = "net.tx_bytes"
+	MetricIOReadBytes        = "io.read_bytes"
+	MetricIOWriteBytes       = "io.write_bytes"
+	MetricDiskReadLatencyMS  = "disk.read_latency_ms"
+	MetricDiskWriteLatencyMS = "disk.write_latency_ms"
+	MetricStorageAvailBytes  = "storage.avail_bytes"
 )
+
+const (
+	// DownsampleAfter switches Query to hourly averages for longer windows.
+	DownsampleAfter = 6 * time.Hour
+	// HourlyRetention is how long downsampled buckets are kept.
+	HourlyRetention = 90 * 24 * time.Hour
+)
+
+const netIfacePrefix = "net.iface."
 
 // Point is one real sample. Queries never synthesize extra points.
 type Point struct {
@@ -53,7 +70,7 @@ type QueryResult struct {
 	Series []Series `json:"series"`
 }
 
-// KnownNames is the Phase 2 host scrape set.
+// KnownNames is the host scrape set. Per-interface series are extra names.
 var KnownNames = []string{
 	MetricCPUBusyRatio,
 	MetricMemoryUsedBytes,
@@ -61,26 +78,48 @@ var KnownNames = []string{
 	MetricMemoryAvailBytes,
 	MetricNetRxBytes,
 	MetricNetTxBytes,
+	MetricIOReadBytes,
+	MetricIOWriteBytes,
+	MetricDiskReadLatencyMS,
+	MetricDiskWriteLatencyMS,
+	MetricStorageAvailBytes,
 }
 
 func unitFor(name string) string {
 	switch name {
 	case MetricCPUBusyRatio:
 		return "ratio"
+	case MetricDiskReadLatencyMS, MetricDiskWriteLatencyMS:
+		return "milliseconds"
 	case MetricMemoryUsedBytes, MetricMemoryTotalBytes, MetricMemoryAvailBytes,
-		MetricNetRxBytes, MetricNetTxBytes:
+		MetricNetRxBytes, MetricNetTxBytes, MetricIOReadBytes, MetricIOWriteBytes,
+		MetricStorageAvailBytes:
 		return "bytes"
 	default:
+		if strings.HasPrefix(name, netIfacePrefix) {
+			return "bytes"
+		}
 		return ""
 	}
+}
+
+func Alertable(name string) bool {
+	for _, n := range KnownNames {
+		if n == name {
+			return true
+		}
+	}
+	return false
 }
 
 func knownName(name string) bool {
 	switch name {
 	case MetricCPUBusyRatio, MetricMemoryUsedBytes, MetricMemoryTotalBytes,
-		MetricMemoryAvailBytes, MetricNetRxBytes, MetricNetTxBytes:
+		MetricMemoryAvailBytes, MetricNetRxBytes, MetricNetTxBytes,
+		MetricIOReadBytes, MetricIOWriteBytes, MetricDiskReadLatencyMS,
+		MetricDiskWriteLatencyMS, MetricStorageAvailBytes:
 		return true
 	default:
-		return false
+		return strings.HasPrefix(name, netIfacePrefix)
 	}
 }

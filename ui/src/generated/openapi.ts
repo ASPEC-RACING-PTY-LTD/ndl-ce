@@ -816,6 +816,83 @@ export interface ZFSCreateRequest {
   force?: boolean;
 }
 
+export interface LogsResponse {
+  status: string;
+  unit?: string;
+  lines: string[];
+  message?: string;
+}
+
+export interface SmartResponse {
+  status: string;
+  stale?: boolean;
+  items: Record<string, unknown>[];
+}
+
+export interface CapacityResponse {
+  status: string;
+  message?: string;
+  samples?: number;
+  last_bytes?: number;
+  hours_to_zero?: number;
+}
+
+export interface TimelineResponse {
+  items: Record<string, unknown>[];
+  from?: string;
+  to?: string;
+}
+
+export interface AlertListResponse {
+  items: AlertRule[];
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  metric: string;
+  op: string;
+  threshold: number;
+  for_minutes?: number;
+  enabled: boolean;
+  last_fired_at?: string;
+  created_at?: string;
+}
+
+export interface AlertCreateRequest {
+  name: string;
+  metric: string;
+  op: string;
+  threshold: number;
+  for_minutes?: number;
+}
+
+export interface ChannelListResponse {
+  items: NotificationChannel[];
+}
+
+export interface NotificationChannel {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  webhook_configured?: boolean;
+  smtp_host?: string;
+  smtp_port?: number;
+  created_at?: string;
+}
+
+export interface ChannelCreateRequest {
+  name: string;
+  kind: string;
+  url?: string;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_from?: string;
+  smtp_username?: string;
+  smtp_password?: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -841,6 +918,20 @@ export type GetNodeHardwarePath = "/api/v1/nodes/{id}/hardware";
 export type GetNodeCapabilitiesPath = "/api/v1/nodes/{id}/capabilities";
 
 export type GetNodeMetricsPath = "/api/v1/nodes/{id}/metrics";
+
+export type GetNodeLogsPath = "/api/v1/nodes/{id}/logs";
+
+export type GetNodeSmartPath = "/api/v1/nodes/{id}/smart";
+
+export type GetNodeCapacityPath = "/api/v1/nodes/{id}/capacity";
+
+export type GetWorkloadLogsPath = "/api/v1/workloads/{id}/logs";
+
+export type GetTimelinePath = "/api/v1/timeline";
+
+export type ListAlertsPath = "/api/v1/alerts";
+
+export type ListAlertChannelsPath = "/api/v1/alerts/channels";
 
 export type ListTasksPath = "/api/v1/tasks";
 

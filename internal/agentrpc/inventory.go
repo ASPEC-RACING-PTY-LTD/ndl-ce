@@ -36,7 +36,7 @@ func (h *Handler) GetMetrics(ctx context.Context, req *connect.Request[agentv1.G
 		}), nil
 	}
 	from, to := parseMetricWindow(req.Msg.GetFrom(), req.Msg.GetTo())
-	res, err := h.Metrics.Query(metrics.KnownNames, from, to)
+	res, err := h.Metrics.QueryWindow(from, to)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}

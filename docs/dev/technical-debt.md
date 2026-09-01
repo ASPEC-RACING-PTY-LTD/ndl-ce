@@ -102,5 +102,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. ZFS create-time native encryption is not implemented. Why not blocking: Phase 15 is pools, zvols, datasets, snapshot/send; encryption remains a follow-up, not a fake unlock.
 - LOW. by-id aliases of the root disk are not EvalSymlinks-compared. Why not blocking: inventory MountHint=/ refuses /dev/sdX and prefix children; extra disks remain the product path.
 
+## Phase 16
+
+- MEDIUM. Live journald follow and local SMTP delivery are not executed in this Cloud VM. Why not blocking: typed argv, SkipHostCmds, and webhook delivery are proven; appliance journald and SMTP remain physical/local validation.
+- LOW. Per-workload traffic is TAP/iface counters (`net.iface.*`), not cgroup netcls identity. Why not blocking: host net plus TAP names are honest; cgroup accounting can land later.
+- LOW. Capacity forecast is a linear fit of `storage.avail_bytes` samples. Why not blocking: fewer than four points stays Collecting and does not invent hours-to-zero.
+
+
 
 

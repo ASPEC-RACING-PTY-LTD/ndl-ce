@@ -94,4 +94,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if Authorize(op, SecretReveal) || Authorize(op, ClusterDestroy) || Authorize(op, IdentityService) {
 		t.Fatal("step-up and service principals stay admin")
 	}
+	if !Authorize(view, AlertRead) || Authorize(view, AlertManage) {
+		t.Fatal("viewer alert is read-only")
+	}
+	if !Authorize(op, AlertRead) || !Authorize(op, AlertManage) {
+		t.Fatal("operator may manage alerts")
+	}
 }
