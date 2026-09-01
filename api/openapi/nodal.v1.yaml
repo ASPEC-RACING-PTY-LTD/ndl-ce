@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.24
-  description: Phase 25 LVM-thin storage, plus prior northbound API.
+  version: 0.1.25
+  description: Phase 26 NFS/SMB/iSCSI compute datastores, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -2263,6 +2263,68 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LVMCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/datastores:
+    get:
+      operationId: getDatastoreRuntime
+      summary: NFS/SMB/iSCSI runtime. Backup destinations remain Phase 11. Incremental send is false.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatastoreRuntime"
+  /storage/nfs:
+    post:
+      operationId: createNfs
+      summary: Add an NFS share as a compute/library pool. Share down stays unavailable; rows remain.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NFSCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/smb:
+    post:
+      operationId: createSmb
+      summary: Add an SMB share. Password is stored in secrets, never in unit files or list JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SMBCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/iscsi:
+    post:
+      operationId: createIscsi
+      summary: Log in to an iSCSI target and use the LUN as a VM disk handle.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ISCSICreateRequest"
       responses:
         "201":
           description: Created
@@ -5021,6 +5083,74 @@ components:
           type: array
           items:
             type: string
+    DatastoreRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        nfs:
+          type: boolean
+        smb:
+          type: boolean
+        iscsi:
+          type: boolean
+        incremental_send:
+          type: boolean
+        directory_default:
+          type: boolean
+        passwords_in_unit_files:
+          type: boolean
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+    NFSCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - locator
+      properties:
+        name:
+          type: string
+        locator:
+          type: string
+    SMBCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - locator
+      properties:
+        name:
+          type: string
+        locator:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+    ISCSICreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - iqn
+        - portal
+      properties:
+        name:
+          type: string
+        iqn:
+          type: string
+        locator:
+          type: string
+        portal:
+          type: string
     LogsResponse:
       type: object
       additionalProperties: false

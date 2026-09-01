@@ -40,6 +40,12 @@ func ValidateDiskPath(diskPath string) error {
 		if err := storage.ValidateLVMDevice(cleaned); err == nil {
 			return nil
 		}
+		if strings.HasPrefix(cleaned, storage.ISCSIByPath) {
+			if strings.Contains(cleaned, "..") {
+				return fmt.Errorf("disk_path is not a clean locator")
+			}
+			return nil
+		}
 		if strings.HasPrefix(cleaned, storage.LVMMountRoot+"/") {
 			return nil
 		}

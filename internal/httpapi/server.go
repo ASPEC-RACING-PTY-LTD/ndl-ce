@@ -69,6 +69,7 @@ type Server struct {
 	GPU         GPURPC
 	ZFS         ZFSRPC
 	LVM         LVMRPC
+	Datastore   DatastoreRPC
 	Hub         *EventHub
 	UI          fs.FS
 	Now         func() time.Time
@@ -250,6 +251,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/storage/zfs/create", s.createZFS)
 	mux.HandleFunc("GET /api/v1/storage/lvm", s.lvmRuntime)
 	mux.HandleFunc("POST /api/v1/storage/lvm/create", s.createLVM)
+	mux.HandleFunc("GET /api/v1/storage/datastores", s.datastoreRuntime)
+	mux.HandleFunc("POST /api/v1/storage/nfs", s.createNFS)
+	mux.HandleFunc("POST /api/v1/storage/smb", s.createSMB)
+	mux.HandleFunc("POST /api/v1/storage/iscsi", s.createISCSI)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

@@ -172,6 +172,13 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. LVM backup is a full qemu-img convert of the snapshot LV, not a send stream. Why not blocking: IncrementalSend stays false; inventing zfs-send-equivalent would violate the phase.
 - LOW. lvconvert --merge rollback is not proven against a live origin. Why not blocking: snapshot create is the acceptance gate; merge refuses a running workload.
 
+## Phase 26
+
+- MEDIUM. Live NFS/SMB/iSCSI is not in this Cloud job. Why not blocking: fake mount plus SkipHostCmds prove share down stays unavailable, passwords stay off argv, and incremental send stays false; a NAS appliance is the intended live job.
+- LOW. Phase 11 NFS/SMB backup destinations remain catalog-only unless the locator is already a local directory. Why not blocking: compute mounts are a different object; conflating them would invent a backup copy.
+- LOW. iSCSI snapshots stay false. Why not blocking: a raw LUN is not a qcow2 overlay chain; inventing snapshots would violate honesty.
+- LOW. SMB credentials are a 0600 file under /var/lib/ndl/secrets/datastore, not a systemd unit. Why not blocking: that is the security requirement; Cloud does not write the file when SkipHostCmds is set.
+
 
 
 

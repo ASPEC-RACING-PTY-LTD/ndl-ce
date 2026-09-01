@@ -51,13 +51,14 @@ func (h *Handler) GetStorage(ctx context.Context, req *connect.Request[agentv1.G
 	obs := h.driver().Observe(dirHints(decodeHints(req.Msg.GetStoragePools())))
 	obs.Pools = append(obs.Pools, h.zfs().ObserveHints(ctx, zfsHints(decodeHints(req.Msg.GetStoragePools())))...)
 	obs.Pools = append(obs.Pools, h.lvm().ObserveHints(ctx, lvmHints(decodeHints(req.Msg.GetStoragePools())))...)
+	obs.Pools = append(obs.Pools, h.datastore().ObserveHints(ctx, dsHints(decodeHints(req.Msg.GetStoragePools())))...)
 	return connect.NewResponse(&agentv1.GetStorageResponse{StorageJson: mustJSON(obs)}), nil
 }
 
 func dirHints(in []storage.PoolHint) []storage.PoolHint {
 	var out []storage.PoolHint
 	for _, h := range in {
-		if h.BackendType == storage.BackendZFS || h.BackendType == storage.BackendLVM {
+		if h.BackendType == storage.BackendZFS || h.BackendType == storage.BackendLVM || h.BackendType == storage.BackendNFS || h.BackendType == storage.BackendSMB || h.BackendType == storage.BackendISCSI {
 			continue
 		}
 		out = append(out, h)
@@ -85,14 +86,26 @@ func lvmHints(in []storage.PoolHint) []storage.PoolHint {
 	return out
 }
 
+func dsHints(in []storage.PoolHint) []storage.PoolHint {
+	var out []storage.PoolHint
+	for _, h := range in {
+		if h.BackendType == storage.BackendNFS || h.BackendType == storage.BackendSMB || h.BackendType == storage.BackendISCSI {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
 func (h *Handler) observeStorage(hints []storage.PoolHint) []byte {
-	var dir, zfs, lvm []storage.PoolHint
+	var dir, zfs, lvm, ds []storage.PoolHint
 	for _, hint := range hints {
 		switch hint.BackendType {
 		case storage.BackendZFS:
 			zfs = append(zfs, hint)
 		case storage.BackendLVM:
 			lvm = append(lvm, hint)
+		case storage.BackendNFS, storage.BackendSMB, storage.BackendISCSI:
+			ds = append(ds, hint)
 		default:
 			dir = append(dir, hint)
 		}
@@ -100,6 +113,7 @@ func (h *Handler) observeStorage(hints []storage.PoolHint) []byte {
 	obs := h.driver().Observe(dir)
 	obs.Pools = append(obs.Pools, h.zfs().ObserveHints(context.Background(), zfs)...)
 	obs.Pools = append(obs.Pools, h.lvm().ObserveHints(context.Background(), lvm)...)
+	obs.Pools = append(obs.Pools, h.datastore().ObserveHints(context.Background(), ds)...)
 	return mustJSON(obs)
 }
 

@@ -267,6 +267,16 @@ func HostVolumePath(backendType, rootPath, backendRef string) (string, error) {
 		}
 		return backendRef, nil
 	}
+	if backendType == BackendISCSI {
+		if !strings.HasPrefix(backendRef, ISCSIByPath) {
+			return "", fmt.Errorf("iscsi locator is invalid")
+		}
+		cleaned := path.Clean(backendRef)
+		if cleaned != backendRef || strings.Contains(backendRef, "..") {
+			return "", fmt.Errorf("iscsi locator is invalid")
+		}
+		return cleaned, nil
+	}
 	return JoinUnder(rootPath, backendRef)
 }
 
@@ -276,6 +286,9 @@ func QEMUFormat(backendType, format string) string {
 		return "raw"
 	}
 	if backendType == BackendLVM || format == FormatThinLV {
+		return "raw"
+	}
+	if backendType == BackendISCSI {
 		return "raw"
 	}
 	if format == "" {

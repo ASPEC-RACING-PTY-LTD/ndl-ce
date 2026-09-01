@@ -57,6 +57,8 @@ type Memory struct {
 	zfsDatasets       map[string]ZFSDataset
 	lvmVGs            map[string]LVMVG
 	lvmLVs            map[string]LVMLV
+	datastores        map[string]Datastore
+	datastoreSecrets  map[string][2]string
 	alertRules        map[string]AlertRule
 	notifyChannels    map[string]NotificationChannel
 	notifySecrets     map[string][2]string

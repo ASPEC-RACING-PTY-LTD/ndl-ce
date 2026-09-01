@@ -47,6 +47,9 @@ func run(args []string) error {
   storage zfs runtime
   storage lvm create --name NAME --disk PATH
   storage lvm runtime
+  storage nfs add --name NAME --locator SERVER:/EXPORT
+  storage smb add --name NAME --locator //SERVER/SHARE [--username USER]
+  storage iscsi add --name NAME --iqn IQN --portal HOST:3260
   network list
   network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
   network apply --id ID [--dry-run] [--confirm-ifname IF]
@@ -363,7 +366,7 @@ func sessionFile() string {
 
 func cmdStorage(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: nodalctl storage pool|volume|image|zfs|lvm ...")
+		return fmt.Errorf("usage: nodalctl storage pool|volume|image|zfs|lvm|nfs|smb|iscsi ...")
 	}
 	switch args[0] + " " + args[1] {
 	case "pool list":
@@ -410,6 +413,24 @@ func cmdStorage(args []string) error {
 		return postJSON("/api/v1/storage/lvm/create", map[string]any{"name": f["name"], "disks": []string{f["disk"]}}, true)
 	case "lvm runtime":
 		return cmdGet("/api/v1/storage/lvm")
+	case "nfs add":
+		f := parseFlags(args[2:])
+		if f["name"] == "" || f["locator"] == "" {
+			return fmt.Errorf("usage: nodalctl storage nfs add --name NAME --locator SERVER:/EXPORT")
+		}
+		return postJSON("/api/v1/storage/nfs", map[string]any{"name": f["name"], "locator": f["locator"]}, true)
+	case "smb add":
+		f := parseFlags(args[2:])
+		if f["name"] == "" || f["locator"] == "" {
+			return fmt.Errorf("usage: nodalctl storage smb add --name NAME --locator //SERVER/SHARE [--username USER]")
+		}
+		return postJSON("/api/v1/storage/smb", map[string]any{"name": f["name"], "locator": f["locator"], "username": f["username"], "password": f["password"]}, true)
+	case "iscsi add":
+		f := parseFlags(args[2:])
+		if f["name"] == "" || f["iqn"] == "" || f["portal"] == "" {
+			return fmt.Errorf("usage: nodalctl storage iscsi add --name NAME --iqn IQN --portal HOST:3260")
+		}
+		return postJSON("/api/v1/storage/iscsi", map[string]any{"name": f["name"], "iqn": f["iqn"], "portal": f["portal"]}, true)
 	default:
 		return fmt.Errorf("unknown storage command")
 	}

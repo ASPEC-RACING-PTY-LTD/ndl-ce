@@ -177,6 +177,7 @@ message ExecuteRequest {
     BackupVerify backup_verify = 32;
     BackupExtract backup_extract = 33;
     LVMPool lvm_pool = 34;
+    Datastore datastore = 35;
   }
 }
 
@@ -281,6 +282,17 @@ message LVMPool {
   string class = 7;
   int64 size_bytes = 8;
   string snapshot = 9;
+}
+
+message Datastore {
+  string action = 1;
+  string pool_id = 2;
+  string kind = 3;
+  string locator = 4;
+  string portal = 5;
+  string username = 6;
+  string password = 7;
+  string iqn = 8;
 }
 
 message VMSnapshot {

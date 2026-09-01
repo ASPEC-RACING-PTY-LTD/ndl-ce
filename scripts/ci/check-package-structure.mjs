@@ -106,6 +106,9 @@ if (!changelog.includes("nodal (0.1.23)") || !changelog.includes("Phase 24 backu
 if (!changelog.includes("nodal (0.1.24)") || !changelog.includes("Phase 25 LVM-thin")) {
   errors.push("changelog must include nodal (0.1.24) Phase 25 LVM-thin");
 }
+if (!changelog.includes("nodal (0.1.25)") || !changelog.includes("Phase 26 NFS/SMB/iSCSI")) {
+  errors.push("changelog must include nodal (0.1.25) Phase 26 NFS/SMB/iSCSI");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

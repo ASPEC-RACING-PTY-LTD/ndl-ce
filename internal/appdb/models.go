@@ -186,6 +186,11 @@ type Store interface {
 	UpsertLVMLV(ctx context.Context, lv LVMLV) error
 	GetLVMLV(ctx context.Context, volumeID string) (*LVMLV, error)
 
+	UpsertDatastore(ctx context.Context, d Datastore) error
+	GetDatastore(ctx context.Context, poolID string) (*Datastore, error)
+	UpsertDatastoreSecret(ctx context.Context, poolID, username, password string) error
+	DatastoreSecret(ctx context.Context, poolID string) (username, password string, err error)
+
 	CreateAlertRule(ctx context.Context, r AlertRule) error
 	ListAlertRules(ctx context.Context, clusterID string) ([]AlertRule, error)
 	GetAlertRule(ctx context.Context, clusterID, id string) (*AlertRule, error)

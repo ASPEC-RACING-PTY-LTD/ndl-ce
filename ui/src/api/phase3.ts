@@ -79,3 +79,16 @@ export type LVMRuntime = {
   reason?: string;
   packages?: string[];
 };
+
+export type DatastoreRuntime = {
+  nfs?: boolean;
+  smb?: boolean;
+  iscsi?: boolean;
+  incremental_send?: boolean;
+  directory_default?: boolean;
+  passwords_in_unit_files?: boolean;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+};

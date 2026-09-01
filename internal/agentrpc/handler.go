@@ -42,6 +42,7 @@ type Handler struct {
 	OCI           *oci.Engine
 	ZFS           *storage.ZFSEngine
 	LVM           *storage.LVMEngine
+	Datastore     *storage.DatastoreEngine
 	Journal       *journald.Engine
 	SkipHostCmds  bool
 	GuestSocketFn func(id string) string
@@ -193,6 +194,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execBackupExtract(ctx, req.Msg.GetBackupExtract())
 	case req.Msg.GetLvmPool() != nil:
 		return h.execLVMPool(ctx, req.Msg.GetLvmPool())
+	case req.Msg.GetDatastore() != nil:
+		return h.execDatastore(ctx, req.Msg.GetDatastore())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

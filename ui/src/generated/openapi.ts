@@ -1018,6 +1018,38 @@ export interface LVMCreateRequest {
   disks: string[];
 }
 
+export interface DatastoreRuntime {
+  nfs?: boolean;
+  smb?: boolean;
+  iscsi?: boolean;
+  incremental_send?: boolean;
+  directory_default?: boolean;
+  passwords_in_unit_files?: boolean;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+}
+
+export interface NFSCreateRequest {
+  name: string;
+  locator: string;
+}
+
+export interface SMBCreateRequest {
+  name: string;
+  locator: string;
+  username?: string;
+  password?: string;
+}
+
+export interface ISCSICreateRequest {
+  name: string;
+  iqn: string;
+  locator?: string;
+  portal: string;
+}
+
 export interface LogsResponse {
   status: string;
   unit?: string;
@@ -1330,6 +1362,14 @@ export type CreateZfsPath = "/api/v1/storage/zfs/create";
 export type GetLvmRuntimePath = "/api/v1/storage/lvm";
 
 export type CreateLvmPath = "/api/v1/storage/lvm/create";
+
+export type GetDatastoreRuntimePath = "/api/v1/storage/datastores";
+
+export type CreateNfsPath = "/api/v1/storage/nfs";
+
+export type CreateSmbPath = "/api/v1/storage/smb";
+
+export type CreateIscsiPath = "/api/v1/storage/iscsi";
 
 export type ListRegistriesPath = "/api/v1/registries";
 

@@ -238,6 +238,42 @@ export async function createLVM(body: { name: string; disks: string[] }): Promis
   );
 }
 
+export async function datastoreRuntime(): Promise<import("./phase3").DatastoreRuntime> {
+  return readJson(await request("/storage/datastores"));
+}
+
+export async function createNFS(body: { name: string; locator: string }): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/nfs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function createSMB(body: {
+  name: string;
+  locator: string;
+  username?: string;
+  password?: string;
+}): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/smb", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function createISCSI(body: { name: string; iqn: string; portal: string }): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/iscsi", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getPool(id: string): Promise<import("./phase3").StoragePool> {
   return readJson(await request(`/storage/pools/${id}`));
 }

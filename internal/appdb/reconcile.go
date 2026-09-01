@@ -82,7 +82,7 @@ func ReconcileStorage(ctx context.Context, st Store, clusterID string, pools []S
 				v.AllocatedBytes = &alloc
 			} else if next.Status == storage.StatusUnavailable {
 				v.Status = storage.StatusUnavailable
-			} else if pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM {
+			} else if pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM || pool.BackendType == storage.BackendNFS || pool.BackendType == storage.BackendSMB || pool.BackendType == storage.BackendISCSI {
 				if v.Status == storage.StatusUnavailable || v.Status == "" {
 					v.Status = storage.StatusAvailable
 				}

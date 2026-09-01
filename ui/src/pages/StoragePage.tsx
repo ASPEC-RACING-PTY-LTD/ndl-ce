@@ -2,8 +2,12 @@ import { useEffect, useState } from "react";
 import {
   createPool,
   createVolume,
+  createISCSI,
   createLVM,
+  createNFS,
+  createSMB,
   createZFS,
+  datastoreRuntime,
   importZFS,
   listImages,
   listPools,
@@ -12,7 +16,7 @@ import {
   uploadImage,
   zfsRuntime,
 } from "../api/client";
-import type { LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
+import type { DatastoreRuntime, LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
 import { Field } from "../components/Field";
 import { formatBytes } from "../format";
 import { useSession } from "../session";
@@ -55,6 +59,16 @@ export function StoragePage() {
   const [lvm, setLvm] = useState<LVMRuntime | null>(null);
   const [lvmName, setLvmName] = useState("ndlvg");
   const [lvmDisk, setLvmDisk] = useState("");
+  const [datastores, setDatastores] = useState<DatastoreRuntime | null>(null);
+  const [nfsName, setNfsName] = useState("nfs-iso");
+  const [nfsLocator, setNfsLocator] = useState("");
+  const [smbName, setSmbName] = useState("smb-iso");
+  const [smbLocator, setSmbLocator] = useState("");
+  const [smbUser, setSmbUser] = useState("");
+  const [smbPass, setSmbPass] = useState("");
+  const [iscsiName, setIscsiName] = useState("iscsi-lun");
+  const [iscsiIQN, setIscsiIQN] = useState("");
+  const [iscsiPortal, setIscsiPortal] = useState("");
 
   async function reload() {
     const listed = await listPools();
@@ -70,16 +84,18 @@ export function StoragePage() {
       setSelected(first);
     }
     const poolId = first;
-    const [vols, imgs, runtime, lvmStatus] = await Promise.all([
+    const [vols, imgs, runtime, lvmStatus, dsStatus] = await Promise.all([
       listVolumes(poolId),
       listImages(poolId),
       zfsRuntime().catch(() => null),
       lvmRuntime().catch(() => null),
+      datastoreRuntime().catch(() => null),
     ]);
     setVolumes(vols);
     setImages(imgs);
     setZfs(runtime);
     setLvm(lvmStatus);
+    setDatastores(dsStatus);
   }
 
   useEffect(() => {
@@ -153,15 +169,44 @@ export function StoragePage() {
     }
   }
 
-  async function onCreateLVM() {
+  async function onCreateNFS() {
     setBusy(true);
     setError(null);
     try {
-      const created = await createLVM({ name: lvmName, disks: [lvmDisk] });
+      const created = await createNFS({ name: nfsName, locator: nfsLocator });
       setSelected(created.id);
       await reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "LVM create failed");
+      setError(err instanceof Error ? err.message : "NFS add failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCreateSMB() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createSMB({ name: smbName, locator: smbLocator, username: smbUser, password: smbPass });
+      setSmbPass("");
+      setSelected(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "SMB add failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCreateISCSI() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createISCSI({ name: iscsiName, iqn: iscsiIQN, portal: iscsiPortal });
+      setSelected(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "iSCSI add failed");
     } finally {
       setBusy(false);
     }
@@ -209,8 +254,9 @@ export function StoragePage() {
       <header className="page-header">
         <h1 id="storage-heading">Storage</h1>
         <p className="page-kicker">
-          Directory remains the default. ZFS and LVM-thin are optional first-class storage. Hosts
-          without ZFS or LVM keep Directory. zpool import -f and vgexport are refused.
+          Directory remains the default. ZFS, LVM-thin, and NFS/SMB/iSCSI are optional. Hosts
+          without those tools keep Directory. zpool import -f and vgexport are refused. Passwords
+          are stored in secrets, not unit files.
         </p>
       </header>
       {error ? (
@@ -349,6 +395,100 @@ export function StoragePage() {
             />
             <button className="btn btn-primary" type="submit" disabled={busy || !lvmDisk}>
               Create LVM-thin pool
+            </button>
+          </form>
+        </article>
+      ) : null}
+      {mutate ? (
+        <article className="panel">
+          <h2>Network storage</h2>
+          <p className="lede">
+            NFS and SMB are compute and library mounts. iSCSI is a raw LUN for one VM disk. If the
+            share is down, volumes stay unavailable and are not deleted. Incremental send is not a
+            network datastore capability. Backup destinations remain a separate Phase 11 target.
+          </p>
+          {datastores?.host_supported === false ? (
+            <p className="banner banner-warn" role="status">
+              {datastores.reason || "Network datastore runtime uses the Debian 13 adapter."}
+            </p>
+          ) : null}
+          {datastores?.status === "not_installed" ? (
+            <p className="banner" role="status">
+              Network datastore tools are optional. Directory remains the default. Optional packages:{" "}
+              {(datastores.packages ?? []).join(", ") || "nfs-common, cifs-utils, open-iscsi"}.
+            </p>
+          ) : null}
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateNFS();
+            }}
+          >
+            <Field id="nfs-name" label="NFS pool name" value={nfsName} onChange={(e) => setNfsName(e.target.value)} />
+            <Field
+              id="nfs-locator"
+              label="NFS locator"
+              value={nfsLocator}
+              onChange={(e) => setNfsLocator(e.target.value)}
+              hint="server:/export. This is a locator, not identity. The pool UUID is identity."
+            />
+            <button className="btn btn-primary" type="submit" disabled={busy || !nfsLocator}>
+              Add NFS share
+            </button>
+          </form>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateSMB();
+            }}
+          >
+            <Field id="smb-name" label="SMB pool name" value={smbName} onChange={(e) => setSmbName(e.target.value)} />
+            <Field
+              id="smb-locator"
+              label="SMB locator"
+              value={smbLocator}
+              onChange={(e) => setSmbLocator(e.target.value)}
+              hint="//server/share. The password is written to a 0600 credentials file, never to argv or a unit file."
+            />
+            <Field id="smb-user" label="Username" value={smbUser} onChange={(e) => setSmbUser(e.target.value)} />
+            <Field
+              id="smb-pass"
+              label="Password"
+              type="password"
+              autoComplete="new-password"
+              value={smbPass}
+              onChange={(e) => setSmbPass(e.target.value)}
+            />
+            <button className="btn" type="submit" disabled={busy || !smbLocator}>
+              Add SMB share
+            </button>
+          </form>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateISCSI();
+            }}
+          >
+            <Field id="iscsi-name" label="iSCSI pool name" value={iscsiName} onChange={(e) => setIscsiName(e.target.value)} />
+            <Field
+              id="iscsi-iqn"
+              label="Target IQN"
+              value={iscsiIQN}
+              onChange={(e) => setIscsiIQN(e.target.value)}
+              hint="iqn.yyyy-mm.domain:name. One VM disk LUN per pool. Snapshots are not available."
+            />
+            <Field
+              id="iscsi-portal"
+              label="Portal"
+              value={iscsiPortal}
+              onChange={(e) => setIscsiPortal(e.target.value)}
+              hint="host:3260"
+            />
+            <button className="btn" type="submit" disabled={busy || !iscsiIQN || !iscsiPortal}>
+              Add iSCSI target
             </button>
           </form>
         </article>

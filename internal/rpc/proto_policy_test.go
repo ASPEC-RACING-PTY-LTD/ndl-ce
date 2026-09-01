@@ -68,6 +68,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"BackupVerify backup_verify =",
 		"BackupExtract backup_extract =",
 		"LVMPool lvm_pool =",
+		"Datastore datastore =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

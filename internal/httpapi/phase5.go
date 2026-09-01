@@ -554,6 +554,9 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	if pool.BackendType == storage.BackendLVM {
 		return lxc.LifecycleRequest{}, errUnprocessable("LVM-thin system container clone is not implemented")
 	}
+	if pool.BackendType == storage.BackendISCSI {
+		return lxc.LifecycleRequest{}, errUnprocessable("iSCSI system containers are not supported")
+	}
 	cloneID := uuid.NewString()
 	cloneVol := uuid.NewString()
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]

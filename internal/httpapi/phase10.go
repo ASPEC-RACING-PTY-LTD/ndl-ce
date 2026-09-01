@@ -46,6 +46,12 @@ func (s *Server) snapshotCapability(kind string, depth int, backend string) map[
 			"chain_depth": depth, "reason": "",
 		}
 	}
+	if backend == storage.BackendISCSI {
+		return map[string]any{
+			"supported": false, "mechanism": "", "chain_max": 0,
+			"chain_depth": depth, "reason": iscsiSnapReason,
+		}
+	}
 	if kind != vmspec.KindVM {
 		return map[string]any{
 			"supported": false, "mechanism": "", "chain_max": qemu.ChainMax,
@@ -126,6 +132,10 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	if pool.BackendType == storage.BackendLVM {
 		s.createLVMSnapshot(w, r, p, *row, *vol, *pool, strings.TrimSpace(req.Name), existing)
+		return
+	}
+	if pool.BackendType == storage.BackendISCSI {
+		writeErr(w, http.StatusUnprocessableEntity, iscsiSnapReason)
 		return
 	}
 	if row.Kind == lxc.KindSystemContainer || row.Kind != vmspec.KindVM {
