@@ -20,6 +20,8 @@ service AgentService {
   rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
   // GetStorage observes known Directory pools. It does not delete objects.
   rpc GetStorage(GetStorageRequest) returns (GetStorageResponse);
+  // GetNetworks observes known network objects. It does not delete objects.
+  rpc GetNetworks(GetNetworksRequest) returns (GetNetworksResponse);
   // UploadLibrary streams ISO or cloud-image bytes to the agent.
   rpc UploadLibrary(stream UploadLibraryRequest) returns (UploadLibraryResponse);
 }
@@ -50,8 +52,16 @@ message StoragePoolHint {
   bytes backing_json = 4;
 }
 
+message NetworkHint {
+  string network_id = 1;
+  string kind = 2;
+  string bridge_name = 3;
+  string uplink_ifname = 4;
+}
+
 message ObserveRequest {
   repeated StoragePoolHint storage_pools = 1;
+  repeated NetworkHint networks = 2;
 }
 
 message ObserveResponse {
@@ -59,6 +69,7 @@ message ObserveResponse {
   string schema_version = 2;
   bytes inventory_json = 3;
   bytes storage_json = 4;
+  bytes network_json = 5;
 }
 
 message GetInventoryRequest {}
@@ -87,6 +98,14 @@ message GetStorageResponse {
   bytes storage_json = 1;
 }
 
+message GetNetworksRequest {
+  repeated NetworkHint networks = 1;
+}
+
+message GetNetworksResponse {
+  bytes network_json = 1;
+}
+
 // ExecuteRequest is a typed method table. Add new methods as oneof
 // members. Do not add a string command field or a generic exec RPC.
 message ExecuteRequest {
@@ -95,6 +114,8 @@ message ExecuteRequest {
     Ping ping = 10;
     CreateDirectoryPool create_directory_pool = 11;
     CreateDirectoryVolume create_directory_volume = 12;
+    NetDryRun net_dry_run = 13;
+    NetApply net_apply = 14;
   }
 }
 
@@ -116,6 +137,31 @@ message CreateDirectoryVolume {
   int64 size_bytes = 5;
   string format = 6;
   bytes backing_json = 7;
+}
+
+message NetDryRun {
+  string network_id = 1;
+  string name = 2;
+  string kind = 3;
+  string ipv4_cidr = 4;
+  bool dhcp = 5;
+  bool dns = 6;
+  string uplink_ifname = 7;
+  string confirm_ifname = 8;
+  bytes reservations_json = 9;
+}
+
+message NetApply {
+  string network_id = 1;
+  string name = 2;
+  string kind = 3;
+  string ipv4_cidr = 4;
+  bool dhcp = 5;
+  bool dns = 6;
+  string uplink_ifname = 7;
+  string confirm_ifname = 8;
+  bytes reservations_json = 9;
+  bool arm_rollback = 10;
 }
 
 message ExecuteResponse {

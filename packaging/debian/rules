@@ -35,6 +35,7 @@ override_dh_auto_build:
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-control ./cmd/ndl-control
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-agent ./cmd/ndl-agent
 	$(GO_CD) go build -o $(GO_OUT)build/nodalctl ./cmd/nodalctl
+	$(GO_CD) go build -o $(GO_OUT)build/ndl-network-rollback ./cmd/ndl-network-rollback
 
 override_dh_auto_test:
 	true
@@ -44,6 +45,7 @@ override_dh_auto_install:
 	mkdir -p debian/tmp/lib/systemd/system
 	install -m 0755 build/ndl-control debian/tmp/usr/sbin/ndl-control
 	install -m 0755 build/ndl-agent debian/tmp/usr/sbin/ndl-agent
+	install -m 0755 build/ndl-network-rollback debian/tmp/usr/lib/ndl/ndl-network-rollback
 	install -m 0755 build/nodalctl debian/tmp/usr/bin/nodalctl
 	if [ -d $(MODROOT)/ui/dist ]; then \
 		mkdir -p debian/tmp/usr/share/ndl/ui; \
@@ -54,6 +56,8 @@ override_dh_auto_install:
 	install -m 0644 $(MODROOT)/systemd/ndl-agent.service debian/tmp/lib/systemd/system/ndl-agent.service
 	install -m 0644 $(MODROOT)/systemd/ndl-agent.socket debian/tmp/lib/systemd/system/ndl-agent.socket
 	install -m 0644 $(MODROOT)/systemd/nodal-workloads.target debian/tmp/lib/systemd/system/nodal-workloads.target
+	install -m 0644 $(MODROOT)/systemd/ndl-network-rollback.service debian/tmp/lib/systemd/system/ndl-network-rollback.service
+	install -m 0644 $(MODROOT)/systemd/ndl-dnsmasq@.service debian/tmp/lib/systemd/system/ndl-dnsmasq@.service
 
 override_dh_install:
 	dh_install

@@ -32,6 +32,9 @@ ensure_user() {
 start_units() {
   if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload >/dev/null 2>&1 || true
+    # The system-wide dnsmasq unit would be a second DHCP server on the LAN.
+    systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
+    systemctl mask dnsmasq.service >/dev/null 2>&1 || true
     systemctl enable ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
     systemctl start ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
   fi

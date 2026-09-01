@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getNodeMetrics, listEvents, listNodes, listPools, listTasks } from "../api/client";
+import { getNodeMetrics, listEvents, listNetworks, listNodes, listPools, listTasks } from "../api/client";
 import type { EventItem, MetricsResponse, NodeSummary, TaskItem } from "../api/phase2";
 import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
@@ -15,6 +15,7 @@ export function DashboardPage() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [needStorage, setNeedStorage] = useState(false);
+  const [needNetwork, setNeedNetwork] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,11 +27,12 @@ export function DashboardPage() {
           return;
         }
         setNode(first);
-        const [ev, tk, met, pools] = await Promise.all([
+        const [ev, tk, met, pools, nets] = await Promise.all([
           listEvents().catch(() => []),
           listTasks().catch(() => []),
           first ? getNodeMetrics(first.id).catch(() => null) : Promise.resolve(null),
           listPools().catch(() => ({ items: [] })),
+          listNetworks().catch(() => ({ items: [] })),
         ]);
         if (cancelled) {
           return;
@@ -40,6 +42,8 @@ export function DashboardPage() {
         setMetrics(met);
         const usable = (pools.items ?? []).some((p) => p.status === "available" || p.status === "warning");
         setNeedStorage(!usable);
+        const netReady = (nets.items ?? []).some((n) => n.status === "available" || n.status === "warning");
+        setNeedNetwork(!netReady);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
@@ -69,6 +73,12 @@ export function DashboardPage() {
         <p className="banner banner-warn" role="status">
           No usable storage pool yet. Create a Directory pool on the{" "}
           <Link href="/storage">Storage</Link> page.
+        </p>
+      ) : null}
+      {needNetwork ? (
+        <p className="banner banner-warn" role="status">
+          No guest network yet. Create an isolated network on the{" "}
+          <Link href="/network">Network</Link> page.
         </p>
       ) : null}
       {!node ? (

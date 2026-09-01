@@ -11,6 +11,7 @@ import (
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/transport"
 	"io"
@@ -152,6 +153,76 @@ func (c Client) CreateDirectoryVolume(ctx context.Context, req storage.CreateVol
 	var out storage.CreateVolumeResult
 	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
 		return storage.CreateVolumeResult{}, err
+	}
+	return out, nil
+}
+
+func encodeNetworkHints(hints []ndnet.Hint) []*agentv1.NetworkHint {
+	out := make([]*agentv1.NetworkHint, 0, len(hints))
+	for _, h := range hints {
+		out = append(out, &agentv1.NetworkHint{
+			NetworkId: h.NetworkID, Kind: h.Kind, BridgeName: h.BridgeName, UplinkIfname: h.UplinkIfName,
+		})
+	}
+	return out
+}
+
+func decodeNetworks(raw []byte) (ndnet.Observation, error) {
+	var obs ndnet.Observation
+	if len(raw) == 0 {
+		return obs, nil
+	}
+	if err := json.Unmarshal(raw, &obs); err != nil {
+		return obs, err
+	}
+	return obs, nil
+}
+
+// GetNetworks observes known network objects.
+func (c Client) GetNetworks(ctx context.Context, hints []ndnet.Hint) (ndnet.Observation, error) {
+	res, err := c.rpc().GetNetworks(ctx, connect.NewRequest(&agentv1.GetNetworksRequest{Networks: encodeNetworkHints(hints)}))
+	if err != nil {
+		return ndnet.Observation{}, err
+	}
+	return decodeNetworks(res.Msg.GetNetworkJson())
+}
+
+// DryRunNetwork is a typed Execute method.
+func (c Client) DryRunNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.Preview, error) {
+	reservations, _ := json.Marshal(spec.Reservations)
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_NetDryRun{NetDryRun: &agentv1.NetDryRun{
+			NetworkId: spec.NetworkID, Name: spec.Name, Kind: spec.Kind, Ipv4Cidr: spec.IPv4CIDR,
+			Dhcp: spec.DHCP, Dns: spec.DNS, UplinkIfname: spec.UplinkIfName,
+			ConfirmIfname: spec.ConfirmIfName, ReservationsJson: reservations,
+		}},
+	}))
+	if err != nil {
+		return ndnet.Preview{}, err
+	}
+	var out ndnet.Preview
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return ndnet.Preview{}, err
+	}
+	return out, nil
+}
+
+// ApplyNetwork is a typed Execute method.
+func (c Client) ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyResult, error) {
+	reservations, _ := json.Marshal(spec.Reservations)
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_NetApply{NetApply: &agentv1.NetApply{
+			NetworkId: spec.NetworkID, Name: spec.Name, Kind: spec.Kind, Ipv4Cidr: spec.IPv4CIDR,
+			Dhcp: spec.DHCP, Dns: spec.DNS, UplinkIfname: spec.UplinkIfName,
+			ConfirmIfname: spec.ConfirmIfName, ReservationsJson: reservations, ArmRollback: spec.ArmRollback,
+		}},
+	}))
+	if err != nil {
+		return ndnet.ApplyResult{}, err
+	}
+	var out ndnet.ApplyResult
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return ndnet.ApplyResult{}, err
 	}
 	return out, nil
 }

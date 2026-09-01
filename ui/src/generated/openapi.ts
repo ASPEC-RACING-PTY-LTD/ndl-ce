@@ -193,6 +193,70 @@ export interface StorageImage {
   size_bytes?: number;
 }
 
+export interface NetworkListResponse {
+  items: Network[];
+  first_run?: boolean;
+  nics?: Record<string, unknown>[];
+}
+
+export interface Network {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  danger?: string;
+  bridge_name?: string;
+  dhcp?: boolean;
+}
+
+export interface CreateNetworkRequest {
+  name?: string;
+  kind?: string;
+  ipv4_cidr?: string;
+  uplink_ifname?: string;
+  confirm_ifname?: string;
+  dry_run?: boolean;
+}
+
+export interface ApplyNetworkRequest {
+  confirm_ifname?: string;
+  uplink_ifname?: string;
+  dry_run?: boolean;
+}
+
+export interface NetworkPreview {
+  danger?: string;
+  requires_confirm?: boolean;
+  typed_ifname?: string;
+  dry_run?: boolean;
+}
+
+export interface ConfirmationRequired {
+  error: string;
+  code?: string;
+  danger?: string;
+  typed_ifname?: string;
+  confirm_token?: string;
+  message?: string;
+}
+
+export interface ReservationListResponse {
+  items: Reservation[];
+}
+
+export interface Reservation {
+  id: string;
+  mac: string;
+  ipv4: string;
+  hostname?: string;
+}
+
+export interface CreateReservationRequest {
+  mac: string;
+  ipv4: string;
+  hostname?: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -236,3 +300,11 @@ export type GetStorageVolumePath = "/api/v1/storage/volumes/{id}";
 export type ListStorageImagesPath = "/api/v1/storage/images";
 
 export type GetStorageImagePath = "/api/v1/storage/images/{id}";
+
+export type ListNetworksPath = "/api/v1/networks";
+
+export type GetNetworkPath = "/api/v1/networks/{id}";
+
+export type ApplyNetworkPath = "/api/v1/networks/{id}/apply";
+
+export type ListNetworkReservationsPath = "/api/v1/networks/{id}/reservations";

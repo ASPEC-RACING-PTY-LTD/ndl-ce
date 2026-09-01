@@ -23,10 +23,10 @@ Description: No-dal unprivileged control plane
 
 Package: ndl-agent
 Architecture: amd64
-Depends: adduser, qemu-utils, ${misc:Depends}
+Depends: adduser, qemu-utils, dnsmasq-base, nftables, ${misc:Depends}
 Description: No-dal privileged node agent
  Typed host operations only. No generic command execution.
- Phase 3 adds qemu-img via qemu-utils. Not the full QEMU system stack.
+ Phase 4 adds systemd-networkd persistence, isolated dnsmasq, and nftables validation.
 
 Package: ndl-ui
 Architecture: all

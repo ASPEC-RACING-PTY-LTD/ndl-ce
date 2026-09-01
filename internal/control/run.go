@@ -91,6 +91,7 @@ func Run(cfg Config) error {
 		Agent:     agent,
 		Observer:  agent,
 		Storage:   agent,
+		Network:   agent,
 		Hub:       hub,
 		UI:        ui,
 		SetupHash: cfg.SetupHash,

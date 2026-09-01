@@ -45,6 +45,7 @@ type Server struct {
 	Agent      Agent
 	Observer   Observer
 	Storage    StorageRPC
+	Network    NetworkRPC
 	Hub        *EventHub
 	UI         fs.FS
 	Now        func() time.Time
@@ -94,6 +95,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/storage/images", s.listImages)
 	mux.HandleFunc("POST /api/v1/storage/images", s.uploadImage)
 	mux.HandleFunc("GET /api/v1/storage/images/{id}", s.getImage)
+	mux.HandleFunc("GET /api/v1/networks", s.listNetworks)
+	mux.HandleFunc("POST /api/v1/networks", s.createNetwork)
+	mux.HandleFunc("GET /api/v1/networks/{id}", s.getNetwork)
+	mux.HandleFunc("POST /api/v1/networks/{id}/apply", s.applyNetwork)
+	mux.HandleFunc("GET /api/v1/networks/{id}/reservations", s.listReservations)
+	mux.HandleFunc("POST /api/v1/networks/{id}/reservations", s.createReservation)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

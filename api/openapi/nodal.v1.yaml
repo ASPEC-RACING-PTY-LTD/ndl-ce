@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.0
-  description: Phase 3 northbound API. Host visibility plus Directory storage and the image library.
+  version: 0.1.3
+  description: Phase 4 northbound API. Host visibility, Directory storage, and safe networking.
 servers:
   - url: /api/v1
 paths:
@@ -344,6 +344,127 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StorageImage"
+  /networks:
+    get:
+      operationId: listNetworks
+      summary: List network objects
+      responses:
+        "200":
+          description: Networks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkListResponse"
+    post:
+      operationId: createNetwork
+      summary: Create or dry-run a network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNetworkRequest"
+      responses:
+        "200":
+          description: Dry-run preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkPreview"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Network"
+        "409":
+          description: Typed confirmation required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfirmationRequired"
+  /networks/{id}:
+    get:
+      operationId: getNetwork
+      summary: Get a network by UUID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Network
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Network"
+  /networks/{id}/apply:
+    post:
+      operationId: applyNetwork
+      summary: Apply or dry-run a network
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: dry_run
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyNetworkRequest"
+      responses:
+        "200":
+          description: Applied or previewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Network"
+  /networks/{id}/reservations:
+    get:
+      operationId: listNetworkReservations
+      summary: List DHCP reservations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reservations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationListResponse"
+    post:
+      operationId: createNetworkReservation
+      summary: Create a DHCP reservation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReservationRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
 components:
   schemas:
     HealthResponse:
@@ -789,3 +910,138 @@ components:
           type: string
         size_bytes:
           type: integer
+    NetworkListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Network"
+        first_run:
+          type: boolean
+        nics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    Network:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+        - kind
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        danger:
+          type: string
+        bridge_name:
+          type: string
+        dhcp:
+          type: boolean
+    CreateNetworkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        ipv4_cidr:
+          type: string
+        uplink_ifname:
+          type: string
+        confirm_ifname:
+          type: string
+        dry_run:
+          type: boolean
+    ApplyNetworkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        confirm_ifname:
+          type: string
+        uplink_ifname:
+          type: string
+        dry_run:
+          type: boolean
+    NetworkPreview:
+      type: object
+      additionalProperties: true
+      properties:
+        danger:
+          type: string
+        requires_confirm:
+          type: boolean
+        typed_ifname:
+          type: string
+        dry_run:
+          type: boolean
+    ConfirmationRequired:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        danger:
+          type: string
+        typed_ifname:
+          type: string
+        confirm_token:
+          type: string
+        message:
+          type: string
+    ReservationListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reservation"
+    Reservation:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - mac
+        - ipv4
+      properties:
+        id:
+          type: string
+        mac:
+          type: string
+        ipv4:
+          type: string
+        hostname:
+          type: string
+    CreateReservationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - mac
+        - ipv4
+      properties:
+        mac:
+          type: string
+        ipv4:
+          type: string
+        hostname:
+          type: string

@@ -42,7 +42,13 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 	if !strings.Contains(oneof, "Ping ping =") {
 		t.Fatal("Execute oneof must include Ping")
 	}
-	allowed := []string{"Ping ping =", "CreateDirectoryPool create_directory_pool =", "CreateDirectoryVolume create_directory_volume ="}
+	allowed := []string{
+		"Ping ping =",
+		"CreateDirectoryPool create_directory_pool =",
+		"CreateDirectoryVolume create_directory_volume =",
+		"NetDryRun net_dry_run =",
+		"NetApply net_apply =",
+	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {
 			t.Fatalf("Execute oneof missing %s", name)
@@ -60,6 +66,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"rpc GetInventory(",
 		"rpc GetMetrics(",
 		"rpc GetStorage(",
+		"rpc GetNetworks(",
 		"rpc UploadLibrary(",
 	} {
 		if !strings.Contains(text, need) {

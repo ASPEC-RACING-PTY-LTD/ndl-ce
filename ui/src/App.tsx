@@ -6,6 +6,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { MePage } from "./pages/MePage";
 import { NodePage } from "./pages/NodePage";
 import { SetupPage } from "./pages/SetupPage";
+import { NetworkPage } from "./pages/NetworkPage";
 import { StoragePage } from "./pages/StoragePage";
 import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
@@ -80,6 +81,8 @@ function AppRoutes() {
     page = <EventsPage />;
   } else if (path === "/storage") {
     page = <StoragePage />;
+  } else if (path === "/network") {
+    page = <NetworkPage />;
   } else if (path === "/node" || path.startsWith("/node/")) {
     page = <NodePage />;
   }

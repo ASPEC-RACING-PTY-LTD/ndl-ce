@@ -400,6 +400,24 @@ code {
   gap: var(--space-2);
 }
 
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.code-block {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  background: var(--bg-canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
 .muted {
   color: var(--fg-tertiary);
 }

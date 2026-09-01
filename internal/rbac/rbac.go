@@ -24,6 +24,9 @@ const (
 	StoragePoolCreate   = "storage.pool.create"
 	StorageVolumeCreate = "storage.volume.create"
 	StorageImageUpload  = "storage.image.upload"
+	NetworkRead         = "network.read"
+	NetworkCreate       = "network.create"
+	NetworkApply        = "network.apply"
 	All                 = "*"
 )
 
@@ -43,9 +46,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, ClusterRead,
 			NodeRead, EventsRead, MetricsRead,
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
+			NetworkRead, NetworkCreate, NetworkApply,
 		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead}
+		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead}
 	default:
 		return nil
 	}

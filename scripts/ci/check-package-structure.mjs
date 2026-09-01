@@ -22,6 +22,8 @@ const required = [
   "systemd/ndl-agent.service",
   "systemd/ndl-agent.socket",
   "systemd/nodal-workloads.target",
+  "systemd/ndl-network-rollback.service",
+  "systemd/ndl-dnsmasq@.service",
   "docs/install.md",
   "docs/uninstall.md",
   "docs/recovery.md",
@@ -69,6 +71,15 @@ if (/nvidia|cuda|kubernetes|kubeadm|kubelet|zfs-dkms|zfsutils|ceph|ollama|vllm|q
 if (!/^Package: ndl-agent[\s\S]*?qemu-utils/m.test(control)) {
   errors.push("ndl-agent must Depend on qemu-utils for offline qemu-img");
 }
+if (!/^Package: ndl-agent[\s\S]*?dnsmasq-base/m.test(control)) {
+  errors.push("ndl-agent must Depend on dnsmasq-base, not the system-wide dnsmasq daemon");
+}
+if (/^Package: ndl-agent[\s\S]*?Depends:[^\n]*\bdnsmasq,/m.test(control)) {
+  errors.push("ndl-agent must not Depend on the system-wide dnsmasq package");
+}
+if (!/^Package: ndl-agent[\s\S]*?nftables/m.test(control)) {
+  errors.push("ndl-agent must Depend on nftables for NAT and INPUT validation");
+}
 
 const proto = existsSync("proto/nodal/agent/v1/agent.proto")
   ? readFileSync("proto/nodal/agent/v1/agent.proto", "utf8")
@@ -105,8 +116,11 @@ if (!agentUnit.includes("NoNewPrivileges=yes")) {
 if (!agentUnit.includes("DevicePolicy=closed")) {
   errors.push("ndl-agent.service must set DevicePolicy=closed");
 }
-if (!/^CapabilityBoundingSet=\s*$/m.test(agentUnit)) {
-  errors.push("ndl-agent.service must use an empty CapabilityBoundingSet");
+if (!/^CapabilityBoundingSet=CAP_NET_ADMIN\s*$/m.test(agentUnit)) {
+  errors.push("ndl-agent.service must grant CAP_NET_ADMIN for isolated-nat nftables");
+}
+if (/CAP_SYS_ADMIN/.test(agentUnit)) {
+  errors.push("ndl-agent.service must not grant CAP_SYS_ADMIN");
 }
 if (/^RuntimeDirectory=ndl\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl");

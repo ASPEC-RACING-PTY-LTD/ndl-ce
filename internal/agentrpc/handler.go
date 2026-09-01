@@ -14,6 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/peercred"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"sync"
@@ -31,6 +32,7 @@ type Handler struct {
 	Metrics    *metrics.Store
 	Storage    *storage.Directory
 	Uploads    *storage.Uploads
+	Nets       *ndnet.Engine
 
 	mu         sync.Mutex
 	last       inventory.Inventory
@@ -65,6 +67,7 @@ func (h *Handler) Observe(ctx context.Context, req *connect.Request[agentv1.Obse
 		SchemaVersion: inv.SchemaVersion,
 		InventoryJson: mustJSON(inv),
 		StorageJson:   h.observeStorage(decodeHints(req.Msg.GetStoragePools())),
+		NetworkJson:   h.observeNetworks(decodeNetworkHints(req.Msg.GetNetworks())),
 	}), nil
 }
 
@@ -132,6 +135,10 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "created", ResultJson: mustJSON(res)}), nil
+	case req.Msg.GetNetDryRun() != nil:
+		return h.execNetDryRun(ctx, req.Msg.GetNetDryRun())
+	case req.Msg.GetNetApply() != nil:
+		return h.execNetApply(ctx, req.Msg.GetNetApply())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

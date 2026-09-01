@@ -1,0 +1,17 @@
+[Unit]
+Description=No-dal isolated DHCP/DNS (%i)
+Documentation=https://no-dal.com
+# Isolated bridge only. Do not bind this unit to ndl-control or ndl-agent.
+After=network.target systemd-networkd.service
+StartLimitIntervalSec=30
+StartLimitBurst=8
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/var/lib/ndl/net/dnsmasq/%i.conf --pid-file=/run/ndl/dnsmasq-%i.pid
+Restart=on-failure
+RestartSec=2
+User=root
+
+[Install]
+WantedBy=multi-user.target

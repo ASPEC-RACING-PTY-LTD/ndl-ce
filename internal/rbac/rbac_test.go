@@ -31,6 +31,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, StoragePoolCreate) || !Authorize(op, StorageVolumeCreate) || !Authorize(op, StorageImageUpload) {
 		t.Fatal("operator storage mutations")
 	}
+	if !Authorize(view, NetworkRead) || Authorize(view, NetworkCreate) || Authorize(view, NetworkApply) {
+		t.Fatal("viewer network is read-only")
+	}
+	if !Authorize(op, NetworkCreate) || !Authorize(op, NetworkApply) {
+		t.Fatal("operator isolated network mutations")
+	}
 	if Authorize(nil, NodeRead) {
 		t.Fatal("deny by default")
 	}

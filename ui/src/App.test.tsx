@@ -51,6 +51,7 @@ const defaultRoutes = {
   "/api/v1/events": { status: 200, body: { items: [] } },
   "/api/v1/tasks": { status: 200, body: { items: [] } },
   "/api/v1/storage/pools": { status: 200, body: { items: [] } },
+  "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
 };
 
 afterEach(() => {
@@ -239,6 +240,30 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "local" })).toBeVisible();
     expect(screen.getByText(/^no$/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /create directory pool/i })).toBeVisible();
+  });
+
+  it("shows isolated network first-run and create form", async () => {
+    window.history.replaceState({}, "", "/network");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/networks": {
+        status: 200,
+        body: {
+          first_run: true,
+          items: [],
+          nics: [{ name: "eth0", ifindex: 2, state: "up", addresses: ["192.168.1.10/24"] }],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^network$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /first-run guest network/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /create network/i })).toBeVisible();
+    expect(screen.getByText(/eth0/)).toBeVisible();
+    expect(screen.getByText(/ifindex 2/i)).toBeVisible();
   });
 
   it("imports generated OpenAPI path types", () => {

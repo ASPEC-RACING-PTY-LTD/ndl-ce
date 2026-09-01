@@ -51,6 +51,9 @@ const (
 	AgentServiceGetMetricsProcedure = "/nodal.agent.v1.AgentService/GetMetrics"
 	// AgentServiceGetStorageProcedure is the fully-qualified name of the AgentService's GetStorage RPC.
 	AgentServiceGetStorageProcedure = "/nodal.agent.v1.AgentService/GetStorage"
+	// AgentServiceGetNetworksProcedure is the fully-qualified name of the AgentService's GetNetworks
+	// RPC.
+	AgentServiceGetNetworksProcedure = "/nodal.agent.v1.AgentService/GetNetworks"
 	// AgentServiceUploadLibraryProcedure is the fully-qualified name of the AgentService's
 	// UploadLibrary RPC.
 	AgentServiceUploadLibraryProcedure = "/nodal.agent.v1.AgentService/UploadLibrary"
@@ -71,6 +74,8 @@ type AgentServiceClient interface {
 	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
 	// GetStorage observes known Directory pools. It does not delete objects.
 	GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error)
+	// GetNetworks observes known network objects. It does not delete objects.
+	GetNetworks(context.Context, *connect.Request[v1.GetNetworksRequest]) (*connect.Response[v1.GetNetworksResponse], error)
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context) *connect.ClientStreamForClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
 }
@@ -134,6 +139,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("GetStorage")),
 			connect.WithClientOptions(opts...),
 		),
+		getNetworks: connect.NewClient[v1.GetNetworksRequest, v1.GetNetworksResponse](
+			httpClient,
+			baseURL+AgentServiceGetNetworksProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetNetworks")),
+			connect.WithClientOptions(opts...),
+		),
 		uploadLibrary: connect.NewClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse](
 			httpClient,
 			baseURL+AgentServiceUploadLibraryProcedure,
@@ -153,6 +164,7 @@ type agentServiceClient struct {
 	getInventory  *connect.Client[v1.GetInventoryRequest, v1.GetInventoryResponse]
 	getMetrics    *connect.Client[v1.GetMetricsRequest, v1.GetMetricsResponse]
 	getStorage    *connect.Client[v1.GetStorageRequest, v1.GetStorageResponse]
+	getNetworks   *connect.Client[v1.GetNetworksRequest, v1.GetNetworksResponse]
 	uploadLibrary *connect.Client[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
 }
 
@@ -196,6 +208,11 @@ func (c *agentServiceClient) GetStorage(ctx context.Context, req *connect.Reques
 	return c.getStorage.CallUnary(ctx, req)
 }
 
+// GetNetworks calls nodal.agent.v1.AgentService.GetNetworks.
+func (c *agentServiceClient) GetNetworks(ctx context.Context, req *connect.Request[v1.GetNetworksRequest]) (*connect.Response[v1.GetNetworksResponse], error) {
+	return c.getNetworks.CallUnary(ctx, req)
+}
+
 // UploadLibrary calls nodal.agent.v1.AgentService.UploadLibrary.
 func (c *agentServiceClient) UploadLibrary(ctx context.Context) *connect.ClientStreamForClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse] {
 	return c.uploadLibrary.CallClientStream(ctx)
@@ -216,6 +233,8 @@ type AgentServiceHandler interface {
 	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
 	// GetStorage observes known Directory pools. It does not delete objects.
 	GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error)
+	// GetNetworks observes known network objects. It does not delete objects.
+	GetNetworks(context.Context, *connect.Request[v1.GetNetworksRequest]) (*connect.Response[v1.GetNetworksResponse], error)
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error)
 }
@@ -275,6 +294,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("GetStorage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceGetNetworksHandler := connect.NewUnaryHandler(
+		AgentServiceGetNetworksProcedure,
+		svc.GetNetworks,
+		connect.WithSchema(agentServiceMethods.ByName("GetNetworks")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceUploadLibraryHandler := connect.NewClientStreamHandler(
 		AgentServiceUploadLibraryProcedure,
 		svc.UploadLibrary,
@@ -299,6 +324,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceGetMetricsHandler.ServeHTTP(w, r)
 		case AgentServiceGetStorageProcedure:
 			agentServiceGetStorageHandler.ServeHTTP(w, r)
+		case AgentServiceGetNetworksProcedure:
+			agentServiceGetNetworksHandler.ServeHTTP(w, r)
 		case AgentServiceUploadLibraryProcedure:
 			agentServiceUploadLibraryHandler.ServeHTTP(w, r)
 		default:
@@ -340,6 +367,10 @@ func (UnimplementedAgentServiceHandler) GetMetrics(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetStorage is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetNetworks(context.Context, *connect.Request[v1.GetNetworksRequest]) (*connect.Response[v1.GetNetworksResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetNetworks is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error) {

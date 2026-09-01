@@ -188,3 +188,73 @@ export async function uploadImage(poolId: string, kind: string, file: File): Pro
   }
   return (await res.json()) as import("./phase3").LibraryItem;
 }
+
+export async function listNetworks(): Promise<import("./phase4").NetworkListResponse> {
+  return readJson(await request("/networks"));
+}
+
+export async function createNetwork(
+  body: {
+    name: string;
+    kind: string;
+    ipv4_cidr?: string;
+    uplink_ifname?: string;
+    confirm_ifname?: string;
+    dry_run?: boolean;
+  },
+  confirmToken?: string,
+): Promise<import("./phase4").Network | import("./phase4").NetworkPreview | import("./phase4").ConfirmRequired> {
+  const headers = new Headers();
+  if (confirmToken) {
+    headers.set("X-Nodal-Confirm", confirmToken);
+  }
+  const res = await request("/networks", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const parsed = (await res.json().catch(() => ({ error: `Request failed (${res.status})` }))) as
+    | import("./phase4").Network
+    | import("./phase4").NetworkPreview
+    | import("./phase4").ConfirmRequired;
+  if (res.status === 409) {
+    return parsed;
+  }
+  if (!res.ok) {
+    const message =
+      parsed && "error" in parsed && typeof parsed.error === "string" ? parsed.error : `Request failed (${res.status})`;
+    throw new ApiError(res.status, message);
+  }
+  return parsed;
+}
+
+export async function applyNetwork(
+  id: string,
+  dryRun: boolean,
+  confirmIfName?: string,
+  confirmToken?: string,
+): Promise<import("./phase4").Network | import("./phase4").NetworkPreview | import("./phase4").ConfirmRequired> {
+  const headers = new Headers();
+  if (confirmToken) {
+    headers.set("X-Nodal-Confirm", confirmToken);
+  }
+  const q = dryRun ? "?dry_run=true" : "";
+  const res = await request(`/networks/${id}/apply${q}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ confirm_ifname: confirmIfName, dry_run: dryRun }),
+  });
+  const parsed = (await res.json().catch(() => ({ error: `Request failed (${res.status})` }))) as
+    | import("./phase4").Network
+    | import("./phase4").NetworkPreview
+    | import("./phase4").ConfirmRequired;
+  if (res.status === 409) {
+    return parsed;
+  }
+  if (!res.ok) {
+    const message =
+      parsed && "error" in parsed && typeof parsed.error === "string" ? parsed.error : `Request failed (${res.status})`;
+    throw new ApiError(res.status, message);
+  }
+  return parsed;
+}

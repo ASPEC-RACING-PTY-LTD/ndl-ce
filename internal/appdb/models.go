@@ -67,6 +67,17 @@ type Store interface {
 	GetLibraryItem(ctx context.Context, clusterID, id string) (*LibraryItem, error)
 	GetLibraryByChecksum(ctx context.Context, poolID, checksum string) (*LibraryItem, error)
 	UpdateLibraryObserved(ctx context.Context, item LibraryItem) error
+
+	CreateNetwork(ctx context.Context, n Network) error
+	ListNetworks(ctx context.Context, clusterID string) ([]Network, error)
+	GetNetwork(ctx context.Context, clusterID, id string) (*Network, error)
+	UpdateNetworkObserved(ctx context.Context, n Network) error
+
+	CreateAddress(ctx context.Context, a Address) error
+	ListAddresses(ctx context.Context, clusterID, networkID string) ([]Address, error)
+
+	CreateReservation(ctx context.Context, r DHCPReservation) error
+	ListReservations(ctx context.Context, clusterID, networkID string) ([]DHCPReservation, error)
 }
 
 // Cluster is the appliance cluster of one.

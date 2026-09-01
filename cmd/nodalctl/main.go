@@ -41,6 +41,9 @@ func run(args []string) error {
   storage volume create --pool-id ID --class CLASS --size-bytes N
   storage image list
   storage image upload --pool-id ID --kind KIND --file PATH
+  network list
+  network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
+  network apply --id ID [--dry-run] [--confirm-ifname IF]
 `)
 		return nil
 	}
@@ -80,6 +83,8 @@ func run(args []string) error {
 		return cmdGet("/api/v1/events")
 	case "storage":
 		return cmdStorage(args[1:])
+	case "network":
+		return cmdNetwork(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -288,6 +293,87 @@ func cmdUploadImage(poolID, kind, file string) error {
 		return fmt.Errorf("%s: %s", res.Status, strings.TrimSpace(string(b)))
 	}
 	fmt.Println(string(b))
+	return nil
+}
+
+func cmdNetwork(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl network list|create|apply ...")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/networks")
+	case "create":
+		f := parseFlags(args[1:])
+		body := map[string]any{
+			"name": f["name"], "kind": f["kind"], "ipv4_cidr": f["cidr"],
+			"uplink_ifname": f["uplink"], "confirm_ifname": f["confirm-ifname"],
+			"dry_run": f["dry-run"] == "true",
+		}
+		headers := map[string]string{}
+		if tok := f["confirm"]; tok != "" {
+			headers["X-Nodal-Confirm"] = tok
+		}
+		return postJSONHeaders("/api/v1/networks", body, true, headers)
+	case "apply":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl network apply --id ID [--dry-run]")
+		}
+		path := "/api/v1/networks/" + f["id"] + "/apply"
+		if f["dry-run"] == "true" {
+			path += "?dry_run=true"
+		}
+		body := map[string]any{"confirm_ifname": f["confirm-ifname"], "uplink_ifname": f["uplink"]}
+		headers := map[string]string{}
+		if tok := f["confirm"]; tok != "" {
+			headers["X-Nodal-Confirm"] = tok
+		}
+		return postJSONHeaders(path, body, true, headers)
+	default:
+		return fmt.Errorf("unknown network command")
+	}
+}
+
+func postJSONHeaders(path string, body any, saveSession bool, headers map[string]string) error {
+	var rdr io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rdr = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequest("POST", baseURL()+path, rdr)
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	if saveSession {
+		if c, err := os.ReadFile(sessionFile()); err == nil {
+			req.Header.Set("Cookie", strings.TrimSpace(string(c)))
+		}
+		if tok := os.Getenv("NODAL_TOKEN"); tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	out, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("%s: %s", res.Status, strings.TrimSpace(string(out)))
+	}
+	if len(out) > 0 {
+		fmt.Println(string(out))
+	}
 	return nil
 }
 

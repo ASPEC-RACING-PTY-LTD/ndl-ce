@@ -16,10 +16,10 @@ RestartSec=2
 # The socket unit owns /run/ndl. Do not set RuntimeDirectory=ndl here;
 # a service restart would delete agent.sock.
 NoNewPrivileges=yes
-CapabilityBoundingSet=
+CapabilityBoundingSet=CAP_NET_ADMIN
 DevicePolicy=closed
-# Phase 1 needs files and the unix socket only.
-# Device allowlist is added when inventory and KVM land.
+# CAP_NET_ADMIN is required for isolated-nat nftables. File and
+# networkd drop-in writes do not need extra capabilities.
 # ExecStop must not stop guest workload units.
 
 [Install]
