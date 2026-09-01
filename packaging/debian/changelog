@@ -1,3 +1,9 @@
+nodal (0.1.8) UNRELEASED; urgency=medium
+
+  * Phase 9 HTTPS and certificates for the management plane
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.7) UNRELEASED; urgency=medium
 
   * Phase 8 product virtual machines (Dogfood Host)

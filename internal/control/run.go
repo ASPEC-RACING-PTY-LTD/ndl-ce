@@ -17,6 +17,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/httpapi"
+	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/store"
 	"github.com/no-dal/ndl-ce/migrations"
@@ -24,21 +25,27 @@ import (
 
 // Config is process configuration.
 type Config struct {
-	Listen    string
-	DSN       string
-	UIDir     string
-	SetupHash string
-	AgentSock string
+	Listen     string
+	TLSListen  string
+	HTTPListen string
+	CertDir    string
+	DSN        string
+	UIDir      string
+	SetupHash  string
+	AgentSock  string
 }
 
 // LoadConfig reads environment.
 func LoadConfig() Config {
 	c := Config{
-		Listen:    getenv("NODAL_LISTEN", ":8080"),
-		DSN:       first(os.Getenv("NODAL_DSN"), os.Getenv("NODAL_DATABASE_URL")),
-		UIDir:     getenv("NODAL_UI_DIR", "/usr/share/ndl/ui"),
-		SetupHash: os.Getenv("NODAL_SETUP_HASH"),
-		AgentSock: os.Getenv("NODAL_AGENT_SOCKET"),
+		Listen:     getenv("NODAL_LISTEN", ":8080"),
+		TLSListen:  getenv("NODAL_TLS_LISTEN", ":443"),
+		HTTPListen: getenv("NODAL_HTTP_LISTEN", ":80"),
+		CertDir:    getenv("NODAL_CERT_DIR", "/var/lib/ndl/certs"),
+		DSN:        first(os.Getenv("NODAL_DSN"), os.Getenv("NODAL_DATABASE_URL")),
+		UIDir:      getenv("NODAL_UI_DIR", "/usr/share/ndl/ui"),
+		SetupHash:  os.Getenv("NODAL_SETUP_HASH"),
+		AgentSock:  os.Getenv("NODAL_AGENT_SOCKET"),
 	}
 	if c.DSN == "" {
 		c.DSN = "postgresql:///nodal?host=/var/run/postgresql"
@@ -85,24 +92,71 @@ func Run(cfg Config) error {
 	}
 	hub := &httpapi.EventHub{}
 	agent := agentrpc.Client{Socket: cfg.AgentSock}
+	challenges := &ndltls.ChallengeMem{}
 	srv := &httpapi.Server{
-		Store:     st,
-		Lockout:   auth.NewLockout(),
-		Agent:     agent,
-		Observer:  agent,
-		Storage:   agent,
-		Network:   agent,
-		Workloads: agent,
-		IO:        agent,
-		QEMU:      httpapi.AdaptQEMU(agent),
-		VM:        httpapi.AdaptVM(agent),
-		Hub:       hub,
-		UI:        ui,
-		SetupHash: cfg.SetupHash,
+		Store:      st,
+		Lockout:    auth.NewLockout(),
+		Agent:      agent,
+		Observer:   agent,
+		Storage:    agent,
+		Network:    agent,
+		Workloads:  agent,
+		IO:         agent,
+		QEMU:       httpapi.AdaptQEMU(agent),
+		VM:         httpapi.AdaptVM(agent),
+		Hub:        hub,
+		UI:         ui,
+		SetupHash:  cfg.SetupHash,
+		TLSListen:  cfg.TLSListen,
+		HTTPListen: cfg.HTTPListen,
+		CertDir:    ndltls.Dir{Root: cfg.CertDir},
+		Challenges: challenges,
+	}
+	enabled, err := certificateEnabled(ctx, st)
+	if err != nil {
+		return fmt.Errorf("tls state is unreadable; refusing to start: %w", err)
+	}
+	if enabled {
+		srv.TLSRequired = true
 	}
 	go observer{Store: st, Agent: agent, Hub: hub}.run(context.Background())
+	handler := srv.Handler()
+	if srv.TLSRequired {
+		mat, err := loadEnabledMaterial(cfg.CertDir)
+		if err != nil {
+			return fmt.Errorf("tls is enabled; refusing to start without last-good material: %w", err)
+		}
+		srv.TLSServing = true
+		redir := redirectHandler("", challenges)
+		go func() {
+			log.Printf("ndl-control HTTP redirect on %s", cfg.Listen)
+			_ = http.ListenAndServe(cfg.Listen, redir)
+		}()
+		if cfg.HTTPListen != "" && cfg.HTTPListen != cfg.Listen {
+			go func() {
+				log.Printf("ndl-control HTTP redirect on %s", cfg.HTTPListen)
+				_ = http.ListenAndServe(cfg.HTTPListen, redir)
+			}()
+		}
+		return serveTLS(cfg.TLSListen, mat.Certificate, handler)
+	}
 	log.Printf("ndl-control listening on %s", cfg.Listen)
-	return http.ListenAndServe(cfg.Listen, srv.Handler())
+	return http.ListenAndServe(cfg.Listen, handler)
+}
+
+func certificateEnabled(ctx context.Context, st appdb.Store) (bool, error) {
+	c, err := st.GetCluster(ctx)
+	if err != nil {
+		return false, err
+	}
+	if c == nil {
+		return false, nil
+	}
+	cert, err := st.GetCertificate(ctx, c.ID)
+	if err != nil {
+		return false, err
+	}
+	return cert != nil && cert.Enabled, nil
 }
 
 func ensureReady(ctx context.Context, st appdb.Store, setupHash string) error {

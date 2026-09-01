@@ -218,6 +218,9 @@ export function CertificatePage() {
               <p className="banner banner-warn" role="status">
                 TLS is enabled. Use the HTTPS management URL. Do not treat cleartext HTTP as the normal
                 management address.
+                {certs.restart_required
+                  ? " Restart ndl-control to apply this certificate to the HTTPS listener. Until then this process still serves the previous listener."
+                  : ""}
               </p>
             ) : null}
           </article>

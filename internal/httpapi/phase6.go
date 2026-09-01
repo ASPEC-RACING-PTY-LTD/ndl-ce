@@ -144,6 +144,9 @@ func (s *Server) getIOSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
+	if !s.requireTLS(w, r) {
+		return
+	}
 	if r.URL.Query().Get("ticket") != "" || r.URL.Query().Get("X-Nodal-Ticket") != "" {
 		writeErr(w, http.StatusBadRequest, "ticket must be sent in X-Nodal-Ticket")
 		return

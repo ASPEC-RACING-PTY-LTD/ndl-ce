@@ -92,4 +92,5 @@ for cand in $ips; do
 done
 
 echo "No-dal is installed."
-echo "Open http://${addr}:8080/setup"
+echo "Until TLS is enabled, setup is at http://${addr}:8080/setup"
+echo "After enabling TLS, open https://${addr}/setup"

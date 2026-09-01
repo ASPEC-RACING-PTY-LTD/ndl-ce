@@ -53,6 +53,26 @@ qemu-img convert is refused while the source or destination disk is attached
 to a running unit, and when applied or unit state cannot be proven stopped.
 Live disk mutation is an error, not a warning.
 
+## TLS (Phase 9)
+
+Private keys live under `/var/lib/ndl/certs` mode 0600. PostgreSQL stores
+fingerprint and mode only. The API never returns a private key.
+
+Enabling TLS requires `X-Nodal-Confirm: enable-tls`. Restart `ndl-control`
+after generate or import so the process binds HTTPS. A bad import keeps the
+last good certificate pair and does not fall back to open HTTP.
+
+When TLS is enabled, port 80 and the previous HTTP listen address redirect
+to HTTPS. ACME HTTP-01 tokens are served on `/.well-known/acme-challenge/`
+without redirect. Event streams and IO websockets refuse cleartext.
+
+Let's Encrypt (public HTTP-01) and step-ca (private ACME directory URL) use
+the same ACME fields. Directory probe failure is recorded as `failed`, not
+as an issued certificate.
+
+Self-signed trust is the SHA-256 fingerprint shown in the UI. It is not a
+public CA.
+
 Console uses `compute.console` and a short-lived ticket. It does not grant
 `terminal.open`. VM Terminal and Files remain Phase 20.
 

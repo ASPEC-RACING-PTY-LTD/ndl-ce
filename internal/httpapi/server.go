@@ -18,6 +18,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 )
@@ -40,21 +41,29 @@ type Observer interface {
 
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
-	Store      appdb.Store
-	Lockout    *auth.Lockout
-	Agent      Agent
-	Observer   Observer
-	Storage    StorageRPC
-	Network    NetworkRPC
-	Workloads  WorkloadRPC
-	IO         IORPC
-	QEMU       QemuRPC
-	VM         VMRPC
-	Hub        *EventHub
-	UI         fs.FS
-	Now        func() time.Time
-	SetupHash  string
-	AllowedUID uint32
+	Store       appdb.Store
+	Lockout     *auth.Lockout
+	Agent       Agent
+	Observer    Observer
+	Storage     StorageRPC
+	Network     NetworkRPC
+	Workloads   WorkloadRPC
+	IO          IORPC
+	QEMU        QemuRPC
+	VM          VMRPC
+	Hub         *EventHub
+	UI          fs.FS
+	Now         func() time.Time
+	SetupHash   string
+	AllowedUID  uint32
+	TLSRequired bool
+	TLSServing  bool // true when this process is listening with TLS
+	CertDirty   bool // true when on-disk material changed since TLSServing
+	TLSListen   string
+	HTTPListen  string
+	HTTPSURL    string
+	CertDir     ndltls.Dir
+	Challenges  *ndltls.ChallengeMem
 }
 
 type principal struct {
@@ -139,6 +148,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/lab/qemu-proto", s.labQemuProtoStatus)
 	mux.HandleFunc("POST /api/v1/lab/qemu-proto/stop", s.labQemuProtoStop)
 	mux.HandleFunc("POST /api/v1/lab/qemu-proto/kill", s.labQemuProtoKill)
+	mux.HandleFunc("GET /api/v1/certs", s.getCerts)
+	mux.HandleFunc("POST /api/v1/certs/generate", s.generateCert)
+	mux.HandleFunc("POST /api/v1/certs/import", s.importCert)
+	mux.HandleFunc("POST /api/v1/certs/acme", s.acmeCert)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}
@@ -169,9 +182,10 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	open, _ := s.setupOpen(r.Context())
 	status := "ok"
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":     status,
-		"service":    "ndl-control",
-		"setup_open": open,
+		"status":      status,
+		"service":     "ndl-control",
+		"setup_open":  open,
+		"tls_enabled": s.TLSRequired,
 	})
 }
 
@@ -353,7 +367,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.RevokeSession(r.Context(), p.SessID)
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.cookieSecure(r), SameSite: http.SameSiteLaxMode})
 	s.audit(r, p.User.ClusterID, p.User.ID, "auth.logout", "ok", "")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -502,6 +516,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 		Value:    raw,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   s.cookieSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  sess.ExpiresAt,
 	})

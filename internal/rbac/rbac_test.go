@@ -58,7 +58,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, TerminalOpen) || !Authorize(op, FilesUpload) || !Authorize(op, FilesDelete) {
 		t.Fatal("operator CT terminal and files")
 	}
-	if Authorize(nil, NodeRead) {
-		t.Fatal("deny by default")
+	if Authorize(view, SettingsTLSManage) || Authorize(op, SettingsTLSManage) {
+		t.Fatal("only admin may manage TLS")
+	}
+	if !Authorize(view, SettingsTLSRead) || !Authorize(op, SettingsTLSRead) {
+		t.Fatal("tls status is readable")
 	}
 }

@@ -23,8 +23,10 @@ repo over HTTPS, runs `apt-get install -y nodal`, waits for
 Open http://ADDR:8080/setup
 ```
 
-`ADDR` is the first IPv4 from `hostname -I`, or `127.0.0.1`. The URL
-is HTTP in this phase. HTTPS is a later phase.
+`ADDR` is the first IPv4 from `hostname -I`, or `127.0.0.1`. Until TLS
+is enabled the setup URL is HTTP on port 8080. After you generate or
+import a certificate, the management URL is `https://ADDR/setup`.
+HTTP then redirects to HTTPS except for ACME HTTP-01 challenges.
 
 Override the repo if needed:
 
@@ -45,7 +47,9 @@ Package postinst does that.
    Debian 13 (`trixie`) with `Signed-By` pointing at that keyring.
 3. `apt-get update`
 4. `apt-get install -y nodal`
-5. Open `http://ADDR:8080/setup` and claim the first admin.
+5. Open `http://ADDR:8080/setup` and claim the first admin. Then enable
+   TLS from Certificates (`nodalctl cert generate --cn ADDR --confirm enable-tls`)
+   and use `https://ADDR/setup` going forward.
 
 Result matches the one-line path: same packages, same units, same
 `/setup` flow. No factory password is created.

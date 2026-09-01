@@ -1231,6 +1231,8 @@ components:
             - ndl-control
         setup_open:
           type: boolean
+        tls_enabled:
+          type: boolean
     SetupStatusResponse:
       type: object
       additionalProperties: false
@@ -2138,6 +2140,9 @@ components:
           type: string
         trust_note:
           type: string
+        restart_required:
+          type: boolean
+          description: True when on-disk material is not yet served by this process. Restart ndl-control to apply.
     GenerateCertRequest:
       type: object
       additionalProperties: false

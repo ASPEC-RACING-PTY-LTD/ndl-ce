@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -61,6 +62,10 @@ func run(args []string) error {
   lab qemu-proto status
   lab qemu-proto stop
   lab qemu-proto kill
+  cert status
+  cert generate --cn NAME [--san HOST] --confirm enable-tls
+  cert import --cert FILE --key FILE --confirm enable-tls
+  cert acme --directory URL --email EMAIL --domain NAME --confirm enable-tls
 `)
 		return nil
 	}
@@ -113,6 +118,8 @@ func run(args []string) error {
 		return cmdWorkload(args[1:])
 	case "lab":
 		return cmdLab(args[1:])
+	case "cert":
+		return cmdCert(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -121,6 +128,9 @@ func run(args []string) error {
 func baseURL() string {
 	if u := os.Getenv("NODAL_URL"); u != "" {
 		return strings.TrimRight(u, "/")
+	}
+	if _, err := os.Stat("/var/lib/ndl/certs/current.crt"); err == nil {
+		return "https://127.0.0.1"
 	}
 	return "http://127.0.0.1:8080"
 }
@@ -229,7 +239,10 @@ func do(method, path string, body any, useSession bool) ([]byte, error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar}
+	client := &http.Client{Jar: jar, Transport: nodalTransport()}
+	if f := strings.TrimSpace(os.Getenv("NODAL_CONFIRM")); f != "" && req.Header.Get("X-Nodal-Confirm") == "" {
+		req.Header.Set("X-Nodal-Confirm", f)
+	}
 	if useSession {
 		if c, err := os.ReadFile(sessionFile()); err == nil {
 			req.Header.Set("Cookie", strings.TrimSpace(string(c)))
@@ -606,6 +619,62 @@ func cmdLab(args []string) error {
 		return postJSON("/api/v1/lab/qemu-proto/kill", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl lab qemu-proto start|status|stop|kill")
+	}
+}
+
+func nodalTransport() http.RoundTripper {
+	tr, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+	clone := tr.Clone()
+	if os.Getenv("NODAL_TLS_INSECURE") == "1" || strings.HasPrefix(baseURL(), "https://127.0.0.1") {
+		clone.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	return clone
+}
+
+func cmdCert(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: nodalctl cert status|generate|import|acme")
+	}
+	switch args[0] {
+	case "status":
+		return cmdGet("/api/v1/certs")
+	case "generate":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		sans := []string{}
+		if f["san"] != "" {
+			sans = []string{f["san"]}
+		}
+		return postJSON("/api/v1/certs/generate", map[string]any{"common_name": f["cn"], "sans": sans}, true)
+	case "import":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		certPEM, err := os.ReadFile(f["cert"])
+		if err != nil {
+			return err
+		}
+		keyPEM, err := os.ReadFile(f["key"])
+		if err != nil {
+			return err
+		}
+		return postJSON("/api/v1/certs/import", map[string]any{"cert_pem": string(certPEM), "key_pem": string(keyPEM)}, true)
+	case "acme":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/certs/acme", map[string]any{
+			"directory": f["directory"], "email": f["email"], "domain": f["domain"],
+		}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl cert status|generate|import|acme")
 	}
 }
 

@@ -4,6 +4,7 @@ export interface HealthResponse {
   status: "ok" | "starting";
   service: "ndl-control";
   setup_open?: boolean;
+  tls_enabled?: boolean;
 }
 
 export interface SetupStatusResponse {
@@ -417,6 +418,7 @@ export interface CertificateStatus {
   http_listen?: string;
   https_url?: string;
   trust_note?: string;
+  restart_required?: boolean;
 }
 
 export interface GenerateCertRequest {

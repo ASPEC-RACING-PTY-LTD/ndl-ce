@@ -44,6 +44,8 @@ const (
 	FilesDelete         = "files.delete"
 	FilesPermissions    = "files.permissions"
 	FilesOwnership      = "files.ownership"
+	SettingsTLSRead     = "settings.tls.read"
+	SettingsTLSManage   = "settings.tls.manage"
 	All                 = "*"
 )
 
@@ -67,9 +69,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			ComputeRead, ComputeCreate, ComputeLifecycle,
 			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
+			SettingsTLSRead,
 		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead, FilesRead}
+		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead}
 	default:
 		return nil
 	}

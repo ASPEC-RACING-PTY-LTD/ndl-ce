@@ -189,6 +189,9 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
+	if !s.requireTLS(w, r) {
+		return
+	}
 	p, err := s.require(w, r, rbac.EventsRead)
 	if err != nil {
 		return

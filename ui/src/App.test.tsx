@@ -379,7 +379,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /^certificates$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^certificates$/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^status$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^status$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /generate self-signed/i })).toBeVisible();
     expect(screen.queryByRole("button", { name: /download.*key/i })).not.toBeInTheDocument();
   });

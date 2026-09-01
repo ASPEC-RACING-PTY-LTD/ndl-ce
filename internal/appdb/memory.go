@@ -35,6 +35,7 @@ type Memory struct {
 	vmCidata      map[string]VMCidata
 	vmFirmware    map[string]VMFirmware
 	ioSessions    map[string]IOSession
+	certificate   *Certificate
 }
 
 // NewMemory returns an empty store.

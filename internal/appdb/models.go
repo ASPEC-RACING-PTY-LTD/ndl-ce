@@ -107,6 +107,9 @@ type Store interface {
 	GetIOSession(ctx context.Context, clusterID, id string) (*IOSession, error)
 	GetIOSessionByTicketHash(ctx context.Context, ticketHash string) (*IOSession, error)
 	UpdateIOSession(ctx context.Context, s IOSession) error
+
+	GetCertificate(ctx context.Context, clusterID string) (*Certificate, error)
+	UpsertCertificate(ctx context.Context, c Certificate) error
 }
 
 // Cluster is the appliance cluster of one.

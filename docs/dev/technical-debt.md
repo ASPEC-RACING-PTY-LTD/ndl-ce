@@ -55,3 +55,9 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. TAP devices are created at prepare and not always deleted on a clean stop; cleanup runs on failed prepare and VM delete. Why not blocking: names are `nv` plus hex and stay on the VM bridge; leaked TAPs do not attach a second QEMU. Later lifecycle polish can delete on stop.
 - LOW. `ip link delete` allowlist still accepts any `nv*` name if last-applied is tampered. Why not blocking: TAP names are compiled, and delete already refuses unmanaged names that are not derived.
 
+## Phase 9
+
+- MEDIUM. ACME HTTP-01 issuance is a directory probe plus stored pending/failed state, not a completed Let's Encrypt issuance in Cloud. Why not blocking: generate and import are the Dogfood TLS path; ACME for public names and step-ca is documented and probed honestly.
+- MEDIUM. After generate/import, HTTPS redirect starts on ndl-control restart (`restart_required`), not in the same process. Why not blocking: confirm is required, cookies/WS harden immediately, and the UI tells the operator to restart.
+- LOW. Binding :443 requires CAP_NET_BIND_SERVICE on ndl-control. Why not blocking: the unit is still non-root.
+
