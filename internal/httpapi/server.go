@@ -49,6 +49,7 @@ type Server struct {
 	Workloads  WorkloadRPC
 	IO         IORPC
 	QEMU       QemuRPC
+	VM         VMRPC
 	Hub        *EventHub
 	UI         fs.FS
 	Now        func() time.Time
@@ -112,8 +113,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/start", s.lifecycleWorkload("start"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/stop", s.lifecycleWorkload("stop"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/restart", s.lifecycleWorkload("restart"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/force-stop", s.lifecycleWorkload("force-stop"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/delete", s.lifecycleWorkload("delete"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/clone", s.lifecycleWorkload("clone"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/console/sessions", s.createVMConsole)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/terminal/sessions", s.createNodeTerminal)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/terminal/sessions", s.createWorkloadTerminal)
 	mux.HandleFunc("GET /api/v1/io/sessions/{id}", s.getIOSession)

@@ -46,10 +46,13 @@ func run(args []string) error {
   network apply --id ID [--dry-run] [--confirm-ifname IF]
   workload list
   workload create --kind system-container --name NAME --image-pin PIN --pool-id ID --network-id ID [--cpus N] [--memory-bytes N] [--privileged]
+  workload create --kind vm --name NAME --network-id ID [--pool-id ID] [--cpus N] [--memory-bytes N] [--firmware bios|uefi] [--cloud-image-id ID] [--iso-library-id ID] [--autostart] [--nocloud-user USER] [--nocloud-host HOST]
   workload get --id ID
   workload start --id ID
   workload stop --id ID
   workload restart --id ID
+  workload force-stop --id ID
+  workload update --id ID [--cpus N] [--memory-bytes N] [--autostart true|false]
   workload delete --id ID
   workload clone --id ID [--name NAME]
   node terminal [--id ID] [--cwd PATH]
@@ -187,6 +190,26 @@ func postJSON(path string, body any, saveSession bool) error {
 		fmt.Println(string(resp))
 	}
 	return nil
+}
+
+func patchJSON(path string, body any, saveSession bool) error {
+	resp, err := do("PATCH", path, body, saveSession)
+	if err != nil {
+		return err
+	}
+	if len(resp) > 0 {
+		fmt.Println(string(resp))
+	}
+	return nil
+}
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func do(method, path string, body any, useSession bool) ([]byte, error) {
@@ -404,7 +427,7 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 
 func cmdWorkload(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|delete|clone|files")
+		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|files")
 	}
 	switch args[0] {
 	case "list":
@@ -423,6 +446,28 @@ func cmdWorkload(args []string) error {
 			"name": f["name"], "kind": kind, "image_pin": f["image-pin"],
 			"pool_id": f["pool-id"], "network_id": f["network-id"],
 			"privileged": f["privileged"] == "true",
+		}
+		if kind == "vm" {
+			body["firmware"] = firstNonEmpty(f["firmware"], "bios")
+			body["autostart"] = f["autostart"] == "true"
+			if f["cloud-image-id"] != "" {
+				body["cloud_image_id"] = f["cloud-image-id"]
+			}
+			if f["iso-library-id"] != "" {
+				body["iso_library_id"] = f["iso-library-id"]
+			}
+			nocloud := map[string]any{"enable": true}
+			if f["nocloud-user"] != "" {
+				nocloud["username"] = f["nocloud-user"]
+			}
+			if f["nocloud-host"] != "" {
+				nocloud["hostname"] = f["nocloud-host"]
+			} else if f["name"] != "" {
+				nocloud["hostname"] = f["name"]
+			}
+			body["nocloud"] = nocloud
+			delete(body, "image_pin")
+			delete(body, "privileged")
 		}
 		if cpus > 0 {
 			body["cpus"] = cpus
@@ -446,7 +491,37 @@ func cmdWorkload(args []string) error {
 		if f["id"] == "" {
 			return fmt.Errorf("usage: nodalctl workload %s --id ID", args[0])
 		}
-		return postJSON("/api/v1/workloads/"+f["id"]+"/"+args[0], map[string]any{}, true)
+		headers := map[string]string{}
+		if args[0] == "delete" {
+			headers["X-Nodal-Confirm"] = "delete"
+		}
+		return postJSONHeaders("/api/v1/workloads/"+f["id"]+"/"+args[0], map[string]any{}, true, headers)
+	case "force-stop":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload force-stop --id ID")
+		}
+		return postJSON("/api/v1/workloads/"+f["id"]+"/force-stop", map[string]any{}, true)
+	case "update":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload update --id ID [--cpus N] [--memory-bytes N] [--autostart true|false]")
+		}
+		body := map[string]any{}
+		var cpus int
+		var mem int64
+		fmt.Sscan(f["cpus"], &cpus)
+		fmt.Sscan(f["memory-bytes"], &mem)
+		if cpus > 0 {
+			body["cpus"] = cpus
+		}
+		if mem > 0 {
+			body["memory_bytes"] = mem
+		}
+		if f["autostart"] == "true" || f["autostart"] == "false" {
+			body["autostart"] = f["autostart"] == "true"
+		}
+		return patchJSON("/api/v1/workloads/"+f["id"], body, true)
 	case "clone":
 		f := parseFlags(args[1:])
 		if f["id"] == "" {

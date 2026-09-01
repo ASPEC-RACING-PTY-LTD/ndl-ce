@@ -43,6 +43,15 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, ComputeCreate) || !Authorize(op, ComputeLifecycle) {
 		t.Fatal("operator unprivileged create and lifecycle")
 	}
+	if !Authorize(op, ComputeModify) || !Authorize(op, ComputeStart) || !Authorize(op, ComputeStop) || !Authorize(op, ComputeDelete) || !Authorize(op, ComputeConsole) {
+		t.Fatal("operator phase 8 compute permissions")
+	}
+	if Authorize(view, ComputeModify) || Authorize(view, ComputeStart) || Authorize(view, ComputeConsole) || Authorize(view, ComputeDelete) {
+		t.Fatal("viewer compute remains read-only")
+	}
+	if Authorize(view, TerminalOpen) {
+		t.Fatal("viewer must not have terminal")
+	}
 	if !Authorize(view, FilesRead) || Authorize(view, FilesDownload) || Authorize(view, TerminalOpen) {
 		t.Fatal("viewer files.read only, no download, no terminal")
 	}

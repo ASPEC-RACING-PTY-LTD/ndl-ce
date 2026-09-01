@@ -15,6 +15,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
+	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
 // WorkloadRPC is the privileged agent surface for system containers.
@@ -25,22 +26,36 @@ type WorkloadRPC interface {
 }
 
 type createWorkloadRequest struct {
-	Name         string `json:"name"`
-	Kind         string `json:"kind"`
-	ImagePin     string `json:"image_pin"`
-	CPUs         int    `json:"cpus"`
-	MemoryBytes  int64  `json:"memory_bytes"`
-	PoolID       string `json:"pool_id"`
-	NetworkID    string `json:"network_id"`
-	VolumeID     string `json:"volume_id"`
-	Privileged   bool   `json:"privileged"`
-	DesiredPower string `json:"desired_power"`
+	Name         string          `json:"name"`
+	Kind         string          `json:"kind"`
+	ImagePin     string          `json:"image_pin"`
+	CPUs         int             `json:"cpus"`
+	MemoryBytes  int64           `json:"memory_bytes"`
+	PoolID       string          `json:"pool_id"`
+	NetworkID    string          `json:"network_id"`
+	VolumeID     string          `json:"volume_id"`
+	Privileged   bool            `json:"privileged"`
+	DesiredPower string          `json:"desired_power"`
+	Firmware     string          `json:"firmware"`
+	Autostart    bool            `json:"autostart"`
+	Balloon      bool            `json:"balloon"`
+	ISOLibraryID string          `json:"iso_library_id"`
+	CloudImageID string          `json:"cloud_image_id"`
+	NoCloud      vmspec.NoCloud  `json:"nocloud"`
+	Spec         json.RawMessage `json:"spec"`
+	QEMUArgs     []string        `json:"qemu_args"`
+	Command      string          `json:"command"`
 }
 
 type patchWorkloadRequest struct {
-	CPUs         int    `json:"cpus"`
-	MemoryBytes  int64  `json:"memory_bytes"`
-	DesiredPower string `json:"desired_power"`
+	Name         string          `json:"name"`
+	CPUs         int             `json:"cpus"`
+	MemoryBytes  int64           `json:"memory_bytes"`
+	DesiredPower string          `json:"desired_power"`
+	Firmware     string          `json:"firmware"`
+	Autostart    *bool           `json:"autostart"`
+	ISOLibraryID *string         `json:"iso_library_id"`
+	NoCloud      *vmspec.NoCloud `json:"nocloud"`
 }
 
 type cloneWorkloadRequest struct {
@@ -97,6 +112,14 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Kind = normalizeKind(req.Kind)
 	req.ImagePin = strings.TrimSpace(req.ImagePin)
+	if len(req.QEMUArgs) > 0 || strings.TrimSpace(req.Command) != "" {
+		writeErr(w, http.StatusBadRequest, "raw QEMU arguments are not allowed")
+		return
+	}
+	if req.Kind == vmspec.KindVM {
+		s.createVM(w, r, p, req)
+		return
+	}
 	if req.Name == "" || req.ImagePin == "" {
 		writeErr(w, http.StatusBadRequest, "name and image_pin are required")
 		return
@@ -314,6 +337,10 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 			writeErr(w, http.StatusNotFound, "workload not found")
 			return
 		}
+		if row.Kind == vmspec.KindVM {
+			s.vmLifecycle(w, r, p, *row, action)
+			return
+		}
 		if s.Workloads == nil {
 			writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
 			return
@@ -382,6 +409,10 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 	row, err := s.Store.GetWorkload(r.Context(), p.User.ClusterID, r.PathValue("id"))
 	if err != nil || row == nil {
 		writeErr(w, http.StatusNotFound, "workload not found")
+		return
+	}
+	if row.Kind == vmspec.KindVM {
+		s.patchVM(w, r, p, *row)
 		return
 	}
 	var req patchWorkloadRequest
@@ -541,11 +572,11 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 	nics, _ := s.Store.ListWorkloadNICs(ctx, w.ClusterID, w.ID)
 	diskOut := make([]map[string]any, 0, len(disks))
 	for _, d := range disks {
-		diskOut = append(diskOut, map[string]any{"id": d.ID, "volume_id": d.VolumeID, "role": d.Role})
+		diskOut = append(diskOut, map[string]any{"id": d.ID, "volume_id": d.VolumeID, "role": d.Role, "slot": d.Slot, "pci_addr": d.BusAddr, "read_only": d.ReadOnly, "format": d.Format})
 	}
 	nicOut := make([]map[string]any, 0, len(nics))
 	for _, n := range nics {
-		nicOut = append(nicOut, map[string]any{"id": n.ID, "network_id": n.NetworkID, "mac": n.MAC, "ipv4": n.IPv4})
+		nicOut = append(nicOut, map[string]any{"id": n.ID, "network_id": n.NetworkID, "mac": n.MAC, "ipv4": n.IPv4, "pci_addr": n.PCIAddr, "model": n.Model})
 	}
 	var pid any
 	if w.PID != nil {
@@ -567,6 +598,8 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"uid_map": w.UIDMap, "gid_map": w.GIDMap, "pid": pid, "unit_active": w.UnitActive,
 		"migrate_ready": w.MigrateReady, "migrate_blockers": blockers, "devices": devices,
 		"warnings": w.Warnings, "disks": diskOut, "nics": nicOut,
+		"autostart": w.Autostart, "pending_restart": w.PendingRestart, "firmware": w.Firmware,
+		"spec": specJSON(w), "applied": appliedJSON(w),
 		"created_at": w.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
@@ -609,8 +642,8 @@ type statusError struct {
 
 func (e statusError) Error() string { return e.msg }
 
-func errNotFound(msg string) error   { return statusError{status: http.StatusNotFound, msg: msg} }
-func errConflict(msg string) error   { return statusError{status: http.StatusConflict, msg: msg} }
+func errNotFound(msg string) error { return statusError{status: http.StatusNotFound, msg: msg} }
+func errConflict(msg string) error { return statusError{status: http.StatusConflict, msg: msg} }
 func errUnavailable(msg string) error {
 	return statusError{status: http.StatusBadGateway, msg: msg}
 }

@@ -38,7 +38,7 @@ export function WorkloadsPage() {
     <section className="page page-wide" aria-labelledby="workloads-heading">
       <header className="page-header">
         <h1 id="workloads-heading">Workloads</h1>
-        <p className="page-kicker">System containers. VMs are a later phase.</p>
+        <p className="page-kicker">System containers and virtual machines on this node.</p>
       </header>
       {error ? (
         <p className="banner banner-error" role="alert">
@@ -46,14 +46,15 @@ export function WorkloadsPage() {
         </p>
       ) : null}
       {mutate ? (
-        <p>
+        <p className="btn-row">
           <Link href="/workloads/new/system-container">Create system container</Link>
+          <Link href="/workloads/new/vm">Create VM</Link>
         </p>
       ) : null}
       <article className="panel">
-        <h2>System containers</h2>
+        <h2>On this node</h2>
         {items.length === 0 ? (
-          <p>No system containers yet.</p>
+          <p>No workloads yet.</p>
         ) : (
           <ul className="plain-list">
             {items.map((w) => (

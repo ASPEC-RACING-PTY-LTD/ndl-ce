@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.6
-  description: Phase 7 lab QEMU prototype plus Phase 6 northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, and Files.
+  version: 0.1.7
+  description: Phase 8 product VMs plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, and virtual machines.
 servers:
   - url: /api/v1
 paths:
@@ -478,7 +478,7 @@ paths:
                 $ref: "#/components/schemas/WorkloadListResponse"
     post:
       operationId: createWorkload
-      summary: Create a system container
+      summary: Create a system container or VM
       requestBody:
         required: true
         content:
@@ -610,6 +610,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/{id}/force-stop:
+    post:
+      operationId: forceStopWorkload
+      summary: Force stop a VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
   /workloads/{id}/delete:
     post:
       operationId: deleteWorkload
@@ -667,6 +684,29 @@ paths:
       responses:
         "201":
           description: Ticket shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IOSession"
+  /workloads/{id}/console/sessions:
+    post:
+      operationId: createWorkloadConsoleSession
+      summary: Issue a ticketed VM console session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIOSessionRequest"
+      responses:
+        "201":
+          description: Created
           content:
             application/json:
               schema:
@@ -1704,12 +1744,20 @@ components:
           type: boolean
         ipv4:
           type: string
+        autostart:
+          type: boolean
+        pending_restart:
+          type: boolean
+        firmware:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
     CreateWorkloadRequest:
       type: object
       additionalProperties: false
       required:
         - name
-        - image_pin
         - network_id
       properties:
         name:
@@ -1732,15 +1780,32 @@ components:
           type: boolean
         desired_power:
           type: string
+        firmware:
+          type: string
+        autostart:
+          type: boolean
+        cloud_image_id:
+          type: string
+        iso_library_id:
+          type: string
+        nocloud:
+          type: object
+          additionalProperties: true
     UpdateWorkloadRequest:
       type: object
       additionalProperties: false
       properties:
+        name:
+          type: string
         cpus:
           type: integer
         memory_bytes:
           type: integer
         desired_power:
+          type: string
+        autostart:
+          type: boolean
+        firmware:
           type: string
     CloneWorkloadRequest:
       type: object

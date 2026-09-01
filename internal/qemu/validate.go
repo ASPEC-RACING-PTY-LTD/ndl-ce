@@ -12,7 +12,7 @@ var allowedLaunchFlags = map[string]struct{}{
 	"-name": {}, "-machine": {}, "-accel": {}, "-cpu": {},
 	"-smp": {}, "-m": {}, "-nodefaults": {}, "-no-user-config": {},
 	"-display": {}, "-blockdev": {}, "-device": {}, "-chardev": {},
-	"-mon": {}, "-serial": {}, "-vnc": {},
+	"-mon": {}, "-serial": {}, "-vnc": {}, "-netdev": {}, "-boot": {}, "-drive": {},
 }
 
 // ValidateDiskPath requires an absolute VolumeHandle locator under the

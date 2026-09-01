@@ -47,11 +47,17 @@ export function WorkloadDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  async function onAction(action: "start" | "stop" | "restart" | "delete" | "clone") {
+  async function onAction(action: "start" | "stop" | "restart" | "delete" | "clone" | "force-stop") {
     setBusy(true);
     setError(null);
     try {
-      const next = await workloadAction(id, action);
+      if (action === "delete" && item?.kind === "vm") {
+        if (!window.confirm("Delete this VM configuration? Attached volumes are preserved.")) {
+          setBusy(false);
+          return;
+        }
+      }
+      const next = await workloadAction(id, action, undefined, action === "delete" && item?.kind === "vm" ? "delete" : undefined);
       if (action === "clone") {
         navigate(`/workloads/${next.id}`);
         return;
@@ -110,9 +116,16 @@ export function WorkloadDetailPage() {
           <Link href={`/workloads/${item.id}/files`}>Files</Link>
         </nav>
       ) : (
-        <p className="banner banner-warn" role="status">
-          VM Terminal and Files are Phase 20 and are not implemented.
-        </p>
+        <>
+          <nav className="subnav" aria-label="VM IO">
+            <Link href={`/workloads/${item.id}/console`}>Console</Link>
+            <span>Terminal (unavailable)</span>
+            <span>Files (unavailable)</span>
+          </nav>
+          <p className="banner banner-warn" role="status">
+            No-dal Guest Agent required. VM Terminal and Files are introduced in a later platform phase.
+          </p>
+        </>
       )}
       {error ? (
         <p className="banner banner-error" role="alert">
@@ -149,8 +162,20 @@ export function WorkloadDetailPage() {
             <dd>{formatBytes(item.memory_bytes)}</dd>
           </div>
           <div>
-            <dt>Privileged</dt>
-            <dd>{item.privileged ? "yes" : "no"}</dd>
+            <dt>Node</dt>
+            <dd>{item.node_id || "Not reported"}</dd>
+          </div>
+          <div>
+            <dt>Firmware</dt>
+            <dd>{item.firmware || (item.kind === "vm" ? "bios" : "n/a")}</dd>
+          </div>
+          <div>
+            <dt>Autostart</dt>
+            <dd>{item.autostart ? "yes" : "no"}</dd>
+          </div>
+          <div>
+            <dt>Pending restart</dt>
+            <dd>{item.pending_restart ? "desired spec differs from running config" : "no"}</dd>
           </div>
           <div>
             <dt>IPv4</dt>
@@ -160,6 +185,26 @@ export function WorkloadDetailPage() {
             <dt>MAC</dt>
             <dd>{mac || "Not reported"}</dd>
           </div>
+          {item.kind === "vm" ? (
+            <>
+              <div>
+                <dt>Disks</dt>
+                <dd>
+                  {(item.disks ?? []).length
+                    ? (item.disks ?? []).map((d) => `${d.role || "disk"} ${d.volume_id}`).join(", ")
+                    : "Not reported"}
+                </dd>
+              </div>
+              <div>
+                <dt>NICs</dt>
+                <dd>
+                  {(item.nics ?? []).length
+                    ? (item.nics ?? []).map((n) => `${n.mac || "mac pending"} ${n.pci_addr || ""}`.trim()).join(", ")
+                    : "Not reported"}
+                </dd>
+              </div>
+            </>
+          ) : null}
           <div>
             <dt>Migrate ready</dt>
             <dd>{item.migrate_ready ? "yes" : "no"}</dd>
@@ -179,9 +224,15 @@ export function WorkloadDetailPage() {
             <button className="btn" type="button" disabled={busy} onClick={() => void onAction("restart")}>
               Restart
             </button>
-            <button className="btn" type="button" disabled={busy} onClick={() => void onAction("clone")}>
-              Clone
-            </button>
+            {item.kind === "vm" ? (
+              <button className="btn" type="button" disabled={busy} onClick={() => void onAction("force-stop")}>
+                Force Stop
+              </button>
+            ) : (
+              <button className="btn" type="button" disabled={busy} onClick={() => void onAction("clone")}>
+                Clone
+              </button>
+            )}
             <button className="btn" type="button" disabled={busy} onClick={() => void onAction("delete")}>
               Delete
             </button>

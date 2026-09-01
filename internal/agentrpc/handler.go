@@ -13,8 +13,8 @@ import (
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/inventory"
-	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/peercred"
 	"github.com/no-dal/ndl-ce/internal/qemu"
@@ -154,6 +154,12 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execQemuProtoStop(ctx, req.Msg.GetQemuProtoStop())
 	case req.Msg.GetQemuProtoStatus() != nil:
 		return h.execQemuProtoStatus(ctx, req.Msg.GetQemuProtoStatus())
+	case req.Msg.GetVmPrepare() != nil:
+		return h.execVMPrepare(ctx, req.Msg.GetVmPrepare())
+	case req.Msg.GetVmLifecycle() != nil:
+		return h.execVMLifecycle(ctx, req.Msg.GetVmLifecycle())
+	case req.Msg.GetVmQueryPci() != nil:
+		return h.execVMQueryPCI(ctx, req.Msg.GetVmQueryPci())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

@@ -5,6 +5,7 @@ import "time"
 const (
 	IOTargetHost            = "host"
 	IOTargetSystemContainer = "system-container"
+	IOTargetVM              = "vm"
 	IOKindTerminal          = "terminal"
 	IOKindConsole           = "console"
 	IOStatePending          = "pending"

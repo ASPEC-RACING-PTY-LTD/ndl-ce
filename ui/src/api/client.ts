@@ -271,12 +271,23 @@ export async function createWorkload(
   body: {
     name: string;
     kind: string;
-    image_pin: string;
+    image_pin?: string;
     cpus?: number;
     memory_bytes?: number;
     pool_id?: string;
     network_id: string;
     privileged?: boolean;
+    firmware?: string;
+    autostart?: boolean;
+    cloud_image_id?: string;
+    iso_library_id?: string;
+    nocloud?: {
+      enable?: boolean;
+      hostname?: string;
+      username?: string;
+      ssh_authorized_keys?: string[];
+      user_data?: string;
+    };
   },
   idempotencyKey?: string,
 ): Promise<import("./phase5").Workload> {
@@ -295,7 +306,14 @@ export async function createWorkload(
 
 export async function patchWorkload(
   id: string,
-  body: { cpus?: number; memory_bytes?: number; desired_power?: string },
+  body: {
+    cpus?: number;
+    memory_bytes?: number;
+    desired_power?: string;
+    autostart?: boolean;
+    firmware?: string;
+    name?: string;
+  },
 ): Promise<import("./phase5").Workload> {
   return readJson(
     await request(`/workloads/${id}`, {
@@ -380,14 +398,29 @@ export async function downloadFile(kind: "node" | "workload", id: string, path: 
   URL.revokeObjectURL(href);
 }
 
+export async function createConsoleSession(id: string, mode: "serial" | "vnc"): Promise<import("./phase6").IOSession> {
+  return readJson(
+    await request(`/workloads/${id}/console/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
+  );
+}
+
 export async function workloadAction(
   id: string,
-  action: "start" | "stop" | "restart" | "delete" | "clone",
+  action: "start" | "stop" | "restart" | "delete" | "clone" | "force-stop",
   body?: { name?: string },
+  confirm?: string,
 ): Promise<import("./phase5").Workload> {
+  const headers = new Headers();
+  if (confirm) {
+    headers.set("X-Nodal-Confirm", confirm);
+  }
   return readJson(
     await request(`/workloads/${id}/${action}`, {
       method: "POST",
+      headers,
       body: JSON.stringify(body ?? {}),
     }),
   );

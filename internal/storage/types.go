@@ -237,10 +237,10 @@ type CreateVolumeResult struct {
 
 // BeginUploadRequest starts a library write into an agent-owned temp file.
 type BeginUploadRequest struct {
-	ItemID      string `json:"item_id"`
-	PoolID      string `json:"pool_id"`
-	RootPath    string `json:"root_path"`
-	Kind        string `json:"kind"`
+	ItemID          string   `json:"item_id"`
+	PoolID          string   `json:"pool_id"`
+	RootPath        string   `json:"root_path"`
+	Kind            string   `json:"kind"`
 	DisplayName     string   `json:"display_name"`
 	MaxBytes        int64    `json:"max_bytes"`
 	RejectChecksums []string `json:"reject_checksums,omitempty"`

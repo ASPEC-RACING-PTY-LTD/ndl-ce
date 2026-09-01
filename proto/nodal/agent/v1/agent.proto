@@ -141,7 +141,30 @@ message ExecuteRequest {
     QemuProtoStart qemu_proto_start = 17;
     QemuProtoStop qemu_proto_stop = 18;
     QemuProtoStatus qemu_proto_status = 19;
+    VMPrepare vm_prepare = 20;
+    VMLifecycle vm_lifecycle = 21;
+    VMQueryPCI vm_query_pci = 22;
   }
+}
+
+message VMPrepare {
+  string workload_id = 1;
+  bytes launch_json = 2;
+  string user_data = 3;
+  string source_path = 4;
+  string source_format = 5;
+  string dest_path = 6;
+  string dest_format = 7;
+}
+
+message VMLifecycle {
+  string workload_id = 1;
+  string action = 2;
+  bool autostart = 3;
+}
+
+message VMQueryPCI {
+  string workload_id = 1;
 }
 
 message QemuProtoStart {

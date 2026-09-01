@@ -49,6 +49,12 @@ func (m *Memory) CreateWorkload(_ context.Context, w Workload) error {
 	if len(w.MigrateBlockers) == 0 {
 		w.MigrateBlockers = json.RawMessage(`[]`)
 	}
+	if len(w.SpecJSON) == 0 {
+		w.SpecJSON = json.RawMessage(`{}`)
+	}
+	if len(w.AppliedJSON) == 0 {
+		w.AppliedJSON = json.RawMessage(`{}`)
+	}
 	m.workloads[w.ID] = w
 	return nil
 }
@@ -152,6 +158,17 @@ func (m *Memory) UpdateWorkloadSpec(_ context.Context, w Workload) error {
 	if w.DesiredPower != "" {
 		cur.DesiredPower = w.DesiredPower
 	}
+	if len(w.SpecJSON) > 0 {
+		cur.SpecJSON = w.SpecJSON
+	}
+	if len(w.AppliedJSON) > 0 {
+		cur.AppliedJSON = w.AppliedJSON
+	}
+	cur.Autostart = w.Autostart
+	cur.PendingRestart = w.PendingRestart
+	if w.Firmware != "" {
+		cur.Firmware = w.Firmware
+	}
 	cur.UpdatedAt = time.Now().UTC()
 	m.workloads[w.ID] = cur
 	return nil
@@ -215,6 +232,12 @@ func (m *Memory) UpdateWorkloadNIC(_ context.Context, n WorkloadNIC) error {
 		return fmt.Errorf("workload nic not found")
 	}
 	cur.IPv4 = n.IPv4
+	if n.PCIAddr != "" {
+		cur.PCIAddr = n.PCIAddr
+	}
+	if n.Model != "" {
+		cur.Model = n.Model
+	}
 	m.workloadNICs[n.ID] = cur
 	return nil
 }

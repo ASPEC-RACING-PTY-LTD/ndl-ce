@@ -30,6 +30,11 @@ const (
 	ComputeRead         = "compute.read"
 	ComputeCreate       = "compute.create"
 	ComputeLifecycle    = "compute.lifecycle"
+	ComputeModify       = "compute.modify"
+	ComputeStart        = "compute.start"
+	ComputeStop         = "compute.stop"
+	ComputeDelete       = "compute.delete"
+	ComputeConsole      = "compute.console"
 	TerminalOpen        = "terminal.open"
 	FilesRead           = "files.read"
 	FilesDownload       = "files.download"
@@ -60,6 +65,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
+			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
 		}
 	case Viewer:

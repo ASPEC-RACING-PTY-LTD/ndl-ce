@@ -102,25 +102,25 @@ type File struct {
 
 // Plan is the fully generated apply payload. No user shell strings.
 type Plan struct {
-	NetworkID          string
-	Name               string
-	Kind               string
-	BridgeName         string
-	UplinkIfName       string
-	IPv4CIDR           string
-	Gateway            string
-	DHCPStart          string
-	DHCPEnd            string
-	DHCP               bool
-	DNS                bool
-	NAT                bool
-	Files              []File
-	Dnsmasq            string
-	NFT                string
-	Class              Classification
-	ManagementIfIndex  int
-	ManagementIfName   string
-	Warnings           []string
+	NetworkID         string
+	Name              string
+	Kind              string
+	BridgeName        string
+	UplinkIfName      string
+	IPv4CIDR          string
+	Gateway           string
+	DHCPStart         string
+	DHCPEnd           string
+	DHCP              bool
+	DNS               bool
+	NAT               bool
+	Files             []File
+	Dnsmasq           string
+	NFT               string
+	Class             Classification
+	ManagementIfIndex int
+	ManagementIfName  string
+	Warnings          []string
 }
 
 // Preview is the dry-run API/agent result.

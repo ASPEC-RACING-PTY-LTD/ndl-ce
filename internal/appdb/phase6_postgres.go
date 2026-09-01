@@ -45,8 +45,8 @@ func (p *Postgres) GetIOSessionByTicketHash(ctx context.Context, ticketHash stri
 func (p *Postgres) UpdateIOSession(ctx context.Context, s IOSession) error {
 	_, err := p.DB.ExecContext(ctx, `
 UPDATE io_sessions
-SET state=$2, reason=$3, cwd=$4, connected_at=$5, ended_at=$6
-WHERE id=$1`, s.ID, s.State, s.Reason, s.CWD, s.ConnectedAt, s.EndedAt)
+SET state=$2, reason=$3, cwd=$4, connected_at=$5, ended_at=$6, expires_at=$7
+WHERE id=$1`, s.ID, s.State, s.Reason, s.CWD, s.ConnectedAt, s.EndedAt, s.ExpiresAt)
 	return err
 }
 

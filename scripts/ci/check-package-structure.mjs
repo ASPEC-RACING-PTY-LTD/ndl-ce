@@ -55,6 +55,9 @@ const changelog = existsSync("packaging/debian/changelog")
 if (!changelog.includes("nodal (0.1.6)") || !changelog.includes("Phase 7 QEMU/QMP supervisory prototype")) {
   errors.push("changelog must include nodal (0.1.6) Phase 7 QEMU/QMP supervisory prototype");
 }
+if (!changelog.includes("nodal (0.1.7)") || !changelog.includes("Phase 8 product virtual machines")) {
+  errors.push("changelog must include nodal (0.1.7) Phase 8 product virtual machines");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")
@@ -107,6 +110,9 @@ if (!/^Package: ndl-agent[\s\S]*?\bgpgv\b/m.test(control)) {
 }
 if (!/^Package: ndl-agent[\s\S]*?uidmap/m.test(control)) {
   errors.push("ndl-agent must Depend on uidmap");
+}
+if (!/^Package: ndl-agent[\s\S]*?iproute2/m.test(control)) {
+  errors.push("ndl-agent must Depend on iproute2 for typed TAP operations");
 }
 
 const proto = existsSync("proto/nodal/agent/v1/agent.proto")

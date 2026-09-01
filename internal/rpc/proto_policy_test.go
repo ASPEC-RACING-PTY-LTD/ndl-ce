@@ -53,6 +53,9 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"QemuProtoStart qemu_proto_start =",
 		"QemuProtoStop qemu_proto_stop =",
 		"QemuProtoStatus qemu_proto_status =",
+		"VMPrepare vm_prepare =",
+		"VMLifecycle vm_lifecycle =",
+		"VMQueryPCI vm_query_pci =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

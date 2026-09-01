@@ -29,6 +29,9 @@ type termSession interface {
 }
 
 func startTermSession(ctx context.Context, req termRequest) (termSession, error) {
+	if req.TargetKind == "vm" {
+		return startVMConsole(ctx, req)
+	}
 	return startPTYSession(ctx, req)
 }
 

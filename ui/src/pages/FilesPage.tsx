@@ -50,7 +50,7 @@ export function FilesPage() {
     void getWorkload(id)
       .then((w) => {
         if (!cancelled && w.kind !== "system-container") {
-          setUnsupported("VM Files is Phase 20 and is not implemented.");
+          setUnsupported("No-dal Guest Agent required. VM Terminal and Files are introduced in a later platform phase.");
         }
       })
       .catch((err) => {

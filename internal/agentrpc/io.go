@@ -261,4 +261,3 @@ func applyTermFrame(sess termSession, raw []byte) error {
 }
 
 var errNeedPong = errors.New("pong")
-

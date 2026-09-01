@@ -26,16 +26,16 @@ const (
 
 // Compile-time privileged binary paths. Never assembled from a shell string.
 const (
-	BinLXCStart  = "/usr/bin/lxc-start"
-	BinLXCStop   = "/usr/bin/lxc-stop"
-	BinLXCInfo   = "/usr/bin/lxc-info"
+	BinLXCStart   = "/usr/bin/lxc-start"
+	BinLXCStop    = "/usr/bin/lxc-stop"
+	BinLXCInfo    = "/usr/bin/lxc-info"
 	BinLXCCopy    = "/usr/bin/lxc-copy"
 	BinLXCAttach  = "/usr/bin/lxc-attach"
 	BinLXCConsole = "/usr/bin/lxc-console"
 	BinSystemctl  = "/usr/bin/systemctl"
-	BinTar       = "/usr/bin/tar"
-	BinCP        = "/usr/bin/cp"
-	BinGPGV      = "/usr/bin/gpgv"
+	BinTar        = "/usr/bin/tar"
+	BinCP         = "/usr/bin/cp"
+	BinGPGV       = "/usr/bin/gpgv"
 )
 
 const (

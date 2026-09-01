@@ -96,6 +96,13 @@ type Store interface {
 	ListWorkloadNICs(ctx context.Context, clusterID, workloadID string) ([]WorkloadNIC, error)
 	UpdateWorkloadNIC(ctx context.Context, n WorkloadNIC) error
 
+	DeleteWorkload(ctx context.Context, clusterID, id string) error
+
+	UpsertVMCidata(ctx context.Context, row VMCidata) error
+	GetVMCidata(ctx context.Context, clusterID, workloadID string) (*VMCidata, error)
+	UpsertVMFirmware(ctx context.Context, row VMFirmware) error
+	GetVMFirmware(ctx context.Context, clusterID, workloadID string) (*VMFirmware, error)
+
 	CreateIOSession(ctx context.Context, s IOSession) error
 	GetIOSession(ctx context.Context, clusterID, id string) (*IOSession, error)
 	GetIOSessionByTicketHash(ctx context.Context, ticketHash string) (*IOSession, error)

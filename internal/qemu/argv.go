@@ -120,3 +120,33 @@ func DetectAccel() string {
 	}
 	return "tcg"
 }
+
+// DetectFirmware returns the first allowlisted OVMF code file on this host.
+func DetectFirmware() string {
+	for _, p := range []string{
+		"/usr/share/OVMF/OVMF_CODE_4M.fd",
+		"/usr/share/OVMF/OVMF_CODE.fd",
+		"/usr/share/qemu/OVMF_CODE_4M.fd",
+		"/usr/share/qemu/OVMF_CODE.fd",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// ConsoleSocket is the unix locator for serial or VNC. It is not a ticket.
+func (e *Engine) ConsoleSocket(id, kind string) (string, error) {
+	if err := ValidateWorkloadID(id); err != nil {
+		return "", err
+	}
+	switch strings.TrimSpace(kind) {
+	case "serial":
+		return e.serialPath(id), nil
+	case "vnc":
+		return e.vncPath(id), nil
+	default:
+		return "", fmt.Errorf("console mode must be serial or vnc")
+	}
+}

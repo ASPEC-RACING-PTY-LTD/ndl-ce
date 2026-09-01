@@ -35,6 +35,11 @@ type Workload struct {
 	Devices         json.RawMessage
 	Warnings        []string
 	IdempotencyKey  string
+	SpecJSON        json.RawMessage
+	AppliedJSON     json.RawMessage
+	Autostart       bool
+	PendingRestart  bool
+	Firmware        string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -46,6 +51,10 @@ type WorkloadDisk struct {
 	WorkloadID string
 	VolumeID   string
 	Role       string
+	Slot       int
+	BusAddr    string
+	ReadOnly   bool
+	Format     string
 	CreatedAt  time.Time
 }
 
@@ -57,7 +66,27 @@ type WorkloadNIC struct {
 	NetworkID  string
 	MAC        string
 	IPv4       string
+	PCIAddr    string
+	Model      string
 	CreatedAt  time.Time
+}
+
+// VMCidata is managed NoCloud seed metadata. Secrets are never stored here.
+type VMCidata struct {
+	WorkloadID  string
+	ClusterID   string
+	UserDataSHA string
+	HasPassword bool
+	UpdatedAt   time.Time
+}
+
+// VMFirmware records per-VM firmware vars locators, not product identity.
+type VMFirmware struct {
+	WorkloadID string
+	ClusterID  string
+	Mode       string
+	VarsRef    string
+	UpdatedAt  time.Time
 }
 
 func WorkloadHints(items []Workload) []lxc.Hint {

@@ -13,6 +13,8 @@ import { TerminalPage } from "./pages/TerminalPage";
 import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
+import { VmCreatePage } from "./pages/VmCreatePage";
+import { ConsolePage } from "./pages/ConsolePage";
 import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
@@ -90,6 +92,10 @@ function AppRoutes() {
     page = <NetworkPage />;
   } else if (path === "/workloads/new/system-container") {
     page = <WorkloadCreatePage />;
+  } else if (path === "/workloads/new/vm") {
+    page = <VmCreatePage />;
+  } else if (/^\/workloads\/[^/]+\/console$/.test(path)) {
+    page = <ConsolePage />;
   } else if (/^\/workloads\/[^/]+\/terminal$/.test(path)) {
     page = <TerminalPage />;
   } else if (/^\/workloads\/[^/]+\/files$/.test(path)) {

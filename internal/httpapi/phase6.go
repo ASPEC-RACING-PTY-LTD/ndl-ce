@@ -17,6 +17,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/iojail"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -25,7 +26,7 @@ import (
 const (
 	ioTicketHeader = "X-Nodal-Ticket"
 	ioTicketTTL    = 2 * time.Minute
-	vmUnsupported  = "VM Terminal and Files are Phase 20 and are not implemented"
+	vmUnsupported  = "No-dal Guest Agent required. VM Terminal and Files are introduced in a later platform phase."
 )
 
 // IORPC is the privileged agent surface for Files and Terminal.
@@ -117,13 +118,22 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, p *princ
 }
 
 func (s *Server) getIOSession(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.TerminalOpen)
+	p, err := s.principal(r)
 	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 	row, err := s.Store.GetIOSession(r.Context(), p.User.ClusterID, r.PathValue("id"))
 	if err != nil || row == nil {
 		writeErr(w, http.StatusNotFound, "session not found")
+		return
+	}
+	need := rbac.TerminalOpen
+	if row.Kind == appdb.IOKindConsole && row.TargetKind == appdb.IOTargetVM {
+		need = rbac.ComputeConsole
+	}
+	if !rbac.Authorize(p.Grants, need) {
+		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	if row.UserID != p.User.ID && !hasRole(p, rbac.Admin) {
@@ -147,10 +157,6 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	if !rbac.Authorize(p.Grants, rbac.TerminalOpen) {
-		writeErr(w, http.StatusForbidden, "forbidden")
-		return
-	}
 	ticket := wsTicket(r)
 	if ticket == "" {
 		writeErr(w, http.StatusUnauthorized, "X-Nodal-Ticket is required")
@@ -161,11 +167,19 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid ticket")
 		return
 	}
+	need := rbac.TerminalOpen
+	if row.Kind == appdb.IOKindConsole && row.TargetKind == appdb.IOTargetVM {
+		need = rbac.ComputeConsole
+	}
+	if !rbac.Authorize(p.Grants, need) {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	if row.UserID != p.User.ID && !hasRole(p, rbac.Admin) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if s.now().After(row.ExpiresAt) && row.State == appdb.IOStatePending {
+	if s.now().After(row.ExpiresAt) && (row.State == appdb.IOStatePending || row.Kind == appdb.IOKindConsole) {
 		row.State = appdb.IOStateExpired
 		row.Reason = "ticket expired"
 		_ = s.Store.UpdateIOSession(r.Context(), *row)
@@ -186,7 +200,7 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cwd := row.CWD
-	if row.Kind == appdb.IOKindConsole {
+	if row.Kind == appdb.IOKindConsole && row.TargetKind != appdb.IOTargetVM {
 		cwd = "console"
 	}
 	conn, err := s.IO.OpenTerminal(r.Context(), agentrpc.TermOpen{
@@ -446,6 +460,9 @@ func (s *Server) workloadJail(ctx context.Context, clusterID string, w appdb.Wor
 func (s *Server) sessionJail(ctx context.Context, clusterID string, row appdb.IOSession) (string, error) {
 	if row.TargetKind == appdb.IOTargetHost {
 		return "/", nil
+	}
+	if row.TargetKind == appdb.IOTargetVM {
+		return (&qemu.Engine{}).ConsoleSocket(row.TargetID, row.CWD)
 	}
 	wl, err := s.Store.GetWorkload(ctx, clusterID, row.TargetID)
 	if err != nil || wl == nil {

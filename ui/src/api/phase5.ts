@@ -9,6 +9,8 @@ export type WorkloadNIC = {
   network_id: string;
   mac: string;
   ipv4?: string;
+  pci_addr?: string;
+  model?: string;
 };
 
 export type Workload = {
@@ -31,6 +33,11 @@ export type Workload = {
   warnings?: string[];
   disks?: WorkloadDisk[];
   nics?: WorkloadNIC[];
+  autostart?: boolean;
+  pending_restart?: boolean;
+  firmware?: string;
+  spec?: unknown;
+  node_id?: string;
 };
 
 export type WorkloadListResponse = {

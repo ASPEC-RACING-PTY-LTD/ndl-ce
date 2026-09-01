@@ -185,9 +185,6 @@ func (e *Engine) Restart(ctx context.Context, id string) error {
 }
 
 func (e *Engine) ensureAppliedTraverse(id string) {
-	if e.SkipHostCmds {
-		return
-	}
 	applied, err := e.readApplied(id)
 	if err != nil {
 		return

@@ -12,6 +12,7 @@ type Engine struct {
 	DataDir      string
 	SkipHostCmds bool
 	Now          func() time.Time
+	LiveUnits    map[string]bool
 }
 
 func (e *Engine) dataDir() string {

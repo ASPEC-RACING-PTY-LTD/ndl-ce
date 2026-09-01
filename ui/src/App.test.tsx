@@ -53,6 +53,7 @@ const defaultRoutes = {
   "/api/v1/storage/pools": { status: 200, body: { items: [] } },
   "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
+  "/api/v1/storage/images": { status: 200, body: { items: [] } },
 };
 
 afterEach(() => {
@@ -278,9 +279,10 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^workloads$/i })).toBeVisible();
-    expect(screen.getByText(/no system containers yet/i)).toBeVisible();
+    expect(screen.getByText(/no workloads yet/i)).toBeVisible();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /create system container/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /create vm/i })).toBeVisible();
   });
 
   it("imports generated OpenAPI path types", () => {
@@ -324,7 +326,34 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/phase 20/i)).toBeVisible();
+    expect(await screen.findByText(/guest agent required/i)).toBeVisible();
     expect(screen.queryByText(/connected/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the create VM wizard", async () => {
+    window.history.replaceState({}, "", "/workloads/new/vm");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /create vm/i })).toBeVisible();
+    expect(screen.getByText(/step 1 of 7/i)).toBeVisible();
+  });
+
+  it("shows VM console and honest guest-agent limits", async () => {
+    window.history.replaceState({}, "", "/workloads/vm-1");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/vm-1": {
+        status: 200,
+        body: { id: "vm-1", name: "web", kind: "vm", status: "running", firmware: "bios", pending_restart: false },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^web$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /console/i })).toBeVisible();
+    expect(screen.getByText(/no-dal guest agent required/i)).toBeVisible();
   });
 });

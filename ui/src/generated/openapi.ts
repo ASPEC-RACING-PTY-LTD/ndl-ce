@@ -278,12 +278,16 @@ export interface Workload {
   unit_active?: boolean;
   migrate_ready?: boolean;
   ipv4?: string;
+  autostart?: boolean;
+  pending_restart?: boolean;
+  firmware?: string;
+  spec?: Record<string, unknown>;
 }
 
 export interface CreateWorkloadRequest {
   name: string;
   kind?: string;
-  image_pin: string;
+  image_pin?: string;
   cpus?: number;
   memory_bytes?: number;
   pool_id?: string;
@@ -291,12 +295,20 @@ export interface CreateWorkloadRequest {
   volume_id?: string;
   privileged?: boolean;
   desired_power?: string;
+  firmware?: string;
+  autostart?: boolean;
+  cloud_image_id?: string;
+  iso_library_id?: string;
+  nocloud?: Record<string, unknown>;
 }
 
 export interface UpdateWorkloadRequest {
+  name?: string;
   cpus?: number;
   memory_bytes?: number;
   desired_power?: string;
+  autostart?: boolean;
+  firmware?: string;
 }
 
 export interface CloneWorkloadRequest {
@@ -451,11 +463,15 @@ export type StopWorkloadPath = "/api/v1/workloads/{id}/stop";
 
 export type RestartWorkloadPath = "/api/v1/workloads/{id}/restart";
 
+export type ForceStopWorkloadPath = "/api/v1/workloads/{id}/force-stop";
+
 export type DeleteWorkloadPath = "/api/v1/workloads/{id}/delete";
 
 export type CloneWorkloadPath = "/api/v1/workloads/{id}/clone";
 
 export type CreateNodeTerminalSessionPath = "/api/v1/nodes/{id}/terminal/sessions";
+
+export type CreateWorkloadConsoleSessionPath = "/api/v1/workloads/{id}/console/sessions";
 
 export type CreateWorkloadTerminalSessionPath = "/api/v1/workloads/{id}/terminal/sessions";
 

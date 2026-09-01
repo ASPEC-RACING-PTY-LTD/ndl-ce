@@ -43,3 +43,13 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Debian `qemu-system-x86` does not ship `/etc/apparmor.d/usr.bin.qemu-system-x86_64`, so the local snippet is a no-op until a parent profile exists. Why not blocking: TCG/QMP were proven; confinement is still the unit user plus closed devices.
 - LOW. `Observed.PID` is unused; runtime identity is systemd MainPID / `running_as`.
 - LOW. `EnableAutostart` trusts the caller UUID. The RPC already requires a UUID.
+
+## Phase 8
+
+- MEDIUM. Shared `ndl-qemu` uid can read/write sibling VolumeHandle disks because the AppArmor local snippet allows `/var/lib/ndl/storage/** rwk`. Why not blocking: per-VM credentials would add a fragile identity model; Dogfood Host isolation is unit plus closed devices plus typed launch.
+- LOW. Debian `qemu-system-x86` still may not ship a parent AppArmor profile, so the local snippet can remain a no-op. Why not blocking: confinement is still the ndl-qemu user plus closed devices; enforcing AppArmor is physical/appliance validation.
+- LOW. Host reboot autostart is systemd enablement, not a live guest reboot in Cloud CI. Why not blocking: the unit is independent of CP/agent.
+- LOW. Browser graphical console confirms a ticketed VNC unix session and does not decode a full RFB framebuffer. Serial is the interactive compatibility console. Why not blocking: console works without a guest agent; a richer VNC client can land later.
+- LOW. PCI live match compares persisted slot addresses to `query-pci` slots. QEMU may also show bridges and implicit devices. Why not blocking: assigned virtio/VGA/serial slots are still pinned.
+- LOW. Cloud-image validation beyond qcow2 magic remains best-effort from Phase 3. Why not blocking: QEMU start fails honestly if the artifact is not usable; the library file is not mutated.
+

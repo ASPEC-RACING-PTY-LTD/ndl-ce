@@ -165,6 +165,9 @@ func (e *Engine) Start(ctx context.Context, id string) error {
 // AlreadyRunning is true when systemd reports the unit as live.
 // A second start must not rewrite frozen argv or leak another process.
 func (e *Engine) AlreadyRunning(ctx context.Context, id string) bool {
+	if e.LiveUnits != nil {
+		return e.LiveUnits[id]
+	}
 	if e.SkipHostCmds {
 		return false
 	}
@@ -233,6 +236,24 @@ func (e *Engine) Observe(ctx context.Context, id string) Observed {
 	if applied, err := e.ReadApplied(id); err == nil {
 		obs.Machine = applied.Spec.Machine
 		obs.Accel = applied.Spec.Accel
+		if applied.Launch.Machine != "" {
+			obs.Machine = applied.Launch.Machine
+		}
+		if applied.Launch.Accel != "" {
+			obs.Accel = applied.Launch.Accel
+		}
+		obs.PCI = applied.Launch.PCI
+	}
+	if e.LiveUnits != nil {
+		if e.LiveUnits[id] {
+			obs.Status = StatusRunning
+			obs.UnitActive = true
+			obs.Reason = "fixture live unit"
+			return obs
+		}
+		obs.Status = StatusStopped
+		obs.Reason = "fixture"
+		return obs
 	}
 	if e.SkipHostCmds {
 		obs.Status = StatusStopped
@@ -241,12 +262,27 @@ func (e *Engine) Observe(ctx context.Context, id string) Observed {
 	}
 	active, _ := e.unitActive(ctx, id)
 	obs.UnitActive = active
+	state, _ := e.unitState(ctx, id)
+	state = strings.TrimSpace(state)
+	if applied, err := e.ReadApplied(id); err == nil && applied.Launch.PCI != nil {
+		obs.PCI = applied.Launch.PCI
+	}
+	switch state {
+	case "activating":
+		obs.Status = StatusStarting
+		obs.Reason = "unit activating"
+		return obs
+	case "deactivating":
+		obs.Status = StatusStopping
+		obs.Reason = "unit deactivating"
+		return obs
+	}
 	if !active {
 		if _, err := e.ReadApplied(id); err == nil {
 			obs.Status = StatusStopped
 		}
-		if state, err := e.unitState(ctx, id); err == nil && strings.Contains(state, "failed") {
-			obs.Status = StatusFailed
+		if strings.Contains(state, "failed") {
+			obs.Status = StatusCrashed
 			obs.Reason = "qemu exited"
 		}
 		return obs
@@ -257,6 +293,10 @@ func (e *Engine) Observe(ctx context.Context, id string) Observed {
 			obs.Reason = "qmp:" + st
 		} else {
 			obs.Reason = "qmp connected"
+		}
+		if live, err := q.queryPCI(); err == nil && len(obs.PCI) > 0 {
+			match := pciMatchesLaunch(live, obs.PCI)
+			obs.PCILiveMatch = &match
 		}
 		q.Close()
 	} else {

@@ -18,6 +18,14 @@ func ValidateWorkloadID(id string) error {
 	return nil
 }
 
+// Restart is stop then start. systemd still owns the process.
+func (e *Engine) Restart(ctx context.Context, id string) error {
+	if err := e.Stop(ctx, id); err != nil {
+		return err
+	}
+	return e.Start(ctx, id)
+}
+
 // ForceStop sends SIGKILL to the main QEMU process via systemd, then stops the unit.
 // Argv is allowlisted constants plus the validated unit name. No shell string.
 func (e *Engine) ForceStop(ctx context.Context, id string) error {
