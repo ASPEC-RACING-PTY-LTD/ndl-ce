@@ -167,6 +167,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execBackupCopy(ctx, req.Msg.GetBackupCopy())
 	case req.Msg.GetHostUpdate() != nil:
 		return h.execHostUpdate(ctx, req.Msg.GetHostUpdate())
+	case req.Msg.GetGpuAssign() != nil:
+		return h.execGPUAssign(ctx, req.Msg.GetGpuAssign())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

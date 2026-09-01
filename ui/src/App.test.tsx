@@ -669,4 +669,55 @@ describe("App", () => {
     expect(screen.getByLabelText(/authenticator code/i)).toBeVisible();
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
   });
+
+  it("renders the node GPU tab without assigning by default", async () => {
+    window.history.replaceState({}, "", "/node/gpu");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/nodes": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "node-1",
+              name: "local",
+              status: "available",
+              host_os: "Debian GNU/Linux 13 (trixie)",
+            },
+          ],
+        },
+      },
+      "/api/v1/gpus": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "0000:02:00.0",
+              pci: "0000:02:00.0",
+              vendor: "NVIDIA",
+              iommu_group: "12",
+              group_members: [
+                { pci: "0000:02:00.0", kind: "display" },
+                { pci: "0000:02:00.1", kind: "audio" },
+              ],
+              assignments: [],
+            },
+          ],
+          acs_override: "refused",
+          default_devices: [],
+          note: "Workloads created without a GPU assignment do not receive /dev/dri.",
+          runtime: { host_supported: false, status: "unsupported", cuda: "not_reported", rocm: "not_reported" },
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: /^gpu$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^gpus$/i })).toBeVisible();
+    expect(screen.getByText(/0000:02:00.1 audio/i)).toBeVisible();
+    expect(screen.getByText(/creating a workload without a gpu does not attach \/dev\/dri/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^assign gpu$/i })).not.toBeInTheDocument();
+  });
 });

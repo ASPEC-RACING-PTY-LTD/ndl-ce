@@ -707,6 +707,90 @@ export interface ServicePrincipalCreated {
   kind: "service";
 }
 
+export interface GPUListResponse {
+  items: GPU[];
+  iommu?: Record<string, unknown>;
+  runtime?: GPURuntime;
+  acs_override: string;
+  default_devices: string[];
+  note: string;
+}
+
+export interface GPU {
+  id: string;
+  vendor?: string;
+  model?: string;
+  pci: string;
+  driver?: string;
+  iommu_group?: string;
+  hint?: string;
+  group_members?: GPUGroupMember[];
+  assignments?: GPUAssignment[];
+}
+
+export interface GPUGroupMember {
+  pci: string;
+  class?: string;
+  kind: string;
+  driver?: string;
+}
+
+export interface GPUAssignment {
+  id: string;
+  gpu_id: string;
+  workload_id: string;
+  mode: string;
+  exclusive: boolean;
+  iommu_group?: string;
+  pci_devices?: string[];
+  device_nodes?: string[];
+  status: string;
+  reason?: string;
+}
+
+export interface GPUAssignmentListResponse {
+  items: GPUAssignment[];
+}
+
+export interface GPUAssignRequest {
+  gpu_id: string;
+  workload_id: string;
+  mode: string;
+  exclusive?: boolean;
+  acs_override?: boolean;
+}
+
+export interface GPUUnassignRequest {
+  id: string;
+}
+
+export interface GPUInstallRequest {
+  dry_run?: boolean;
+}
+
+export interface GPURuntime {
+  host_supported: boolean;
+  status: string;
+  reason?: string;
+  cuda: string;
+  rocm: string;
+  packages?: string[];
+  argv?: string[];
+  flags?: Record<string, unknown>;
+}
+
+export interface GPUAssignResult {
+  status?: string;
+  reason?: string;
+  pci_devices?: string[];
+  device_nodes?: string[];
+  argv?: string[];
+  cuda?: string;
+  rocm?: string;
+  host_supported?: boolean;
+  packages?: string[];
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -874,3 +958,15 @@ export type AddGroupMemberPath = "/api/v1/groups/{id}/members";
 export type BindGroupRolePath = "/api/v1/groups/{id}/roles";
 
 export type ListServicePrincipalsPath = "/api/v1/service-principals";
+
+export type ListGpusPath = "/api/v1/gpus";
+
+export type GetGpuRuntimePath = "/api/v1/gpus/runtime";
+
+export type InstallGpuRuntimePath = "/api/v1/gpus/runtime/install";
+
+export type AssignGpuPath = "/api/v1/gpus/assign";
+
+export type UnassignGpuPath = "/api/v1/gpus/unassign";
+
+export type ListWorkloadGpusPath = "/api/v1/workloads/{id}/gpus";

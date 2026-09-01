@@ -88,4 +88,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Cluster destroy stays not implemented after AAL 2. Why not blocking: CE must not wipe the appliance in this phase.
 - LOW. recover-admin host-key path is not executed in Cloud CI (not root, not an installed product). Why not blocking: SQL includes DELETE FROM mfa_methods; unit tests prove login after DeleteUserMFA.
 
+## Phase 14
+
+- MEDIUM. Physical GPU, IOMMU, VFIO bind, and DKMS are not available in this Cloud VM. Why not blocking: API/RBAC, group listing, exclusive claims, typed driverctl argv, and LXC config without /dev/dri are proven; hardware bind remains appliance validation.
+- LOW. Render assignment uses the planned `/dev/dri/renderD128` locator. Why not blocking: the node is optional in LXC config; Cloud has no DRM device to prove the live node number.
+- LOW. QEMU vfio-pci slots start at 0x1a rather than a live query-pci allocation. Why not blocking: locators are not identity; Phase 8 already pins compiled PCI slots.
+
+
 

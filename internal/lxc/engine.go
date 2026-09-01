@@ -259,7 +259,8 @@ func (e *Engine) Clone(ctx context.Context, req LifecycleRequest) (Result, error
 func specChanged(prev, next Spec) bool {
 	return prev.CPUs != next.CPUs || prev.MemoryBytes != next.MemoryBytes ||
 		prev.BridgeName != next.BridgeName || prev.Privileged != next.Privileged ||
-		prev.UIDMap != next.UIDMap || prev.GIDMap != next.GIDMap || prev.Name != next.Name
+		prev.UIDMap != next.UIDMap || prev.GIDMap != next.GIDMap || prev.Name != next.Name ||
+		strings.Join(prev.GPUDevices, "\n") != strings.Join(next.GPUDevices, "\n")
 }
 
 func (e *Engine) prepareRootfs(spec Spec) error {

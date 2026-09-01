@@ -461,6 +461,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			WorkloadID: row.ID, Name: next.Name, ImagePin: next.ImagePin, CPUs: next.CPUs,
 			MemoryBytes: next.MemoryBytes, VolumeID: volID, RootfsPath: rootfs, NetworkID: netID,
 			BridgeName: bridge, MAC: mac, Privileged: next.Privileged, UIDMap: next.UIDMap, GIDMap: next.GIDMap,
+			GPUDevices: s.gpuDeviceNodes(r.Context(), p.User.ClusterID, row.ID),
 		})
 		if next.DesiredPower == "stopped" {
 			_, _ = s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "stop"})

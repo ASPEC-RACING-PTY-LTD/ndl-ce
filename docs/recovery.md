@@ -191,4 +191,23 @@ even after AAL 2 and confirm.
 4. Password login succeeds without an MFA challenge.
 5. Re-enroll TOTP if MFA is still required by policy.
 
+## GPU assignment (Phase 14)
+
+Workloads receive a GPU only when assigned. Create without a GPU does not
+attach `/dev/dri`. `gpu=all` is refused. ACS override is refused as the
+product default. Two exclusive claims on the same GPU or IOMMU group fail.
+
+VFIO assignment requires a VM snapshot and a stopped guest. Bind uses typed
+`driverctl set-override <BDF> vfio-pci`. Unassign runs `driverctl unset-override`
+so the host driver can bind again. HDMI audio functions in the same IOMMU
+group are listed and included in the VFIO host set.
+
+GPU runtime packages are optional host-platform work. They are not Depends of
+`ndl-agent`. NVIDIA_VISIBLE_DEVICES=all is never set.
+
+Failed VFIO restore: unassign still records the dropped claim and retries
+host-driver restore through the same typed argv. If driverctl is missing, the
+status is failed with an honest reason, not a fake unbound GPU.
+
+
 

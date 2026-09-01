@@ -55,6 +55,7 @@ type Server struct {
 	VM          VMRPC
 	Backup      BackupRPC
 	Update      UpdateRPC
+	GPU         GPURPC
 	Hub         *EventHub
 	UI          fs.FS
 	Now         func() time.Time
@@ -192,6 +193,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/secrets/reveal", s.revealSecret)
 	mux.HandleFunc("POST /api/v1/cluster/destroy", s.destroyCluster)
 	mux.HandleFunc("POST /api/v1/storage/volumes/{id}/unlock", s.unlockVolume)
+	mux.HandleFunc("GET /api/v1/gpus", s.listGPUs)
+	mux.HandleFunc("GET /api/v1/gpus/runtime", s.gpuRuntime)
+	mux.HandleFunc("POST /api/v1/gpus/runtime/install", s.installGPURuntime)
+	mux.HandleFunc("POST /api/v1/gpus/assign", s.assignGPU)
+	mux.HandleFunc("POST /api/v1/gpus/unassign", s.unassignGPU)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/gpus", s.workloadGPUs)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

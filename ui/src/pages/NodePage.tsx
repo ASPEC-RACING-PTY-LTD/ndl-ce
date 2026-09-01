@@ -9,6 +9,7 @@ import {
 import type { Capability, HardwareResponse, MetricsResponse, NodeSummary } from "../api/phase2";
 import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
+import { GpuPage } from "./GpuPage";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { usePath } from "../router";
 
@@ -79,6 +80,8 @@ export function NodePage() {
       ? "metrics"
       : path.startsWith("/node/events")
         ? "events"
+      : path.startsWith("/node/gpu")
+        ? "gpu"
         : "summary";
 
   return (
@@ -97,6 +100,9 @@ export function NodePage() {
         <Link href="/node/hardware" aria-current={tab === "hardware" ? "page" : undefined}>
           Hardware
         </Link>
+        <Link href="/node/gpu" aria-current={tab === "gpu" ? "page" : undefined}>
+          GPU
+        </Link>
         <Link href="/node/metrics" aria-current={tab === "metrics" ? "page" : undefined}>
           Metrics
         </Link>
@@ -108,6 +114,7 @@ export function NodePage() {
       </nav>
       {tab === "summary" ? <NodeSummaryView id={id} fallback={nodes} /> : null}
       {tab === "hardware" ? <NodeHardwareView id={id} /> : null}
+      {tab === "gpu" ? <GpuPage /> : null}
       {tab === "metrics" ? <NodeMetricsView id={id} /> : null}
     </section>
   );

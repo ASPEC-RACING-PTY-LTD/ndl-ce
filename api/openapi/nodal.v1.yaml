@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.12
-  description: Phase 13 identity completion plus prior northbound API. Groups, TOTP MFA, service principals, audit browser, and honest volume encryption fields.
+  version: 0.1.13
+  description: Phase 14 GPU runtime and assignment plus prior northbound API. Explicit gpu_id, IOMMU group listing, exclusive claims, and Debian 13 runtime install.
 servers:
   - url: /api/v1
 paths:
@@ -1793,6 +1793,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServicePrincipalCreated"
+  /gpus:
+    get:
+      operationId: listGpus
+      summary: List GPUs, IOMMU group members, and assignments. gpu=all is never a valid id.
+      responses:
+        "200":
+          description: GPUs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUListResponse"
+  /gpus/runtime:
+    get:
+      operationId: getGpuRuntime
+      summary: GPU runtime install status. Debian 13 adapter only.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPURuntime"
+  /gpus/runtime/install:
+    post:
+      operationId: installGpuRuntime
+      summary: Install GPU userland via typed Debian apt-get. Requires confirm or dry_run.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GPUInstallRequest"
+      responses:
+        "200":
+          description: Requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUAssignResult"
+        "422":
+          description: Confirm required
+  /gpus/assign:
+    post:
+      operationId: assignGpu
+      summary: Assign a GPU by PCI BDF. ACS override is refused. Two exclusive claims fail.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GPUAssignRequest"
+      responses:
+        "201":
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUAssignment"
+        "400":
+          description: gpu=all or invalid id
+        "409":
+          description: Exclusive claim conflict
+        "422":
+          description: ACS override, VFIO preconditions, or unsupported mode
+  /gpus/unassign:
+    post:
+      operationId: unassignGpu
+      summary: Drop a GPU claim and restore the host driver for VFIO.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GPUUnassignRequest"
+      responses:
+        "200":
+          description: Unassigned
+  /workloads/{id}/gpus:
+    get:
+      operationId: listWorkloadGpus
+      summary: GPU assignments for one workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUAssignmentListResponse"
 components:
   schemas:
     HealthResponse:
@@ -3521,4 +3615,212 @@ components:
           type: string
           enum:
             - service
+    GPUListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - acs_override
+        - default_devices
+        - note
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPU"
+        iommu:
+          type: object
+          additionalProperties: true
+        runtime:
+          $ref: "#/components/schemas/GPURuntime"
+        acs_override:
+          type: string
+        default_devices:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+    GPU:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - pci
+      properties:
+        id:
+          type: string
+        vendor:
+          type: string
+        model:
+          type: string
+        pci:
+          type: string
+        driver:
+          type: string
+        iommu_group:
+          type: string
+        hint:
+          type: string
+        group_members:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUGroupMember"
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUAssignment"
+    GPUGroupMember:
+      type: object
+      additionalProperties: false
+      required:
+        - pci
+        - kind
+      properties:
+        pci:
+          type: string
+        class:
+          type: string
+        kind:
+          type: string
+        driver:
+          type: string
+    GPUAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - gpu_id
+        - workload_id
+        - mode
+        - exclusive
+        - status
+      properties:
+        id:
+          type: string
+        gpu_id:
+          type: string
+        workload_id:
+          type: string
+        mode:
+          type: string
+        exclusive:
+          type: boolean
+        iommu_group:
+          type: string
+        pci_devices:
+          type: array
+          items:
+            type: string
+        device_nodes:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        reason:
+          type: string
+    GPUAssignmentListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUAssignment"
+    GPUAssignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - gpu_id
+        - workload_id
+        - mode
+      properties:
+        gpu_id:
+          type: string
+        workload_id:
+          type: string
+        mode:
+          type: string
+        exclusive:
+          type: boolean
+        acs_override:
+          type: boolean
+    GPUUnassignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    GPUInstallRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        dry_run:
+          type: boolean
+    GPURuntime:
+      type: object
+      additionalProperties: false
+      required:
+        - host_supported
+        - status
+        - cuda
+        - rocm
+      properties:
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        cuda:
+          type: string
+        rocm:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+        flags:
+          type: object
+          additionalProperties:
+            type: string
+    GPUAssignResult:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+        reason:
+          type: string
+        pci_devices:
+          type: array
+          items:
+            type: string
+        device_nodes:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+        cuda:
+          type: string
+        rocm:
+          type: string
+        host_supported:
+          type: boolean
+        packages:
+          type: array
+          items:
+            type: string
 

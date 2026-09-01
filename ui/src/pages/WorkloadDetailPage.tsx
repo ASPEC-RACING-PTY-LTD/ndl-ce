@@ -115,6 +115,7 @@ export function WorkloadDetailPage() {
           <Link href={`/workloads/${item.id}/terminal`}>Terminal</Link>
           <Link href={`/workloads/${item.id}/files`}>Files</Link>
           <Link href={`/workloads/${item.id}/snapshots`}>Snapshots</Link>
+          {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
         </nav>
       ) : (
         <>
@@ -123,6 +124,7 @@ export function WorkloadDetailPage() {
             <span>Terminal (unavailable)</span>
             <span>Files (unavailable)</span>
             <Link href={`/workloads/${item.id}/snapshots`}>Snapshots</Link>
+            {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
           </nav>
           <p className="banner banner-warn" role="status">
             No-dal Guest Agent required. VM Terminal and Files are introduced in a later platform phase.

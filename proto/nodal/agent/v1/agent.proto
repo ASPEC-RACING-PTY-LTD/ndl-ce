@@ -153,6 +153,7 @@ message ExecuteRequest {
     VMSnapshot vm_snapshot = 23;
     BackupCopy backup_copy = 24;
     HostUpdate host_update = 25;
+    GPUAssign gpu_assign = 26;
   }
 }
 
@@ -163,6 +164,18 @@ message HostUpdate {
   string version = 4;
   bool dry_run = 5;
   string checkpoint_id = 6;
+}
+
+message GPUAssign {
+  string action = 1;
+  string gpu_id = 2;
+  string workload_id = 3;
+  string mode = 4;
+  bool exclusive = 5;
+  repeated string pci_devices = 6;
+  repeated string device_nodes = 7;
+  bool acs_override = 8;
+  bool dry_run = 9;
 }
 
 message BackupCopy {

@@ -22,6 +22,7 @@ import { UpdatesPage } from "./pages/UpdatesPage";
 import { MFAPage } from "./pages/MFAPage";
 import { GroupsPage } from "./pages/GroupsPage";
 import { AuditPage } from "./pages/AuditPage";
+import { GpuPage } from "./pages/GpuPage";
 import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
@@ -113,6 +114,8 @@ function AppRoutes() {
     page = <TerminalPage />;
   } else if (/^\/nodes\/[^/]+\/files$/.test(path)) {
     page = <FilesPage />;
+  } else if (/^\/workloads\/[^/]+\/gpus$/.test(path)) {
+    page = <GpuPage />;
   } else if (path.startsWith("/workloads/") && path !== "/workloads") {
     page = <WorkloadDetailPage />;
   } else if (path === "/workloads") {

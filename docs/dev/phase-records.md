@@ -65,3 +65,13 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest MFA: TOTP works. WebAuthn is not implemented. Directory volume unlock is 422, not a fake LUKS open. Cluster destroy remains not implemented.
 - Follow-up: WebAuthn, real LUKS/ZFS unlock after Phase 15, license activation UI Phase 43
 
+## Phase 14
+
+- Package: 0.1.13
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (gpu=all refused, HDMI audio listed in IOMMU group, two exclusive claims fail, ACS override 422, viewer 403, VFIO requires snapshot and stopped VM, Ubuntu runtime unsupported, CT create without GPU omits /dev/dri, typed driverctl argv, NVIDIA_VISIBLE_DEVICES never all). FIXTURE for driverctl/apt-get/DKMS (SkipHostCmds). NOT PHYSICALLY VALIDATED: real NVIDIA/AMD/Intel GPU, IOMMU groups on hardware, VFIO bind/unbind, DKMS, /dev/dri inside a running CT
+- Honest GPU: none detected stays none detected. Runtime install is Unsupported on this Ubuntu Cloud host. Store GPU picker is Phase 36.
+- Follow-up: OCI GPU consume claims in Phase 21, MIG if NVML offers it, licensed vGPU post-1.0 CE
+
+

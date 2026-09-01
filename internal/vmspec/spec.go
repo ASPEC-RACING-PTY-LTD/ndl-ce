@@ -140,6 +140,13 @@ type Launch struct {
 	Balloon       bool              `json:"balloon"`
 	BootOrder     string            `json:"boot_order"`
 	QGA           bool              `json:"qemu_ga"`
+	GPUs          []LaunchGPU       `json:"gpus,omitempty"`
+}
+
+// LaunchGPU is a compiled VFIO host PCI locator. It is not product identity.
+type LaunchGPU struct {
+	Host    string `json:"host"`
+	PCIAddr string `json:"pci_addr"`
 }
 
 // Firmware is the resolved firmware mode and locators.

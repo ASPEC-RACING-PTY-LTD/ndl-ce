@@ -52,6 +52,7 @@ type Memory struct {
 	mfaChallenges     map[string]MFAChallenge
 	servicePrincipals map[string]ServicePrincipal
 	volumeEnc         map[string]VolumeEncryption
+	gpuAssignments    map[string]GPUAssignment
 }
 
 // NewMemory returns an empty store.

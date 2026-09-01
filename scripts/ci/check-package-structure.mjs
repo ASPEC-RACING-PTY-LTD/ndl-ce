@@ -67,6 +67,9 @@ if (!changelog.includes("nodal (0.1.11)") || !changelog.includes("Phase 12 platf
 if (!changelog.includes("nodal (0.1.12)") || !changelog.includes("Phase 13 identity completion")) {
   errors.push("changelog must include nodal (0.1.12) Phase 13 identity completion");
 }
+if (!changelog.includes("nodal (0.1.13)") || !changelog.includes("Phase 14 GPU runtime and assignment")) {
+  errors.push("changelog must include nodal (0.1.13) Phase 14 GPU runtime and assignment");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

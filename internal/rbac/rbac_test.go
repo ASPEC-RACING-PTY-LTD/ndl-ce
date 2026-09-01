@@ -49,6 +49,9 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if Authorize(view, ComputeModify) || Authorize(view, ComputeStart) || Authorize(view, ComputeConsole) || Authorize(view, ComputeDelete) {
 		t.Fatal("viewer compute remains read-only")
 	}
+	if !Authorize(op, ComputeGPUAssign) || Authorize(view, ComputeGPUAssign) {
+		t.Fatal("operator gpu assign; viewer not")
+	}
 	if Authorize(view, TerminalOpen) {
 		t.Fatal("viewer must not have terminal")
 	}

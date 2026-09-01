@@ -84,6 +84,9 @@ func run(args []string) error {
   group list
   group member add --id ID --user-id USER
   group role bind --id ID --role operator|viewer
+  gpu list
+  gpu assign --gpu-id BDF --workload-id ID --mode render|compute|encode|vfio [--exclusive]
+  gpu unassign --id ID
 `)
 		return nil
 	}
@@ -148,6 +151,8 @@ func run(args []string) error {
 		return cmdUser(args[1:])
 	case "group":
 		return cmdGroup(args[1:])
+	case "gpu":
+		return cmdGPU(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -868,6 +873,33 @@ func cmdGroup(args []string) error {
 		return postJSON("/api/v1/groups/"+f["id"]+"/roles", map[string]any{"role": f["role"]}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl group add --name NAME")
+	}
+}
+
+func cmdGPU(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: nodalctl gpu list|assign|unassign")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/gpus")
+	case "assign":
+		f := parseFlags(args[1:])
+		gpuID := firstNonEmpty(f["gpu-id"], f["gpu_id"])
+		wl := firstNonEmpty(f["workload-id"], f["workload_id"])
+		if gpuID == "" || wl == "" || f["mode"] == "" {
+			return fmt.Errorf("usage: nodalctl gpu assign --gpu-id BDF --workload-id ID --mode render|compute|encode|vfio")
+		}
+		body := map[string]any{"gpu_id": gpuID, "workload_id": wl, "mode": f["mode"], "exclusive": f["exclusive"] != "false"}
+		return postJSON("/api/v1/gpus/assign", body, true)
+	case "unassign":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl gpu unassign --id ID")
+		}
+		return postJSON("/api/v1/gpus/unassign", map[string]any{"id": f["id"]}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl gpu list|assign|unassign")
 	}
 }
 

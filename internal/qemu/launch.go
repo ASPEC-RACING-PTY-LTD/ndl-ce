@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/gpu"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
@@ -133,6 +134,18 @@ func (e *Engine) CompileLaunch(launch vmspec.Launch) ([]string, error) {
 			}
 			argv = append(argv, "-device", "virtio-blk-pci,drive="+d.NodeName+",addr="+d.PCIAddr)
 		}
+	}
+	for i, g := range launch.GPUs {
+		if err := vmspec.ValidatePCIAddr(g.PCIAddr); err != nil {
+			return nil, err
+		}
+		if _, err := gpu.ParseGPUID(g.Host); err != nil {
+			return nil, err
+		}
+		if strings.ContainsAny(g.Host, ",=") {
+			return nil, fmt.Errorf("vfio host contains a banned character")
+		}
+		argv = append(argv, "-device", fmt.Sprintf("vfio-pci,host=%s,addr=%s,id=vfio%d", g.Host, g.PCIAddr, i))
 	}
 	for i, n := range launch.NICs {
 		if err := vmspec.ValidateMAC(n.MAC); err != nil {

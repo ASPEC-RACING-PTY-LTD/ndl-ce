@@ -696,3 +696,17 @@ export async function bindGroupRole(id: string, role: string) {
     await request(`/groups/${id}/roles`, { method: "POST", body: JSON.stringify({ role }) }),
   );
 }
+
+export async function listGpus() {
+  return readJson<import("../generated/openapi").GPUListResponse>(await request("/gpus"));
+}
+
+export async function assignGpu(body: import("../generated/openapi").GPUAssignRequest) {
+  return readJson<import("../generated/openapi").GPUAssignment>(
+    await request("/gpus/assign", { method: "POST", body: JSON.stringify(body) }),
+  );
+}
+
+export async function unassignGpu(id: string) {
+  return readJson(await request("/gpus/unassign", { method: "POST", body: JSON.stringify({ id }) }));
+}

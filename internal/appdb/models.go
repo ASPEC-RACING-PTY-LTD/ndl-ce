@@ -165,6 +165,12 @@ type Store interface {
 
 	GetVolumeEncryption(ctx context.Context, clusterID, volumeID string) (*VolumeEncryption, error)
 	UpsertVolumeEncryption(ctx context.Context, e VolumeEncryption) error
+
+	CreateGPUAssignment(ctx context.Context, a GPUAssignment) error
+	ListGPUAssignments(ctx context.Context, clusterID string) ([]GPUAssignment, error)
+	ListGPUAssignmentsForGPU(ctx context.Context, clusterID, gpuID string) ([]GPUAssignment, error)
+	GetGPUAssignment(ctx context.Context, clusterID, id string) (*GPUAssignment, error)
+	DeleteGPUAssignment(ctx context.Context, clusterID, id string) error
 }
 
 // Cluster is the appliance cluster of one.

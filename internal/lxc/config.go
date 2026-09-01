@@ -72,6 +72,27 @@ func RenderConfig(spec Spec) string {
 		fmt.Fprintf(&b, "lxc.idmap = %s\n", uid)
 		fmt.Fprintf(&b, "lxc.idmap = %s\n", gid)
 	}
+	dri, nvidia := false, false
+	for _, dev := range spec.GPUDevices {
+		dev = strings.TrimSpace(dev)
+		if dev == "" || strings.Contains(dev, "..") || !strings.HasPrefix(dev, "/dev/") {
+			continue
+		}
+		if strings.HasPrefix(dev, "/dev/dri/") {
+			dri = true
+		}
+		if strings.HasPrefix(dev, "/dev/nvidia") {
+			nvidia = true
+		}
+		rel := strings.TrimPrefix(dev, "/")
+		fmt.Fprintf(&b, "lxc.mount.entry = %s %s none bind,optional,create=file\n", dev, rel)
+	}
+	if dri {
+		fmt.Fprintf(&b, "lxc.cgroup2.devices.allow = c 226:* rwm\n")
+	}
+	if nvidia {
+		fmt.Fprintf(&b, "lxc.cgroup2.devices.allow = c 195:* rwm\n")
+	}
 	return b.String()
 }
 
