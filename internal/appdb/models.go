@@ -95,6 +95,11 @@ type Store interface {
 	CreateWorkloadNIC(ctx context.Context, n WorkloadNIC) error
 	ListWorkloadNICs(ctx context.Context, clusterID, workloadID string) ([]WorkloadNIC, error)
 	UpdateWorkloadNIC(ctx context.Context, n WorkloadNIC) error
+
+	CreateIOSession(ctx context.Context, s IOSession) error
+	GetIOSession(ctx context.Context, clusterID, id string) (*IOSession, error)
+	GetIOSessionByTicketHash(ctx context.Context, ticketHash string) (*IOSession, error)
+	UpdateIOSession(ctx context.Context, s IOSession) error
 }
 
 // Cluster is the appliance cluster of one.

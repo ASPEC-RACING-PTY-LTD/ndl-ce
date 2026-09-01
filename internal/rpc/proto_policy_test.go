@@ -71,6 +71,10 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"rpc GetNetworks(",
 		"rpc GetWorkloads(",
 		"rpc UploadLibrary(",
+		"rpc FilesOp(",
+		"rpc FilesPut(",
+		"rpc FilesGet(",
+		"rpc AttachTerminal(",
 	} {
 		if !strings.Contains(text, need) {
 			t.Fatalf("proto missing %s", need)

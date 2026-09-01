@@ -166,6 +166,7 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 
 // Start starts nodal-ct@<uuid> via systemd.
 func (e *Engine) Start(ctx context.Context, id string) error {
+	e.ensureAppliedTraverse(id)
 	_, err := e.run(ctx, BinSystemctl, "start", unitName(id))
 	return err
 }
@@ -178,8 +179,23 @@ func (e *Engine) Stop(ctx context.Context, id string) error {
 
 // Restart restarts the CT unit.
 func (e *Engine) Restart(ctx context.Context, id string) error {
+	e.ensureAppliedTraverse(id)
 	_, err := e.run(ctx, BinSystemctl, "restart", unitName(id))
 	return err
+}
+
+func (e *Engine) ensureAppliedTraverse(id string) {
+	if e.SkipHostCmds {
+		return
+	}
+	applied, err := e.readApplied(id)
+	if err != nil {
+		return
+	}
+	if !applied.Spec.Privileged {
+		_ = ensureTraverse(applied.Spec.RootfsPath)
+	}
+	_ = ensureTraverse(e.configPath(id))
 }
 
 // Delete stops the unit and removes runtime files. Desired rows stay in the store.

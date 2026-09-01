@@ -47,6 +47,7 @@ type Server struct {
 	Storage    StorageRPC
 	Network    NetworkRPC
 	Workloads  WorkloadRPC
+	IO         IORPC
 	Hub        *EventHub
 	UI         fs.FS
 	Now        func() time.Time
@@ -112,6 +113,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/restart", s.lifecycleWorkload("restart"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/delete", s.lifecycleWorkload("delete"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/clone", s.lifecycleWorkload("clone"))
+	mux.HandleFunc("POST /api/v1/nodes/{id}/terminal/sessions", s.createNodeTerminal)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/terminal/sessions", s.createWorkloadTerminal)
+	mux.HandleFunc("GET /api/v1/io/sessions/{id}", s.getIOSession)
+	mux.HandleFunc("GET /api/v1/io/sessions/{id}/ws", s.ioSessionWS)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/files", s.nodeFilesList)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/files/stat", s.nodeFilesStat)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/files/download", s.nodeFilesDownload)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/files/upload", s.nodeFilesUpload)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/files/mkdir", s.nodeFilesMkdir)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/files/delete", s.nodeFilesDelete)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/files/move", s.nodeFilesMove)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/files", s.workloadFilesList)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/files/stat", s.workloadFilesStat)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/files/download", s.workloadFilesDownload)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/files/upload", s.workloadFilesUpload)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/files/mkdir", s.workloadFilesMkdir)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/files/delete", s.workloadFilesDelete)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/files/move", s.workloadFilesMove)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

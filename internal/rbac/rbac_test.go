@@ -43,6 +43,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, ComputeCreate) || !Authorize(op, ComputeLifecycle) {
 		t.Fatal("operator unprivileged create and lifecycle")
 	}
+	if !Authorize(view, FilesRead) || Authorize(view, FilesDownload) || Authorize(view, TerminalOpen) {
+		t.Fatal("viewer files.read only, no download, no terminal")
+	}
+	if !Authorize(op, TerminalOpen) || !Authorize(op, FilesUpload) || !Authorize(op, FilesDelete) {
+		t.Fatal("operator CT terminal and files")
+	}
 	if Authorize(nil, NodeRead) {
 		t.Fatal("deny by default")
 	}

@@ -305,6 +305,81 @@ export async function patchWorkload(
   );
 }
 
+export async function createTerminalSession(
+  kind: "node" | "workload",
+  id: string,
+  cwd = "/",
+): Promise<import("./phase6").IOSession> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  return readJson(
+    await request(`/${prefix}/${id}/terminal/sessions`, {
+      method: "POST",
+      body: JSON.stringify({ cwd }),
+    }),
+  );
+}
+
+export async function listFiles(
+  kind: "node" | "workload",
+  id: string,
+  path = "/",
+): Promise<import("./phase6").FileList> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  return readJson(await request(`/${prefix}/${id}/files?path=${encodeURIComponent(path)}`));
+}
+
+export async function mkdirFile(kind: "node" | "workload", id: string, path: string): Promise<void> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  await readJson(
+    await request(`/${prefix}/${id}/files/mkdir`, {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
+  );
+}
+
+export async function deleteFile(kind: "node" | "workload", id: string, path: string): Promise<void> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  await readJson(
+    await request(`/${prefix}/${id}/files/delete`, {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
+  );
+}
+
+export async function uploadFile(kind: "node" | "workload", id: string, path: string, file: File): Promise<void> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  const data = new FormData();
+  data.append("path", path);
+  data.append("file", file);
+  const res = await fetch(`/api/v1/${prefix}/${id}/files/upload`, {
+    method: "POST",
+    credentials: "include",
+    body: data,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+}
+
+export async function downloadFile(kind: "node" | "workload", id: string, path: string, filename: string): Promise<void> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  const res = await fetch(`/api/v1/${prefix}/${id}/files/download?path=${encodeURIComponent(path)}`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+  const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(href);
+}
+
 export async function workloadAction(
   id: string,
   action: "start" | "stop" | "restart" | "delete" | "clone",

@@ -287,4 +287,44 @@ describe("App", () => {
     const path: GetHealthPath = "/api/v1/health";
     expect(path).toBe("/api/v1/health");
   });
+
+  it("renders workload files without inventing a session", async () => {
+    window.history.replaceState({}, "", "/workloads/wl-1/files");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/wl-1": {
+        status: 200,
+        body: { id: "wl-1", name: "accept-ct", kind: "system-container", status: "running" },
+      },
+      "/api/v1/workloads/wl-1/files": {
+        status: 200,
+        body: { path: "/", entries: [{ name: "etc", type: "dir", size: 0, path: "etc" }] },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^files$/i })).toBeVisible();
+    expect(await screen.findByText("etc")).toBeVisible();
+    expect(screen.getByText(/upload here/i)).toBeVisible();
+    expect(screen.queryByText(/fake session/i)).not.toBeInTheDocument();
+  });
+
+  it("says VM terminal is unsupported", async () => {
+    window.history.replaceState({}, "", "/workloads/vm-1/terminal");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/vm-1": {
+        status: 200,
+        body: { id: "vm-1", name: "win", kind: "vm", status: "stopped" },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText(/phase 20/i)).toBeVisible();
+    expect(screen.queryByText(/connected/i)).not.toBeInTheDocument();
+  });
 });

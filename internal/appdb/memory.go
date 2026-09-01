@@ -32,6 +32,7 @@ type Memory struct {
 	workloads     map[string]Workload
 	workloadDisks map[string]WorkloadDisk
 	workloadNICs  map[string]WorkloadNIC
+	ioSessions    map[string]IOSession
 }
 
 // NewMemory returns an empty store.

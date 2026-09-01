@@ -8,6 +8,8 @@ import { NodePage } from "./pages/NodePage";
 import { SetupPage } from "./pages/SetupPage";
 import { NetworkPage } from "./pages/NetworkPage";
 import { StoragePage } from "./pages/StoragePage";
+import { FilesPage } from "./pages/FilesPage";
+import { TerminalPage } from "./pages/TerminalPage";
 import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
@@ -88,6 +90,14 @@ function AppRoutes() {
     page = <NetworkPage />;
   } else if (path === "/workloads/new/system-container") {
     page = <WorkloadCreatePage />;
+  } else if (/^\/workloads\/[^/]+\/terminal$/.test(path)) {
+    page = <TerminalPage />;
+  } else if (/^\/workloads\/[^/]+\/files$/.test(path)) {
+    page = <FilesPage />;
+  } else if (/^\/nodes\/[^/]+\/terminal$/.test(path)) {
+    page = <TerminalPage />;
+  } else if (/^\/nodes\/[^/]+\/files$/.test(path)) {
+    page = <FilesPage />;
   } else if (path.startsWith("/workloads/") && path !== "/workloads") {
     page = <WorkloadDetailPage />;
   } else if (path === "/workloads") {

@@ -103,6 +103,8 @@ export function NodePage() {
         <Link href="/events" aria-current={tab === "events" ? "page" : undefined}>
           Events
         </Link>
+        <Link href={`/nodes/${id}/terminal`}>Terminal</Link>
+        <Link href={`/nodes/${id}/files`}>Files</Link>
       </nav>
       {tab === "summary" ? <NodeSummaryView id={id} fallback={nodes} /> : null}
       {tab === "hardware" ? <NodeHardwareView id={id} /> : null}

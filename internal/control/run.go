@@ -93,6 +93,7 @@ func Run(cfg Config) error {
 		Storage:   agent,
 		Network:   agent,
 		Workloads: agent,
+		IO:        agent,
 		Hub:       hub,
 		UI:        ui,
 		SetupHash: cfg.SetupHash,

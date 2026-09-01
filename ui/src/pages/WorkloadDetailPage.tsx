@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getWorkload, patchWorkload, workloadAction } from "../api/client";
 import type { Workload } from "../api/phase5";
 import { Field } from "../components/Field";
+import { Link } from "../components/Link";
 import { formatBytes, honestStatus } from "../format";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
@@ -103,6 +104,16 @@ export function WorkloadDetailPage() {
         <h1 id="workload-heading">{item.name}</h1>
         <p className="page-kicker">{item.kind}</p>
       </header>
+      {item.kind === "system-container" ? (
+        <nav className="subnav" aria-label="Workload IO">
+          <Link href={`/workloads/${item.id}/terminal`}>Terminal</Link>
+          <Link href={`/workloads/${item.id}/files`}>Files</Link>
+        </nav>
+      ) : (
+        <p className="banner banner-warn" role="status">
+          VM Terminal and Files are Phase 20 and are not implemented.
+        </p>
+      )}
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

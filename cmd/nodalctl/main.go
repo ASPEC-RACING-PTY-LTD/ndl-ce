@@ -52,6 +52,8 @@ func run(args []string) error {
   workload restart --id ID
   workload delete --id ID
   workload clone --id ID [--name NAME]
+  node terminal [--id ID] [--cwd PATH]
+  workload files ls --id ID [--path PATH]
 `)
 		return nil
 	}
@@ -75,10 +77,17 @@ func run(args []string) error {
 	case "host-prepare":
 		return install.HostPrepare()
 	case "node":
-		if len(args) < 2 || args[1] != "show" {
-			return fmt.Errorf("usage: nodalctl node show")
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl node show|terminal")
 		}
-		return cmdGet("/api/v1/nodes")
+		switch args[1] {
+		case "show":
+			return cmdGet("/api/v1/nodes")
+		case "terminal":
+			return cmdNodeTerminal(args[2:])
+		default:
+			return fmt.Errorf("usage: nodalctl node show|terminal")
+		}
 	case "task":
 		if len(args) < 2 || args[1] != "list" {
 			return fmt.Errorf("usage: nodalctl task list")
@@ -389,7 +398,7 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 
 func cmdWorkload(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|delete|clone")
+		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|delete|clone|files")
 	}
 	switch args[0] {
 	case "list":
@@ -438,9 +447,51 @@ func cmdWorkload(args []string) error {
 			return fmt.Errorf("usage: nodalctl workload clone --id ID [--name NAME]")
 		}
 		return postJSON("/api/v1/workloads/"+f["id"]+"/clone", map[string]any{"name": f["name"]}, true)
+	case "files":
+		return cmdWorkloadFiles(args[1:])
 	default:
 		return fmt.Errorf("unknown workload command")
 	}
+}
+
+func cmdNodeTerminal(args []string) error {
+	f := parseFlags(args)
+	id := f["id"]
+	if id == "" {
+		raw, err := do("GET", "/api/v1/nodes", nil, true)
+		if err != nil {
+			return err
+		}
+		var listed struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(raw, &listed); err != nil || len(listed.Items) == 0 {
+			return fmt.Errorf("no local node is enrolled")
+		}
+		id = listed.Items[0].ID
+	}
+	cwd := f["cwd"]
+	if cwd == "" {
+		cwd = "/"
+	}
+	return postJSON("/api/v1/nodes/"+id+"/terminal/sessions", map[string]any{"cwd": cwd}, true)
+}
+
+func cmdWorkloadFiles(args []string) error {
+	if len(args) < 1 || args[0] != "ls" {
+		return fmt.Errorf("usage: nodalctl workload files ls --id ID [--path PATH]")
+	}
+	f := parseFlags(args[1:])
+	if f["id"] == "" {
+		return fmt.Errorf("usage: nodalctl workload files ls --id ID [--path PATH]")
+	}
+	p := f["path"]
+	if p == "" {
+		p = "/"
+	}
+	return cmdGet("/api/v1/workloads/" + f["id"] + "/files?path=" + strings.ReplaceAll(p, " ", "%20"))
 }
 
 func parseFlags(args []string) map[string]string {

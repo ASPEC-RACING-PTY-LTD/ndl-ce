@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.4
-  description: Phase 5 northbound API. Host visibility, Directory storage, safe networking, and system containers.
+  version: 0.1.5
+  description: Phase 6 northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, and Files.
 servers:
   - url: /api/v1
 paths:
@@ -649,6 +649,364 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /nodes/{id}/terminal/sessions:
+    post:
+      operationId: createNodeTerminalSession
+      summary: Create an admin-only host terminal ticket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIOSessionRequest"
+      responses:
+        "201":
+          description: Ticket shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IOSession"
+  /workloads/{id}/terminal/sessions:
+    post:
+      operationId: createWorkloadTerminalSession
+      summary: Create a CT terminal ticket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIOSessionRequest"
+      responses:
+        "201":
+          description: Ticket shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IOSession"
+  /io/sessions/{id}:
+    get:
+      operationId: getIOSession
+      summary: Get a terminal session without the ticket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IOSession"
+  /io/sessions/{id}/ws:
+    get:
+      operationId: connectIOSession
+      summary: WebSocket proxy for nodal.term.v1. Ticket is X-Nodal-Ticket or ndl.ticket subprotocol
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switched to WebSocket
+  /nodes/{id}/files:
+    get:
+      operationId: listNodeFiles
+      summary: List host files. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileListResponse"
+  /nodes/{id}/files/stat:
+    get:
+      operationId: statNodeFile
+      summary: Stat a host path. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileEntry"
+  /nodes/{id}/files/download:
+    get:
+      operationId: downloadNodeFile
+      summary: Download a host file. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bytes
+  /nodes/{id}/files/upload:
+    post:
+      operationId: uploadNodeFile
+      summary: Upload a host file. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Written
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /nodes/{id}/files/mkdir:
+    post:
+      operationId: mkdirNodeFile
+      summary: Create a host directory. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /nodes/{id}/files/delete:
+    post:
+      operationId: deleteNodeFile
+      summary: Delete a host path. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /nodes/{id}/files/move:
+    post:
+      operationId: moveNodeFile
+      summary: Rename a host path. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Moved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files:
+    get:
+      operationId: listWorkloadFiles
+      summary: List CT files
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileListResponse"
+  /workloads/{id}/files/stat:
+    get:
+      operationId: statWorkloadFile
+      summary: Stat a CT path
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileEntry"
+  /workloads/{id}/files/download:
+    get:
+      operationId: downloadWorkloadFile
+      summary: Download a CT file
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bytes
+  /workloads/{id}/files/upload:
+    post:
+      operationId: uploadWorkloadFile
+      summary: Upload a CT file
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Written
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files/mkdir:
+    post:
+      operationId: mkdirWorkloadFile
+      summary: Create a CT directory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files/delete:
+    post:
+      operationId: deleteWorkloadFile
+      summary: Delete a CT path
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files/move:
+    post:
+      operationId: moveWorkloadFile
+      summary: Rename a CT path
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Moved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
 components:
   schemas:
     HealthResponse:
@@ -1325,4 +1683,83 @@ components:
       additionalProperties: false
       properties:
         name:
+          type: string
+    CreateIOSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        cwd:
+          type: string
+        mode:
+          type: string
+    IOSession:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - target_kind
+        - target_id
+        - kind
+        - state
+      properties:
+        id:
+          type: string
+        target_kind:
+          type: string
+        target_id:
+          type: string
+        kind:
+          type: string
+        cwd:
+          type: string
+        state:
+          type: string
+        ticket:
+          type: string
+        ws_path:
+          type: string
+    FileEntry:
+      type: object
+      additionalProperties: true
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        size:
+          type: integer
+        path:
+          type: string
+    FileListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - entries
+      properties:
+        path:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileEntry"
+    FileMutationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        dest_path:
+          type: string
+        mode:
+          type: integer
+    FileMutationResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        ok:
+          type: boolean
+        path:
           type: string

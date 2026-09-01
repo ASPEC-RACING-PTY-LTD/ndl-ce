@@ -16,11 +16,16 @@ RestartSec=2
 # The socket unit owns /run/ndl. Do not set RuntimeDirectory=ndl here;
 # a service restart would delete agent.sock.
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SYS_ADMIN
 DevicePolicy=closed
+DeviceAllow=char-pts rw
+DeviceAllow=/dev/ptmx rw
+DeviceAllow=/dev/pts rw
 # CAP_NET_ADMIN is required for isolated-nat nftables.
 # CAP_CHOWN remaps unprivileged container rootfs onto the persisted uid map.
-# File and networkd drop-in writes do not need extra capabilities.
+# CAP_DAC_OVERRIDE writes through uid-mapped container rootfs for Files.
+# CAP_SETUID, CAP_SETGID, and CAP_SYS_ADMIN are required for typed lxc-attach.
+# There is still no generic host execution RPC.
 # ExecStop must not stop guest workload units.
 
 [Install]

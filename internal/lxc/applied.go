@@ -34,6 +34,16 @@ func (e *Engine) writeApplied(spec Spec, verified bool, sha string) error {
 	return os.WriteFile(e.lastAppliedPath(spec.WorkloadID), append(b, '\n'), 0o640)
 }
 
+// RuntimeLXC is the liblxc path used with typed lxc-attach/lxc-console argv.
+func (e *Engine) RuntimeLXC() string {
+	return e.lxcPath()
+}
+
+// LastApplied returns the on-disk last-applied spec for a workload UUID.
+func (e *Engine) LastApplied(id string) (Applied, error) {
+	return e.readApplied(id)
+}
+
 func (e *Engine) readApplied(id string) (Applied, error) {
 	b, err := os.ReadFile(e.lastAppliedPath(id))
 	if err != nil {

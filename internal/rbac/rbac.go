@@ -30,6 +30,15 @@ const (
 	ComputeRead         = "compute.read"
 	ComputeCreate       = "compute.create"
 	ComputeLifecycle    = "compute.lifecycle"
+	TerminalOpen        = "terminal.open"
+	FilesRead           = "files.read"
+	FilesDownload       = "files.download"
+	FilesUpload         = "files.upload"
+	FilesCreate         = "files.create"
+	FilesModify         = "files.modify"
+	FilesDelete         = "files.delete"
+	FilesPermissions    = "files.permissions"
+	FilesOwnership      = "files.ownership"
 	All                 = "*"
 )
 
@@ -51,9 +60,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
+			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
 		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead}
+		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead, FilesRead}
 	default:
 		return nil
 	}

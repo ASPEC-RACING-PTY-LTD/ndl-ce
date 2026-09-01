@@ -29,7 +29,9 @@ ensure_user() {
 ensure_dirs() {
   mkdir -p /var/lib/ndl
   chown root:ndl-control /var/lib/ndl
-  chmod 0750 /var/lib/ndl
+  # 0751 lets mapped unprivileged container uids traverse to rootfs.
+  # Secrets stay 0600 under this directory; /var/lib/ndl/control stays 0750.
+  chmod 0751 /var/lib/ndl
   mkdir -p /etc/ndl
   chown root:ndl-control /etc/ndl
   chmod 0750 /etc/ndl

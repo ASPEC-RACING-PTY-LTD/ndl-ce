@@ -60,6 +60,15 @@ const (
 	// AgentServiceUploadLibraryProcedure is the fully-qualified name of the AgentService's
 	// UploadLibrary RPC.
 	AgentServiceUploadLibraryProcedure = "/nodal.agent.v1.AgentService/UploadLibrary"
+	// AgentServiceFilesOpProcedure is the fully-qualified name of the AgentService's FilesOp RPC.
+	AgentServiceFilesOpProcedure = "/nodal.agent.v1.AgentService/FilesOp"
+	// AgentServiceFilesPutProcedure is the fully-qualified name of the AgentService's FilesPut RPC.
+	AgentServiceFilesPutProcedure = "/nodal.agent.v1.AgentService/FilesPut"
+	// AgentServiceFilesGetProcedure is the fully-qualified name of the AgentService's FilesGet RPC.
+	AgentServiceFilesGetProcedure = "/nodal.agent.v1.AgentService/FilesGet"
+	// AgentServiceAttachTerminalProcedure is the fully-qualified name of the AgentService's
+	// AttachTerminal RPC.
+	AgentServiceAttachTerminalProcedure = "/nodal.agent.v1.AgentService/AttachTerminal"
 )
 
 // AgentServiceClient is a client for the nodal.agent.v1.AgentService service.
@@ -83,6 +92,14 @@ type AgentServiceClient interface {
 	GetWorkloads(context.Context, *connect.Request[v1.GetWorkloadsRequest]) (*connect.Response[v1.GetWorkloadsResponse], error)
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context) *connect.ClientStreamForClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
+	// FilesOp is a typed jail operation. Path is relative to the jail root.
+	FilesOp(context.Context, *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error)
+	// FilesPut writes one file in chunks beneath the jail.
+	FilesPut(context.Context) *connect.ClientStreamForClient[v1.FilesPutRequest, v1.FilesOpResponse]
+	// FilesGet reads one file in chunks beneath the jail.
+	FilesGet(context.Context, *connect.Request[v1.FilesGetRequest]) (*connect.ServerStreamForClient[v1.FilesGetResponse], error)
+	// AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+	AttachTerminal(context.Context) *connect.BidiStreamForClient[v1.TermFrame, v1.TermFrame]
 }
 
 // NewAgentServiceClient constructs a client for the nodal.agent.v1.AgentService service. By
@@ -162,22 +179,50 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("UploadLibrary")),
 			connect.WithClientOptions(opts...),
 		),
+		filesOp: connect.NewClient[v1.FilesOpRequest, v1.FilesOpResponse](
+			httpClient,
+			baseURL+AgentServiceFilesOpProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("FilesOp")),
+			connect.WithClientOptions(opts...),
+		),
+		filesPut: connect.NewClient[v1.FilesPutRequest, v1.FilesOpResponse](
+			httpClient,
+			baseURL+AgentServiceFilesPutProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("FilesPut")),
+			connect.WithClientOptions(opts...),
+		),
+		filesGet: connect.NewClient[v1.FilesGetRequest, v1.FilesGetResponse](
+			httpClient,
+			baseURL+AgentServiceFilesGetProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("FilesGet")),
+			connect.WithClientOptions(opts...),
+		),
+		attachTerminal: connect.NewClient[v1.TermFrame, v1.TermFrame](
+			httpClient,
+			baseURL+AgentServiceAttachTerminalProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("AttachTerminal")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
-	hello         *connect.Client[v1.HelloRequest, v1.HelloResponse]
-	observe       *connect.Client[v1.ObserveRequest, v1.ObserveResponse]
-	execute       *connect.Client[v1.ExecuteRequest, v1.ExecuteResponse]
-	enroll        *connect.Client[v1.EnrollRequest, v1.EnrollResponse]
-	openSession   *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
-	getInventory  *connect.Client[v1.GetInventoryRequest, v1.GetInventoryResponse]
-	getMetrics    *connect.Client[v1.GetMetricsRequest, v1.GetMetricsResponse]
-	getStorage    *connect.Client[v1.GetStorageRequest, v1.GetStorageResponse]
-	getNetworks   *connect.Client[v1.GetNetworksRequest, v1.GetNetworksResponse]
-	getWorkloads  *connect.Client[v1.GetWorkloadsRequest, v1.GetWorkloadsResponse]
-	uploadLibrary *connect.Client[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
+	hello          *connect.Client[v1.HelloRequest, v1.HelloResponse]
+	observe        *connect.Client[v1.ObserveRequest, v1.ObserveResponse]
+	execute        *connect.Client[v1.ExecuteRequest, v1.ExecuteResponse]
+	enroll         *connect.Client[v1.EnrollRequest, v1.EnrollResponse]
+	openSession    *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
+	getInventory   *connect.Client[v1.GetInventoryRequest, v1.GetInventoryResponse]
+	getMetrics     *connect.Client[v1.GetMetricsRequest, v1.GetMetricsResponse]
+	getStorage     *connect.Client[v1.GetStorageRequest, v1.GetStorageResponse]
+	getNetworks    *connect.Client[v1.GetNetworksRequest, v1.GetNetworksResponse]
+	getWorkloads   *connect.Client[v1.GetWorkloadsRequest, v1.GetWorkloadsResponse]
+	uploadLibrary  *connect.Client[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
+	filesOp        *connect.Client[v1.FilesOpRequest, v1.FilesOpResponse]
+	filesPut       *connect.Client[v1.FilesPutRequest, v1.FilesOpResponse]
+	filesGet       *connect.Client[v1.FilesGetRequest, v1.FilesGetResponse]
+	attachTerminal *connect.Client[v1.TermFrame, v1.TermFrame]
 }
 
 // Hello calls nodal.agent.v1.AgentService.Hello.
@@ -235,6 +280,26 @@ func (c *agentServiceClient) UploadLibrary(ctx context.Context) *connect.ClientS
 	return c.uploadLibrary.CallClientStream(ctx)
 }
 
+// FilesOp calls nodal.agent.v1.AgentService.FilesOp.
+func (c *agentServiceClient) FilesOp(ctx context.Context, req *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error) {
+	return c.filesOp.CallUnary(ctx, req)
+}
+
+// FilesPut calls nodal.agent.v1.AgentService.FilesPut.
+func (c *agentServiceClient) FilesPut(ctx context.Context) *connect.ClientStreamForClient[v1.FilesPutRequest, v1.FilesOpResponse] {
+	return c.filesPut.CallClientStream(ctx)
+}
+
+// FilesGet calls nodal.agent.v1.AgentService.FilesGet.
+func (c *agentServiceClient) FilesGet(ctx context.Context, req *connect.Request[v1.FilesGetRequest]) (*connect.ServerStreamForClient[v1.FilesGetResponse], error) {
+	return c.filesGet.CallServerStream(ctx, req)
+}
+
+// AttachTerminal calls nodal.agent.v1.AgentService.AttachTerminal.
+func (c *agentServiceClient) AttachTerminal(ctx context.Context) *connect.BidiStreamForClient[v1.TermFrame, v1.TermFrame] {
+	return c.attachTerminal.CallBidiStream(ctx)
+}
+
 // AgentServiceHandler is an implementation of the nodal.agent.v1.AgentService service.
 type AgentServiceHandler interface {
 	Hello(context.Context, *connect.Request[v1.HelloRequest]) (*connect.Response[v1.HelloResponse], error)
@@ -256,6 +321,14 @@ type AgentServiceHandler interface {
 	GetWorkloads(context.Context, *connect.Request[v1.GetWorkloadsRequest]) (*connect.Response[v1.GetWorkloadsResponse], error)
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error)
+	// FilesOp is a typed jail operation. Path is relative to the jail root.
+	FilesOp(context.Context, *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error)
+	// FilesPut writes one file in chunks beneath the jail.
+	FilesPut(context.Context, *connect.ClientStream[v1.FilesPutRequest]) (*connect.Response[v1.FilesOpResponse], error)
+	// FilesGet reads one file in chunks beneath the jail.
+	FilesGet(context.Context, *connect.Request[v1.FilesGetRequest], *connect.ServerStream[v1.FilesGetResponse]) error
+	// AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+	AttachTerminal(context.Context, *connect.BidiStream[v1.TermFrame, v1.TermFrame]) error
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -331,6 +404,30 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("UploadLibrary")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceFilesOpHandler := connect.NewUnaryHandler(
+		AgentServiceFilesOpProcedure,
+		svc.FilesOp,
+		connect.WithSchema(agentServiceMethods.ByName("FilesOp")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceFilesPutHandler := connect.NewClientStreamHandler(
+		AgentServiceFilesPutProcedure,
+		svc.FilesPut,
+		connect.WithSchema(agentServiceMethods.ByName("FilesPut")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceFilesGetHandler := connect.NewServerStreamHandler(
+		AgentServiceFilesGetProcedure,
+		svc.FilesGet,
+		connect.WithSchema(agentServiceMethods.ByName("FilesGet")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceAttachTerminalHandler := connect.NewBidiStreamHandler(
+		AgentServiceAttachTerminalProcedure,
+		svc.AttachTerminal,
+		connect.WithSchema(agentServiceMethods.ByName("AttachTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/nodal.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceHelloProcedure:
@@ -355,6 +452,14 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceGetWorkloadsHandler.ServeHTTP(w, r)
 		case AgentServiceUploadLibraryProcedure:
 			agentServiceUploadLibraryHandler.ServeHTTP(w, r)
+		case AgentServiceFilesOpProcedure:
+			agentServiceFilesOpHandler.ServeHTTP(w, r)
+		case AgentServiceFilesPutProcedure:
+			agentServiceFilesPutHandler.ServeHTTP(w, r)
+		case AgentServiceFilesGetProcedure:
+			agentServiceFilesGetHandler.ServeHTTP(w, r)
+		case AgentServiceAttachTerminalProcedure:
+			agentServiceAttachTerminalHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -406,4 +511,20 @@ func (UnimplementedAgentServiceHandler) GetWorkloads(context.Context, *connect.R
 
 func (UnimplementedAgentServiceHandler) UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.UploadLibrary is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) FilesOp(context.Context, *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.FilesOp is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) FilesPut(context.Context, *connect.ClientStream[v1.FilesPutRequest]) (*connect.Response[v1.FilesOpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.FilesPut is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) FilesGet(context.Context, *connect.Request[v1.FilesGetRequest], *connect.ServerStream[v1.FilesGetResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.FilesGet is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) AttachTerminal(context.Context, *connect.BidiStream[v1.TermFrame, v1.TermFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.AttachTerminal is not implemented"))
 }

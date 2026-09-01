@@ -2,11 +2,13 @@ package agentrpc
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net"
 	"net/http"
 
 	"connectrpc.com/connect"
+	"golang.org/x/net/http2"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/inventory"
@@ -337,8 +339,9 @@ func (c Client) rpc() agentv1connect.AgentServiceClient {
 	if path == "" {
 		path = transport.AgentSocket
 	}
-	httpClient := &http.Client{Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+	httpClient := &http.Client{Transport: &http2.Transport{
+		AllowHTTP: true,
+		DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", path)
 		},

@@ -80,6 +80,31 @@ func TestEnsureTraverseAddsExecute(t *testing.T) {
 	}
 }
 
+func TestEnsureAppliedTraverseUsesLastApplied(t *testing.T) {
+	root := t.TempDir()
+	blocked := filepath.Join(root, "blocked")
+	rootfs := filepath.Join(blocked, "rootfs")
+	if err := os.MkdirAll(rootfs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(blocked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	id := "11111111-1111-1111-1111-111111111111"
+	e := &Engine{DataDir: filepath.Join(root, "ndl"), SkipHostCmds: true}
+	if err := e.writeApplied(Spec{WorkloadID: id, RootfsPath: rootfs, Privileged: false}, true, "abc"); err != nil {
+		t.Fatal(err)
+	}
+	e.ensureAppliedTraverse(id)
+	st, err := os.Stat(blocked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode()&0o111 != 0o111 {
+		t.Fatalf("want traverse bits, got %o", st.Mode())
+	}
+}
+
 func TestDearmorEmbeddedKey(t *testing.T) {
 	ring, err := dearmorPublicKey(lxcImageKey)
 	if err != nil {

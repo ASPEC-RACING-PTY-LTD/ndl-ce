@@ -129,11 +129,11 @@ if (!agentUnit.includes("NoNewPrivileges=yes")) {
 if (!agentUnit.includes("DevicePolicy=closed")) {
   errors.push("ndl-agent.service must set DevicePolicy=closed");
 }
-if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN\s*$/m.test(agentUnit)) {
-  errors.push("ndl-agent.service must grant CAP_NET_ADMIN and CAP_CHOWN");
+if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SYS_ADMIN\s*$/m.test(agentUnit)) {
+  errors.push("ndl-agent.service must use the Phase 6 typed capability set");
 }
-if (/CAP_SYS_ADMIN/.test(agentUnit)) {
-  errors.push("ndl-agent.service must not grant CAP_SYS_ADMIN");
+if (!/DeviceAllow=char-pts rw/.test(agentUnit) || !/DeviceAllow=\/dev\/ptmx rw/.test(agentUnit)) {
+  errors.push("ndl-agent.service must allow PTY devices");
 }
 const agentInstall = existsSync("packaging/debian/ndl-agent.install")
   ? readFileSync("packaging/debian/ndl-agent.install", "utf8")
@@ -209,6 +209,12 @@ const rebuildRepo = existsSync("packaging/e2e/rebuild-packages.sh")
   : "";
 if (rebuildRepo.includes("quick-gen-key")) {
   errors.push("rebuild-packages.sh must not generate a new signing key; use packaging/e2e/lib/sign-repo.sh");
+}
+const postinstControl = existsSync("packaging/lib/ndl/postinst-control.sh")
+  ? readFileSync("packaging/lib/ndl/postinst-control.sh", "utf8")
+  : "";
+if (!/chmod 0751 \/var\/lib\/ndl/.test(postinstControl)) {
+  errors.push("postinst-control.sh must leave /var/lib/ndl traversable (0751) for unprivileged containers");
 }
 
 if (errors.length) {

@@ -303,6 +303,45 @@ export interface CloneWorkloadRequest {
   name?: string;
 }
 
+export interface CreateIOSessionRequest {
+  cwd?: string;
+  mode?: string;
+}
+
+export interface IOSession {
+  id: string;
+  target_kind: string;
+  target_id: string;
+  kind: string;
+  cwd?: string;
+  state: string;
+  ticket?: string;
+  ws_path?: string;
+}
+
+export interface FileEntry {
+  name: string;
+  type: string;
+  size?: number;
+  path?: string;
+}
+
+export interface FileListResponse {
+  path?: string;
+  entries: FileEntry[];
+}
+
+export interface FileMutationRequest {
+  path?: string;
+  dest_path?: string;
+  mode?: number;
+}
+
+export interface FileMutationResponse {
+  ok?: boolean;
+  path?: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -368,3 +407,39 @@ export type RestartWorkloadPath = "/api/v1/workloads/{id}/restart";
 export type DeleteWorkloadPath = "/api/v1/workloads/{id}/delete";
 
 export type CloneWorkloadPath = "/api/v1/workloads/{id}/clone";
+
+export type CreateNodeTerminalSessionPath = "/api/v1/nodes/{id}/terminal/sessions";
+
+export type CreateWorkloadTerminalSessionPath = "/api/v1/workloads/{id}/terminal/sessions";
+
+export type GetIOSessionPath = "/api/v1/io/sessions/{id}";
+
+export type ConnectIOSessionPath = "/api/v1/io/sessions/{id}/ws";
+
+export type ListNodeFilesPath = "/api/v1/nodes/{id}/files";
+
+export type StatNodeFilePath = "/api/v1/nodes/{id}/files/stat";
+
+export type DownloadNodeFilePath = "/api/v1/nodes/{id}/files/download";
+
+export type UploadNodeFilePath = "/api/v1/nodes/{id}/files/upload";
+
+export type MkdirNodeFilePath = "/api/v1/nodes/{id}/files/mkdir";
+
+export type DeleteNodeFilePath = "/api/v1/nodes/{id}/files/delete";
+
+export type MoveNodeFilePath = "/api/v1/nodes/{id}/files/move";
+
+export type ListWorkloadFilesPath = "/api/v1/workloads/{id}/files";
+
+export type StatWorkloadFilePath = "/api/v1/workloads/{id}/files/stat";
+
+export type DownloadWorkloadFilePath = "/api/v1/workloads/{id}/files/download";
+
+export type UploadWorkloadFilePath = "/api/v1/workloads/{id}/files/upload";
+
+export type MkdirWorkloadFilePath = "/api/v1/workloads/{id}/files/mkdir";
+
+export type DeleteWorkloadFilePath = "/api/v1/workloads/{id}/files/delete";
+
+export type MoveWorkloadFilePath = "/api/v1/workloads/{id}/files/move";
