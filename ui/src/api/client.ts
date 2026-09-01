@@ -792,3 +792,69 @@ export async function assignGpu(body: import("../generated/openapi").GPUAssignRe
 export async function unassignGpu(id: string) {
   return readJson(await request("/gpus/unassign", { method: "POST", body: JSON.stringify({ id }) }));
 }
+
+export type VMTemplate = {
+  id: string;
+  name: string;
+  source_workload_id?: string;
+  snapshot_id?: string;
+  created_at?: string;
+};
+
+export async function listTemplates() {
+  return readJson<{ items: VMTemplate[] }>(await request("/templates"));
+}
+
+export async function createTemplate(body: { workload_id: string; name?: string }) {
+  return readJson<VMTemplate>(await request("/templates", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function deployTemplate(id: string, name?: string) {
+  return readJson<import("./phase5").Workload>(
+    await request(`/templates/${id}/deploy`, { method: "POST", body: JSON.stringify({ name }) }),
+  );
+}
+
+export async function importWorkload(body: {
+  name?: string;
+  library_id: string;
+  pool_id?: string;
+  network_id: string;
+  firmware?: string;
+}) {
+  return readJson<import("./phase5").Workload>(
+    await request("/workloads/import", { method: "POST", body: JSON.stringify(body) }),
+  );
+}
+
+export async function exportWorkload(id: string, displayName?: string) {
+  return readJson<{ id: string; kind: string; display_name: string }>(
+    await request(`/workloads/${id}/export`, { method: "POST", body: JSON.stringify({ display_name: displayName }) }),
+  );
+}
+
+export type USBDeviceRow = {
+  address: string;
+  vendor?: string;
+  product?: string;
+  name?: string;
+  claimed_by?: string;
+};
+
+export async function listNodeUSB(nodeId: string) {
+  return readJson<{ items: USBDeviceRow[] }>(await request(`/nodes/${nodeId}/usb`));
+}
+
+export async function listNodePCI(nodeId: string) {
+  return readJson<{ items: Array<{ id: string; vendor?: string; device?: string; class?: string; iommu_group?: string; claimed_by?: string }> }>(
+    await request(`/nodes/${nodeId}/pci`),
+  );
+}
+
+export async function attachWorkloadUSB(id: string, address: string) {
+  return readJson(await request(`/workloads/${id}/usb`, { method: "POST", body: JSON.stringify({ address }) }));
+}
+
+export async function attachWorkloadPCI(id: string, pci: string) {
+  return readJson(await request(`/workloads/${id}/pci`, { method: "POST", body: JSON.stringify({ pci }) }));
+}

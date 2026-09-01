@@ -148,6 +148,14 @@ func (e *Engine) CompileLaunch(launch vmspec.Launch) ([]string, error) {
 		}
 		argv = append(argv, "-device", fmt.Sprintf("vfio-pci,host=%s,addr=%s,id=vfio%d", g.Host, g.PCIAddr, i))
 	}
+	argv = append(argv, "-device", "qemu-xhci,id=usb")
+	for _, u := range launch.USBs {
+		dev, err := usbHostDevice(u)
+		if err != nil {
+			return nil, err
+		}
+		argv = append(argv, "-device", dev)
+	}
 	for i, n := range launch.NICs {
 		if err := vmspec.ValidateMAC(n.MAC); err != nil {
 			return nil, err

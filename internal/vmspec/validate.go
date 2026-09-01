@@ -109,6 +109,19 @@ func Validate(spec Spec) error {
 	if strings.Contains(spec.NoCloud.UserData, "\x00") || strings.Contains(spec.NoCloud.NetworkConfig, "\x00") {
 		return fmt.Errorf("nocloud data contains a banned character")
 	}
+	if spec.SecureBoot && spec.Firmware != FirmwareUEFI {
+		return fmt.Errorf("secure boot requires UEFI")
+	}
+	for i, u := range spec.USBs {
+		if err := ValidateUSB(u); err != nil {
+			return fmt.Errorf("usb %d: %w", i, err)
+		}
+	}
+	for i, host := range spec.PCIHosts {
+		if strings.ContainsAny(host, ",=\n\r\x00") {
+			return fmt.Errorf("pci host %d contains a banned character", i)
+		}
+	}
 	return nil
 }
 

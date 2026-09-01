@@ -59,6 +59,8 @@ func run(args []string) error {
   workload update --id ID [--cpus N] [--memory-bytes N] [--autostart true|false]
   workload delete --id ID
   workload clone --id ID [--name NAME]
+  workload import --library-id ID --network-id ID [--name NAME] [--pool-id ID] [--firmware bios|uefi]
+  workload export --id ID [--display-name NAME]
   node terminal [--id ID] [--cwd PATH]
   workload files ls --id ID [--path PATH]
   lab qemu-proto start [--pool-id ID] [--volume-id ID] [--size-bytes N] [--autostart]
@@ -506,7 +508,7 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 
 func cmdWorkload(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|files")
+		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|import|export|files")
 	}
 	switch args[0] {
 	case "list":
@@ -607,6 +609,22 @@ func cmdWorkload(args []string) error {
 			return fmt.Errorf("usage: nodalctl workload clone --id ID [--name NAME]")
 		}
 		return postJSON("/api/v1/workloads/"+f["id"]+"/clone", map[string]any{"name": f["name"]}, true)
+	case "import":
+		f := parseFlags(args[1:])
+		if f["library-id"] == "" || f["network-id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload import --library-id ID --network-id ID [--name NAME] [--pool-id ID] [--firmware bios|uefi]")
+		}
+		body := map[string]any{
+			"library_id": f["library-id"], "network_id": f["network-id"], "name": f["name"],
+			"pool_id": f["pool-id"], "firmware": f["firmware"],
+		}
+		return postJSON("/api/v1/workloads/import", body, true)
+	case "export":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload export --id ID [--display-name NAME]")
+		}
+		return postJSON("/api/v1/workloads/"+f["id"]+"/export", map[string]any{"display_name": f["display-name"]}, true)
 	case "files":
 		return cmdWorkloadFiles(args[1:])
 	default:

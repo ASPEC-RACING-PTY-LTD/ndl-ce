@@ -189,7 +189,7 @@ func ValidClass(class string) bool {
 
 // ValidLibraryKind reports a known library kind.
 func ValidLibraryKind(kind string) bool {
-	return kind == LibraryISO || kind == LibraryCloudImage
+	return kind == LibraryISO || kind == LibraryCloudImage || kind == LibraryDiskImage
 }
 
 func classKindFormat(class, format string) (kind, resolved string, err error) {

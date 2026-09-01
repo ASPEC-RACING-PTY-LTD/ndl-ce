@@ -59,6 +59,8 @@ type Memory struct {
 	notifyChannels    map[string]NotificationChannel
 	notifySecrets     map[string][2]string
 	userPrefs         map[string]UserPrefs
+	vmTemplates       map[string]VMTemplate
+	usbAttachments    map[string]USBAttachment
 }
 
 // NewMemory returns an empty store.

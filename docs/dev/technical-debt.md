@@ -114,6 +114,14 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Tablet/phone layout is CSS-only in Cloud. Why not blocking: chrome wraps and tap targets grow at 64rem; physical devices are not in this environment.
 - LOW. Expert JSON is a read-only preview of the same create body. Why not blocking: a free-form editor that posts extra keys would violate the same-API contract and Host.Exec ban.
 
+## Phase 18
+
+- MEDIUM. Template deploy clones the current source disk when a snapshot overlay is missing. Why not blocking: create records a snapshot when overlay succeeds; Cloud fixtures still clone with new UUIDs and MAC.
+- MEDIUM. Clone of additional data disks is refused. Why not blocking: boot disk clone is the Phase 18 product path; extra attached disks would otherwise share a writable volume UUID.
+- MEDIUM. Live QMP usb-host hotplug is not executed in this Cloud VM. Why not blocking: frozen argv usb-host plus device_add/device_del are typed; missing QMP returns a live-session error instead of inventing attach success.
+- LOW. Generic PCI attach reuses exclusive GPU assignment rows for IOMMU claims. Why not blocking: ParseGPUID and group listing still apply; GPU inventory remains on the GPU API.
+- LOW. Clone boot of a guest OS is not proven here. Why not blocking: clone materializes a new volume via qemu-img convert and starts the systemd unit through the existing VM lifecycle path.
+
 
 
 

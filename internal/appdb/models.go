@@ -190,6 +190,16 @@ type Store interface {
 
 	GetUserPrefs(ctx context.Context, userID string) (*UserPrefs, error)
 	UpsertUserPrefs(ctx context.Context, p UserPrefs) error
+
+	DeleteVolume(ctx context.Context, clusterID, volumeID string) error
+
+	CreateVMTemplate(ctx context.Context, t VMTemplate) error
+	ListVMTemplates(ctx context.Context, clusterID string) ([]VMTemplate, error)
+	GetVMTemplate(ctx context.Context, clusterID, id string) (*VMTemplate, error)
+
+	CreateUSBAttachment(ctx context.Context, a USBAttachment) error
+	ListUSBAttachments(ctx context.Context, clusterID, workloadID string) ([]USBAttachment, error)
+	DeleteUSBAttachment(ctx context.Context, clusterID, id string) error
 }
 
 // Cluster is the appliance cluster of one.

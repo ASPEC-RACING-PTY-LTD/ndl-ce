@@ -49,7 +49,7 @@ func libraryExt(kind, display string) string {
 			return strings.TrimPrefix(display, ".")
 		}
 		return "iso"
-	case LibraryCloudImage:
+	case LibraryCloudImage, LibraryDiskImage:
 		switch display {
 		case ".qcow2", ".img", ".raw", ".qcow":
 			return strings.TrimPrefix(display, ".")
@@ -100,6 +100,7 @@ func poolDirs() []string {
 		"volumes/" + ClassBackupStaging,
 		"library/" + LibraryISO,
 		"library/" + LibraryCloudImage,
+		"library/" + LibraryDiskImage,
 		"tmp",
 	}
 }

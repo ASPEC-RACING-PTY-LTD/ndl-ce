@@ -45,6 +45,7 @@ type createWorkloadRequest struct {
 	Spec         json.RawMessage `json:"spec"`
 	QEMUArgs     []string        `json:"qemu_args"`
 	Command      string          `json:"command"`
+	SecureBoot   bool            `json:"secure_boot"`
 }
 
 type patchWorkloadRequest struct {

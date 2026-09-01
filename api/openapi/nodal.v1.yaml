@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.16
-  description: Phase 17 operator UX plus prior northbound API. Presentation prefs on /me. Same create APIs for Guided, Advanced, and Expert.
+  version: 0.1.17
+  description: Phase 18 VM advanced plus prior northbound API. Templates, clone, import/export, USB and generic PCI passthrough.
 servers:
   - url: /api/v1
 paths:
@@ -823,6 +823,166 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/import:
+    post:
+      operationId: importWorkload
+      summary: Import a qcow2 library item as a new VM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportWorkloadRequest"
+      responses:
+        "201":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}/export:
+    post:
+      operationId: exportWorkload
+      summary: Export a VM boot disk as a library disk-image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportWorkloadRequest"
+      responses:
+        "201":
+          description: Exported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageImage"
+  /workloads/{id}/usb:
+    post:
+      operationId: attachWorkloadUSB
+      summary: Attach an inventory USB device to a VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachUSBRequest"
+      responses:
+        "201":
+          description: Attached
+  /workloads/{id}/pci:
+    post:
+      operationId: attachWorkloadPCI
+      summary: Attach a non-GPU PCI device using VFIO
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachPCIRequest"
+      responses:
+        "201":
+          description: Attached
+  /templates:
+    get:
+      operationId: listTemplates
+      summary: List VM templates
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateListResponse"
+    post:
+      operationId: createTemplate
+      summary: Create a VM template from a workload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTemplateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMTemplate"
+  /templates/{id}/deploy:
+    post:
+      operationId: deployTemplate
+      summary: Deploy a template as a new VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloneWorkloadRequest"
+      responses:
+        "201":
+          description: Deployed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /nodes/{id}/usb:
+    get:
+      operationId: listNodeUSB
+      summary: List USB devices from host inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: USB inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/USBListResponse"
+  /nodes/{id}/pci:
+    get:
+      operationId: listNodePCI
+      summary: List non-GPU PCI devices from host inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PCI inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PCIListResponse"
   /nodes/{id}/terminal/sessions:
     post:
       operationId: createNodeTerminalSession
@@ -2847,6 +3007,111 @@ components:
       properties:
         name:
           type: string
+    ImportWorkloadRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - library_id
+        - network_id
+      properties:
+        name:
+          type: string
+        library_id:
+          type: string
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        firmware:
+          type: string
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+    ExportWorkloadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+    AttachUSBRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - address
+      properties:
+        address:
+          type: string
+    AttachPCIRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - pci
+      properties:
+        pci:
+          type: string
+    CreateTemplateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+      properties:
+        workload_id:
+          type: string
+        name:
+          type: string
+    VMTemplate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        source_workload_id:
+          type: string
+        snapshot_id:
+          type: string
+        created_at:
+          type: string
+    TemplateListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VMTemplate"
+    USBListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    PCIListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        iommu:
+          type: object
+          additionalProperties: true
     CreateIOSessionRequest:
       type: object
       additionalProperties: false

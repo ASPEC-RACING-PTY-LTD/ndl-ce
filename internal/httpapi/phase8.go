@@ -28,6 +28,9 @@ type VMRPC interface {
 	LifecycleVM(ctx context.Context, id, action string, autostart bool) (qemu.Observed, error)
 	QueryPCIVM(ctx context.Context, id string) (qemu.Observed, error)
 	SnapshotVM(ctx context.Context, req qemu.OverlayRequest) (qemu.OverlayResult, error)
+	ApplyUSB(ctx context.Context, id string, usbs []vmspec.LaunchUSB) error
+	HotplugUSB(ctx context.Context, id string, add bool, usb vmspec.LaunchUSB) error
+	ApplyVFIO(ctx context.Context, id string, hosts []string) error
 }
 
 type vmUnavailable struct{}
@@ -44,6 +47,15 @@ func (vmUnavailable) QueryPCIVM(context.Context, string) (qemu.Observed, error) 
 
 func (vmUnavailable) SnapshotVM(context.Context, qemu.OverlayRequest) (qemu.OverlayResult, error) {
 	return qemu.OverlayResult{}, errUnavailable("vm agent is unavailable")
+}
+func (vmUnavailable) ApplyUSB(context.Context, string, []vmspec.LaunchUSB) error {
+	return errUnavailable("vm agent is unavailable")
+}
+func (vmUnavailable) HotplugUSB(context.Context, string, bool, vmspec.LaunchUSB) error {
+	return errUnavailable("vm agent is unavailable")
+}
+func (vmUnavailable) ApplyVFIO(context.Context, string, []string) error {
+	return errUnavailable("vm agent is unavailable")
 }
 
 func AdaptVM(client any) VMRPC {
@@ -235,6 +247,8 @@ func specFromCreate(req createWorkloadRequest) (vmspec.Spec, error) {
 			return vmspec.Spec{}, err
 		}
 		spec = parsed
+		spec.USBs = nil
+		spec.PCIHosts = nil
 	}
 	if req.Name != "" {
 		spec.Name = req.Name
@@ -248,8 +262,13 @@ func specFromCreate(req createWorkloadRequest) (vmspec.Spec, error) {
 	if req.Firmware != "" {
 		spec.Firmware = req.Firmware
 	}
+	if req.SecureBoot {
+		spec.SecureBoot = true
+	}
 	spec.Autostart = req.Autostart
 	spec.Balloon = req.Balloon
+	spec.USBs = nil
+	spec.PCIHosts = nil
 	if req.ISOLibraryID != "" {
 		spec.ISOLibraryID = req.ISOLibraryID
 	}
@@ -398,9 +417,9 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		resolved.ISOPath = isoPath
 	}
 	if spec.Firmware == vmspec.FirmwareUEFI {
-		code := qemu.DetectFirmware()
-		if code == "" {
-			return vmspec.Resolved{}, nil, nil, convert, errConflict("uefi firmware is unavailable on this host")
+		code, ferr := firmwareCodeForSpec(spec)
+		if ferr != nil {
+			return vmspec.Resolved{}, nil, nil, convert, ferr
 		}
 		resolved.FirmwareCode = code
 	}
@@ -504,7 +523,7 @@ func (s *Server) vmLifecycle(w http.ResponseWriter, r *http.Request, p *principa
 	case "delete":
 		perm = rbac.ComputeDelete
 	case "clone":
-		writeErr(w, http.StatusUnprocessableEntity, "VM clone is Phase 18 and is not implemented")
+		s.cloneVM(w, r, p, row)
 		return
 	}
 	if !rbac.Authorize(p.Grants, perm) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
@@ -883,9 +902,9 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 		resolved.ISOPath = isoPath
 	}
 	if spec.Firmware == vmspec.FirmwareUEFI {
-		code := qemu.DetectFirmware()
-		if code == "" {
-			return vmspec.Resolved{}, errConflict("uefi firmware is unavailable on this host")
+		code, ferr := firmwareCodeForSpec(spec)
+		if ferr != nil {
+			return vmspec.Resolved{}, ferr
 		}
 		resolved.FirmwareCode = code
 	}

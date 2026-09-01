@@ -14,6 +14,8 @@ import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
 import { VmCreatePage } from "./pages/VmCreatePage";
+import { TemplatesPage } from "./pages/TemplatesPage";
+import { ImportVMPage } from "./pages/ImportVMPage";
 import { ConsolePage } from "./pages/ConsolePage";
 import { CertificatePage } from "./pages/CertificatePage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
@@ -105,6 +107,10 @@ function AppRoutes() {
     page = <WorkloadCreatePage />;
   } else if (path === "/workloads/new/vm") {
     page = <VmCreatePage />;
+  } else if (path === "/workloads/import") {
+    page = <ImportVMPage />;
+  } else if (path === "/templates") {
+    page = <TemplatesPage />;
   } else if (/^\/workloads\/[^/]+\/console$/.test(path)) {
     page = <ConsolePage />;
   } else if (/^\/workloads\/[^/]+\/terminal$/.test(path)) {

@@ -5,6 +5,8 @@ describe("command palette authorization", () => {
   it("hides Create VM and other mutations from a viewer, including Expert viewers", () => {
     const actions = visiblePaletteActions(["viewer"]);
     expect(actions.some((a) => a.id === "create-vm")).toBe(false);
+    expect(actions.some((a) => a.id === "import-vm")).toBe(false);
+    expect(actions.some((a) => a.id === "templates")).toBe(false);
     expect(actions.some((a) => a.id === "create-ct")).toBe(false);
     expect(actions.some((a) => a.id === "audit")).toBe(false);
     expect(actions.some((a) => a.id === "updates")).toBe(false);

@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/gpu"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
@@ -67,6 +68,13 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 		}
 		launch.Firmware.CodePath = resolved.FirmwareCode
 		launch.Firmware.VarsPath = vars
+		if spec.SecureBoot {
+			if !strings.Contains(resolved.FirmwareCode, "secboot") {
+				return Launch{}, fmt.Errorf("secure boot firmware is unavailable")
+			}
+			launch.Firmware.SecureBoot = true
+			launch.SecureBoot = true
+		}
 	}
 	if len(resolved.Disks) == 0 {
 		return Launch{}, fmt.Errorf("resolved disks are required")
@@ -170,6 +178,30 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 			NodeName: "cidata",
 		})
 	}
+	for _, u := range spec.USBs {
+		if err := ValidateUSB(u); err != nil {
+			return Launch{}, err
+		}
+		launch.USBs = append(launch.USBs, LaunchUSB{
+			Address: u.Address,
+			Vendor:  strings.ToLower(u.Vendor),
+			Product: strings.ToLower(u.Product),
+			ID:      USBDeviceID(u.Address),
+		})
+	}
+	slot := 0x1a
+	for _, host := range spec.PCIHosts {
+		addr, err := gpu.ParseGPUID(host)
+		if err != nil {
+			return Launch{}, err
+		}
+		pci := fmt.Sprintf("0x%x", slot)
+		if err := ValidatePCIAddr(pci); err != nil {
+			return Launch{}, err
+		}
+		launch.GPUs = append(launch.GPUs, LaunchGPU{Host: addr, PCIAddr: pci})
+		slot++
+	}
 	return launch, nil
 }
 
@@ -201,6 +233,7 @@ func allowedFirmware(p string) bool {
 	case "/usr/share/OVMF/OVMF_CODE_4M.fd",
 		"/usr/share/OVMF/OVMF_CODE.fd",
 		"/usr/share/OVMF/OVMF_CODE_4M.secboot.fd",
+		"/usr/share/OVMF/OVMF_CODE.secboot.fd",
 		"/usr/share/qemu/OVMF_CODE_4M.fd",
 		"/usr/share/qemu/OVMF_CODE.fd":
 		return true

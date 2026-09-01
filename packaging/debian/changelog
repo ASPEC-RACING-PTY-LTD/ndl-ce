@@ -1,3 +1,9 @@
+nodal (0.1.17) UNRELEASED; urgency=medium
+
+  * Phase 18 VM advanced: templates, clone, import/export, USB and generic PCI passthrough
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.16) UNRELEASED; urgency=medium
 
   * Phase 17 operator UX: Guided/Advanced/Expert prefs, command palette, tablet chrome

@@ -101,5 +101,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest UX: Expert does not grant permissions. Missing health stays unavailable. Empty workloads stay empty.
 - Follow-up: folder archive download still needs a typed Files RPC (Agent: None in this phase), physical tablet polish
 
+## Phase 18
+
+- Package: 0.1.17
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (clone new UUIDs and MAC, failed import deletes the volume and creates no workload, viewer 403 on import, USB must be in inventory, USB remains listed after attach, PCI list omits GPUs, secure boot without secboot firmware is conflict, no user QEMU argv). FIXTURE: qemu-img convert via Backup.CopyBackup / SkipHostCmds. NOT PHYSICALLY VALIDATED: clone boots a guest, live QMP usb-host hotplug, USB/VFIO hardware, Debian APT upgrade
+- Honest USB/PCI: none detected stays none detected. Secure Boot without host firmware is conflict, not a fake OVMF.
+- Follow-up: template deploy from frozen snapshot when the source VM is deleted; live QMP USB on appliance; physical VFIO of non-GPU PCI
+
 
 

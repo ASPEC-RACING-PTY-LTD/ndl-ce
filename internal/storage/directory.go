@@ -413,7 +413,7 @@ func (d Directory) scanOwned(root, poolID string) ([]ObservedVolume, []ObservedL
 			vols = append(vols, st)
 		}
 	}
-	for _, kind := range []string{LibraryISO, LibraryCloudImage} {
+	for _, kind := range []string{LibraryISO, LibraryCloudImage, LibraryDiskImage} {
 		dir := path.Join(root, "library", kind)
 		ents, err := h.ReadDir(dir)
 		if err != nil {

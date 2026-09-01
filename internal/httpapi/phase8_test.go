@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -73,6 +74,31 @@ func (f *fakeVM) SnapshotVM(_ context.Context, req qemu.OverlayRequest) (qemu.Ov
 		return qemu.OverlayResult{}, f.err
 	}
 	return qemu.OverlayResult{WorkloadID: req.WorkloadID, OverlayPath: req.OverlayPath, BackingPath: req.BackingPath, Mechanism: "qcow2-overlay"}, nil
+}
+
+func (f *fakeVM) ApplyUSB(_ context.Context, _ string, usbs []vmspec.LaunchUSB) error {
+	f.launch.USBs = usbs
+	return f.err
+}
+
+func (f *fakeVM) HotplugUSB(_ context.Context, _ string, _ bool, usb vmspec.LaunchUSB) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.launch.USBs = append(f.launch.USBs, usb)
+	return nil
+}
+
+func (f *fakeVM) ApplyVFIO(_ context.Context, _ string, hosts []string) error {
+	if f.err != nil {
+		return f.err
+	}
+	gpus := make([]vmspec.LaunchGPU, 0, len(hosts))
+	for i, h := range hosts {
+		gpus = append(gpus, vmspec.LaunchGPU{Host: h, PCIAddr: fmt.Sprintf("0x%x", 0x1a+i)})
+	}
+	f.launch.GPUs = gpus
+	return nil
 }
 
 func TestVMCreateLifecycleDeletePreservesVolume(t *testing.T) {
@@ -208,14 +234,6 @@ func TestVMRejectsRawArgsCloneAndViewerMutations(t *testing.T) {
 	}
 	_ = json.NewDecoder(res.Body).Decode(&created)
 	_ = res.Body.Close()
-
-	clone, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+created.ID+"/clone", strings.NewReader(`{}`))
-	clone.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	out, _ := ts.Client().Do(clone)
-	if out.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("clone %d", out.StatusCode)
-	}
-	_ = out.Body.Close()
 
 	hash, _ := auth.HashPassword("password1")
 	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}

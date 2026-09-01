@@ -423,6 +423,7 @@ export function StoragePage() {
                 <select className="field-input" value={kind} onChange={(e) => setKind(e.target.value)}>
                   <option value="iso">ISO</option>
                   <option value="cloud-image">cloud-image</option>
+                  <option value="disk-image">disk-image</option>
                 </select>
               </label>
               <label className="field">

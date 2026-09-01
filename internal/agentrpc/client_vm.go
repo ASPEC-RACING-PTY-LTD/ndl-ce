@@ -106,3 +106,50 @@ func (c Client) CopyBackup(ctx context.Context, action, src, dest string) (stora
 	}
 	return out, nil
 }
+
+func (c Client) ApplyUSB(ctx context.Context, id string, usbs []vmspec.LaunchUSB) error {
+	if len(usbs) == 0 {
+		_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+			Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
+				WorkloadId: id, Action: "del", DeviceKind: "usb-host",
+			}},
+		}))
+		return err
+	}
+	for _, u := range usbs {
+		_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+			Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
+				WorkloadId: id, Action: "add", DeviceKind: "usb-host",
+				VendorId: u.Vendor, ProductId: u.Product, Address: u.Address,
+			}},
+		}))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c Client) HotplugUSB(ctx context.Context, id string, add bool, usb vmspec.LaunchUSB) error {
+	action := "add"
+	if !add {
+		action = "del"
+	}
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
+			WorkloadId: id, Action: action, DeviceKind: "usb-host",
+			VendorId: usb.Vendor, ProductId: usb.Product, Address: usb.Address,
+		}},
+	}))
+	return err
+}
+
+func (c Client) ApplyVFIO(ctx context.Context, id string, hosts []string) error {
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
+			WorkloadId: id, Action: "add", DeviceKind: "vfio-pci",
+			PciHosts: hosts,
+		}},
+	}))
+	return err
+}

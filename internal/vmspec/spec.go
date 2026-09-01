@@ -48,6 +48,9 @@ type Spec struct {
 	Autostart     bool     `json:"autostart"`
 	Console       Console  `json:"console"`
 	Balloon       bool     `json:"balloon"`
+	SecureBoot    bool     `json:"secure_boot,omitempty"`
+	USBs          []USB    `json:"usbs,omitempty"`
+	PCIHosts      []string `json:"pci_hosts,omitempty"`
 }
 
 // Disk is a volume attachment by UUID. Path is never product identity.
@@ -59,6 +62,13 @@ type Disk struct {
 	ReadOnly  bool   `json:"read_only,omitempty"`
 	SizeBytes int64  `json:"size_bytes,omitempty"`
 	PCIAddr   string `json:"pci_addr,omitempty"`
+}
+
+// USB is a host USB device selected from inventory. Not a QEMU argv string.
+type USB struct {
+	Address string `json:"address"`
+	Vendor  string `json:"vendor"`
+	Product string `json:"product"`
 }
 
 // NIC is a network attachment. MAC is allocated once and persisted.
@@ -141,6 +151,8 @@ type Launch struct {
 	BootOrder     string            `json:"boot_order"`
 	QGA           bool              `json:"qemu_ga"`
 	GPUs          []LaunchGPU       `json:"gpus,omitempty"`
+	USBs          []LaunchUSB       `json:"usbs,omitempty"`
+	SecureBoot    bool              `json:"secure_boot,omitempty"`
 }
 
 // LaunchGPU is a compiled VFIO host PCI locator. It is not product identity.
@@ -149,11 +161,20 @@ type LaunchGPU struct {
 	PCIAddr string `json:"pci_addr"`
 }
 
+// LaunchUSB is a compiled usb-host attachment. Vendor and product are hex.
+type LaunchUSB struct {
+	Address string `json:"address"`
+	Vendor  string `json:"vendor"`
+	Product string `json:"product"`
+	ID      string `json:"id"`
+}
+
 // Firmware is the resolved firmware mode and locators.
 type Firmware struct {
-	Mode     string `json:"mode"`
-	CodePath string `json:"code_path,omitempty"`
-	VarsPath string `json:"vars_path,omitempty"`
+	Mode       string `json:"mode"`
+	CodePath   string `json:"code_path,omitempty"`
+	VarsPath   string `json:"vars_path,omitempty"`
+	SecureBoot bool   `json:"secure_boot,omitempty"`
 }
 
 // LaunchDisk is a compiled disk with a stable node-name and PCI address.

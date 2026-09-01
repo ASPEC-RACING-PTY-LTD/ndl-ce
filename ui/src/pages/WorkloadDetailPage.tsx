@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { getWorkload, patchWorkload, workloadAction } from "../api/client";
+import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, listNodeUSB, patchWorkload, workloadAction } from "../api/client";
+import type { USBDeviceRow } from "../api/client";
 import type { Workload } from "../api/phase5";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
@@ -26,12 +27,21 @@ export function WorkloadDetailPage() {
   const [memoryMiB, setMemoryMiB] = useState("256");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
+  const [usbAddr, setUsbAddr] = useState("");
 
   async function reload() {
     const w = await getWorkload(id);
     setItem(w);
     setCpus(String(w.cpus ?? 1));
     setMemoryMiB(String(Math.round((w.memory_bytes ?? 256 * 1024 * 1024) / (1024 * 1024))));
+    if (w.kind === "vm" && w.node_id) {
+      const listed = await listNodeUSB(w.node_id);
+      setUsbs(listed.items ?? []);
+      if (!usbAddr && listed.items?.[0]?.address) {
+        setUsbAddr(listed.items[0].address);
+      }
+    }
   }
 
   useEffect(() => {
@@ -229,9 +239,43 @@ export function WorkloadDetailPage() {
               Restart
             </button>
             {item.kind === "vm" ? (
-              <button className="btn" type="button" disabled={busy} onClick={() => void onAction("force-stop")}>
-                Force Stop
-              </button>
+              <>
+                <button className="btn" type="button" disabled={busy} onClick={() => void onAction("force-stop")}>
+                  Force Stop
+                </button>
+                <button className="btn" type="button" disabled={busy} onClick={() => void onAction("clone")}>
+                  Clone
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    setError(null);
+                    void createTemplate({ workload_id: item.id, name: `${item.name}-template` })
+                      .then(() => navigate("/templates"))
+                      .catch((err) => setError(err instanceof Error ? err.message : "Template failed"))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Save template
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    setError(null);
+                    void exportWorkload(item.id, `${item.name}.qcow2`)
+                      .catch((err) => setError(err instanceof Error ? err.message : "Export failed"))
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Export disk
+                </button>
+              </>
             ) : (
               <button className="btn" type="button" disabled={busy} onClick={() => void onAction("clone")}>
                 Clone
@@ -241,6 +285,41 @@ export function WorkloadDetailPage() {
               Delete
             </button>
           </div>
+        </article>
+      ) : null}
+      {mutate && item.kind === "vm" ? (
+        <article className="panel">
+          <h2>USB passthrough</h2>
+          {usbs.length === 0 ? <p>None detected</p> : null}
+          {usbs.length > 0 ? (
+            <>
+              <label htmlFor="usb-addr">
+                Inventory device
+                <select id="usb-addr" className="field-input" value={usbAddr} onChange={(e) => setUsbAddr(e.target.value)}>
+                  {usbs.map((u) => (
+                    <option key={u.address} value={u.address}>
+                      {u.address} {u.vendor}:{u.product} {u.name || ""} {u.claimed_by ? "(claimed)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="btn"
+                type="button"
+                disabled={busy || !usbAddr}
+                onClick={() => {
+                  setBusy(true);
+                  setError(null);
+                  void attachWorkloadUSB(item.id, usbAddr)
+                    .then(() => reload())
+                    .catch((err) => setError(err instanceof Error ? err.message : "USB attach failed"))
+                    .finally(() => setBusy(false));
+                }}
+              >
+                Attach USB
+              </button>
+            </>
+          ) : null}
         </article>
       ) : null}
       {mutate ? (

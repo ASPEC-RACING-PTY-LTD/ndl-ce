@@ -89,14 +89,17 @@ func ClassifyEdit(prev, next Spec) []ApplyClass {
 		}
 	}
 	add("autostart", ApplyLive, "systemd enablement can change while the VM runs", prev.Autostart != next.Autostart)
-	add("cpus", ApplyRestart, "CPU hotplug is Phase 18", prev.CPUs != next.CPUs)
-	add("memory_bytes", ApplyRestart, "memory balloon resize is not a live product action in Phase 8", prev.MemoryBytes != next.MemoryBytes)
+	add("cpus", ApplyRestart, "CPU hotplug is not a safe live product action", prev.CPUs != next.CPUs)
+	add("memory_bytes", ApplyRestart, "memory balloon resize is not a live product action", prev.MemoryBytes != next.MemoryBytes)
 	add("machine", ApplyUnsupported, "machine ABI is frozen after create", prev.Machine != next.Machine)
 	add("firmware", ApplyStop, "firmware changes require a stopped VM", prev.Firmware != next.Firmware)
+	add("secure_boot", ApplyStop, "secure boot firmware requires a stopped VM", prev.SecureBoot != next.SecureBoot)
 	add("iso_library_id", ApplyStop, "installation media changes require a stopped VM", prev.ISOLibraryID != next.ISOLibraryID)
 	add("nocloud", ApplyRestart, "NoCloud seed is applied at boot", nocloudChanged(prev.NoCloud, next.NoCloud))
 	add("disks", ApplyStop, "disk topology changes require a stopped VM", disksChanged(prev.Disks, next.Disks))
 	add("nics", ApplyStop, "NIC topology changes require a stopped VM", nicsChanged(prev.NICs, next.NICs))
+	add("usbs", ApplyLive, "USB can be hotplugged when QMP allows", usbsChanged(prev.USBs, next.USBs))
+	add("pci_hosts", ApplyStop, "generic PCI VFIO requires a stopped VM", pciHostsChanged(prev.PCIHosts, next.PCIHosts))
 	add("name", ApplyRestart, "display name is desired state; guest hostname follows NoCloud", prev.Name != next.Name)
 	return out
 }
@@ -164,6 +167,30 @@ func nicsChanged(a, b []NIC) bool {
 	}
 	for i := range a {
 		if a[i].NetworkID != b[i].NetworkID || a[i].ID != b[i].ID {
+			return true
+		}
+	}
+	return false
+}
+
+func usbsChanged(a, b []USB) bool {
+	if len(a) != len(b) {
+		return true
+	}
+	for i := range a {
+		if a[i].Address != b[i].Address || a[i].Vendor != b[i].Vendor || a[i].Product != b[i].Product {
+			return true
+		}
+	}
+	return false
+}
+
+func pciHostsChanged(a, b []string) bool {
+	if len(a) != len(b) {
+		return true
+	}
+	for i := range a {
+		if a[i] != b[i] {
 			return true
 		}
 	}

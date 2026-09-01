@@ -79,6 +79,9 @@ if (!changelog.includes("nodal (0.1.15)") || !changelog.includes("Phase 16 obser
 if (!changelog.includes("nodal (0.1.16)") || !changelog.includes("Phase 17 operator UX")) {
   errors.push("changelog must include nodal (0.1.16) Phase 17 operator UX");
 }
+if (!changelog.includes("nodal (0.1.17)") || !changelog.includes("Phase 18 VM advanced")) {
+  errors.push("changelog must include nodal (0.1.17) Phase 18 VM advanced");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

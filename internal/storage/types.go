@@ -24,6 +24,7 @@ const (
 const (
 	LibraryISO        = "iso"
 	LibraryCloudImage = "cloud-image"
+	LibraryDiskImage  = "disk-image"
 )
 
 // Object and pool status values.

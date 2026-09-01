@@ -334,6 +334,54 @@ export interface CloneWorkloadRequest {
   name?: string;
 }
 
+export interface ImportWorkloadRequest {
+  name?: string;
+  library_id: string;
+  pool_id?: string;
+  network_id: string;
+  firmware?: string;
+  cpus?: number;
+  memory_bytes?: number;
+}
+
+export interface ExportWorkloadRequest {
+  display_name?: string;
+}
+
+export interface AttachUSBRequest {
+  address: string;
+}
+
+export interface AttachPCIRequest {
+  pci: string;
+}
+
+export interface CreateTemplateRequest {
+  workload_id: string;
+  name?: string;
+}
+
+export interface VMTemplate {
+  id: string;
+  name: string;
+  source_workload_id?: string;
+  snapshot_id?: string;
+  created_at?: string;
+}
+
+export interface TemplateListResponse {
+  items: VMTemplate[];
+}
+
+export interface USBListResponse {
+  items: Record<string, unknown>[];
+}
+
+export interface PCIListResponse {
+  items: Record<string, unknown>[];
+  iommu?: Record<string, unknown>;
+}
+
 export interface CreateIOSessionRequest {
   cwd?: string;
   mode?: string;
@@ -982,6 +1030,22 @@ export type ForceStopWorkloadPath = "/api/v1/workloads/{id}/force-stop";
 export type DeleteWorkloadPath = "/api/v1/workloads/{id}/delete";
 
 export type CloneWorkloadPath = "/api/v1/workloads/{id}/clone";
+
+export type ImportWorkloadPath = "/api/v1/workloads/import";
+
+export type ExportWorkloadPath = "/api/v1/workloads/{id}/export";
+
+export type AttachWorkloadUSBPath = "/api/v1/workloads/{id}/usb";
+
+export type AttachWorkloadPCIPath = "/api/v1/workloads/{id}/pci";
+
+export type ListTemplatesPath = "/api/v1/templates";
+
+export type DeployTemplatePath = "/api/v1/templates/{id}/deploy";
+
+export type ListNodeUSBPath = "/api/v1/nodes/{id}/usb";
+
+export type ListNodePCIPath = "/api/v1/nodes/{id}/pci";
 
 export type CreateNodeTerminalSessionPath = "/api/v1/nodes/{id}/terminal/sessions";
 

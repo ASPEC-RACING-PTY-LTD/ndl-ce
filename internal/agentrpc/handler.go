@@ -174,6 +174,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execGPUAssign(ctx, req.Msg.GetGpuAssign())
 	case req.Msg.GetZfsPool() != nil:
 		return h.execZFSPool(ctx, req.Msg.GetZfsPool())
+	case req.Msg.GetVmHotplug() != nil:
+		return h.execVMHotplug(ctx, req.Msg.GetVmHotplug())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

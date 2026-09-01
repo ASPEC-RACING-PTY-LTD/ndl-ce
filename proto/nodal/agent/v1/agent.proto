@@ -170,6 +170,7 @@ message ExecuteRequest {
     HostUpdate host_update = 25;
     GPUAssign gpu_assign = 26;
     ZFSPool zfs_pool = 27;
+    VMHotplug vm_hotplug = 28;
   }
 }
 
@@ -207,6 +208,17 @@ message ZFSPool {
   string from_snapshot = 10;
   bool force = 11;
   string dest_path = 12;
+}
+
+message VMHotplug {
+  string workload_id = 1;
+  string action = 2;
+  string device_kind = 3;
+  string vendor_id = 4;
+  string product_id = 5;
+  string address = 6;
+	string pci_host = 7;
+  repeated string pci_hosts = 8;
 }
 
 message BackupCopy {
