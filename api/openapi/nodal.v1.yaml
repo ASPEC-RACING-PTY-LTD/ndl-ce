@@ -2705,6 +2705,8 @@ components:
             - failed
         error:
           type: string
+        restored_workload_id:
+          type: string
         started_at:
           type: string
         finished_at:

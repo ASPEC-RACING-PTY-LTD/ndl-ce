@@ -70,4 +70,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if Authorize(view, ComputeSnapshot) || Authorize(view, StorageSnapshot) {
 		t.Fatal("viewer must not snapshot")
 	}
+	if !Authorize(view, BackupRead) || Authorize(view, BackupCreate) || Authorize(view, BackupRestore) {
+		t.Fatal("viewer backup is read-only")
+	}
+	if !Authorize(op, BackupRead) || !Authorize(op, BackupCreate) || !Authorize(op, BackupRestore) {
+		t.Fatal("operator backup run and restore")
+	}
 }

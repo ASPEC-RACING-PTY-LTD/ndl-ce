@@ -115,6 +115,27 @@ type Store interface {
 	ListSnapshots(ctx context.Context, clusterID, workloadID string) ([]Snapshot, error)
 	GetSnapshot(ctx context.Context, clusterID, id string) (*Snapshot, error)
 	UpdateVolumeLocator(ctx context.Context, clusterID, id, backendRef string) error
+
+	CreateBackupTarget(ctx context.Context, t BackupTarget, password string) error
+	ListBackupTargets(ctx context.Context, clusterID string) ([]BackupTarget, error)
+	GetBackupTarget(ctx context.Context, clusterID, id string) (*BackupTarget, error)
+	UpdateBackupTargetStatus(ctx context.Context, clusterID, id, status string) error
+
+	CreateBackupPolicy(ctx context.Context, p BackupPolicy) error
+	ListBackupPolicies(ctx context.Context, clusterID string) ([]BackupPolicy, error)
+	GetBackupPolicy(ctx context.Context, clusterID, id string) (*BackupPolicy, error)
+	UpdateBackupPolicyLastRun(ctx context.Context, clusterID, id string, at time.Time) error
+
+	CreateBackupRun(ctx context.Context, r BackupRun) error
+	ListBackupRuns(ctx context.Context, clusterID string) ([]BackupRun, error)
+	GetBackupRun(ctx context.Context, clusterID, id string) (*BackupRun, error)
+	UpdateBackupRun(ctx context.Context, r BackupRun) error
+
+	CreateBackupArtifact(ctx context.Context, a BackupArtifact) error
+	ListBackupArtifacts(ctx context.Context, clusterID string) ([]BackupArtifact, error)
+	ListBackupArtifactsForWorkload(ctx context.Context, clusterID, workloadID, targetID string) ([]BackupArtifact, error)
+	GetBackupArtifact(ctx context.Context, clusterID, id string) (*BackupArtifact, error)
+	DeleteBackupArtifact(ctx context.Context, clusterID, id string) error
 }
 
 // Cluster is the appliance cluster of one.

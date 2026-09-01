@@ -9,34 +9,39 @@ import (
 
 // Memory is an in-process Store for tests.
 type Memory struct {
-	mu            sync.Mutex
-	cluster       *Cluster
-	setup         *SetupToken
-	users         map[string]User
-	roles         map[string][]string
-	binds         map[string][]string
-	sess          map[string]Session
-	tokens        map[string]APIToken
-	node          *Node
-	audit         []AuditEvent
-	inventory     map[string]HardwareInventory
-	observations  []NodeObservation
-	operations    []Operation
-	events        []Event
-	pools         map[string]StoragePool
-	volumes       map[string]Volume
-	library       map[string]LibraryItem
-	networks      map[string]Network
-	addresses     map[string]Address
-	reservations  map[string]DHCPReservation
-	workloads     map[string]Workload
-	workloadDisks map[string]WorkloadDisk
-	workloadNICs  map[string]WorkloadNIC
-	vmCidata      map[string]VMCidata
-	vmFirmware    map[string]VMFirmware
-	ioSessions    map[string]IOSession
-	certificate   *Certificate
-	snapshots     map[string]Snapshot
+	mu              sync.Mutex
+	cluster         *Cluster
+	setup           *SetupToken
+	users           map[string]User
+	roles           map[string][]string
+	binds           map[string][]string
+	sess            map[string]Session
+	tokens          map[string]APIToken
+	node            *Node
+	audit           []AuditEvent
+	inventory       map[string]HardwareInventory
+	observations    []NodeObservation
+	operations      []Operation
+	events          []Event
+	pools           map[string]StoragePool
+	volumes         map[string]Volume
+	library         map[string]LibraryItem
+	networks        map[string]Network
+	addresses       map[string]Address
+	reservations    map[string]DHCPReservation
+	workloads       map[string]Workload
+	workloadDisks   map[string]WorkloadDisk
+	workloadNICs    map[string]WorkloadNIC
+	vmCidata        map[string]VMCidata
+	vmFirmware      map[string]VMFirmware
+	ioSessions      map[string]IOSession
+	certificate     *Certificate
+	snapshots       map[string]Snapshot
+	backupTargets   map[string]BackupTarget
+	backupCreds     map[string]string
+	backupPolicies  map[string]BackupPolicy
+	backupRuns      map[string]BackupRun
+	backupArtifacts map[string]BackupArtifact
 }
 
 // NewMemory returns an empty store.

@@ -69,6 +69,8 @@ func run(args []string) error {
   snapshot list --workload ID
   snapshot create --workload ID --name NAME
   snapshot rollback --id ID --confirm rollback
+  backup run --workload ID --target ID [--policy ID]
+  backup restore --artifact ID --mode new|replace [--confirm restore]
 `)
 		return nil
 	}
@@ -125,6 +127,8 @@ func run(args []string) error {
 		return cmdCert(args[1:])
 	case "snapshot":
 		return cmdSnapshot(args[1:])
+	case "backup":
+		return cmdBackup(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -711,6 +715,35 @@ func cmdSnapshot(args []string) error {
 		return postJSON("/api/v1/snapshots/"+f["id"]+"/rollback", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl snapshot create|rollback|list")
+	}
+}
+
+func cmdBackup(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: nodalctl backup run|restore")
+	}
+	switch args[0] {
+	case "run":
+		f := parseFlags(args[1:])
+		if f["workload"] == "" || f["target"] == "" {
+			return fmt.Errorf("usage: nodalctl backup run --workload ID --target ID [--policy ID]")
+		}
+		body := map[string]any{"workload_id": f["workload"], "target_id": f["target"]}
+		if f["policy"] != "" {
+			body["policy_id"] = f["policy"]
+		}
+		return postJSON("/api/v1/backups/run", body, true)
+	case "restore":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		if f["artifact"] == "" || (f["mode"] != "new" && f["mode"] != "replace") {
+			return fmt.Errorf("usage: nodalctl backup restore --artifact ID --mode new|replace [--confirm restore]")
+		}
+		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore", map[string]any{"mode": f["mode"]}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl backup run|restore")
 	}
 }
 

@@ -14,10 +14,11 @@ import (
 )
 
 type observer struct {
-	Store  appdb.Store
-	Agent  agentrpc.Client
-	Hub    *httpapi.EventHub
-	Period time.Duration
+	Store   appdb.Store
+	Agent   agentrpc.Client
+	Hub     *httpapi.EventHub
+	Period  time.Duration
+	Nightly func(context.Context)
 }
 
 func (o observer) run(ctx context.Context) {
@@ -81,6 +82,9 @@ func (o observer) run(ctx context.Context) {
 		o.reconcileStorage(cctx, cluster.ID, node.ID)
 		o.reconcileNetworks(cctx, cluster.ID, node.ID)
 		o.reconcileWorkloads(cctx, cluster.ID, node.ID)
+		if o.Nightly != nil {
+			go o.Nightly(context.Background())
+		}
 		changed := prev == nil || inventoryFingerprint(prev.Payload) != inventoryFingerprint(payload)
 		if !changed {
 			return

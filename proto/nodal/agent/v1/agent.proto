@@ -151,7 +151,14 @@ message ExecuteRequest {
     VMLifecycle vm_lifecycle = 21;
     VMQueryPCI vm_query_pci = 22;
     VMSnapshot vm_snapshot = 23;
+    BackupCopy backup_copy = 24;
   }
+}
+
+message BackupCopy {
+  string action = 1;
+  string source_path = 2;
+  string dest_path = 3;
 }
 
 message VMSnapshot {

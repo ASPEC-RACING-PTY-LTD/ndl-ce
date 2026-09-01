@@ -644,6 +644,9 @@ func (e statusError) Error() string { return e.msg }
 
 func errNotFound(msg string) error { return statusError{status: http.StatusNotFound, msg: msg} }
 func errConflict(msg string) error { return statusError{status: http.StatusConflict, msg: msg} }
+func errUnprocessable(msg string) error {
+	return statusError{status: http.StatusUnprocessableEntity, msg: msg}
+}
 func errUnavailable(msg string) error {
 	return statusError{status: http.StatusBadGateway, msg: msg}
 }

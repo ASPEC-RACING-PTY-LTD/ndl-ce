@@ -109,6 +109,36 @@ Directory overlays. Flatten is an offline convert of the current tip.
 2. Make a change inside the guest.
 3. Stop if needed, rollback to the snapshot, start.
 4. The workload UUID is unchanged. This is not a backup restore.
+
+## Backups (Phase 11)
+
+Backups are independent copies. A snapshot is not a backup. The engine
+snapshots, then converts the frozen disk into a standalone qcow2 on the
+target with a SHA-256 checksum. Overlay backing files are flattened into
+the artifact, so the copy does not depend on live pool files.
+Destinations are local directories, plus NFS and SMB as backup targets
+only. NFS/SMB stay unavailable until the locator is an existing local
+directory. The API never returns target passwords.
+Target create and directory probes go through the typed agent.
+
+Restore `new` mints a new workload UUID. Restore `replace` requires
+`X-Nodal-Confirm: restore` and overwrites the existing boot disk after stop.
+Retention prunes backup artifacts, not live overlay files needed for the
+snapshot chain. Directory system containers refuse backup until a later
+storage backend.
+
+`nodalctl backup run` and `nodalctl backup restore` are the CLI paths.
+
+### Recovery matrix (backup)
+
+1. Create a VM and a local backup target.
+2. Run a backup. A snapshot exists and an artifact with checksum is catalogued.
+3. Delete the VM configuration (volumes may remain) or keep it.
+4. Restore `new` to a new UUID and start the guest on the same node.
+5. The restored disk boots from the independent copy if the target is intact.
+6. Restore `replace` without confirm is refused.
+7. An NFS locator that is not a local directory remains unavailable. That is not a successful backup.
+
 15. Unavailable storage refuses start and records an honest unavailable status.
 16. qemu-img against a live attached disk is refused.
 17. Failed prepare cleans TAP devices that No-dal can prove belong to that VM.

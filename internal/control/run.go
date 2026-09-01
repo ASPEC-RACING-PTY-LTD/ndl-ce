@@ -104,6 +104,7 @@ func Run(cfg Config) error {
 		IO:         agent,
 		QEMU:       httpapi.AdaptQEMU(agent),
 		VM:         httpapi.AdaptVM(agent),
+		Backup:     httpapi.AdaptBackup(agent),
 		Hub:        hub,
 		UI:         ui,
 		SetupHash:  cfg.SetupHash,
@@ -119,7 +120,7 @@ func Run(cfg Config) error {
 	if enabled {
 		srv.TLSRequired = true
 	}
-	go observer{Store: st, Agent: agent, Hub: hub}.run(context.Background())
+	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups}.run(context.Background())
 	handler := srv.Handler()
 	if srv.TLSRequired {
 		mat, err := loadEnabledMaterial(cfg.CertDir)

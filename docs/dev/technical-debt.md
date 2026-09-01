@@ -66,4 +66,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Live overlay uses QMP `blockdev-snapshot-sync`; Cloud tests prove the stopped qemu-img overlay path and that live qemu-img is refused. Why not blocking: the product path is typed QMP or offline overlay, never live qemu-img.
 - LOW. qemu-ga fsfreeze is best-effort and does not block snapshot. Why not blocking: roadmap calls freeze best-effort.
 
+## Phase 11
+
+- MEDIUM. Nightly backup of a running guest creates a qcow2 overlay each run, so the chain cap of 16 can fill if overlays are not flattened. Why not blocking: the backup artifact is a standalone qemu-img convert of the frozen parent; the live chain is a separate snapshot concern; flatten remains an explicit operator action.
+- LOW. qemu-img convert of a backup is not run in Cloud CI (qemu-img is absent). Why not blocking: ConvertOffline is the same typed path as Phase 8/10 flatten; SkipHostCmds plus frozen-parent source assertions cover the control plane.
+- MEDIUM. NFS and SMB destinations are catalogued and used only when the locator is already a local directory. Cloud does not mount remote filesystems. Why not blocking: faking a remote copy would violate honesty; Phase 26 owns NFS/SMB as compute datastores.
+- LOW. Backup compression is the qcow2 image as stored. No extra gzip layer. Why not blocking: full copy is an honest incremental-not-available engine.
+- LOW. Homelab restore-and-boot of a deleted VM on Debian 13 hardware is not proven in this Cloud VM. Why not blocking: fixture restore new UUID plus start is covered; appliance boot remains physical validation.
+
 

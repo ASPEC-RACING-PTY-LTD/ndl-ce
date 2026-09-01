@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,6 +53,7 @@ type Server struct {
 	IO          IORPC
 	QEMU        QemuRPC
 	VM          VMRPC
+	Backup      BackupRPC
 	Hub         *EventHub
 	UI          fs.FS
 	Now         func() time.Time
@@ -64,6 +67,8 @@ type Server struct {
 	HTTPSURL    string
 	CertDir     ndltls.Dir
 	Challenges  *ndltls.ChallengeMem
+	backupMu    sync.Mutex
+	nightlyBusy atomic.Bool
 }
 
 type principal struct {
@@ -152,6 +157,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/snapshots", s.createSnapshot)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/snapshots/flatten", s.flattenSnapshots)
 	mux.HandleFunc("POST /api/v1/snapshots/{id}/rollback", s.rollbackSnapshot)
+	mux.HandleFunc("GET /api/v1/backups/targets", s.listBackupTargets)
+	mux.HandleFunc("POST /api/v1/backups/targets", s.createBackupTarget)
+	mux.HandleFunc("GET /api/v1/backups/policies", s.listBackupPolicies)
+	mux.HandleFunc("POST /api/v1/backups/policies", s.createBackupPolicy)
+	mux.HandleFunc("GET /api/v1/backups/runs", s.listBackupRuns)
+	mux.HandleFunc("GET /api/v1/backups/artifacts", s.listBackupArtifacts)
+	mux.HandleFunc("POST /api/v1/backups/run", s.runBackup)
+	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore", s.restoreBackup)
 	mux.HandleFunc("GET /api/v1/certs", s.getCerts)
 	mux.HandleFunc("POST /api/v1/certs/generate", s.generateCert)
 	mux.HandleFunc("POST /api/v1/certs/import", s.importCert)

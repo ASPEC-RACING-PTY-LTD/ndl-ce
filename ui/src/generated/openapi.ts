@@ -523,6 +523,7 @@ export interface BackupRun {
   snapshot_id?: string;
   status: "running" | "succeeded" | "failed";
   error?: string;
+  restored_workload_id?: string;
   started_at: string;
   finished_at?: string;
 }

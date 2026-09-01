@@ -37,6 +37,9 @@ const (
 	ComputeConsole      = "compute.console"
 	ComputeSnapshot     = "compute.snapshot"
 	StorageSnapshot     = "storage.snapshot"
+	BackupRead          = "backup.read"
+	BackupCreate        = "backup.create"
+	BackupRestore       = "backup.restore"
 	TerminalOpen        = "terminal.open"
 	FilesRead           = "files.read"
 	FilesDownload       = "files.download"
@@ -70,11 +73,12 @@ func (Catalog) PermissionsForRole(role string) []string {
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
 			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot,
+			BackupRead, BackupCreate, BackupRestore,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
 			SettingsTLSRead,
 		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead}
+		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead}
 	default:
 		return nil
 	}

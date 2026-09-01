@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/internal/qemu"
+	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
@@ -86,6 +87,22 @@ func (c Client) SnapshotVM(ctx context.Context, req qemu.OverlayRequest) (qemu.O
 	var out qemu.OverlayResult
 	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
 		return qemu.OverlayResult{}, err
+	}
+	return out, nil
+}
+
+func (c Client) CopyBackup(ctx context.Context, action, src, dest string) (storage.CopyResult, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_BackupCopy{BackupCopy: &agentv1.BackupCopy{
+			Action: action, SourcePath: src, DestPath: dest,
+		}},
+	}))
+	if err != nil {
+		return storage.CopyResult{}, err
+	}
+	var out storage.CopyResult
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return storage.CopyResult{}, err
 	}
 	return out, nil
 }

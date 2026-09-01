@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -74,7 +75,7 @@ func TestRepoHasNumberedPhase1SQL(t *testing.T) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
 			continue
 		}
-		if !strings.HasPrefix(e.Name(), "0001_") && !strings.HasPrefix(e.Name(), "000") {
+		if !strings.HasPrefix(e.Name(), "0001_") && !regexp.MustCompile(`^[0-9]{4}_`).MatchString(e.Name()) {
 			t.Fatalf("unexpected migration name %s", e.Name())
 		}
 		found = true

@@ -97,3 +97,11 @@ func (h *Handler) execVMSnapshot(ctx context.Context, m *agentv1.VMSnapshot) (*c
 	}
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: m.GetAction(), ResultJson: mustJSON(res)}), nil
 }
+
+func (h *Handler) execBackupCopy(ctx context.Context, m *agentv1.BackupCopy) (*connect.Response[agentv1.ExecuteResponse], error) {
+	res, err := h.qemu().CopyOffline(ctx, m.GetAction(), m.GetSourcePath(), m.GetDestPath())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: m.GetAction(), ResultJson: mustJSON(res)}), nil
+}

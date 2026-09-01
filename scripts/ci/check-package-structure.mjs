@@ -58,6 +58,9 @@ if (!changelog.includes("nodal (0.1.6)") || !changelog.includes("Phase 7 QEMU/QM
 if (!changelog.includes("nodal (0.1.7)") || !changelog.includes("Phase 8 product virtual machines")) {
   errors.push("changelog must include nodal (0.1.7) Phase 8 product virtual machines");
 }
+if (!changelog.includes("nodal (0.1.10)") || !changelog.includes("Phase 11 backup engine")) {
+  errors.push("changelog must include nodal (0.1.10) Phase 11 backup engine");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

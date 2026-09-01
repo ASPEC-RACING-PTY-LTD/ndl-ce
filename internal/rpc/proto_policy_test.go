@@ -57,6 +57,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"VMLifecycle vm_lifecycle =",
 		"VMQueryPCI vm_query_pci =",
 		"VMSnapshot vm_snapshot =",
+		"BackupCopy backup_copy =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {
