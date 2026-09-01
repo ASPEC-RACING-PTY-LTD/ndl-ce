@@ -8,13 +8,17 @@ import {
   getNodeCapacity,
   getNodeSmart,
   listNodes,
+  listWG,
+  createWGPeer,
 } from "../api/client";
 import type { Capability, HardwareResponse, MetricsResponse, NodeSummary } from "../api/phase2";
 import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
+import { Field } from "../components/Field";
 import { GpuPage } from "./GpuPage";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { usePath } from "../router";
+import { useSession } from "../session";
 
 type Inventory = {
   host?: Record<string, unknown>;
@@ -43,12 +47,13 @@ export function NodePage() {
         if (cancelled) {
           return;
         }
-        if (!items[0]) {
+        const local = items.find((n) => n.role !== "worker") ?? items[0];
+        if (!local) {
           setNodes("missing");
           return;
         }
-        setId(items[0].id);
-        setNodes(items[0]);
+        setId(local.id);
+        setNodes(local);
       } catch {
         if (!cancelled) {
           setNodes("missing");
@@ -197,7 +202,109 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
           </ul>
         )}
       </article>
+      <RemoteNodeHelper />
     </div>
+  );
+}
+
+function RemoteNodeHelper() {
+  const session = useSession();
+  const mutate = Boolean(
+    session.status === "ready" && (session.user?.roles.includes("admin") || session.user?.roles.includes("operator")),
+  );
+  const [workers, setWorkers] = useState<NodeSummary[]>([]);
+  const [name, setName] = useState("worker-1");
+  const [endpoint, setEndpoint] = useState("");
+  const [snippet, setSnippet] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function reload() {
+    const listed = await listWG();
+    setWorkers(listed.nodes ?? []);
+  }
+
+  useEffect(() => {
+    void reload().catch(() => undefined);
+  }, []);
+
+  async function onCreate() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createWGPeer({ name, endpoint: endpoint || undefined });
+      setSnippet(
+        JSON.stringify(
+          {
+            ...created.desired,
+            private_key: created.worker_private_key,
+            pairing_token: created.pairing_token,
+          },
+          null,
+          2,
+        ),
+      );
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unavailable");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="panel">
+      <h2>Remote worker</h2>
+      <p className="lede">
+        WireGuard is pre-join connectivity. Place the control plane on this box and an agent on
+        another. Cluster join remains Phase 30. A down tunnel marks the worker NotReady; guests keep
+        running.
+      </p>
+      {workers.length === 0 ? (
+        <p>No remote workers yet.</p>
+      ) : (
+        <ul className="plain-list">
+          {workers.map((n) => (
+            <li key={n.id}>
+              <strong>{n.name}</strong> {honestStatus(n.status)}
+              {n.reason ? ` ${n.reason}` : ""}
+              {n.listen_addr ? ` ${n.listen_addr}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {mutate ? (
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onCreate();
+          }}
+        >
+          <Field id="wg-name" label="Worker name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Field
+            id="wg-endpoint"
+            label="Worker endpoint"
+            value={endpoint}
+            onChange={(e) => setEndpoint(e.target.value)}
+            hint="Optional host:port. Copy the generated desired.json to /var/lib/ndl/wireguard/desired.json on the worker."
+          />
+          <button className="btn btn-primary" type="submit" disabled={busy || !name}>
+            Add WireGuard worker
+          </button>
+        </form>
+      ) : null}
+      {error ? (
+        <p className="banner banner-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {snippet ? (
+        <pre className="code-block" tabIndex={0}>
+          {snippet}
+        </pre>
+      ) : null}
+    </article>
   );
 }
 

@@ -34,6 +34,8 @@ func run(args []string) error {
   recover-admin --username USER --password PASS
   host-prepare
   node show
+  cluster wg show
+  cluster wg peer add --name NAME [--endpoint HOST:PORT]
   task list
   event list
   storage pool list
@@ -150,6 +152,8 @@ func run(args []string) error {
 		default:
 			return fmt.Errorf("usage: nodalctl node show|terminal")
 		}
+	case "cluster":
+		return cmdCluster(args[1:])
 	case "task":
 		if len(args) < 2 || args[1] != "list" {
 			return fmt.Errorf("usage: nodalctl task list")
@@ -566,6 +570,34 @@ func cmdNetwork(args []string) error {
 		return postJSON("/api/v1/networks/policies/"+f["id"]+"/apply", map[string]any{}, true)
 	default:
 		return fmt.Errorf("unknown network command")
+	}
+}
+
+func cmdCluster(args []string) error {
+	if len(args) < 2 || args[0] != "wg" {
+		return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
+	}
+	switch args[1] {
+	case "show":
+		return cmdGet("/api/v1/cluster/wg")
+	case "peer":
+		if len(args) < 3 || args[2] != "add" {
+			return fmt.Errorf("usage: nodalctl cluster wg peer add --name NAME [--endpoint HOST:PORT]")
+		}
+		f := parseFlags(args[3:])
+		if f["name"] == "" {
+			return fmt.Errorf("usage: nodalctl cluster wg peer add --name NAME [--endpoint HOST:PORT]")
+		}
+		body := map[string]any{"name": f["name"], "endpoint": f["endpoint"]}
+		if f["local-address"] != "" {
+			body["local_address"] = f["local-address"]
+		}
+		if f["worker-address"] != "" {
+			body["worker_address"] = f["worker-address"]
+		}
+		return postJSON("/api/v1/cluster/wg/peers", body, true)
+	default:
+		return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
 	}
 }
 

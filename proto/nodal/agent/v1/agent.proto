@@ -12,7 +12,8 @@ service AgentService {
   rpc Execute(ExecuteRequest) returns (ExecuteResponse);
   // Local first-node enroll. Join tokens are empty on a single node.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
-  // OpenSession is reserved for later remote-node sessions.
+  // OpenSession is the remote-worker bind. Agents also dial the control
+  // plane HTTP session path. Cluster join remains Phase 30.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   // GetInventory returns the last typed host observation.
   rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse);
@@ -179,6 +180,7 @@ message ExecuteRequest {
     LVMPool lvm_pool = 34;
     Datastore datastore = 35;
     NetAdvanced net_advanced = 36;
+    WireGuard wireguard = 37;
   }
 }
 
@@ -313,6 +315,22 @@ message NetAdvanced {
   string confirm_ifname = 14;
   bool arm_rollback = 15;
   string bridge_name = 16;
+}
+
+message WireGuard {
+  string action = 1;
+  string peer_id = 2;
+  uint32 listen_port = 3;
+  string address_cidr = 4;
+  string private_key_file = 5;
+  repeated WireGuardPeer peers = 6;
+}
+
+message WireGuardPeer {
+  string public_key = 1;
+  string endpoint = 2;
+  string allowed_ips = 3;
+  uint32 persistent_keepalive = 4;
 }
 
 message VMSnapshot {
@@ -490,9 +508,21 @@ message EnrollResponse {
   HostPlatform host_platform = 3;
 }
 
-message OpenSessionRequest {}
+message OpenSessionRequest {
+  string node_id = 1;
+  string cluster_id = 2;
+  string listen_addr = 3;
+  string wg_public_key = 4;
+  int64 handshake_unix = 5;
+  string peer_id = 6;
+}
 
-message OpenSessionResponse {}
+message OpenSessionResponse {
+  string session_id = 1;
+  bool accepted = 2;
+  string reason = 3;
+  string control_listen_addr = 4;
+}
 
 message FilesOpRequest {
   string target_kind = 1;

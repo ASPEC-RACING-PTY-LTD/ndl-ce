@@ -74,6 +74,9 @@ type Memory struct {
 	netBonds          map[string]NetworkBond
 	netPolicies       map[string]NetworkPolicy
 	netOverlays       map[string]NetworkOverlay
+	wgPeers           map[string]WGPeer
+	remoteNodes       map[string]RemoteNode
+	remoteSessions    map[string]RemoteSession
 }
 
 // NewMemory returns an empty store.

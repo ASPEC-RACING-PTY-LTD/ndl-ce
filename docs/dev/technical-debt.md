@@ -185,6 +185,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. VXLAN overlay is local prep and does not form a multi-node mesh. Why not blocking: roadmap says usable after Phase 30.
 - LOW. VLAN-aware filtering is applied with typed `bridge vlan` on an access port rather than rewriting an existing isolated bridge netdev in place. Why not blocking: stacked VLAN netdev plus access PVID is the homelab path; rewriting a live bridge would risk the management NIC.
 
+## Phase 28
+
+- MEDIUM. Live WireGuard between two machines is not in this Cloud job. Why not blocking: SkipHostCmds plus loopback keypairs prove netdev files, 0600 private keys, handshake 0 stays NotReady, and guests keep running when the session is stale.
+- LOW. Remote Execute over the tunnel is recorded as listen_addr and TCP dial exists, but workload APIs still use the local unix agent. Why not blocking: roadmap join and scheduling remain Phase 30; heartbeat plus NotReady is the Phase 28 acceptance.
+- LOW. Pairing tokens are pre-join secrets, not cluster join tokens. Why not blocking: join tokens stay empty until Phase 30.
+
 
 
 

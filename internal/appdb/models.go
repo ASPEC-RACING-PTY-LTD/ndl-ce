@@ -243,6 +243,19 @@ type Store interface {
 	GetStackMember(ctx context.Context, clusterID, id string) (*StackMember, error)
 	GetStackMemberByService(ctx context.Context, clusterID, stackID, service string) (*StackMember, error)
 	UpdateStackMember(ctx context.Context, m StackMember) error
+
+	CreateWGPeer(ctx context.Context, p WGPeer) error
+	ListWGPeers(ctx context.Context, clusterID string) ([]WGPeer, error)
+	GetWGPeer(ctx context.Context, clusterID, id string) (*WGPeer, error)
+	UpdateWGPeerObserved(ctx context.Context, p WGPeer) error
+
+	CreateRemoteNode(ctx context.Context, n RemoteNode) error
+	ListRemoteNodes(ctx context.Context, clusterID string) ([]RemoteNode, error)
+	GetRemoteNode(ctx context.Context, clusterID, id string) (*RemoteNode, error)
+	GetRemoteNodeByPeer(ctx context.Context, clusterID, peerID string) (*RemoteNode, error)
+	UpdateRemoteNodeSession(ctx context.Context, n RemoteNode) error
+
+	CreateRemoteSession(ctx context.Context, s RemoteSession) error
 }
 
 // Cluster is the appliance cluster of one.

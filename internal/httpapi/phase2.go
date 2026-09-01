@@ -26,6 +26,11 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	if node != nil {
 		items = append(items, s.nodeSummary(node, inv, redactViewer(p)))
 	}
+	remotes, _ := s.Store.ListRemoteNodes(r.Context(), p.User.ClusterID)
+	now := s.now()
+	for _, remote := range remotes {
+		items = append(items, remoteNodeJSON(remote, now))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -39,11 +44,20 @@ func (s *Server) getNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if node == nil || node.ID != r.PathValue("id") {
+	if node != nil && node.ID == r.PathValue("id") {
+		writeJSON(w, http.StatusOK, s.nodeSummary(node, inv, redactViewer(p)))
+		return
+	}
+	remote, err := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if remote == nil {
 		writeErr(w, http.StatusNotFound, "node not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.nodeSummary(node, inv, redactViewer(p)))
+	writeJSON(w, http.StatusOK, remoteNodeJSON(*remote, s.now()))
 }
 
 func (s *Server) nodeHardware(w http.ResponseWriter, r *http.Request) {

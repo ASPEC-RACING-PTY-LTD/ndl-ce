@@ -23,6 +23,7 @@ type NetworkRPC interface {
 	ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyResult, error)
 	GetNetworks(ctx context.Context, hints []ndnet.Hint) (ndnet.Observation, error)
 	NetAdvanced(ctx context.Context, op ndnet.AdvancedOp) (ndnet.AdvancedResult, error)
+	WireGuard(ctx context.Context, op ndnet.WGOp) (ndnet.WGResult, error)
 }
 
 type networkWriteRequest struct {

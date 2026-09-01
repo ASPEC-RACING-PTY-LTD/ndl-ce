@@ -51,7 +51,11 @@ export function honestStatus(value?: string): string {
     case "creating":
       return "Creating";
     case "ready":
+    case "Ready":
       return "Ready";
+    case "NotReady":
+    case "not_ready":
+      return "Not ready";
     default:
       return value && value.length > 0 ? value : "Not reported";
   }

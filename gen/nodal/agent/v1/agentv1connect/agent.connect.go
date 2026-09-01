@@ -80,7 +80,8 @@ type AgentServiceClient interface {
 	Execute(context.Context, *connect.Request[v1.ExecuteRequest]) (*connect.Response[v1.ExecuteResponse], error)
 	// Local first-node enroll. Join tokens are empty on a single node.
 	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
-	// OpenSession is reserved for later remote-node sessions.
+	// OpenSession is the remote-worker bind. Agents also dial the control
+	// plane HTTP session path. Cluster join remains Phase 30.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
 	// GetInventory returns the last typed host observation.
 	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)
@@ -329,7 +330,8 @@ type AgentServiceHandler interface {
 	Execute(context.Context, *connect.Request[v1.ExecuteRequest]) (*connect.Response[v1.ExecuteResponse], error)
 	// Local first-node enroll. Join tokens are empty on a single node.
 	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
-	// OpenSession is reserved for later remote-node sessions.
+	// OpenSession is the remote-worker bind. Agents also dial the control
+	// plane HTTP session path. Cluster join remains Phase 30.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
 	// GetInventory returns the last typed host observation.
 	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)

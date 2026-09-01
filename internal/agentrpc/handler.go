@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -21,7 +24,6 @@ import (
 	"github.com/no-dal/ndl-ce/internal/peercred"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/storage"
-	"sync"
 )
 
 const version = "0.1.0"
@@ -198,6 +200,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execDatastore(ctx, req.Msg.GetDatastore())
 	case req.Msg.GetNetAdvanced() != nil:
 		return h.execNetAdvanced(ctx, req.Msg.GetNetAdvanced())
+	case req.Msg.GetWireguard() != nil:
+		return h.execWireGuard(ctx, req.Msg.GetWireguard())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}
@@ -238,9 +242,43 @@ func (h *Handler) Enroll(ctx context.Context, req *connect.Request[agentv1.Enrol
 	}), nil
 }
 
-// OpenSession is reserved.
-func (h *Handler) OpenSession(context.Context, *connect.Request[agentv1.OpenSessionRequest]) (*connect.Response[agentv1.OpenSessionResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("OpenSession is reserved"))
+// OpenSession returns the local bind for a remote-worker session.
+// Agents also dial the control plane HTTP path. Cluster join remains Phase 30.
+func (h *Handler) OpenSession(ctx context.Context, req *connect.Request[agentv1.OpenSessionRequest]) (*connect.Response[agentv1.OpenSessionResponse], error) {
+	if err := h.authorize(ctx); err != nil {
+		return nil, err
+	}
+	nodeID, clusterID, _ := h.Ident.LoadNode()
+	if req.Msg.GetNodeId() != "" {
+		nodeID = req.Msg.GetNodeId()
+	}
+	if req.Msg.GetClusterId() != "" {
+		clusterID = req.Msg.GetClusterId()
+	}
+	listen := strings.TrimSpace(req.Msg.GetListenAddr())
+	if listen == "" {
+		listen = strings.TrimSpace(os.Getenv("NODAL_AGENT_TCP_LISTEN"))
+	}
+	hs := req.Msg.GetHandshakeUnix()
+	pub := req.Msg.GetWgPublicKey()
+	if req.Msg.GetPeerId() != "" {
+		st, err := h.nets().ApplyWireGuard(ctx, ndnet.WGOp{Action: ndnet.ActionWGStatus, PeerID: req.Msg.GetPeerId()})
+		if err == nil {
+			if hs == 0 {
+				hs = st.LastHandshakeUnix
+			}
+			if pub == "" {
+				pub = st.PublicKey
+			}
+			if listen == "" && st.AddressCIDR != "" {
+				listen = strings.Split(st.AddressCIDR, "/")[0] + ":9444"
+			}
+		}
+	}
+	return connect.NewResponse(&agentv1.OpenSessionResponse{
+		SessionId: uuid.NewString(), Accepted: true, ControlListenAddr: listen,
+		Reason: fmt.Sprintf("node=%s cluster=%s pub=%s handshake=%d", nodeID, clusterID, pub, hs),
+	}), nil
 }
 
 func (h *Handler) authorize(ctx context.Context) error {

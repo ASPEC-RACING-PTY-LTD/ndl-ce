@@ -25,7 +25,8 @@ import (
 
 // Client is the control-plane southbound client.
 type Client struct {
-	Socket string
+	Socket  string
+	TCPAddr string
 }
 
 // Hello is the idle Observe-first ping.
@@ -418,6 +419,17 @@ func decodeInventory(raw []byte) (inventory.Inventory, error) {
 }
 
 func (c Client) rpc() agentv1connect.AgentServiceClient {
+	if c.TCPAddr != "" {
+		addr := c.TCPAddr
+		httpClient := &http.Client{Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, "tcp", addr)
+			},
+		}}
+		return agentv1connect.NewAgentServiceClient(httpClient, "http://remote")
+	}
 	path := c.Socket
 	if path == "" {
 		path = transport.AgentSocket
@@ -430,4 +442,16 @@ func (c Client) rpc() agentv1connect.AgentServiceClient {
 		},
 	}}
 	return agentv1connect.NewAgentServiceClient(httpClient, "http://local")
+}
+
+// OpenSession binds a remote worker session on the agent.
+func (c Client) OpenSession(ctx context.Context, nodeID, clusterID, listenAddr, pubKey, peerID string, handshake int64) (*agentv1.OpenSessionResponse, error) {
+	res, err := c.rpc().OpenSession(ctx, connect.NewRequest(&agentv1.OpenSessionRequest{
+		NodeId: nodeID, ClusterId: clusterID, ListenAddr: listenAddr,
+		WgPublicKey: pubKey, HandshakeUnix: handshake, PeerId: peerID,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return res.Msg, nil
 }

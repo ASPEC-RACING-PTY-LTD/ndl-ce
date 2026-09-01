@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.26
-  description: Phase 27 advanced networking, plus prior northbound API.
+  version: 0.1.27
+  description: Phase 28 WireGuard and remote nodes, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -707,6 +707,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NetworkOverlay"
+  /cluster/wg:
+    get:
+      operationId: listWireGuard
+      summary: Pre-join WireGuard peers. Cluster join remains Phase 30.
+      responses:
+        "200":
+          description: Peers and remote workers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WGStatusResponse"
+  /cluster/wg/peers:
+    post:
+      operationId: createWireGuardPeer
+      summary: Create a local plus worker WireGuard pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WGPeerCreateRequest"
+      responses:
+        "201":
+          description: Created. worker_private_key and pairing_token are shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WGPeerCreateResponse"
+  /cluster/sessions:
+    post:
+      operationId: openClusterSession
+      summary: Agent OpenSession dial-out. Pairing token authenticates. Not a join token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenClusterSessionRequest"
+      responses:
+        "200":
+          description: Session accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenClusterSessionResponse"
   /workloads:
     get:
       operationId: listWorkloads
@@ -3365,6 +3410,121 @@ components:
           type: string
         vni:
           type: integer
+    WGPeer:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        public_key:
+          type: string
+        listen_port:
+          type: integer
+        address_cidr:
+          type: string
+        endpoint:
+          type: string
+        allowed_ips:
+          type: string
+        persistent_keepalive:
+          type: integer
+        locator:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        last_handshake_unix:
+          type: integer
+    WGStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WGPeer"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeSummary"
+        join:
+          type: string
+    WGPeerCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        endpoint:
+          type: string
+        local_address:
+          type: string
+        worker_address:
+          type: string
+        listen_port:
+          type: integer
+    WGPeerCreateResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        local:
+          $ref: "#/components/schemas/WGPeer"
+        worker:
+          $ref: "#/components/schemas/WGPeer"
+        warning:
+          type: string
+    OpenClusterSessionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - peer_id
+        - pairing_token
+      properties:
+        peer_id:
+          type: string
+        node_id:
+          type: string
+        cluster_id:
+          type: string
+        listen_addr:
+          type: string
+        wg_public_key:
+          type: string
+        handshake_unix:
+          type: integer
+        pairing_token:
+          type: string
+    OpenClusterSessionResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id:
+          type: string
+        accepted:
+          type: boolean
+        node_id:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
     Network:
       type: object
       additionalProperties: true

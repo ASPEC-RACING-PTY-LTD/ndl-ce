@@ -36,6 +36,7 @@ func main() {
 	recoverStaleNetwork(dir)
 	go scrapeMetrics(ms, dir)
 	go h.RefreshLoop(30 * time.Second)
+	go h.SessionLoop(dir, 30*time.Second)
 	go reattachQEMU(h.QEMU)
 	if err := agentrpc.Serve(h); err != nil {
 		log.Fatal(err)

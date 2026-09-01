@@ -112,6 +112,9 @@ if (!changelog.includes("nodal (0.1.25)") || !changelog.includes("Phase 26 NFS/S
 if (!changelog.includes("nodal (0.1.26)") || !changelog.includes("Phase 27 advanced networking")) {
   errors.push("changelog must include nodal (0.1.26) Phase 27 advanced networking");
 }
+if (!changelog.includes("nodal (0.1.27)") || !changelog.includes("Phase 28 WireGuard")) {
+  errors.push("changelog must include nodal (0.1.27) Phase 28 WireGuard");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

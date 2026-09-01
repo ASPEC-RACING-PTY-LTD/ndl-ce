@@ -20,13 +20,19 @@ const (
 // Runner executes a validated argv vector. Tests replace it.
 type Runner func(ctx context.Context, name string, args ...string) error
 
+// OutputRunner captures stdout from a typed argv. Tests replace it.
+type OutputRunner func(ctx context.Context, name string, args ...string) (string, error)
+
 // Engine applies typed network plans. It never takes a shell string.
 type Engine struct {
 	Root         string
 	NetworkDir   string
 	StateDir     string
+	SecretDir    string
 	Host         func() (HostView, error)
 	Run          Runner
+	Output       OutputRunner
+	Handshake    func(iface string) (int64, error)
 	Probe        func() error
 	UnitActive   func(name string) bool
 	Render       func(Plan) []File
@@ -56,6 +62,21 @@ func (e *Engine) networkDir() string {
 		return filepath.Join(e.Root, "etc/systemd/network")
 	}
 	return defaultNetworkDir
+}
+
+func (e *Engine) secretDir() string {
+	if e.SecretDir != "" {
+		return e.SecretDir
+	}
+	if e.Root != "" && e.Root != "/" {
+		return filepath.Join(e.Root, "var/lib/ndl/secrets/wireguard")
+	}
+	return defaultWGSecretDir
+}
+
+// SecretDirOrDefault is the WireGuard private-key directory. It is not a unit path.
+func (e *Engine) SecretDirOrDefault() string {
+	return e.secretDir()
 }
 
 func (e *Engine) stateDir() string {

@@ -297,6 +297,63 @@ export interface OverlayCreateRequest {
   vni: number;
 }
 
+export interface WGPeer {
+  id?: string;
+  name?: string;
+  role?: string;
+  public_key?: string;
+  listen_port?: number;
+  address_cidr?: string;
+  endpoint?: string;
+  allowed_ips?: string;
+  persistent_keepalive?: number;
+  locator?: string;
+  status?: string;
+  reason?: string;
+  last_handshake_unix?: number;
+}
+
+export interface WGStatusResponse {
+  items: WGPeer[];
+  nodes?: NodeSummary[];
+  join?: string;
+}
+
+export interface WGPeerCreateRequest {
+  name: string;
+  endpoint?: string;
+  local_address?: string;
+  worker_address?: string;
+  listen_port?: number;
+}
+
+export interface WGPeerCreateResponse {
+  id: string;
+  name?: string;
+  role?: string;
+  local?: WGPeer;
+  worker?: WGPeer;
+  warning?: string;
+}
+
+export interface OpenClusterSessionRequest {
+  peer_id: string;
+  node_id?: string;
+  cluster_id?: string;
+  listen_addr?: string;
+  wg_public_key?: string;
+  handshake_unix?: number;
+  pairing_token: string;
+}
+
+export interface OpenClusterSessionResponse {
+  session_id?: string;
+  accepted?: boolean;
+  node_id?: string;
+  status?: string;
+  reason?: string;
+}
+
 export interface Network {
   id: string;
   name: string;
@@ -1301,6 +1358,12 @@ export type CreateNetworkPolicyPath = "/api/v1/networks/policies";
 export type ApplyNetworkPolicyPath = "/api/v1/networks/policies/{id}/apply";
 
 export type CreateNetworkOverlayPath = "/api/v1/networks/overlays";
+
+export type ListWireGuardPath = "/api/v1/cluster/wg";
+
+export type CreateWireGuardPeerPath = "/api/v1/cluster/wg/peers";
+
+export type OpenClusterSessionPath = "/api/v1/cluster/sessions";
 
 export type ListWorkloadsPath = "/api/v1/workloads";
 

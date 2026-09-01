@@ -1,3 +1,9 @@
+nodal (0.1.27) UNRELEASED; urgency=medium
+
+  * Phase 28 WireGuard and remote nodes: systemd-networkd WireGuard, OpenSession dial-out, tunnel down marks NotReady while guests keep running, cluster join remains Phase 30
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.26) UNRELEASED; urgency=medium
 
   * Phase 27 advanced networking: stacked VLAN access ports, active-backup/LACP bonds, guest bridge-family policies that cannot drop management INPUT, VXLAN overlay prep, watchdog still wins

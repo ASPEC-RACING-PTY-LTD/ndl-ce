@@ -67,6 +67,7 @@ const defaultRoutes = {
   "/api/v1/tasks": { status: 200, body: { items: [] } },
   "/api/v1/storage/pools": { status: 200, body: { items: [] } },
   "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
+  "/api/v1/cluster/wg": { status: 200, body: { items: [], nodes: [] } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
   "/api/v1/storage/images": { status: 200, body: { items: [] } },
 };
@@ -289,6 +290,43 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /create network/i })).toBeVisible();
     expect(screen.getByText(/eth0/)).toBeVisible();
     expect(screen.getByText(/ifindex 2/i)).toBeVisible();
+  });
+
+  it("shows the remote worker WireGuard helper", async () => {
+    window.history.replaceState({}, "", "/node");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/nodes": {
+        status: 200,
+        body: {
+          items: [
+            { id: "node-1", name: "local", status: "available", host_os: "Debian GNU/Linux 13 (trixie)" },
+            { id: "worker-1", name: "worker-1", role: "worker", status: "NotReady", reason: "wireguard handshake not observed" },
+          ],
+        },
+      },
+      "/api/v1/cluster/wg": {
+        status: 200,
+        body: {
+          items: [],
+          nodes: [{ id: "worker-1", name: "worker-1", role: "worker", status: "NotReady" }],
+          join: "Cluster join remains Phase 30.",
+        },
+      },
+      "/api/v1/nodes/node-1": {
+        status: 200,
+        body: { id: "node-1", name: "local", status: "available", host_os: "Debian GNU/Linux 13 (trixie)" },
+      },
+      "/api/v1/nodes/node-1/capabilities": { status: 200, body: { node_id: "node-1", capabilities: [] } },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^remote worker$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /add wireguard worker/i })).toBeVisible();
+    expect(await screen.findByText(/not ready/i)).toBeVisible();
+    expect(screen.getByText(/cluster join remains phase 30/i)).toBeVisible();
   });
 
   it("renders the workloads route without fake counts", async () => {

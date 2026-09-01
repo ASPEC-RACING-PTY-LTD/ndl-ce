@@ -14,7 +14,7 @@ func (h *Handler) nets() *ndnet.Engine {
 	if h.Nets != nil {
 		return h.Nets
 	}
-	return &ndnet.Engine{Render: debian.NetworkdFiles}
+	return &ndnet.Engine{Render: debian.NetworkdFiles, SkipHostCmds: h.SkipHostCmds}
 }
 
 func specFromProto(id, name, kind, cidr string, dhcp, dns bool, uplink, confirm string, reservations []byte, arm bool) ndnet.Spec {

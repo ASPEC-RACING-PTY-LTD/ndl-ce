@@ -117,6 +117,51 @@ export async function getNode(id: string): Promise<import("./phase2").NodeSummar
   return readJson(await request(`/nodes/${id}`));
 }
 
+export type WGPeer = {
+  id: string;
+  name?: string;
+  role?: string;
+  public_key?: string;
+  listen_port?: number;
+  address_cidr?: string;
+  endpoint?: string;
+  locator?: string;
+  status?: string;
+  reason?: string;
+  last_handshake_unix?: number;
+};
+
+export type WGStatus = {
+  items?: WGPeer[];
+  nodes?: import("./phase2").NodeSummary[];
+  join?: string;
+};
+
+export type WGPeerCreateResult = {
+  id: string;
+  name?: string;
+  local?: WGPeer;
+  worker?: WGPeer;
+  node?: import("./phase2").NodeSummary;
+  worker_private_key?: string;
+  pairing_token?: string;
+  desired?: Record<string, unknown>;
+  warning?: string;
+};
+
+export async function listWG(): Promise<WGStatus> {
+  return readJson(await request("/cluster/wg"));
+}
+
+export async function createWGPeer(body: {
+  name: string;
+  endpoint?: string;
+  local_address?: string;
+  worker_address?: string;
+}): Promise<WGPeerCreateResult> {
+  return readJson(await request("/cluster/wg/peers", { method: "POST", body: JSON.stringify(body) }));
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

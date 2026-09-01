@@ -191,5 +191,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: WireGuard remains Phase 28; live extra-NIC appliance job; multi-node overlay mesh Phase 30
 - Audit follow-up: policies cannot emit inet INPUT drop; VLAN/bond on management still require typed confirm and the 120s watchdog
 
+## Phase 28
+
+- Package: 0.1.27
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (systemd-networkd WireGuard files with PrivateKeyFile, private key 0600 and absent from list JSON, SkipHostCmds handshake 0 stays unavailable/NotReady, OpenSession dial-out with pairing token, Ready only with live handshake plus session, stale tunnel returns NotReady, guests remain running). FIXTURE: SkipHostCmds + loopback keypairs + fakeNet. NOT PHYSICALLY VALIDATED: live WireGuard handshake across two machines; mTLS over the tunnel for Execute
+- Follow-up: host platform compatibility and installer remain Phase 29; cluster join remains Phase 30; live two-box appliance job
+- Audit follow-up: SkipHostCmds and missing handshake never invent Ready; worker_private_key and pairing_token are shown once and never stored in list JSON
+
 
 

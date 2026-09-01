@@ -55,6 +55,22 @@ func (f fakeNet) NetAdvanced(_ context.Context, op ndnet.AdvancedOp) (ndnet.Adva
 	return res, nil
 }
 
+func (f fakeNet) WireGuard(_ context.Context, op ndnet.WGOp) (ndnet.WGResult, error) {
+	if f.err != nil {
+		return ndnet.WGResult{}, f.err
+	}
+	_, pub, err := ndnet.GenerateWGKey()
+	if err != nil {
+		return ndnet.WGResult{}, err
+	}
+	loc, _ := ndnet.WGName(op.PeerID)
+	return ndnet.WGResult{
+		Action: op.Action, PeerID: op.PeerID, Status: ndnet.StatusUnavailable, Reason: ndnet.WGSkipReason,
+		Locator: loc, PublicKey: pub, ListenPort: op.ListenPort, AddressCIDR: op.AddressCIDR,
+		LastHandshakeUnix: 0, Warnings: []string{ndnet.WGJoinLater},
+	}, nil
+}
+
 func claimAdmin(t *testing.T, ts *httptest.Server, token string) string {
 	t.Helper()
 	res, err := ts.Client().Post(ts.URL+"/api/v1/setup/claim", "application/json", strings.NewReader(
