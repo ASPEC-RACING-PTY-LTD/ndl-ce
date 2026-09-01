@@ -10,6 +10,8 @@ const SKIP_DIRS = new Set([
   "vendor",
   "bin",
   "gen",
+  "packaging/e2e/out",
+  "packaging/e2e/gocache",
 ]);
 
 export function walkFiles(root, { extensions = null, skipFiles = new Set() } = {}) {

@@ -86,7 +86,7 @@ if (!controlUnit.includes("EnvironmentFile=-/etc/ndl/control.env")) {
 if (!controlUnit.includes("After=network.target postgresql.service")) {
   errors.push("ndl-control.service must start after network and postgresql");
 }
-if (controlUnit.includes("RuntimeDirectory=ndl")) {
+if (/^RuntimeDirectory=ndl\s*$/m.test(controlUnit)) {
   errors.push("ndl-control.service must not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl");
 }
 
