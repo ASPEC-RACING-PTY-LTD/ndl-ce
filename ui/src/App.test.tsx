@@ -412,7 +412,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /^snapshots$/i })).toBeVisible();
     expect(screen.getByText(/point-in-time restore on the same pool\. this is not a backup\./i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /^create snapshot$/i })).toBeVisible();
+    expect(await screen.findByRole("button", { name: /^create snapshot$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^flatten chain$/i })).toBeVisible();
     expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^\/backups$/i)).not.toBeInTheDocument();
@@ -445,8 +445,8 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^snapshots$/i })).toBeVisible();
-    expect(await screen.findByText(/unsupported/i)).toBeVisible();
-    expect(screen.getByText(/not zfs/i)).toBeVisible();
+    expect(await screen.findByText(/Unsupported\./i)).toBeVisible();
+    expect(screen.getAllByText(/not ZFS/i).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
   });

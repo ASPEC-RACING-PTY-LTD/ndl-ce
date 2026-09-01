@@ -52,6 +52,31 @@ export function SnapshotsPage() {
   const [loadState, setLoadState] = useState<"collecting" | "ready" | "unavailable">("collecting");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoadState("collecting");
+    setError(null);
+    void (async () => {
+      try {
+        const [w, listed] = await Promise.all([getWorkload(id), listWorkloadSnapshots(id)]);
+        if (cancelled) {
+          return;
+        }
+        setWorkload(w);
+        applyList(listed);
+        setLoadState("ready");
+      } catch (err) {
+        if (!cancelled) {
+          setLoadState("unavailable");
+          setError(err instanceof Error ? err.message : "Unavailable");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   async function reload() {
     const [w, listed] = await Promise.all([getWorkload(id), listWorkloadSnapshots(id)]);
     setWorkload(w);
@@ -63,22 +88,6 @@ export function SnapshotsPage() {
     setItems(listed.items ?? []);
     setCapability(listed.capability ?? null);
   }
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadState("collecting");
-    setError(null);
-    void reload().catch((err) => {
-      if (!cancelled) {
-        setLoadState("unavailable");
-        setError(err instanceof Error ? err.message : "Unavailable");
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
 
   async function onCreate() {
     const trimmed = name.trim();
