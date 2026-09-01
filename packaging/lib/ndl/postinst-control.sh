@@ -51,16 +51,21 @@ ensure_postgres_ready() {
 }
 
 ensure_cluster() {
-  command -v pg_lsclusters >/dev/null 2>&1 || die "pg_lsclusters not found; install postgresql-16"
-  if pg_lsclusters --no-header 2>/dev/null | awk '{print $1}' | grep -qx 16; then
-    return
-  fi
+  command -v pg_lsclusters >/dev/null 2>&1 || die "pg_lsclusters not found; install postgresql"
+  versions=$(pg_lsclusters --no-header 2>/dev/null | awk '{print $1}' | sort -u)
+  for v in $versions; do
+    case "$v" in
+      16|17)
+        return
+        ;;
+    esac
+  done
   found=$(pg_lsclusters --no-header 2>/dev/null | awk '{print $1 "/" $2}' | tr '\n' ' ')
   found=${found% }
   if [ -n "$found" ]; then
-    die "found PostgreSQL cluster(s) (${found}) but not version 16. Refusing to modify an unrelated cluster."
+    die "found PostgreSQL cluster(s) (${found}) but not version 16 or 17. Refusing to modify an unrelated cluster."
   fi
-  die "no PostgreSQL 16 cluster found. Install postgresql-16 or create a 16/main cluster."
+  die "no PostgreSQL cluster found. Install postgresql (Debian 13 default) or postgresql-16."
 }
 
 db_scalar() {

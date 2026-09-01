@@ -27,15 +27,24 @@ HELPER := $(MODROOT)/packaging/lib/ndl/postinst-control.sh
 	dh $@
 
 override_dh_auto_clean:
-	rm -rf debian/tmp
+	rm -rf debian/tmp build
 	rm -f debian/ndl-control.service debian/ndl-agent.service debian/ndl-agent.socket
 
 override_dh_auto_build:
+	mkdir -p build
+	$(GO_CD) go build -o $(GO_OUT)build/ndl-control ./cmd/ndl-control
+	$(GO_CD) go build -o $(GO_OUT)build/ndl-agent ./cmd/ndl-agent
+	$(GO_CD) go build -o $(GO_OUT)build/nodalctl ./cmd/nodalctl
+
+override_dh_auto_test:
+	true
+
+override_dh_auto_install:
 	mkdir -p debian/tmp/usr/sbin debian/tmp/usr/bin debian/tmp/usr/lib/ndl
 	mkdir -p debian/tmp/lib/systemd/system
-	$(GO_CD) go build -o $(GO_OUT)debian/tmp/usr/sbin/ndl-control ./cmd/ndl-control
-	$(GO_CD) go build -o $(GO_OUT)debian/tmp/usr/sbin/ndl-agent ./cmd/ndl-agent
-	$(GO_CD) go build -o $(GO_OUT)debian/tmp/usr/bin/nodalctl ./cmd/nodalctl
+	install -m 0755 build/ndl-control debian/tmp/usr/sbin/ndl-control
+	install -m 0755 build/ndl-agent debian/tmp/usr/sbin/ndl-agent
+	install -m 0755 build/nodalctl debian/tmp/usr/bin/nodalctl
 	if [ -d $(MODROOT)/ui/dist ]; then \
 		mkdir -p debian/tmp/usr/share/ndl/ui; \
 		cp -a $(MODROOT)/ui/dist/. debian/tmp/usr/share/ndl/ui/; \
@@ -46,15 +55,18 @@ override_dh_auto_build:
 	install -m 0644 $(MODROOT)/systemd/ndl-agent.socket debian/tmp/lib/systemd/system/ndl-agent.socket
 	install -m 0644 $(MODROOT)/systemd/nodal-workloads.target debian/tmp/lib/systemd/system/nodal-workloads.target
 
-override_dh_auto_test:
-	true
-
 override_dh_install:
 	dh_install
 	if [ -d debian/tmp/usr/share/ndl/ui ]; then \
 		mkdir -p debian/ndl-ui/usr/share/ndl/ui; \
 		cp -a debian/tmp/usr/share/ndl/ui/. debian/ndl-ui/usr/share/ndl/ui/; \
 	fi
+
+override_dh_dwz:
+	true
+
+override_dh_strip:
+	true
 
 override_dh_installsystemd:
 	cp -f $(MODROOT)/systemd/ndl-control.service debian/ndl-control.service

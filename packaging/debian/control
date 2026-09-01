@@ -23,7 +23,7 @@ Description: No-dal unprivileged control plane
 
 Package: ndl-agent
 Architecture: amd64
-Depends: ${misc:Depends}
+Depends: adduser, ${misc:Depends}
 Description: No-dal privileged node agent
  Typed host operations only. No generic command execution.
  Core package only.

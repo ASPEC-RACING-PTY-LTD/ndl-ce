@@ -2,7 +2,7 @@
 set -e
 
 # Socket ListenStream is owned by group ndl-control. Create the group
-# here so this package can be configured before ndl-control.
+# and service user here so this package can start before ndl-control.
 ensure_group() {
   if getent group ndl-control >/dev/null; then
     return
@@ -12,6 +12,21 @@ ensure_group() {
     return
   fi
   groupadd --system ndl-control
+}
+
+ensure_user() {
+  ensure_group
+  if getent passwd ndl-control >/dev/null; then
+    return
+  fi
+  if command -v adduser >/dev/null 2>&1; then
+    adduser --system --ingroup ndl-control --home /var/lib/ndl \
+      --no-create-home --shell /usr/sbin/nologin \
+      --gecos "No-dal control plane" ndl-control
+    return
+  fi
+  useradd --system --gid ndl-control --home-dir /var/lib/ndl \
+    --no-create-home --shell /usr/sbin/nologin ndl-control
 }
 
 start_units() {
@@ -24,7 +39,7 @@ start_units() {
 
 case "$1" in
   configure)
-    ensure_group
+    ensure_user
     start_units
     ;;
 esac
