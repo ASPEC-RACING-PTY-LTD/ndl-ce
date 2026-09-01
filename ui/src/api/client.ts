@@ -486,6 +486,26 @@ export async function applyStack(id: string): Promise<Stack> {
   );
 }
 
+export async function patchStackMember(
+  stackId: string,
+  memberId: string,
+  body: {
+    name?: string;
+    image_pin?: string;
+    env?: { name: string; value?: string }[];
+    privileged?: boolean;
+    cpus?: number;
+    memory_bytes?: number;
+  },
+): Promise<Stack> {
+  return readJson(
+    await request(`/stacks/${stackId}/members/${memberId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getWorkloadLogs(id: string, lines = 200): Promise<{ status: string; unit: string; lines: string[]; message?: string }> {
   return readJson(await request(`/workloads/${id}/logs?lines=${lines}`));
 }

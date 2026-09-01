@@ -177,6 +177,11 @@ func (s *Server) importStackCompose(w http.ResponseWriter, r *http.Request) {
 	for k, v := range req.VolumeMap {
 		volMap[k] = v
 	}
+	if stackNeedsVolumeCreate(parsed.NamedVolumes, volMap) && !rbac.Authorize(p.Grants, rbac.StorageVolumeCreate) {
+		s.audit(r, p.User.ClusterID, p.User.ID, "stack.import.volume", "denied", req.Name)
+		writeErr(w, http.StatusForbidden, "storage.volume.create is required to create Directory volumes for named compose volumes")
+		return
+	}
 	if err := s.resolveStackVolumes(r.Context(), p.User.ClusterID, req.PoolID, parsed.NamedVolumes, volMap); err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -221,6 +226,11 @@ func (s *Server) importStackCompose(w http.ResponseWriter, r *http.Request) {
 				VolumeID: vid, ContainerPath: v.ContainerPath, ReadOnly: v.ReadOnly,
 			})
 		}
+		if err := validateMemberDesired(md); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			_ = s.Store.DeleteStack(r.Context(), p.User.ClusterID, stack.ID)
+			return
+		}
 		body, _ := json.Marshal(md)
 		mem := appdb.StackMember{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, StackID: stack.ID,
@@ -245,6 +255,111 @@ func (s *Server) importStackCompose(w http.ResponseWriter, r *http.Request) {
 	}
 	members, _ := s.Store.ListStackMembers(r.Context(), p.User.ClusterID, stack.ID)
 	writeJSON(w, http.StatusCreated, s.stackJSON(r.Context(), *updated, members))
+}
+
+func (s *Server) patchStackMember(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.ComputeModify)
+	if err != nil {
+		return
+	}
+	stackID := r.PathValue("id")
+	memberID := r.PathValue("memberId")
+	stack, err := s.Store.GetStack(r.Context(), p.User.ClusterID, stackID)
+	if err != nil || stack == nil {
+		writeErr(w, http.StatusNotFound, "stack not found")
+		return
+	}
+	mem, err := s.Store.GetStackMember(r.Context(), p.User.ClusterID, memberID)
+	if err != nil || mem == nil || mem.StackID != stack.ID {
+		writeErr(w, http.StatusNotFound, "stack member not found")
+		return
+	}
+	var req struct {
+		Name        *string            `json:"name"`
+		ImagePin    *string            `json:"image_pin"`
+		Env         *[]oci.EnvVar      `json:"env"`
+		Ports       *[]oci.Port        `json:"ports"`
+		Volumes     *[]oci.VolumeMount `json:"volumes"`
+		Privileged  *bool              `json:"privileged"`
+		Command     *[]string          `json:"command"`
+		Health      *oci.Healthcheck   `json:"health"`
+		NetworkID   *string            `json:"network_id"`
+		RegistryID  *string            `json:"registry_id"`
+		CPUs        *int               `json:"cpus"`
+		MemoryBytes *int64             `json:"memory_bytes"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	var md memberDesired
+	if err := json.Unmarshal(mem.DesiredJSON, &md); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid member desired state")
+		return
+	}
+	if req.Name != nil {
+		md.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.ImagePin != nil {
+		md.ImagePin = strings.TrimSpace(*req.ImagePin)
+	}
+	if req.Env != nil {
+		md.Env = *req.Env
+	}
+	if req.Ports != nil {
+		md.Ports = *req.Ports
+	}
+	if req.Volumes != nil {
+		md.Volumes = *req.Volumes
+	}
+	if req.Privileged != nil {
+		if *req.Privileged && !hasRole(p, rbac.Admin) {
+			s.audit(r, p.User.ClusterID, p.User.ID, "stack.member.privileged", "denied", mem.ID)
+			writeErr(w, http.StatusForbidden, "only admin may set privileged on stack members")
+			return
+		}
+		md.Privileged = *req.Privileged
+	}
+	if req.Command != nil {
+		md.Command = *req.Command
+	}
+	if req.Health != nil {
+		md.Health = req.Health
+	}
+	if req.NetworkID != nil {
+		md.NetworkID = strings.TrimSpace(*req.NetworkID)
+	}
+	if req.RegistryID != nil {
+		md.RegistryID = strings.TrimSpace(*req.RegistryID)
+	}
+	if req.CPUs != nil {
+		md.CPUs = *req.CPUs
+	}
+	if req.MemoryBytes != nil {
+		md.MemoryBytes = *req.MemoryBytes
+	}
+	if err := validateMemberDesired(md); err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	body, err := json.Marshal(md)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.Store.UpdateStackMember(r.Context(), appdb.StackMember{
+		ID: mem.ID, ClusterID: p.User.ClusterID, DesiredJSON: body,
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "stack.member.update", "ok", mem.ID)
+	updated, _ := s.Store.GetStack(r.Context(), p.User.ClusterID, stack.ID)
+	if updated == nil {
+		updated = stack
+	}
+	members, _ := s.Store.ListStackMembers(r.Context(), p.User.ClusterID, stack.ID)
+	writeJSON(w, http.StatusOK, s.stackJSON(r.Context(), *updated, members))
 }
 
 func (s *Server) applyStack(w http.ResponseWriter, r *http.Request) {
@@ -352,6 +467,30 @@ func (s *Server) applyStackMembers(ctx context.Context, p *principal, stackID st
 	return firstErr
 }
 
+func stackNeedsVolumeCreate(names []string, volMap map[string]string) bool {
+	for _, name := range names {
+		if strings.TrimSpace(volMap[name]) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func validateMemberDesired(md memberDesired) error {
+	if strings.TrimSpace(md.Name) == "" {
+		return errBadRequest("member name is required")
+	}
+	spec := oci.Spec{
+		WorkloadID: uuid.NewString(), Name: md.Name, ImagePin: md.ImagePin,
+		Env: md.Env, Ports: md.Ports, Volumes: md.Volumes, Health: md.Health,
+		Resources: oci.Resources{CPUs: md.CPUs, MemoryBytes: md.MemoryBytes},
+	}
+	if err := oci.ValidateSpec(spec); err != nil {
+		return errBadRequest(err.Error())
+	}
+	return nil
+}
+
 func (s *Server) resolveStackVolumes(ctx context.Context, clusterID, poolID string, names []string, volMap map[string]string) error {
 	for _, name := range names {
 		if volMap[name] != "" {
@@ -367,6 +506,9 @@ func (s *Server) resolveStackVolumes(ctx context.Context, clusterID, poolID stri
 		pool, err := s.Store.GetStoragePool(ctx, clusterID, poolID)
 		if err != nil || pool == nil {
 			return errNotFound("pool not found")
+		}
+		if pool.Status == storage.StatusUnavailable {
+			return errConflict("storage pool is unavailable")
 		}
 		if s.Storage == nil {
 			return errUnavailable("storage agent is unavailable")

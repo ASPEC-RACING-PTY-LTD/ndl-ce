@@ -239,6 +239,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/stacks/{id}", s.patchStack)
 	mux.HandleFunc("DELETE /api/v1/stacks/{id}", s.deleteStack)
 	mux.HandleFunc("POST /api/v1/stacks/{id}/apply", s.applyStack)
+	mux.HandleFunc("PATCH /api/v1/stacks/{id}/members/{memberId}", s.patchStackMember)
 	mux.HandleFunc("GET /api/v1/storage/zfs", s.zfsRuntime)
 	mux.HandleFunc("POST /api/v1/storage/zfs/import", s.importZFS)
 	mux.HandleFunc("POST /api/v1/storage/zfs/create", s.createZFS)

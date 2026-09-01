@@ -14,6 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
+	"github.com/no-dal/ndl-ce/internal/secutil"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
@@ -308,5 +309,234 @@ services:
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusCreated {
 		t.Fatal("must reject host bind /")
+	}
+}
+
+func TestPhase22ImportRequiresStorageVolumeCreate(t *testing.T) {
+	_, mem, ts, _, clusterID, poolID, _ := phase22Ready(t)
+	admin, err := mem.GetUserByName(context.Background(), clusterID, "admin")
+	if err != nil || admin == nil {
+		t.Fatal("admin user")
+	}
+	plain := "ndl_compute_only_token"
+	_ = mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: clusterID, UserID: admin.ID, Name: "compute-only",
+		TokenHash: secutil.HashSHA256(plain), Prefix: "ndl_co",
+		Permissions: []string{rbac.ComputeCreate, rbac.ComputeRead},
+	})
+	body, _ := json.Marshal(map[string]any{"name": "needs-vol", "compose": composeFixture, "pool_id": poolID})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/stacks/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+plain)
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("compute-only volume create %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage.volume.create") {
+		t.Fatalf("expected storage.volume.create denial: %s", raw)
+	}
+
+	noVol := `
+services:
+  web:
+    image: nginx:alpine
+`
+	body, _ = json.Marshal(map[string]any{"name": "no-vol", "compose": noVol})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/stacks/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+plain)
+	res, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ = io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("compute-only without volumes %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestPhase22ImportVolumeMapSkipsCreatePermission(t *testing.T) {
+	_, mem, ts, _, clusterID, poolID, _ := phase22Ready(t)
+	admin, err := mem.GetUserByName(context.Background(), clusterID, "admin")
+	if err != nil || admin == nil {
+		t.Fatal("admin user")
+	}
+	pool, err := mem.GetStoragePool(context.Background(), clusterID, poolID)
+	if err != nil || pool == nil {
+		t.Fatal("pool")
+	}
+	webVol := uuid.NewString()
+	apiVol := uuid.NewString()
+	for _, id := range []string{webVol, apiVol} {
+		_ = mem.CreateVolume(context.Background(), appdb.Volume{
+			ID: id, ClusterID: clusterID, NodeID: pool.NodeID, PoolID: poolID,
+			Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+			Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/" + id,
+		})
+	}
+	plain := "ndl_compute_map_token"
+	_ = mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: clusterID, UserID: admin.ID, Name: "compute-map",
+		TokenHash: secutil.HashSHA256(plain), Prefix: "ndl_cm",
+		Permissions: []string{rbac.ComputeCreate, rbac.ComputeRead, rbac.StorageRead},
+	})
+	body, _ := json.Marshal(map[string]any{
+		"name": "mapped", "compose": composeFixture, "pool_id": poolID,
+		"volume_map": map[string]string{"webdata": webVol, "apidata": apiVol},
+	})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/stacks/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+plain)
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("mapped import %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestPhase22PatchMemberDesiredBeforeApply(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, _ := phase22Ready(t)
+	body, _ := json.Marshal(map[string]any{"name": "editme", "compose": composeFixture, "pool_id": poolID})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/stacks/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("import %d %s", res.StatusCode, raw)
+	}
+	var stack map[string]any
+	_ = json.Unmarshal(raw, &stack)
+	stackID, _ := stack["id"].(string)
+	members, _ := stack["members"].([]any)
+	first := members[0].(map[string]any)
+	memberID, _ := first["id"].(string)
+
+	patch, _ := json.Marshal(map[string]any{
+		"image_pin": "nginx:1.27-alpine",
+		"env":       []map[string]string{{"name": "APP_ENV", "value": "staging"}},
+	})
+	req, _ = http.NewRequest("PATCH", ts.URL+"/api/v1/stacks/"+stackID+"/members/"+memberID, strings.NewReader(string(patch)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ = io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("patch %d %s", res.StatusCode, raw)
+	}
+	var updated map[string]any
+	_ = json.Unmarshal(raw, &updated)
+	found := false
+	for _, m := range updated["members"].([]any) {
+		mm := m.(map[string]any)
+		if mm["id"] != memberID {
+			continue
+		}
+		desired, _ := mm["desired"].(map[string]any)
+		if desired["image_pin"] != "nginx:1.27-alpine" {
+			t.Fatalf("image not edited: %s", raw)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("member missing after patch: %s", raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/stacks/"+stackID+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ = io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("apply %d %s", res.StatusCode, raw)
+	}
+	_ = json.Unmarshal(raw, &updated)
+	for _, m := range updated["members"].([]any) {
+		mm := m.(map[string]any)
+		if mm["id"] != memberID {
+			continue
+		}
+		wlID, _ := mm["workload_id"].(string)
+		wl, _ := mem.GetWorkload(context.Background(), clusterID, wlID)
+		if wl == nil || wl.ImagePin != "nginx:1.27-alpine" {
+			t.Fatalf("apply ignored edited member: %+v", wl)
+		}
+	}
+}
+
+func TestPhase22PatchMemberPrivilegedRequiresAdmin(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, _ := phase22Ready(t)
+	simple := `
+services:
+  web:
+    image: busybox:1
+`
+	body, _ := json.Marshal(map[string]any{"name": "priv-edit", "compose": simple, "pool_id": poolID})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/stacks/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("import %d %s", res.StatusCode, raw)
+	}
+	var stack map[string]any
+	_ = json.Unmarshal(raw, &stack)
+	stackID, _ := stack["id"].(string)
+	memberID, _ := stack["members"].([]any)[0].(map[string]any)["id"].(string)
+
+	hash, _ := auth.HashPassword("password1")
+	opID := uuid.NewString()
+	_ = mem.CreateUser(context.Background(), appdb.User{ID: opID, ClusterID: clusterID, Username: "op-edit", PasswordHash: hash})
+	_ = mem.BindRole(context.Background(), clusterID, opID, rbac.Operator)
+	login, err := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"op-edit","password":"password1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer login.Body.Close()
+	var opCookie string
+	for _, c := range login.Cookies() {
+		if c.Name == sessionCookie {
+			opCookie = c.Value
+		}
+	}
+	patch, _ := json.Marshal(map[string]any{"privileged": true})
+	req, _ = http.NewRequest("PATCH", ts.URL+"/api/v1/stacks/"+stackID+"/members/"+memberID, strings.NewReader(string(patch)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: opCookie})
+	res, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("operator privileged patch %d %s", res.StatusCode, b)
 	}
 }

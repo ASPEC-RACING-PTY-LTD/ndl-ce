@@ -145,9 +145,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 ## Phase 22
 
 - MEDIUM. Stack apply orchestrates existing OCI RPC; live multi-container containerd apply is not proven on this Cloud VM. Why not blocking: FakeOCI covers import, privileged reject, and partial resume; honest collecting/unavailable statuses remain.
-- MEDIUM. Compose import supports a service/image/env/ports/named-volumes subset; full Compose feature surface (depends_on, profiles, build, tmpfs, secrets files) is not claimed. Why not blocking: imported members are editable No-dal objects; Compose is not runtime SoT.
+- MEDIUM. Compose import supports a service/image/env/ports/named-volumes subset; full Compose feature surface (depends_on, profiles, build, tmpfs, secrets files) is not claimed. Why not blocking: imported members are PATCH-editable No-dal objects; Compose is not runtime SoT.
 - LOW. Stack delete does not cascade-delete OCI workloads. Why not blocking: workloads remain first-class objects reachable from member links.
 - LOW. Shared stack-scoped networks beyond attaching an existing network_id are not introduced. Why not blocking: Phase 4 networks remain the attachment surface.
+- LOW. Named compose volumes always allocate Directory volumes even if the selected pool is ZFS. Why not blocking: Directory is the documented compose volume class; ZFS dataset mounts can wait for a later storage pass.
+- LOW. Apply is create-once per member; later desired edits do not recreate the OCI unit. Why not blocking: the linked workload remains the running object and is editable through the workload API.
 
 
 

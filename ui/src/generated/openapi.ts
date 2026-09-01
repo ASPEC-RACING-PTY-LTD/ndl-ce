@@ -394,6 +394,21 @@ export interface PatchStackRequest {
   name?: string;
 }
 
+export interface PatchStackMemberRequest {
+  name?: string;
+  image_pin?: string;
+  env?: Record<string, unknown>[];
+  ports?: Record<string, unknown>[];
+  volumes?: Record<string, unknown>[];
+  privileged?: boolean;
+  command?: string[];
+  health?: Record<string, unknown>;
+  network_id?: string;
+  registry_id?: string;
+  cpus?: number;
+  memory_bytes?: number;
+}
+
 export interface UpdateWorkloadRequest {
   name?: string;
   cpus?: number;
@@ -1259,6 +1274,8 @@ export type ImportStackComposePath = "/api/v1/stacks/import";
 export type GetStackPath = "/api/v1/stacks/{id}";
 
 export type ApplyStackPath = "/api/v1/stacks/{id}/apply";
+
+export type PatchStackMemberPath = "/api/v1/stacks/{id}/members/{memberId}";
 
 export type ListGpusPath = "/api/v1/gpus";
 

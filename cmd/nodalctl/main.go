@@ -695,7 +695,7 @@ func cmdRegistry(args []string) error {
 
 func cmdStack(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl stack list|import|get|apply")
+		return fmt.Errorf("usage: nodalctl stack list|import|get|apply|patch-member")
 	}
 	switch args[0] {
 	case "list":
@@ -740,8 +740,24 @@ func cmdStack(args []string) error {
 			return fmt.Errorf("usage: nodalctl stack apply --id ID")
 		}
 		return postJSON("/api/v1/stacks/"+f["id"]+"/apply", map[string]any{}, true)
+	case "patch-member":
+		f := parseFlags(args[1:])
+		if f["id"] == "" || f["member"] == "" {
+			return fmt.Errorf("usage: nodalctl stack patch-member --id STACK --member MEMBER [--image-pin REF] [--name NAME]")
+		}
+		body := map[string]any{}
+		if f["image-pin"] != "" {
+			body["image_pin"] = f["image-pin"]
+		}
+		if f["name"] != "" {
+			body["name"] = f["name"]
+		}
+		if len(body) == 0 {
+			return fmt.Errorf("usage: nodalctl stack patch-member --id STACK --member MEMBER [--image-pin REF] [--name NAME]")
+		}
+		return patchJSON("/api/v1/stacks/"+f["id"]+"/members/"+f["member"], body, true)
 	default:
-		return fmt.Errorf("usage: nodalctl stack list|import|get|apply")
+		return fmt.Errorf("usage: nodalctl stack list|import|get|apply|patch-member")
 	}
 }
 

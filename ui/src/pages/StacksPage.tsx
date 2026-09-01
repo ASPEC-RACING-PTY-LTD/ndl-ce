@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { applyStack, getStack, importStack, listPools, listStacks, type Stack } from "../api/client";
+import { applyStack, getStack, importStack, listPools, listStacks, patchStackMember, type Stack, type StackMember } from "../api/client";
 import type { StoragePool } from "../api/phase3";
 import { Link } from "../components/Link";
 import { honestStatus } from "../format";
@@ -108,7 +108,7 @@ volumes:
       {mutate ? (
         <article className="panel">
           <h2>Import Compose</h2>
-          <p>Named volumes become Directory volumes or mapped No-dal volume UUIDs. Privileged requires admin.</p>
+            <p>Named volumes become Directory volumes or mapped No-dal volume UUIDs. Creating volumes requires storage.volume.create. Privileged requires admin.</p>
           <div className="field">
             <label className="field-label" htmlFor="stack-name">
               Name
@@ -149,6 +149,7 @@ export function StackDetailPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
+  const admin = Boolean(roles?.includes("admin"));
   const path = usePath();
   const id = path.split("/").pop() ?? "";
   const [stack, setStack] = useState<Stack | null>(null);
@@ -202,7 +203,7 @@ export function StackDetailPage() {
         </p>
         <h1 id="stack-detail-heading">{stack?.name ?? "Stack"}</h1>
         <p className="page-kicker">
-          Status {stack ? honestStatus(stack.status) : "unavailable"}. Members are No-dal objects; Compose is not the runtime source of truth.
+          Status {stack ? honestStatus(stack.status) : "unavailable"}. Members are editable No-dal objects; Compose is not the runtime source of truth.
         </p>
       </header>
       {error ? (
@@ -225,24 +226,153 @@ export function StackDetailPage() {
           <ul className="plain-list">
             {stack.members.map((m) => (
               <li key={m.id}>
-                <strong>{m.service_name}</strong> {honestStatus(m.status)}
-                {m.desired && typeof m.desired.image_pin === "string" ? ` ${m.desired.image_pin}` : ""}
-                {m.workload_id ? (
-                  <>
-                    {" "}
-                    <Link href={`/workloads/${m.workload_id}`}>{m.workload?.name ?? m.workload_id}</Link>
-                    {m.workload?.kind ? ` (${m.workload.kind})` : ""}
-                    {m.workload?.health?.status ? ` health ${honestStatus(m.workload.health.status)}` : ""}
-                  </>
-                ) : (
-                  <span> not applied</span>
-                )}
-                {m.reason ? ` ${m.reason}` : ""}
+                <MemberEditor
+                  stackId={id}
+                  member={m}
+                  mutate={mutate}
+                  admin={admin}
+                  onSaved={setStack}
+                  onError={setError}
+                />
               </li>
             ))}
           </ul>
         )}
       </article>
     </section>
+  );
+}
+
+function envToText(env: unknown): string {
+  if (!Array.isArray(env)) {
+    return "";
+  }
+  return env
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return "";
+      }
+      const row = item as { name?: unknown; value?: unknown };
+      const name = typeof row.name === "string" ? row.name : "";
+      const value = typeof row.value === "string" ? row.value : "";
+      if (!name) {
+        return "";
+      }
+      return `${name}=${value}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseEnvText(text: string): { name: string; value: string }[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const idx = line.indexOf("=");
+      if (idx < 0) {
+        return { name: line, value: "" };
+      }
+      return { name: line.slice(0, idx), value: line.slice(idx + 1) };
+    });
+}
+
+function MemberEditor({
+  stackId,
+  member,
+  mutate,
+  admin,
+  onSaved,
+  onError,
+}: {
+  stackId: string;
+  member: StackMember;
+  mutate: boolean;
+  admin: boolean;
+  onSaved: (stack: Stack) => void;
+  onError: (message: string | null) => void;
+}) {
+  const desired = member.desired ?? {};
+  const [image, setImage] = useState(typeof desired.image_pin === "string" ? desired.image_pin : "");
+  const [envText, setEnvText] = useState(envToText(desired.env));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setImage(typeof member.desired?.image_pin === "string" ? member.desired.image_pin : "");
+    setEnvText(envToText(member.desired?.env));
+  }, [member]);
+
+  async function onSave() {
+    setBusy(true);
+    onError(null);
+    try {
+      const updated = await patchStackMember(stackId, member.id, {
+        image_pin: image,
+        env: parseEnvText(envText),
+      });
+      onSaved(updated);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <p>
+        <strong>{member.service_name}</strong> {honestStatus(member.status)}
+        {member.workload_id ? (
+          <>
+            {" "}
+            <Link href={`/workloads/${member.workload_id}`}>{member.workload?.name ?? member.workload_id}</Link>
+            {member.workload?.kind ? ` (${member.workload.kind})` : ""}
+            {member.workload?.health?.status ? ` health ${honestStatus(member.workload.health.status)}` : ""}
+          </>
+        ) : (
+          <span> not applied</span>
+        )}
+        {member.reason ? ` ${member.reason}` : ""}
+      </p>
+      {member.workload_id ? (
+        <p className="field-hint">
+          Applied members keep this desired state for inspection. Edit the linked OCI workload for the running unit.
+        </p>
+      ) : null}
+      {mutate ? (
+        <>
+          <div className="field">
+            <label className="field-label" htmlFor={`member-image-${member.id}`}>
+              Image
+            </label>
+            <input
+              id={`member-image-${member.id}`}
+              className="field-input"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor={`member-env-${member.id}`}>
+              Environment
+            </label>
+            <textarea
+              id={`member-env-${member.id}`}
+              className="field-input"
+              rows={4}
+              value={envText}
+              onChange={(e) => setEnvText(e.target.value)}
+            />
+          </div>
+          {admin && desired.privileged ? <p>Privileged (admin import).</p> : null}
+          <p className="btn-row">
+            <button className="btn" type="button" disabled={busy || !image.trim()} onClick={() => void onSave()}>
+              Save member
+            </button>
+          </p>
+        </>
+      ) : null}
+    </div>
   );
 }

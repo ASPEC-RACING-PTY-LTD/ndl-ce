@@ -2244,7 +2244,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Stack"
         "403":
-          description: Privileged services require admin
+          description: Privileged services require admin; creating named volumes requires storage.volume.create
   /stacks/{id}:
     get:
       operationId: getStack
@@ -2313,6 +2313,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Stack"
+  /stacks/{id}/members/{memberId}:
+    patch:
+      operationId: patchStackMember
+      summary: Update an imported stack member as a No-dal object (Compose is not runtime SoT)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchStackMemberRequest"
+      responses:
+        "200":
+          description: Updated stack
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+        "403":
+          description: Privileged requires admin
   /gpus:
     get:
       operationId: listGpus
@@ -3320,6 +3350,47 @@ components:
       properties:
         name:
           type: string
+    PatchStackMemberRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        image_pin:
+          type: string
+        env:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        ports:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        volumes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        privileged:
+          type: boolean
+        command:
+          type: array
+          items:
+            type: string
+        health:
+          type: object
+          additionalProperties: true
+        network_id:
+          type: string
+        registry_id:
+          type: string
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+          format: int64
     UpdateWorkloadRequest:
       type: object
       additionalProperties: false
