@@ -497,7 +497,8 @@ message UploadLibraryResponse {
 }
 
 message EnrollRequest {
-  // Empty on the local appliance. Remote join tokens are later phases.
+  // Empty on the local appliance. Remote join uses HTTP POST /api/v1/cluster/join.
+  // If set, unix Enroll does not consume the token; it only returns identity written by join.
   string join_token = 1;
   string cluster_id = 2;
 }

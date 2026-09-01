@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/install"
 )
 
@@ -34,6 +35,10 @@ func run(args []string) error {
   recover-admin --username USER --password PASS
   host-prepare
   node show
+  cluster show
+  cluster join-token create
+  cluster join --token TOKEN [--url URL] [--hostname HOST]
+  cluster node revoke --id ID
   cluster wg show
   cluster wg peer add --name NAME [--endpoint HOST:PORT]
   task list
@@ -574,31 +579,114 @@ func cmdNetwork(args []string) error {
 }
 
 func cmdCluster(args []string) error {
-	if len(args) < 2 || args[0] != "wg" {
-		return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl cluster show|join-token create|join|node revoke|wg show|peer add")
 	}
-	switch args[1] {
+	switch args[0] {
 	case "show":
-		return cmdGet("/api/v1/cluster/wg")
-	case "peer":
-		if len(args) < 3 || args[2] != "add" {
-			return fmt.Errorf("usage: nodalctl cluster wg peer add --name NAME [--endpoint HOST:PORT]")
+		return cmdGet("/api/v1/cluster")
+	case "join-token":
+		if len(args) < 2 || args[1] != "create" {
+			return fmt.Errorf("usage: nodalctl cluster join-token create")
 		}
-		f := parseFlags(args[3:])
-		if f["name"] == "" {
-			return fmt.Errorf("usage: nodalctl cluster wg peer add --name NAME [--endpoint HOST:PORT]")
+		return postJSON("/api/v1/cluster/join-tokens", map[string]any{}, true)
+	case "join":
+		return cmdClusterJoin(args[1:])
+	case "node":
+		if len(args) < 2 || args[1] != "revoke" {
+			return fmt.Errorf("usage: nodalctl cluster node revoke --id ID")
 		}
-		body := map[string]any{"name": f["name"], "endpoint": f["endpoint"]}
-		if f["local-address"] != "" {
-			body["local_address"] = f["local-address"]
+		f := parseFlags(args[2:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl cluster node revoke --id ID")
 		}
-		if f["worker-address"] != "" {
-			body["worker_address"] = f["worker-address"]
+		return postJSON("/api/v1/cluster/nodes/"+f["id"]+"/revoke", map[string]any{}, true)
+	case "wg":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
 		}
-		return postJSON("/api/v1/cluster/wg/peers", body, true)
+		switch args[1] {
+		case "show":
+			return cmdGet("/api/v1/cluster/wg")
+		case "peer":
+			if len(args) < 3 || args[2] != "add" {
+				return fmt.Errorf("usage: nodalctl cluster wg peer add --name NAME [--endpoint HOST:PORT]")
+			}
+			f := parseFlags(args[3:])
+			if f["name"] == "" {
+				return fmt.Errorf("usage: nodalctl cluster wg peer add --name NAME [--endpoint HOST:PORT]")
+			}
+			body := map[string]any{"name": f["name"], "endpoint": f["endpoint"]}
+			if f["local-address"] != "" {
+				body["local_address"] = f["local-address"]
+			}
+			if f["worker-address"] != "" {
+				body["worker_address"] = f["worker-address"]
+			}
+			return postJSON("/api/v1/cluster/wg/peers", body, true)
+		default:
+			return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
+		}
 	default:
-		return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
+		return fmt.Errorf("usage: nodalctl cluster show|join-token create|join|node revoke|wg show|peer add")
 	}
+}
+
+func cmdClusterJoin(args []string) error {
+	f := parseFlags(args)
+	if f["token"] == "" {
+		return fmt.Errorf("usage: nodalctl cluster join --token TOKEN [--url URL] [--hostname HOST]")
+	}
+	hostname := f["hostname"]
+	if hostname == "" {
+		hostname, _ = os.Hostname()
+	}
+	if hostname == "" {
+		return fmt.Errorf("hostname is required")
+	}
+	url := strings.TrimRight(f["url"], "/")
+	if url == "" {
+		url = strings.TrimRight(baseURL(), "/")
+	}
+	body, err := json.Marshal(map[string]any{"token": f["token"], "hostname": hostname})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", url+"/api/v1/cluster/join", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Transport: nodalTransport()}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	out, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("%s: %s", res.Status, strings.TrimSpace(string(out)))
+	}
+	var joined struct {
+		ID        string `json:"id"`
+		ClusterID string `json:"cluster_id"`
+		CACert    string `json:"ca_cert"`
+		NodeCert  string `json:"node_cert"`
+		NodeKey   string `json:"node_key"`
+	}
+	if err := json.Unmarshal(out, &joined); err != nil {
+		return err
+	}
+	dir := os.Getenv("NODAL_DATA_DIR")
+	if dir == "" {
+		dir = "/var/lib/ndl"
+	}
+	ident := identity.Files{Dir: dir}
+	if err := ident.SaveJoinMaterial(joined.ClusterID, joined.ID, []byte(joined.CACert), []byte(joined.NodeCert), []byte(joined.NodeKey)); err != nil {
+		return err
+	}
+	fmt.Println(string(out))
+	return nil
 }
 
 func postJSONHeaders(path string, body any, saveSession bool, headers map[string]string) error {

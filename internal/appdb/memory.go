@@ -17,7 +17,7 @@ type Memory struct {
 	binds             map[string][]string
 	sess              map[string]Session
 	tokens            map[string]APIToken
-	node              *Node
+	nodes             map[string]Node
 	audit             []AuditEvent
 	inventory         map[string]HardwareInventory
 	observations      []NodeObservation
@@ -77,6 +77,8 @@ type Memory struct {
 	wgPeers           map[string]WGPeer
 	remoteNodes       map[string]RemoteNode
 	remoteSessions    map[string]RemoteSession
+	joinTokens        map[string]JoinToken
+	clusterLease      *ClusterLease
 }
 
 // NewMemory returns an empty store.
@@ -330,18 +332,17 @@ func (m *Memory) RevokeToken(_ context.Context, id, userID string) error {
 func (m *Memory) UpsertNode(_ context.Context, n Node) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.node = &n
+	if m.nodes == nil {
+		m.nodes = map[string]Node{}
+	}
+	m.nodes[n.ID] = n
 	return nil
 }
 
 func (m *Memory) GetNode(_ context.Context, clusterID string) (*Node, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.node == nil || m.node.ClusterID != clusterID {
-		return nil, nil
-	}
-	n := *m.node
-	return &n, nil
+	return controlNodeLocked(m.nodes, clusterID), nil
 }
 
 func (m *Memory) InsertAudit(_ context.Context, e AuditEvent) error {

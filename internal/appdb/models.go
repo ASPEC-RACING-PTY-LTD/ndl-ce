@@ -38,6 +38,16 @@ type Store interface {
 
 	UpsertNode(ctx context.Context, n Node) error
 	GetNode(ctx context.Context, clusterID string) (*Node, error)
+	GetNodeByID(ctx context.Context, clusterID, id string) (*Node, error)
+	ListClusterNodes(ctx context.Context, clusterID string) ([]Node, error)
+	RevokeNode(ctx context.Context, clusterID, id string, at time.Time) error
+
+	CreateJoinToken(ctx context.Context, t JoinToken) error
+	ConsumeJoinToken(ctx context.Context, tokenHash string, nodeID string, at time.Time) (*JoinToken, error)
+	GetJoinTokenByHash(ctx context.Context, tokenHash string) (*JoinToken, error)
+
+	AcquireLease(ctx context.Context, clusterID, holderID string, expiresAt time.Time) error
+	GetClusterLease(ctx context.Context, clusterID string) (*ClusterLease, error)
 
 	InsertAudit(ctx context.Context, e AuditEvent) error
 	ListAuditEvents(ctx context.Context, clusterID string, limit int) ([]AuditEvent, error)
@@ -304,12 +314,33 @@ type APIToken struct {
 	RevokedAt   *time.Time
 }
 
-// Node is the local enrolled node.
+// Node is a cluster member. ID is identity. Hostname is a locator only.
 type Node struct {
 	ID           string
 	ClusterID    string
 	Name         string
+	Hostname     string
+	Role         string
 	HostPlatform json.RawMessage
+	RevokedAt    *time.Time
+}
+
+// JoinToken is a single-use cluster join secret. The plaintext is never stored.
+type JoinToken struct {
+	ID             string
+	ClusterID      string
+	TokenHash      string
+	ExpiresAt      time.Time
+	ConsumedAt     *time.Time
+	ConsumedNodeID string
+	CreatedAt      time.Time
+}
+
+// ClusterLease is the single Postgres writer lock.
+type ClusterLease struct {
+	ClusterID string
+	HolderID  string
+	ExpiresAt time.Time
 }
 
 // HardwareInventory is cached observed hardware. Not desired state.

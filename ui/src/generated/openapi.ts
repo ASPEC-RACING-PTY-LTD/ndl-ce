@@ -76,6 +76,9 @@ export interface NodeSummary {
   status: string;
   support_tier?: string;
   host_platform?: string;
+  role?: string;
+  hostname?: string;
+  revoked?: boolean;
   stale?: boolean;
   observed_at?: string;
   host_os?: string;
@@ -336,6 +339,50 @@ export interface WGPeerCreateResponse {
   local?: WGPeer;
   worker?: WGPeer;
   warning?: string;
+}
+
+export interface ClusterInventoryResponse {
+  id: string;
+  name?: string;
+  nodes: NodeSummary[];
+  writer?: boolean;
+  lease_holder?: string;
+  lease_expires_at?: string;
+}
+
+export interface JoinTokenCreateRequest {
+  ttl_seconds?: number;
+}
+
+export interface JoinTokenCreateResponse {
+  id: string;
+  token: string;
+  expires_at: string;
+  warning?: string;
+}
+
+export interface ClusterJoinRequest {
+  token: string;
+  hostname: string;
+  host_platform?: Record<string, unknown>;
+}
+
+export interface ClusterJoinResponse {
+  id: string;
+  cluster_id: string;
+  name?: string;
+  hostname?: string;
+  role: string;
+  token_id?: string;
+  ca_cert?: string;
+  node_cert?: string;
+  node_key?: string;
+  warning?: string;
+}
+
+export interface ClusterNodeRevokeResponse {
+  id: string;
+  revoked: boolean;
 }
 
 export interface OpenClusterSessionRequest {
@@ -1366,6 +1413,14 @@ export type ListWireGuardPath = "/api/v1/cluster/wg";
 export type CreateWireGuardPeerPath = "/api/v1/cluster/wg/peers";
 
 export type OpenClusterSessionPath = "/api/v1/cluster/sessions";
+
+export type GetClusterPath = "/api/v1/cluster";
+
+export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
+
+export type JoinClusterPath = "/api/v1/cluster/join";
+
+export type RevokeClusterNodePath = "/api/v1/cluster/nodes/{id}/revoke";
 
 export type ListWorkloadsPath = "/api/v1/workloads";
 

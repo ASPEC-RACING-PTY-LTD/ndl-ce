@@ -4531,7 +4531,8 @@ func (x *UploadLibraryResponse) GetResultJson() []byte {
 
 type EnrollRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Empty on the local appliance. Remote join tokens are later phases.
+	// Empty on the local appliance. Remote join uses HTTP POST /api/v1/cluster/join.
+	// If set, unix Enroll does not consume the token; it only returns identity written by join.
 	JoinToken     string `protobuf:"bytes,1,opt,name=join_token,json=joinToken,proto3" json:"join_token,omitempty"`
 	ClusterId     string `protobuf:"bytes,2,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
 	unknownFields protoimpl.UnknownFields

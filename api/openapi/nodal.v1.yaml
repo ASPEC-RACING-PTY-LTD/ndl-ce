@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.28
-  description: Phase 29 host platform adapters and Debian installer ISO, plus prior northbound API.
+  version: 0.1.29
+  description: Phase 30 cluster join, single-use tokens, worker nodes, and a single Postgres writer lease, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -710,7 +710,7 @@ paths:
   /cluster/wg:
     get:
       operationId: listWireGuard
-      summary: Pre-join WireGuard peers. Cluster join remains Phase 30.
+      summary: Pre-join WireGuard peers. Pairing tokens are not join tokens.
       responses:
         "200":
           description: Peers and remote workers
@@ -752,6 +752,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpenClusterSessionResponse"
+  /cluster:
+    get:
+      operationId: getCluster
+      summary: Cluster inventory. Hostname is a locator; identity is the node UUID.
+      responses:
+        "200":
+          description: Cluster members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterInventoryResponse"
+  /cluster/join-tokens:
+    post:
+      operationId: createJoinToken
+      summary: Create a single-use cluster join token. Shown once.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinTokenCreateRequest"
+      responses:
+        "201":
+          description: Token shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinTokenCreateResponse"
+  /cluster/join:
+    post:
+      operationId: joinCluster
+      summary: Join as a worker using a single-use join token. No user session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClusterJoinRequest"
+      responses:
+        "201":
+          description: Worker enrolled. node_key is shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterJoinResponse"
+  /cluster/nodes/{id}/revoke:
+    post:
+      operationId: revokeClusterNode
+      summary: Revoke a worker node. The control node cannot be revoked.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterNodeRevokeResponse"
   /workloads:
     get:
       operationId: listWorkloads
@@ -2923,6 +2985,12 @@ components:
           type: string
         host_platform:
           type: string
+        role:
+          type: string
+        hostname:
+          type: string
+        revoked:
+          type: boolean
         stale:
           type: boolean
         observed_at:
@@ -3494,6 +3562,102 @@ components:
           $ref: "#/components/schemas/WGPeer"
         warning:
           type: string
+    ClusterInventoryResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - nodes
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeSummary"
+        writer:
+          type: boolean
+        lease_holder:
+          type: string
+        lease_expires_at:
+          type: string
+    JoinTokenCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ttl_seconds:
+          type: integer
+    JoinTokenCreateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - token
+        - expires_at
+      properties:
+        id:
+          type: string
+        token:
+          type: string
+        expires_at:
+          type: string
+        warning:
+          type: string
+    ClusterJoinRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - token
+        - hostname
+      properties:
+        token:
+          type: string
+        hostname:
+          type: string
+        host_platform:
+          type: object
+          additionalProperties: true
+    ClusterJoinResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - cluster_id
+        - role
+      properties:
+        id:
+          type: string
+        cluster_id:
+          type: string
+        name:
+          type: string
+        hostname:
+          type: string
+        role:
+          type: string
+        token_id:
+          type: string
+        ca_cert:
+          type: string
+        node_cert:
+          type: string
+        node_key:
+          type: string
+        warning:
+          type: string
+    ClusterNodeRevokeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revoked
+      properties:
+        id:
+          type: string
+        revoked:
+          type: boolean
     OpenClusterSessionRequest:
       type: object
       additionalProperties: false

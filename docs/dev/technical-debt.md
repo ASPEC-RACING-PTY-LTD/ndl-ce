@@ -196,6 +196,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. The Debian installer ISO is config-only in this Cloud job and is not booted. Why not blocking: mkosi.conf pins Debian 13 and the nodal metapackage; a spare PC boot is the intended live job.
 - LOW. Ubuntu LTS is not Tier 1. Why not blocking: the roadmap allows documenting qualification gaps instead of faking support. Netplan dual-write, packaging, and DKMS remain the blockers.
 
+## Phase 30
+
+- MEDIUM. Live two-box join over TLS and WireGuard is not in this Cloud job. Why not blocking: HTTP join, token reuse, writer lease, and inventory are proven with Memory plus an ephemeral CA.
+- LOW. Worker Execute still uses the local unix agent on the control node. Why not blocking: placement and remote apply remain Phase 31.
+- LOW. Cluster CA is issued and stored on disk; northbound HTTPS is still the existing appliance certificate. Why not blocking: join returns node mTLS material; wrapping Execute in mTLS is follow-up.
+
 
 
 

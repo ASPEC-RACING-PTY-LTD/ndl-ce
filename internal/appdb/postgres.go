@@ -259,24 +259,34 @@ func (p *Postgres) RevokeToken(ctx context.Context, id, userID string) error {
 }
 
 func (p *Postgres) UpsertNode(ctx context.Context, n Node) error {
+	role := n.Role
+	if role == "" {
+		role = "control"
+	}
+	if len(n.HostPlatform) == 0 {
+		n.HostPlatform = json.RawMessage(`{}`)
+	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO nodes (id, cluster_id, name, host_platform)
-VALUES ($1,$2,$3,$4)
-ON CONFLICT (id) DO UPDATE SET host_platform = EXCLUDED.host_platform`,
-		n.ID, n.ClusterID, n.Name, n.HostPlatform)
+INSERT INTO nodes (id, cluster_id, name, host_platform, role, hostname)
+VALUES ($1,$2,$3,$4,$5,$6)
+ON CONFLICT (id) DO UPDATE SET
+  host_platform = EXCLUDED.host_platform,
+  hostname = CASE WHEN EXCLUDED.hostname = '' THEN nodes.hostname ELSE EXCLUDED.hostname END,
+  role = CASE WHEN EXCLUDED.role = '' THEN nodes.role ELSE EXCLUDED.role END`,
+		n.ID, n.ClusterID, n.Name, n.HostPlatform, role, n.Hostname)
 	return err
 }
 
 func (p *Postgres) GetNode(ctx context.Context, clusterID string) (*Node, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, name, host_platform FROM nodes WHERE cluster_id=$1 LIMIT 1`, clusterID)
-	var n Node
-	if err := row.Scan(&n.ID, &n.ClusterID, &n.Name, &n.HostPlatform); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &n, nil
+	row := p.DB.QueryRowContext(ctx, `
+SELECT id::text, cluster_id::text, name, host_platform, COALESCE(role, 'control'), COALESCE(hostname, ''), revoked_at
+FROM nodes
+WHERE cluster_id=$1 AND revoked_at IS NULL
+ORDER BY CASE WHEN COALESCE(role, '') IN ('', 'control') THEN 0 ELSE 1 END,
+         CASE WHEN name = 'local' THEN 0 ELSE 1 END,
+         enrolled_at ASC
+LIMIT 1`, clusterID)
+	return scanNode(row)
 }
 
 func (p *Postgres) InsertAudit(ctx context.Context, e AuditEvent) error {

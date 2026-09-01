@@ -261,8 +261,8 @@ function RemoteNodeHelper() {
       <h2>Remote worker</h2>
       <p className="lede">
         WireGuard is pre-join connectivity. Place the control plane on this box and an agent on
-        another. Cluster join remains Phase 30. A down tunnel marks the worker NotReady; guests keep
-        running.
+        another. Join the worker from Cluster with a single-use join token. A down tunnel marks the
+        worker NotReady; guests keep running.
       </p>
       {workers.length === 0 ? (
         <p>No remote workers yet.</p>

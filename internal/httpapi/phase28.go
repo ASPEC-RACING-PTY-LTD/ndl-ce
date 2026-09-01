@@ -43,7 +43,7 @@ func (s *Server) listWG(w http.ResponseWriter, r *http.Request) {
 		workers = append(workers, remoteNodeJSON(n, now))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": items, "nodes": workers, "join": "Cluster join remains Phase 30.",
+		"items": items, "nodes": workers, "join": "Use POST /api/v1/cluster/join-tokens then nodalctl cluster join. Pairing tokens are not join tokens.",
 	})
 }
 
@@ -141,7 +141,7 @@ func (s *Server) createWGPeer(w http.ResponseWriter, r *http.Request) {
 				"persistent_keepalive": ndnet.DefaultWGKeepalive,
 			}},
 		},
-		"warning": "worker_private_key and pairing_token are shown once. Cluster join remains Phase 30.",
+		"warning": "worker_private_key and pairing_token are shown once. Pairing tokens are not join tokens.",
 	})
 }
 

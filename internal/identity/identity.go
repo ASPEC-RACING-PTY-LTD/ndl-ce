@@ -85,6 +85,26 @@ func (f Files) SaveNode(nodeID, clusterID string) error {
 	return writeJSON(f.NodePath(), nodeDoc{NodeID: nodeID, ClusterID: clusterID}, 0640)
 }
 
+// SaveJoinMaterial persists HTTP join identity and node mTLS material. The CA private key is not included.
+func (f Files) SaveJoinMaterial(clusterID, nodeID string, caPEM, certPEM, keyPEM []byte) error {
+	if err := f.SaveCluster(clusterID); err != nil {
+		return err
+	}
+	if err := f.SaveNode(nodeID, clusterID); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(f.Dir, 0750); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(f.Dir, "cluster-ca.crt"), caPEM, 0640); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(f.Dir, "node.crt"), certPEM, 0640); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(f.Dir, "node.key"), keyPEM, 0600)
+}
+
 // EnsureHostKey creates host.key if missing.
 func (f Files) EnsureHostKey() ([]byte, error) {
 	if b, err := os.ReadFile(f.HostKeyPath()); err == nil && len(b) >= 32 {

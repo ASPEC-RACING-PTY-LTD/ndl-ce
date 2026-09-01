@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
@@ -82,6 +83,8 @@ type Server struct {
 	HTTPListen  string
 	HTTPSURL    string
 	CertDir     ndltls.Dir
+	ClusterCA   cluster.CA
+	LeaseHolder string
 	Challenges  *ndltls.ChallengeMem
 	backupMu    sync.Mutex
 	nightlyBusy atomic.Bool
@@ -158,6 +161,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/cluster/wg", s.listWG)
 	mux.HandleFunc("POST /api/v1/cluster/wg/peers", s.createWGPeer)
 	mux.HandleFunc("POST /api/v1/cluster/sessions", s.openClusterSession)
+	mux.HandleFunc("GET /api/v1/cluster", s.getCluster)
+	mux.HandleFunc("POST /api/v1/cluster/join-tokens", s.createJoinToken)
+	mux.HandleFunc("POST /api/v1/cluster/join", s.joinCluster)
+	mux.HandleFunc("POST /api/v1/cluster/nodes/{id}/revoke", s.revokeClusterNode)
 	mux.HandleFunc("GET /api/v1/workloads", s.listWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/import", s.importVM)
@@ -419,6 +426,7 @@ func (s *Server) setupClaim(w http.ResponseWriter, r *http.Request) {
 			ID:           nodeID,
 			ClusterID:    cluster.ID,
 			Name:         "local",
+			Role:         "control",
 			HostPlatform: plat,
 		})
 	}

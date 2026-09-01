@@ -220,6 +220,24 @@ func (h *Handler) Enroll(ctx context.Context, req *connect.Request[agentv1.Enrol
 	if clusterID == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("cluster_id is required"))
 	}
+	if strings.TrimSpace(req.Msg.GetJoinToken()) != "" {
+		existing, existingCluster, err := h.Ident.LoadNode()
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("cluster join is HTTP POST /api/v1/cluster/join; unix Enroll does not consume join tokens"))
+		}
+		if existingCluster != "" && existingCluster != clusterID {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("node already enrolled in another cluster"))
+		}
+		cid := existingCluster
+		if cid == "" {
+			cid = clusterID
+		}
+		return connect.NewResponse(&agentv1.EnrollResponse{
+			ClusterId:    cid,
+			NodeId:       existing,
+			HostPlatform: protoPlatform(p),
+		}), nil
+	}
 	nodeID := uuid.NewString()
 	if existing, existingCluster, err := h.Ident.LoadNode(); err == nil {
 		nodeID = existing

@@ -89,6 +89,9 @@ export function Shell({ children }: ShellProps) {
           <Link href="/node" aria-current={path === "/node" || path.startsWith("/node/") ? "page" : undefined}>
             Node
           </Link>
+          <Link href="/settings/cluster" aria-current={path === "/settings/cluster" ? "page" : undefined}>
+            Cluster
+          </Link>
           <Link href="/tasks" aria-current={path === "/tasks" ? "page" : undefined}>
             Tasks
           </Link>

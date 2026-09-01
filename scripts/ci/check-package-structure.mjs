@@ -51,6 +51,14 @@ if (existsSync("internal/hostos/ubuntu")) {
     errors.push("Ubuntu adapter must document qualification gaps and stay unqualified");
   }
 }
+if (!existsSync("migrations/0027_phase30.sql")) {
+  errors.push("missing migrations/0027_phase30.sql cluster join, tokens, and writer lease");
+} else {
+  const joinSql = readFileSync("migrations/0027_phase30.sql", "utf8");
+  if (!joinSql.includes("join_tokens") || !joinSql.includes("cluster_leases") || !/role text/.test(joinSql)) {
+    errors.push("phase 30 migration must add join_tokens, cluster_leases, and nodes.role");
+  }
+}
 if (!existsSync("packaging/iso/mkosi.conf")) {
   errors.push("missing packaging/iso/mkosi.conf Debian installer ISO contract");
 } else {
@@ -131,6 +139,9 @@ if (!changelog.includes("nodal (0.1.27)") || !changelog.includes("Phase 28 WireG
 }
 if (!changelog.includes("nodal (0.1.28)") || !changelog.includes("Phase 29 host platform")) {
   errors.push("changelog must include nodal (0.1.28) Phase 29 host platform");
+}
+if (!changelog.includes("nodal (0.1.29)") || !changelog.includes("Phase 30 cluster join")) {
+  errors.push("changelog must include nodal (0.1.29) Phase 30 cluster join");
 }
 
 const control = existsSync("packaging/debian/control")

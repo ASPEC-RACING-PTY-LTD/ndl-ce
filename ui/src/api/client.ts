@@ -162,6 +162,39 @@ export async function createWGPeer(body: {
   return readJson(await request("/cluster/wg/peers", { method: "POST", body: JSON.stringify(body) }));
 }
 
+export type ClusterNode = import("./phase2").NodeSummary & {
+  hostname?: string;
+  revoked?: boolean;
+  revoked_at?: string;
+};
+
+export type ClusterInventory = {
+  id: string;
+  name?: string;
+  nodes?: ClusterNode[];
+  writer?: boolean;
+  lease_holder?: string;
+};
+
+export type JoinTokenCreateResult = {
+  id: string;
+  token: string;
+  expires_at: string;
+  warning?: string;
+};
+
+export async function getCluster(): Promise<ClusterInventory> {
+  return readJson(await request("/cluster"));
+}
+
+export async function createJoinToken(): Promise<JoinTokenCreateResult> {
+  return readJson(await request("/cluster/join-tokens", { method: "POST", body: JSON.stringify({}) }));
+}
+
+export async function revokeClusterNode(id: string): Promise<{ id: string; revoked: boolean }> {
+  return readJson(await request(`/cluster/nodes/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }));
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

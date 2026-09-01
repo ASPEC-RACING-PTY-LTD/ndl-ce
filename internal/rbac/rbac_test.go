@@ -82,6 +82,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, NodeUpdate) || Authorize(view, NodeUpdate) {
 		t.Fatal("operator may update the node; viewer may not")
 	}
+	if !Authorize(op, ClusterJoin) || Authorize(view, ClusterJoin) {
+		t.Fatal("operator may create join tokens; viewer may not")
+	}
+	if !Authorize(op, NodeRevoke) || Authorize(view, NodeRevoke) {
+		t.Fatal("operator may revoke workers; viewer may not")
+	}
 	if Authorize(view, AuditRead) || Authorize(op, AuditRead) {
 		t.Fatal("viewer and operator must not read audit")
 	}

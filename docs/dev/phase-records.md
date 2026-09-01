@@ -209,5 +209,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: cluster join remains Phase 30; live ISO boot appliance job; Ubuntu qualification remains a dedicated runner
 - Audit follow-up: Ubuntu is not claimed as Tier 1; qualification gaps are listed; Netplan is not dual-written on Debian
 
+## Phase 30
+
+- Package: 0.1.29
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (single-use join token reuse fails, second `nodes` row is a worker, hostname collision still unique UUID, existing VM on the control node stays running, second AcquireLease fails, unix Enroll does not consume join tokens, cluster CA key stays on disk). FIXTURE: Memory store plus ephemeral CA. NOT PHYSICALLY VALIDATED: two-box join over live TLS and WireGuard
+- Follow-up: placement remains Phase 31; live two-box appliance job; mTLS on Execute over the tunnel
+- Audit follow-up: pairing tokens are not join tokens; two control-plane processes cannot both hold the writer lease; hostname is not identity
+
 
 

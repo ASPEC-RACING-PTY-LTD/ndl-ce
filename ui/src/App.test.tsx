@@ -68,6 +68,7 @@ const defaultRoutes = {
   "/api/v1/storage/pools": { status: 200, body: { items: [] } },
   "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
   "/api/v1/cluster/wg": { status: 200, body: { items: [], nodes: [] } },
+  "/api/v1/cluster": { status: 200, body: { id: "cluster-1", name: "local", nodes: [] } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
   "/api/v1/storage/images": { status: 200, body: { items: [] } },
 };
@@ -326,7 +327,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^remote worker$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /add wireguard worker/i })).toBeVisible();
     expect(await screen.findByText(/not ready/i)).toBeVisible();
-    expect(screen.getByText(/cluster join remains phase 30/i)).toBeVisible();
+    expect(screen.getByText(/join the worker from cluster/i)).toBeVisible();
   });
 
   it("renders the workloads route without fake counts", async () => {
@@ -493,6 +494,32 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^status$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /generate self-signed/i })).toBeVisible();
     expect(screen.queryByRole("button", { name: /download.*key/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the cluster page with join token and inventory", async () => {
+    window.history.replaceState({}, "", "/settings/cluster");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/cluster": {
+        status: 200,
+        body: {
+          id: "cluster-1",
+          name: "local",
+          nodes: [
+            { id: "node-a", name: "local", role: "control", status: "available", hostname: "box-a" },
+            { id: "node-b", name: "box-b", role: "worker", status: "unknown", hostname: "box-b" },
+          ],
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^cluster$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    expect(screen.getByText(/one control plane writer/i)).toBeVisible();
+    expect(await screen.findByText(/locator box-b/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /create join token/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^revoke$/i })).toBeVisible();
   });
 
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {

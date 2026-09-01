@@ -58,6 +58,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "storage", label: "Storage", href: "/storage", keywords: ["pool", "volume"] },
   { id: "network", label: "Network", href: "/network", keywords: ["bridge", "nic"] },
   { id: "node", label: "Node", href: "/node", keywords: ["host", "hardware"] },
+  { id: "cluster", label: "Cluster", href: "/settings/cluster", keywords: ["join", "worker", "node"] },
   { id: "events", label: "Events", href: "/events", keywords: ["timeline"] },
   { id: "alerts", label: "Alerts", href: "/alerts", keywords: ["notify"] },
   { id: "backups", label: "Backups", href: "/backups", keywords: ["restore"] },

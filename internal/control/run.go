@@ -13,9 +13,11 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/httpapi"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -33,6 +35,8 @@ type Config struct {
 	UIDir      string
 	SetupHash  string
 	AgentSock  string
+	CADir      string
+	HolderID   string
 }
 
 // LoadConfig reads environment.
@@ -46,6 +50,7 @@ func LoadConfig() Config {
 		UIDir:      getenv("NODAL_UI_DIR", "/usr/share/ndl/ui"),
 		SetupHash:  os.Getenv("NODAL_SETUP_HASH"),
 		AgentSock:  os.Getenv("NODAL_AGENT_SOCKET"),
+		CADir:      getenv("NODAL_CLUSTER_CA_DIR", "/var/lib/ndl/secrets/cluster-ca"),
 	}
 	if c.DSN == "" {
 		c.DSN = "postgresql:///nodal?host=/var/run/postgresql"
@@ -90,37 +95,51 @@ func Run(cfg Config) error {
 			ui = os.DirFS(cfg.UIDir)
 		}
 	}
+	holder := cfg.HolderID
+	if holder == "" {
+		host, _ := os.Hostname()
+		holder = fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.NewString())
+	}
+	ca := cluster.CA{Dir: cfg.CADir}
+	if cl, _ := st.GetCluster(ctx); cl != nil {
+		if err := st.AcquireLease(ctx, cl.ID, holder, time.Now().UTC().Add(30*time.Second)); err != nil {
+			return fmt.Errorf("another control plane holds the writer lease: %w", err)
+		}
+		_ = ca.Ensure(time.Now().UTC())
+	}
 	hub := &httpapi.EventHub{}
 	agent := agentrpc.Client{Socket: cfg.AgentSock}
 	challenges := &ndltls.ChallengeMem{}
 	srv := &httpapi.Server{
-		Store:      st,
-		Lockout:    auth.NewLockout(),
-		Agent:      agent,
-		Observer:   agent,
-		Logs:       agent,
-		Storage:    agent,
-		Network:    agent,
-		Workloads:  agent,
-		IO:         agent,
-		QEMU:       httpapi.AdaptQEMU(agent),
-		VM:         httpapi.AdaptVM(agent),
-		OCI:        httpapi.AdaptOCI(agent),
-		Backup:     httpapi.AdaptBackup(agent),
-		Object:     httpapi.AdaptObject(agent),
-		Verify:     httpapi.AdaptVerify(agent),
-		Update:     httpapi.AdaptUpdate(agent),
-		GPU:        httpapi.AdaptGPU(agent),
-		ZFS:        httpapi.AdaptZFS(agent),
-		LVM:        httpapi.AdaptLVM(agent),
-		Datastore:  httpapi.AdaptDatastore(agent),
-		Hub:        hub,
-		UI:         ui,
-		SetupHash:  cfg.SetupHash,
-		TLSListen:  cfg.TLSListen,
-		HTTPListen: cfg.HTTPListen,
-		CertDir:    ndltls.Dir{Root: cfg.CertDir},
-		Challenges: challenges,
+		Store:       st,
+		Lockout:     auth.NewLockout(),
+		Agent:       agent,
+		Observer:    agent,
+		Logs:        agent,
+		Storage:     agent,
+		Network:     agent,
+		Workloads:   agent,
+		IO:          agent,
+		QEMU:        httpapi.AdaptQEMU(agent),
+		VM:          httpapi.AdaptVM(agent),
+		OCI:         httpapi.AdaptOCI(agent),
+		Backup:      httpapi.AdaptBackup(agent),
+		Object:      httpapi.AdaptObject(agent),
+		Verify:      httpapi.AdaptVerify(agent),
+		Update:      httpapi.AdaptUpdate(agent),
+		GPU:         httpapi.AdaptGPU(agent),
+		ZFS:         httpapi.AdaptZFS(agent),
+		LVM:         httpapi.AdaptLVM(agent),
+		Datastore:   httpapi.AdaptDatastore(agent),
+		Hub:         hub,
+		UI:          ui,
+		SetupHash:   cfg.SetupHash,
+		TLSListen:   cfg.TLSListen,
+		HTTPListen:  cfg.HTTPListen,
+		CertDir:     ndltls.Dir{Root: cfg.CertDir},
+		ClusterCA:   ca,
+		LeaseHolder: holder,
+		Challenges:  challenges,
 	}
 	enabled, err := certificateEnabled(ctx, st)
 	if err != nil {
@@ -129,6 +148,7 @@ func Run(cfg Config) error {
 	if enabled {
 		srv.TLSRequired = true
 	}
+	go renewWriterLease(st, holder, ca)
 	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups, Alerts: srv.TickAlerts}.run(context.Background())
 	handler := srv.Handler()
 	if srv.TLSRequired {
@@ -152,6 +172,19 @@ func Run(cfg Config) error {
 	}
 	log.Printf("ndl-control listening on %s", cfg.Listen)
 	return http.ListenAndServe(cfg.Listen, handler)
+}
+
+func renewWriterLease(st appdb.Store, holder string, ca cluster.CA) {
+	tick := time.NewTicker(10 * time.Second)
+	defer tick.Stop()
+	for range tick.C {
+		c, err := st.GetCluster(context.Background())
+		if err != nil || c == nil {
+			continue
+		}
+		_ = st.AcquireLease(context.Background(), c.ID, holder, time.Now().UTC().Add(30*time.Second))
+		_ = ca.Ensure(time.Now().UTC())
+	}
 }
 
 func certificateEnabled(ctx context.Context, st appdb.Store) (bool, error) {
