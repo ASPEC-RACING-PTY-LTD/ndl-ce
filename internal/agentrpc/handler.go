@@ -15,6 +15,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/peercred"
+	"github.com/no-dal/ndl-ce/internal/storage"
 	"sync"
 )
 
@@ -28,9 +29,12 @@ type Handler struct {
 	Peer       func(ctx context.Context) (peercred.Creds, error)
 	Collect    func() inventory.Inventory
 	Metrics    *metrics.Store
+	Storage    *storage.Directory
+	Uploads    *storage.Uploads
 
-	mu   sync.Mutex
-	last inventory.Inventory
+	mu         sync.Mutex
+	last       inventory.Inventory
+	uploadOnce sync.Once
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
@@ -51,7 +55,7 @@ func (h *Handler) Hello(ctx context.Context, _ *connect.Request[agentv1.HelloReq
 }
 
 // Observe scrapes typed host inventory. It does not execute a host command.
-func (h *Handler) Observe(ctx context.Context, _ *connect.Request[agentv1.ObserveRequest]) (*connect.Response[agentv1.ObserveResponse], error) {
+func (h *Handler) Observe(ctx context.Context, req *connect.Request[agentv1.ObserveRequest]) (*connect.Response[agentv1.ObserveResponse], error) {
 	if err := h.authorize(ctx); err != nil {
 		return nil, err
 	}
@@ -60,6 +64,7 @@ func (h *Handler) Observe(ctx context.Context, _ *connect.Request[agentv1.Observ
 		ObservedAt:    inv.ObservedAt.UTC().Format(timeRFC3339),
 		SchemaVersion: inv.SchemaVersion,
 		InventoryJson: mustJSON(inv),
+		StorageJson:   h.observeStorage(decodeHints(req.Msg.GetStoragePools())),
 	}), nil
 }
 
@@ -96,15 +101,40 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-// Execute handles typed Ping only.
+// Execute handles typed methods only.
 func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.ExecuteRequest]) (*connect.Response[agentv1.ExecuteResponse], error) {
 	if err := h.authorize(ctx); err != nil {
 		return nil, err
 	}
-	if req.Msg.GetPing() == nil {
+	switch {
+	case req.Msg.GetPing() != nil:
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "pong"}), nil
+	case req.Msg.GetCreateDirectoryPool() != nil:
+		m := req.Msg.GetCreateDirectoryPool()
+		res, err := h.driver().CreatePool(ctx, storage.CreatePoolRequest{
+			PoolID: m.GetPoolId(), Name: m.GetName(), RootPath: m.GetRootPath(), Create: m.GetCreate(),
+		}, m.GetExistingRoots())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "created", ResultJson: mustJSON(res)}), nil
+	case req.Msg.GetCreateDirectoryVolume() != nil:
+		m := req.Msg.GetCreateDirectoryVolume()
+		hint := storage.PoolHint{PoolID: m.GetPoolId(), BackendType: storage.BackendDirectory, RootPath: m.GetRootPath()}
+		if len(m.GetBackingJson()) > 0 {
+			_ = json.Unmarshal(m.GetBackingJson(), &hint.Backing)
+		}
+		res, err := h.driver().CreateVolume(ctx, storage.CreateVolumeRequest{
+			VolumeID: m.GetVolumeId(), PoolID: m.GetPoolId(), RootPath: m.GetRootPath(),
+			Class: m.GetClass(), Size: m.GetSizeBytes(), Format: m.GetFormat(),
+		}, hint)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "created", ResultJson: mustJSON(res)}), nil
+	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}
-	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "pong"}), nil
 }
 
 // Enroll writes durable node identity. Unsupported hosts fail closed.

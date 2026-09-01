@@ -42,8 +42,14 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 	if !strings.Contains(oneof, "Ping ping =") {
 		t.Fatal("Execute oneof must include Ping")
 	}
-	if strings.Count(oneof, "=") != 1 {
-		t.Fatalf("Execute oneof must only contain Ping:\n%s", oneof)
+	allowed := []string{"Ping ping =", "CreateDirectoryPool create_directory_pool =", "CreateDirectoryVolume create_directory_volume ="}
+	for _, name := range allowed {
+		if !strings.Contains(oneof, name) {
+			t.Fatalf("Execute oneof missing %s", name)
+		}
+	}
+	if strings.Count(oneof, "=") != len(allowed) {
+		t.Fatalf("Execute oneof must only contain typed methods:\n%s", oneof)
 	}
 	for _, need := range []string{
 		"rpc Hello(",
@@ -53,6 +59,8 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"rpc OpenSession(",
 		"rpc GetInventory(",
 		"rpc GetMetrics(",
+		"rpc GetStorage(",
+		"rpc UploadLibrary(",
 	} {
 		if !strings.Contains(text, need) {
 			t.Fatalf("proto missing %s", need)

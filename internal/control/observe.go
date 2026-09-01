@@ -78,6 +78,7 @@ func (o observer) run(ctx context.Context) {
 			ObservedAt: inv.ObservedAt,
 			Stale:      false,
 		})
+		o.reconcileStorage(cctx, cluster.ID, node.ID)
 		changed := prev == nil || inventoryFingerprint(prev.Payload) != inventoryFingerprint(payload)
 		if !changed {
 			return

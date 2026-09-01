@@ -44,6 +44,7 @@ type Server struct {
 	Lockout    *auth.Lockout
 	Agent      Agent
 	Observer   Observer
+	Storage    StorageRPC
 	Hub        *EventHub
 	UI         fs.FS
 	Now        func() time.Time
@@ -84,6 +85,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /api/v1/events", s.listEvents)
 	mux.HandleFunc("GET /api/v1/events/stream", s.streamEvents)
+	mux.HandleFunc("GET /api/v1/storage/pools", s.listPools)
+	mux.HandleFunc("POST /api/v1/storage/pools", s.createPool)
+	mux.HandleFunc("GET /api/v1/storage/pools/{id}", s.getPool)
+	mux.HandleFunc("GET /api/v1/storage/volumes", s.listVolumes)
+	mux.HandleFunc("POST /api/v1/storage/volumes", s.createVolume)
+	mux.HandleFunc("GET /api/v1/storage/volumes/{id}", s.getVolume)
+	mux.HandleFunc("GET /api/v1/storage/images", s.listImages)
+	mux.HandleFunc("POST /api/v1/storage/images", s.uploadImage)
+	mux.HandleFunc("GET /api/v1/storage/images/{id}", s.getImage)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

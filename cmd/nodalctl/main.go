@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -34,6 +35,12 @@ func run(args []string) error {
   node show
   task list
   event list
+  storage pool list
+  storage pool create --name NAME --path PATH
+  storage volume list
+  storage volume create --pool-id ID --class CLASS --size-bytes N
+  storage image list
+  storage image upload --pool-id ID --kind KIND --file PATH
 `)
 		return nil
 	}
@@ -71,6 +78,8 @@ func run(args []string) error {
 			return fmt.Errorf("usage: nodalctl event list")
 		}
 		return cmdGet("/api/v1/events")
+	case "storage":
+		return cmdStorage(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -199,6 +208,87 @@ func do(method, path string, body any, useSession bool) ([]byte, error) {
 func sessionFile() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "nodal", "session")
+}
+
+func cmdStorage(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: nodalctl storage pool|volume|image ...")
+	}
+	switch args[0] + " " + args[1] {
+	case "pool list":
+		return cmdGet("/api/v1/storage/pools")
+	case "pool create":
+		f := parseFlags(args[2:])
+		body := map[string]any{"name": f["name"], "path": f["path"], "create": true}
+		return postJSON("/api/v1/storage/pools", body, true)
+	case "volume list":
+		return cmdGet("/api/v1/storage/volumes")
+	case "volume create":
+		f := parseFlags(args[2:])
+		var size int64
+		fmt.Sscan(f["size-bytes"], &size)
+		return postJSON("/api/v1/storage/volumes", map[string]any{
+			"pool_id": f["pool-id"], "class": f["class"], "size_bytes": size, "format": f["format"],
+		}, true)
+	case "image list":
+		return cmdGet("/api/v1/storage/images")
+	case "image upload":
+		f := parseFlags(args[2:])
+		return cmdUploadImage(f["pool-id"], f["kind"], f["file"])
+	default:
+		return fmt.Errorf("unknown storage command")
+	}
+}
+
+func cmdUploadImage(poolID, kind, file string) error {
+	if poolID == "" || kind == "" || file == "" {
+		return fmt.Errorf("usage: nodalctl storage image upload --pool-id ID --kind KIND --file PATH")
+	}
+	fh, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer fh.Close()
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		_ = mw.WriteField("pool_id", poolID)
+		_ = mw.WriteField("kind", kind)
+		_ = mw.WriteField("filename", filepath.Base(file))
+		part, err := mw.CreateFormFile("file", filepath.Base(file))
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, fh); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		_ = mw.Close()
+		_ = pw.Close()
+	}()
+	req, err := http.NewRequest("POST", baseURL()+"/api/v1/storage/images", pr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if c, err := os.ReadFile(sessionFile()); err == nil {
+		req.Header.Set("Cookie", strings.TrimSpace(string(c)))
+	}
+	if tok := os.Getenv("NODAL_TOKEN"); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("%s: %s", res.Status, strings.TrimSpace(string(b)))
+	}
+	fmt.Println(string(b))
+	return nil
 }
 
 func parseFlags(args []string) map[string]string {

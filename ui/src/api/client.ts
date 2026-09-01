@@ -128,3 +128,63 @@ export async function listEvents(): Promise<import("./phase2").EventItem[]> {
   const body = await readJson<{ items: import("./phase2").EventItem[] }>(await request("/events"));
   return body.items ?? [];
 }
+
+export async function listPools(): Promise<import("./phase3").PoolListResponse> {
+  return readJson(await request("/storage/pools"));
+}
+
+export async function createPool(body: { name: string; path: string }): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/pools", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function getPool(id: string): Promise<import("./phase3").StoragePool> {
+  return readJson(await request(`/storage/pools/${id}`));
+}
+
+export async function listVolumes(poolId?: string): Promise<import("./phase3").StorageVolume[]> {
+  const q = poolId ? `?pool_id=${encodeURIComponent(poolId)}` : "";
+  const body = await readJson<{ items: import("./phase3").StorageVolume[] }>(await request(`/storage/volumes${q}`));
+  return body.items ?? [];
+}
+
+export async function createVolume(body: {
+  pool_id: string;
+  class: string;
+  size_bytes: number;
+  format?: string;
+}): Promise<import("./phase3").StorageVolume> {
+  return readJson(
+    await request("/storage/volumes", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function listImages(poolId?: string): Promise<import("./phase3").LibraryItem[]> {
+  const q = poolId ? `?pool_id=${encodeURIComponent(poolId)}` : "";
+  const body = await readJson<{ items: import("./phase3").LibraryItem[] }>(await request(`/storage/images${q}`));
+  return body.items ?? [];
+}
+
+export async function uploadImage(poolId: string, kind: string, file: File): Promise<import("./phase3").LibraryItem> {
+  const data = new FormData();
+  data.append("pool_id", poolId);
+  data.append("kind", kind);
+  data.append("filename", file.name);
+  data.append("file", file);
+  const res = await fetch("/api/v1/storage/images", {
+    method: "POST",
+    credentials: "include",
+    body: data,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+  return (await res.json()) as import("./phase3").LibraryItem;
+}

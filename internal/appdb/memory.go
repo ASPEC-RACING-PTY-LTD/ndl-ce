@@ -23,6 +23,9 @@ type Memory struct {
 	observations []NodeObservation
 	operations   []Operation
 	events       []Event
+	pools        map[string]StoragePool
+	volumes      map[string]Volume
+	library      map[string]LibraryItem
 }
 
 // NewMemory returns an empty store.

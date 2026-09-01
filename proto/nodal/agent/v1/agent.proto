@@ -18,6 +18,10 @@ service AgentService {
   rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse);
   // GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
   rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+  // GetStorage observes known Directory pools. It does not delete objects.
+  rpc GetStorage(GetStorageRequest) returns (GetStorageResponse);
+  // UploadLibrary streams ISO or cloud-image bytes to the agent.
+  rpc UploadLibrary(stream UploadLibraryRequest) returns (UploadLibraryResponse);
 }
 
 message HostPlatform {
@@ -39,12 +43,22 @@ message HelloResponse {
   repeated string feature_flags = 3;
 }
 
-message ObserveRequest {}
+message StoragePoolHint {
+  string pool_id = 1;
+  string backend_type = 2;
+  string root_path = 3;
+  bytes backing_json = 4;
+}
+
+message ObserveRequest {
+  repeated StoragePoolHint storage_pools = 1;
+}
 
 message ObserveResponse {
   string observed_at = 1;
   string schema_version = 2;
   bytes inventory_json = 3;
+  bytes storage_json = 4;
 }
 
 message GetInventoryRequest {}
@@ -65,20 +79,78 @@ message GetMetricsResponse {
   bytes series_json = 2;
 }
 
+message GetStorageRequest {
+  repeated StoragePoolHint storage_pools = 1;
+}
+
+message GetStorageResponse {
+  bytes storage_json = 1;
+}
+
 // ExecuteRequest is a typed method table. Add new methods as oneof
 // members. Do not add a string command field or a generic exec RPC.
 message ExecuteRequest {
   string operation_id = 1;
   oneof method {
     Ping ping = 10;
+    CreateDirectoryPool create_directory_pool = 11;
+    CreateDirectoryVolume create_directory_volume = 12;
   }
 }
 
 message Ping {}
 
+message CreateDirectoryPool {
+  string pool_id = 1;
+  string name = 2;
+  string root_path = 3;
+  bool create = 4;
+  repeated string existing_roots = 5;
+}
+
+message CreateDirectoryVolume {
+  string volume_id = 1;
+  string pool_id = 2;
+  string root_path = 3;
+  string class = 4;
+  int64 size_bytes = 5;
+  string format = 6;
+  bytes backing_json = 7;
+}
+
 message ExecuteResponse {
   bool ok = 1;
   string message = 2;
+  bytes result_json = 3;
+}
+
+message UploadLibraryRequest {
+  oneof payload {
+    UploadLibraryBegin begin = 1;
+    bytes chunk = 2;
+    UploadLibraryFinish finish = 3;
+  }
+}
+
+message UploadLibraryBegin {
+  string item_id = 1;
+  string pool_id = 2;
+  string root_path = 3;
+  string kind = 4;
+  string display_name = 5;
+  int64 max_bytes = 6;
+  bytes backing_json = 7;
+  repeated string reject_sha256 = 8;
+}
+
+message UploadLibraryFinish {
+  string expected_sha256 = 1;
+}
+
+message UploadLibraryResponse {
+  bool ok = 1;
+  string message = 2;
+  bytes result_json = 3;
 }
 
 message EnrollRequest {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getNodeMetrics, listEvents, listNodes, listTasks } from "../api/client";
+import { getNodeMetrics, listEvents, listNodes, listPools, listTasks } from "../api/client";
 import type { EventItem, MetricsResponse, NodeSummary, TaskItem } from "../api/phase2";
 import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
@@ -14,6 +14,7 @@ export function DashboardPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [needStorage, setNeedStorage] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,10 +26,11 @@ export function DashboardPage() {
           return;
         }
         setNode(first);
-        const [ev, tk, met] = await Promise.all([
+        const [ev, tk, met, pools] = await Promise.all([
           listEvents().catch(() => []),
           listTasks().catch(() => []),
           first ? getNodeMetrics(first.id).catch(() => null) : Promise.resolve(null),
+          listPools().catch(() => ({ items: [] })),
         ]);
         if (cancelled) {
           return;
@@ -36,6 +38,8 @@ export function DashboardPage() {
         setEvents(ev.slice(0, 5));
         setTasks(tk.slice(0, 5));
         setMetrics(met);
+        const usable = (pools.items ?? []).some((p) => p.status === "available" || p.status === "warning");
+        setNeedStorage(!usable);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
@@ -59,6 +63,12 @@ export function DashboardPage() {
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
+        </p>
+      ) : null}
+      {needStorage ? (
+        <p className="banner banner-warn" role="status">
+          No usable storage pool yet. Create a Directory pool on the{" "}
+          <Link href="/storage">Storage</Link> page.
         </p>
       ) : null}
       {!node ? (

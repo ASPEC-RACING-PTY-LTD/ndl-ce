@@ -25,6 +25,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, NodeRead) || !Authorize(op, EventsRead) || !Authorize(op, MetricsRead) {
 		t.Fatal("operator phase 2 reads")
 	}
+	if !Authorize(view, StorageRead) || Authorize(view, StoragePoolCreate) || Authorize(view, StorageVolumeCreate) || Authorize(view, StorageImageUpload) {
+		t.Fatal("viewer storage is read-only")
+	}
+	if !Authorize(op, StoragePoolCreate) || !Authorize(op, StorageVolumeCreate) || !Authorize(op, StorageImageUpload) {
+		t.Fatal("operator storage mutations")
+	}
 	if Authorize(nil, NodeRead) {
 		t.Fatal("deny by default")
 	}

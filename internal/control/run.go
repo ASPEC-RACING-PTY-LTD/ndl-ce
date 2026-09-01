@@ -90,6 +90,7 @@ func Run(cfg Config) error {
 		Lockout:   auth.NewLockout(),
 		Agent:     agent,
 		Observer:  agent,
+		Storage:   agent,
 		Hub:       hub,
 		UI:        ui,
 		SetupHash: cfg.SetupHash,

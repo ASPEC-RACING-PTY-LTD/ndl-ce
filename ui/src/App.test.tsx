@@ -50,6 +50,7 @@ const defaultRoutes = {
   "/api/v1/nodes": { status: 200, body: { items: [] } },
   "/api/v1/events": { status: 200, body: { items: [] } },
   "/api/v1/tasks": { status: 200, body: { items: [] } },
+  "/api/v1/storage/pools": { status: 200, body: { items: [] } },
 };
 
 afterEach(() => {
@@ -132,7 +133,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /log out/i })).toBeVisible();
     expect(screen.queryByText(/ci works/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/storage pool/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/no usable storage pool yet/i)).toBeVisible();
 
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/192\.168\./);
@@ -194,6 +195,50 @@ describe("App", () => {
       );
     });
     expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeVisible();
+  });
+
+  it("shows storage pools with locator, capacity, and create form", async () => {
+    window.history.replaceState({}, "", "/storage");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/storage/pools": {
+        status: 200,
+        body: {
+          default_path: "/var/lib/ndl/storage/local",
+          items: [
+            {
+              id: "pool-1",
+              name: "local",
+              backend_type: "directory",
+              status: "warning",
+              locator: "/var/lib/ndl/storage/local",
+              usable_bytes: 40 * 1024 * 1024 * 1024,
+              allocated_bytes: 2 * 1024 * 1024 * 1024,
+              provisioned_bytes: 10 * 1024 * 1024 * 1024,
+              storage_classes: ["vm-disk", "iso"],
+              capabilities: { incremental_send: false },
+              warning_text: [
+                "This Directory pool shares the host root filesystem. Filling it can fill the host and destabilize No-dal.",
+              ],
+            },
+          ],
+        },
+      },
+      "/api/v1/storage/volumes": { status: 200, body: { items: [] } },
+      "/api/v1/storage/images": { status: 200, body: { items: [] } },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^storage$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /create directory pool/i })).toBeVisible();
+    expect(
+      await screen.findByText(/filling it can fill the host and destabilize no-dal/i),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "local" })).toBeVisible();
+    expect(screen.getByText(/^no$/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /create directory pool/i })).toBeVisible();
   });
 
   it("imports generated OpenAPI path types", () => {

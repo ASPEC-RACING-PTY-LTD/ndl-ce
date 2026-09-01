@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: No-dal Community Edition API
   version: 0.1.0
-  description: Phase 2 northbound API. Observed host inventory, tasks, events, and metrics.
+  description: Phase 3 northbound API. Host visibility plus Directory storage and the image library.
 servers:
   - url: /api/v1
 paths:
@@ -218,6 +218,132 @@ paths:
       responses:
         "200":
           description: Event stream
+  /storage/pools:
+    get:
+      operationId: listStoragePools
+      summary: List Directory storage pools
+      responses:
+        "200":
+          description: Pools
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePoolListResponse"
+    post:
+      operationId: createStoragePool
+      summary: Create a Directory storage pool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStoragePoolRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/pools/{id}:
+    get:
+      operationId: getStoragePool
+      summary: Get a Directory storage pool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pool
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/volumes:
+    get:
+      operationId: listStorageVolumes
+      summary: List volumes
+      responses:
+        "200":
+          description: Volumes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageVolumeListResponse"
+    post:
+      operationId: createStorageVolume
+      summary: Create a volume by UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStorageVolumeRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageVolume"
+  /storage/volumes/{id}:
+    get:
+      operationId: getStorageVolume
+      summary: Get a volume by UUID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Volume
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageVolume"
+  /storage/images:
+    get:
+      operationId: listStorageImages
+      summary: List library items
+      responses:
+        "200":
+          description: Library
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageImageListResponse"
+    post:
+      operationId: uploadStorageImage
+      summary: Upload ISO or cloud-image media
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageImage"
+  /storage/images/{id}:
+    get:
+      operationId: getStorageImage
+      summary: Get a library item by UUID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageImage"
 components:
   schemas:
     HealthResponse:
@@ -535,3 +661,131 @@ components:
           additionalProperties: true
         created_at:
           type: string
+    StoragePoolListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoragePool"
+        default_path:
+          type: string
+    StoragePool:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+        - backend_type
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        backend_type:
+          type: string
+        status:
+          type: string
+        locator:
+          type: string
+        reason:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        warning_text:
+          type: array
+          items:
+            type: string
+        usable_bytes:
+          type: integer
+        allocated_bytes:
+          type: integer
+        provisioned_bytes:
+          type: integer
+    CreateStoragePoolRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        create:
+          type: boolean
+    StorageVolumeListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageVolume"
+    StorageVolume:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - pool_id
+        - class
+      properties:
+        id:
+          type: string
+        pool_id:
+          type: string
+        class:
+          type: string
+        backend_ref:
+          type: string
+        size_bytes:
+          type: integer
+    CreateStorageVolumeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - pool_id
+        - class
+        - size_bytes
+      properties:
+        pool_id:
+          type: string
+        class:
+          type: string
+        size_bytes:
+          type: integer
+        format:
+          type: string
+    StorageImageListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StorageImage"
+    StorageImage:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - kind
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        display_name:
+          type: string
+        checksum_sha256:
+          type: string
+        size_bytes:
+          type: integer

@@ -137,6 +137,62 @@ export interface EventItem {
   created_at: string;
 }
 
+export interface StoragePoolListResponse {
+  items: StoragePool[];
+  default_path?: string;
+}
+
+export interface StoragePool {
+  id: string;
+  name: string;
+  backend_type: string;
+  status: string;
+  locator?: string;
+  reason?: string;
+  warnings?: string[];
+  warning_text?: string[];
+  usable_bytes?: number;
+  allocated_bytes?: number;
+  provisioned_bytes?: number;
+}
+
+export interface CreateStoragePoolRequest {
+  name?: string;
+  path?: string;
+  create?: boolean;
+}
+
+export interface StorageVolumeListResponse {
+  items: StorageVolume[];
+}
+
+export interface StorageVolume {
+  id: string;
+  pool_id: string;
+  class: string;
+  backend_ref?: string;
+  size_bytes?: number;
+}
+
+export interface CreateStorageVolumeRequest {
+  pool_id: string;
+  class: string;
+  size_bytes: number;
+  format?: string;
+}
+
+export interface StorageImageListResponse {
+  items: StorageImage[];
+}
+
+export interface StorageImage {
+  id: string;
+  kind: string;
+  display_name?: string;
+  checksum_sha256?: string;
+  size_bytes?: number;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -168,3 +224,15 @@ export type ListTasksPath = "/api/v1/tasks";
 export type ListEventsPath = "/api/v1/events";
 
 export type StreamEventsPath = "/api/v1/events/stream";
+
+export type ListStoragePoolsPath = "/api/v1/storage/pools";
+
+export type GetStoragePoolPath = "/api/v1/storage/pools/{id}";
+
+export type ListStorageVolumesPath = "/api/v1/storage/volumes";
+
+export type GetStorageVolumePath = "/api/v1/storage/volumes/{id}";
+
+export type ListStorageImagesPath = "/api/v1/storage/images";
+
+export type GetStorageImagePath = "/api/v1/storage/images/{id}";

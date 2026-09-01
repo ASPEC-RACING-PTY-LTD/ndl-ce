@@ -51,6 +51,22 @@ type Store interface {
 
 	InsertEvent(ctx context.Context, e Event) error
 	ListEvents(ctx context.Context, clusterID string, limit int) ([]Event, error)
+
+	CreateStoragePool(ctx context.Context, p StoragePool) error
+	ListStoragePools(ctx context.Context, clusterID string) ([]StoragePool, error)
+	GetStoragePool(ctx context.Context, clusterID, id string) (*StoragePool, error)
+	UpdateStoragePoolObserved(ctx context.Context, p StoragePool) error
+
+	CreateVolume(ctx context.Context, v Volume) error
+	ListVolumes(ctx context.Context, clusterID, poolID string) ([]Volume, error)
+	GetVolume(ctx context.Context, clusterID, id string) (*Volume, error)
+	UpdateVolumeObserved(ctx context.Context, v Volume) error
+
+	CreateLibraryItem(ctx context.Context, item LibraryItem) error
+	ListLibraryItems(ctx context.Context, clusterID, poolID string) ([]LibraryItem, error)
+	GetLibraryItem(ctx context.Context, clusterID, id string) (*LibraryItem, error)
+	GetLibraryByChecksum(ctx context.Context, poolID, checksum string) (*LibraryItem, error)
+	UpdateLibraryObserved(ctx context.Context, item LibraryItem) error
 }
 
 // Cluster is the appliance cluster of one.

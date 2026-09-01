@@ -49,6 +49,11 @@ const (
 	AgentServiceGetInventoryProcedure = "/nodal.agent.v1.AgentService/GetInventory"
 	// AgentServiceGetMetricsProcedure is the fully-qualified name of the AgentService's GetMetrics RPC.
 	AgentServiceGetMetricsProcedure = "/nodal.agent.v1.AgentService/GetMetrics"
+	// AgentServiceGetStorageProcedure is the fully-qualified name of the AgentService's GetStorage RPC.
+	AgentServiceGetStorageProcedure = "/nodal.agent.v1.AgentService/GetStorage"
+	// AgentServiceUploadLibraryProcedure is the fully-qualified name of the AgentService's
+	// UploadLibrary RPC.
+	AgentServiceUploadLibraryProcedure = "/nodal.agent.v1.AgentService/UploadLibrary"
 )
 
 // AgentServiceClient is a client for the nodal.agent.v1.AgentService service.
@@ -64,6 +69,10 @@ type AgentServiceClient interface {
 	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)
 	// GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
 	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
+	// GetStorage observes known Directory pools. It does not delete objects.
+	GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error)
+	// UploadLibrary streams ISO or cloud-image bytes to the agent.
+	UploadLibrary(context.Context) *connect.ClientStreamForClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
 }
 
 // NewAgentServiceClient constructs a client for the nodal.agent.v1.AgentService service. By
@@ -119,18 +128,32 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("GetMetrics")),
 			connect.WithClientOptions(opts...),
 		),
+		getStorage: connect.NewClient[v1.GetStorageRequest, v1.GetStorageResponse](
+			httpClient,
+			baseURL+AgentServiceGetStorageProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetStorage")),
+			connect.WithClientOptions(opts...),
+		),
+		uploadLibrary: connect.NewClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse](
+			httpClient,
+			baseURL+AgentServiceUploadLibraryProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("UploadLibrary")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
-	hello        *connect.Client[v1.HelloRequest, v1.HelloResponse]
-	observe      *connect.Client[v1.ObserveRequest, v1.ObserveResponse]
-	execute      *connect.Client[v1.ExecuteRequest, v1.ExecuteResponse]
-	enroll       *connect.Client[v1.EnrollRequest, v1.EnrollResponse]
-	openSession  *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
-	getInventory *connect.Client[v1.GetInventoryRequest, v1.GetInventoryResponse]
-	getMetrics   *connect.Client[v1.GetMetricsRequest, v1.GetMetricsResponse]
+	hello         *connect.Client[v1.HelloRequest, v1.HelloResponse]
+	observe       *connect.Client[v1.ObserveRequest, v1.ObserveResponse]
+	execute       *connect.Client[v1.ExecuteRequest, v1.ExecuteResponse]
+	enroll        *connect.Client[v1.EnrollRequest, v1.EnrollResponse]
+	openSession   *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
+	getInventory  *connect.Client[v1.GetInventoryRequest, v1.GetInventoryResponse]
+	getMetrics    *connect.Client[v1.GetMetricsRequest, v1.GetMetricsResponse]
+	getStorage    *connect.Client[v1.GetStorageRequest, v1.GetStorageResponse]
+	uploadLibrary *connect.Client[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
 }
 
 // Hello calls nodal.agent.v1.AgentService.Hello.
@@ -168,6 +191,16 @@ func (c *agentServiceClient) GetMetrics(ctx context.Context, req *connect.Reques
 	return c.getMetrics.CallUnary(ctx, req)
 }
 
+// GetStorage calls nodal.agent.v1.AgentService.GetStorage.
+func (c *agentServiceClient) GetStorage(ctx context.Context, req *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error) {
+	return c.getStorage.CallUnary(ctx, req)
+}
+
+// UploadLibrary calls nodal.agent.v1.AgentService.UploadLibrary.
+func (c *agentServiceClient) UploadLibrary(ctx context.Context) *connect.ClientStreamForClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse] {
+	return c.uploadLibrary.CallClientStream(ctx)
+}
+
 // AgentServiceHandler is an implementation of the nodal.agent.v1.AgentService service.
 type AgentServiceHandler interface {
 	Hello(context.Context, *connect.Request[v1.HelloRequest]) (*connect.Response[v1.HelloResponse], error)
@@ -181,6 +214,10 @@ type AgentServiceHandler interface {
 	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)
 	// GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
 	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
+	// GetStorage observes known Directory pools. It does not delete objects.
+	GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error)
+	// UploadLibrary streams ISO or cloud-image bytes to the agent.
+	UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -232,6 +269,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("GetMetrics")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceGetStorageHandler := connect.NewUnaryHandler(
+		AgentServiceGetStorageProcedure,
+		svc.GetStorage,
+		connect.WithSchema(agentServiceMethods.ByName("GetStorage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceUploadLibraryHandler := connect.NewClientStreamHandler(
+		AgentServiceUploadLibraryProcedure,
+		svc.UploadLibrary,
+		connect.WithSchema(agentServiceMethods.ByName("UploadLibrary")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/nodal.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceHelloProcedure:
@@ -248,6 +297,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceGetInventoryHandler.ServeHTTP(w, r)
 		case AgentServiceGetMetricsProcedure:
 			agentServiceGetMetricsHandler.ServeHTTP(w, r)
+		case AgentServiceGetStorageProcedure:
+			agentServiceGetStorageHandler.ServeHTTP(w, r)
+		case AgentServiceUploadLibraryProcedure:
+			agentServiceUploadLibraryHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -283,4 +336,12 @@ func (UnimplementedAgentServiceHandler) GetInventory(context.Context, *connect.R
 
 func (UnimplementedAgentServiceHandler) GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetMetrics is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetStorage is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.UploadLibrary is not implemented"))
 }

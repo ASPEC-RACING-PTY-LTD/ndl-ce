@@ -20,6 +20,10 @@ const (
 	NodeRead            = "node.read"
 	EventsRead          = "events.read"
 	MetricsRead         = "metrics.read"
+	StorageRead         = "storage.read"
+	StoragePoolCreate   = "storage.pool.create"
+	StorageVolumeCreate = "storage.volume.create"
+	StorageImageUpload  = "storage.image.upload"
 	All                 = "*"
 )
 
@@ -38,9 +42,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 		return []string{
 			IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, ClusterRead,
 			NodeRead, EventsRead, MetricsRead,
+			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead}
+		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead}
 	default:
 		return nil
 	}

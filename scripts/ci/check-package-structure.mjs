@@ -63,8 +63,11 @@ const dependLines = control
   .split(/\r?\n/)
   .filter((line) => /^\s*Depends:/.test(line))
   .join("\n");
-if (/nvidia|cuda|kubernetes|kubeadm|kubelet|zfs-dkms|zfsutils|ceph|ollama|vllm/i.test(dependLines)) {
-  errors.push("Phase 1 Depends must not include GPU, Kubernetes, ZFS DKMS, or AI");
+if (/nvidia|cuda|kubernetes|kubeadm|kubelet|zfs-dkms|zfsutils|ceph|ollama|vllm|qemu-system|lvm2|nfs-kernel-server|samba/i.test(dependLines)) {
+  errors.push("Depends must not include GPU, Kubernetes, ZFS, LVM, NFS/SMB servers, QEMU system, or AI");
+}
+if (!/^Package: ndl-agent[\s\S]*?qemu-utils/m.test(control)) {
+  errors.push("ndl-agent must Depend on qemu-utils for offline qemu-img");
 }
 
 const proto = existsSync("proto/nodal/agent/v1/agent.proto")

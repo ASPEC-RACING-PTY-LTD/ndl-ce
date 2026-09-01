@@ -227,6 +227,11 @@ code {
   background: var(--danger-bg);
 }
 
+.banner-warn {
+  background: oklch(0.82 0.12 85 / 0.16);
+  color: inherit;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
