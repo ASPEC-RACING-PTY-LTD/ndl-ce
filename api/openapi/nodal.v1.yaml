@@ -1061,10 +1061,10 @@ paths:
   /lab/qemu-proto/kill:
     post:
       operationId: killLabQemuProto
-      summary: Stop the lab QEMU prototype. ForceStop is not available so this uses the same graceful stop.
+      summary: Force-stop the lab QEMU prototype via systemd SIGKILL (admin only)
       responses:
         "200":
-          description: Stopped using graceful StopQemuProto
+          description: Force-stopped
           content:
             application/json:
               schema:

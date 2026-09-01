@@ -27,12 +27,7 @@ else
   note "KVM device is absent; QEMU TCG is the honest accelerator"
 fi
 
-if ! command -v qemu-system-x86_64 >/dev/null 2>&1; then
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y qemu-system-x86
-fi
-command -v qemu-system-x86_64 >/dev/null || fail "qemu-system-x86_64 is missing"
+command -v qemu-system-x86_64 >/dev/null || fail "qemu-system-x86_64 is missing; ndl-agent must Depend on qemu-system-x86"
 
 systemctl restart ndl-agent ndl-control
 sleep 2
@@ -176,9 +171,11 @@ assert str(row.get("machine") or "").startswith("pc-q35-"), row
 accel=str(row.get("accel") or "")
 assert accel=="$ACCEL_KIND", (accel, "$ACCEL_KIND", row)
 uid=str(row.get("running_as") or "")
+if not uid:
+    raise SystemExit("status omitted running_as")
 if uid=="0":
     raise SystemExit("qemu is running as root")
-print("observe running_as", uid or "(unset)", "accel", accel)
+print("observe running_as", uid, "accel", accel)
 PY
 
 systemctl cat "nodal-vm@${WL}.service" | grep -q 'BindsTo=ndl-control' && fail "nodal-vm binds to ndl-control"
@@ -221,7 +218,7 @@ import json
 row=json.load(open("/tmp/ndl-qemu-status.json"))
 st=str(row.get("status") or "")
 print("qmp reconnect status", st, row.get("reason"), row.get("machine"))
-if st in ("failed","stopped","unavailable"):
+if st != "running":
     raise SystemExit("status API lost the running VM after agent restart")
 machine=str(row.get("machine") or "")
 want=open("/tmp/ndl-qemu-machine").read().strip()

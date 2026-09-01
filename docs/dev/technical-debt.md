@@ -38,3 +38,8 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. PCI addresses are pinned at 0x5/0x6 in last-applied rather than from `query-pci`. Why not blocking: ABI is stable for the gate; live query can land with product VMs.
 - LOW. Host reboot is proven via `systemctl enable` of `nodal-vm@`, not a live guest reboot. Why not blocking: the unit is independent of CP/agent and enabled for `nodal-workloads.target`.
 - LOW. Adding other-execute on storage/workload parents uses a temporary root chown because the agent bounding set has no CAP_FOWNER. Why not blocking: CAP_CHOWN is already required; this does not add a new capability.
+- MEDIUM. Launcher re-validation does not re-pin `filename=` under the storage root or force sockets onto the per-VM runtime dir. Why not blocking: compile already jails those fields; AppArmor workloads `r` blocks QEMU from rewriting argv when a parent profile exists.
+- MEDIUM. Lab start does not re-check an existing volume is `vm-disk` before chown to `ndl-qemu`. Why not blocking: the lab path is admin-only and the prototype creates its own volume.
+- LOW. Debian `qemu-system-x86` does not ship `/etc/apparmor.d/usr.bin.qemu-system-x86_64`, so the local snippet is a no-op until a parent profile exists. Why not blocking: TCG/QMP were proven; confinement is still the unit user plus closed devices.
+- LOW. `Observed.PID` is unused; runtime identity is systemd MainPID / `running_as`.
+- LOW. `EnableAutostart` trusts the caller UUID. The RPC already requires a UUID.
