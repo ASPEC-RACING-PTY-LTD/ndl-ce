@@ -48,6 +48,7 @@ type Server struct {
 	Network    NetworkRPC
 	Workloads  WorkloadRPC
 	IO         IORPC
+	QEMU       QemuRPC
 	Hub        *EventHub
 	UI         fs.FS
 	Now        func() time.Time
@@ -131,6 +132,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/files/mkdir", s.workloadFilesMkdir)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/files/delete", s.workloadFilesDelete)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/files/move", s.workloadFilesMove)
+	mux.HandleFunc("POST /api/v1/lab/qemu-proto", s.labQemuProtoStart)
+	mux.HandleFunc("GET /api/v1/lab/qemu-proto", s.labQemuProtoStatus)
+	mux.HandleFunc("POST /api/v1/lab/qemu-proto/stop", s.labQemuProtoStop)
+	mux.HandleFunc("POST /api/v1/lab/qemu-proto/kill", s.labQemuProtoKill)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

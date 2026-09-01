@@ -94,6 +94,7 @@ func Run(cfg Config) error {
 		Network:   agent,
 		Workloads: agent,
 		IO:        agent,
+		QEMU:      httpapi.AdaptQEMU(agent),
 		Hub:       hub,
 		UI:        ui,
 		SetupHash: cfg.SetupHash,

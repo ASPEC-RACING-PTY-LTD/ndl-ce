@@ -1,4 +1,5 @@
 usr/sbin/ndl-agent
+usr/sbin/ndl-qemu-launch
 usr/lib/ndl/ndl-network-rollback
 lib/systemd/system/ndl-agent.service
 lib/systemd/system/ndl-agent.socket
@@ -6,3 +7,5 @@ lib/systemd/system/nodal-workloads.target
 lib/systemd/system/ndl-network-rollback.service
 lib/systemd/system/ndl-dnsmasq@.service
 lib/systemd/system/nodal-ct@.service
+lib/systemd/system/nodal-vm@.service
+etc/apparmor.d/local/usr.bin.qemu-system-x86_64

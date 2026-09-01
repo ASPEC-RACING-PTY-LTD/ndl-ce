@@ -342,6 +342,53 @@ export interface FileMutationResponse {
   path?: string;
 }
 
+export interface StartLabQemuProtoRequest {
+  workload_id?: string;
+  pool_id?: string;
+  volume_id?: string;
+  size_bytes?: number;
+  autostart?: boolean;
+}
+
+export interface LabQemuLastApplied {
+  schema_version?: string;
+  volume_id?: string;
+  disk_path?: string;
+  disk_format?: string;
+  machine?: string;
+  accel?: string;
+  autostart?: boolean;
+  memory_bytes?: number;
+  cpus?: number;
+}
+
+export interface LabQemuProtoResponse {
+  id?: string;
+  name: string;
+  kind: string;
+  status: string;
+  reason?: string;
+  desired_power?: string;
+  volume_id?: string;
+  disk_path?: string;
+  disk_format?: string;
+  machine?: string;
+  accel?: string;
+  autostart?: boolean;
+  cpus?: number;
+  memory_bytes?: number;
+  unit: string;
+  unit_status?: string;
+  observe_status?: string;
+  unit_active?: boolean;
+  running_as?: string;
+  qmp?: string;
+  serial_socket?: string;
+  vnc_socket?: string;
+  qga_socket?: string;
+  last_applied?: LabQemuLastApplied;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -443,3 +490,9 @@ export type MkdirWorkloadFilePath = "/api/v1/workloads/{id}/files/mkdir";
 export type DeleteWorkloadFilePath = "/api/v1/workloads/{id}/files/delete";
 
 export type MoveWorkloadFilePath = "/api/v1/workloads/{id}/files/move";
+
+export type GetLabQemuProtoPath = "/api/v1/lab/qemu-proto";
+
+export type StopLabQemuProtoPath = "/api/v1/lab/qemu-proto/stop";
+
+export type KillLabQemuProtoPath = "/api/v1/lab/qemu-proto/kill";

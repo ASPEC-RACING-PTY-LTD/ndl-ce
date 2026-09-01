@@ -54,6 +54,10 @@ func run(args []string) error {
   workload clone --id ID [--name NAME]
   node terminal [--id ID] [--cwd PATH]
   workload files ls --id ID [--path PATH]
+  lab qemu-proto start [--pool-id ID] [--volume-id ID] [--size-bytes N] [--autostart]
+  lab qemu-proto status
+  lab qemu-proto stop
+  lab qemu-proto kill
 `)
 		return nil
 	}
@@ -104,6 +108,8 @@ func run(args []string) error {
 		return cmdNetwork(args[1:])
 	case "workload":
 		return cmdWorkload(args[1:])
+	case "lab":
+		return cmdLab(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -492,6 +498,40 @@ func cmdWorkloadFiles(args []string) error {
 		p = "/"
 	}
 	return cmdGet("/api/v1/workloads/" + f["id"] + "/files?path=" + strings.ReplaceAll(p, " ", "%20"))
+}
+
+func cmdLab(args []string) error {
+	if len(args) < 2 || args[0] != "qemu-proto" {
+		return fmt.Errorf("usage: nodalctl lab qemu-proto start|status|stop|kill")
+	}
+	switch args[1] {
+	case "start":
+		f := parseFlags(args[2:])
+		body := map[string]any{}
+		if f["pool-id"] != "" {
+			body["pool_id"] = f["pool-id"]
+		}
+		if f["volume-id"] != "" {
+			body["volume_id"] = f["volume-id"]
+		}
+		var size int64
+		fmt.Sscan(f["size-bytes"], &size)
+		if size > 0 {
+			body["size_bytes"] = size
+		}
+		if f["autostart"] == "true" {
+			body["autostart"] = true
+		}
+		return postJSON("/api/v1/lab/qemu-proto", body, true)
+	case "status":
+		return cmdGet("/api/v1/lab/qemu-proto")
+	case "stop":
+		return postJSON("/api/v1/lab/qemu-proto/stop", map[string]any{}, true)
+	case "kill":
+		return postJSON("/api/v1/lab/qemu-proto/kill", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl lab qemu-proto start|status|stop|kill")
+	}
 }
 
 func parseFlags(args []string) map[string]string {

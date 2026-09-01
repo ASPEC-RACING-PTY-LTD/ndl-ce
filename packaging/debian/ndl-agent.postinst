@@ -29,6 +29,50 @@ ensure_user() {
     --no-create-home --shell /usr/sbin/nologin ndl-control
 }
 
+ensure_qemu_group() {
+  if getent group ndl-qemu >/dev/null; then
+    return
+  fi
+  if command -v addgroup >/dev/null 2>&1; then
+    addgroup --system ndl-qemu
+    return
+  fi
+  groupadd --system ndl-qemu
+}
+
+ensure_qemu_user() {
+  ensure_qemu_group
+  if ! getent passwd ndl-qemu >/dev/null; then
+    if command -v adduser >/dev/null 2>&1; then
+      adduser --system --ingroup ndl-qemu --home /var/lib/ndl/runtime/qemu \
+        --no-create-home --shell /usr/sbin/nologin \
+        --gecos "No-dal QEMU" ndl-qemu
+    else
+      useradd --system --gid ndl-qemu --home-dir /var/lib/ndl/runtime/qemu \
+        --no-create-home --shell /usr/sbin/nologin ndl-qemu
+    fi
+  fi
+  mkdir -p /var/lib/ndl/runtime/qemu /var/lib/ndl/workloads /var/lib/ndl/storage
+  chown ndl-qemu:ndl-qemu /var/lib/ndl/runtime/qemu
+  chmod 0751 /var/lib/ndl /var/lib/ndl/workloads /var/lib/ndl/storage /var/lib/ndl/runtime /var/lib/ndl/runtime/qemu
+  if getent group kvm >/dev/null; then
+    if command -v adduser >/dev/null 2>&1; then
+      adduser ndl-qemu kvm
+      return
+    fi
+    usermod -a -G kvm ndl-qemu
+  fi
+}
+
+reload_qemu_apparmor() {
+  if [ ! -f /etc/apparmor.d/usr.bin.qemu-system-x86_64 ]; then
+    return
+  fi
+  if command -v apparmor_parser >/dev/null 2>&1; then
+    apparmor_parser -r /etc/apparmor.d/usr.bin.qemu-system-x86_64 >/dev/null 2>&1 || true
+  fi
+}
+
 ensure_root_idmap() {
   if [ ! -f /etc/subuid ] || ! grep -q '^root:' /etc/subuid; then
     echo 'root:100000:65536' >> /etc/subuid
@@ -57,7 +101,9 @@ start_units() {
 case "$1" in
   configure)
     ensure_user
+    ensure_qemu_user
     ensure_root_idmap
+    reload_qemu_apparmor
     start_units
     ;;
 esac

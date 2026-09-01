@@ -961,6 +961,9 @@ type ExecuteRequest struct {
 	//	*ExecuteRequest_NetApply
 	//	*ExecuteRequest_CtCreate
 	//	*ExecuteRequest_CtLifecycle
+	//	*ExecuteRequest_QemuProtoStart
+	//	*ExecuteRequest_QemuProtoStop
+	//	*ExecuteRequest_QemuProtoStatus
 	Method        isExecuteRequest_Method `protobuf_oneof:"method"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1073,6 +1076,33 @@ func (x *ExecuteRequest) GetCtLifecycle() *CTLifecycle {
 	return nil
 }
 
+func (x *ExecuteRequest) GetQemuProtoStart() *QemuProtoStart {
+	if x != nil {
+		if x, ok := x.Method.(*ExecuteRequest_QemuProtoStart); ok {
+			return x.QemuProtoStart
+		}
+	}
+	return nil
+}
+
+func (x *ExecuteRequest) GetQemuProtoStop() *QemuProtoStop {
+	if x != nil {
+		if x, ok := x.Method.(*ExecuteRequest_QemuProtoStop); ok {
+			return x.QemuProtoStop
+		}
+	}
+	return nil
+}
+
+func (x *ExecuteRequest) GetQemuProtoStatus() *QemuProtoStatus {
+	if x != nil {
+		if x, ok := x.Method.(*ExecuteRequest_QemuProtoStatus); ok {
+			return x.QemuProtoStatus
+		}
+	}
+	return nil
+}
+
 type isExecuteRequest_Method interface {
 	isExecuteRequest_Method()
 }
@@ -1105,6 +1135,18 @@ type ExecuteRequest_CtLifecycle struct {
 	CtLifecycle *CTLifecycle `protobuf:"bytes,16,opt,name=ct_lifecycle,json=ctLifecycle,proto3,oneof"`
 }
 
+type ExecuteRequest_QemuProtoStart struct {
+	QemuProtoStart *QemuProtoStart `protobuf:"bytes,17,opt,name=qemu_proto_start,json=qemuProtoStart,proto3,oneof"`
+}
+
+type ExecuteRequest_QemuProtoStop struct {
+	QemuProtoStop *QemuProtoStop `protobuf:"bytes,18,opt,name=qemu_proto_stop,json=qemuProtoStop,proto3,oneof"`
+}
+
+type ExecuteRequest_QemuProtoStatus struct {
+	QemuProtoStatus *QemuProtoStatus `protobuf:"bytes,19,opt,name=qemu_proto_status,json=qemuProtoStatus,proto3,oneof"`
+}
+
 func (*ExecuteRequest_Ping) isExecuteRequest_Method() {}
 
 func (*ExecuteRequest_CreateDirectoryPool) isExecuteRequest_Method() {}
@@ -1118,6 +1160,216 @@ func (*ExecuteRequest_NetApply) isExecuteRequest_Method() {}
 func (*ExecuteRequest_CtCreate) isExecuteRequest_Method() {}
 
 func (*ExecuteRequest_CtLifecycle) isExecuteRequest_Method() {}
+
+func (*ExecuteRequest_QemuProtoStart) isExecuteRequest_Method() {}
+
+func (*ExecuteRequest_QemuProtoStop) isExecuteRequest_Method() {}
+
+func (*ExecuteRequest_QemuProtoStatus) isExecuteRequest_Method() {}
+
+type QemuProtoStart struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkloadId    string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	VolumeId      string                 `protobuf:"bytes,2,opt,name=volume_id,json=volumeId,proto3" json:"volume_id,omitempty"`
+	DiskPath      string                 `protobuf:"bytes,3,opt,name=disk_path,json=diskPath,proto3" json:"disk_path,omitempty"`
+	DiskFormat    string                 `protobuf:"bytes,4,opt,name=disk_format,json=diskFormat,proto3" json:"disk_format,omitempty"`
+	Cpus          int32                  `protobuf:"varint,5,opt,name=cpus,proto3" json:"cpus,omitempty"`
+	MemoryBytes   int64                  `protobuf:"varint,6,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	Machine       string                 `protobuf:"bytes,7,opt,name=machine,proto3" json:"machine,omitempty"`
+	Accel         string                 `protobuf:"bytes,8,opt,name=accel,proto3" json:"accel,omitempty"`
+	Autostart     bool                   `protobuf:"varint,9,opt,name=autostart,proto3" json:"autostart,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QemuProtoStart) Reset() {
+	*x = QemuProtoStart{}
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QemuProtoStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QemuProtoStart) ProtoMessage() {}
+
+func (x *QemuProtoStart) ProtoReflect() protoreflect.Message {
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QemuProtoStart.ProtoReflect.Descriptor instead.
+func (*QemuProtoStart) Descriptor() ([]byte, []int) {
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *QemuProtoStart) GetWorkloadId() string {
+	if x != nil {
+		return x.WorkloadId
+	}
+	return ""
+}
+
+func (x *QemuProtoStart) GetVolumeId() string {
+	if x != nil {
+		return x.VolumeId
+	}
+	return ""
+}
+
+func (x *QemuProtoStart) GetDiskPath() string {
+	if x != nil {
+		return x.DiskPath
+	}
+	return ""
+}
+
+func (x *QemuProtoStart) GetDiskFormat() string {
+	if x != nil {
+		return x.DiskFormat
+	}
+	return ""
+}
+
+func (x *QemuProtoStart) GetCpus() int32 {
+	if x != nil {
+		return x.Cpus
+	}
+	return 0
+}
+
+func (x *QemuProtoStart) GetMemoryBytes() int64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *QemuProtoStart) GetMachine() string {
+	if x != nil {
+		return x.Machine
+	}
+	return ""
+}
+
+func (x *QemuProtoStart) GetAccel() string {
+	if x != nil {
+		return x.Accel
+	}
+	return ""
+}
+
+func (x *QemuProtoStart) GetAutostart() bool {
+	if x != nil {
+		return x.Autostart
+	}
+	return false
+}
+
+type QemuProtoStop struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkloadId    string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	Force         bool                   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QemuProtoStop) Reset() {
+	*x = QemuProtoStop{}
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QemuProtoStop) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QemuProtoStop) ProtoMessage() {}
+
+func (x *QemuProtoStop) ProtoReflect() protoreflect.Message {
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QemuProtoStop.ProtoReflect.Descriptor instead.
+func (*QemuProtoStop) Descriptor() ([]byte, []int) {
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *QemuProtoStop) GetWorkloadId() string {
+	if x != nil {
+		return x.WorkloadId
+	}
+	return ""
+}
+
+func (x *QemuProtoStop) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+type QemuProtoStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkloadId    string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QemuProtoStatus) Reset() {
+	*x = QemuProtoStatus{}
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QemuProtoStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QemuProtoStatus) ProtoMessage() {}
+
+func (x *QemuProtoStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QemuProtoStatus.ProtoReflect.Descriptor instead.
+func (*QemuProtoStatus) Descriptor() ([]byte, []int) {
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *QemuProtoStatus) GetWorkloadId() string {
+	if x != nil {
+		return x.WorkloadId
+	}
+	return ""
+}
 
 type CTCreate struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1140,7 +1392,7 @@ type CTCreate struct {
 
 func (x *CTCreate) Reset() {
 	*x = CTCreate{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1152,7 +1404,7 @@ func (x *CTCreate) String() string {
 func (*CTCreate) ProtoMessage() {}
 
 func (x *CTCreate) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[18]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1165,7 +1417,7 @@ func (x *CTCreate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CTCreate.ProtoReflect.Descriptor instead.
 func (*CTCreate) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{18}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CTCreate) GetWorkloadId() string {
@@ -1274,7 +1526,7 @@ type CTLifecycle struct {
 
 func (x *CTLifecycle) Reset() {
 	*x = CTLifecycle{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1286,7 +1538,7 @@ func (x *CTLifecycle) String() string {
 func (*CTLifecycle) ProtoMessage() {}
 
 func (x *CTLifecycle) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[19]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1299,7 +1551,7 @@ func (x *CTLifecycle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CTLifecycle.ProtoReflect.Descriptor instead.
 func (*CTLifecycle) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{19}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *CTLifecycle) GetWorkloadId() string {
@@ -1363,7 +1615,7 @@ type WorkloadHint struct {
 
 func (x *WorkloadHint) Reset() {
 	*x = WorkloadHint{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1375,7 +1627,7 @@ func (x *WorkloadHint) String() string {
 func (*WorkloadHint) ProtoMessage() {}
 
 func (x *WorkloadHint) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[20]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1388,7 +1640,7 @@ func (x *WorkloadHint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadHint.ProtoReflect.Descriptor instead.
 func (*WorkloadHint) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{20}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *WorkloadHint) GetWorkloadId() string {
@@ -1427,7 +1679,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1439,7 +1691,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[21]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1452,7 +1704,7 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{21}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{24}
 }
 
 type CreateDirectoryPool struct {
@@ -1468,7 +1720,7 @@ type CreateDirectoryPool struct {
 
 func (x *CreateDirectoryPool) Reset() {
 	*x = CreateDirectoryPool{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1480,7 +1732,7 @@ func (x *CreateDirectoryPool) String() string {
 func (*CreateDirectoryPool) ProtoMessage() {}
 
 func (x *CreateDirectoryPool) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[22]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1493,7 +1745,7 @@ func (x *CreateDirectoryPool) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDirectoryPool.ProtoReflect.Descriptor instead.
 func (*CreateDirectoryPool) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{22}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CreateDirectoryPool) GetPoolId() string {
@@ -1546,7 +1798,7 @@ type CreateDirectoryVolume struct {
 
 func (x *CreateDirectoryVolume) Reset() {
 	*x = CreateDirectoryVolume{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1558,7 +1810,7 @@ func (x *CreateDirectoryVolume) String() string {
 func (*CreateDirectoryVolume) ProtoMessage() {}
 
 func (x *CreateDirectoryVolume) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1571,7 +1823,7 @@ func (x *CreateDirectoryVolume) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateDirectoryVolume.ProtoReflect.Descriptor instead.
 func (*CreateDirectoryVolume) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateDirectoryVolume) GetVolumeId() string {
@@ -1640,7 +1892,7 @@ type NetDryRun struct {
 
 func (x *NetDryRun) Reset() {
 	*x = NetDryRun{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1652,7 +1904,7 @@ func (x *NetDryRun) String() string {
 func (*NetDryRun) ProtoMessage() {}
 
 func (x *NetDryRun) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1665,7 +1917,7 @@ func (x *NetDryRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetDryRun.ProtoReflect.Descriptor instead.
 func (*NetDryRun) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *NetDryRun) GetNetworkId() string {
@@ -1749,7 +2001,7 @@ type NetApply struct {
 
 func (x *NetApply) Reset() {
 	*x = NetApply{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1761,7 +2013,7 @@ func (x *NetApply) String() string {
 func (*NetApply) ProtoMessage() {}
 
 func (x *NetApply) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1774,7 +2026,7 @@ func (x *NetApply) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetApply.ProtoReflect.Descriptor instead.
 func (*NetApply) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *NetApply) GetNetworkId() string {
@@ -1858,7 +2110,7 @@ type ExecuteResponse struct {
 
 func (x *ExecuteResponse) Reset() {
 	*x = ExecuteResponse{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1870,7 +2122,7 @@ func (x *ExecuteResponse) String() string {
 func (*ExecuteResponse) ProtoMessage() {}
 
 func (x *ExecuteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1883,7 +2135,7 @@ func (x *ExecuteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteResponse) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ExecuteResponse) GetOk() bool {
@@ -1921,7 +2173,7 @@ type UploadLibraryRequest struct {
 
 func (x *UploadLibraryRequest) Reset() {
 	*x = UploadLibraryRequest{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1933,7 +2185,7 @@ func (x *UploadLibraryRequest) String() string {
 func (*UploadLibraryRequest) ProtoMessage() {}
 
 func (x *UploadLibraryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1946,7 +2198,7 @@ func (x *UploadLibraryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadLibraryRequest.ProtoReflect.Descriptor instead.
 func (*UploadLibraryRequest) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{27}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *UploadLibraryRequest) GetPayload() isUploadLibraryRequest_Payload {
@@ -2021,7 +2273,7 @@ type UploadLibraryBegin struct {
 
 func (x *UploadLibraryBegin) Reset() {
 	*x = UploadLibraryBegin{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2033,7 +2285,7 @@ func (x *UploadLibraryBegin) String() string {
 func (*UploadLibraryBegin) ProtoMessage() {}
 
 func (x *UploadLibraryBegin) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2046,7 +2298,7 @@ func (x *UploadLibraryBegin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadLibraryBegin.ProtoReflect.Descriptor instead.
 func (*UploadLibraryBegin) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *UploadLibraryBegin) GetItemId() string {
@@ -2114,7 +2366,7 @@ type UploadLibraryFinish struct {
 
 func (x *UploadLibraryFinish) Reset() {
 	*x = UploadLibraryFinish{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2126,7 +2378,7 @@ func (x *UploadLibraryFinish) String() string {
 func (*UploadLibraryFinish) ProtoMessage() {}
 
 func (x *UploadLibraryFinish) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2139,7 +2391,7 @@ func (x *UploadLibraryFinish) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadLibraryFinish.ProtoReflect.Descriptor instead.
 func (*UploadLibraryFinish) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *UploadLibraryFinish) GetExpectedSha256() string {
@@ -2160,7 +2412,7 @@ type UploadLibraryResponse struct {
 
 func (x *UploadLibraryResponse) Reset() {
 	*x = UploadLibraryResponse{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2172,7 +2424,7 @@ func (x *UploadLibraryResponse) String() string {
 func (*UploadLibraryResponse) ProtoMessage() {}
 
 func (x *UploadLibraryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2185,7 +2437,7 @@ func (x *UploadLibraryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadLibraryResponse.ProtoReflect.Descriptor instead.
 func (*UploadLibraryResponse) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *UploadLibraryResponse) GetOk() bool {
@@ -2220,7 +2472,7 @@ type EnrollRequest struct {
 
 func (x *EnrollRequest) Reset() {
 	*x = EnrollRequest{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2232,7 +2484,7 @@ func (x *EnrollRequest) String() string {
 func (*EnrollRequest) ProtoMessage() {}
 
 func (x *EnrollRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2245,7 +2497,7 @@ func (x *EnrollRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollRequest.ProtoReflect.Descriptor instead.
 func (*EnrollRequest) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *EnrollRequest) GetJoinToken() string {
@@ -2273,7 +2525,7 @@ type EnrollResponse struct {
 
 func (x *EnrollResponse) Reset() {
 	*x = EnrollResponse{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2285,7 +2537,7 @@ func (x *EnrollResponse) String() string {
 func (*EnrollResponse) ProtoMessage() {}
 
 func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2298,7 +2550,7 @@ func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollResponse.ProtoReflect.Descriptor instead.
 func (*EnrollResponse) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{32}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *EnrollResponse) GetClusterId() string {
@@ -2330,7 +2582,7 @@ type OpenSessionRequest struct {
 
 func (x *OpenSessionRequest) Reset() {
 	*x = OpenSessionRequest{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2342,7 +2594,7 @@ func (x *OpenSessionRequest) String() string {
 func (*OpenSessionRequest) ProtoMessage() {}
 
 func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2355,7 +2607,7 @@ func (x *OpenSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionRequest.ProtoReflect.Descriptor instead.
 func (*OpenSessionRequest) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{33}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{36}
 }
 
 type OpenSessionResponse struct {
@@ -2366,7 +2618,7 @@ type OpenSessionResponse struct {
 
 func (x *OpenSessionResponse) Reset() {
 	*x = OpenSessionResponse{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2378,7 +2630,7 @@ func (x *OpenSessionResponse) String() string {
 func (*OpenSessionResponse) ProtoMessage() {}
 
 func (x *OpenSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2391,7 +2643,7 @@ func (x *OpenSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenSessionResponse.ProtoReflect.Descriptor instead.
 func (*OpenSessionResponse) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{34}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{37}
 }
 
 type FilesOpRequest struct {
@@ -2409,7 +2661,7 @@ type FilesOpRequest struct {
 
 func (x *FilesOpRequest) Reset() {
 	*x = FilesOpRequest{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2421,7 +2673,7 @@ func (x *FilesOpRequest) String() string {
 func (*FilesOpRequest) ProtoMessage() {}
 
 func (x *FilesOpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2434,7 +2686,7 @@ func (x *FilesOpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesOpRequest.ProtoReflect.Descriptor instead.
 func (*FilesOpRequest) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{35}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *FilesOpRequest) GetTargetKind() string {
@@ -2497,7 +2749,7 @@ type FilesOpResponse struct {
 
 func (x *FilesOpResponse) Reset() {
 	*x = FilesOpResponse{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2509,7 +2761,7 @@ func (x *FilesOpResponse) String() string {
 func (*FilesOpResponse) ProtoMessage() {}
 
 func (x *FilesOpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2522,7 +2774,7 @@ func (x *FilesOpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesOpResponse.ProtoReflect.Descriptor instead.
 func (*FilesOpResponse) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{36}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *FilesOpResponse) GetOk() bool {
@@ -2560,7 +2812,7 @@ type FilesPutRequest struct {
 
 func (x *FilesPutRequest) Reset() {
 	*x = FilesPutRequest{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2572,7 +2824,7 @@ func (x *FilesPutRequest) String() string {
 func (*FilesPutRequest) ProtoMessage() {}
 
 func (x *FilesPutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2585,7 +2837,7 @@ func (x *FilesPutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesPutRequest.ProtoReflect.Descriptor instead.
 func (*FilesPutRequest) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{37}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *FilesPutRequest) GetPayload() isFilesPutRequest_Payload {
@@ -2658,7 +2910,7 @@ type FilesPutBegin struct {
 
 func (x *FilesPutBegin) Reset() {
 	*x = FilesPutBegin{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2670,7 +2922,7 @@ func (x *FilesPutBegin) String() string {
 func (*FilesPutBegin) ProtoMessage() {}
 
 func (x *FilesPutBegin) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2683,7 +2935,7 @@ func (x *FilesPutBegin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesPutBegin.ProtoReflect.Descriptor instead.
 func (*FilesPutBegin) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{38}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *FilesPutBegin) GetTargetKind() string {
@@ -2737,7 +2989,7 @@ type FilesPutFinish struct {
 
 func (x *FilesPutFinish) Reset() {
 	*x = FilesPutFinish{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2749,7 +3001,7 @@ func (x *FilesPutFinish) String() string {
 func (*FilesPutFinish) ProtoMessage() {}
 
 func (x *FilesPutFinish) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2762,7 +3014,7 @@ func (x *FilesPutFinish) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesPutFinish.ProtoReflect.Descriptor instead.
 func (*FilesPutFinish) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{39}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *FilesPutFinish) GetExpectedSha256() string {
@@ -2784,7 +3036,7 @@ type FilesGetRequest struct {
 
 func (x *FilesGetRequest) Reset() {
 	*x = FilesGetRequest{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2796,7 +3048,7 @@ func (x *FilesGetRequest) String() string {
 func (*FilesGetRequest) ProtoMessage() {}
 
 func (x *FilesGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2809,7 +3061,7 @@ func (x *FilesGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesGetRequest.ProtoReflect.Descriptor instead.
 func (*FilesGetRequest) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{40}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *FilesGetRequest) GetTargetKind() string {
@@ -2850,7 +3102,7 @@ type FilesGetResponse struct {
 
 func (x *FilesGetResponse) Reset() {
 	*x = FilesGetResponse{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2862,7 +3114,7 @@ func (x *FilesGetResponse) String() string {
 func (*FilesGetResponse) ProtoMessage() {}
 
 func (x *FilesGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2875,7 +3127,7 @@ func (x *FilesGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilesGetResponse.ProtoReflect.Descriptor instead.
 func (*FilesGetResponse) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{41}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *FilesGetResponse) GetChunk() []byte {
@@ -2905,7 +3157,7 @@ type TermFrame struct {
 
 func (x *TermFrame) Reset() {
 	*x = TermFrame{}
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2917,7 +3169,7 @@ func (x *TermFrame) String() string {
 func (*TermFrame) ProtoMessage() {}
 
 func (x *TermFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_nodal_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_nodal_agent_v1_agent_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2930,7 +3182,7 @@ func (x *TermFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TermFrame.ProtoReflect.Descriptor instead.
 func (*TermFrame) Descriptor() ([]byte, []int) {
-	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{42}
+	return file_nodal_agent_v1_agent_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *TermFrame) GetTargetKind() string {
@@ -3034,7 +3286,7 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\x12GetNetworksRequest\x127\n" +
 	"\bnetworks\x18\x01 \x03(\v2\x1b.nodal.agent.v1.NetworkHintR\bnetworks\"8\n" +
 	"\x13GetNetworksResponse\x12!\n" +
-	"\fnetwork_json\x18\x01 \x01(\fR\vnetworkJson\"\x96\x04\n" +
+	"\fnetwork_json\x18\x01 \x01(\fR\vnetworkJson\"\xfa\x05\n" +
 	"\x0eExecuteRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12*\n" +
 	"\x04ping\x18\n" +
@@ -3044,8 +3296,30 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\vnet_dry_run\x18\r \x01(\v2\x19.nodal.agent.v1.NetDryRunH\x00R\tnetDryRun\x127\n" +
 	"\tnet_apply\x18\x0e \x01(\v2\x18.nodal.agent.v1.NetApplyH\x00R\bnetApply\x127\n" +
 	"\tct_create\x18\x0f \x01(\v2\x18.nodal.agent.v1.CTCreateH\x00R\bctCreate\x12@\n" +
-	"\fct_lifecycle\x18\x10 \x01(\v2\x1b.nodal.agent.v1.CTLifecycleH\x00R\vctLifecycleB\b\n" +
-	"\x06method\"\xf5\x02\n" +
+	"\fct_lifecycle\x18\x10 \x01(\v2\x1b.nodal.agent.v1.CTLifecycleH\x00R\vctLifecycle\x12J\n" +
+	"\x10qemu_proto_start\x18\x11 \x01(\v2\x1e.nodal.agent.v1.QemuProtoStartH\x00R\x0eqemuProtoStart\x12G\n" +
+	"\x0fqemu_proto_stop\x18\x12 \x01(\v2\x1d.nodal.agent.v1.QemuProtoStopH\x00R\rqemuProtoStop\x12M\n" +
+	"\x11qemu_proto_status\x18\x13 \x01(\v2\x1f.nodal.agent.v1.QemuProtoStatusH\x00R\x0fqemuProtoStatusB\b\n" +
+	"\x06method\"\x91\x02\n" +
+	"\x0eQemuProtoStart\x12\x1f\n" +
+	"\vworkload_id\x18\x01 \x01(\tR\n" +
+	"workloadId\x12\x1b\n" +
+	"\tvolume_id\x18\x02 \x01(\tR\bvolumeId\x12\x1b\n" +
+	"\tdisk_path\x18\x03 \x01(\tR\bdiskPath\x12\x1f\n" +
+	"\vdisk_format\x18\x04 \x01(\tR\n" +
+	"diskFormat\x12\x12\n" +
+	"\x04cpus\x18\x05 \x01(\x05R\x04cpus\x12!\n" +
+	"\fmemory_bytes\x18\x06 \x01(\x03R\vmemoryBytes\x12\x18\n" +
+	"\amachine\x18\a \x01(\tR\amachine\x12\x14\n" +
+	"\x05accel\x18\b \x01(\tR\x05accel\x12\x1c\n" +
+	"\tautostart\x18\t \x01(\bR\tautostart\"F\n" +
+	"\rQemuProtoStop\x12\x1f\n" +
+	"\vworkload_id\x18\x01 \x01(\tR\n" +
+	"workloadId\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"2\n" +
+	"\x0fQemuProtoStatus\x12\x1f\n" +
+	"\vworkload_id\x18\x01 \x01(\tR\n" +
+	"workloadId\"\xf5\x02\n" +
 	"\bCTCreate\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x12\n" +
@@ -3238,7 +3512,7 @@ func file_nodal_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_nodal_agent_v1_agent_proto_rawDescData
 }
 
-var file_nodal_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_nodal_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_nodal_agent_v1_agent_proto_goTypes = []any{
 	(*HostPlatform)(nil),          // 0: nodal.agent.v1.HostPlatform
 	(*HelloRequest)(nil),          // 1: nodal.agent.v1.HelloRequest
@@ -3258,87 +3532,93 @@ var file_nodal_agent_v1_agent_proto_goTypes = []any{
 	(*GetNetworksRequest)(nil),    // 15: nodal.agent.v1.GetNetworksRequest
 	(*GetNetworksResponse)(nil),   // 16: nodal.agent.v1.GetNetworksResponse
 	(*ExecuteRequest)(nil),        // 17: nodal.agent.v1.ExecuteRequest
-	(*CTCreate)(nil),              // 18: nodal.agent.v1.CTCreate
-	(*CTLifecycle)(nil),           // 19: nodal.agent.v1.CTLifecycle
-	(*WorkloadHint)(nil),          // 20: nodal.agent.v1.WorkloadHint
-	(*Ping)(nil),                  // 21: nodal.agent.v1.Ping
-	(*CreateDirectoryPool)(nil),   // 22: nodal.agent.v1.CreateDirectoryPool
-	(*CreateDirectoryVolume)(nil), // 23: nodal.agent.v1.CreateDirectoryVolume
-	(*NetDryRun)(nil),             // 24: nodal.agent.v1.NetDryRun
-	(*NetApply)(nil),              // 25: nodal.agent.v1.NetApply
-	(*ExecuteResponse)(nil),       // 26: nodal.agent.v1.ExecuteResponse
-	(*UploadLibraryRequest)(nil),  // 27: nodal.agent.v1.UploadLibraryRequest
-	(*UploadLibraryBegin)(nil),    // 28: nodal.agent.v1.UploadLibraryBegin
-	(*UploadLibraryFinish)(nil),   // 29: nodal.agent.v1.UploadLibraryFinish
-	(*UploadLibraryResponse)(nil), // 30: nodal.agent.v1.UploadLibraryResponse
-	(*EnrollRequest)(nil),         // 31: nodal.agent.v1.EnrollRequest
-	(*EnrollResponse)(nil),        // 32: nodal.agent.v1.EnrollResponse
-	(*OpenSessionRequest)(nil),    // 33: nodal.agent.v1.OpenSessionRequest
-	(*OpenSessionResponse)(nil),   // 34: nodal.agent.v1.OpenSessionResponse
-	(*FilesOpRequest)(nil),        // 35: nodal.agent.v1.FilesOpRequest
-	(*FilesOpResponse)(nil),       // 36: nodal.agent.v1.FilesOpResponse
-	(*FilesPutRequest)(nil),       // 37: nodal.agent.v1.FilesPutRequest
-	(*FilesPutBegin)(nil),         // 38: nodal.agent.v1.FilesPutBegin
-	(*FilesPutFinish)(nil),        // 39: nodal.agent.v1.FilesPutFinish
-	(*FilesGetRequest)(nil),       // 40: nodal.agent.v1.FilesGetRequest
-	(*FilesGetResponse)(nil),      // 41: nodal.agent.v1.FilesGetResponse
-	(*TermFrame)(nil),             // 42: nodal.agent.v1.TermFrame
+	(*QemuProtoStart)(nil),        // 18: nodal.agent.v1.QemuProtoStart
+	(*QemuProtoStop)(nil),         // 19: nodal.agent.v1.QemuProtoStop
+	(*QemuProtoStatus)(nil),       // 20: nodal.agent.v1.QemuProtoStatus
+	(*CTCreate)(nil),              // 21: nodal.agent.v1.CTCreate
+	(*CTLifecycle)(nil),           // 22: nodal.agent.v1.CTLifecycle
+	(*WorkloadHint)(nil),          // 23: nodal.agent.v1.WorkloadHint
+	(*Ping)(nil),                  // 24: nodal.agent.v1.Ping
+	(*CreateDirectoryPool)(nil),   // 25: nodal.agent.v1.CreateDirectoryPool
+	(*CreateDirectoryVolume)(nil), // 26: nodal.agent.v1.CreateDirectoryVolume
+	(*NetDryRun)(nil),             // 27: nodal.agent.v1.NetDryRun
+	(*NetApply)(nil),              // 28: nodal.agent.v1.NetApply
+	(*ExecuteResponse)(nil),       // 29: nodal.agent.v1.ExecuteResponse
+	(*UploadLibraryRequest)(nil),  // 30: nodal.agent.v1.UploadLibraryRequest
+	(*UploadLibraryBegin)(nil),    // 31: nodal.agent.v1.UploadLibraryBegin
+	(*UploadLibraryFinish)(nil),   // 32: nodal.agent.v1.UploadLibraryFinish
+	(*UploadLibraryResponse)(nil), // 33: nodal.agent.v1.UploadLibraryResponse
+	(*EnrollRequest)(nil),         // 34: nodal.agent.v1.EnrollRequest
+	(*EnrollResponse)(nil),        // 35: nodal.agent.v1.EnrollResponse
+	(*OpenSessionRequest)(nil),    // 36: nodal.agent.v1.OpenSessionRequest
+	(*OpenSessionResponse)(nil),   // 37: nodal.agent.v1.OpenSessionResponse
+	(*FilesOpRequest)(nil),        // 38: nodal.agent.v1.FilesOpRequest
+	(*FilesOpResponse)(nil),       // 39: nodal.agent.v1.FilesOpResponse
+	(*FilesPutRequest)(nil),       // 40: nodal.agent.v1.FilesPutRequest
+	(*FilesPutBegin)(nil),         // 41: nodal.agent.v1.FilesPutBegin
+	(*FilesPutFinish)(nil),        // 42: nodal.agent.v1.FilesPutFinish
+	(*FilesGetRequest)(nil),       // 43: nodal.agent.v1.FilesGetRequest
+	(*FilesGetResponse)(nil),      // 44: nodal.agent.v1.FilesGetResponse
+	(*TermFrame)(nil),             // 45: nodal.agent.v1.TermFrame
 }
 var file_nodal_agent_v1_agent_proto_depIdxs = []int32{
 	0,  // 0: nodal.agent.v1.HelloResponse.host_platform:type_name -> nodal.agent.v1.HostPlatform
 	3,  // 1: nodal.agent.v1.ObserveRequest.storage_pools:type_name -> nodal.agent.v1.StoragePoolHint
 	4,  // 2: nodal.agent.v1.ObserveRequest.networks:type_name -> nodal.agent.v1.NetworkHint
-	20, // 3: nodal.agent.v1.ObserveRequest.workloads:type_name -> nodal.agent.v1.WorkloadHint
-	20, // 4: nodal.agent.v1.GetWorkloadsRequest.workloads:type_name -> nodal.agent.v1.WorkloadHint
+	23, // 3: nodal.agent.v1.ObserveRequest.workloads:type_name -> nodal.agent.v1.WorkloadHint
+	23, // 4: nodal.agent.v1.GetWorkloadsRequest.workloads:type_name -> nodal.agent.v1.WorkloadHint
 	3,  // 5: nodal.agent.v1.GetStorageRequest.storage_pools:type_name -> nodal.agent.v1.StoragePoolHint
 	4,  // 6: nodal.agent.v1.GetNetworksRequest.networks:type_name -> nodal.agent.v1.NetworkHint
-	21, // 7: nodal.agent.v1.ExecuteRequest.ping:type_name -> nodal.agent.v1.Ping
-	22, // 8: nodal.agent.v1.ExecuteRequest.create_directory_pool:type_name -> nodal.agent.v1.CreateDirectoryPool
-	23, // 9: nodal.agent.v1.ExecuteRequest.create_directory_volume:type_name -> nodal.agent.v1.CreateDirectoryVolume
-	24, // 10: nodal.agent.v1.ExecuteRequest.net_dry_run:type_name -> nodal.agent.v1.NetDryRun
-	25, // 11: nodal.agent.v1.ExecuteRequest.net_apply:type_name -> nodal.agent.v1.NetApply
-	18, // 12: nodal.agent.v1.ExecuteRequest.ct_create:type_name -> nodal.agent.v1.CTCreate
-	19, // 13: nodal.agent.v1.ExecuteRequest.ct_lifecycle:type_name -> nodal.agent.v1.CTLifecycle
-	28, // 14: nodal.agent.v1.UploadLibraryRequest.begin:type_name -> nodal.agent.v1.UploadLibraryBegin
-	29, // 15: nodal.agent.v1.UploadLibraryRequest.finish:type_name -> nodal.agent.v1.UploadLibraryFinish
-	0,  // 16: nodal.agent.v1.EnrollResponse.host_platform:type_name -> nodal.agent.v1.HostPlatform
-	38, // 17: nodal.agent.v1.FilesPutRequest.begin:type_name -> nodal.agent.v1.FilesPutBegin
-	39, // 18: nodal.agent.v1.FilesPutRequest.finish:type_name -> nodal.agent.v1.FilesPutFinish
-	1,  // 19: nodal.agent.v1.AgentService.Hello:input_type -> nodal.agent.v1.HelloRequest
-	5,  // 20: nodal.agent.v1.AgentService.Observe:input_type -> nodal.agent.v1.ObserveRequest
-	17, // 21: nodal.agent.v1.AgentService.Execute:input_type -> nodal.agent.v1.ExecuteRequest
-	31, // 22: nodal.agent.v1.AgentService.Enroll:input_type -> nodal.agent.v1.EnrollRequest
-	33, // 23: nodal.agent.v1.AgentService.OpenSession:input_type -> nodal.agent.v1.OpenSessionRequest
-	9,  // 24: nodal.agent.v1.AgentService.GetInventory:input_type -> nodal.agent.v1.GetInventoryRequest
-	11, // 25: nodal.agent.v1.AgentService.GetMetrics:input_type -> nodal.agent.v1.GetMetricsRequest
-	13, // 26: nodal.agent.v1.AgentService.GetStorage:input_type -> nodal.agent.v1.GetStorageRequest
-	15, // 27: nodal.agent.v1.AgentService.GetNetworks:input_type -> nodal.agent.v1.GetNetworksRequest
-	7,  // 28: nodal.agent.v1.AgentService.GetWorkloads:input_type -> nodal.agent.v1.GetWorkloadsRequest
-	27, // 29: nodal.agent.v1.AgentService.UploadLibrary:input_type -> nodal.agent.v1.UploadLibraryRequest
-	35, // 30: nodal.agent.v1.AgentService.FilesOp:input_type -> nodal.agent.v1.FilesOpRequest
-	37, // 31: nodal.agent.v1.AgentService.FilesPut:input_type -> nodal.agent.v1.FilesPutRequest
-	40, // 32: nodal.agent.v1.AgentService.FilesGet:input_type -> nodal.agent.v1.FilesGetRequest
-	42, // 33: nodal.agent.v1.AgentService.AttachTerminal:input_type -> nodal.agent.v1.TermFrame
-	2,  // 34: nodal.agent.v1.AgentService.Hello:output_type -> nodal.agent.v1.HelloResponse
-	6,  // 35: nodal.agent.v1.AgentService.Observe:output_type -> nodal.agent.v1.ObserveResponse
-	26, // 36: nodal.agent.v1.AgentService.Execute:output_type -> nodal.agent.v1.ExecuteResponse
-	32, // 37: nodal.agent.v1.AgentService.Enroll:output_type -> nodal.agent.v1.EnrollResponse
-	34, // 38: nodal.agent.v1.AgentService.OpenSession:output_type -> nodal.agent.v1.OpenSessionResponse
-	10, // 39: nodal.agent.v1.AgentService.GetInventory:output_type -> nodal.agent.v1.GetInventoryResponse
-	12, // 40: nodal.agent.v1.AgentService.GetMetrics:output_type -> nodal.agent.v1.GetMetricsResponse
-	14, // 41: nodal.agent.v1.AgentService.GetStorage:output_type -> nodal.agent.v1.GetStorageResponse
-	16, // 42: nodal.agent.v1.AgentService.GetNetworks:output_type -> nodal.agent.v1.GetNetworksResponse
-	8,  // 43: nodal.agent.v1.AgentService.GetWorkloads:output_type -> nodal.agent.v1.GetWorkloadsResponse
-	30, // 44: nodal.agent.v1.AgentService.UploadLibrary:output_type -> nodal.agent.v1.UploadLibraryResponse
-	36, // 45: nodal.agent.v1.AgentService.FilesOp:output_type -> nodal.agent.v1.FilesOpResponse
-	36, // 46: nodal.agent.v1.AgentService.FilesPut:output_type -> nodal.agent.v1.FilesOpResponse
-	41, // 47: nodal.agent.v1.AgentService.FilesGet:output_type -> nodal.agent.v1.FilesGetResponse
-	42, // 48: nodal.agent.v1.AgentService.AttachTerminal:output_type -> nodal.agent.v1.TermFrame
-	34, // [34:49] is the sub-list for method output_type
-	19, // [19:34] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	24, // 7: nodal.agent.v1.ExecuteRequest.ping:type_name -> nodal.agent.v1.Ping
+	25, // 8: nodal.agent.v1.ExecuteRequest.create_directory_pool:type_name -> nodal.agent.v1.CreateDirectoryPool
+	26, // 9: nodal.agent.v1.ExecuteRequest.create_directory_volume:type_name -> nodal.agent.v1.CreateDirectoryVolume
+	27, // 10: nodal.agent.v1.ExecuteRequest.net_dry_run:type_name -> nodal.agent.v1.NetDryRun
+	28, // 11: nodal.agent.v1.ExecuteRequest.net_apply:type_name -> nodal.agent.v1.NetApply
+	21, // 12: nodal.agent.v1.ExecuteRequest.ct_create:type_name -> nodal.agent.v1.CTCreate
+	22, // 13: nodal.agent.v1.ExecuteRequest.ct_lifecycle:type_name -> nodal.agent.v1.CTLifecycle
+	18, // 14: nodal.agent.v1.ExecuteRequest.qemu_proto_start:type_name -> nodal.agent.v1.QemuProtoStart
+	19, // 15: nodal.agent.v1.ExecuteRequest.qemu_proto_stop:type_name -> nodal.agent.v1.QemuProtoStop
+	20, // 16: nodal.agent.v1.ExecuteRequest.qemu_proto_status:type_name -> nodal.agent.v1.QemuProtoStatus
+	31, // 17: nodal.agent.v1.UploadLibraryRequest.begin:type_name -> nodal.agent.v1.UploadLibraryBegin
+	32, // 18: nodal.agent.v1.UploadLibraryRequest.finish:type_name -> nodal.agent.v1.UploadLibraryFinish
+	0,  // 19: nodal.agent.v1.EnrollResponse.host_platform:type_name -> nodal.agent.v1.HostPlatform
+	41, // 20: nodal.agent.v1.FilesPutRequest.begin:type_name -> nodal.agent.v1.FilesPutBegin
+	42, // 21: nodal.agent.v1.FilesPutRequest.finish:type_name -> nodal.agent.v1.FilesPutFinish
+	1,  // 22: nodal.agent.v1.AgentService.Hello:input_type -> nodal.agent.v1.HelloRequest
+	5,  // 23: nodal.agent.v1.AgentService.Observe:input_type -> nodal.agent.v1.ObserveRequest
+	17, // 24: nodal.agent.v1.AgentService.Execute:input_type -> nodal.agent.v1.ExecuteRequest
+	34, // 25: nodal.agent.v1.AgentService.Enroll:input_type -> nodal.agent.v1.EnrollRequest
+	36, // 26: nodal.agent.v1.AgentService.OpenSession:input_type -> nodal.agent.v1.OpenSessionRequest
+	9,  // 27: nodal.agent.v1.AgentService.GetInventory:input_type -> nodal.agent.v1.GetInventoryRequest
+	11, // 28: nodal.agent.v1.AgentService.GetMetrics:input_type -> nodal.agent.v1.GetMetricsRequest
+	13, // 29: nodal.agent.v1.AgentService.GetStorage:input_type -> nodal.agent.v1.GetStorageRequest
+	15, // 30: nodal.agent.v1.AgentService.GetNetworks:input_type -> nodal.agent.v1.GetNetworksRequest
+	7,  // 31: nodal.agent.v1.AgentService.GetWorkloads:input_type -> nodal.agent.v1.GetWorkloadsRequest
+	30, // 32: nodal.agent.v1.AgentService.UploadLibrary:input_type -> nodal.agent.v1.UploadLibraryRequest
+	38, // 33: nodal.agent.v1.AgentService.FilesOp:input_type -> nodal.agent.v1.FilesOpRequest
+	40, // 34: nodal.agent.v1.AgentService.FilesPut:input_type -> nodal.agent.v1.FilesPutRequest
+	43, // 35: nodal.agent.v1.AgentService.FilesGet:input_type -> nodal.agent.v1.FilesGetRequest
+	45, // 36: nodal.agent.v1.AgentService.AttachTerminal:input_type -> nodal.agent.v1.TermFrame
+	2,  // 37: nodal.agent.v1.AgentService.Hello:output_type -> nodal.agent.v1.HelloResponse
+	6,  // 38: nodal.agent.v1.AgentService.Observe:output_type -> nodal.agent.v1.ObserveResponse
+	29, // 39: nodal.agent.v1.AgentService.Execute:output_type -> nodal.agent.v1.ExecuteResponse
+	35, // 40: nodal.agent.v1.AgentService.Enroll:output_type -> nodal.agent.v1.EnrollResponse
+	37, // 41: nodal.agent.v1.AgentService.OpenSession:output_type -> nodal.agent.v1.OpenSessionResponse
+	10, // 42: nodal.agent.v1.AgentService.GetInventory:output_type -> nodal.agent.v1.GetInventoryResponse
+	12, // 43: nodal.agent.v1.AgentService.GetMetrics:output_type -> nodal.agent.v1.GetMetricsResponse
+	14, // 44: nodal.agent.v1.AgentService.GetStorage:output_type -> nodal.agent.v1.GetStorageResponse
+	16, // 45: nodal.agent.v1.AgentService.GetNetworks:output_type -> nodal.agent.v1.GetNetworksResponse
+	8,  // 46: nodal.agent.v1.AgentService.GetWorkloads:output_type -> nodal.agent.v1.GetWorkloadsResponse
+	33, // 47: nodal.agent.v1.AgentService.UploadLibrary:output_type -> nodal.agent.v1.UploadLibraryResponse
+	39, // 48: nodal.agent.v1.AgentService.FilesOp:output_type -> nodal.agent.v1.FilesOpResponse
+	39, // 49: nodal.agent.v1.AgentService.FilesPut:output_type -> nodal.agent.v1.FilesOpResponse
+	44, // 50: nodal.agent.v1.AgentService.FilesGet:output_type -> nodal.agent.v1.FilesGetResponse
+	45, // 51: nodal.agent.v1.AgentService.AttachTerminal:output_type -> nodal.agent.v1.TermFrame
+	37, // [37:52] is the sub-list for method output_type
+	22, // [22:37] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_nodal_agent_v1_agent_proto_init() }
@@ -3354,13 +3634,16 @@ func file_nodal_agent_v1_agent_proto_init() {
 		(*ExecuteRequest_NetApply)(nil),
 		(*ExecuteRequest_CtCreate)(nil),
 		(*ExecuteRequest_CtLifecycle)(nil),
+		(*ExecuteRequest_QemuProtoStart)(nil),
+		(*ExecuteRequest_QemuProtoStop)(nil),
+		(*ExecuteRequest_QemuProtoStatus)(nil),
 	}
-	file_nodal_agent_v1_agent_proto_msgTypes[27].OneofWrappers = []any{
+	file_nodal_agent_v1_agent_proto_msgTypes[30].OneofWrappers = []any{
 		(*UploadLibraryRequest_Begin)(nil),
 		(*UploadLibraryRequest_Chunk)(nil),
 		(*UploadLibraryRequest_Finish)(nil),
 	}
-	file_nodal_agent_v1_agent_proto_msgTypes[37].OneofWrappers = []any{
+	file_nodal_agent_v1_agent_proto_msgTypes[40].OneofWrappers = []any{
 		(*FilesPutRequest_Begin)(nil),
 		(*FilesPutRequest_Chunk)(nil),
 		(*FilesPutRequest_Finish)(nil),
@@ -3371,7 +3654,7 @@ func file_nodal_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nodal_agent_v1_agent_proto_rawDesc), len(file_nodal_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   43,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

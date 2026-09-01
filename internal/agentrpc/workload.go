@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
 func (h *Handler) workloads() *lxc.Engine {
@@ -28,10 +29,29 @@ func decodeWorkloadHints(in []*agentv1.WorkloadHint) []lxc.Hint {
 }
 
 func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
-	obs, err := h.workloads().Observe(context.Background(), hints)
-	if err != nil {
-		return mustJSON(lxc.Observation{})
+	var ct []lxc.Hint
+	var vms []lxc.Observed
+	for _, hint := range hints {
+		if hint.Kind == qemu.KindVM {
+			obs := h.qemu().Observe(context.Background(), hint.WorkloadID)
+			vms = append(vms, lxc.Observed{
+				WorkloadID:      obs.WorkloadID,
+				Kind:            qemu.KindVM,
+				Status:          obs.Status,
+				Reason:          obs.Reason,
+				UnitActive:      obs.UnitActive,
+				MigrateReady:    false,
+				MigrateBlockers: []string{"QEMU live migrate is not implemented"},
+			})
+			continue
+		}
+		ct = append(ct, hint)
 	}
+	obs, err := h.workloads().Observe(context.Background(), ct)
+	if err != nil {
+		obs = lxc.Observation{}
+	}
+	obs.Workloads = append(obs.Workloads, vms...)
 	return mustJSON(obs)
 }
 

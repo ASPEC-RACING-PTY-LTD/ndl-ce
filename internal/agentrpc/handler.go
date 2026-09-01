@@ -17,6 +17,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/peercred"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"sync"
 )
@@ -35,6 +36,7 @@ type Handler struct {
 	Uploads    *storage.Uploads
 	Nets       *ndnet.Engine
 	Workloads  *lxc.Engine
+	QEMU       *qemu.Engine
 
 	mu         sync.Mutex
 	last       inventory.Inventory
@@ -146,6 +148,12 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execCTCreate(ctx, req.Msg.GetCtCreate())
 	case req.Msg.GetCtLifecycle() != nil:
 		return h.execCTLifecycle(ctx, req.Msg.GetCtLifecycle())
+	case req.Msg.GetQemuProtoStart() != nil:
+		return h.execQemuProtoStart(ctx, req.Msg.GetQemuProtoStart())
+	case req.Msg.GetQemuProtoStop() != nil:
+		return h.execQemuProtoStop(ctx, req.Msg.GetQemuProtoStop())
+	case req.Msg.GetQemuProtoStatus() != nil:
+		return h.execQemuProtoStatus(ctx, req.Msg.GetQemuProtoStatus())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

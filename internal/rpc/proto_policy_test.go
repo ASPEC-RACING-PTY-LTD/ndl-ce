@@ -50,6 +50,9 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"NetApply net_apply =",
 		"CTCreate ct_create =",
 		"CTLifecycle ct_lifecycle =",
+		"QemuProtoStart qemu_proto_start =",
+		"QemuProtoStop qemu_proto_stop =",
+		"QemuProtoStatus qemu_proto_status =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

@@ -138,7 +138,31 @@ message ExecuteRequest {
     NetApply net_apply = 14;
     CTCreate ct_create = 15;
     CTLifecycle ct_lifecycle = 16;
+    QemuProtoStart qemu_proto_start = 17;
+    QemuProtoStop qemu_proto_stop = 18;
+    QemuProtoStatus qemu_proto_status = 19;
   }
+}
+
+message QemuProtoStart {
+  string workload_id = 1;
+  string volume_id = 2;
+  string disk_path = 3;
+  string disk_format = 4;
+  int32 cpus = 5;
+  int64 memory_bytes = 6;
+  string machine = 7;
+  string accel = 8;
+  bool autostart = 9;
+}
+
+message QemuProtoStop {
+  string workload_id = 1;
+  bool force = 2;
+}
+
+message QemuProtoStatus {
+  string workload_id = 1;
 }
 
 message CTCreate {

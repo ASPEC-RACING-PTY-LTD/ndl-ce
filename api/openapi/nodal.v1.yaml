@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.5
-  description: Phase 6 northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, and Files.
+  version: 0.1.6
+  description: Phase 7 lab QEMU prototype plus Phase 6 northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, and Files.
 servers:
   - url: /api/v1
 paths:
@@ -1007,6 +1007,70 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileMutationResponse"
+  /lab/qemu-proto:
+    get:
+      operationId: getLabQemuProto
+      summary: Lab QEMU prototype status (admin only)
+      responses:
+        "200":
+          description: Status from store plus last-applied fields. Unit observation is Collecting or Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabQemuProtoResponse"
+        "403":
+          description: Forbidden
+        "404":
+          description: Not started
+    post:
+      operationId: startLabQemuProto
+      summary: Start the lab QEMU prototype (admin only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartLabQemuProtoRequest"
+      responses:
+        "200":
+          description: Reused existing qemu-proto workload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabQemuProtoResponse"
+        "201":
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabQemuProtoResponse"
+        "403":
+          description: Forbidden
+  /lab/qemu-proto/stop:
+    post:
+      operationId: stopLabQemuProto
+      summary: Gracefully stop the lab QEMU prototype (admin only)
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabQemuProtoResponse"
+        "403":
+          description: Forbidden
+  /lab/qemu-proto/kill:
+    post:
+      operationId: killLabQemuProto
+      summary: Stop the lab QEMU prototype. ForceStop is not available so this uses the same graceful stop.
+      responses:
+        "200":
+          description: Stopped using graceful StopQemuProto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabQemuProtoResponse"
+        "403":
+          description: Forbidden
 components:
   schemas:
     HealthResponse:
@@ -1763,3 +1827,96 @@ components:
           type: boolean
         path:
           type: string
+    StartLabQemuProtoRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        workload_id:
+          type: string
+        pool_id:
+          type: string
+        volume_id:
+          type: string
+        size_bytes:
+          type: integer
+        autostart:
+          type: boolean
+    LabQemuLastApplied:
+      type: object
+      additionalProperties: true
+      properties:
+        schema_version:
+          type: string
+        volume_id:
+          type: string
+        disk_path:
+          type: string
+        disk_format:
+          type: string
+        machine:
+          type: string
+        accel:
+          type: string
+        autostart:
+          type: boolean
+        memory_bytes:
+          type: integer
+        cpus:
+          type: integer
+    LabQemuProtoResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - name
+        - kind
+        - status
+        - unit
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        desired_power:
+          type: string
+        volume_id:
+          type: string
+        disk_path:
+          type: string
+        disk_format:
+          type: string
+        machine:
+          type: string
+        accel:
+          type: string
+        autostart:
+          type: boolean
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+        unit:
+          type: string
+        unit_status:
+          type: string
+        observe_status:
+          type: string
+        unit_active:
+          type: boolean
+        running_as:
+          type: string
+        qmp:
+          type: string
+        serial_socket:
+          type: string
+        vnc_socket:
+          type: string
+        qga_socket:
+          type: string
+        last_applied:
+          $ref: "#/components/schemas/LabQemuLastApplied"

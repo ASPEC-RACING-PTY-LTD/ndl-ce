@@ -31,3 +31,10 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Folder archive download was left for Phase 17.
 - LOW. VM Terminal and Files remain Phase 20 and return 422.
 - LOW. Docker Desktop overlay backing identity changes across host reboot, so Directory pools on this e2e guest can show unavailable. Real disk UUIDs are the product path.
+
+## Phase 7
+
+- MEDIUM. Shared `ndl-qemu` uid can rewrite sibling frozen argv. Why not blocking: the prototype owns one VM; Phase 8 isolation can add per-VM credentials.
+- LOW. PCI addresses are pinned at 0x5/0x6 in last-applied rather than from `query-pci`. Why not blocking: ABI is stable for the gate; live query can land with product VMs.
+- LOW. Host reboot is proven via `systemctl enable` of `nodal-vm@`, not a live guest reboot. Why not blocking: the unit is independent of CP/agent and enabled for `nodal-workloads.target`.
+- LOW. Adding other-execute on storage/workload parents uses a temporary root chown because the agent bounding set has no CAP_FOWNER. Why not blocking: CAP_CHOWN is already required; this does not add a new capability.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
 func main() {
@@ -27,13 +29,22 @@ func main() {
 		Ident:     identity.Files{Dir: dir},
 		Metrics:   ms,
 		Workloads: &lxc.Engine{DataDir: dir},
+		QEMU:      &qemu.Engine{DataDir: dir},
 	}
 	recoverStaleNetwork(dir)
 	go scrapeMetrics(ms)
 	go h.RefreshLoop(30 * time.Second)
+	go reattachQEMU(h.QEMU)
 	if err := agentrpc.Serve(h); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func reattachQEMU(eng *qemu.Engine) {
+	if eng == nil {
+		return
+	}
+	_ = eng.ReattachApplied(context.Background())
 }
 
 func recoverStaleNetwork(dataDir string) {

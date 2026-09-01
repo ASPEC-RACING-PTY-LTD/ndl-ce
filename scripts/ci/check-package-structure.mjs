@@ -25,6 +25,9 @@ const required = [
   "systemd/ndl-network-rollback.service",
   "systemd/ndl-dnsmasq@.service",
   "systemd/nodal-ct@.service",
+  "systemd/nodal-vm@.service",
+  "cmd/ndl-qemu-launch/main.go",
+  "packaging/apparmor/usr.bin.qemu-system-x86_64.local",
   "docs/install.md",
   "docs/uninstall.md",
   "docs/recovery.md",
@@ -46,6 +49,12 @@ const format = existsSync("packaging/debian/source/format")
 if (format !== "3.0 (native)") {
   errors.push("packaging/debian/source/format must be 3.0 (native)");
 }
+const changelog = existsSync("packaging/debian/changelog")
+  ? readFileSync("packaging/debian/changelog", "utf8")
+  : "";
+if (!changelog.includes("nodal (0.1.6)") || !changelog.includes("Phase 7 QEMU/QMP supervisory prototype")) {
+  errors.push("changelog must include nodal (0.1.6) Phase 7 QEMU/QMP supervisory prototype");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")
@@ -66,11 +75,17 @@ const dependLines = control
   .split(/\r?\n/)
   .filter((line) => /^\s*Depends:/.test(line))
   .join("\n");
-if (/nvidia|cuda|kubernetes|kubeadm|kubelet|zfs-dkms|zfsutils|ceph|ollama|vllm|qemu-system|lvm2|nfs-kernel-server|samba/i.test(dependLines)) {
-  errors.push("Depends must not include GPU, Kubernetes, ZFS, LVM, NFS/SMB servers, QEMU system, or AI");
+if (/nvidia|cuda|kubernetes|kubeadm|kubelet|zfs-dkms|zfsutils|ceph|ollama|vllm|lvm2|nfs-kernel-server|samba/i.test(dependLines)) {
+  errors.push("Depends must not include GPU, Kubernetes, ZFS, LVM, NFS/SMB servers, or AI");
+}
+if (/libvirt/i.test(control)) {
+  errors.push("Depends must not include libvirt");
 }
 if (!/^Package: ndl-agent[\s\S]*?qemu-utils/m.test(control)) {
   errors.push("ndl-agent must Depend on qemu-utils for offline qemu-img");
+}
+if (!/^Package: ndl-agent[\s\S]*?qemu-system-x86/m.test(control)) {
+  errors.push("ndl-agent must Depend on qemu-system-x86");
 }
 if (!/^Package: ndl-agent[\s\S]*?dnsmasq-base/m.test(control)) {
   errors.push("ndl-agent must Depend on dnsmasq-base, not the system-wide dnsmasq daemon");
@@ -99,6 +114,9 @@ const proto = existsSync("proto/nodal/agent/v1/agent.proto")
   : "";
 if (/rpc\s+(HostExec|ExecHost|Exec)\s*\(/.test(proto)) {
   errors.push("agent proto must not define a generic exec RPC");
+}
+if (/Host\.Exec/.test(proto)) {
+  errors.push("agent proto must not define Host.Exec");
 }
 
 const controlUnit = existsSync("systemd/ndl-control.service")
@@ -132,6 +150,9 @@ if (!agentUnit.includes("DevicePolicy=closed")) {
 if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SYS_ADMIN\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must use the Phase 6 typed capability set");
 }
+if (/qemu-system|ndl-qemu-launch/.test(agentUnit)) {
+  errors.push("ndl-agent.service must not parent QEMU");
+}
 if (!/DeviceAllow=char-pts rw/.test(agentUnit) || !/DeviceAllow=\/dev\/ptmx rw/.test(agentUnit)) {
   errors.push("ndl-agent.service must allow PTY devices");
 }
@@ -141,11 +162,35 @@ const agentInstall = existsSync("packaging/debian/ndl-agent.install")
 if (!agentInstall.includes("nodal-ct@.service")) {
   errors.push("ndl-agent.install must install nodal-ct@.service");
 }
+if (!agentInstall.includes("usr/sbin/ndl-qemu-launch")) {
+  errors.push("ndl-agent.install must install usr/sbin/ndl-qemu-launch");
+}
+if (!agentInstall.includes("nodal-vm@.service")) {
+  errors.push("ndl-agent.install must install nodal-vm@.service");
+}
+if (!agentInstall.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
+  errors.push("ndl-agent.install must install the QEMU AppArmor local profile");
+}
 const rules = existsSync("packaging/debian/rules")
   ? readFileSync("packaging/debian/rules", "utf8")
   : "";
 if (!rules.includes("nodal-ct@.service")) {
   errors.push("debian/rules must install nodal-ct@.service");
+}
+if (!rules.includes("./cmd/ndl-qemu-launch")) {
+  errors.push("debian/rules must build ndl-qemu-launch");
+}
+if (!rules.includes("usr/sbin/ndl-qemu-launch")) {
+  errors.push("debian/rules must install ndl-qemu-launch to usr/sbin/ndl-qemu-launch");
+}
+if (!rules.includes("nodal-vm@.service")) {
+  errors.push("debian/rules must install nodal-vm@.service");
+}
+if (!rules.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
+  errors.push("debian/rules must install the QEMU AppArmor local profile");
+}
+if (/libvirt/i.test(rules) || /libvirt/i.test(agentInstall)) {
+  errors.push("packaging must not use libvirt");
 }
 const ctUnit = existsSync("systemd/nodal-ct@.service")
   ? readFileSync("systemd/nodal-ct@.service", "utf8")
@@ -156,11 +201,41 @@ if (!/Type=simple/.test(ctUnit) || !/lxc-start[^\n]* -F/.test(ctUnit)) {
 if (/^Type=forking/m.test(ctUnit) || /^ExecStart=.*lxc-start.* -d/m.test(ctUnit)) {
   errors.push("nodal-ct@.service must not use Type=forking or lxc-start -d");
 }
+const vmUnit = existsSync("systemd/nodal-vm@.service")
+  ? readFileSync("systemd/nodal-vm@.service", "utf8")
+  : "";
+if (!vmUnit.includes("User=ndl-qemu")) {
+  errors.push("nodal-vm@.service must set User=ndl-qemu");
+}
+if (!vmUnit.includes("ExecStart=/usr/sbin/ndl-qemu-launch")) {
+  errors.push("nodal-vm@.service must start ndl-qemu-launch");
+}
+if (/libvirt/i.test(vmUnit)) {
+  errors.push("nodal-vm@.service must not use libvirt");
+}
 const postinst = existsSync("packaging/debian/ndl-agent.postinst")
   ? readFileSync("packaging/debian/ndl-agent.postinst", "utf8")
   : "";
 if (!postinst.includes("lxc-net.service")) {
   errors.push("ndl-agent.postinst must mask lxc-net.service");
+}
+if (!/adduser[^\n]*ndl-qemu|useradd[^\n]*ndl-qemu/.test(postinst)) {
+  errors.push("ndl-agent.postinst must create system user ndl-qemu");
+}
+if (!postinst.includes("/var/lib/ndl/runtime/qemu")) {
+  errors.push("ndl-agent.postinst must set ndl-qemu home to /var/lib/ndl/runtime/qemu");
+}
+if (!/nologin/.test(postinst) || !postinst.includes("ndl-qemu")) {
+  errors.push("ndl-agent.postinst must create ndl-qemu with no shell");
+}
+if (!/getent group kvm/.test(postinst) || !/adduser ndl-qemu kvm|usermod[^\n]*kvm/.test(postinst)) {
+  errors.push("ndl-agent.postinst must add ndl-qemu to kvm when that group exists");
+}
+if (/systemctl\s+enable --now[^\n]*nodal-vm@|systemctl\s+start[^\n]*nodal-vm@/.test(postinst)) {
+  errors.push("ndl-agent.postinst must not start a VM");
+}
+if (/libvirt/i.test(postinst)) {
+  errors.push("ndl-agent.postinst must not use libvirt");
 }
 if (/^RuntimeDirectory=ndl\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl");
@@ -191,6 +266,9 @@ if (existsSync(unitDir)) {
     }
     if (name.startsWith("nodal-") && /Requires=ndl-(control|agent)\.service/.test(unit)) {
       errors.push(`${name} must not Require the control plane or agent`);
+    }
+    if (/libvirt/i.test(unit)) {
+      errors.push(`${name} must not use libvirt`);
     }
   }
 }

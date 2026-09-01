@@ -1,0 +1,4 @@
+# No-dal Phase 7 QEMU sockets and VolumeHandle disks.
+/var/lib/ndl/runtime/qemu/** rw,
+/var/lib/ndl/workloads/** r,
+/var/lib/ndl/storage/** rwk,
