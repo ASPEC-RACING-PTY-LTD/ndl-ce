@@ -96,7 +96,7 @@ func EvaluateUpdate(p Platform, req UpdateRequest) UpdateResult {
 		Status:   "unsupported",
 		Packages: unsupportedPackages(),
 	}
-	if !Debian13Amd64(p) {
+	if !Lookup(p).Qualified() {
 		res.Reason = UpdateUnsupportedReason
 		res.Items = unsupportedItems()
 		res.Checks = unsupportedChecks()

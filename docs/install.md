@@ -1,11 +1,20 @@
 # Install No-dal
 
-Phase 1 supports Debian 13 amd64 only. Fedora, Ubuntu, and other
-hosts are refused and install nothing.
+Phase 29 still qualifies **Debian 13 amd64** as the only Tier 1 host.
+Ubuntu LTS is detected and refused. Qualification gaps (Netplan versus
+systemd-networkd, packaging, DKMS) are documented. Do not treat Ubuntu
+as supported until those tests pass.
 
-Both paths below install the same `nodal` metapackage
+Host OS, VM guest OS, system-container distribution, and OCI image are
+different objects. This page is the **host** install.
+
+The three host install paths install the same `nodal` metapackage
 (`ndl-control`, `ndl-agent`, `ndl-ui`, `nodalctl`), start the same
 units, and finish at the same `/setup` page.
+
+- Path A: existing Debian 13 amd64, add the signed repo, `apt-get install -y nodal`.
+- Path B: one-line bootstrap below.
+- Path C: Debian installer ISO in `packaging/iso`, same metapackage after reboot.
 
 ## One-line bootstrap
 

@@ -200,5 +200,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: host platform compatibility and installer remain Phase 29; cluster join remains Phase 30; live two-box appliance job
 - Audit follow-up: SkipHostCmds and missing handshake never invent Ready; worker_private_key and pairing_token are shown once and never stored in list JSON
 
+## Phase 29
+
+- Package: 0.1.28
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (hostos Adapter lookup, fake adapter, Ubuntu adapter refuses Debian networkd rewrite, Ubuntu still cannot enroll, ISO mkosi.conf wraps Debian 13 nodal metapackage, bootstrap remains Debian-only). FIXTURE: os-release fixtures plus mkosi.conf. NOT PHYSICALLY VALIDATED: mkosi ISO boot in a VM; Ubuntu LTS one-line install
+- Follow-up: cluster join remains Phase 30; live ISO boot appliance job; Ubuntu qualification remains a dedicated runner
+- Audit follow-up: Ubuntu is not claimed as Tier 1; qualification gaps are listed; Netplan is not dual-written on Debian
+
 
 

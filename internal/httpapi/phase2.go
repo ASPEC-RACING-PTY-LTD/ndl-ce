@@ -293,9 +293,24 @@ func (s *Server) cachedNode(r *http.Request, clusterID string) (*appdb.Node, *ap
 
 func (s *Server) nodeSummary(node *appdb.Node, inv *appdb.HardwareInventory, redact bool) map[string]any {
 	out := map[string]any{
-		"id":     node.ID,
-		"name":   node.Name,
-		"status": "unknown",
+		"id":           node.ID,
+		"name":         node.Name,
+		"status":       "unknown",
+		"support_tier": "unknown",
+	}
+	if len(node.HostPlatform) > 0 {
+		var hp struct {
+			SupportTier string `json:"support_tier"`
+			ID          string `json:"id"`
+		}
+		if json.Unmarshal(node.HostPlatform, &hp) == nil {
+			if hp.SupportTier != "" {
+				out["support_tier"] = hp.SupportTier
+			}
+			if hp.ID != "" {
+				out["host_platform"] = hp.ID
+			}
+		}
 	}
 	if parsed, ok := decodeInv(inv); ok {
 		if redact {

@@ -167,6 +167,10 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
             <dd>{node.host_os || "Not reported"}</dd>
           </div>
           <div>
+            <dt>Support tier</dt>
+            <dd>{node.support_tier || "Not reported"}</dd>
+          </div>
+          <div>
             <dt>CPU</dt>
             <dd>{node.cpu_model || "Not reported"}</dd>
           </div>

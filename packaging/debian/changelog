@@ -1,3 +1,9 @@
+nodal (0.1.28) UNRELEASED; urgency=medium
+
+  * Phase 29 host platform compatibility: formal adapter interface, Ubuntu LTS remains unqualified, Debian installer ISO wraps the same nodal metapackage
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.27) UNRELEASED; urgency=medium
 
   * Phase 28 WireGuard and remote nodes: systemd-networkd WireGuard, OpenSession dial-out, tunnel down marks NotReady while guests keep running, cluster join remains Phase 30

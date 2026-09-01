@@ -74,6 +74,8 @@ export interface NodeSummary {
   id: string;
   name: string;
   status: string;
+  support_tier?: string;
+  host_platform?: string;
   stale?: boolean;
   observed_at?: string;
   host_os?: string;

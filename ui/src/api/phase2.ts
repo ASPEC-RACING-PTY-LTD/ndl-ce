@@ -12,6 +12,8 @@ export type NodeSummary = {
   stale?: boolean;
   observed_at?: string;
   host_os?: string;
+  support_tier?: string;
+  host_platform?: string;
   host_id?: string;
   host_version_id?: string;
   cpu_model?: string;

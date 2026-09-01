@@ -191,6 +191,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Remote Execute over the tunnel is recorded as listen_addr and TCP dial exists, but workload APIs still use the local unix agent. Why not blocking: roadmap join and scheduling remain Phase 30; heartbeat plus NotReady is the Phase 28 acceptance.
 - LOW. Pairing tokens are pre-join secrets, not cluster join tokens. Why not blocking: join tokens stay empty until Phase 30.
 
+## Phase 29
+
+- MEDIUM. The Debian installer ISO is config-only in this Cloud job and is not booted. Why not blocking: mkosi.conf pins Debian 13 and the nodal metapackage; a spare PC boot is the intended live job.
+- LOW. Ubuntu LTS is not Tier 1. Why not blocking: the roadmap allows documenting qualification gaps instead of faking support. Netplan dual-write, packaging, and DKMS remain the blockers.
+
 
 
 

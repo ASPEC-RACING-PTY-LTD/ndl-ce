@@ -42,8 +42,22 @@ for (const rel of required) {
   if (!existsSync(rel)) errors.push(`missing ${rel}`);
 }
 
-if (existsSync("internal/hostos/ubuntu") || existsSync("packaging/ubuntu")) {
-  errors.push("Ubuntu host adapter must not exist yet");
+if (existsSync("packaging/ubuntu")) {
+  errors.push("Ubuntu packaging tree must not exist until Ubuntu is qualified");
+}
+if (existsSync("internal/hostos/ubuntu")) {
+  const ubuntuGo = readFileSync("internal/hostos/ubuntu/ubuntu.go", "utf8");
+  if (!ubuntuGo.includes("QualificationGaps") || !/not a qualified/i.test(ubuntuGo)) {
+    errors.push("Ubuntu adapter must document qualification gaps and stay unqualified");
+  }
+}
+if (!existsSync("packaging/iso/mkosi.conf")) {
+  errors.push("missing packaging/iso/mkosi.conf Debian installer ISO contract");
+} else {
+  const iso = readFileSync("packaging/iso/mkosi.conf", "utf8");
+  if (!iso.includes("Distribution=debian") || !iso.includes("Packages=nodal")) {
+    errors.push("ISO must wrap Debian 13 and the nodal metapackage");
+  }
 }
 
 const format = existsSync("packaging/debian/source/format")
@@ -114,6 +128,9 @@ if (!changelog.includes("nodal (0.1.26)") || !changelog.includes("Phase 27 advan
 }
 if (!changelog.includes("nodal (0.1.27)") || !changelog.includes("Phase 28 WireGuard")) {
   errors.push("changelog must include nodal (0.1.27) Phase 28 WireGuard");
+}
+if (!changelog.includes("nodal (0.1.28)") || !changelog.includes("Phase 29 host platform")) {
+  errors.push("changelog must include nodal (0.1.28) Phase 29 host platform");
 }
 
 const control = existsSync("packaging/debian/control")
