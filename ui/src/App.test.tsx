@@ -503,7 +503,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^updates$/i })).toBeVisible();
-    expect(await screen.findByText(/Unsupported/i)).toBeVisible();
+    expect(await screen.findByText(/Unsupported\./i)).toBeVisible();
     expect(screen.getByText(/Host platform is not Debian 13 amd64\./i)).toBeVisible();
     expect(screen.getByText(/will not pretend an upgrade succeeded/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();

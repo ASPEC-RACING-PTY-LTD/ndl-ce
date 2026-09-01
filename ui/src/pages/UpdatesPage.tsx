@@ -351,8 +351,8 @@ export function UpdatesPage() {
               </p>
             ) : !hostSupported ? (
               <p className="muted">
-                Actions stay disabled while the host is Unsupported. Check, apply, and rollback will
-                not be treated as successful.
+                Actions stay disabled while this host does not support platform updates. Check,
+                apply, and rollback will not be treated as successful.
               </p>
             ) : (
               <p className="muted">
