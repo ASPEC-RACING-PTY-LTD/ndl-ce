@@ -15,6 +15,7 @@ import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
 import { VmCreatePage } from "./pages/VmCreatePage";
 import { ConsolePage } from "./pages/ConsolePage";
+import { CertificatePage } from "./pages/CertificatePage";
 import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
@@ -110,6 +111,8 @@ function AppRoutes() {
     page = <WorkloadsPage />;
   } else if (path === "/node" || path.startsWith("/node/")) {
     page = <NodePage />;
+  } else if (path === "/settings/certificates") {
+    page = <CertificatePage />;
   }
 
   return <Shell>{page}</Shell>;

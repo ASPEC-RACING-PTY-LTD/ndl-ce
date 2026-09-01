@@ -401,6 +401,40 @@ export interface LabQemuProtoResponse {
   last_applied?: LabQemuLastApplied;
 }
 
+export interface CertificateStatus {
+  enabled: boolean;
+  mode: "self_signed" | "imported" | "acme" | "";
+  common_name: string;
+  sans: string[];
+  fingerprint: string;
+  not_before?: string;
+  not_after?: string;
+  acme_directory?: string;
+  acme_email?: string;
+  acme_status: "not_configured" | "pending" | "issued" | "failed";
+  next_renewal_at?: string;
+  tls_listen?: string;
+  http_listen?: string;
+  https_url?: string;
+  trust_note?: string;
+}
+
+export interface GenerateCertRequest {
+  common_name: string;
+  sans: string[];
+}
+
+export interface ImportCertRequest {
+  cert_pem: string;
+  key_pem: string;
+}
+
+export interface AcmeCertRequest {
+  directory: string;
+  email: string;
+  domain: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -512,3 +546,11 @@ export type GetLabQemuProtoPath = "/api/v1/lab/qemu-proto";
 export type StopLabQemuProtoPath = "/api/v1/lab/qemu-proto/stop";
 
 export type KillLabQemuProtoPath = "/api/v1/lab/qemu-proto/kill";
+
+export type GetCertsPath = "/api/v1/certs";
+
+export type GenerateCertPath = "/api/v1/certs/generate";
+
+export type ImportCertPath = "/api/v1/certs/import";
+
+export type AcmeCertPath = "/api/v1/certs/acme";

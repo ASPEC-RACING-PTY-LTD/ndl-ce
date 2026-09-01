@@ -356,4 +356,31 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /console/i })).toBeVisible();
     expect(screen.getByText(/no-dal guest agent required/i)).toBeVisible();
   });
+
+  it("renders the certificates settings page for admin", async () => {
+    window.history.replaceState({}, "", "/settings/certificates");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/certs": {
+        status: 200,
+        body: {
+          enabled: false,
+          mode: "",
+          common_name: "",
+          sans: [],
+          fingerprint: "",
+          acme_status: "not_configured",
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^certificates$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^certificates$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^status$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /generate self-signed/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /download.*key/i })).not.toBeInTheDocument();
+  });
 });

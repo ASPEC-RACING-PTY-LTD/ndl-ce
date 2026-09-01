@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.7
-  description: Phase 8 product VMs plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, and virtual machines.
+  version: 0.1.8
+  description: Phase 9 HTTPS certificates plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, virtual machines, and TLS settings.
 servers:
   - url: /api/v1
 paths:
@@ -1111,6 +1111,106 @@ paths:
                 $ref: "#/components/schemas/LabQemuProtoResponse"
         "403":
           description: Forbidden
+  /certs:
+    get:
+      operationId: getCerts
+      summary: TLS certificate status for the management plane
+      responses:
+        "200":
+          description: Current certificate status. Private keys are never included.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+  /certs/generate:
+    post:
+      operationId: generateCert
+      summary: Generate a self-signed management certificate
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - enable-tls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateCertRequest"
+      responses:
+        "200":
+          description: Generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /certs/import:
+    post:
+      operationId: importCert
+      summary: Import a PEM certificate and private key for the management plane
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - enable-tls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportCertRequest"
+      responses:
+        "200":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /certs/acme:
+    post:
+      operationId: acmeCert
+      summary: Configure ACME for the management certificate
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - enable-tls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcmeCertRequest"
+      responses:
+        "200":
+          description: ACME configuration accepted. Status may be pending or failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
 components:
   schemas:
     HealthResponse:
@@ -1985,3 +2085,95 @@ components:
           type: string
         last_applied:
           $ref: "#/components/schemas/LabQemuLastApplied"
+    CertificateStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - mode
+        - common_name
+        - sans
+        - fingerprint
+        - acme_status
+      properties:
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum:
+            - self_signed
+            - imported
+            - acme
+            - ""
+        common_name:
+          type: string
+        sans:
+          type: array
+          items:
+            type: string
+        fingerprint:
+          type: string
+        not_before:
+          type: string
+        not_after:
+          type: string
+        acme_directory:
+          type: string
+        acme_email:
+          type: string
+        acme_status:
+          type: string
+          enum:
+            - not_configured
+            - pending
+            - issued
+            - failed
+        next_renewal_at:
+          type: string
+        tls_listen:
+          type: string
+        http_listen:
+          type: string
+        https_url:
+          type: string
+        trust_note:
+          type: string
+    GenerateCertRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - common_name
+        - sans
+      properties:
+        common_name:
+          type: string
+        sans:
+          type: array
+          items:
+            type: string
+    ImportCertRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - cert_pem
+        - key_pem
+      properties:
+        cert_pem:
+          type: string
+        key_pem:
+          type: string
+    AcmeCertRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - directory
+        - email
+        - domain
+      properties:
+        directory:
+          type: string
+        email:
+          type: string
+        domain:
+          type: string
+

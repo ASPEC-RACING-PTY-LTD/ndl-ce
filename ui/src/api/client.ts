@@ -425,3 +425,52 @@ export async function workloadAction(
     }),
   );
 }
+
+export async function getCerts(): Promise<import("../generated/openapi").CertificateStatus> {
+  return readJson(await request("/certs"));
+}
+
+export async function generateCert(
+  body: import("../generated/openapi").GenerateCertRequest,
+  confirm = "enable-tls",
+): Promise<import("../generated/openapi").CertificateStatus> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request("/certs/generate", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function importCert(
+  body: import("../generated/openapi").ImportCertRequest,
+  confirm = "enable-tls",
+): Promise<import("../generated/openapi").CertificateStatus> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request("/certs/import", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function acmeCert(
+  body: import("../generated/openapi").AcmeCertRequest,
+  confirm = "enable-tls",
+): Promise<import("../generated/openapi").CertificateStatus> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request("/certs/acme", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+  );
+}

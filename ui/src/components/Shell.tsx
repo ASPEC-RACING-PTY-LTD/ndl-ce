@@ -75,6 +75,12 @@ export function Shell({ children }: ShellProps) {
           <Link href="/me" aria-current={path === "/me" ? "page" : undefined}>
             Account
           </Link>
+          <Link
+            href="/settings/certificates"
+            aria-current={path === "/settings/certificates" ? "page" : undefined}
+          >
+            Certificates
+          </Link>
         </nav>
         <div className="shell-session">
           {user ? (
