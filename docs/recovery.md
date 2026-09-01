@@ -139,8 +139,31 @@ storage backend.
 6. Restore `replace` without confirm is refused.
 7. An NFS locator that is not a local directory remains unavailable. That is not a successful backup.
 
-15. Unavailable storage refuses start and records an honest unavailable status.
-16. qemu-img against a live attached disk is refused.
-17. Failed prepare cleans TAP devices that No-dal can prove belong to that VM.
-18. Expired or unauthorized console tickets are refused.
+## Platform updates (Phase 12)
+
+Control-plane package updates use the signed No-dal Debian repository that
+install used. They do not use a one-off script. Split packages mean
+`ndl-control` can restart without `BindsTo` on `nodal-vm@` units, so guests
+keep running.
+
+On a host that is not Debian 13 amd64 the Update API reports Unsupported
+and does not pretend apt succeeded. Check is always a dry run. Apply and
+rollback require `X-Nodal-Confirm`. Checkpoint writes `/var/lib/ndl` plus
+a PostgreSQL dump when the Debian adapter can run those typed argv lists.
+
+Kernel rollback is GRUB previous-entry (`grub-reboot 1`), not a QEMU guest
+action. Store app compatibility is not implemented (Phase 36).
+
+`nodalctl update check` and `nodalctl update apply --confirm apply-update`
+are the CLI paths.
+
+### Recovery matrix (platform update)
+
+1. Confirm `nodal-vm@` has no BindsTo/PartOf on ndl-control or ndl-agent.
+2. Apply a control-plane package bump from the signed repo.
+3. Guests stay running. ndl-control may restart.
+4. Roll back the `ndl-control` package to the recorded previous version.
+5. After a kernel package update, use GRUB previous-kernel (`grub-reboot 1`) then reboot the host if the new kernel is unusable.
+6. Homelab Migration Candidate requires Phases 9 through 12 on Debian 13 hardware. Cloud fixture coverage is not that gate.
+
 

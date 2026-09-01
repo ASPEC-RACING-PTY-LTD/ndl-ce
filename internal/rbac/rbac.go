@@ -40,6 +40,7 @@ const (
 	BackupRead          = "backup.read"
 	BackupCreate        = "backup.create"
 	BackupRestore       = "backup.restore"
+	NodeUpdate          = "node.update"
 	TerminalOpen        = "terminal.open"
 	FilesRead           = "files.read"
 	FilesDownload       = "files.download"
@@ -73,7 +74,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
 			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot,
-			BackupRead, BackupCreate, BackupRestore,
+			BackupRead, BackupCreate, BackupRestore, NodeUpdate,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
 			SettingsTLSRead,
 		}

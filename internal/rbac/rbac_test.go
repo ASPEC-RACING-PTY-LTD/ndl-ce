@@ -76,4 +76,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, BackupRead) || !Authorize(op, BackupCreate) || !Authorize(op, BackupRestore) {
 		t.Fatal("operator backup run and restore")
 	}
+	if !Authorize(op, NodeUpdate) || Authorize(view, NodeUpdate) {
+		t.Fatal("operator may update the node; viewer may not")
+	}
 }

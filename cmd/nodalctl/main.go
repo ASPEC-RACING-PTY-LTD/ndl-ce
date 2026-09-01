@@ -71,6 +71,11 @@ func run(args []string) error {
   snapshot rollback --id ID --confirm rollback
   backup run --workload ID --target ID [--policy ID]
   backup restore --artifact ID --mode new|replace [--confirm restore]
+  update check
+  update apply --confirm apply-update
+  update preflight
+  update checkpoint
+  update rollback --confirm rollback-update
 `)
 		return nil
 	}
@@ -129,6 +134,8 @@ func run(args []string) error {
 		return cmdSnapshot(args[1:])
 	case "backup":
 		return cmdBackup(args[1:])
+	case "update":
+		return cmdUpdate(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -744,6 +751,40 @@ func cmdBackup(args []string) error {
 		return postJSON("/api/v1/backups/artifacts/"+f["artifact"]+"/restore", map[string]any{"mode": f["mode"]}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl backup run|restore")
+	}
+}
+
+func cmdUpdate(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: nodalctl update check|apply|preflight|checkpoint|rollback")
+	}
+	switch args[0] {
+	case "check":
+		return postJSON("/api/v1/updates/check", map[string]any{}, true)
+	case "preflight":
+		return postJSON("/api/v1/updates/preflight", map[string]any{}, true)
+	case "checkpoint":
+		return postJSON("/api/v1/updates/checkpoint", map[string]any{}, true)
+	case "apply":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		if os.Getenv("NODAL_CONFIRM") == "" {
+			return fmt.Errorf("usage: nodalctl update apply --confirm apply-update")
+		}
+		return postJSON("/api/v1/updates/apply", map[string]any{}, true)
+	case "rollback":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		if os.Getenv("NODAL_CONFIRM") == "" {
+			return fmt.Errorf("usage: nodalctl update rollback --confirm rollback-update")
+		}
+		return postJSON("/api/v1/updates/rollback", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl update check|apply|preflight|checkpoint|rollback")
 	}
 }
 

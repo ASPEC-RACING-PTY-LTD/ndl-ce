@@ -26,17 +26,18 @@ const version = "0.1.0"
 
 // Handler is the typed agent service.
 type Handler struct {
-	Ident      identity.Files
-	AllowedUID uint32
-	Lookup     func() (hostos.Platform, error)
-	Peer       func(ctx context.Context) (peercred.Creds, error)
-	Collect    func() inventory.Inventory
-	Metrics    *metrics.Store
-	Storage    *storage.Directory
-	Uploads    *storage.Uploads
-	Nets       *ndnet.Engine
-	Workloads  *lxc.Engine
-	QEMU       *qemu.Engine
+	Ident        identity.Files
+	AllowedUID   uint32
+	Lookup       func() (hostos.Platform, error)
+	Peer         func(ctx context.Context) (peercred.Creds, error)
+	Collect      func() inventory.Inventory
+	Metrics      *metrics.Store
+	Storage      *storage.Directory
+	Uploads      *storage.Uploads
+	Nets         *ndnet.Engine
+	Workloads    *lxc.Engine
+	QEMU         *qemu.Engine
+	SkipHostCmds bool
 
 	mu         sync.Mutex
 	last       inventory.Inventory
@@ -164,6 +165,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execVMSnapshot(ctx, req.Msg.GetVmSnapshot())
 	case req.Msg.GetBackupCopy() != nil:
 		return h.execBackupCopy(ctx, req.Msg.GetBackupCopy())
+	case req.Msg.GetHostUpdate() != nil:
+		return h.execHostUpdate(ctx, req.Msg.GetHostUpdate())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

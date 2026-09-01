@@ -54,6 +54,7 @@ type Server struct {
 	QEMU        QemuRPC
 	VM          VMRPC
 	Backup      BackupRPC
+	Update      UpdateRPC
 	Hub         *EventHub
 	UI          fs.FS
 	Now         func() time.Time
@@ -169,6 +170,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/certs/generate", s.generateCert)
 	mux.HandleFunc("POST /api/v1/certs/import", s.importCert)
 	mux.HandleFunc("POST /api/v1/certs/acme", s.acmeCert)
+	mux.HandleFunc("GET /api/v1/updates", s.getUpdates)
+	mux.HandleFunc("POST /api/v1/updates/check", s.checkUpdates)
+	mux.HandleFunc("POST /api/v1/updates/preflight", s.preflightUpdates)
+	mux.HandleFunc("POST /api/v1/updates/checkpoint", s.checkpointUpdates)
+	mux.HandleFunc("POST /api/v1/updates/apply", s.applyUpdates)
+	mux.HandleFunc("POST /api/v1/updates/rollback", s.rollbackUpdates)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

@@ -152,7 +152,17 @@ message ExecuteRequest {
     VMQueryPCI vm_query_pci = 22;
     VMSnapshot vm_snapshot = 23;
     BackupCopy backup_copy = 24;
+    HostUpdate host_update = 25;
   }
+}
+
+message HostUpdate {
+  string action = 1;
+  string channel = 2;
+  string package_name = 3;
+  string version = 4;
+  bool dry_run = 5;
+  string checkpoint_id = 6;
 }
 
 message BackupCopy {

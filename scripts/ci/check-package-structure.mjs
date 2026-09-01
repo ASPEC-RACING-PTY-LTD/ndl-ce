@@ -61,6 +61,9 @@ if (!changelog.includes("nodal (0.1.7)") || !changelog.includes("Phase 8 product
 if (!changelog.includes("nodal (0.1.10)") || !changelog.includes("Phase 11 backup engine")) {
   errors.push("changelog must include nodal (0.1.10) Phase 11 backup engine");
 }
+if (!changelog.includes("nodal (0.1.11)") || !changelog.includes("Phase 12 platform updates")) {
+  errors.push("changelog must include nodal (0.1.11) Phase 12 platform updates");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

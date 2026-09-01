@@ -42,6 +42,7 @@ type Memory struct {
 	backupPolicies  map[string]BackupPolicy
 	backupRuns      map[string]BackupRun
 	backupArtifacts map[string]BackupArtifact
+	updateOps       map[string]UpdateOperation
 }
 
 // NewMemory returns an empty store.

@@ -136,6 +136,11 @@ type Store interface {
 	ListBackupArtifactsForWorkload(ctx context.Context, clusterID, workloadID, targetID string) ([]BackupArtifact, error)
 	GetBackupArtifact(ctx context.Context, clusterID, id string) (*BackupArtifact, error)
 	DeleteBackupArtifact(ctx context.Context, clusterID, id string) error
+
+	CreateUpdateOperation(ctx context.Context, op UpdateOperation) error
+	ListUpdateOperations(ctx context.Context, clusterID string, limit int) ([]UpdateOperation, error)
+	GetLatestUpdateOperation(ctx context.Context, clusterID string) (*UpdateOperation, error)
+	UpdateUpdateOperation(ctx context.Context, op UpdateOperation) error
 }
 
 // Cluster is the appliance cluster of one.

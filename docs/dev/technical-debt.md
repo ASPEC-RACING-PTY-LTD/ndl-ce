@@ -74,4 +74,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Backup compression is the qcow2 image as stored. No extra gzip layer. Why not blocking: full copy is an honest incremental-not-available engine.
 - LOW. Homelab restore-and-boot of a deleted VM on Debian 13 hardware is not proven in this Cloud VM. Why not blocking: fixture restore new UUID plus start is covered; appliance boot remains physical validation.
 
+## Phase 12
+
+- MEDIUM. Homelab Migration Candidate requires Phases 9-12 on Debian 13 hardware. This Cloud VM is Ubuntu and has no installed product. Why not blocking: the Update API refuses honestly; signed-repo upgrade remains appliance validation.
+- LOW. GRUB previous-kernel is documented typed argv and is not executed during a control-plane package apply. Why not blocking: CP bumps must not reboot guests or the host; kernel rollback is an operator recovery step.
+- LOW. apt-get/pg_dump/tar are not run in Cloud CI. Why not blocking: SkipHostCmds plus argv unit tests cover the typed adapter; executing apt on Ubuntu would fake Debian success.
+- LOW. Store compatibility is an honest unsupported hook. Why not blocking: roadmap assigns the real check to Phase 36.
+
 

@@ -1,3 +1,9 @@
+nodal (0.1.11) UNRELEASED; urgency=medium
+
+  * Phase 12 platform updates: host-neutral Update API, Debian 13 signed-repo adapter, checkpoint, rollback
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.10) UNRELEASED; urgency=medium
 
   * Phase 11 backup engine: local/NFS/SMB targets, snapshot-then-copy, restore new or replace
