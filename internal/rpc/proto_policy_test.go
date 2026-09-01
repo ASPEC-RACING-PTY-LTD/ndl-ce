@@ -60,6 +60,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"BackupCopy backup_copy =",
 		"HostUpdate host_update =",
 		"GPUAssign gpu_assign =",
+		"ZFSPool zfs_pool =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

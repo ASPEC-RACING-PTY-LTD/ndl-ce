@@ -56,6 +56,7 @@ type Server struct {
 	Backup      BackupRPC
 	Update      UpdateRPC
 	GPU         GPURPC
+	ZFS         ZFSRPC
 	Hub         *EventHub
 	UI          fs.FS
 	Now         func() time.Time
@@ -199,6 +200,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/gpus/assign", s.assignGPU)
 	mux.HandleFunc("POST /api/v1/gpus/unassign", s.unassignGPU)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/gpus", s.workloadGPUs)
+	mux.HandleFunc("GET /api/v1/storage/zfs", s.zfsRuntime)
+	mux.HandleFunc("POST /api/v1/storage/zfs/import", s.importZFS)
+	mux.HandleFunc("POST /api/v1/storage/zfs/create", s.createZFS)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

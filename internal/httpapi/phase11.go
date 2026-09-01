@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	ctBackupReason = "Directory system container backups are not available. They are not ZFS. Container backup arrives with a later storage backend."
-	restoreConfirm = "restore"
-	backupPurpose  = "ndl-backup"
+	ctBackupReason   = "Directory system container backups are not available. They are not ZFS. Use a ZFS dataset for system container backup send."
+	zfsRestoreReason = "ZFS send artifacts restore with zfs recv in a later backup phase. qemu-img is not used on a ZFS stream."
+	restoreConfirm   = "restore"
+	backupPurpose    = "ndl-backup"
 )
 
 // BackupRPC is the privileged agent surface for checksummed backup copies.
@@ -374,7 +375,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if err != nil || wl == nil {
 		return appdb.BackupRun{}, errNotFound("workload not found")
 	}
-	if wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM {
+	_, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
+	zfs := locErr == nil && pool != nil && pool.BackendType == storage.BackendZFS
+	if !zfs && (wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM) {
 		return appdb.BackupRun{}, errUnprocessable(ctBackupReason)
 	}
 	tgt, err := s.Store.GetBackupTarget(ctx, clusterID, targetID)
@@ -387,7 +390,10 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if tgt.Status != appdb.BackupAvailable {
 		return appdb.BackupRun{}, errUnprocessable("backup target is unavailable")
 	}
-	if s.VM == nil || s.Backup == nil {
+	if s.Backup == nil {
+		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
+	}
+	if !zfs && s.VM == nil {
 		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
 	}
 	run := appdb.BackupRun{
@@ -411,17 +417,38 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	}
 	run.SnapshotID = snap.ID
 	artifactID := uuid.NewString()
-	dest := filepath.Join(tgt.Locator, artifactID+".qcow2")
-	res, err := s.Backup.CopyBackup(ctx, qemu.BackupCopy, frozen, dest)
-	if err != nil {
-		return fail(err.Error())
-	}
-	art := appdb.BackupArtifact{
-		ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: workloadID,
-		ChecksumSHA256: res.SHA256, SizeBytes: res.Size, Locator: dest, Format: firstNonEmpty(res.Format, "qcow2"),
-	}
-	if err := s.Store.CreateBackupArtifact(ctx, art); err != nil {
-		return fail(err.Error())
+	if snap.Mechanism == appdb.MechanismZFS {
+		dest := filepath.Join(tgt.Locator, artifactID+".zfs")
+		res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
+			Action: "send", PoolID: pool.ID, Name: s.zfsPoolName(ctx, *pool),
+			VolumeID: snap.VolumeID, Snapshot: s.snapshotTag(snap.BackendRef), DestPath: dest,
+		})
+		if err != nil {
+			return fail(err.Error())
+		}
+		if res.Status != storage.StatusAvailable {
+			return fail(firstNonEmpty(res.Reason, "zfs send failed"))
+		}
+		art := appdb.BackupArtifact{
+			ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: workloadID,
+			Locator: dest, Format: "zfs",
+		}
+		if err := s.Store.CreateBackupArtifact(ctx, art); err != nil {
+			return fail(err.Error())
+		}
+	} else {
+		dest := filepath.Join(tgt.Locator, artifactID+".qcow2")
+		res, err := s.Backup.CopyBackup(ctx, qemu.BackupCopy, frozen, dest)
+		if err != nil {
+			return fail(err.Error())
+		}
+		art := appdb.BackupArtifact{
+			ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: workloadID,
+			ChecksumSHA256: res.SHA256, SizeBytes: res.Size, Locator: dest, Format: firstNonEmpty(res.Format, "qcow2"),
+		}
+		if err := s.Store.CreateBackupArtifact(ctx, art); err != nil {
+			return fail(err.Error())
+		}
 	}
 	now := s.now()
 	run.Status = appdb.BackupSucceeded
@@ -444,6 +471,28 @@ func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row ap
 	vol, pool, tip, err := s.bootVolumeLocator(ctx, clusterID, row)
 	if err != nil {
 		return appdb.Snapshot{}, "", err
+	}
+	if pool.BackendType == storage.BackendZFS {
+		tag := "backup-" + runID[:8]
+		res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
+			Action: "snapshot", PoolID: pool.ID, Name: s.zfsPoolName(ctx, *pool),
+			VolumeID: vol.ID, Snapshot: tag,
+		})
+		if err != nil {
+			return appdb.Snapshot{}, "", err
+		}
+		if res.Status != storage.StatusAvailable {
+			return appdb.Snapshot{}, "", errUnprocessable(firstNonEmpty(res.Reason, storage.ZFSMissing))
+		}
+		snap := appdb.Snapshot{
+			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, VolumeID: vol.ID,
+			Name: tag, PurposeTag: tag, Mechanism: appdb.MechanismZFS, BackendRef: res.BackendRef,
+			Status: appdb.SnapshotAvailable,
+		}
+		if err := s.Store.CreateSnapshot(ctx, snap); err != nil {
+			return appdb.Snapshot{}, "", err
+		}
+		return snap, res.BackendRef, nil
 	}
 	depth := overlayChainDepth(vol.BackendRef, existing)
 	if depth >= qemu.ChainMax {
@@ -574,6 +623,10 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	origRun, _ := s.Store.GetBackupRun(r.Context(), p.User.ClusterID, art.RunID)
 	if origRun == nil || origRun.TargetID == "" {
 		writeErr(w, http.StatusUnprocessableEntity, "restore cannot locate the original backup target")
+		return
+	}
+	if art.Format == "zfs" {
+		writeErr(w, http.StatusUnprocessableEntity, zfsRestoreReason)
 		return
 	}
 	run := appdb.BackupRun{

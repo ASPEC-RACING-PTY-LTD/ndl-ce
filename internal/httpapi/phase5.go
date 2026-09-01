@@ -142,7 +142,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusFailedDependency, "local node is not enrolled")
 		return
 	}
-	if s.Workloads == nil || s.Storage == nil {
+	if s.Workloads == nil {
 		writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
 		return
 	}
@@ -293,7 +293,25 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		return nil, nil, "", nil, errConflict("an available network is required")
 	}
 	if existing, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existing != nil {
-		return pool, netw, path.Join(pool.RootPath, existing.BackendRef), existing, nil
+		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, existing.BackendRef)
+		if err != nil {
+			return nil, nil, "", nil, errConflict("volume locator is invalid")
+		}
+		return pool, netw, loc, existing, nil
+	}
+	if pool.BackendType == storage.BackendZFS {
+		row, err := s.createZFSVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, lxc.DefaultRootSize)
+		if err != nil {
+			return nil, nil, "", nil, err
+		}
+		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, row.BackendRef)
+		if err != nil {
+			return nil, nil, "", nil, errConflict("volume locator is invalid")
+		}
+		return pool, netw, loc, &row, nil
+	}
+	if s.Storage == nil {
+		return nil, nil, "", nil, errUnavailable("storage agent is unavailable")
 	}
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
@@ -442,7 +460,9 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		if len(disks) > 0 {
 			if vol, _ := s.Store.GetVolume(r.Context(), p.User.ClusterID, disks[0].VolumeID); vol != nil {
 				if pool, _ := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, vol.PoolID); pool != nil {
-					rootfs = path.Join(pool.RootPath, vol.BackendRef)
+					if loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef); err == nil {
+						rootfs = loc
+					}
 					volID = vol.ID
 				}
 			}
@@ -498,7 +518,9 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	if err != nil || pool == nil {
 		return lxc.LifecycleRequest{}, errConflict("source pool is unavailable")
 	}
-	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID)
+	if pool.BackendType == storage.BackendZFS {
+		return lxc.LifecycleRequest{}, errUnprocessable("ZFS system container clone is not implemented")
+	}
 	cloneID := uuid.NewString()
 	cloneVol := uuid.NewString()
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
@@ -522,9 +544,6 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	req := lxc.LifecycleRequest{
 		WorkloadID: src.ID, Action: "clone", CloneID: cloneID, CloneVolumeID: cloneVol,
 		CloneRootfsPath: path.Join(pool.RootPath, backend), CloneMAC: lxc.MACFromUUID(cloneID), CloneName: name,
-	}
-	if len(nics) > 0 {
-		_ = nics
 	}
 	return req, nil
 }

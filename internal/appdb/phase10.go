@@ -10,6 +10,7 @@ import (
 const (
 	SnapshotAvailable = "available"
 	MechanismOverlay  = "qcow2-overlay"
+	MechanismZFS      = "zfs"
 )
 
 // Snapshot is a point-in-time disk restore object. It is not a backup.

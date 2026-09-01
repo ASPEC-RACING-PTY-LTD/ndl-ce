@@ -154,6 +154,7 @@ message ExecuteRequest {
     BackupCopy backup_copy = 24;
     HostUpdate host_update = 25;
     GPUAssign gpu_assign = 26;
+    ZFSPool zfs_pool = 27;
   }
 }
 
@@ -176,6 +177,21 @@ message GPUAssign {
   repeated string device_nodes = 7;
   bool acs_override = 8;
   bool dry_run = 9;
+}
+
+message ZFSPool {
+  string action = 1;
+  string pool_id = 2;
+  string name = 3;
+  string guid = 4;
+  repeated string disks = 5;
+  string volume_id = 6;
+  string class = 7;
+  int64 size_bytes = 8;
+  string snapshot = 9;
+  string from_snapshot = 10;
+  bool force = 11;
+  string dest_path = 12;
 }
 
 message BackupCopy {

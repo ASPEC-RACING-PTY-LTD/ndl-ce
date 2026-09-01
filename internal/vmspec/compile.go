@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
 // Compile turns desired spec plus resolved locators into a frozen Launch.
@@ -73,12 +75,23 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 		if err := ValidateCleanPath(d.Path, "disk path"); err != nil {
 			return Launch{}, err
 		}
+		zvol := strings.HasPrefix(d.Path, storage.ZVolDevPrefix)
 		if !strings.HasPrefix(d.Path, "/var/lib/ndl/storage/") && !strings.HasPrefix(d.Path, "/var/lib/ndl/runtime/qemu/"+workloadID+"/") {
-			return Launch{}, fmt.Errorf("disk path must be a VolumeHandle locator")
+			if err := storage.ValidateZVolPath(d.Path); err != nil {
+				return Launch{}, fmt.Errorf("disk path must be a VolumeHandle locator")
+			}
+			zvol = true
 		}
 		format := d.Format
 		if format == "" {
-			format = "qcow2"
+			if zvol {
+				format = "raw"
+			} else {
+				format = "qcow2"
+			}
+		}
+		if zvol && format != "raw" {
+			return Launch{}, fmt.Errorf("zvol disk format must be raw")
 		}
 		if format != "qcow2" && format != "raw" {
 			return Launch{}, fmt.Errorf("disk format must be qcow2 or raw")

@@ -54,3 +54,15 @@ export type PoolListResponse = {
   items: StoragePool[];
   default_path?: string;
 };
+
+export type ZFSRuntime = {
+  backend?: string;
+  incremental_send?: boolean;
+  snapshots?: boolean;
+  directory_default?: boolean;
+  force_import?: string;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+};

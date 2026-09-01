@@ -42,6 +42,9 @@ func run(args []string) error {
   storage volume create --pool-id ID --class CLASS --size-bytes N
   storage image list
   storage image upload --pool-id ID --kind KIND --file PATH
+  storage zfs import --guid GUID [--name NAME]
+  storage zfs create --name NAME --disk PATH
+  storage zfs runtime
   network list
   network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
   network apply --id ID [--dry-run] [--confirm-ifname IF]
@@ -334,6 +337,22 @@ func cmdStorage(args []string) error {
 	case "image upload":
 		f := parseFlags(args[2:])
 		return cmdUploadImage(f["pool-id"], f["kind"], f["file"])
+	case "zfs import":
+		f := parseFlags(args[2:])
+		guid := firstNonEmpty(f["guid"], f["zpool-guid"])
+		if guid == "" {
+			return fmt.Errorf("usage: nodalctl storage zfs import --guid GUID [--name NAME]")
+		}
+		body := map[string]any{"guid": guid, "name": f["name"]}
+		return postJSON("/api/v1/storage/zfs/import", body, true)
+	case "zfs create":
+		f := parseFlags(args[2:])
+		if f["name"] == "" || f["disk"] == "" {
+			return fmt.Errorf("usage: nodalctl storage zfs create --name NAME --disk PATH")
+		}
+		return postJSON("/api/v1/storage/zfs/create", map[string]any{"name": f["name"], "disks": []string{f["disk"]}}, true)
+	case "zfs runtime":
+		return cmdGet("/api/v1/storage/zfs")
 	default:
 		return fmt.Errorf("unknown storage command")
 	}

@@ -37,6 +37,7 @@ type Handler struct {
 	Nets         *ndnet.Engine
 	Workloads    *lxc.Engine
 	QEMU         *qemu.Engine
+	ZFS          *storage.ZFSEngine
 	SkipHostCmds bool
 
 	mu         sync.Mutex
@@ -169,6 +170,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execHostUpdate(ctx, req.Msg.GetHostUpdate())
 	case req.Msg.GetGpuAssign() != nil:
 		return h.execGPUAssign(ctx, req.Msg.GetGpuAssign())
+	case req.Msg.GetZfsPool() != nil:
+		return h.execZFSPool(ctx, req.Msg.GetZfsPool())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

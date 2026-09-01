@@ -2,6 +2,7 @@ package qemu
 
 import (
 	"fmt"
+	"github.com/no-dal/ndl-ce/internal/storage"
 	"path"
 	"strings"
 )
@@ -33,6 +34,9 @@ func ValidateDiskPath(diskPath string) error {
 		return fmt.Errorf("disk_path is not a clean locator")
 	}
 	if cleaned != storageRoot && !strings.HasPrefix(cleaned, storageRoot+"/") {
+		if strings.HasPrefix(cleaned, storage.ZVolDevPrefix) {
+			return storage.ValidateZVolPath(cleaned)
+		}
 		return fmt.Errorf("disk_path must be under the storage root")
 	}
 	return nil

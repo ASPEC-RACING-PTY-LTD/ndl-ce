@@ -209,5 +209,17 @@ Failed VFIO restore: unassign still records the dropped claim and retries
 host-driver restore through the same typed argv. If driverctl is missing, the
 status is failed with an honest reason, not a fake unbound GPU.
 
+## ZFS storage (Phase 15)
+
+Import is by pool GUID. `zpool import -f` is refused. Create uses extra disks only,
+never the host root disk. UUID remains desired identity; `zpool_guid`, dataset names,
+and `/dev/zvol/...` are locators.
+
+If a disk is pulled, the pool is faulted or unavailable. Desired pool and volume rows
+remain. Capacity is not reported as zero.
+
+Directory remains the default for hosts without ZFS. Missing ZFS userland is not a fake
+Available pool.
+
 
 

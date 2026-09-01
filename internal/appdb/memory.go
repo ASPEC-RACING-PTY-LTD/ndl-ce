@@ -53,6 +53,8 @@ type Memory struct {
 	servicePrincipals map[string]ServicePrincipal
 	volumeEnc         map[string]VolumeEncryption
 	gpuAssignments    map[string]GPUAssignment
+	zfsPools          map[string]ZFSPool
+	zfsDatasets       map[string]ZFSDataset
 }
 
 // NewMemory returns an empty store.

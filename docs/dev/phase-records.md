@@ -74,4 +74,13 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest GPU: none detected stays none detected. Runtime install is Unsupported on this Ubuntu Cloud host. Store GPU picker is Phase 36.
 - Follow-up: OCI GPU consume claims in Phase 21, MIG if NVML offers it, licensed vGPU post-1.0 CE
 
+## Phase 15
+
+- Package: 0.1.14
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (force import 422, GUID import, root disk refuse, ZFS incremental_send true / Directory false, pulled-disk rows remain unavailable with nil capacity, zvol vs dataset volume create, viewer 403, Ubuntu runtime unsupported, ZFS snapshot mechanism, flatten 422, zvol QEMU raw path, typed zpool/zfs argv never -f). FIXTURE for zpool/zfs execution (SkipHostCmds). NOT PHYSICALLY VALIDATED: real zpool create/import, zvol VM boot, dataset CT root, zfs send stream on disk
+- Honest ZFS: hosts without ZFS keep Directory as default. Missing userland is Unavailable/not installed, not a fake Available pool. zpool import -f is refused.
+- Follow-up: physical zvol+dataset acceptance, zfs recv restore, native encryption
+
 

@@ -171,6 +171,12 @@ type Store interface {
 	ListGPUAssignmentsForGPU(ctx context.Context, clusterID, gpuID string) ([]GPUAssignment, error)
 	GetGPUAssignment(ctx context.Context, clusterID, id string) (*GPUAssignment, error)
 	DeleteGPUAssignment(ctx context.Context, clusterID, id string) error
+
+	UpsertZFSPool(ctx context.Context, p ZFSPool) error
+	GetZFSPool(ctx context.Context, poolID string) (*ZFSPool, error)
+	GetZFSPoolByGUID(ctx context.Context, guid string) (*ZFSPool, error)
+	UpsertZFSDataset(ctx context.Context, d ZFSDataset) error
+	GetZFSDataset(ctx context.Context, volumeID string) (*ZFSDataset, error)
 }
 
 // Cluster is the appliance cluster of one.

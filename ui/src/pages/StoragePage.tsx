@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import {
   createPool,
   createVolume,
+  createZFS,
+  importZFS,
   listImages,
   listPools,
   listVolumes,
   uploadImage,
+  zfsRuntime,
 } from "../api/client";
-import type { LibraryItem, StoragePool, StorageVolume } from "../api/phase3";
+import type { LibraryItem, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
 import { Field } from "../components/Field";
 import { formatBytes } from "../format";
 import { useSession } from "../session";
@@ -43,6 +46,10 @@ export function StoragePage() {
   const [kind, setKind] = useState("iso");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [zfs, setZfs] = useState<ZFSRuntime | null>(null);
+  const [zfsName, setZfsName] = useState("tank");
+  const [zfsGUID, setZfsGUID] = useState("");
+  const [zfsDisk, setZfsDisk] = useState("");
 
   async function reload() {
     const listed = await listPools();
@@ -58,9 +65,14 @@ export function StoragePage() {
       setSelected(first);
     }
     const poolId = first;
-    const [vols, imgs] = await Promise.all([listVolumes(poolId), listImages(poolId)]);
+    const [vols, imgs, runtime] = await Promise.all([
+      listVolumes(poolId),
+      listImages(poolId),
+      zfsRuntime().catch(() => null),
+    ]);
     setVolumes(vols);
     setImages(imgs);
+    setZfs(runtime);
   }
 
   useEffect(() => {
@@ -101,6 +113,34 @@ export function StoragePage() {
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onImportZFS() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await importZFS({ guid: zfsGUID, name: zfsName });
+      setSelected(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ZFS import failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCreateZFS() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createZFS({ name: zfsName, disks: [zfsDisk] });
+      setSelected(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ZFS create failed");
     } finally {
       setBusy(false);
     }
@@ -147,7 +187,10 @@ export function StoragePage() {
     <section className="page page-wide" aria-labelledby="storage-heading">
       <header className="page-header">
         <h1 id="storage-heading">Storage</h1>
-        <p className="page-kicker">Directory pools, volumes, and the image library.</p>
+        <p className="page-kicker">
+          Directory remains the default. ZFS is optional first-class storage. Hosts without ZFS keep
+          Directory. zpool import -f is refused.
+        </p>
       </header>
       {error ? (
         <p className="banner banner-error" role="alert">
@@ -191,6 +234,63 @@ export function StoragePage() {
           ) : (
             <p>An operator or administrator must create the first pool.</p>
           )}
+        </article>
+      ) : null}
+      {mutate ? (
+        <article className="panel">
+          <h2>ZFS</h2>
+          <p className="lede">
+            Import by pool GUID or create on extra disks. The host root disk is refused. Incremental
+            send is a ZFS capability. Directory incremental send stays no.
+          </p>
+          {zfs?.host_supported === false ? (
+            <p className="banner banner-warn" role="status">
+              {zfs.reason || "ZFS runtime install uses the Debian 13 adapter. Directory remains first-class."}
+            </p>
+          ) : null}
+          {zfs?.status === "not_installed" ? (
+            <p className="banner" role="status">
+              ZFS userland is not installed. Directory storage remains the default. Optional package:{" "}
+              {(zfs.packages ?? []).join(", ") || "zfsutils-linux"}.
+            </p>
+          ) : null}
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onImportZFS();
+            }}
+          >
+            <Field id="zfs-name" label="Pool name" value={zfsName} onChange={(e) => setZfsName(e.target.value)} />
+            <Field
+              id="zfs-guid"
+              label="zpool GUID"
+              value={zfsGUID}
+              onChange={(e) => setZfsGUID(e.target.value)}
+              hint="Numeric pool GUID. Names are locators, not identity. Force import is refused."
+            />
+            <button className="btn btn-primary" type="submit" disabled={busy || !zfsGUID}>
+              Import ZFS pool
+            </button>
+          </form>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateZFS();
+            }}
+          >
+            <Field
+              id="zfs-disk"
+              label="Extra disk"
+              value={zfsDisk}
+              onChange={(e) => setZfsDisk(e.target.value)}
+              hint="A by-id or extra-disk path such as /dev/disk/by-id/.... Not the host root disk."
+            />
+            <button className="btn" type="submit" disabled={busy || !zfsDisk}>
+              Create ZFS pool
+            </button>
+          </form>
         </article>
       ) : null}
       <article className="panel">

@@ -63,8 +63,12 @@ func (s *Server) createPool(w http.ResponseWriter, r *http.Request) {
 	if req.Path == "" {
 		req.Path = storage.DefaultPoolPath
 	}
-	if req.Backend != "" && req.Backend != storage.BackendDirectory {
-		writeErr(w, http.StatusBadRequest, "Phase 3 supports the Directory backend only")
+	if req.Backend != "" && req.Backend != storage.BackendDirectory && req.Backend != storage.BackendZFS {
+		writeErr(w, http.StatusBadRequest, "unsupported storage backend")
+		return
+	}
+	if req.Backend == storage.BackendZFS {
+		writeErr(w, http.StatusBadRequest, "create a ZFS pool with POST /api/v1/storage/zfs/create or import with POST /api/v1/storage/zfs/import")
 		return
 	}
 	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
@@ -170,6 +174,16 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	if pool.Status == storage.StatusUnavailable {
 		writeErr(w, http.StatusConflict, "storage pool is unavailable")
+		return
+	}
+	if pool.BackendType == storage.BackendZFS {
+		row, err := s.createZFSVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, volumeJSON(row))
 		return
 	}
 	if s.Storage == nil {
@@ -354,18 +368,62 @@ func firstNonEmpty(v ...string) string {
 }
 
 func (s *Server) refreshStorage(ctx context.Context, clusterID string) {
-	if s.Storage == nil {
-		return
-	}
 	pools, err := s.Store.ListStoragePools(ctx, clusterID)
 	if err != nil || len(pools) == 0 {
 		return
 	}
-	obs, err := s.Storage.GetStorage(ctx, appdb.PoolHints(pools))
-	if err != nil {
-		return
+	var dir, zfs []appdb.StoragePool
+	for _, p := range pools {
+		if p.BackendType == storage.BackendZFS {
+			zfs = append(zfs, p)
+			continue
+		}
+		dir = append(dir, p)
+	}
+	if s.Storage != nil && len(dir) > 0 {
+		obs, err := s.Storage.GetStorage(ctx, appdb.PoolHints(dir))
+		if err == nil {
+			_, _, _ = appdb.ReconcileStorage(ctx, s.Store, clusterID, dir, obs)
+		}
+	}
+	if len(zfs) > 0 {
+		s.refreshZFS(ctx, clusterID, zfs)
+	}
+}
+
+func (s *Server) refreshZFS(ctx context.Context, clusterID string, pools []appdb.StoragePool) {
+	obs := storage.Observation{}
+	for _, p := range pools {
+		res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
+			Action: "observe", PoolID: p.ID, Name: s.zfsPoolName(ctx, p), GUID: zfsGUID(ctx, s.Store, p.ID),
+		})
+		seen := storage.ObservedPool{
+			PoolID: p.ID, BackendType: storage.BackendZFS, RootPath: p.RootPath,
+			Status: storage.StatusUnavailable, Capabilities: storage.ZFSCapabilities(),
+		}
+		if err != nil {
+			seen.Reason = err.Error()
+		} else {
+			seen.Status = res.Status
+			seen.Reason = res.Reason
+			if res.RootPath != "" {
+				seen.RootPath = res.RootPath
+			}
+			if res.Status != storage.StatusAvailable {
+				seen.Capacity = storage.Capacity{}
+			}
+		}
+		obs.Pools = append(obs.Pools, seen)
 	}
 	_, _, _ = appdb.ReconcileStorage(ctx, s.Store, clusterID, pools, obs)
+}
+
+func zfsGUID(ctx context.Context, st appdb.Store, poolID string) string {
+	z, _ := st.GetZFSPool(ctx, poolID)
+	if z == nil {
+		return ""
+	}
+	return z.ZPoolGUID
 }
 
 func (s *Server) startOp(ctx context.Context, clusterID, nodeID, kind, stage string, progress int) appdb.Operation {

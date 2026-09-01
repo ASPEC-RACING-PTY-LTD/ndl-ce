@@ -1,3 +1,9 @@
+nodal (0.1.14) UNRELEASED; urgency=medium
+
+  * Phase 15 ZFS storage: import by GUID, zvol VM disks, dataset CT roots, no zpool import -f
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.13) UNRELEASED; urgency=medium
 
   * Phase 14 GPU runtime and assignment: explicit gpu_id, IOMMU groups, exclusive claims, Debian 13 runtime

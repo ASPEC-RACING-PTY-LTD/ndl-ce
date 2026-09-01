@@ -791,6 +791,31 @@ export interface GPUAssignResult {
   packages?: string[];
 }
 
+export interface ZFSRuntime {
+  backend?: string;
+  incremental_send?: boolean;
+  snapshots?: boolean;
+  directory_default?: boolean;
+  force_import?: string;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+  argv?: string[];
+}
+
+export interface ZFSImportRequest {
+  guid: string;
+  name?: string;
+  force?: boolean;
+}
+
+export interface ZFSCreateRequest {
+  name: string;
+  disks: string[];
+  force?: boolean;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -958,6 +983,12 @@ export type AddGroupMemberPath = "/api/v1/groups/{id}/members";
 export type BindGroupRolePath = "/api/v1/groups/{id}/roles";
 
 export type ListServicePrincipalsPath = "/api/v1/service-principals";
+
+export type GetZfsRuntimePath = "/api/v1/storage/zfs";
+
+export type ImportZfsPath = "/api/v1/storage/zfs/import";
+
+export type CreateZfsPath = "/api/v1/storage/zfs/create";
 
 export type ListGpusPath = "/api/v1/gpus";
 

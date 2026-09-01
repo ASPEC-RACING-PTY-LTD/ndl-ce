@@ -319,7 +319,7 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		Accel: qemu.DetectAccel(),
 		Disks: []vmspec.ResolvedDisk{{
 			VolumeID: vol.ID, Role: vmspec.DiskRoleBoot, Path: diskPath,
-			Format: firstNonEmpty(vol.Format, "qcow2"), PCIAddr: spec.Disks[0].PCIAddr,
+			Format: storage.QEMUFormat(vol.BackendType, vol.Format), PCIAddr: spec.Disks[0].PCIAddr,
 		}},
 	}
 	for _, d := range spec.Disks {
@@ -343,13 +343,13 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		if perr != nil || epool == nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("storage pool is not found")
 		}
-		epath, jerr := storage.JoinUnder(epool.RootPath, extra.BackendRef)
+		epath, jerr := storage.HostVolumePath(epool.BackendType, epool.RootPath, extra.BackendRef)
 		if jerr != nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("volume locator is invalid")
 		}
 		resolved.Disks = append(resolved.Disks, vmspec.ResolvedDisk{
 			VolumeID: extra.ID, Role: vmspec.DiskRoleData, Slot: d.Slot, Path: epath,
-			Format: firstNonEmpty(extra.Format, d.Format, "qcow2"), ReadOnly: d.ReadOnly, PCIAddr: d.PCIAddr,
+			Format: storage.QEMUFormat(extra.BackendType, firstNonEmpty(extra.Format, d.Format)), ReadOnly: d.ReadOnly, PCIAddr: d.PCIAddr,
 		})
 	}
 	for i, n := range spec.NICs {
@@ -377,7 +377,7 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		if jerr != nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("cloud image locator is invalid")
 		}
-		convert = qemu.ConvertRequest{SourcePath: src, SourceFormat: "qcow2", DestPath: diskPath, DestFormat: firstNonEmpty(vol.Format, "qcow2")}
+		convert = qemu.ConvertRequest{SourcePath: src, SourceFormat: "qcow2", DestPath: diskPath, DestFormat: storage.QEMUFormat(vol.BackendType, vol.Format)}
 	}
 	if spec.ISOLibraryID != "" {
 		lib, lerr := s.Store.GetLibraryItem(ctx, clusterID, spec.ISOLibraryID)
@@ -442,11 +442,22 @@ func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID strin
 		if err != nil || p == nil {
 			return nil, "", errConflict("storage pool is not found")
 		}
-		diskPath, err := storage.JoinUnder(p.RootPath, existing.BackendRef)
+		diskPath, err := storage.HostVolumePath(p.BackendType, p.RootPath, existing.BackendRef)
 		if err != nil {
 			return nil, "", errConflict("volume locator is invalid")
 		}
 		return existing, diskPath, nil
+	}
+	if pool.BackendType == storage.BackendZFS {
+		row, err := s.createZFSVolume(ctx, clusterID, *pool, storage.ClassVMDisk, size)
+		if err != nil {
+			return nil, "", err
+		}
+		diskPath, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, row.BackendRef)
+		if err != nil {
+			return nil, "", errConflict("volume locator is invalid")
+		}
+		return &row, diskPath, nil
 	}
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
@@ -800,13 +811,13 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 		if err != nil || pool == nil || (pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning) {
 			return errConflict("storage is unavailable")
 		}
-		diskPath, err := storage.JoinUnder(pool.RootPath, vol.BackendRef)
+		diskPath, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
 		if err != nil {
 			return errConflict("volume locator is invalid")
 		}
 		resolved.Disks = append(resolved.Disks, vmspec.ResolvedDisk{
 			VolumeID: vol.ID, Role: role, Slot: slot, Path: diskPath,
-			Format: firstNonEmpty(format, vol.Format, "qcow2"), ReadOnly: readOnly, PCIAddr: pci,
+			Format: storage.QEMUFormat(vol.BackendType, firstNonEmpty(format, vol.Format)), ReadOnly: readOnly, PCIAddr: pci,
 		})
 		return nil
 	}

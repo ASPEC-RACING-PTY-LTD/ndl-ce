@@ -143,6 +143,28 @@ export async function createPool(body: { name: string; path: string }): Promise<
   );
 }
 
+export async function zfsRuntime(): Promise<import("./phase3").ZFSRuntime> {
+  return readJson(await request("/storage/zfs"));
+}
+
+export async function importZFS(body: { guid: string; name?: string }): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/zfs/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function createZFS(body: { name: string; disks: string[] }): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/zfs/create", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getPool(id: string): Promise<import("./phase3").StoragePool> {
   return readJson(await request(`/storage/pools/${id}`));
 }

@@ -94,5 +94,13 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. Render assignment uses the planned `/dev/dri/renderD128` locator. Why not blocking: the node is optional in LXC config; Cloud has no DRM device to prove the live node number.
 - LOW. QEMU vfio-pci slots start at 0x1a rather than a live query-pci allocation. Why not blocking: locators are not identity; Phase 8 already pins compiled PCI slots.
 
+## Phase 15
+
+- MEDIUM. Physical ZFS pools, zvols, dataset mounts, and zfs send streams are not available in this Cloud VM. Why not blocking: GUID import, force refuse, capability matrix, pulled-disk unavailable-with-nil-capacity, zvol vs dataset locators, and typed argv are proven; hardware ZFS remains appliance validation.
+- MEDIUM. zfs recv restore of a send artifact is honest 422. Why not blocking: BackupSource send is this phase; qemu-img must not consume a ZFS stream; recv restore can land with backup hardening.
+- MEDIUM. zfs send captures stdout in-process rather than streaming to the dest file. Why not blocking: SkipHostCmds is the Cloud path; a streaming RunTo belongs on the appliance for large zvols.
+- LOW. ZFS create-time native encryption is not implemented. Why not blocking: Phase 15 is pools, zvols, datasets, snapshot/send; encryption remains a follow-up, not a fake unlock.
+- LOW. by-id aliases of the root disk are not EvalSymlinks-compared. Why not blocking: inventory MountHint=/ refuses /dev/sdX and prefix children; extra disks remain the product path.
+
 
 

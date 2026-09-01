@@ -163,3 +163,26 @@ func TestMACStableAcrossCompile(t *testing.T) {
 		t.Fatal(a)
 	}
 }
+
+func TestCompileAcceptsZVolRawDisk(t *testing.T) {
+	id := "11111111-1111-4111-8111-111111111111"
+	netID := "33333333-3333-4333-8333-333333333333"
+	resolved := Resolved{
+		Accel: "tcg",
+		Disks: []ResolvedDisk{{
+			Role: DiskRoleBoot, Path: "/dev/zvol/tank/" + id, Format: "raw",
+		}},
+		NICs: []ResolvedNIC{{NetworkID: netID, BridgeName: "ndl0", MAC: "02:00:00:00:00:01"}},
+	}
+	launch, err := Compile(id, Spec{Name: "z", NICs: []NIC{{NetworkID: netID}}}, resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launch.Disks[0].Format != "raw" || launch.Disks[0].Path != "/dev/zvol/tank/"+id {
+		t.Fatalf("%+v", launch.Disks[0])
+	}
+	resolved.Disks[0].Path = "/dev/sda"
+	if _, err := Compile(id, Spec{Name: "z", NICs: []NIC{{NetworkID: netID}}}, resolved); err == nil {
+		t.Fatal("generic /dev")
+	}
+}

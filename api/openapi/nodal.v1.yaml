@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.13
-  description: Phase 14 GPU runtime and assignment plus prior northbound API. Explicit gpu_id, IOMMU group listing, exclusive claims, and Debian 13 runtime install.
+  version: 0.1.14
+  description: Phase 15 ZFS storage plus prior northbound API. Import by GUID, no zpool import -f, zvol VM disks, dataset CT roots, Directory remains default.
 servers:
   - url: /api/v1
 paths:
@@ -1793,6 +1793,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServicePrincipalCreated"
+  /storage/zfs:
+    get:
+      operationId: getZfsRuntime
+      summary: ZFS runtime status. Directory remains default. Force import is refused.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZFSRuntime"
+  /storage/zfs/import:
+    post:
+      operationId: importZfs
+      summary: Import a ZFS pool by GUID. zpool import -f is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZFSImportRequest"
+      responses:
+        "201":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+        "422":
+          description: Force import refused
+  /storage/zfs/create:
+    post:
+      operationId: createZfs
+      summary: Create a ZFS pool on extra disks. The host root disk is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZFSCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
   /gpus:
     get:
       operationId: listGpus
@@ -3823,4 +3870,59 @@ components:
           type: array
           items:
             type: string
+    ZFSRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          type: string
+        incremental_send:
+          type: boolean
+        snapshots:
+          type: boolean
+        directory_default:
+          type: boolean
+        force_import:
+          type: string
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+    ZFSImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - guid
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        force:
+          type: boolean
+    ZFSCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - disks
+      properties:
+        name:
+          type: string
+        disks:
+          type: array
+          items:
+            type: string
+        force:
+          type: boolean
 

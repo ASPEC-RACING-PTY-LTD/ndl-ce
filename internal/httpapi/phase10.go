@@ -17,7 +17,9 @@ import (
 )
 
 const (
-	ctSnapshotReason = "Directory system container snapshots are not available. They are not ZFS. ZFS snapshots arrive in a later storage phase."
+	ctSnapshotReason = "Directory system container snapshots are not available. They are not ZFS. Use a ZFS dataset for system container snapshots."
+	zfsFlattenReason = "ZFS snapshots do not use qcow2 overlay chains. Flatten is not applicable."
+	zfsRollbackRun   = "stop the workload before ZFS rollback"
 	rollbackConfirm  = "rollback"
 	flattenConfirm   = "flatten"
 )
@@ -31,7 +33,13 @@ func snapshotJSON(s appdb.Snapshot) map[string]any {
 	}
 }
 
-func (s *Server) snapshotCapability(kind string, depth int) map[string]any {
+func (s *Server) snapshotCapability(kind string, depth int, backend string) map[string]any {
+	if backend == storage.BackendZFS {
+		return map[string]any{
+			"supported": true, "mechanism": appdb.MechanismZFS, "chain_max": 0,
+			"chain_depth": depth, "reason": "",
+		}
+	}
 	if kind != vmspec.KindVM {
 		return map[string]any{
 			"supported": false, "mechanism": "", "chain_max": qemu.ChainMax,
@@ -65,12 +73,16 @@ func (s *Server) listSnapshots(w http.ResponseWriter, r *http.Request) {
 		out = append(out, snapshotJSON(item))
 	}
 	depth := len(items)
-	if vol, _, _, locErr := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row); locErr == nil {
-		depth = overlayChainDepth(vol.BackendRef, items)
+	backend := ""
+	if vol, pool, _, locErr := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row); locErr == nil {
+		backend = pool.BackendType
+		if backend != storage.BackendZFS {
+			depth = overlayChainDepth(vol.BackendRef, items)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":      out,
-		"capability": s.snapshotCapability(row.Kind, depth),
+		"capability": s.snapshotCapability(row.Kind, depth, backend),
 	})
 }
 
@@ -83,10 +95,6 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 	row, err := s.Store.GetWorkload(r.Context(), p.User.ClusterID, id)
 	if err != nil || row == nil {
 		writeErr(w, http.StatusNotFound, "workload not found")
-		return
-	}
-	if row.Kind == lxc.KindSystemContainer || row.Kind != vmspec.KindVM {
-		writeErr(w, http.StatusUnprocessableEntity, ctSnapshotReason)
 		return
 	}
 	var req struct {
@@ -104,6 +112,14 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 	vol, pool, tip, err := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	if pool.BackendType == storage.BackendZFS {
+		s.createZFSSnapshot(w, r, p, *row, *vol, *pool, strings.TrimSpace(req.Name), existing)
+		return
+	}
+	if row.Kind == lxc.KindSystemContainer || row.Kind != vmspec.KindVM {
+		writeErr(w, http.StatusUnprocessableEntity, ctSnapshotReason)
 		return
 	}
 	depth := overlayChainDepth(vol.BackendRef, existing)
@@ -176,6 +192,31 @@ func (s *Server) rollbackSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	if pool.BackendType == storage.BackendZFS {
+		if row.UnitActive || row.Status == qemu.StatusRunning || row.Status == qemu.StatusStarting {
+			writeErr(w, http.StatusUnprocessableEntity, zfsRollbackRun)
+			return
+		}
+		tag := s.snapshotTag(snap.BackendRef)
+		if tag == "" {
+			tag = snap.PurposeTag
+		}
+		res, zerr := s.zfs().ZFSPool(r.Context(), storage.ZFSOp{
+			Action: "rollback", PoolID: pool.ID, Name: s.zfsPoolName(r.Context(), *pool),
+			VolumeID: vol.ID, Snapshot: tag,
+		})
+		if zerr != nil {
+			writeErr(w, http.StatusBadRequest, zerr.Error())
+			return
+		}
+		if res.Status != storage.StatusAvailable {
+			writeErr(w, http.StatusConflict, firstNonEmpty(res.Reason, "zfs rollback failed"))
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "snapshot.rollback", "ok", snap.ID)
+		writeJSON(w, http.StatusOK, snapshotJSON(*snap))
+		return
+	}
 	newID := uuid.NewString()
 	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"--rb-"+newID+".qcow2")
 	overlay, jerr := storage.JoinUnder(pool.RootPath, overlayRel)
@@ -222,13 +263,17 @@ func (s *Server) flattenSnapshots(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "workload not found")
 		return
 	}
-	if row.Kind != vmspec.KindVM {
-		writeErr(w, http.StatusUnprocessableEntity, ctSnapshotReason)
-		return
-	}
 	vol, pool, tip, err := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	if pool.BackendType == storage.BackendZFS {
+		writeErr(w, http.StatusUnprocessableEntity, zfsFlattenReason)
+		return
+	}
+	if row.Kind != vmspec.KindVM {
+		writeErr(w, http.StatusUnprocessableEntity, ctSnapshotReason)
 		return
 	}
 	flatID := uuid.NewString()
@@ -285,7 +330,7 @@ func (s *Server) bootVolumeLocator(ctx context.Context, clusterID string, row ap
 	if pool.Status == storage.StatusUnavailable {
 		return nil, nil, "", errConflict("storage pool is unavailable")
 	}
-	tip, err := storage.JoinUnder(pool.RootPath, vol.BackendRef)
+	tip, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
 	if err != nil {
 		return nil, nil, "", errConflict("volume locator is invalid")
 	}

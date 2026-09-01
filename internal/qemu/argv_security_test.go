@@ -41,6 +41,20 @@ func TestValidateDiskPathRejectsCommaEqualsInjection(t *testing.T) {
 	}
 }
 
+func TestValidateDiskPathAcceptsZVol(t *testing.T) {
+	zvol := "/dev/zvol/tank/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if err := ValidateDiskPath(zvol); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	if _, err := e.compile(argvSecSpec(zvol, "raw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDiskPath("/dev/sda"); err == nil {
+		t.Fatal("generic /dev")
+	}
+}
+
 func TestValidateDiskPathRejectsOutsideStorageRoot(t *testing.T) {
 	for _, disk := range []string{
 		"/etc/passwd",

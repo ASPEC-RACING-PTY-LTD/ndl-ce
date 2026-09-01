@@ -107,6 +107,7 @@ func Run(cfg Config) error {
 		Backup:     httpapi.AdaptBackup(agent),
 		Update:     httpapi.AdaptUpdate(agent),
 		GPU:        httpapi.AdaptGPU(agent),
+		ZFS:        httpapi.AdaptZFS(agent),
 		Hub:        hub,
 		UI:         ui,
 		SetupHash:  cfg.SetupHash,
