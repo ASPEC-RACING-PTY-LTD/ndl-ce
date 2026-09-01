@@ -95,7 +95,7 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	res, err := s.updater().HostUpdate(r.Context(), hostos.UpdateRequest{Action: "check", Channel: hostos.ChannelStable, DryRun: true})
+	res, err := s.updater().HostUpdate(r.Context(), hostos.UpdateRequest{Action: "status", Channel: hostos.ChannelStable, DryRun: true})
 	if err != nil {
 		res = hostos.UpdateResult{Supported: false, Reason: "update agent is unavailable", Status: appdb.UpdateUnsupported, Channel: hostos.ChannelStable}
 	}

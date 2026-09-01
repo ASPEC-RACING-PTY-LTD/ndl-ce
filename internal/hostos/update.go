@@ -151,8 +151,10 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 		return res, nil
 	}
 	switch strings.TrimSpace(req.Action) {
+	case debian.UpdateStatus, "":
+		return runStatus(ctx, res, exec)
 	case debian.UpdateCheck:
-		return runCheck(ctx, req, res, exec)
+		return runCheck(ctx, res, exec)
 	case debian.UpdatePreflight:
 		return runPreflight(res), nil
 	case debian.UpdateCheckpoint:
@@ -169,7 +171,18 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 	}
 }
 
-func runCheck(ctx context.Context, req UpdateRequest, res UpdateResult, exec ExecFunc) (UpdateResult, error) {
+func runStatus(ctx context.Context, res UpdateResult, exec ExecFunc) (UpdateResult, error) {
+	res.DryRun = true
+	if exec == nil {
+		return res, nil
+	}
+	pkgs, _, ver := readPolicies(ctx, exec)
+	res.Packages = pkgs
+	res.Version = ver
+	return res, nil
+}
+
+func runCheck(ctx context.Context, res UpdateResult, exec ExecFunc) (UpdateResult, error) {
 	res.DryRun = true
 	res.Changelog = "Changelog is not reported until the signed repository returns one."
 	if exec == nil {
@@ -181,13 +194,26 @@ func runCheck(ctx context.Context, req UpdateRequest, res UpdateResult, exec Exe
 		res.Reason = "package index refresh failed"
 		return res, nil
 	}
+	pkgs, items, ver := readPolicies(ctx, exec)
+	res.Packages = pkgs
+	res.Items = items
+	res.Version = ver
+	if logOut, err := exec(ctx, debian.ChangelogArgv()); err == nil {
+		if trimmed := strings.TrimSpace(logOut); trimmed != "" {
+			res.Changelog = trimChangelog(trimmed)
+		}
+	}
+	return res, nil
+}
+
+func readPolicies(ctx context.Context, exec ExecFunc) ([]PackageStatus, []PreviewItem, string) {
 	pkgs := make([]PackageStatus, 0, len(PackageNames))
 	items := make([]PreviewItem, 0, len(PackageNames))
 	var controlVer string
 	for _, name := range PackageNames {
 		argv, err := debian.PolicyArgv(name)
 		if err != nil {
-			return res, err
+			continue
 		}
 		out, err := exec(ctx, argv)
 		if err != nil {
@@ -213,17 +239,7 @@ func runCheck(ctx context.Context, req UpdateRequest, res UpdateResult, exec Exe
 			Name: name, CurrentVersion: pol.Installed, CandidateVersion: pol.Candidate, Action: act,
 		})
 	}
-	res.Packages = pkgs
-	res.Items = items
-	res.Version = controlVer
-	if exec != nil {
-		if logOut, err := exec(ctx, debian.ChangelogArgv()); err == nil {
-			if trimmed := strings.TrimSpace(logOut); trimmed != "" {
-				res.Changelog = trimChangelog(trimmed)
-			}
-		}
-	}
-	return res, nil
+	return pkgs, items, controlVer
 }
 
 func holdItems(pkgs []PackageStatus) []PreviewItem {

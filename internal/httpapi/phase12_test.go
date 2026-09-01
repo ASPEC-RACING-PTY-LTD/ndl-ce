@@ -35,6 +35,25 @@ func (f *fakeUpdate) HostUpdate(_ context.Context, req hostos.UpdateRequest) (ho
 	return hostos.RunUpdate(context.Background(), p, req, nil)
 }
 
+func TestUpdatesGetUsesStatusNotCheck(t *testing.T) {
+	s, _, token := testServer(t)
+	fu := &fakeUpdate{}
+	s.Update = fu
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("%d", res.StatusCode)
+	}
+	if len(fu.calls) != 1 || fu.calls[0].Action != "status" {
+		t.Fatalf("GET must not refresh package indexes: %+v", fu.calls)
+	}
+}
+
 func TestUpdatesUnsupportedHostHonest(t *testing.T) {
 	s, _, token := testServer(t)
 	s.Update = &fakeUpdate{}

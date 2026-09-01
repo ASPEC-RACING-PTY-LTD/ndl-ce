@@ -35,6 +35,31 @@ func TestEvaluateUpdateDebian13(t *testing.T) {
 	}
 }
 
+func TestRunUpdateStatusDoesNotRefreshIndexes(t *testing.T) {
+	p, err := DetectFrom(strings.NewReader("ID=debian\nVERSION_ID=13\nPRETTY_NAME=\"Debian GNU/Linux 13\"\n"), "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls [][]string
+	exec := func(_ context.Context, argv []string) (string, error) {
+		calls = append(calls, append([]string{}, argv...))
+		return "ndl-control:\n  Installed: 0.1.10\n  Candidate: 0.1.10\n", nil
+	}
+	res, err := RunUpdate(context.Background(), p, UpdateRequest{Action: "status"}, exec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Supported {
+		t.Fatal(res)
+	}
+	for _, argv := range calls {
+		joined := strings.Join(argv, " ")
+		if strings.Contains(joined, "update") && strings.Contains(joined, "apt-get") {
+			t.Fatalf("status must not refresh indexes: %v", argv)
+		}
+	}
+}
+
 func TestRunUpdateSkipExecIsHonest(t *testing.T) {
 	p, err := DetectFrom(strings.NewReader("ID=debian\nVERSION_ID=13\nPRETTY_NAME=\"Debian GNU/Linux 13\"\n"), "amd64")
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 
 const (
 	UpdateCheck      = "check"
+	UpdateStatus     = "status"
 	UpdatePreflight  = "preflight"
 	UpdateCheckpoint = "checkpoint"
 	UpdateApply      = "apply"
