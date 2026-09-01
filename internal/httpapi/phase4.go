@@ -22,6 +22,7 @@ type NetworkRPC interface {
 	DryRunNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.Preview, error)
 	ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyResult, error)
 	GetNetworks(ctx context.Context, hints []ndnet.Hint) (ndnet.Observation, error)
+	NetAdvanced(ctx context.Context, op ndnet.AdvancedOp) (ndnet.AdvancedResult, error)
 }
 
 type networkWriteRequest struct {
@@ -51,6 +52,10 @@ func (s *Server) listNetworks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":     out,
 		"nics":      s.inventoryNICs(r.Context(), p.User.ClusterID),
+		"vlans":     vlanListJSON(s.Store, r.Context(), p.User.ClusterID),
+		"bonds":     bondListJSON(s.Store, r.Context(), p.User.ClusterID),
+		"policies":  policyListJSON(s.Store, r.Context(), p.User.ClusterID),
+		"overlays":  overlayListJSON(s.Store, r.Context(), p.User.ClusterID),
 		"first_run": len(items) == 0,
 	})
 }

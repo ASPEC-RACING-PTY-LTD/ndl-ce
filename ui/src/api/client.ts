@@ -391,6 +391,44 @@ export async function applyNetwork(
   return parsed;
 }
 
+export async function createVLAN(body: {
+  name?: string;
+  network_id?: string;
+  vlan_id: number;
+  parent_ifname?: string;
+  access_ifname?: string;
+  mode?: string;
+  confirm_ifname?: string;
+}): Promise<import("./phase4").NetworkVLAN> {
+  return readJson(await request("/networks/vlans", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function createBond(body: {
+  name: string;
+  mode?: string;
+  members: string[];
+  confirm_ifname?: string;
+}): Promise<import("./phase4").NetworkBond> {
+  return readJson(await request("/networks/bonds", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function createPolicy(body: {
+  name: string;
+  action?: string;
+  src_workload_id: string;
+  dst_workload_id: string;
+}): Promise<import("./phase4").NetworkPolicy> {
+  return readJson(await request("/networks/policies", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function applyPolicy(id: string): Promise<import("./phase4").NetworkPolicy> {
+  return readJson(await request(`/networks/policies/${id}/apply`, { method: "POST", body: "{}" }));
+}
+
+export async function createOverlay(body: { name?: string; vni: number }): Promise<import("./phase4").NetworkOverlay> {
+  return readJson(await request("/networks/overlays", { method: "POST", body: JSON.stringify(body) }));
+}
+
 export async function listWorkloads(): Promise<import("./phase5").WorkloadListResponse> {
   return readJson(await request("/workloads"));
 }

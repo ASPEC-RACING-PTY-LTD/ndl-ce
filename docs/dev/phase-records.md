@@ -182,5 +182,14 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: advanced networking remains Phase 27; live NAS appliance job; iSCSI multipath
 - Audit follow-up: SkipHostCmds and missing mount stay unavailable and never invent incremental send; password is never on argv or in a unit file
 
+## Phase 27
+
+- Package: 0.1.26
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (VLAN access VID 20 files and typed bridge vlan argv, active-backup bond shown, guest policy deny-pair drop without INPUT hook, management INPUT refuse, LAN-bridge watchdog still restores, overlay is local prep). FIXTURE: SkipHostCmds + fakeNet. NOT PHYSICALLY VALIDATED: live VLAN-aware bridge, LACP, nft bridge family against two guests
+- Follow-up: WireGuard remains Phase 28; live extra-NIC appliance job; multi-node overlay mesh Phase 30
+- Audit follow-up: policies cannot emit inet INPUT drop; VLAN/bond on management still require typed confirm and the 120s watchdog
+
 
 

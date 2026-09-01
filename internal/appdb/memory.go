@@ -70,6 +70,10 @@ type Memory struct {
 	registrySecrets   map[string][2]string
 	stacks            map[string]Stack
 	stackMembers      map[string]StackMember
+	netVLANs          map[string]NetworkVLAN
+	netBonds          map[string]NetworkBond
+	netPolicies       map[string]NetworkPolicy
+	netOverlays       map[string]NetworkOverlay
 }
 
 // NewMemory returns an empty store.

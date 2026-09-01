@@ -53,6 +53,10 @@ func run(args []string) error {
   network list
   network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
   network apply --id ID [--dry-run] [--confirm-ifname IF]
+  network vlan add --vid 20 [--network-id ID] [--access IF]
+  network bond add --name NAME [--mode active-backup] --members IF,IF
+  network policy create --name NAME --src-workload ID --dst-workload ID [--action deny]
+  network policy apply --id ID
   guest status --id ID
   workload list
   workload create --kind system-container --name NAME --image-pin PIN --pool-id ID --network-id ID [--cpus N] [--memory-bytes N] [--privileged]
@@ -489,9 +493,14 @@ func cmdUploadImage(poolID, kind, file string) error {
 
 func cmdNetwork(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl network list|create|apply ...")
+		return fmt.Errorf("usage: nodalctl network list|create|apply|vlan add|bond add|policy ...")
 	}
-	switch args[0] {
+	cmd := args[0]
+	if len(args) > 1 && (args[1] == "add" || args[1] == "create" || args[1] == "apply") {
+		cmd = args[0] + " " + args[1]
+		args = args[1:]
+	}
+	switch cmd {
 	case "list":
 		return cmdGet("/api/v1/networks")
 	case "create":
@@ -521,6 +530,40 @@ func cmdNetwork(args []string) error {
 			headers["X-Nodal-Confirm"] = tok
 		}
 		return postJSONHeaders(path, body, true, headers)
+	case "vlan add":
+		f := parseFlags(args[1:])
+		if f["vid"] == "" {
+			return fmt.Errorf("usage: nodalctl network vlan add --vid 20 [--network-id ID] [--access IF]")
+		}
+		vid := 0
+		fmt.Sscanf(f["vid"], "%d", &vid)
+		return postJSON("/api/v1/networks/vlans", map[string]any{
+			"network_id": f["network-id"], "vlan_id": vid, "access_ifname": f["access"],
+			"parent_ifname": f["parent"], "name": f["name"], "confirm_ifname": f["confirm-ifname"],
+		}, true)
+	case "bond add":
+		f := parseFlags(args[1:])
+		if f["name"] == "" || f["members"] == "" {
+			return fmt.Errorf("usage: nodalctl network bond add --name NAME --members IF,IF")
+		}
+		return postJSON("/api/v1/networks/bonds", map[string]any{
+			"name": f["name"], "mode": f["mode"], "members": strings.Split(f["members"], ","),
+			"confirm_ifname": f["confirm-ifname"],
+		}, true)
+	case "policy create":
+		f := parseFlags(args[1:])
+		if f["name"] == "" || f["src-workload"] == "" || f["dst-workload"] == "" {
+			return fmt.Errorf("usage: nodalctl network policy create --name NAME --src-workload ID --dst-workload ID")
+		}
+		return postJSON("/api/v1/networks/policies", map[string]any{
+			"name": f["name"], "action": f["action"], "src_workload_id": f["src-workload"], "dst_workload_id": f["dst-workload"],
+		}, true)
+	case "policy apply":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl network policy apply --id ID")
+		}
+		return postJSON("/api/v1/networks/policies/"+f["id"]+"/apply", map[string]any{}, true)
 	default:
 		return fmt.Errorf("unknown network command")
 	}

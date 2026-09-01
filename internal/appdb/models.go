@@ -75,6 +75,17 @@ type Store interface {
 	GetNetwork(ctx context.Context, clusterID, id string) (*Network, error)
 	UpdateNetworkObserved(ctx context.Context, n Network) error
 
+	CreateNetworkVLAN(ctx context.Context, v NetworkVLAN) error
+	ListNetworkVLANs(ctx context.Context, clusterID string) ([]NetworkVLAN, error)
+	CreateNetworkBond(ctx context.Context, b NetworkBond) error
+	ListNetworkBonds(ctx context.Context, clusterID string) ([]NetworkBond, error)
+	CreateNetworkPolicy(ctx context.Context, p NetworkPolicy) error
+	ListNetworkPolicies(ctx context.Context, clusterID string) ([]NetworkPolicy, error)
+	GetNetworkPolicy(ctx context.Context, clusterID, id string) (*NetworkPolicy, error)
+	UpdateNetworkPolicyStatus(ctx context.Context, clusterID, id, status, reason string) error
+	CreateNetworkOverlay(ctx context.Context, o NetworkOverlay) error
+	ListNetworkOverlays(ctx context.Context, clusterID string) ([]NetworkOverlay, error)
+
 	CreateAddress(ctx context.Context, a Address) error
 	ListAddresses(ctx context.Context, clusterID, networkID string) ([]Address, error)
 

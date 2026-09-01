@@ -178,6 +178,7 @@ message ExecuteRequest {
     BackupExtract backup_extract = 33;
     LVMPool lvm_pool = 34;
     Datastore datastore = 35;
+    NetAdvanced net_advanced = 36;
   }
 }
 
@@ -293,6 +294,25 @@ message Datastore {
   string username = 6;
   string password = 7;
   string iqn = 8;
+}
+
+message NetAdvanced {
+  string action = 1;
+  string object_id = 2;
+  string network_id = 3;
+  string name = 4;
+  int32 vlan_id = 5;
+  string parent_ifname = 6;
+  string mode = 7;
+  string access_ifname = 8;
+  repeated string members = 9;
+  string src_mac = 10;
+  string dst_mac = 11;
+  string policy_action = 12;
+  uint32 overlay_vni = 13;
+  string confirm_ifname = 14;
+  bool arm_rollback = 15;
+  string bridge_name = 16;
 }
 
 message VMSnapshot {

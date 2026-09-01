@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.25
-  description: Phase 26 NFS/SMB/iSCSI compute datastores, plus prior northbound API.
+  version: 0.1.26
+  description: Phase 27 advanced networking, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -622,6 +622,91 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Reservation"
+  /networks/vlans:
+    post:
+      operationId: createNetworkVlan
+      summary: Add a stacked VLAN. Access port on VID 20 is the homelab path. Management NIC requires typed confirm.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VLANCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkVLAN"
+  /networks/bonds:
+    post:
+      operationId: createNetworkBond
+      summary: Create an active-backup or LACP bond. Bonding the management NIC requires typed confirm.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BondCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkBond"
+  /networks/policies:
+    post:
+      operationId: createNetworkPolicy
+      summary: Create a guest-to-guest bridge policy. Cannot drop management INPUT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkPolicy"
+  /networks/policies/{id}/apply:
+    post:
+      operationId: applyNetworkPolicy
+      summary: Apply a guest-to-guest policy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkPolicy"
+  /networks/overlays:
+    post:
+      operationId: createNetworkOverlay
+      summary: Local VXLAN prep. Multi-node mesh is Phase 30.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverlayCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkOverlay"
   /workloads:
     get:
       operationId: listWorkloads
@@ -3119,6 +3204,167 @@ components:
           items:
             type: object
             additionalProperties: true
+        vlans:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkVLAN"
+        bonds:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkBond"
+        policies:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkPolicy"
+        overlays:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkOverlay"
+    NetworkVLAN:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        network_id:
+          type: string
+        name:
+          type: string
+        vlan_id:
+          type: integer
+        parent_ifname:
+          type: string
+        access_ifname:
+          type: string
+        mode:
+          type: string
+        locator:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+    NetworkBond:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mode:
+          type: string
+        members:
+          type: array
+          items:
+            type: string
+        locator:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+    NetworkPolicy:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        action:
+          type: string
+        src_workload_id:
+          type: string
+        dst_workload_id:
+          type: string
+        src_mac:
+          type: string
+        dst_mac:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+    NetworkOverlay:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        vni:
+          type: integer
+        locator:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+    VLANCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - vlan_id
+      properties:
+        name:
+          type: string
+        network_id:
+          type: string
+        vlan_id:
+          type: integer
+        parent_ifname:
+          type: string
+        access_ifname:
+          type: string
+        mode:
+          type: string
+        confirm_ifname:
+          type: string
+    BondCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - members
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+        members:
+          type: array
+          items:
+            type: string
+        confirm_ifname:
+          type: string
+    PolicyCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - src_workload_id
+        - dst_workload_id
+      properties:
+        name:
+          type: string
+        action:
+          type: string
+        src_workload_id:
+          type: string
+        dst_workload_id:
+          type: string
+    OverlayCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - vni
+      properties:
+        name:
+          type: string
+        vni:
+          type: integer
     Network:
       type: object
       additionalProperties: true

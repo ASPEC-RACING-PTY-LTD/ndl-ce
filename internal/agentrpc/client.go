@@ -254,6 +254,27 @@ func (c Client) ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyR
 	return out, nil
 }
 
+// NetAdvanced is a typed VLAN, bond, policy, or overlay action.
+func (c Client) NetAdvanced(ctx context.Context, op ndnet.AdvancedOp) (ndnet.AdvancedResult, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_NetAdvanced{NetAdvanced: &agentv1.NetAdvanced{
+			Action: op.Action, ObjectId: op.ObjectID, NetworkId: op.NetworkID, Name: op.Name,
+			VlanId: int32(op.VID), ParentIfname: op.ParentIfName, Mode: op.Mode, AccessIfname: op.AccessIfName,
+			Members: op.Members, SrcMac: op.SrcMAC, DstMac: op.DstMAC, PolicyAction: op.PolicyAction,
+			OverlayVni: op.OverlayVNI, ConfirmIfname: op.ConfirmIfName, ArmRollback: op.ArmRollback,
+			BridgeName: op.BridgeName,
+		}},
+	}))
+	if err != nil {
+		return ndnet.AdvancedResult{}, err
+	}
+	var out ndnet.AdvancedResult
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return ndnet.AdvancedResult{}, err
+	}
+	return out, nil
+}
+
 // GetWorkloads observes known system containers.
 func (c Client) GetWorkloads(ctx context.Context, hints []lxc.Hint) (lxc.Observation, error) {
 	res, err := c.rpc().GetWorkloads(ctx, connect.NewRequest(&agentv1.GetWorkloadsRequest{Workloads: encodeWorkloadHints(hints)}))

@@ -34,6 +34,26 @@ func (f fakeNet) ApplyNetwork(context.Context, ndnet.Spec) (ndnet.ApplyResult, e
 func (f fakeNet) GetNetworks(context.Context, []ndnet.Hint) (ndnet.Observation, error) {
 	return f.obs, nil
 }
+func (f fakeNet) NetAdvanced(_ context.Context, op ndnet.AdvancedOp) (ndnet.AdvancedResult, error) {
+	if f.err != nil {
+		return ndnet.AdvancedResult{}, f.err
+	}
+	res := ndnet.AdvancedResult{Action: op.Action, ObjectID: op.ObjectID, Status: ndnet.StatusAvailable, VID: op.VID, Mode: op.Mode}
+	if op.Action == ndnet.ActionOverlayPrep {
+		res.Reason = ndnet.OverlayPrepMsg
+	}
+	if op.Action == ndnet.ActionBondAdd {
+		res.Mode = ndnet.BondActiveBackup
+		if op.Mode != "" {
+			res.Mode = op.Mode
+		}
+		res.Locator = "ndlbtest01"
+	}
+	if op.Action == ndnet.ActionVLANAdd {
+		res.Locator = "ndlvtest01"
+	}
+	return res, nil
+}
 
 func claimAdmin(t *testing.T, ts *httptest.Server, token string) string {
 	t.Helper()

@@ -218,6 +218,83 @@ export interface NetworkListResponse {
   items: Network[];
   first_run?: boolean;
   nics?: Record<string, unknown>[];
+  vlans?: NetworkVLAN[];
+  bonds?: NetworkBond[];
+  policies?: NetworkPolicy[];
+  overlays?: NetworkOverlay[];
+}
+
+export interface NetworkVLAN {
+  id?: string;
+  network_id?: string;
+  name?: string;
+  vlan_id?: number;
+  parent_ifname?: string;
+  access_ifname?: string;
+  mode?: string;
+  locator?: string;
+  status?: string;
+  reason?: string;
+}
+
+export interface NetworkBond {
+  id?: string;
+  name?: string;
+  mode?: string;
+  members?: string[];
+  locator?: string;
+  status?: string;
+  reason?: string;
+}
+
+export interface NetworkPolicy {
+  id?: string;
+  name?: string;
+  action?: string;
+  src_workload_id?: string;
+  dst_workload_id?: string;
+  src_mac?: string;
+  dst_mac?: string;
+  status?: string;
+  reason?: string;
+}
+
+export interface NetworkOverlay {
+  id?: string;
+  name?: string;
+  vni?: number;
+  locator?: string;
+  status?: string;
+  reason?: string;
+}
+
+export interface VLANCreateRequest {
+  name?: string;
+  network_id?: string;
+  vlan_id: number;
+  parent_ifname?: string;
+  access_ifname?: string;
+  mode?: string;
+  confirm_ifname?: string;
+}
+
+export interface BondCreateRequest {
+  name: string;
+  mode?: string;
+  members: string[];
+  confirm_ifname?: string;
+}
+
+export interface PolicyCreateRequest {
+  name: string;
+  action?: string;
+  src_workload_id: string;
+  dst_workload_id: string;
+}
+
+export interface OverlayCreateRequest {
+  name?: string;
+  vni: number;
 }
 
 export interface Network {
@@ -1214,6 +1291,16 @@ export type GetNetworkPath = "/api/v1/networks/{id}";
 export type ApplyNetworkPath = "/api/v1/networks/{id}/apply";
 
 export type ListNetworkReservationsPath = "/api/v1/networks/{id}/reservations";
+
+export type CreateNetworkVlanPath = "/api/v1/networks/vlans";
+
+export type CreateNetworkBondPath = "/api/v1/networks/bonds";
+
+export type CreateNetworkPolicyPath = "/api/v1/networks/policies";
+
+export type ApplyNetworkPolicyPath = "/api/v1/networks/policies/{id}/apply";
+
+export type CreateNetworkOverlayPath = "/api/v1/networks/overlays";
 
 export type ListWorkloadsPath = "/api/v1/workloads";
 

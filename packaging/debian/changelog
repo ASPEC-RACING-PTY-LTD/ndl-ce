@@ -1,3 +1,9 @@
+nodal (0.1.26) UNRELEASED; urgency=medium
+
+  * Phase 27 advanced networking: stacked VLAN access ports, active-backup/LACP bonds, guest bridge-family policies that cannot drop management INPUT, VXLAN overlay prep, watchdog still wins
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.25) UNRELEASED; urgency=medium
 
   * Phase 26 NFS/SMB/iSCSI compute datastores: mount or login, ISO library on NFS, VM disk on iSCSI or NFS file, share down stays unavailable, passwords in secrets not unit files

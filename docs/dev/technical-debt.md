@@ -179,6 +179,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. iSCSI snapshots stay false. Why not blocking: a raw LUN is not a qcow2 overlay chain; inventing snapshots would violate honesty.
 - LOW. SMB credentials are a 0600 file under /var/lib/ndl/secrets/datastore, not a systemd unit. Why not blocking: that is the security requirement; Cloud does not write the file when SkipHostCmds is set.
 
+## Phase 27
+
+- MEDIUM. Live VLAN-aware bridging, LACP, and nft bridge-family forwarding are not proven on this Cloud VM. Why not blocking: SkipHostCmds plus fixtures prove VID 20 access argv, bond files, policy refuse of management INPUT, and that the Phase 4 watchdog still restores a failed LAN-bridge probe.
+- LOW. VXLAN overlay is local prep and does not form a multi-node mesh. Why not blocking: roadmap says usable after Phase 30.
+- LOW. VLAN-aware filtering is applied with typed `bridge vlan` on an access port rather than rewriting an existing isolated bridge netdev in place. Why not blocking: stacked VLAN netdev plus access PVID is the homelab path; rewriting a live bridge would risk the management NIC.
+
 
 
 

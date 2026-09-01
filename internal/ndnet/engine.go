@@ -518,11 +518,15 @@ func (e *Engine) dnsmasqRunning(id string) bool {
 }
 
 func (e *Engine) writeNFTFile(rules string) (string, error) {
+	return e.writeNFTNamed("ndl.nft", rules)
+}
+
+func (e *Engine) writeNFTNamed(name, rules string) (string, error) {
 	dir := filepath.Join(e.stateDir(), "nft")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, "ndl.nft")
+	path := filepath.Join(dir, name)
 	return path, os.WriteFile(path, []byte(rules), 0600)
 }
 

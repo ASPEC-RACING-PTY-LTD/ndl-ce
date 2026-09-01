@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { applyNetwork, createNetwork, listNetworks } from "../api/client";
-import type { ConfirmRequired, Network, NetworkNIC } from "../api/phase4";
+import { applyNetwork, applyPolicy, createBond, createNetwork, createPolicy, createVLAN, listNetworks } from "../api/client";
+import type { ConfirmRequired, Network, NetworkBond, NetworkNIC, NetworkPolicy, NetworkVLAN } from "../api/phase4";
 import { Field } from "../components/Field";
 import { useSession } from "../session";
 
@@ -18,6 +18,9 @@ export function NetworkPage() {
   const mutate = canMutate(roles);
   const [items, setItems] = useState<Network[]>([]);
   const [nics, setNics] = useState<NetworkNIC[]>([]);
+  const [vlans, setVlans] = useState<NetworkVLAN[]>([]);
+  const [bonds, setBonds] = useState<NetworkBond[]>([]);
+  const [policies, setPolicies] = useState<NetworkPolicy[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("isolated");
   const [kind, setKind] = useState("isolated");
@@ -27,11 +30,21 @@ export function NetworkPage() {
   const [confirmToken, setConfirmToken] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [vlanVid, setVlanVid] = useState("20");
+  const [vlanAccess, setVlanAccess] = useState("");
+  const [bondName, setBondName] = useState("uplink");
+  const [bondMembers, setBondMembers] = useState("");
+  const [polName, setPolName] = useState("deny-pair");
+  const [polSrc, setPolSrc] = useState("");
+  const [polDst, setPolDst] = useState("");
 
   async function reload() {
     const listed = await listNetworks();
     setItems(listed.items ?? []);
     setNics(listed.nics ?? []);
+    setVlans(listed.vlans ?? []);
+    setBonds(listed.bonds ?? []);
+    setPolicies(listed.policies ?? []);
   }
 
   useEffect(() => {
@@ -115,11 +128,69 @@ export function NetworkPage() {
     }
   }
 
+  async function onCreateVLAN() {
+    setBusy(true);
+    setError(null);
+    try {
+      await createVLAN({
+        vlan_id: Number(vlanVid),
+        network_id: items[0]?.id,
+        access_ifname: vlanAccess || undefined,
+        confirm_ifname: typed || undefined,
+      });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "VLAN add failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCreateBond() {
+    setBusy(true);
+    setError(null);
+    try {
+      await createBond({
+        name: bondName,
+        mode: "active-backup",
+        members: bondMembers.split(",").map((m) => m.trim()).filter(Boolean),
+        confirm_ifname: typed || undefined,
+      });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bond add failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCreatePolicy() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createPolicy({
+        name: polName,
+        action: "deny",
+        src_workload_id: polSrc,
+        dst_workload_id: polDst,
+      });
+      await applyPolicy(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Policy apply failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="page page-wide" aria-labelledby="network-heading">
       <header className="page-header">
         <h1 id="network-heading">Network</h1>
-        <p className="page-kicker">Isolated, isolated-NAT, and LAN-bridge networks. Isolated is the safe default.</p>
+        <p className="page-kicker">
+          Isolated, isolated-NAT, and LAN-bridge networks. VLAN access ports, bonds, and guest policies
+          are optional. Isolated is the safe default. Policies cannot drop management INPUT.
+        </p>
       </header>
       {error ? (
         <p className="banner banner-error" role="alert">
@@ -198,6 +269,83 @@ export function NetworkPage() {
           </ul>
         )}
       </article>
+      {mutate ? (
+        <article className="panel">
+          <h2>VLANs, bonds, and policies</h2>
+          <p className="lede">
+            Stacked VLAN access ports use a VID such as 20. Bonds default to active-backup. Guest
+            policies use the nftables bridge family and cannot drop management INPUT. The 120s
+            rollback watchdog still wins on dangerous uplink changes.
+          </p>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateVLAN();
+            }}
+          >
+            <Field id="vlan-vid" label="VLAN ID" value={vlanVid} onChange={(e) => setVlanVid(e.target.value)} hint="Access port PVID. 20 is the homelab example." />
+            <Field id="vlan-access" label="Access interface" value={vlanAccess} onChange={(e) => setVlanAccess(e.target.value)} hint="Optional extra NIC. Management requires typed confirm." />
+            <button className="btn btn-primary" type="submit" disabled={busy}>
+              Add VLAN
+            </button>
+          </form>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateBond();
+            }}
+          >
+            <Field id="bond-name" label="Bond name" value={bondName} onChange={(e) => setBondName(e.target.value)} />
+            <Field id="bond-members" label="Members" value={bondMembers} onChange={(e) => setBondMembers(e.target.value)} hint="Comma-separated extra NICs, for example eth1,eth2." />
+            <button className="btn" type="submit" disabled={busy || !bondMembers}>
+              Add bond
+            </button>
+          </form>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreatePolicy();
+            }}
+          >
+            <Field id="pol-name" label="Policy name" value={polName} onChange={(e) => setPolName(e.target.value)} />
+            <Field id="pol-src" label="Source workload UUID" value={polSrc} onChange={(e) => setPolSrc(e.target.value)} />
+            <Field id="pol-dst" label="Destination workload UUID" value={polDst} onChange={(e) => setPolDst(e.target.value)} />
+            <button className="btn" type="submit" disabled={busy || !polSrc || !polDst}>
+              Deny pair
+            </button>
+          </form>
+          {vlans.length > 0 ? (
+            <ul className="plain-list">
+              {vlans.map((v) => (
+                <li key={v.id}>
+                  VLAN {v.vlan_id} {v.locator} {v.status}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {bonds.length > 0 ? (
+            <ul className="plain-list">
+              {bonds.map((b) => (
+                <li key={b.id}>
+                  Bond {b.name} {b.mode} {b.locator} {b.status}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {policies.length > 0 ? (
+            <ul className="plain-list">
+              {policies.map((p) => (
+                <li key={p.id}>
+                  Policy {p.name} {p.action} {p.status}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </article>
+      ) : null}
       <article className="panel">
         <h2>Host NICs</h2>
         {nics.length === 0 ? (
