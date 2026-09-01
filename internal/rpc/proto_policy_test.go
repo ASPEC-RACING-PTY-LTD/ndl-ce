@@ -48,6 +48,8 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"CreateDirectoryVolume create_directory_volume =",
 		"NetDryRun net_dry_run =",
 		"NetApply net_apply =",
+		"CTCreate ct_create =",
+		"CTLifecycle ct_lifecycle =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {
@@ -67,6 +69,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"rpc GetMetrics(",
 		"rpc GetStorage(",
 		"rpc GetNetworks(",
+		"rpc GetWorkloads(",
 		"rpc UploadLibrary(",
 	} {
 		if !strings.Contains(text, need) {

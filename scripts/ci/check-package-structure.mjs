@@ -24,6 +24,7 @@ const required = [
   "systemd/nodal-workloads.target",
   "systemd/ndl-network-rollback.service",
   "systemd/ndl-dnsmasq@.service",
+  "systemd/nodal-ct@.service",
   "docs/install.md",
   "docs/uninstall.md",
   "docs/recovery.md",
@@ -80,6 +81,18 @@ if (/^Package: ndl-agent[\s\S]*?Depends:[^\n]*\bdnsmasq,/m.test(control)) {
 if (!/^Package: ndl-agent[\s\S]*?nftables/m.test(control)) {
   errors.push("ndl-agent must Depend on nftables for NAT and INPUT validation");
 }
+if (!/^Package: ndl-agent[\s\S]*?\blxc\b/m.test(control)) {
+  errors.push("ndl-agent must Depend on lxc");
+}
+if (!/^Package: ndl-agent[\s\S]*?lxcfs/m.test(control)) {
+  errors.push("ndl-agent must Depend on lxcfs");
+}
+if (!/^Package: ndl-agent[\s\S]*?\bgpgv\b/m.test(control)) {
+  errors.push("ndl-agent must Depend on gpgv to verify official LXC image signatures");
+}
+if (!/^Package: ndl-agent[\s\S]*?uidmap/m.test(control)) {
+  errors.push("ndl-agent must Depend on uidmap");
+}
 
 const proto = existsSync("proto/nodal/agent/v1/agent.proto")
   ? readFileSync("proto/nodal/agent/v1/agent.proto", "utf8")
@@ -116,11 +129,38 @@ if (!agentUnit.includes("NoNewPrivileges=yes")) {
 if (!agentUnit.includes("DevicePolicy=closed")) {
   errors.push("ndl-agent.service must set DevicePolicy=closed");
 }
-if (!/^CapabilityBoundingSet=CAP_NET_ADMIN\s*$/m.test(agentUnit)) {
-  errors.push("ndl-agent.service must grant CAP_NET_ADMIN for isolated-nat nftables");
+if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN\s*$/m.test(agentUnit)) {
+  errors.push("ndl-agent.service must grant CAP_NET_ADMIN and CAP_CHOWN");
 }
 if (/CAP_SYS_ADMIN/.test(agentUnit)) {
   errors.push("ndl-agent.service must not grant CAP_SYS_ADMIN");
+}
+const agentInstall = existsSync("packaging/debian/ndl-agent.install")
+  ? readFileSync("packaging/debian/ndl-agent.install", "utf8")
+  : "";
+if (!agentInstall.includes("nodal-ct@.service")) {
+  errors.push("ndl-agent.install must install nodal-ct@.service");
+}
+const rules = existsSync("packaging/debian/rules")
+  ? readFileSync("packaging/debian/rules", "utf8")
+  : "";
+if (!rules.includes("nodal-ct@.service")) {
+  errors.push("debian/rules must install nodal-ct@.service");
+}
+const ctUnit = existsSync("systemd/nodal-ct@.service")
+  ? readFileSync("systemd/nodal-ct@.service", "utf8")
+  : "";
+if (!/Type=simple/.test(ctUnit) || !/lxc-start[^\n]* -F/.test(ctUnit)) {
+  errors.push("nodal-ct@.service must run lxc-start in the foreground as Type=simple");
+}
+if (/^Type=forking/m.test(ctUnit) || /^ExecStart=.*lxc-start.* -d/m.test(ctUnit)) {
+  errors.push("nodal-ct@.service must not use Type=forking or lxc-start -d");
+}
+const postinst = existsSync("packaging/debian/ndl-agent.postinst")
+  ? readFileSync("packaging/debian/ndl-agent.postinst", "utf8")
+  : "";
+if (!postinst.includes("lxc-net.service")) {
+  errors.push("ndl-agent.postinst must mask lxc-net.service");
 }
 if (/^RuntimeDirectory=ndl\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl");

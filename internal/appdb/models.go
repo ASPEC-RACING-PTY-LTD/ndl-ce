@@ -78,6 +78,23 @@ type Store interface {
 
 	CreateReservation(ctx context.Context, r DHCPReservation) error
 	ListReservations(ctx context.Context, clusterID, networkID string) ([]DHCPReservation, error)
+
+	GetOperationByIdempotency(ctx context.Context, clusterID, key string) (*Operation, error)
+
+	CreateWorkload(ctx context.Context, w Workload) error
+	ListWorkloads(ctx context.Context, clusterID string) ([]Workload, error)
+	GetWorkload(ctx context.Context, clusterID, id string) (*Workload, error)
+	GetWorkloadByName(ctx context.Context, clusterID, name string) (*Workload, error)
+	GetWorkloadByIdempotency(ctx context.Context, clusterID, key string) (*Workload, error)
+	UpdateWorkloadObserved(ctx context.Context, w Workload) error
+	UpdateWorkloadSpec(ctx context.Context, w Workload) error
+
+	CreateWorkloadDisk(ctx context.Context, d WorkloadDisk) error
+	ListWorkloadDisks(ctx context.Context, clusterID, workloadID string) ([]WorkloadDisk, error)
+
+	CreateWorkloadNIC(ctx context.Context, n WorkloadNIC) error
+	ListWorkloadNICs(ctx context.Context, clusterID, workloadID string) ([]WorkloadNIC, error)
+	UpdateWorkloadNIC(ctx context.Context, n WorkloadNIC) error
 }
 
 // Cluster is the appliance cluster of one.

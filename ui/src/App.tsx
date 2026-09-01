@@ -8,6 +8,9 @@ import { NodePage } from "./pages/NodePage";
 import { SetupPage } from "./pages/SetupPage";
 import { NetworkPage } from "./pages/NetworkPage";
 import { StoragePage } from "./pages/StoragePage";
+import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
+import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
+import { WorkloadsPage } from "./pages/WorkloadsPage";
 import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
@@ -83,6 +86,12 @@ function AppRoutes() {
     page = <StoragePage />;
   } else if (path === "/network") {
     page = <NetworkPage />;
+  } else if (path === "/workloads/new/system-container") {
+    page = <WorkloadCreatePage />;
+  } else if (path.startsWith("/workloads/") && path !== "/workloads") {
+    page = <WorkloadDetailPage />;
+  } else if (path === "/workloads") {
+    page = <WorkloadsPage />;
   } else if (path === "/node" || path.startsWith("/node/")) {
     page = <NodePage />;
   }

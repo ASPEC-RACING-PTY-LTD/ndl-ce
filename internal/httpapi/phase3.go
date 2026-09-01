@@ -379,13 +379,24 @@ func (s *Server) startOp(ctx context.Context, clusterID, nodeID, kind, stage str
 
 func (s *Server) finishOp(ctx context.Context, op appdb.Operation, state, message string, progress int) {
 	op.State = state
-	op.Message = message
 	op.Progress = &progress
-	if state == "succeeded" {
+	if looksLikeCreateIDs(op.Message) && !looksLikeCreateIDs(message) {
+		op.Stage = message
+	} else {
+		op.Message = message
+		if state == "succeeded" {
+			op.Stage = "done"
+		}
+	}
+	if state == "succeeded" && looksLikeCreateIDs(op.Message) {
 		op.Stage = "done"
 	}
 	op.UpdatedAt = time.Now().UTC()
 	_ = s.Store.UpsertOperation(ctx, op)
+}
+
+func looksLikeCreateIDs(message string) bool {
+	return strings.Contains(message, `"workload_id"`)
 }
 
 func (s *Server) emitEvent(ctx context.Context, clusterID, nodeID, typ string, payload map[string]string) {

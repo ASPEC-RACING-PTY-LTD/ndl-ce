@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getNodeMetrics, listEvents, listNetworks, listNodes, listPools, listTasks } from "../api/client";
+import { getNodeMetrics, listEvents, listNetworks, listNodes, listPools, listTasks, listWorkloads } from "../api/client";
 import type { EventItem, MetricsResponse, NodeSummary, TaskItem } from "../api/phase2";
 import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
@@ -16,6 +16,7 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [needStorage, setNeedStorage] = useState(false);
   const [needNetwork, setNeedNetwork] = useState(false);
+  const [needWorkload, setNeedWorkload] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,12 +28,13 @@ export function DashboardPage() {
           return;
         }
         setNode(first);
-        const [ev, tk, met, pools, nets] = await Promise.all([
+        const [ev, tk, met, pools, nets, wls] = await Promise.all([
           listEvents().catch(() => []),
           listTasks().catch(() => []),
           first ? getNodeMetrics(first.id).catch(() => null) : Promise.resolve(null),
           listPools().catch(() => ({ items: [] })),
           listNetworks().catch(() => ({ items: [] })),
+          listWorkloads().catch(() => ({ items: [] })),
         ]);
         if (cancelled) {
           return;
@@ -44,6 +46,8 @@ export function DashboardPage() {
         setNeedStorage(!usable);
         const netReady = (nets.items ?? []).some((n) => n.status === "available" || n.status === "warning");
         setNeedNetwork(!netReady);
+        const haveWL = (wls.items ?? []).length > 0;
+        setNeedWorkload(usable && netReady && !haveWL);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
@@ -79,6 +83,12 @@ export function DashboardPage() {
         <p className="banner banner-warn" role="status">
           No guest network yet. Create an isolated network on the{" "}
           <Link href="/network">Network</Link> page.
+        </p>
+      ) : null}
+      {needWorkload ? (
+        <p className="banner banner-warn" role="status">
+          Storage and network are ready. Create a system container on the{" "}
+          <Link href="/workloads">Workloads</Link> page.
         </p>
       ) : null}
       {!node ? (

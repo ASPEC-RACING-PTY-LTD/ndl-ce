@@ -257,6 +257,52 @@ export interface CreateReservationRequest {
   hostname?: string;
 }
 
+export interface WorkloadListResponse {
+  items: Workload[];
+  image_pins?: string[];
+}
+
+export interface Workload {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  reason?: string;
+  desired_power?: string;
+  image_pin?: string;
+  image_verified?: boolean;
+  cpus?: number;
+  memory_bytes?: number;
+  privileged?: boolean;
+  pid?: number;
+  unit_active?: boolean;
+  migrate_ready?: boolean;
+  ipv4?: string;
+}
+
+export interface CreateWorkloadRequest {
+  name: string;
+  kind?: string;
+  image_pin: string;
+  cpus?: number;
+  memory_bytes?: number;
+  pool_id?: string;
+  network_id: string;
+  volume_id?: string;
+  privileged?: boolean;
+  desired_power?: string;
+}
+
+export interface UpdateWorkloadRequest {
+  cpus?: number;
+  memory_bytes?: number;
+  desired_power?: string;
+}
+
+export interface CloneWorkloadRequest {
+  name?: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -308,3 +354,17 @@ export type GetNetworkPath = "/api/v1/networks/{id}";
 export type ApplyNetworkPath = "/api/v1/networks/{id}/apply";
 
 export type ListNetworkReservationsPath = "/api/v1/networks/{id}/reservations";
+
+export type ListWorkloadsPath = "/api/v1/workloads";
+
+export type GetWorkloadPath = "/api/v1/workloads/{id}";
+
+export type StartWorkloadPath = "/api/v1/workloads/{id}/start";
+
+export type StopWorkloadPath = "/api/v1/workloads/{id}/stop";
+
+export type RestartWorkloadPath = "/api/v1/workloads/{id}/restart";
+
+export type DeleteWorkloadPath = "/api/v1/workloads/{id}/delete";
+
+export type CloneWorkloadPath = "/api/v1/workloads/{id}/clone";

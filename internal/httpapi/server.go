@@ -46,6 +46,7 @@ type Server struct {
 	Observer   Observer
 	Storage    StorageRPC
 	Network    NetworkRPC
+	Workloads  WorkloadRPC
 	Hub        *EventHub
 	UI         fs.FS
 	Now        func() time.Time
@@ -101,6 +102,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/networks/{id}/apply", s.applyNetwork)
 	mux.HandleFunc("GET /api/v1/networks/{id}/reservations", s.listReservations)
 	mux.HandleFunc("POST /api/v1/networks/{id}/reservations", s.createReservation)
+	mux.HandleFunc("GET /api/v1/workloads", s.listWorkloads)
+	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
+	mux.HandleFunc("GET /api/v1/workloads/{id}", s.getWorkload)
+	mux.HandleFunc("PATCH /api/v1/workloads/{id}", s.patchWorkload)
+	mux.HandleFunc("POST /api/v1/workloads/{id}", s.patchWorkload)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/start", s.lifecycleWorkload("start"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/stop", s.lifecycleWorkload("stop"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/restart", s.lifecycleWorkload("restart"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/delete", s.lifecycleWorkload("delete"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/clone", s.lifecycleWorkload("clone"))
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

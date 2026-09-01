@@ -22,6 +22,8 @@ service AgentService {
   rpc GetStorage(GetStorageRequest) returns (GetStorageResponse);
   // GetNetworks observes known network objects. It does not delete objects.
   rpc GetNetworks(GetNetworksRequest) returns (GetNetworksResponse);
+  // GetWorkloads observes known system containers. It does not delete objects.
+  rpc GetWorkloads(GetWorkloadsRequest) returns (GetWorkloadsResponse);
   // UploadLibrary streams ISO or cloud-image bytes to the agent.
   rpc UploadLibrary(stream UploadLibraryRequest) returns (UploadLibraryResponse);
 }
@@ -62,6 +64,7 @@ message NetworkHint {
 message ObserveRequest {
   repeated StoragePoolHint storage_pools = 1;
   repeated NetworkHint networks = 2;
+  repeated WorkloadHint workloads = 3;
 }
 
 message ObserveResponse {
@@ -70,6 +73,15 @@ message ObserveResponse {
   bytes inventory_json = 3;
   bytes storage_json = 4;
   bytes network_json = 5;
+  bytes workload_json = 6;
+}
+
+message GetWorkloadsRequest {
+  repeated WorkloadHint workloads = 1;
+}
+
+message GetWorkloadsResponse {
+  bytes workload_json = 1;
 }
 
 message GetInventoryRequest {}
@@ -116,7 +128,42 @@ message ExecuteRequest {
     CreateDirectoryVolume create_directory_volume = 12;
     NetDryRun net_dry_run = 13;
     NetApply net_apply = 14;
+    CTCreate ct_create = 15;
+    CTLifecycle ct_lifecycle = 16;
   }
+}
+
+message CTCreate {
+  string workload_id = 1;
+  string name = 2;
+  string image_pin = 3;
+  int32 cpus = 4;
+  int64 memory_bytes = 5;
+  string volume_id = 6;
+  string rootfs_path = 7;
+  string network_id = 8;
+  string bridge_name = 9;
+  string mac = 10;
+  bool privileged = 11;
+  string uid_map = 12;
+  string gid_map = 13;
+}
+
+message CTLifecycle {
+  string workload_id = 1;
+  string action = 2;
+  string clone_id = 3;
+  string clone_volume_id = 4;
+  string clone_rootfs_path = 5;
+  string clone_mac = 6;
+  string clone_name = 7;
+}
+
+message WorkloadHint {
+  string workload_id = 1;
+  string kind = 2;
+  string volume_id = 3;
+  string network_id = 4;
 }
 
 message Ping {}

@@ -52,6 +52,7 @@ const defaultRoutes = {
   "/api/v1/tasks": { status: 200, body: { items: [] } },
   "/api/v1/storage/pools": { status: 200, body: { items: [] } },
   "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
+  "/api/v1/workloads": { status: 200, body: { items: [] } },
 };
 
 afterEach(() => {
@@ -134,6 +135,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /log out/i })).toBeVisible();
     expect(screen.queryByText(/ci works/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/12 running/i)).not.toBeInTheDocument();
     expect(screen.getByText(/no usable storage pool yet/i)).toBeVisible();
 
     const text = container.textContent ?? "";
@@ -264,6 +266,21 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /create network/i })).toBeVisible();
     expect(screen.getByText(/eth0/)).toBeVisible();
     expect(screen.getByText(/ifindex 2/i)).toBeVisible();
+  });
+
+  it("renders the workloads route without fake counts", async () => {
+    window.history.replaceState({}, "", "/workloads");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^workloads$/i })).toBeVisible();
+    expect(screen.getByText(/no system containers yet/i)).toBeVisible();
+    expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /create system container/i })).toBeVisible();
   });
 
   it("imports generated OpenAPI path types", () => {

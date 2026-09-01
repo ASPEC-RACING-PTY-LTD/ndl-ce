@@ -16,6 +16,14 @@ export function honestStatus(value?: string): string {
   switch (value) {
     case "available":
       return "Available";
+    case "running":
+      return "Running";
+    case "stopped":
+      return "Stopped";
+    case "failed":
+      return "Failed";
+    case "warning":
+      return "Warning";
     case "unavailable":
       return "Unavailable";
     case "not_reported":

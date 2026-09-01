@@ -27,6 +27,9 @@ const (
 	NetworkRead         = "network.read"
 	NetworkCreate       = "network.create"
 	NetworkApply        = "network.apply"
+	ComputeRead         = "compute.read"
+	ComputeCreate       = "compute.create"
+	ComputeLifecycle    = "compute.lifecycle"
 	All                 = "*"
 )
 
@@ -47,9 +50,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			NodeRead, EventsRead, MetricsRead,
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 			NetworkRead, NetworkCreate, NetworkApply,
+			ComputeRead, ComputeCreate, ComputeLifecycle,
 		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead}
+		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead}
 	default:
 		return nil
 	}

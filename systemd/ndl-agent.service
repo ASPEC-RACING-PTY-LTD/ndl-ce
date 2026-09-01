@@ -16,10 +16,11 @@ RestartSec=2
 # The socket unit owns /run/ndl. Do not set RuntimeDirectory=ndl here;
 # a service restart would delete agent.sock.
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN
 DevicePolicy=closed
-# CAP_NET_ADMIN is required for isolated-nat nftables. File and
-# networkd drop-in writes do not need extra capabilities.
+# CAP_NET_ADMIN is required for isolated-nat nftables.
+# CAP_CHOWN remaps unprivileged container rootfs onto the persisted uid map.
+# File and networkd drop-in writes do not need extra capabilities.
 # ExecStop must not stop guest workload units.
 
 [Install]

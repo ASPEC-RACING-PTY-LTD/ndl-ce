@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.3
-  description: Phase 4 northbound API. Host visibility, Directory storage, and safe networking.
+  version: 0.1.4
+  description: Phase 5 northbound API. Host visibility, Directory storage, safe networking, and system containers.
 servers:
   - url: /api/v1
 paths:
@@ -465,6 +465,190 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Reservation"
+  /workloads:
+    get:
+      operationId: listWorkloads
+      summary: List system containers
+      responses:
+        "200":
+          description: Workloads
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadListResponse"
+    post:
+      operationId: createWorkload
+      summary: Create a system container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkloadRequest"
+      responses:
+        "200":
+          description: Idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}:
+    get:
+      operationId: getWorkload
+      summary: Get a workload by UUID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+    patch:
+      operationId: updateWorkload
+      summary: Edit cpu, memory, or desired power
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkloadRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+    post:
+      operationId: updateWorkloadPost
+      summary: Edit cpu, memory, or desired power
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkloadRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}/start:
+    post:
+      operationId: startWorkload
+      summary: Start a system container
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}/stop:
+    post:
+      operationId: stopWorkload
+      summary: Stop a system container
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}/restart:
+    post:
+      operationId: restartWorkload
+      summary: Restart a system container
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}/delete:
+    post:
+      operationId: deleteWorkload
+      summary: Delete a system container runtime
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}/clone:
+    post:
+      operationId: cloneWorkload
+      summary: Clone a system container
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloneWorkloadRequest"
+      responses:
+        "201":
+          description: Cloned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
 components:
   schemas:
     HealthResponse:
@@ -1044,4 +1228,101 @@ components:
         ipv4:
           type: string
         hostname:
+          type: string
+    WorkloadListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Workload"
+        image_pins:
+          type: array
+          items:
+            type: string
+    Workload:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+        - kind
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        desired_power:
+          type: string
+        image_pin:
+          type: string
+        image_verified:
+          type: boolean
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+        privileged:
+          type: boolean
+        pid:
+          type: integer
+        unit_active:
+          type: boolean
+        migrate_ready:
+          type: boolean
+        ipv4:
+          type: string
+    CreateWorkloadRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - image_pin
+        - network_id
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        image_pin:
+          type: string
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        volume_id:
+          type: string
+        privileged:
+          type: boolean
+        desired_power:
+          type: string
+    UpdateWorkloadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+        desired_power:
+          type: string
+    CloneWorkloadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
           type: string

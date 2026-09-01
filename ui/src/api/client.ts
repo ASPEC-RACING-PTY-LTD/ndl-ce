@@ -258,3 +258,62 @@ export async function applyNetwork(
   }
   return parsed;
 }
+
+export async function listWorkloads(): Promise<import("./phase5").WorkloadListResponse> {
+  return readJson(await request("/workloads"));
+}
+
+export async function getWorkload(id: string): Promise<import("./phase5").Workload> {
+  return readJson(await request(`/workloads/${id}`));
+}
+
+export async function createWorkload(
+  body: {
+    name: string;
+    kind: string;
+    image_pin: string;
+    cpus?: number;
+    memory_bytes?: number;
+    pool_id?: string;
+    network_id: string;
+    privileged?: boolean;
+  },
+  idempotencyKey?: string,
+): Promise<import("./phase5").Workload> {
+  const headers = new Headers();
+  if (idempotencyKey) {
+    headers.set("Idempotency-Key", idempotencyKey);
+  }
+  return readJson(
+    await request("/workloads", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function patchWorkload(
+  id: string,
+  body: { cpus?: number; memory_bytes?: number; desired_power?: string },
+): Promise<import("./phase5").Workload> {
+  return readJson(
+    await request(`/workloads/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function workloadAction(
+  id: string,
+  action: "start" | "stop" | "restart" | "delete" | "clone",
+  body?: { name?: string },
+): Promise<import("./phase5").Workload> {
+  return readJson(
+    await request(`/workloads/${id}/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
+  );
+}

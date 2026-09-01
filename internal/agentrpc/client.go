@@ -11,6 +11,7 @@ import (
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/transport"
@@ -223,6 +224,54 @@ func (c Client) ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyR
 	var out ndnet.ApplyResult
 	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
 		return ndnet.ApplyResult{}, err
+	}
+	return out, nil
+}
+
+// GetWorkloads observes known system containers.
+func (c Client) GetWorkloads(ctx context.Context, hints []lxc.Hint) (lxc.Observation, error) {
+	res, err := c.rpc().GetWorkloads(ctx, connect.NewRequest(&agentv1.GetWorkloadsRequest{Workloads: encodeWorkloadHints(hints)}))
+	if err != nil {
+		return lxc.Observation{}, err
+	}
+	return decodeWorkloads(res.Msg.GetWorkloadJson())
+}
+
+// CreateCT is a typed Execute method.
+func (c Client) CreateCT(ctx context.Context, spec lxc.Spec) (lxc.Result, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_CtCreate{CtCreate: &agentv1.CTCreate{
+			WorkloadId: spec.WorkloadID, Name: spec.Name, ImagePin: spec.ImagePin,
+			Cpus: int32(spec.CPUs), MemoryBytes: spec.MemoryBytes, VolumeId: spec.VolumeID,
+			RootfsPath: spec.RootfsPath, NetworkId: spec.NetworkID, BridgeName: spec.BridgeName,
+			Mac: spec.MAC, Privileged: spec.Privileged, UidMap: spec.UIDMap, GidMap: spec.GIDMap,
+		}},
+	}))
+	if err != nil {
+		return lxc.Result{}, err
+	}
+	var out lxc.Result
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return lxc.Result{}, err
+	}
+	return out, nil
+}
+
+// LifecycleCT is a typed Execute method.
+func (c Client) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_CtLifecycle{CtLifecycle: &agentv1.CTLifecycle{
+			WorkloadId: req.WorkloadID, Action: req.Action, CloneId: req.CloneID,
+			CloneVolumeId: req.CloneVolumeID, CloneRootfsPath: req.CloneRootfsPath,
+			CloneMac: req.CloneMAC, CloneName: req.CloneName,
+		}},
+	}))
+	if err != nil {
+		return lxc.Result{}, err
+	}
+	var out lxc.Result
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return lxc.Result{}, err
 	}
 	return out, nil
 }

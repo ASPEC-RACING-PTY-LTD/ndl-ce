@@ -26,9 +26,12 @@ type Memory struct {
 	pools        map[string]StoragePool
 	volumes      map[string]Volume
 	library      map[string]LibraryItem
-	networks     map[string]Network
-	addresses    map[string]Address
-	reservations map[string]DHCPReservation
+	networks      map[string]Network
+	addresses     map[string]Address
+	reservations  map[string]DHCPReservation
+	workloads     map[string]Workload
+	workloadDisks map[string]WorkloadDisk
+	workloadNICs  map[string]WorkloadNIC
 }
 
 // NewMemory returns an empty store.

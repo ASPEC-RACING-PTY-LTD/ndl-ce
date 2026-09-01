@@ -5,3 +5,4 @@ lib/systemd/system/ndl-agent.socket
 lib/systemd/system/nodal-workloads.target
 lib/systemd/system/ndl-network-rollback.service
 lib/systemd/system/ndl-dnsmasq@.service
+lib/systemd/system/nodal-ct@.service

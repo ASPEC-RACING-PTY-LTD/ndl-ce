@@ -14,6 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/peercred"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -33,6 +34,7 @@ type Handler struct {
 	Storage    *storage.Directory
 	Uploads    *storage.Uploads
 	Nets       *ndnet.Engine
+	Workloads  *lxc.Engine
 
 	mu         sync.Mutex
 	last       inventory.Inventory
@@ -68,6 +70,7 @@ func (h *Handler) Observe(ctx context.Context, req *connect.Request[agentv1.Obse
 		InventoryJson: mustJSON(inv),
 		StorageJson:   h.observeStorage(decodeHints(req.Msg.GetStoragePools())),
 		NetworkJson:   h.observeNetworks(decodeNetworkHints(req.Msg.GetNetworks())),
+		WorkloadJson:  h.observeWorkloads(decodeWorkloadHints(req.Msg.GetWorkloads())),
 	}), nil
 }
 
@@ -139,6 +142,10 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execNetDryRun(ctx, req.Msg.GetNetDryRun())
 	case req.Msg.GetNetApply() != nil:
 		return h.execNetApply(ctx, req.Msg.GetNetApply())
+	case req.Msg.GetCtCreate() != nil:
+		return h.execCTCreate(ctx, req.Msg.GetCtCreate())
+	case req.Msg.GetCtLifecycle() != nil:
+		return h.execCTLifecycle(ctx, req.Msg.GetCtLifecycle())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

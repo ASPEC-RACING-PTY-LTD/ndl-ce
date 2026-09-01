@@ -8,6 +8,7 @@ import (
 
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/identity"
+	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 )
@@ -22,7 +23,11 @@ func main() {
 		log.Fatal(err)
 	}
 	defer ms.Close()
-	h := &agentrpc.Handler{Ident: identity.Files{Dir: dir}, Metrics: ms}
+	h := &agentrpc.Handler{
+		Ident:     identity.Files{Dir: dir},
+		Metrics:   ms,
+		Workloads: &lxc.Engine{DataDir: dir},
+	}
 	recoverStaleNetwork(dir)
 	go scrapeMetrics(ms)
 	go h.RefreshLoop(30 * time.Second)

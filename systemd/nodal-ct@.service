@@ -1,0 +1,20 @@
+[Unit]
+Description=No-dal system container %i
+Documentation=https://no-dal.com
+After=nodal-workloads.target
+# Supervised by systemd. Do not bind to ndl-control or ndl-agent.
+
+[Service]
+# Foreground monitor. Type=forking plus lxc-start -d loses the main PID
+# and systemd immediately runs ExecStop.
+Type=simple
+ExecStart=/usr/bin/lxc-start -P /var/lib/ndl/runtime/lxc -n %i -F
+ExecStop=/usr/bin/lxc-stop -P /var/lib/ndl/runtime/lxc -n %i --timeout 30
+KillMode=mixed
+Restart=no
+Delegate=yes
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=nodal-workloads.target

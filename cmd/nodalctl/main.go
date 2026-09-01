@@ -44,6 +44,14 @@ func run(args []string) error {
   network list
   network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
   network apply --id ID [--dry-run] [--confirm-ifname IF]
+  workload list
+  workload create --kind system-container --name NAME --image-pin PIN --pool-id ID --network-id ID [--cpus N] [--memory-bytes N] [--privileged]
+  workload get --id ID
+  workload start --id ID
+  workload stop --id ID
+  workload restart --id ID
+  workload delete --id ID
+  workload clone --id ID [--name NAME]
 `)
 		return nil
 	}
@@ -85,6 +93,8 @@ func run(args []string) error {
 		return cmdStorage(args[1:])
 	case "network":
 		return cmdNetwork(args[1:])
+	case "workload":
+		return cmdWorkload(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -375,6 +385,62 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 		fmt.Println(string(out))
 	}
 	return nil
+}
+
+func cmdWorkload(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|delete|clone")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/workloads")
+	case "create":
+		f := parseFlags(args[1:])
+		kind := f["kind"]
+		if kind == "" {
+			kind = "system-container"
+		}
+		var cpus int
+		var mem int64
+		fmt.Sscan(f["cpus"], &cpus)
+		fmt.Sscan(f["memory-bytes"], &mem)
+		body := map[string]any{
+			"name": f["name"], "kind": kind, "image_pin": f["image-pin"],
+			"pool_id": f["pool-id"], "network_id": f["network-id"],
+			"privileged": f["privileged"] == "true",
+		}
+		if cpus > 0 {
+			body["cpus"] = cpus
+		}
+		if mem > 0 {
+			body["memory_bytes"] = mem
+		}
+		headers := map[string]string{}
+		if key := f["idempotency-key"]; key != "" {
+			headers["Idempotency-Key"] = key
+		}
+		return postJSONHeaders("/api/v1/workloads", body, true, headers)
+	case "get":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload get --id ID")
+		}
+		return cmdGet("/api/v1/workloads/" + f["id"])
+	case "start", "stop", "restart", "delete":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload %s --id ID", args[0])
+		}
+		return postJSON("/api/v1/workloads/"+f["id"]+"/"+args[0], map[string]any{}, true)
+	case "clone":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl workload clone --id ID [--name NAME]")
+		}
+		return postJSON("/api/v1/workloads/"+f["id"]+"/clone", map[string]any{"name": f["name"]}, true)
+	default:
+		return fmt.Errorf("unknown workload command")
+	}
 }
 
 func parseFlags(args []string) map[string]string {

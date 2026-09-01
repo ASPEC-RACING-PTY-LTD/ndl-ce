@@ -29,12 +29,26 @@ ensure_user() {
     --no-create-home --shell /usr/sbin/nologin ndl-control
 }
 
+ensure_root_idmap() {
+  if [ ! -f /etc/subuid ] || ! grep -q '^root:' /etc/subuid; then
+    echo 'root:100000:65536' >> /etc/subuid
+  fi
+  if [ ! -f /etc/subgid ] || ! grep -q '^root:' /etc/subgid; then
+    echo 'root:100000:65536' >> /etc/subgid
+  fi
+}
+
 start_units() {
   if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload >/dev/null 2>&1 || true
     # The system-wide dnsmasq unit would be a second DHCP server on the LAN.
     systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
     systemctl mask dnsmasq.service >/dev/null 2>&1 || true
+    # lxc-net would be a second DHCP server on the LAN.
+    systemctl disable --now lxc-net.service >/dev/null 2>&1 || true
+    systemctl mask lxc-net.service >/dev/null 2>&1 || true
+    systemctl enable --now lxcfs.service >/dev/null 2>&1 || true
+    systemctl enable nodal-workloads.target >/dev/null 2>&1 || true
     systemctl enable ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
     systemctl start ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
   fi
@@ -43,6 +57,7 @@ start_units() {
 case "$1" in
   configure)
     ensure_user
+    ensure_root_idmap
     start_units
     ;;
 esac
