@@ -41,6 +41,16 @@ func TestMemorySecondLeaseFails(t *testing.T) {
 	if err := m.AcquireLease(t.Context(), clusterID, "writer-a", exp); err != nil {
 		t.Fatal(err)
 	}
+	if err := m.FenceLease(t.Context(), clusterID, time.Now().UTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AcquireLease(t.Context(), clusterID, "writer-b", exp); err != nil {
+		t.Fatalf("standby after fence: %v", err)
+	}
+	got, _ := m.GetClusterLease(t.Context(), clusterID)
+	if got == nil || got.HolderID != "writer-b" || got.Fenced {
+		t.Fatalf("lease %+v", got)
+	}
 }
 
 func TestMemoryGetNodeStaysControlWithWorkers(t *testing.T) {

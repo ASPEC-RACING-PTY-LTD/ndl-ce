@@ -68,6 +68,9 @@ if (!existsSync("migrations/0029_phase32.sql")) {
 if (!existsSync("migrations/0030_phase33.sql")) {
   errors.push("missing migrations/0030_phase33.sql artifact locality and pull URL");
 }
+if (!existsSync("migrations/0031_phase34.sql")) {
+  errors.push("missing migrations/0031_phase34.sql HA state and rolling plans");
+}
 if (!existsSync("packaging/iso/mkosi.conf")) {
   errors.push("missing packaging/iso/mkosi.conf Debian installer ISO contract");
 } else {
@@ -160,6 +163,9 @@ if (!changelog.includes("nodal (0.1.31)") || !changelog.includes("Phase 32 workl
 }
 if (!changelog.includes("nodal (0.1.32)") || !changelog.includes("Phase 33 cluster storage")) {
   errors.push("changelog must include nodal (0.1.32) Phase 33 cluster storage");
+}
+if (!changelog.includes("nodal (0.1.33)") || !changelog.includes("Phase 34 HA foundations")) {
+  errors.push("changelog must include nodal (0.1.33) Phase 34 HA foundations");
 }
 
 const control = existsSync("packaging/debian/control")

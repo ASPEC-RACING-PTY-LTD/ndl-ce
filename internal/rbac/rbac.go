@@ -53,6 +53,7 @@ const (
 	NodeUpdate          = "node.update"
 	NodeRevoke          = "node.revoke"
 	ClusterJoin         = "cluster.join"
+	ClusterPromote      = "cluster.promote"
 	TerminalOpen        = "terminal.open"
 	FilesRead           = "files.read"
 	FilesDownload       = "files.download"

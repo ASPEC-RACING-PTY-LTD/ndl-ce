@@ -763,6 +763,101 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClusterInventoryResponse"
+  /cluster/ha:
+    get:
+      operationId: getClusterHA
+      summary: HA foundations status. Single writer. Not multi-master.
+      responses:
+        "200":
+          description: HA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/ha/replica:
+    post:
+      operationId: configureHAReplica
+      summary: Store a replica endpoint. DSN is a secret and is never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigureHAReplicaRequest"
+      responses:
+        "200":
+          description: Replica recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/ha/fence:
+    post:
+      operationId: fenceClusterHA
+      summary: Record that the operator isolated the old writer. STONITH is not implemented.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - fence
+      responses:
+        "200":
+          description: Lease fenced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/ha/promote:
+    post:
+      operationId: promoteClusterHA
+      summary: Take the writer lease after fence or expiry. Privileged.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - promote
+      responses:
+        "200":
+          description: This process is the writer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/update:
+    get:
+      operationId: getClusterUpdate
+      summary: Rolling update preview and last plan
+      responses:
+        "200":
+          description: Rolling preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RollingUpdatePreview"
+    post:
+      operationId: runClusterUpdate
+      summary: Drain one node, apply Phase 12 update on this control node, then the next. Guests are not stopped.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - cluster-update
+      responses:
+        "200":
+          description: Rolling plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RollingPlan"
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -3714,6 +3809,125 @@ components:
           type: string
         lease_expires_at:
           type: string
+    HAStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+        - writer
+        - replica_status
+        - fencing_mode
+        - multi_master
+      properties:
+        mode:
+          type: string
+          enum:
+            - single-writer
+        writer:
+          type: boolean
+        replica_status:
+          type: string
+          enum:
+            - not_configured
+            - unavailable
+        replica_endpoint:
+          type: string
+        fencing_mode:
+          type: string
+          enum:
+            - operator
+        fencing_reason:
+          type: string
+        multi_master:
+          type: boolean
+        reason:
+          type: string
+        fenced_holder:
+          type: string
+        fenced_at:
+          type: string
+        promoted_holder:
+          type: string
+        promoted_at:
+          type: string
+        lease_holder:
+          type: string
+        lease_expires_at:
+          type: string
+        lease_fenced:
+          type: boolean
+    ConfigureHAReplicaRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        endpoint:
+          type: string
+        dsn:
+          type: string
+          description: Stored as a secret. Never returned.
+    RollingStep:
+      type: object
+      additionalProperties: false
+      required:
+        - node_id
+        - ordinal
+        - action
+      properties:
+        id:
+          type: string
+        node_id:
+          type: string
+        name:
+          type: string
+        ordinal:
+          type: integer
+        action:
+          type: string
+          enum:
+            - drain
+            - update
+        status:
+          type: string
+        reason:
+          type: string
+        update_operation_id:
+          type: string
+    RollingPlan:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - steps
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        created_at:
+          type: string
+        finished_at:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/RollingStep"
+    RollingUpdatePreview:
+      type: object
+      additionalProperties: false
+      required:
+        - preview
+      properties:
+        preview:
+          type: array
+          items:
+            $ref: "#/components/schemas/RollingStep"
+        note:
+          type: string
+        plan:
+          $ref: "#/components/schemas/RollingPlan"
     JoinTokenCreateRequest:
       type: object
       additionalProperties: false

@@ -211,6 +211,35 @@ are the CLI paths.
 5. After a kernel package update, use GRUB previous-kernel (`grub-reboot 1`) then reboot the host if the new kernel is unusable.
 6. Homelab Migration Candidate requires Phases 9 through 12 on Debian 13 hardware. Cloud fixture coverage is not that gate.
 
+## HA foundations and rolling updates (Phase 34)
+
+The cluster has one Postgres writer. A second control-plane process cannot
+hold the lease while it is live. Replica DSN is a secret and is never
+returned. Replica status stays `not_configured` until a DSN is stored, then
+`unavailable` until operator-managed streaming replication is proven. This
+is not multi-master.
+
+Fencing is operator isolation of the old writer. STONITH is not implemented.
+`POST /api/v1/cluster/ha/fence` with confirm expires the lease. Promote then
+takes it. Guests keep running because workload units are not bound to
+ndl-control.
+
+Rolling update drains one node (maintenance; guests stay running), applies
+the Phase 12 update on this control node, then the next. Worker package
+apply stays unavailable until the dest agent is connected.
+
+`nodalctl cluster ha`, `nodalctl cluster fence --confirm fence`,
+`nodalctl cluster promote --confirm promote`, and
+`nodalctl cluster update --confirm cluster-update` are the CLI paths.
+
+### Recovery matrix (HA and rolling)
+
+1. Two holders: the second AcquireLease fails while the first lease is live.
+2. Fence or expire the lease. The standby takes it. Guests stay running.
+3. Rolling update does not call guest stop.
+4. Worker update steps stay unavailable when dest agent is not connected.
+5. Replica DSN never appears in HA JSON.
+
 ## Identity completion (Phase 13)
 
 TOTP is the working MFA method. WebAuthn is not implemented. Login returns

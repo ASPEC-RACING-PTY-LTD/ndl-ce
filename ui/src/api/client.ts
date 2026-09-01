@@ -195,6 +195,50 @@ export async function revokeClusterNode(id: string): Promise<{ id: string; revok
   return readJson(await request(`/cluster/nodes/${id}/revoke`, { method: "POST", body: JSON.stringify({}) }));
 }
 
+export async function getClusterHA(): Promise<import("../generated/openapi").HAStatus> {
+  return readJson(await request("/cluster/ha"));
+}
+
+export async function configureHAReplica(
+  body: import("../generated/openapi").ConfigureHAReplicaRequest,
+): Promise<import("../generated/openapi").HAStatus> {
+  return readJson(await request("/cluster/ha/replica", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function fenceClusterHA(): Promise<import("../generated/openapi").HAStatus> {
+  return readJson(
+    await request("/cluster/ha/fence", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "fence" },
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function promoteClusterHA(): Promise<import("../generated/openapi").HAStatus> {
+  return readJson(
+    await request("/cluster/ha/promote", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "promote" },
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function getClusterUpdate(): Promise<import("../generated/openapi").RollingUpdatePreview> {
+  return readJson(await request("/cluster/update"));
+}
+
+export async function runClusterUpdate(): Promise<import("../generated/openapi").RollingPlan> {
+  return readJson(
+    await request("/cluster/update", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "cluster-update" },
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

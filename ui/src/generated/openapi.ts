@@ -350,6 +350,55 @@ export interface ClusterInventoryResponse {
   lease_expires_at?: string;
 }
 
+export interface HAStatus {
+  mode: "single-writer";
+  writer: boolean;
+  replica_status: "not_configured" | "unavailable";
+  replica_endpoint?: string;
+  fencing_mode: "operator";
+  fencing_reason?: string;
+  multi_master: boolean;
+  reason?: string;
+  fenced_holder?: string;
+  fenced_at?: string;
+  promoted_holder?: string;
+  promoted_at?: string;
+  lease_holder?: string;
+  lease_expires_at?: string;
+  lease_fenced?: boolean;
+}
+
+export interface ConfigureHAReplicaRequest {
+  endpoint?: string;
+  dsn?: string;
+}
+
+export interface RollingStep {
+  id?: string;
+  node_id: string;
+  name?: string;
+  ordinal: number;
+  action: "drain" | "update";
+  status?: string;
+  reason?: string;
+  update_operation_id?: string;
+}
+
+export interface RollingPlan {
+  id: string;
+  status: string;
+  reason?: string;
+  created_at?: string;
+  finished_at?: string;
+  steps: RollingStep[];
+}
+
+export interface RollingUpdatePreview {
+  preview: RollingStep[];
+  note?: string;
+  plan?: RollingPlan;
+}
+
 export interface JoinTokenCreateRequest {
   ttl_seconds?: number;
 }
@@ -1523,6 +1572,16 @@ export type CreateWireGuardPeerPath = "/api/v1/cluster/wg/peers";
 export type OpenClusterSessionPath = "/api/v1/cluster/sessions";
 
 export type GetClusterPath = "/api/v1/cluster";
+
+export type GetClusterHAPath = "/api/v1/cluster/ha";
+
+export type ConfigureHAReplicaPath = "/api/v1/cluster/ha/replica";
+
+export type FenceClusterHAPath = "/api/v1/cluster/ha/fence";
+
+export type PromoteClusterHAPath = "/api/v1/cluster/ha/promote";
+
+export type GetClusterUpdatePath = "/api/v1/cluster/update";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

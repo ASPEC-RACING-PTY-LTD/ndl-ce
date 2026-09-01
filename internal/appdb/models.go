@@ -48,6 +48,20 @@ type Store interface {
 
 	AcquireLease(ctx context.Context, clusterID, holderID string, expiresAt time.Time) error
 	GetClusterLease(ctx context.Context, clusterID string) (*ClusterLease, error)
+	FenceLease(ctx context.Context, clusterID string, at time.Time) error
+
+	GetHAState(ctx context.Context, clusterID string) (*HAState, error)
+	UpsertHAState(ctx context.Context, h HAState) error
+	SetHAReplicaDSN(ctx context.Context, clusterID, dsn string) error
+	GetHAReplicaDSN(ctx context.Context, clusterID string) (string, error)
+
+	CreateRollingPlan(ctx context.Context, p RollingPlan) error
+	GetRollingPlan(ctx context.Context, clusterID, id string) (*RollingPlan, error)
+	LatestRollingPlan(ctx context.Context, clusterID string) (*RollingPlan, error)
+	UpdateRollingPlan(ctx context.Context, p RollingPlan) error
+	CreateRollingStep(ctx context.Context, s RollingStep) error
+	ListRollingSteps(ctx context.Context, clusterID, planID string) ([]RollingStep, error)
+	UpdateRollingStep(ctx context.Context, s RollingStep) error
 
 	InsertAudit(ctx context.Context, e AuditEvent) error
 	ListAuditEvents(ctx context.Context, clusterID string, limit int) ([]AuditEvent, error)
@@ -362,6 +376,7 @@ type ClusterLease struct {
 	ClusterID string
 	HolderID  string
 	ExpiresAt time.Time
+	Fenced    bool
 }
 
 // HardwareInventory is cached observed hardware. Not desired state.

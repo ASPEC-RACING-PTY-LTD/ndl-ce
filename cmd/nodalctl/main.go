@@ -38,6 +38,11 @@ func run(args []string) error {
   node maintain --id ID [--reason TEXT]
   node maintain exit --id ID
   cluster show
+  cluster ha
+  cluster ha replica --endpoint HOST [--dsn DSN]
+  cluster fence --confirm fence
+  cluster promote --confirm promote
+  cluster update [--confirm cluster-update]
   cluster join-token create
   cluster join --token TOKEN [--url URL] [--hostname HOST]
   cluster node revoke --id ID
@@ -601,11 +606,55 @@ func cmdNetwork(args []string) error {
 
 func cmdCluster(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl cluster show|join-token create|join|node revoke|wg show|peer add")
+		return fmt.Errorf("usage: nodalctl cluster show|ha|fence|promote|update|join-token create|join|node revoke|wg show|peer add")
 	}
 	switch args[0] {
 	case "show":
 		return cmdGet("/api/v1/cluster")
+	case "ha":
+		if len(args) == 1 {
+			return cmdGet("/api/v1/cluster/ha")
+		}
+		if args[1] != "replica" {
+			return fmt.Errorf("usage: nodalctl cluster ha [replica --endpoint HOST [--dsn DSN]]")
+		}
+		f := parseFlags(args[2:])
+		if f["endpoint"] == "" && f["dsn"] == "" {
+			return fmt.Errorf("usage: nodalctl cluster ha replica --endpoint HOST [--dsn DSN]")
+		}
+		body := map[string]any{}
+		if f["endpoint"] != "" {
+			body["endpoint"] = f["endpoint"]
+		}
+		if f["dsn"] != "" {
+			body["dsn"] = f["dsn"]
+		}
+		return postJSON("/api/v1/cluster/ha/replica", body, true)
+	case "fence":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		if os.Getenv("NODAL_CONFIRM") == "" {
+			return fmt.Errorf("usage: nodalctl cluster fence --confirm fence")
+		}
+		return postJSON("/api/v1/cluster/ha/fence", map[string]any{}, true)
+	case "promote":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		if os.Getenv("NODAL_CONFIRM") == "" {
+			return fmt.Errorf("usage: nodalctl cluster promote --confirm promote")
+		}
+		return postJSON("/api/v1/cluster/ha/promote", map[string]any{}, true)
+	case "update":
+		f := parseFlags(args[1:])
+		if f["confirm"] == "" {
+			return cmdGet("/api/v1/cluster/update")
+		}
+		_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		return postJSON("/api/v1/cluster/update", map[string]any{}, true)
 	case "join-token":
 		if len(args) < 2 || args[1] != "create" {
 			return fmt.Errorf("usage: nodalctl cluster join-token create")
@@ -649,7 +698,7 @@ func cmdCluster(args []string) error {
 			return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
 		}
 	default:
-		return fmt.Errorf("usage: nodalctl cluster show|join-token create|join|node revoke|wg show|peer add")
+		return fmt.Errorf("usage: nodalctl cluster show|ha|fence|promote|update|join-token create|join|node revoke|wg show|peer add")
 	}
 }
 

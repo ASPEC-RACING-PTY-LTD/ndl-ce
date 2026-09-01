@@ -219,6 +219,13 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. ZFS send artifacts still refuse qemu-img restore. Why not blocking: Phase 23 already stores send streams; zfs recv restore is a later storage path.
 - LOW. Live R2 restore after losing a physical node is not in this Cloud job. Why not blocking: source-down restore onto the control fixture plus DR export without credentials cover the documented runbook.
 
+## Phase 34
+
+- MEDIUM. Streaming Postgres replica is not proven. Why not blocking: DSN is stored as a secret and status stays unavailable; this phase is single-writer foundations, not multi-master.
+- MEDIUM. STONITH is not implemented. Why not blocking: fence is an operator isolation record that expires the lease; the architecture names fencing as defined, not automatic kill.
+- LOW. Worker Phase 12 apply is not wired. Why not blocking: rolling records unavailable rather than running apt on the control node for the wrong host.
+
+
 
 
 

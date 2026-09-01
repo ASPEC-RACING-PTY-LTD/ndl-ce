@@ -79,6 +79,10 @@ type Memory struct {
 	remoteSessions    map[string]RemoteSession
 	joinTokens        map[string]JoinToken
 	clusterLease      *ClusterLease
+	haState           map[string]HAState
+	haReplicaDSN      map[string]string
+	rollingPlans      map[string]RollingPlan
+	rollingSteps      map[string]RollingStep
 	nodeGroups        map[string]NodeGroup
 	nodeGroupMembers  map[string][]string
 	nodeMaint         map[string]NodeMaintenance

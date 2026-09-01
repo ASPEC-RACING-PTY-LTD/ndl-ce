@@ -245,5 +245,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: dest Execute restore/pull; ZFS recv restore of send artifacts
 - Audit follow-up: dest secret.use only when this node materializes an object artifact; DR export has no credentials
 
+## Phase 34
+
+- Package: 0.1.33
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (second writer refused until fence, standby takes the lease, guests stay running, rolling drain plus control Phase 12 apply does not stop guests, worker update stays unavailable, replica DSN absent from JSON). FIXTURE: Memory lease plus fakeUpdate. NOT PHYSICALLY VALIDATED: streaming Postgres replica; STONITH; three-box rolling apt
+- Follow-up: dest agent rolling apply; live replica probe; STONITH remains out of CE
+- Audit follow-up: promotion is admin-only; STONITH is not implemented
+
+
 
 

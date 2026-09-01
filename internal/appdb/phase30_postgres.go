@@ -136,9 +136,11 @@ INSERT INTO cluster_leases (cluster_id, holder_id, expires_at)
 VALUES ($1,$2,$3)
 ON CONFLICT (cluster_id) DO UPDATE SET
   holder_id = EXCLUDED.holder_id,
-  expires_at = EXCLUDED.expires_at
+  expires_at = EXCLUDED.expires_at,
+  fenced = false
 WHERE cluster_leases.holder_id = EXCLUDED.holder_id
-   OR cluster_leases.expires_at < now()`,
+   OR cluster_leases.expires_at < now()
+   OR cluster_leases.fenced = true`,
 		clusterID, holderID, expiresAt)
 	if err != nil {
 		return err
@@ -151,9 +153,9 @@ WHERE cluster_leases.holder_id = EXCLUDED.holder_id
 }
 
 func (p *Postgres) GetClusterLease(ctx context.Context, clusterID string) (*ClusterLease, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT cluster_id::text, holder_id, expires_at FROM cluster_leases WHERE cluster_id=$1`, clusterID)
+	row := p.DB.QueryRowContext(ctx, `SELECT cluster_id::text, holder_id, expires_at, COALESCE(fenced, false) FROM cluster_leases WHERE cluster_id=$1`, clusterID)
 	var l ClusterLease
-	if err := row.Scan(&l.ClusterID, &l.HolderID, &l.ExpiresAt); err != nil {
+	if err := row.Scan(&l.ClusterID, &l.HolderID, &l.ExpiresAt, &l.Fenced); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}

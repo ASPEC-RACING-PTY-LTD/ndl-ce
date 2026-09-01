@@ -69,6 +69,17 @@ const defaultRoutes = {
   "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
   "/api/v1/cluster/wg": { status: 200, body: { items: [], nodes: [] } },
   "/api/v1/cluster": { status: 200, body: { id: "cluster-1", name: "local", nodes: [] } },
+  "/api/v1/cluster/ha": {
+    status: 200,
+    body: {
+      mode: "single-writer",
+      writer: true,
+      replica_status: "not_configured",
+      fencing_mode: "operator",
+      multi_master: false,
+    },
+  },
+  "/api/v1/cluster/update": { status: 200, body: { preview: [], note: "Rolling drains one node" } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
   "/api/v1/storage/images": { status: 200, body: { items: [] } },
 };
@@ -520,6 +531,12 @@ describe("App", () => {
     expect(await screen.findByText(/locator box-b/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /create join token/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^revoke$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^ha$/i })).toBeVisible();
+    expect(screen.getByText(/not multi-master/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /fence old writer/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /promote this writer/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^rolling update$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /run rolling update/i })).toBeVisible();
   });
 
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {
