@@ -47,6 +47,9 @@ const defaultRoutes = {
   },
   "/api/v1/setup/status": { status: 200, body: { open: false } },
   "/api/v1/me": { status: 401 },
+  "/api/v1/nodes": { status: 200, body: { items: [] } },
+  "/api/v1/events": { status: 200, body: { items: [] } },
+  "/api/v1/tasks": { status: 200, body: { items: [] } },
 };
 
 afterEach(() => {
@@ -84,32 +87,56 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^sign in$/i })).toBeVisible();
   });
 
-  it("shows an empty dashboard with no fake infrastructure data", async () => {
+  it("shows the local node without fake infrastructure data", async () => {
     window.history.replaceState({}, "", "/");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/nodes": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "node-1",
+              name: "local",
+              status: "available",
+              host_os: "Debian GNU/Linux 13 (trixie)",
+              cpu_model: "Test CPU",
+              cpu_cores: 4,
+              cpu_threads: 8,
+              memory_bytes: 8 * 1024 * 1024 * 1024,
+              disk_count: 1,
+              disk_bytes: 20 * 1024 * 1024 * 1024,
+              nic_count: 1,
+              gpu_present: false,
+              gpu_count: 0,
+            },
+          ],
+        },
+      },
+      "/api/v1/events": { status: 200, body: { items: [] } },
+      "/api/v1/tasks": { status: 200, body: { items: [] } },
+      "/api/v1/nodes/node-1/metrics": {
+        status: 200,
+        body: { status: "collecting", series: [] },
+      },
     });
 
     const { container } = render(<App />);
 
     expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeVisible();
-    expect(screen.getByText(/there is no host inventory yet \(phase 2\)/i)).toBeVisible();
+    expect(await screen.findByText(/debian gnu\/linux 13/i)).toBeVisible();
+    expect(screen.getByText(/none detected/i)).toBeVisible();
+    expect(screen.getAllByText(/collecting data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/community edition\. license activation is not required\./i)).toBeVisible();
     expect(screen.getByRole("button", { name: /log out/i })).toBeVisible();
     expect(screen.queryByText(/ci works/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/storage pool/i)).not.toBeInTheDocument();
 
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/192\.168\./);
-    expect(text).not.toMatch(/10\.\d+\.\d+\.\d+/);
-    expect(text).not.toMatch(/workload/i);
-    expect(text).not.toMatch(/\bvm\b/i);
-    expect(text).not.toMatch(/\bnodes?\b/i);
-    expect(text).not.toMatch(/storage/i);
-    expect(text).not.toMatch(/backup/i);
-    expect(text).not.toMatch(/cluster/i);
-    expect(text).not.toMatch(/metrics?/i);
-    expect(text).not.toMatch(/chart/i);
+    expect(container.querySelector("svg.metric-chart")).toBeNull();
   });
 
   it("shows the current user on /me", async () => {

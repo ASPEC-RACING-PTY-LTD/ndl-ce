@@ -94,3 +94,37 @@ export async function getMe(): Promise<MeResponse | null> {
   }
   return readJson<MeResponse>(res);
 }
+
+export async function listNodes(): Promise<import("./phase2").NodeSummary[]> {
+  const body = await readJson<{ items: import("./phase2").NodeSummary[] }>(await request("/nodes"));
+  return body.items ?? [];
+}
+
+export async function getNode(id: string): Promise<import("./phase2").NodeSummary> {
+  return readJson(await request(`/nodes/${id}`));
+}
+
+export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
+  return readJson(await request(`/nodes/${id}/hardware`));
+}
+
+export async function getNodeCapabilities(id: string): Promise<{
+  capabilities: import("./phase2").Capability[];
+  stale?: boolean;
+}> {
+  return readJson(await request(`/nodes/${id}/capabilities`));
+}
+
+export async function getNodeMetrics(id: string): Promise<import("./phase2").MetricsResponse> {
+  return readJson(await request(`/nodes/${id}/metrics`));
+}
+
+export async function listTasks(): Promise<import("./phase2").TaskItem[]> {
+  const body = await readJson<{ items: import("./phase2").TaskItem[] }>(await request("/tasks"));
+  return body.items ?? [];
+}
+
+export async function listEvents(): Promise<import("./phase2").EventItem[]> {
+  const body = await readJson<{ items: import("./phase2").EventItem[] }>(await request("/events"));
+  return body.items ?? [];
+}

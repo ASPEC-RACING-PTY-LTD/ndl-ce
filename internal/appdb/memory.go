@@ -9,16 +9,20 @@ import (
 
 // Memory is an in-process Store for tests.
 type Memory struct {
-	mu      sync.Mutex
-	cluster *Cluster
-	setup   *SetupToken
-	users   map[string]User
-	roles   map[string][]string
-	binds   map[string][]string
-	sess    map[string]Session
-	tokens  map[string]APIToken
-	node    *Node
-	audit   []AuditEvent
+	mu           sync.Mutex
+	cluster      *Cluster
+	setup        *SetupToken
+	users        map[string]User
+	roles        map[string][]string
+	binds        map[string][]string
+	sess         map[string]Session
+	tokens       map[string]APIToken
+	node         *Node
+	audit        []AuditEvent
+	inventory    map[string]HardwareInventory
+	observations []NodeObservation
+	operations   []Operation
+	events       []Event
 }
 
 // NewMemory returns an empty store.

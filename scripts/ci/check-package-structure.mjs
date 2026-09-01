@@ -105,6 +105,9 @@ if (!agentUnit.includes("DevicePolicy=closed")) {
 if (!/^CapabilityBoundingSet=\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must use an empty CapabilityBoundingSet");
 }
+if (/^RuntimeDirectory=ndl\s*$/m.test(agentUnit)) {
+  errors.push("ndl-agent.service must not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl");
+}
 
 const socket = existsSync("systemd/ndl-agent.socket")
   ? readFileSync("systemd/ndl-agent.socket", "utf8")

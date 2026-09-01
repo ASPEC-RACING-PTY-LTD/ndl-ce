@@ -13,7 +13,8 @@ User=root
 ExecStart=/usr/sbin/ndl-agent
 Restart=on-failure
 RestartSec=2
-RuntimeDirectory=ndl
+# The socket unit owns /run/ndl. Do not set RuntimeDirectory=ndl here;
+# a service restart would delete agent.sock.
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 DevicePolicy=closed

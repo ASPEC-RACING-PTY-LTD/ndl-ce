@@ -80,6 +80,8 @@ function tsType(prop) {
       return "number";
     case "boolean":
       return "boolean";
+    case "object":
+      return "Record<string, unknown>";
     default:
       throw new Error(`unsupported OpenAPI type ${JSON.stringify(prop)}`);
   }

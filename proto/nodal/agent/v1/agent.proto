@@ -14,6 +14,10 @@ service AgentService {
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
   // OpenSession is reserved for later remote-node sessions.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  // GetInventory returns the last typed host observation.
+  rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse);
+  // GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
+  rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
 }
 
 message HostPlatform {
@@ -38,7 +42,27 @@ message HelloResponse {
 message ObserveRequest {}
 
 message ObserveResponse {
-  // Phase 0: empty observation. Phase 2 fills inventory.
+  string observed_at = 1;
+  string schema_version = 2;
+  bytes inventory_json = 3;
+}
+
+message GetInventoryRequest {}
+
+message GetInventoryResponse {
+  string observed_at = 1;
+  string schema_version = 2;
+  bytes inventory_json = 3;
+}
+
+message GetMetricsRequest {
+  string from = 1;
+  string to = 2;
+}
+
+message GetMetricsResponse {
+  string status = 1;
+  bytes series_json = 2;
 }
 
 // ExecuteRequest is a typed method table. Add new methods as oneof

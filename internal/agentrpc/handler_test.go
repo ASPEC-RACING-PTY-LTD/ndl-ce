@@ -72,7 +72,17 @@ func TestHelloObservePing(t *testing.T) {
 	if hello.Msg.GetHostPlatform().GetId() != "debian" {
 		t.Fatal(hello.Msg.GetHostPlatform())
 	}
-	if _, err := h.Observe(context.Background(), connect.NewRequest(&agentv1.ObserveRequest{})); err != nil {
+	obs, err := h.Observe(context.Background(), connect.NewRequest(&agentv1.ObserveRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(obs.Msg.GetInventoryJson()) == 0 {
+		t.Fatal("observe must return inventory json")
+	}
+	if _, err := h.GetInventory(context.Background(), connect.NewRequest(&agentv1.GetInventoryRequest{})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.GetMetrics(context.Background(), connect.NewRequest(&agentv1.GetMetricsRequest{})); err != nil {
 		t.Fatal(err)
 	}
 	ping, err := h.Execute(context.Background(), connect.NewRequest(&agentv1.ExecuteRequest{

@@ -83,22 +83,20 @@ func Run(cfg Config) error {
 			ui = os.DirFS(cfg.UIDir)
 		}
 	}
+	hub := &httpapi.EventHub{}
+	agent := agentrpc.Client{Socket: cfg.AgentSock}
 	srv := &httpapi.Server{
 		Store:     st,
 		Lockout:   auth.NewLockout(),
-		Agent:     agentrpc.Client{Socket: cfg.AgentSock},
+		Agent:     agent,
+		Observer:  agent,
+		Hub:       hub,
 		UI:        ui,
 		SetupHash: cfg.SetupHash,
 	}
-	go idleObserve(cfg)
+	go observer{Store: st, Agent: agent, Hub: hub}.run(context.Background())
 	log.Printf("ndl-control listening on %s", cfg.Listen)
 	return http.ListenAndServe(cfg.Listen, srv.Handler())
-}
-
-func idleObserve(cfg Config) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = agentrpc.Client{Socket: cfg.AgentSock}.Hello(ctx)
 }
 
 func ensureReady(ctx context.Context, st appdb.Store, setupHash string) error {

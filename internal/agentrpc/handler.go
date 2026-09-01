@@ -12,7 +12,10 @@ import (
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/identity"
+	"github.com/no-dal/ndl-ce/internal/inventory"
+	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/peercred"
+	"sync"
 )
 
 const version = "0.1.0"
@@ -23,6 +26,11 @@ type Handler struct {
 	AllowedUID uint32
 	Lookup     func() (hostos.Platform, error)
 	Peer       func(ctx context.Context) (peercred.Creds, error)
+	Collect    func() inventory.Inventory
+	Metrics    *metrics.Store
+
+	mu   sync.Mutex
+	last inventory.Inventory
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
@@ -42,12 +50,50 @@ func (h *Handler) Hello(ctx context.Context, _ *connect.Request[agentv1.HelloReq
 	}), nil
 }
 
-// Observe is empty in Phase 1.
+// Observe scrapes typed host inventory. It does not execute a host command.
 func (h *Handler) Observe(ctx context.Context, _ *connect.Request[agentv1.ObserveRequest]) (*connect.Response[agentv1.ObserveResponse], error) {
 	if err := h.authorize(ctx); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentv1.ObserveResponse{}), nil
+	inv := h.refresh()
+	return connect.NewResponse(&agentv1.ObserveResponse{
+		ObservedAt:    inv.ObservedAt.UTC().Format(timeRFC3339),
+		SchemaVersion: inv.SchemaVersion,
+		InventoryJson: mustJSON(inv),
+	}), nil
+}
+
+const timeRFC3339 = "2006-01-02T15:04:05Z07:00"
+
+func (h *Handler) refresh() inventory.Inventory {
+	var inv inventory.Inventory
+	if h.Collect != nil {
+		inv = h.Collect()
+	} else {
+		inv = inventory.Collect(inventory.Options{})
+	}
+	h.mu.Lock()
+	h.last = inv
+	h.mu.Unlock()
+	return inv
+}
+
+func (h *Handler) cachedOrRefresh() inventory.Inventory {
+	h.mu.Lock()
+	last := h.last
+	h.mu.Unlock()
+	if last.SchemaVersion == "" {
+		return h.refresh()
+	}
+	return last
+}
+
+func mustJSON(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
 }
 
 // Execute handles typed Ping only.

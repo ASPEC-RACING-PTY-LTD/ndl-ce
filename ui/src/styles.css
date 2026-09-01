@@ -73,6 +73,11 @@ h1 {
   letter-spacing: -0.02em;
 }
 
+h2 {
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
 a {
   color: var(--accent);
 }
@@ -350,6 +355,84 @@ code {
 
 .gate-status {
   color: var(--fg-secondary);
+}
+
+.page-wide {
+  width: min(72rem, 100%);
+}
+
+.card-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.subnav a {
+  color: var(--fg-secondary);
+  text-decoration: none;
+}
+
+.subnav a[aria-current="page"] {
+  color: var(--fg-primary);
+  font-weight: 650;
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.muted {
+  color: var(--fg-tertiary);
+}
+
+.chart-empty {
+  color: var(--fg-secondary);
+}
+
+.metric-chart {
+  width: 100%;
+  height: 6rem;
+  color: var(--accent);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  color: var(--fg-tertiary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 650;
 }
 
 @media (max-width: 40rem) {

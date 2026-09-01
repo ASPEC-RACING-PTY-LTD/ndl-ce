@@ -39,6 +39,18 @@ type Store interface {
 	GetNode(ctx context.Context, clusterID string) (*Node, error)
 
 	InsertAudit(ctx context.Context, e AuditEvent) error
+
+	UpsertInventory(ctx context.Context, row HardwareInventory) error
+	GetInventory(ctx context.Context, nodeID string) (*HardwareInventory, error)
+	MarkInventoryStale(ctx context.Context, nodeID string) error
+
+	InsertObservation(ctx context.Context, o NodeObservation) error
+
+	UpsertOperation(ctx context.Context, op Operation) error
+	ListOperations(ctx context.Context, clusterID string, limit int) ([]Operation, error)
+
+	InsertEvent(ctx context.Context, e Event) error
+	ListEvents(ctx context.Context, clusterID string, limit int) ([]Event, error)
 }
 
 // Cluster is the appliance cluster of one.
@@ -90,6 +102,50 @@ type Node struct {
 	ClusterID    string
 	Name         string
 	HostPlatform json.RawMessage
+}
+
+// HardwareInventory is cached observed hardware. Not desired state.
+type HardwareInventory struct {
+	NodeID     string
+	ClusterID  string
+	Payload    json.RawMessage
+	ObservedAt time.Time
+	Stale      bool
+}
+
+// NodeObservation records that a scrape completed.
+type NodeObservation struct {
+	ID         string
+	ClusterID  string
+	NodeID     string
+	Kind       string
+	ObservedAt time.Time
+	Stale      bool
+}
+
+// Operation is a job/task with optional honest progress.
+type Operation struct {
+	ID             string
+	ClusterID      string
+	NodeID         string
+	Kind           string
+	State          string
+	IdempotencyKey string
+	Progress       *int
+	Stage          string
+	Message        string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// Event is a platform occurrence. It is not an audit event.
+type Event struct {
+	ID        string
+	ClusterID string
+	NodeID    string
+	Type      string
+	Payload   json.RawMessage
+	CreatedAt time.Time
 }
 
 // AuditEvent is a security audit row.

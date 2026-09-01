@@ -44,6 +44,11 @@ const (
 	// AgentServiceOpenSessionProcedure is the fully-qualified name of the AgentService's OpenSession
 	// RPC.
 	AgentServiceOpenSessionProcedure = "/nodal.agent.v1.AgentService/OpenSession"
+	// AgentServiceGetInventoryProcedure is the fully-qualified name of the AgentService's GetInventory
+	// RPC.
+	AgentServiceGetInventoryProcedure = "/nodal.agent.v1.AgentService/GetInventory"
+	// AgentServiceGetMetricsProcedure is the fully-qualified name of the AgentService's GetMetrics RPC.
+	AgentServiceGetMetricsProcedure = "/nodal.agent.v1.AgentService/GetMetrics"
 )
 
 // AgentServiceClient is a client for the nodal.agent.v1.AgentService service.
@@ -55,6 +60,10 @@ type AgentServiceClient interface {
 	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
 	// OpenSession is reserved for later remote-node sessions.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
+	// GetInventory returns the last typed host observation.
+	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)
+	// GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
+	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the nodal.agent.v1.AgentService service. By
@@ -98,16 +107,30 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("OpenSession")),
 			connect.WithClientOptions(opts...),
 		),
+		getInventory: connect.NewClient[v1.GetInventoryRequest, v1.GetInventoryResponse](
+			httpClient,
+			baseURL+AgentServiceGetInventoryProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetInventory")),
+			connect.WithClientOptions(opts...),
+		),
+		getMetrics: connect.NewClient[v1.GetMetricsRequest, v1.GetMetricsResponse](
+			httpClient,
+			baseURL+AgentServiceGetMetricsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetMetrics")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
-	hello       *connect.Client[v1.HelloRequest, v1.HelloResponse]
-	observe     *connect.Client[v1.ObserveRequest, v1.ObserveResponse]
-	execute     *connect.Client[v1.ExecuteRequest, v1.ExecuteResponse]
-	enroll      *connect.Client[v1.EnrollRequest, v1.EnrollResponse]
-	openSession *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
+	hello        *connect.Client[v1.HelloRequest, v1.HelloResponse]
+	observe      *connect.Client[v1.ObserveRequest, v1.ObserveResponse]
+	execute      *connect.Client[v1.ExecuteRequest, v1.ExecuteResponse]
+	enroll       *connect.Client[v1.EnrollRequest, v1.EnrollResponse]
+	openSession  *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
+	getInventory *connect.Client[v1.GetInventoryRequest, v1.GetInventoryResponse]
+	getMetrics   *connect.Client[v1.GetMetricsRequest, v1.GetMetricsResponse]
 }
 
 // Hello calls nodal.agent.v1.AgentService.Hello.
@@ -135,6 +158,16 @@ func (c *agentServiceClient) OpenSession(ctx context.Context, req *connect.Reque
 	return c.openSession.CallUnary(ctx, req)
 }
 
+// GetInventory calls nodal.agent.v1.AgentService.GetInventory.
+func (c *agentServiceClient) GetInventory(ctx context.Context, req *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error) {
+	return c.getInventory.CallUnary(ctx, req)
+}
+
+// GetMetrics calls nodal.agent.v1.AgentService.GetMetrics.
+func (c *agentServiceClient) GetMetrics(ctx context.Context, req *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error) {
+	return c.getMetrics.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the nodal.agent.v1.AgentService service.
 type AgentServiceHandler interface {
 	Hello(context.Context, *connect.Request[v1.HelloRequest]) (*connect.Response[v1.HelloResponse], error)
@@ -144,6 +177,10 @@ type AgentServiceHandler interface {
 	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
 	// OpenSession is reserved for later remote-node sessions.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
+	// GetInventory returns the last typed host observation.
+	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)
+	// GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
+	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -183,6 +220,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("OpenSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceGetInventoryHandler := connect.NewUnaryHandler(
+		AgentServiceGetInventoryProcedure,
+		svc.GetInventory,
+		connect.WithSchema(agentServiceMethods.ByName("GetInventory")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetMetricsHandler := connect.NewUnaryHandler(
+		AgentServiceGetMetricsProcedure,
+		svc.GetMetrics,
+		connect.WithSchema(agentServiceMethods.ByName("GetMetrics")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/nodal.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceHelloProcedure:
@@ -195,6 +244,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceEnrollHandler.ServeHTTP(w, r)
 		case AgentServiceOpenSessionProcedure:
 			agentServiceOpenSessionHandler.ServeHTTP(w, r)
+		case AgentServiceGetInventoryProcedure:
+			agentServiceGetInventoryHandler.ServeHTTP(w, r)
+		case AgentServiceGetMetricsProcedure:
+			agentServiceGetMetricsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -222,4 +275,12 @@ func (UnimplementedAgentServiceHandler) Enroll(context.Context, *connect.Request
 
 func (UnimplementedAgentServiceHandler) OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.OpenSession is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetInventory is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetMetrics is not implemented"))
 }

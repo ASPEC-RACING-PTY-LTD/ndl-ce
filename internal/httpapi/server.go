@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 )
@@ -32,11 +33,18 @@ type Agent interface {
 	Enroll(ctx context.Context, clusterID string) (nodeID string, hostPlatform json.RawMessage, err error)
 }
 
+// Observer reads cached agent observations. It does not scan the host here.
+type Observer interface {
+	GetMetrics(ctx context.Context, from, to time.Time) (metrics.QueryResult, error)
+}
+
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
 	Store      appdb.Store
 	Lockout    *auth.Lockout
 	Agent      Agent
+	Observer   Observer
+	Hub        *EventHub
 	UI         fs.FS
 	Now        func() time.Time
 	SetupHash  string
@@ -68,6 +76,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/me", s.me)
 	mux.HandleFunc("POST /api/v1/tokens", s.createToken)
 	mux.HandleFunc("POST /api/v1/tokens/revoke", s.revokeToken)
+	mux.HandleFunc("GET /api/v1/nodes", s.listNodes)
+	mux.HandleFunc("GET /api/v1/nodes/{id}", s.getNode)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/hardware", s.nodeHardware)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/capabilities", s.nodeCapabilities)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/metrics", s.nodeMetrics)
+	mux.HandleFunc("GET /api/v1/tasks", s.listTasks)
+	mux.HandleFunc("GET /api/v1/events", s.listEvents)
+	mux.HandleFunc("GET /api/v1/events/stream", s.streamEvents)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

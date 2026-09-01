@@ -31,6 +31,9 @@ func run(args []string) error {
   token create --name NAME
   recover-admin --username USER --password PASS
   host-prepare
+  node show
+  task list
+  event list
 `)
 		return nil
 	}
@@ -53,6 +56,21 @@ func run(args []string) error {
 		return cmdRecover(args[1:])
 	case "host-prepare":
 		return install.HostPrepare()
+	case "node":
+		if len(args) < 2 || args[1] != "show" {
+			return fmt.Errorf("usage: nodalctl node show")
+		}
+		return cmdGet("/api/v1/nodes")
+	case "task":
+		if len(args) < 2 || args[1] != "list" {
+			return fmt.Errorf("usage: nodalctl task list")
+		}
+		return cmdGet("/api/v1/tasks")
+	case "event":
+		if len(args) < 2 || args[1] != "list" {
+			return fmt.Errorf("usage: nodalctl event list")
+		}
+		return cmdGet("/api/v1/events")
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -100,6 +118,15 @@ func cmdWhoami() error {
 func cmdTokenCreate(args []string) error {
 	f := parseFlags(args)
 	resp, err := do("POST", "/api/v1/tokens", map[string]string{"name": f["name"]}, true)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(resp))
+	return nil
+}
+
+func cmdGet(path string) error {
+	resp, err := do("GET", path, nil, true)
 	if err != nil {
 		return err
 	}

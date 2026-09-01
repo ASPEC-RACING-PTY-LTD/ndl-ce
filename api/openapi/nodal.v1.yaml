@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: No-dal Community Edition API
   version: 0.1.0
-  description: Phase 1 northbound API. No inventory or workload routes.
+  description: Phase 2 northbound API. Observed host inventory, tasks, events, and metrics.
 servers:
   - url: /api/v1
 paths:
@@ -110,6 +110,114 @@ paths:
       responses:
         "204":
           description: Revoked
+  /nodes:
+    get:
+      operationId: listNodes
+      summary: Local node summary
+      responses:
+        "200":
+          description: Nodes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeListResponse"
+  /nodes/{id}:
+    get:
+      operationId: getNode
+      summary: One node summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeSummary"
+  /nodes/{id}/hardware:
+    get:
+      operationId: getNodeHardware
+      summary: Cached observed hardware
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Hardware inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HardwareResponse"
+  /nodes/{id}/capabilities:
+    get:
+      operationId: getNodeCapabilities
+      summary: Observed capability flags
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Capabilities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilitiesResponse"
+  /nodes/{id}/metrics:
+    get:
+      operationId: getNodeMetrics
+      summary: Agent SQLite metric samples
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsResponse"
+  /tasks:
+    get:
+      operationId: listTasks
+      summary: Operations and tasks
+      responses:
+        "200":
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskListResponse"
+  /events:
+    get:
+      operationId: listEvents
+      summary: Platform events
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventListResponse"
+  /events/stream:
+    get:
+      operationId: streamEvents
+      summary: Server-sent platform events
+      responses:
+        "200":
+          description: Event stream
 components:
   schemas:
     HealthResponse:
@@ -221,4 +329,209 @@ components:
         - error
       properties:
         error:
+          type: string
+    NodeListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeSummary"
+    NodeSummary:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        stale:
+          type: boolean
+        observed_at:
+          type: string
+        host_os:
+          type: string
+        host_id:
+          type: string
+        host_version_id:
+          type: string
+        cpu_model:
+          type: string
+        cpu_sockets:
+          type: integer
+        cpu_cores:
+          type: integer
+        cpu_threads:
+          type: integer
+        memory_bytes:
+          type: integer
+        disk_count:
+          type: integer
+        disk_bytes:
+          type: integer
+        nic_count:
+          type: integer
+        gpu_count:
+          type: integer
+        gpu_present:
+          type: boolean
+    HardwareResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - status
+      properties:
+        node_id:
+          type: string
+        observed_at:
+          type: string
+        stale:
+          type: boolean
+        status:
+          type: string
+        message:
+          type: string
+        inventory:
+          type: object
+          additionalProperties: true
+    CapabilitiesResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - capabilities
+      properties:
+        node_id:
+          type: string
+        stale:
+          type: boolean
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+    Capability:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        detail:
+          type: string
+    MetricsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - series
+      properties:
+        status:
+          type: string
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetricSeries"
+    MetricSeries:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - status
+        - points
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        unit:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetricPoint"
+    MetricPoint:
+      type: object
+      additionalProperties: false
+      required:
+        - time
+        - value
+      properties:
+        time:
+          type: string
+        value:
+          type: number
+    TaskListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskItem"
+    TaskItem:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - kind
+        - state
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        state:
+          type: string
+        stage:
+          type: string
+        message:
+          type: string
+        progress:
+          type: integer
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    EventListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventItem"
+    EventItem:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - type
+        - created_at
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        node_id:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        created_at:
           type: string

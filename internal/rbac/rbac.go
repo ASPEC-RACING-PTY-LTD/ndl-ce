@@ -17,6 +17,9 @@ const (
 	IdentityRecover     = "identity.recover"
 	AuditRead           = "audit.read"
 	ClusterRead         = "cluster.read"
+	NodeRead            = "node.read"
+	EventsRead          = "events.read"
+	MetricsRead         = "metrics.read"
 	All                 = "*"
 )
 
@@ -32,9 +35,12 @@ func (Catalog) PermissionsForRole(role string) []string {
 	case Admin:
 		return []string{All}
 	case Operator:
-		return []string{IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, ClusterRead}
+		return []string{
+			IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, ClusterRead,
+			NodeRead, EventsRead, MetricsRead,
+		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead}
+		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead}
 	default:
 		return nil
 	}

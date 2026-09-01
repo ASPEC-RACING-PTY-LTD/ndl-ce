@@ -1,9 +1,12 @@
 import { useEffect } from "react";
 import { Shell } from "./components/Shell";
 import { DashboardPage } from "./pages/DashboardPage";
+import { EventsPage } from "./pages/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MePage } from "./pages/MePage";
+import { NodePage } from "./pages/NodePage";
 import { SetupPage } from "./pages/SetupPage";
+import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
 
@@ -67,9 +70,18 @@ function AppRoutes() {
     return <Redirect to={session.setupOpen ? "/setup" : "/login"} />;
   }
 
-  return (
-    <Shell>{path === "/me" ? <MePage /> : <DashboardPage />}</Shell>
-  );
+  let page = <DashboardPage />;
+  if (path === "/me") {
+    page = <MePage />;
+  } else if (path === "/tasks") {
+    page = <TasksPage />;
+  } else if (path === "/events" || path === "/node/events") {
+    page = <EventsPage />;
+  } else if (path === "/node" || path.startsWith("/node/")) {
+    page = <NodePage />;
+  }
+
+  return <Shell>{page}</Shell>;
 }
 
 export function App() {
