@@ -11,6 +11,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
@@ -166,7 +167,7 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if mode == gpu.ModeVFIO {
-		if wl.Kind == lxc.KindSystemContainer {
+		if wl.Kind == lxc.KindSystemContainer || wl.Kind == oci.KindOCI {
 			writeErr(w, http.StatusUnprocessableEntity, "VFIO assignment is for VMs")
 			return
 		}
@@ -183,8 +184,8 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusUnprocessableEntity, "snapshot the VM before VFIO bind")
 			return
 		}
-	} else if wl.Kind != lxc.KindSystemContainer {
-		writeErr(w, http.StatusUnprocessableEntity, "render, compute, and encode assign Linux device nodes to system containers")
+	} else if wl.Kind != lxc.KindSystemContainer && wl.Kind != oci.KindOCI {
+		writeErr(w, http.StatusUnprocessableEntity, "render, compute, and encode assign Linux device nodes to system containers and OCI workloads")
 		return
 	}
 	var pci []string

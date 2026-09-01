@@ -23,6 +23,13 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
     keywords: ["lxc", "container", "ct"],
     require: "mutate",
   },
+  {
+    id: "create-oci",
+    label: "Create OCI application",
+    href: "/workloads/new/oci",
+    keywords: ["oci", "containerd", "docker", "image"],
+    require: "mutate",
+  },
   { id: "dashboard", label: "Dashboard", href: "/", keywords: ["home", "overview"] },
   { id: "workloads", label: "Workloads", href: "/workloads", keywords: ["vm", "container"] },
   {

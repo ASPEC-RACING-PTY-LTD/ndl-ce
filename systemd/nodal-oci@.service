@@ -1,0 +1,18 @@
+[Unit]
+Description=No-dal OCI application container %i
+Documentation=https://no-dal.com
+After=nodal-workloads.target
+# Supervised by systemd. Do not bind to ndl-control or ndl-agent.
+# Workloads survive control-plane stop the same way nodal-ct@ does.
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/ndl-oci-launch %i
+ExecStop=/usr/bin/ctr --namespace nodal tasks kill %i
+KillMode=mixed
+Restart=no
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=nodal-workloads.target

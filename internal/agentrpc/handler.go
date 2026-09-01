@@ -17,6 +17,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/peercred"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -38,6 +39,7 @@ type Handler struct {
 	Nets          *ndnet.Engine
 	Workloads     *lxc.Engine
 	QEMU          *qemu.Engine
+	OCI           *oci.Engine
 	ZFS           *storage.ZFSEngine
 	Journal       *journald.Engine
 	SkipHostCmds  bool
@@ -180,6 +182,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execVMHotplug(ctx, req.Msg.GetVmHotplug())
 	case req.Msg.GetVmGuest() != nil:
 		return h.execVMGuest(ctx, req.Msg.GetVmGuest())
+	case req.Msg.GetOciRuntime() != nil:
+		return h.execOCIRuntime(ctx, req.Msg.GetOciRuntime())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

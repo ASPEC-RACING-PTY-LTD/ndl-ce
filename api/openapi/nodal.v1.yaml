@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.19
+  version: 0.1.20
   description: Phase 20 guest Terminal and Files plus prior northbound API. VM tabs require nodal_ga ok. qemu-ga remains freeze/shutdown.
 servers:
   - url: /api/v1
@@ -635,7 +635,7 @@ paths:
                 $ref: "#/components/schemas/WorkloadListResponse"
     post:
       operationId: createWorkload
-      summary: Create a system container or VM
+      summary: Create a system container, OCI application, or VM
       requestBody:
         required: true
         content:
@@ -2172,6 +2172,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StoragePool"
+  /registries:
+    get:
+      operationId: listRegistries
+      summary: List OCI registries (never returns passwords)
+      responses:
+        "200":
+          description: Registries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryListResponse"
+    post:
+      operationId: createRegistry
+      summary: Add an OCI registry with optional credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRegistryRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registry"
   /gpus:
     get:
       operationId: listGpus
@@ -2964,12 +2991,16 @@ components:
         spec:
           type: object
           additionalProperties: true
+        health:
+          type: object
+          additionalProperties: true
+        unit:
+          type: string
     CreateWorkloadRequest:
       type: object
       additionalProperties: false
       required:
         - name
-        - network_id
       properties:
         name:
           type: string
@@ -2987,6 +3018,25 @@ components:
           type: string
         volume_id:
           type: string
+        volume_ids:
+          type: array
+          items:
+            type: string
+        registry_id:
+          type: string
+        ports:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        env:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        health:
+          type: object
+          additionalProperties: true
         privileged:
           type: boolean
         desired_power:
@@ -3002,6 +3052,55 @@ components:
         nocloud:
           type: object
           additionalProperties: true
+    Registry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - url
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+        insecure:
+          type: boolean
+        has_credentials:
+          type: boolean
+        status:
+          type: string
+        created_at:
+          type: string
+    RegistryListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Registry"
+    CreateRegistryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - url
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        insecure:
+          type: boolean
     UpdateWorkloadRequest:
       type: object
       additionalProperties: false

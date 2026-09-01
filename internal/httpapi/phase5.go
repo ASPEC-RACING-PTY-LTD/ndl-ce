@@ -13,6 +13,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
@@ -26,26 +27,34 @@ type WorkloadRPC interface {
 }
 
 type createWorkloadRequest struct {
-	Name         string          `json:"name"`
-	Kind         string          `json:"kind"`
-	ImagePin     string          `json:"image_pin"`
-	CPUs         int             `json:"cpus"`
-	MemoryBytes  int64           `json:"memory_bytes"`
-	PoolID       string          `json:"pool_id"`
-	NetworkID    string          `json:"network_id"`
-	VolumeID     string          `json:"volume_id"`
-	Privileged   bool            `json:"privileged"`
-	DesiredPower string          `json:"desired_power"`
-	Firmware     string          `json:"firmware"`
-	Autostart    bool            `json:"autostart"`
-	Balloon      bool            `json:"balloon"`
-	ISOLibraryID string          `json:"iso_library_id"`
-	CloudImageID string          `json:"cloud_image_id"`
-	NoCloud      vmspec.NoCloud  `json:"nocloud"`
-	Spec         json.RawMessage `json:"spec"`
-	QEMUArgs     []string        `json:"qemu_args"`
-	Command      string          `json:"command"`
-	SecureBoot   bool            `json:"secure_boot"`
+	Name         string            `json:"name"`
+	Kind         string            `json:"kind"`
+	ImagePin     string            `json:"image_pin"`
+	CPUs         int               `json:"cpus"`
+	MemoryBytes  int64             `json:"memory_bytes"`
+	PoolID       string            `json:"pool_id"`
+	NetworkID    string            `json:"network_id"`
+	VolumeID     string            `json:"volume_id"`
+	VolumeIDs    []string          `json:"volume_ids"`
+	RegistryID   string            `json:"registry_id"`
+	Ports        []oci.Port        `json:"ports"`
+	Env          []oci.EnvVar      `json:"env"`
+	SecretRefs   []oci.SecretRef   `json:"secret_refs"`
+	Volumes      []oci.VolumeMount `json:"volumes"`
+	Health       *oci.Healthcheck  `json:"health"`
+	HostPath     string            `json:"host_path"`
+	Privileged   bool              `json:"privileged"`
+	DesiredPower string            `json:"desired_power"`
+	Firmware     string            `json:"firmware"`
+	Autostart    bool              `json:"autostart"`
+	Balloon      bool              `json:"balloon"`
+	ISOLibraryID string            `json:"iso_library_id"`
+	CloudImageID string            `json:"cloud_image_id"`
+	NoCloud      vmspec.NoCloud    `json:"nocloud"`
+	Spec         json.RawMessage   `json:"spec"`
+	QEMUArgs     []string          `json:"qemu_args"`
+	Command      string            `json:"command"`
+	SecureBoot   bool              `json:"secure_boot"`
 }
 
 type patchWorkloadRequest struct {
@@ -121,12 +130,16 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		s.createVM(w, r, p, req)
 		return
 	}
+	if req.Kind == oci.KindOCI {
+		s.createOCIWorkload(w, r, p, req)
+		return
+	}
 	if req.Name == "" || req.ImagePin == "" {
 		writeErr(w, http.StatusBadRequest, "name and image_pin are required")
 		return
 	}
 	if req.Kind != lxc.KindSystemContainer {
-		writeErr(w, http.StatusBadRequest, "kind must be system-container")
+		writeErr(w, http.StatusBadRequest, "kind must be system-container or oci")
 		return
 	}
 	if err := lxc.ValidatePin(req.ImagePin); err != nil {
@@ -358,6 +371,10 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 		}
 		if row.Kind == vmspec.KindVM {
 			s.vmLifecycle(w, r, p, *row, action)
+			return
+		}
+		if row.Kind == oci.KindOCI {
+			s.ociLifecycle(w, r, p, *row, action)
 			return
 		}
 		if s.Workloads == nil {
@@ -611,7 +628,7 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 	if len(w.MigrateBlockers) > 0 {
 		blockers = w.MigrateBlockers
 	}
-	return map[string]any{
+	out := map[string]any{
 		"id": w.ID, "node_id": w.NodeID, "name": w.Name, "kind": w.Kind,
 		"status": w.Status, "reason": w.Reason, "desired_power": w.DesiredPower,
 		"image_pin": w.ImagePin, "image_verified": w.ImageVerified,
@@ -623,6 +640,11 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"spec": specJSON(w), "applied": appliedJSON(w),
 		"created_at": w.CreatedAt.UTC().Format(time.RFC3339),
 	}
+	if w.Kind == oci.KindOCI {
+		out["health"] = ociHealthFromWorkload(w)
+		out["unit"] = oci.UnitName(w.ID)
+	}
+	return out
 }
 
 func (s *Server) startOpKeyed(ctx context.Context, clusterID, nodeID, kind, stage, key, message string, progress int) appdb.Operation {

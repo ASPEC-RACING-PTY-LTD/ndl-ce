@@ -128,6 +128,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Honest IO: tabs stay disabled until nodal_ga is ok; agent down is unavailable, not healthy
 - Follow-up: live virtio-serial Terminal/Files on Debian 13; Windows PTY remains unimplemented
 
+## Phase 21
+
+- Package: 0.1.20
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (private registry pull with stored creds via FakeRuntime, health collecting/not_configured visible, reject host bind /, privileged admin-only, GPU render/compute/encode for kind oci and VFIO still VM-only, nodal-oci@ independent of CP). FIXTURE: FakeRuntime + SkipHostCmds. NOT PHYSICALLY VALIDATED: containerd pull/run on Debian 13, live health HTTP probe
+- Runtime choice: containerd via allowlisted `/usr/bin/ctr`. Cloud has no containerd; SkipHostCmds and FakeRuntime stay honest unavailable.
+- Follow-up: live containerd on appliance; Compose/stacks remain Phase 22
+
 
 
 

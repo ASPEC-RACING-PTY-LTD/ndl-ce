@@ -27,7 +27,9 @@ const required = [
   "systemd/ndl-dnsmasq@.service",
   "systemd/nodal-ct@.service",
   "systemd/nodal-vm@.service",
+  "systemd/nodal-oci@.service",
   "cmd/ndl-qemu-launch/main.go",
+  "cmd/ndl-oci-launch/main.go",
   "packaging/apparmor/usr.bin.qemu-system-x86_64.local",
   "docs/install.md",
   "docs/uninstall.md",
@@ -88,6 +90,9 @@ if (!changelog.includes("nodal (0.1.18)") || !changelog.includes("Phase 19 No-da
 }
 if (!changelog.includes("nodal (0.1.19)") || !changelog.includes("Phase 20 guest Terminal and Files")) {
   errors.push("changelog must include nodal (0.1.19) Phase 20 guest Terminal and Files");
+}
+if (!changelog.includes("nodal (0.1.20)") || !changelog.includes("Phase 21 OCI application workloads")) {
+  errors.push("changelog must include nodal (0.1.20) Phase 21 OCI application workloads");
 }
 
 const control = existsSync("packaging/debian/control")
@@ -205,8 +210,14 @@ if (!agentInstall.includes("nodal-ct@.service")) {
 if (!agentInstall.includes("usr/sbin/ndl-qemu-launch")) {
   errors.push("ndl-agent.install must install usr/sbin/ndl-qemu-launch");
 }
+if (!agentInstall.includes("usr/sbin/ndl-oci-launch")) {
+  errors.push("ndl-agent.install must install usr/sbin/ndl-oci-launch");
+}
 if (!agentInstall.includes("nodal-vm@.service")) {
   errors.push("ndl-agent.install must install nodal-vm@.service");
+}
+if (!agentInstall.includes("nodal-oci@.service")) {
+  errors.push("ndl-agent.install must install nodal-oci@.service");
 }
 if (!agentInstall.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
   errors.push("ndl-agent.install must install the QEMU AppArmor local profile");
@@ -219,6 +230,15 @@ if (!rules.includes("nodal-ct@.service")) {
 }
 if (!rules.includes("./cmd/ndl-qemu-launch")) {
   errors.push("debian/rules must build ndl-qemu-launch");
+}
+if (!rules.includes("./cmd/ndl-oci-launch")) {
+  errors.push("debian/rules must build ndl-oci-launch");
+}
+if (!rules.includes("usr/sbin/ndl-oci-launch")) {
+  errors.push("debian/rules must install ndl-oci-launch to usr/sbin/ndl-oci-launch");
+}
+if (!rules.includes("nodal-oci@.service")) {
+  errors.push("debian/rules must install nodal-oci@.service");
 }
 if (!rules.includes("./cmd/ndl-guest")) {
   errors.push("debian/rules must build ndl-guest");
@@ -259,6 +279,18 @@ if (!/Type=simple/.test(ctUnit) || !/lxc-start[^\n]* -F/.test(ctUnit)) {
 }
 if (/^Type=forking/m.test(ctUnit) || /^ExecStart=.*lxc-start.* -d/m.test(ctUnit)) {
   errors.push("nodal-ct@.service must not use Type=forking or lxc-start -d");
+}
+const ociUnit = existsSync("systemd/nodal-oci@.service")
+  ? readFileSync("systemd/nodal-oci@.service", "utf8")
+  : "";
+if (!/Type=simple/.test(ociUnit) || !ociUnit.includes("ExecStart=/usr/sbin/ndl-oci-launch")) {
+  errors.push("nodal-oci@.service must run ndl-oci-launch as Type=simple");
+}
+if (/^(After|BindsTo|Requires|PartOf|Wants)=.*(ndl-control|ndl-agent)/m.test(ociUnit)) {
+  errors.push("nodal-oci@.service must not bind to ndl-control or ndl-agent");
+}
+if (!/WantedBy=nodal-workloads.target/.test(ociUnit)) {
+  errors.push("nodal-oci@.service must be WantedBy nodal-workloads.target");
 }
 const vmUnit = existsSync("systemd/nodal-vm@.service")
   ? readFileSync("systemd/nodal-vm@.service", "utf8")

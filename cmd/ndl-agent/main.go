@@ -12,6 +12,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
@@ -30,6 +31,7 @@ func main() {
 		Metrics:   ms,
 		Workloads: &lxc.Engine{DataDir: dir},
 		QEMU:      &qemu.Engine{DataDir: dir},
+		OCI:       &oci.Engine{DataDir: dir},
 	}
 	recoverStaleNetwork(dir)
 	go scrapeMetrics(ms, dir)

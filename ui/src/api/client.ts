@@ -379,7 +379,10 @@ export async function createWorkload(
     cpus?: number;
     memory_bytes?: number;
     pool_id?: string;
-    network_id: string;
+    network_id?: string;
+    registry_id?: string;
+    volume_ids?: string[];
+    health?: { http_path?: string; port?: number };
     privileged?: boolean;
     firmware?: string;
     autostart?: boolean;
@@ -406,6 +409,23 @@ export async function createWorkload(
       body: JSON.stringify(body),
     }),
   );
+}
+
+export type Registry = {
+  id: string;
+  name: string;
+  url: string;
+  insecure?: boolean;
+  has_credentials?: boolean;
+  status?: string;
+};
+
+export async function listRegistries(): Promise<{ items: Registry[] }> {
+  return readJson(await request("/registries"));
+}
+
+export async function getWorkloadLogs(id: string, lines = 200): Promise<{ status: string; unit: string; lines: string[]; message?: string }> {
+  return readJson(await request(`/workloads/${id}/logs?lines=${lines}`));
 }
 
 export async function patchWorkload(

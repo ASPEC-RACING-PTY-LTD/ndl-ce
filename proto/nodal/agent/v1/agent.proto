@@ -172,7 +172,14 @@ message ExecuteRequest {
     ZFSPool zfs_pool = 27;
     VMHotplug vm_hotplug = 28;
     VMGuest vm_guest = 29;
+    OCIRuntime oci_runtime = 30;
   }
+}
+
+message OCIRuntime {
+  string action = 1;
+  string workload_id = 2;
+  bytes spec_json = 3;
 }
 
 message VMGuest {

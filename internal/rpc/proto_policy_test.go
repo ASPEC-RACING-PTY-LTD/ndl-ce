@@ -63,6 +63,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"ZFSPool zfs_pool =",
 		"VMHotplug vm_hotplug =",
 		"VMGuest vm_guest =",
+		"OCIRuntime oci_runtime =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

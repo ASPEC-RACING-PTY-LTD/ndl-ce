@@ -15,6 +15,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/transport"
 	"golang.org/x/net/http2"
@@ -297,6 +298,44 @@ func (c Client) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.
 	var out lxc.Result
 	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
 		return lxc.Result{}, err
+	}
+	return out, nil
+}
+
+// CreateOCI is a typed Execute method for OCI application workloads.
+func (c Client) CreateOCI(ctx context.Context, spec oci.Spec) (oci.Result, error) {
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return oci.Result{}, err
+	}
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_OciRuntime{OciRuntime: &agentv1.OCIRuntime{
+			Action: "create", WorkloadId: spec.WorkloadID, SpecJson: raw,
+		}},
+	}))
+	if err != nil {
+		return oci.Result{}, err
+	}
+	var out oci.Result
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return oci.Result{}, err
+	}
+	return out, nil
+}
+
+// LifecycleOCI is a typed Execute method for OCI lifecycle.
+func (c Client) LifecycleOCI(ctx context.Context, req oci.LifecycleRequest) (oci.Result, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_OciRuntime{OciRuntime: &agentv1.OCIRuntime{
+			Action: req.Action, WorkloadId: req.WorkloadID,
+		}},
+	}))
+	if err != nil {
+		return oci.Result{}, err
+	}
+	var out oci.Result
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return oci.Result{}, err
 	}
 	return out, nil
 }

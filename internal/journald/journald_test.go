@@ -26,6 +26,9 @@ func TestAllowUnit(t *testing.T) {
 	if _, err := AllowUnit("nodal-ct@" + id + ".service"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := AllowUnit("nodal-oci@" + id + ".service"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestArgvNeverShell(t *testing.T) {

@@ -45,6 +45,7 @@ export function WorkloadsPage() {
       {mutate ? (
         <p className="btn-row">
           <Link href="/workloads/new/system-container">Create system container</Link>
+          <Link href="/workloads/new/oci">Create OCI</Link>
           <Link href="/workloads/new/vm">Create VM</Link>
           <Link href="/workloads/import">Import VM</Link>
           <Link href="/templates">Templates</Link>

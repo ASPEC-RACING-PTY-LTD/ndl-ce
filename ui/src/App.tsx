@@ -11,6 +11,7 @@ import { StoragePage } from "./pages/StoragePage";
 import { FilesPage } from "./pages/FilesPage";
 import { TerminalPage } from "./pages/TerminalPage";
 import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
+import { OciCreatePage } from "./pages/OciCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
 import { VmCreatePage } from "./pages/VmCreatePage";
@@ -105,6 +106,8 @@ function AppRoutes() {
     page = <NetworkPage />;
   } else if (path === "/workloads/new/system-container") {
     page = <WorkloadCreatePage />;
+  } else if (path === "/workloads/new/oci") {
+    page = <OciCreatePage />;
   } else if (path === "/workloads/new/vm") {
     page = <VmCreatePage />;
   } else if (path === "/workloads/import") {

@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
@@ -30,6 +31,7 @@ func decodeWorkloadHints(in []*agentv1.WorkloadHint) []lxc.Hint {
 
 func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
 	var ct []lxc.Hint
+	var ociHints []oci.Hint
 	var vms []lxc.Observed
 	for _, hint := range hints {
 		if hint.Kind == qemu.KindVM {
@@ -45,6 +47,13 @@ func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
 			})
 			continue
 		}
+		if hint.Kind == oci.KindOCI {
+			ociHints = append(ociHints, oci.Hint{
+				WorkloadID: hint.WorkloadID, Kind: oci.KindOCI,
+				VolumeID: hint.VolumeID, NetworkID: hint.NetworkID,
+			})
+			continue
+		}
 		ct = append(ct, hint)
 	}
 	obs, err := h.workloads().Observe(context.Background(), ct)
@@ -52,6 +61,19 @@ func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
 		obs = lxc.Observation{}
 	}
 	obs.Workloads = append(obs.Workloads, vms...)
+	if len(ociHints) > 0 {
+		ociObs, err := h.oci().Observe(context.Background(), ociHints)
+		if err == nil {
+			for _, w := range ociObs.Workloads {
+				obs.Workloads = append(obs.Workloads, lxc.Observed{
+					WorkloadID: w.WorkloadID, Kind: oci.KindOCI, Status: w.Status,
+					Reason: w.Reason, UnitActive: w.UnitActive, Warnings: w.Warnings,
+					MigrateReady: false, MigrateBlockers: []string{"OCI recreate migrate is Phase 32"},
+					ObservedAt: w.ObservedAt,
+				})
+			}
+		}
+	}
 	return mustJSON(obs)
 }
 

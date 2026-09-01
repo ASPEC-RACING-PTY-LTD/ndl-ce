@@ -17,6 +17,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
@@ -52,7 +53,12 @@ func (s *Server) workloadLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	unit := "nodal-vm@" + wl.ID + ".service"
-	if wl.Kind != "vm" {
+	switch wl.Kind {
+	case "vm":
+		unit = "nodal-vm@" + wl.ID + ".service"
+	case oci.KindOCI:
+		unit = oci.UnitName(wl.ID)
+	default:
 		unit = "nodal-ct@" + wl.ID + ".service"
 	}
 	s.writeLogs(w, r, unit)

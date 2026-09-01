@@ -203,6 +203,11 @@ type Store interface {
 
 	UpsertGuestObservation(ctx context.Context, g GuestObservation) error
 	GetGuestObservation(ctx context.Context, clusterID, workloadID string) (*GuestObservation, error)
+
+	CreateRegistry(ctx context.Context, r Registry, username, password string) error
+	ListRegistries(ctx context.Context, clusterID string) ([]Registry, error)
+	GetRegistry(ctx context.Context, clusterID, id string) (*Registry, error)
+	RegistrySecrets(ctx context.Context, clusterID, id string) (username, password string, err error)
 }
 
 // Cluster is the appliance cluster of one.

@@ -105,6 +105,7 @@ func Run(cfg Config) error {
 		IO:         agent,
 		QEMU:       httpapi.AdaptQEMU(agent),
 		VM:         httpapi.AdaptVM(agent),
+		OCI:        httpapi.AdaptOCI(agent),
 		Backup:     httpapi.AdaptBackup(agent),
 		Update:     httpapi.AdaptUpdate(agent),
 		GPU:        httpapi.AdaptGPU(agent),

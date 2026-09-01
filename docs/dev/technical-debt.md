@@ -134,6 +134,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Terminal Here / Upload Here are proven through HTTP plus a fake guest/IO, not a booted virtio-serial guest. Why not blocking: Cloud has no KVM guest OS; jail is guest:/ and product tabs stay off unless nodal_ga is ok.
 - LOW. Windows PTY remains unimplemented, so a Windows VM with nodal_ga ok can still fail Terminal honestly. Why not blocking: Files still work; Console remains the Windows shell path.
 
+## Phase 21
+
+- MEDIUM. containerd pull/run is proven with FakeRuntime and SkipHostCmds, not a live ctr on this Cloud VM. Why not blocking: Cloud has no containerd; unavailable health stays honest; Debian 13 appliance validation remains.
+- LOW. Health HTTP probe is configured and visible as collecting/not_configured; live probe against a running task is not executed here. Why not blocking: inventing healthy would violate honesty.
+- LOW. OCI clone is refused. Why not blocking: recreate-from-image plus volume move belongs with migrate phases.
 
 
 

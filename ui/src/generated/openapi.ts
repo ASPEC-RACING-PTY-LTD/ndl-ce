@@ -301,6 +301,8 @@ export interface Workload {
   pending_restart?: boolean;
   firmware?: string;
   spec?: Record<string, unknown>;
+  health?: Record<string, unknown>;
+  unit?: string;
 }
 
 export interface CreateWorkloadRequest {
@@ -310,8 +312,13 @@ export interface CreateWorkloadRequest {
   cpus?: number;
   memory_bytes?: number;
   pool_id?: string;
-  network_id: string;
+  network_id?: string;
   volume_id?: string;
+  volume_ids?: string[];
+  registry_id?: string;
+  ports?: Record<string, unknown>[];
+  env?: Record<string, unknown>[];
+  health?: Record<string, unknown>;
   privileged?: boolean;
   desired_power?: string;
   firmware?: string;
@@ -319,6 +326,28 @@ export interface CreateWorkloadRequest {
   cloud_image_id?: string;
   iso_library_id?: string;
   nocloud?: Record<string, unknown>;
+}
+
+export interface Registry {
+  id: string;
+  name: string;
+  url: string;
+  insecure?: boolean;
+  has_credentials?: boolean;
+  status?: string;
+  created_at?: string;
+}
+
+export interface RegistryListResponse {
+  items: Registry[];
+}
+
+export interface CreateRegistryRequest {
+  name: string;
+  url: string;
+  username?: string;
+  password?: string;
+  insecure?: boolean;
 }
 
 export interface UpdateWorkloadRequest {
@@ -1176,6 +1205,8 @@ export type GetZfsRuntimePath = "/api/v1/storage/zfs";
 export type ImportZfsPath = "/api/v1/storage/zfs/import";
 
 export type CreateZfsPath = "/api/v1/storage/zfs/create";
+
+export type ListRegistriesPath = "/api/v1/registries";
 
 export type ListGpusPath = "/api/v1/gpus";
 

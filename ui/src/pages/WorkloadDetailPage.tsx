@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, getWorkloadGuest, listNodeUSB, patchWorkload, workloadAction } from "../api/client";
+import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, getWorkloadGuest, getWorkloadLogs, listNodeUSB, patchWorkload, workloadAction } from "../api/client";
 import type { USBDeviceRow, WorkloadGuest } from "../api/client";
 import type { Workload } from "../api/phase5";
 import { Field } from "../components/Field";
@@ -30,6 +30,10 @@ export function WorkloadDetailPage() {
   const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
   const [usbAddr, setUsbAddr] = useState("");
   const [guest, setGuest] = useState<WorkloadGuest | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logStatus, setLogStatus] = useState<string>("");
+  const [logMessage, setLogMessage] = useState<string>("");
+  const [showLogs, setShowLogs] = useState(false);
 
   async function reload() {
     const w = await getWorkload(id);
@@ -141,6 +145,13 @@ export function WorkloadDetailPage() {
           <Link href={`/workloads/${item.id}/snapshots`}>Snapshots</Link>
           {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
         </nav>
+      ) : item.kind === "oci" ? (
+        <nav className="subnav" aria-label="OCI IO">
+          <button type="button" className="btn btn-ghost" onClick={() => setShowLogs((v) => !v)}>
+            {showLogs ? "Hide logs" : "Logs"}
+          </button>
+          {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
+        </nav>
       ) : (
         <>
           <nav className="subnav" aria-label="VM IO">
@@ -195,6 +206,35 @@ export function WorkloadDetailPage() {
           </article>
         </>
       )}
+      {item.kind === "oci" && showLogs ? (
+        <article className="panel">
+          <h2>Logs</h2>
+          <p className="page-kicker">
+            Unit {item.unit || `nodal-oci@${item.id}.service`}. Status: {logStatus || "Collecting"}
+            {logMessage ? ` (${logMessage})` : ""}
+          </p>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              void getWorkloadLogs(item.id)
+                .then((logs) => {
+                  setLogStatus(logs.status);
+                  setLogMessage(logs.message || "");
+                  setLogLines(logs.lines ?? []);
+                })
+                .catch((err) => setError(err instanceof Error ? err.message : "Logs unavailable"));
+            }}
+          >
+            Refresh logs
+          </button>
+          {logLines.length === 0 ? (
+            <p>No lines. Status stays unavailable when journald is missing.</p>
+          ) : (
+            <pre className="code-block">{logLines.join("\n")}</pre>
+          )}
+        </article>
+      ) : null}
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
@@ -207,6 +247,15 @@ export function WorkloadDetailPage() {
             <dt>Status</dt>
             <dd>{honestStatus(item.status)}</dd>
           </div>
+          {item.kind === "oci" ? (
+            <div>
+              <dt>Health</dt>
+              <dd>
+                {item.health?.status ? honestStatus(item.health.status) : "Collecting"}
+                {item.health?.message ? ` (${item.health.message})` : ""}
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Reason</dt>
             <dd>{item.reason || "None"}</dd>

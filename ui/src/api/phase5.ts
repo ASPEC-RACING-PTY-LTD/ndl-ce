@@ -38,6 +38,8 @@ export type Workload = {
   firmware?: string;
   spec?: unknown;
   node_id?: string;
+  health?: { status?: string; message?: string };
+  unit?: string;
 };
 
 export type WorkloadListResponse = {

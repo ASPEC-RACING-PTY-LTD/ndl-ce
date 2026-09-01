@@ -52,6 +52,9 @@ func run(args []string) error {
   workload list
   workload create --kind system-container --name NAME --image-pin PIN --pool-id ID --network-id ID [--cpus N] [--memory-bytes N] [--privileged]
   workload create --kind vm --name NAME --network-id ID [--pool-id ID] [--cpus N] [--memory-bytes N] [--firmware bios|uefi] [--cloud-image-id ID] [--iso-library-id ID] [--autostart] [--nocloud-user USER] [--nocloud-host HOST]
+  workload create --kind oci --name NAME --image-pin IMAGE [--registry-id ID] [--network-id ID] [--volume-id ID] [--cpus N] [--memory-bytes N] [--privileged]
+  registry list
+  registry add --name NAME --url URL [--username USER] [--password PASS] [--insecure]
   workload get --id ID
   workload start --id ID
   workload stop --id ID
@@ -151,6 +154,8 @@ func run(args []string) error {
 		return cmdGuestStatus(args[2:])
 	case "workload":
 		return cmdWorkload(args[1:])
+	case "registry":
+		return cmdRegistry(args[1:])
 	case "lab":
 		return cmdLab(args[1:])
 	case "cert":
@@ -566,6 +571,15 @@ func cmdWorkload(args []string) error {
 			delete(body, "image_pin")
 			delete(body, "privileged")
 		}
+		if kind == "oci" {
+			if f["registry-id"] != "" {
+				body["registry_id"] = f["registry-id"]
+			}
+			if f["volume-id"] != "" {
+				body["volume_ids"] = []string{f["volume-id"]}
+			}
+			delete(body, "pool_id")
+		}
 		if cpus > 0 {
 			body["cpus"] = cpus
 		}
@@ -647,6 +661,29 @@ func cmdWorkload(args []string) error {
 		return cmdWorkloadTerminal(args[1:])
 	default:
 		return fmt.Errorf("unknown workload command")
+	}
+}
+
+func cmdRegistry(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl registry list|add")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/registries")
+	case "add":
+		f := parseFlags(args[1:])
+		if f["name"] == "" || f["url"] == "" {
+			return fmt.Errorf("usage: nodalctl registry add --name NAME --url URL [--username USER] [--password PASS] [--insecure]")
+		}
+		body := map[string]any{
+			"name": f["name"], "url": f["url"],
+			"username": f["username"], "password": f["password"],
+			"insecure": f["insecure"] == "true",
+		}
+		return postJSON("/api/v1/registries", body, true)
+	default:
+		return fmt.Errorf("usage: nodalctl registry list|add")
 	}
 }
 

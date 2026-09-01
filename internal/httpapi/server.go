@@ -61,6 +61,7 @@ type Server struct {
 	IO          IORPC
 	QEMU        QemuRPC
 	VM          VMRPC
+	OCI         OCIRPC
 	Backup      BackupRPC
 	Update      UpdateRPC
 	GPU         GPURPC
@@ -229,6 +230,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/gpus/assign", s.assignGPU)
 	mux.HandleFunc("POST /api/v1/gpus/unassign", s.unassignGPU)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/gpus", s.workloadGPUs)
+	mux.HandleFunc("GET /api/v1/registries", s.listRegistries)
+	mux.HandleFunc("POST /api/v1/registries", s.createRegistry)
 	mux.HandleFunc("GET /api/v1/storage/zfs", s.zfsRuntime)
 	mux.HandleFunc("POST /api/v1/storage/zfs/import", s.importZFS)
 	mux.HandleFunc("POST /api/v1/storage/zfs/create", s.createZFS)

@@ -65,6 +65,12 @@ func AllowUnit(unit string) (string, error) {
 			return unit, nil
 		}
 	}
+	if strings.HasPrefix(unit, "nodal-oci@") && strings.HasSuffix(unit, ".service") {
+		id := strings.TrimSuffix(strings.TrimPrefix(unit, "nodal-oci@"), ".service")
+		if _, err := uuid.Parse(id); err == nil {
+			return unit, nil
+		}
+	}
 	return "", errors.New("journal unit is not allowlisted")
 }
 
