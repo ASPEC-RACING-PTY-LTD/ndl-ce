@@ -54,6 +54,7 @@ type createWorkloadRequest struct {
 	Spec         json.RawMessage   `json:"spec"`
 	QEMUArgs     []string          `json:"qemu_args"`
 	Command      string            `json:"command"`
+	CommandSlice []string          `json:"-"`
 	SecureBoot   bool              `json:"secure_boot"`
 }
 
@@ -692,6 +693,11 @@ func errUnprocessable(msg string) error {
 }
 func errUnavailable(msg string) error {
 	return statusError{status: http.StatusBadGateway, msg: msg}
+}
+func errBadRequest(msg string) error { return statusError{status: http.StatusBadRequest, msg: msg} }
+func errForbidden(msg string) error  { return statusError{status: http.StatusForbidden, msg: msg} }
+func errFailedDependency(msg string) error {
+	return statusError{status: http.StatusFailedDependency, msg: msg}
 }
 
 func statusFor(err error) int {

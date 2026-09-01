@@ -208,6 +208,17 @@ type Store interface {
 	ListRegistries(ctx context.Context, clusterID string) ([]Registry, error)
 	GetRegistry(ctx context.Context, clusterID, id string) (*Registry, error)
 	RegistrySecrets(ctx context.Context, clusterID, id string) (username, password string, err error)
+
+	CreateStack(ctx context.Context, s Stack) error
+	ListStacks(ctx context.Context, clusterID string) ([]Stack, error)
+	GetStack(ctx context.Context, clusterID, id string) (*Stack, error)
+	UpdateStack(ctx context.Context, s Stack) error
+	DeleteStack(ctx context.Context, clusterID, id string) error
+	CreateStackMember(ctx context.Context, m StackMember) error
+	ListStackMembers(ctx context.Context, clusterID, stackID string) ([]StackMember, error)
+	GetStackMember(ctx context.Context, clusterID, id string) (*StackMember, error)
+	GetStackMemberByService(ctx context.Context, clusterID, stackID, service string) (*StackMember, error)
+	UpdateStackMember(ctx context.Context, m StackMember) error
 }
 
 // Cluster is the appliance cluster of one.

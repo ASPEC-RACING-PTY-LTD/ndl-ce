@@ -38,6 +38,20 @@ export function honestStatus(value?: string): string {
       return "Stale";
     case "unknown":
       return "Unknown";
+    case "draft":
+      return "Draft";
+    case "applying":
+      return "Applying";
+    case "applied":
+      return "Applied";
+    case "partial":
+      return "Partial";
+    case "pending":
+      return "Pending";
+    case "creating":
+      return "Creating";
+    case "ready":
+      return "Ready";
     default:
       return value && value.length > 0 ? value : "Not reported";
   }

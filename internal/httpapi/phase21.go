@@ -108,52 +108,64 @@ func registryJSON(r appdb.Registry) map[string]any {
 }
 
 func (s *Server) createOCIWorkload(w http.ResponseWriter, r *http.Request, p *principal, req createWorkloadRequest) {
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	row, created, err := s.provisionOCI(r.Context(), p, req, key, func(action, outcome, detail string) {
+		s.audit(r, p.User.ClusterID, p.User.ID, action, outcome, detail)
+	})
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	if created {
+		writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
+		return
+	}
+	writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), row))
+}
+
+// provisionOCI creates an OCI workload via agent RPC. Stack apply reuses this path.
+// created is false when an existing workload is returned idempotently.
+func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkloadRequest, key string, audit func(action, outcome, detail string)) (appdb.Workload, bool, error) {
+	if audit == nil {
+		audit = func(string, string, string) {}
+	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.ImagePin = strings.TrimSpace(req.ImagePin)
 	if req.Name == "" || req.ImagePin == "" {
-		writeErr(w, http.StatusBadRequest, "name and image_pin are required")
-		return
+		return appdb.Workload{}, false, errBadRequest("name and image_pin are required")
 	}
 	if err := oci.ValidateImageRef(req.ImagePin); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
+		return appdb.Workload{}, false, errBadRequest(err.Error())
 	}
 	if req.Privileged && !hasRole(p, rbac.Admin) {
-		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create.privileged", "denied", "operator cannot create privileged containers")
-		writeErr(w, http.StatusForbidden, "only admin may create privileged containers")
-		return
+		audit("workload.create.privileged", "denied", "operator cannot create privileged containers")
+		return appdb.Workload{}, false, errForbidden("only admin may create privileged containers")
 	}
 	if strings.TrimSpace(req.HostPath) != "" {
-		writeErr(w, http.StatusBadRequest, "host_path mounts are not allowed; use volume_ids")
-		return
+		return appdb.Workload{}, false, errBadRequest("host_path mounts are not allowed; use volume_ids")
 	}
-	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
+	node, err := s.Store.GetNode(ctx, p.User.ClusterID)
 	if err != nil || node == nil {
-		writeErr(w, http.StatusFailedDependency, "local node is not enrolled")
-		return
+		return appdb.Workload{}, false, errFailedDependency("local node is not enrolled")
 	}
 	rpc := s.ociRPC()
-	if existing, _ := s.Store.GetWorkloadByName(r.Context(), p.User.ClusterID, req.Name); existing != nil {
-		writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *existing))
-		return
+	if existing, _ := s.Store.GetWorkloadByName(ctx, p.User.ClusterID, req.Name); existing != nil {
+		return *existing, false, nil
 	}
-	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if key != "" {
-		if existing, _ := s.Store.GetWorkloadByIdempotency(r.Context(), p.User.ClusterID, key); existing != nil {
-			writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *existing))
-			return
+		if existing, _ := s.Store.GetWorkloadByIdempotency(ctx, p.User.ClusterID, key); existing != nil {
+			return *existing, false, nil
 		}
 	}
 	var regURL string
 	var specPullUser, specPullPass string
 	if req.RegistryID != "" {
-		reg, err := s.Store.GetRegistry(r.Context(), p.User.ClusterID, req.RegistryID)
+		reg, err := s.Store.GetRegistry(ctx, p.User.ClusterID, req.RegistryID)
 		if err != nil || reg == nil {
-			writeErr(w, http.StatusNotFound, "registry not found")
-			return
+			return appdb.Workload{}, false, errNotFound("registry not found")
 		}
 		regURL = reg.URL
-		user, pass, _ := s.Store.RegistrySecrets(r.Context(), p.User.ClusterID, req.RegistryID)
+		user, pass, _ := s.Store.RegistrySecrets(ctx, p.User.ClusterID, req.RegistryID)
 		specPullUser, specPullPass = user, pass
 	}
 	vols := append([]oci.VolumeMount{}, req.Volumes...)
@@ -167,23 +179,19 @@ func (s *Server) createOCIWorkload(w http.ResponseWriter, r *http.Request, p *pr
 	volumePaths := map[string]string{}
 	for _, m := range vols {
 		if err := oci.ValidateVolumeMount(m); err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
+			return appdb.Workload{}, false, errBadRequest(err.Error())
 		}
-		vol, err := s.Store.GetVolume(r.Context(), p.User.ClusterID, m.VolumeID)
+		vol, err := s.Store.GetVolume(ctx, p.User.ClusterID, m.VolumeID)
 		if err != nil || vol == nil {
-			writeErr(w, http.StatusNotFound, "volume not found")
-			return
+			return appdb.Workload{}, false, errNotFound("volume not found")
 		}
-		pool, err := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, vol.PoolID)
+		pool, err := s.Store.GetStoragePool(ctx, p.User.ClusterID, vol.PoolID)
 		if err != nil || pool == nil {
-			writeErr(w, http.StatusUnprocessableEntity, "volume pool unavailable")
-			return
+			return appdb.Workload{}, false, errUnprocessable("volume pool unavailable")
 		}
 		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
 		if err != nil {
-			writeErr(w, http.StatusUnprocessableEntity, "volume locator is invalid")
-			return
+			return appdb.Workload{}, false, errUnprocessable("volume locator is invalid")
 		}
 		volumePaths[m.VolumeID] = loc
 	}
@@ -198,44 +206,40 @@ func (s *Server) createOCIWorkload(w http.ResponseWriter, r *http.Request, p *pr
 	}
 	var netw *appdb.Network
 	if req.NetworkID != "" {
-		n, err := s.Store.GetNetwork(r.Context(), p.User.ClusterID, req.NetworkID)
+		n, err := s.Store.GetNetwork(ctx, p.User.ClusterID, req.NetworkID)
 		if err != nil || n == nil {
-			writeErr(w, http.StatusNotFound, "network not found")
-			return
+			return appdb.Workload{}, false, errNotFound("network not found")
 		}
 		netw = n
 	}
-	ids := s.planCreateIDs(r.Context(), p.User.ClusterID, node.ID, key, "")
+	ids := s.planCreateIDs(ctx, p.User.ClusterID, node.ID, key, "")
 	spec := oci.Spec{
 		WorkloadID: ids.WorkloadID, Name: req.Name, ImagePin: req.ImagePin,
 		RegistryID: req.RegistryID, RegistryURL: regURL, Ports: req.Ports, Env: req.Env,
 		SecretRefs: req.SecretRefs, Volumes: vols, Health: req.Health, Privileged: req.Privileged,
 		VolumePaths: volumePaths, Resources: oci.Resources{CPUs: req.CPUs, MemoryBytes: req.MemoryBytes},
-		PullUsername: specPullUser, PullPassword: specPullPass,
+		PullUsername: specPullUser, PullPassword: specPullPass, Command: req.CommandSlice,
 	}
 	if netw != nil {
 		spec.NetworkID = netw.ID
 		spec.BridgeName = netw.BridgeName
 	}
 	if err := oci.ValidateSpec(spec); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
+		return appdb.Workload{}, false, errBadRequest(err.Error())
 	}
-	op := s.startOpKeyed(r.Context(), p.User.ClusterID, node.ID, "workload.create", "creating", key, mustCreateMsg(createIDs{WorkloadID: ids.WorkloadID}), 20)
+	op := s.startOpKeyed(ctx, p.User.ClusterID, node.ID, "workload.create", "creating", key, mustCreateMsg(createIDs{WorkloadID: ids.WorkloadID}), 20)
 	if req.Privileged {
-		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create.privileged", "ok", ids.WorkloadID)
+		audit("workload.create.privileged", "ok", ids.WorkloadID)
 	}
-	res, err := rpc.CreateOCI(r.Context(), spec)
+	res, err := rpc.CreateOCI(ctx, spec)
 	if err != nil {
-		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
-		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "denied", err.Error())
-		writeErr(w, statusFor(err), err.Error())
-		return
+		s.finishOp(ctx, op, "failed", err.Error(), 0)
+		audit("workload.create", "denied", err.Error())
+		return appdb.Workload{}, false, err
 	}
-	if existing, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, ids.WorkloadID); existing != nil {
-		s.finishOp(r.Context(), op, "succeeded", mustCreateMsg(createIDs{WorkloadID: ids.WorkloadID}), 100)
-		writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *existing))
-		return
+	if existing, _ := s.Store.GetWorkload(ctx, p.User.ClusterID, ids.WorkloadID); existing != nil {
+		s.finishOp(ctx, op, "succeeded", mustCreateMsg(createIDs{WorkloadID: ids.WorkloadID}), 100)
+		return *existing, false, nil
 	}
 	health := res.Health
 	if health.Status == "" {
@@ -263,26 +267,25 @@ func (s *Server) createOCIWorkload(w http.ResponseWriter, r *http.Request, p *pr
 	if row.Status == "" {
 		row.Status = oci.StatusCollecting
 	}
-	if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
-		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
-		writeErr(w, http.StatusConflict, err.Error())
-		return
+	if err := s.Store.CreateWorkload(ctx, row); err != nil {
+		s.finishOp(ctx, op, "failed", err.Error(), 0)
+		return appdb.Workload{}, false, errConflict(err.Error())
 	}
 	for _, m := range vols {
-		_ = s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
+		_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 			VolumeID: m.VolumeID, Role: "data", Format: storage.FormatDirectory, CreatedAt: s.now(),
 		})
 	}
 	if netw != nil {
-		_ = s.Store.CreateWorkloadNIC(r.Context(), appdb.WorkloadNIC{
+		_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 			NetworkID: netw.ID, CreatedAt: s.now(),
 		})
 	}
-	s.finishOp(r.Context(), op, "succeeded", mustCreateMsg(createIDs{WorkloadID: ids.WorkloadID}), 100)
-	s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
-	writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
+	s.finishOp(ctx, op, "succeeded", mustCreateMsg(createIDs{WorkloadID: ids.WorkloadID}), 100)
+	audit("workload.create", "ok", row.ID)
+	return row, true, nil
 }
 
 func (s *Server) ociLifecycle(w http.ResponseWriter, r *http.Request, p *principal, row appdb.Workload, action string) {

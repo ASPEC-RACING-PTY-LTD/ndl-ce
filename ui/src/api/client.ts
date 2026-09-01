@@ -424,6 +424,68 @@ export async function listRegistries(): Promise<{ items: Registry[] }> {
   return readJson(await request("/registries"));
 }
 
+export type StackMember = {
+  id: string;
+  service_name: string;
+  status: string;
+  sort_order?: number;
+  workload_id?: string | null;
+  reason?: string;
+  desired?: Record<string, unknown>;
+  workload?: {
+    id: string;
+    name?: string;
+    kind?: string;
+    status?: string;
+    image_pin?: string;
+    health?: { status?: string; message?: string };
+  };
+};
+
+export type Stack = {
+  id: string;
+  name: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  has_source_compose?: boolean;
+  members?: StackMember[];
+  desired?: Record<string, unknown>;
+};
+
+export async function listStacks(): Promise<{ items: Stack[] }> {
+  return readJson(await request("/stacks"));
+}
+
+export async function getStack(id: string): Promise<Stack> {
+  return readJson(await request(`/stacks/${id}`));
+}
+
+export async function importStack(body: {
+  name: string;
+  compose: string;
+  pool_id?: string;
+  network_id?: string;
+  registry_id?: string;
+  apply?: boolean;
+}): Promise<Stack> {
+  return readJson(
+    await request("/stacks/import", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function applyStack(id: string): Promise<Stack> {
+  return readJson(
+    await request(`/stacks/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function getWorkloadLogs(id: string, lines = 200): Promise<{ status: string; unit: string; lines: string[]; message?: string }> {
   return readJson(await request(`/workloads/${id}/logs?lines=${lines}`));
 }

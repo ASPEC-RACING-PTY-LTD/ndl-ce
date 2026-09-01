@@ -48,6 +48,7 @@ export function WorkloadsPage() {
           <Link href="/workloads/new/oci">Create OCI</Link>
           <Link href="/workloads/new/vm">Create VM</Link>
           <Link href="/workloads/import">Import VM</Link>
+          <Link href="/stacks">Stacks</Link>
           <Link href="/templates">Templates</Link>
         </p>
       ) : null}

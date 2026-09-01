@@ -80,6 +80,9 @@ export function Shell({ children }: ShellProps) {
           <Link href="/workloads" aria-current={path === "/workloads" || path.startsWith("/workloads/") ? "page" : undefined}>
             Workloads
           </Link>
+          <Link href="/stacks" aria-current={path === "/stacks" || path.startsWith("/stacks/") ? "page" : undefined}>
+            Stacks
+          </Link>
           <Link href="/templates" aria-current={path === "/templates" ? "page" : undefined}>
             Templates
           </Link>

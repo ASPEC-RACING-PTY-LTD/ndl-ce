@@ -32,6 +32,14 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   },
   { id: "dashboard", label: "Dashboard", href: "/", keywords: ["home", "overview"] },
   { id: "workloads", label: "Workloads", href: "/workloads", keywords: ["vm", "container"] },
+  { id: "stacks", label: "Stacks", href: "/stacks", keywords: ["compose", "multi-container", "oci"] },
+  {
+    id: "import-stack",
+    label: "Import Compose stack",
+    href: "/stacks",
+    keywords: ["compose", "yaml", "docker-compose"],
+    require: "mutate",
+  },
   {
     id: "templates",
     label: "VM templates",

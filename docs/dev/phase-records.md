@@ -137,6 +137,13 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Runtime choice: containerd via allowlisted `/usr/bin/ctr`. Cloud has no containerd; SkipHostCmds and FakeRuntime stay honest unavailable.
 - Follow-up: live containerd on appliance; Compose/stacks remain Phase 22
 
+## Phase 22
+
+- Package: 0.1.21
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (compose fixture import to stacks/stack_members, privileged reject for operator, host bind / reject, anonymous volume reject, apply creates kind=oci workloads, partial apply resumes idempotently, member health stays collecting/unavailable never fake healthy). FIXTURE: FakeOCI + fakeStorage. NOT PHYSICALLY VALIDATED: multi-container apply against live containerd on Debian 13
+- Follow-up: shared stack networks beyond existing network_id attach; live containerd stack apply on appliance; S3 backups remain Phase 23
 
 
 

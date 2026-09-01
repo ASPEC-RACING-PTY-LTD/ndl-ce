@@ -26,6 +26,7 @@ import { MFAPage } from "./pages/MFAPage";
 import { GroupsPage } from "./pages/GroupsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
+import { StacksPage, StackDetailPage } from "./pages/StacksPage";
 import { TasksPage } from "./pages/TasksPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
@@ -132,6 +133,10 @@ function AppRoutes() {
     page = <WorkloadDetailPage />;
   } else if (path === "/workloads") {
     page = <WorkloadsPage />;
+  } else if (path === "/stacks") {
+    page = <StacksPage />;
+  } else if (path.startsWith("/stacks/")) {
+    page = <StackDetailPage />;
   } else if (path === "/node" || path.startsWith("/node/")) {
     page = <NodePage />;
   } else if (path === "/settings/certificates") {

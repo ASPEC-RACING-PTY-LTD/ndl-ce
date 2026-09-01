@@ -55,6 +55,10 @@ func run(args []string) error {
   workload create --kind oci --name NAME --image-pin IMAGE [--registry-id ID] [--network-id ID] [--volume-id ID] [--cpus N] [--memory-bytes N] [--privileged]
   registry list
   registry add --name NAME --url URL [--username USER] [--password PASS] [--insecure]
+  stack list
+  stack import FILE [--name NAME] [--pool-id ID] [--network-id ID] [--registry-id ID] [--apply]
+  stack get --id ID
+  stack apply --id ID
   workload get --id ID
   workload start --id ID
   workload stop --id ID
@@ -156,6 +160,8 @@ func run(args []string) error {
 		return cmdWorkload(args[1:])
 	case "registry":
 		return cmdRegistry(args[1:])
+	case "stack":
+		return cmdStack(args[1:])
 	case "lab":
 		return cmdLab(args[1:])
 	case "cert":
@@ -684,6 +690,58 @@ func cmdRegistry(args []string) error {
 		return postJSON("/api/v1/registries", body, true)
 	default:
 		return fmt.Errorf("usage: nodalctl registry list|add")
+	}
+}
+
+func cmdStack(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl stack list|import|get|apply")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/stacks")
+	case "import":
+		f := parseFlags(args[1:])
+		path := f["file"]
+		if path == "" && len(args) > 1 && !strings.HasPrefix(args[1], "--") {
+			path = args[1]
+			f = parseFlags(args[2:])
+		}
+		if path == "" {
+			return fmt.Errorf("usage: nodalctl stack import FILE [--name NAME] [--pool-id ID] [--network-id ID] [--registry-id ID] [--apply]")
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		name := f["name"]
+		if name == "" {
+			base := filepath.Base(path)
+			name = strings.TrimSuffix(base, filepath.Ext(base))
+			if name == "" {
+				name = "stack"
+			}
+		}
+		body := map[string]any{
+			"name": name, "compose": string(raw),
+			"pool_id": f["pool-id"], "network_id": f["network-id"], "registry_id": f["registry-id"],
+			"apply": f["apply"] == "true",
+		}
+		return postJSON("/api/v1/stacks/import", body, true)
+	case "get":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl stack get --id ID")
+		}
+		return cmdGet("/api/v1/stacks/" + f["id"])
+	case "apply":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl stack apply --id ID")
+		}
+		return postJSON("/api/v1/stacks/"+f["id"]+"/apply", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl stack list|import|get|apply")
 	}
 }
 

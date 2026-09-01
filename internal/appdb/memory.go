@@ -64,6 +64,8 @@ type Memory struct {
 	guestObs          map[string]GuestObservation
 	registries        map[string]Registry
 	registrySecrets   map[string][2]string
+	stacks            map[string]Stack
+	stackMembers      map[string]StackMember
 }
 
 // NewMemory returns an empty store.

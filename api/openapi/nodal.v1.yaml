@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.20
-  description: Phase 20 guest Terminal and Files plus prior northbound API. VM tabs require nodal_ga ok. qemu-ga remains freeze/shutdown.
+  version: 0.1.21
+  description: Phase 22 application stacks and Compose import plus prior northbound API. Compose is import only; stacks are the desired-state objects.
 servers:
   - url: /api/v1
 paths:
@@ -2199,6 +2199,120 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Registry"
+  /stacks:
+    get:
+      operationId: listStacks
+      summary: List application stacks
+      responses:
+        "200":
+          description: Stacks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StackListResponse"
+    post:
+      operationId: createStack
+      summary: Create an empty application stack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStackRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+  /stacks/import:
+    post:
+      operationId: importStackCompose
+      summary: Import Compose YAML into an inspectable No-dal stack (Compose is not runtime SoT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportStackRequest"
+      responses:
+        "201":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+        "403":
+          description: Privileged services require admin
+  /stacks/{id}:
+    get:
+      operationId: getStack
+      summary: Get stack detail with members and workload links
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stack
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+    patch:
+      operationId: patchStack
+      summary: Update stack metadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchStackRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+    delete:
+      operationId: deleteStack
+      summary: Delete a stack (does not delete workloads)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+  /stacks/{id}/apply:
+    post:
+      operationId: applyStack
+      summary: Apply stack members as OCI workloads (idempotent; resumes partial apply)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Applied or partial
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
   /gpus:
     get:
       operationId: listGpus
@@ -3101,6 +3215,111 @@ components:
           type: string
         insecure:
           type: boolean
+    Stack:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          description: draft|applying|applied|partial|failed (never invents all-healthy)
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        has_source_compose:
+          type: boolean
+        desired:
+          type: object
+          additionalProperties: true
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/StackMember"
+    StackMember:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - service_name
+        - status
+      properties:
+        id:
+          type: string
+        service_name:
+          type: string
+        status:
+          type: string
+          description: pending|creating|ready|collecting|unavailable|failed
+        sort_order:
+          type: integer
+        workload_id:
+          type: string
+          nullable: true
+        reason:
+          type: string
+        desired:
+          type: object
+          additionalProperties: true
+        workload:
+          type: object
+          additionalProperties: true
+    StackListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stack"
+    CreateStackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    ImportStackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - compose
+      properties:
+        name:
+          type: string
+        compose:
+          type: string
+          description: Compose YAML text. Becomes inspectable stack members, not runtime SoT.
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        registry_id:
+          type: string
+        volume_map:
+          type: object
+          additionalProperties:
+            type: string
+          description: Compose named volume to existing No-dal volume UUID
+        apply:
+          type: boolean
+    PatchStackRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
     UpdateWorkloadRequest:
       type: object
       additionalProperties: false

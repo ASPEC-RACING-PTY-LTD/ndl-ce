@@ -350,6 +350,50 @@ export interface CreateRegistryRequest {
   insecure?: boolean;
 }
 
+export interface Stack {
+  id: string;
+  name: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  has_source_compose?: boolean;
+  desired?: Record<string, unknown>;
+  members?: StackMember[];
+}
+
+export interface StackMember {
+  id: string;
+  service_name: string;
+  status: string;
+  sort_order?: number;
+  workload_id?: string;
+  reason?: string;
+  desired?: Record<string, unknown>;
+  workload?: Record<string, unknown>;
+}
+
+export interface StackListResponse {
+  items: Stack[];
+}
+
+export interface CreateStackRequest {
+  name: string;
+}
+
+export interface ImportStackRequest {
+  name: string;
+  compose: string;
+  pool_id?: string;
+  network_id?: string;
+  registry_id?: string;
+  volume_map?: Record<string, unknown>;
+  apply?: boolean;
+}
+
+export interface PatchStackRequest {
+  name?: string;
+}
+
 export interface UpdateWorkloadRequest {
   name?: string;
   cpus?: number;
@@ -1207,6 +1251,14 @@ export type ImportZfsPath = "/api/v1/storage/zfs/import";
 export type CreateZfsPath = "/api/v1/storage/zfs/create";
 
 export type ListRegistriesPath = "/api/v1/registries";
+
+export type ListStacksPath = "/api/v1/stacks";
+
+export type ImportStackComposePath = "/api/v1/stacks/import";
+
+export type GetStackPath = "/api/v1/stacks/{id}";
+
+export type ApplyStackPath = "/api/v1/stacks/{id}/apply";
 
 export type ListGpusPath = "/api/v1/gpus";
 
