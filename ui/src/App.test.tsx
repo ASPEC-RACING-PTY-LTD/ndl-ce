@@ -581,4 +581,92 @@ describe("App", () => {
     expect(screen.getAllByText("local-disk").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
   });
+
+  it("renders MFA, groups, and audit pages from the shell", async () => {
+    window.history.replaceState({}, "", "/settings/mfa");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/mfa": { status: 200, body: { enabled: false, kind: "not_configured" } },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^authenticator$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^mfa$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^groups$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^audit$/i })).toBeVisible();
+    expect(screen.getByText(/webauthn is not implemented yet/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^enroll totp$/i })).toBeVisible();
+  });
+
+  it("renders groups with honest empty state", async () => {
+    window.history.replaceState({}, "", "/groups");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/groups": { status: 200, body: { items: [] } },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^groups$/i })).toBeVisible();
+    expect(screen.getByText(/admin cannot be granted through a group/i)).toBeVisible();
+    expect(screen.getByText(/not configured/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^add group$/i })).toBeVisible();
+  });
+
+  it("renders audit events and keeps license activation off this page", async () => {
+    window.history.replaceState({}, "", "/audit");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/audit": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "aud-1",
+              action: "auth.login",
+              result: "ok",
+              created_at: "2026-09-01T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^audit$/i })).toBeVisible();
+    expect(screen.getByText(/viewers cannot read this log/i)).toBeVisible();
+    expect(await screen.findByText("auth.login")).toBeVisible();
+    expect(screen.queryByText(/activate license/i)).not.toBeInTheDocument();
+  });
+
+  it("prompts for a TOTP code when login returns an MFA challenge", async () => {
+    window.history.replaceState({}, "", "/login");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/auth/login": {
+        status: 200,
+        body: {
+          mfa_required: true,
+          mfa_challenge_id: "ch-1",
+          mfa_token: "tok-1",
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^sign in$/i })).toBeVisible();
+    fireEvent.change(screen.getByLabelText(/^username$/i), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    expect(await screen.findByRole("heading", { name: /^authenticator$/i })).toBeVisible();
+    expect(screen.getByLabelText(/authenticator code/i)).toBeVisible();
+    expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
+  });
 });

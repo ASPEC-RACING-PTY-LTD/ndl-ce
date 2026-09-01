@@ -21,6 +21,7 @@ type Store interface {
 	GetUser(ctx context.Context, id string) (*User, error)
 	UpdatePassword(ctx context.Context, userID, passwordHash string) error
 	CountAdmins(ctx context.Context, clusterID string) (int, error)
+	DeleteUserMFA(ctx context.Context, userID string) error
 
 	EnsureRoles(ctx context.Context, clusterID string, roles map[string][]string) error
 	BindRole(ctx context.Context, clusterID, userID, roleName string) error
@@ -39,6 +40,7 @@ type Store interface {
 	GetNode(ctx context.Context, clusterID string) (*Node, error)
 
 	InsertAudit(ctx context.Context, e AuditEvent) error
+	ListAuditEvents(ctx context.Context, clusterID string, limit int) ([]AuditEvent, error)
 
 	UpsertInventory(ctx context.Context, row HardwareInventory) error
 	GetInventory(ctx context.Context, nodeID string) (*HardwareInventory, error)
@@ -141,6 +143,28 @@ type Store interface {
 	ListUpdateOperations(ctx context.Context, clusterID string, limit int) ([]UpdateOperation, error)
 	GetLatestUpdateOperation(ctx context.Context, clusterID string) (*UpdateOperation, error)
 	UpdateUpdateOperation(ctx context.Context, op UpdateOperation) error
+
+	CreateGroup(ctx context.Context, g Group) error
+	ListGroups(ctx context.Context, clusterID string) ([]Group, error)
+	GetGroup(ctx context.Context, clusterID, id string) (*Group, error)
+	AddGroupMember(ctx context.Context, clusterID, groupID, userID string) error
+	ListGroupMembers(ctx context.Context, clusterID, groupID string) ([]string, error)
+	BindGroupRole(ctx context.Context, clusterID, groupID, roleName string) error
+
+	UpsertMFAMethod(ctx context.Context, m MFAMethod, totpSecret string, recoveryHashes []string) error
+	GetMFAMethod(ctx context.Context, userID string) (*MFAMethod, string, []string, error)
+	EnableMFAMethod(ctx context.Context, userID string) error
+	ConsumeRecoveryHash(ctx context.Context, userID, hash string) error
+
+	CreateMFAChallenge(ctx context.Context, c MFAChallenge) error
+	GetMFAChallengeByHash(ctx context.Context, hash string) (*MFAChallenge, error)
+	ConsumeMFAChallenge(ctx context.Context, id string) error
+
+	CreateServicePrincipal(ctx context.Context, sp ServicePrincipal) error
+	ListServicePrincipals(ctx context.Context, clusterID string) ([]ServicePrincipal, error)
+
+	GetVolumeEncryption(ctx context.Context, clusterID, volumeID string) (*VolumeEncryption, error)
+	UpsertVolumeEncryption(ctx context.Context, e VolumeEncryption) error
 }
 
 // Cluster is the appliance cluster of one.
@@ -163,6 +187,7 @@ type User struct {
 	ClusterID    string
 	Username     string
 	PasswordHash string
+	Kind         string
 }
 
 // Session is a cookie session.
@@ -173,17 +198,19 @@ type Session struct {
 	TokenHash string
 	ExpiresAt time.Time
 	RevokedAt *time.Time
+	AAL       int
 }
 
 // APIToken is a hashed bearer token.
 type APIToken struct {
-	ID        string
-	ClusterID string
-	UserID    string
-	Name      string
-	TokenHash string
-	Prefix    string
-	RevokedAt *time.Time
+	ID          string
+	ClusterID   string
+	UserID      string
+	Name        string
+	TokenHash   string
+	Prefix      string
+	Permissions []string
+	RevokedAt   *time.Time
 }
 
 // Node is the local enrolled node.

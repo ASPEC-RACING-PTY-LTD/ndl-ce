@@ -19,6 +19,9 @@ import { CertificatePage } from "./pages/CertificatePage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
+import { MFAPage } from "./pages/MFAPage";
+import { GroupsPage } from "./pages/GroupsPage";
+import { AuditPage } from "./pages/AuditPage";
 import { TasksPage } from "./pages/TasksPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
@@ -120,6 +123,12 @@ function AppRoutes() {
     page = <CertificatePage />;
   } else if (path === "/settings/updates") {
     page = <UpdatesPage />;
+  } else if (path === "/settings/mfa") {
+    page = <MFAPage />;
+  } else if (path === "/groups") {
+    page = <GroupsPage />;
+  } else if (path === "/audit") {
+    page = <AuditPage />;
   } else if (path === "/backups") {
     page = <BackupsPage />;
   }

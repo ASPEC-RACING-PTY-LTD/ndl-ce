@@ -19,7 +19,10 @@ replaying setup is refused. There is no factory password to reuse.
 
 `nodalctl recover-admin` is a local host operation. It requires
 root (or equivalent) on the machine. It is not a remote reset and
-it is not a default credential.
+it is not a default credential. It resets the named user's password,
+revokes that user's sessions and API tokens, and deletes their
+`mfa_methods` rows so a lost last authenticator cannot lock the
+administrator out of the appliance.
 
 ## Identity that persists
 
@@ -165,5 +168,27 @@ are the CLI paths.
 4. Roll back the `ndl-control` package to the recorded previous version.
 5. After a kernel package update, use GRUB previous-kernel (`grub-reboot 1`) then reboot the host if the new kernel is unusable.
 6. Homelab Migration Candidate requires Phases 9 through 12 on Debian 13 hardware. Cloud fixture coverage is not that gate.
+
+## Identity completion (Phase 13)
+
+TOTP is the working MFA method. WebAuthn is not implemented. Login returns
+an MFA challenge instead of a session when TOTP is enabled. Recovery codes
+are shown once at enroll. Service principals cannot password-login.
+
+`nodalctl recover-admin` deletes `mfa_methods` for the named user so a lost
+last authenticator does not strand the administrator. `nodalctl user mfa`
+and `nodalctl group add` are the CLI paths.
+
+Volume encryption unlock is honest 422 for Directory storage. LUKS and ZFS
+native encryption are later backends. Cluster destroy stays not implemented
+even after AAL 2 and confirm.
+
+### Recovery matrix (lost MFA)
+
+1. Enroll TOTP and confirm a code.
+2. Lose the authenticator and recovery codes.
+3. On the appliance as root, run `nodalctl recover-admin --username USER --password NEW`.
+4. Password login succeeds without an MFA challenge.
+5. Re-enroll TOTP if MFA is still required by policy.
 
 

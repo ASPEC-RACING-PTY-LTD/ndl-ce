@@ -56,3 +56,12 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Homelab Migration Candidate: not claimed. Phases 9-12 have not passed on Debian 13 hardware in this environment.
 - Follow-up: cluster rolling updates Phase 34, Ubuntu host adapter Phase 29, Store compatibility Phase 36
 
+## Phase 13
+
+- Package: 0.1.12
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (TOTP enroll/challenge/verify, re-enroll of enabled MFA is 409, API tokens cannot enroll, viewer audit 403, operator MFA, token permissions cannot exceed creator, service principal password login denied, AAL 2 step-up for cluster.destroy, groups cannot bind admin, verify lockout, login fail-closed if MFA state is unreadable, recover-admin SQL deletes mfa_methods). FIXTURE for recover-admin host-key path. NOT PHYSICALLY VALIDATED: hardware TOTP device, WebAuthn, LUKS/ZFS volume unlock
+- Honest MFA: TOTP works. WebAuthn is not implemented. Directory volume unlock is 422, not a fake LUKS open. Cluster destroy remains not implemented.
+- Follow-up: WebAuthn, real LUKS/ZFS unlock after Phase 15, license activation UI Phase 43
+

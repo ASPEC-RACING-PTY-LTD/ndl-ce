@@ -52,7 +52,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const signIn = useCallback(async (body: LoginRequest) => {
-    const user = await login(body);
+    const result = await login(body);
+    if ("mfa_required" in result && result.mfa_required) {
+      throw new ApiError(401, "MFA required");
+    }
+    const user = result as MeResponse;
     setState({ status: "ready", setupOpen: false, user });
     return user;
   }, []);

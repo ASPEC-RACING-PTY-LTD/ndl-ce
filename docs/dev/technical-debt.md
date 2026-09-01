@@ -81,4 +81,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - LOW. apt-get/pg_dump/tar are not run in Cloud CI. Why not blocking: SkipHostCmds plus argv unit tests cover the typed adapter; executing apt on Ubuntu would fake Debian success.
 - LOW. Store compatibility is an honest unsupported hook. Why not blocking: roadmap assigns the real check to Phase 36.
 
+## Phase 13
+
+- MEDIUM. WebAuthn is not implemented. Why not blocking: roadmap allows TOTP as the working MFA; UI and API say not implemented.
+- MEDIUM. Directory volume unlock is honest 422. LUKS/ZFS native encryption need those backends. Why not blocking: ZFS create-time encryption is Phase 15; faking unlock would violate honesty.
+- LOW. Cluster destroy stays not implemented after AAL 2. Why not blocking: CE must not wipe the appliance in this phase.
+- LOW. recover-admin host-key path is not executed in Cloud CI (not root, not an installed product). Why not blocking: SQL includes DELETE FROM mfa_methods; unit tests prove login after DeleteUserMFA.
+
 

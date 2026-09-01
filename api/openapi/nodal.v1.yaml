@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.11
-  description: Phase 12 platform updates plus prior northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, Files, virtual machines, TLS settings, snapshots, backups, and control-plane package updates.
+  version: 0.1.12
+  description: Phase 13 identity completion plus prior northbound API. Groups, TOTP MFA, service principals, audit browser, and honest volume encryption fields.
 servers:
   - url: /api/v1
 paths:
@@ -57,11 +57,13 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Authenticated
+          description: Authenticated or MFA challenge
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MeResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/MeResponse"
+                  - $ref: "#/components/schemas/MFAChallengeResponse"
   /auth/logout:
     post:
       operationId: logout
@@ -1626,6 +1628,171 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/mfa/verify:
+    post:
+      operationId: verifyMfa
+      summary: Complete a TOTP or recovery-code challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAVerifyRequest"
+      responses:
+        "200":
+          description: Session at AAL 2
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: Invalid challenge
+  /mfa:
+    get:
+      operationId: getMfa
+      summary: Current user MFA status
+      responses:
+        "200":
+          description: MFA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAStatus"
+  /mfa/enroll:
+    post:
+      operationId: enrollMfa
+      summary: Start TOTP enrollment
+      responses:
+        "201":
+          description: Secret and recovery codes shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAEnrollResponse"
+  /mfa/confirm:
+    post:
+      operationId: confirmMfa
+      summary: Confirm TOTP enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAConfirmRequest"
+      responses:
+        "200":
+          description: MFA enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAStatus"
+  /audit:
+    get:
+      operationId: listAudit
+      summary: Audit browser. Requires audit.read.
+      responses:
+        "200":
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditListResponse"
+        "403":
+          description: Forbidden
+  /groups:
+    get:
+      operationId: listGroups
+      summary: List groups
+      responses:
+        "200":
+          description: Groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupListResponse"
+    post:
+      operationId: createGroup
+      summary: Create a group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroupRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+  /groups/{id}/members:
+    post:
+      operationId: addGroupMember
+      summary: Add a user to a group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddGroupMemberRequest"
+      responses:
+        "200":
+          description: Added
+  /groups/{id}/roles:
+    post:
+      operationId: bindGroupRole
+      summary: Bind operator or viewer to a group. Admin cannot be granted through a group.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindGroupRoleRequest"
+      responses:
+        "200":
+          description: Bound
+        "403":
+          description: Admin role refused
+  /service-principals:
+    get:
+      operationId: listServicePrincipals
+      summary: List service principals
+      responses:
+        "200":
+          description: Service principals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePrincipalListResponse"
+    post:
+      operationId: createServicePrincipal
+      summary: Create a service principal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServicePrincipalRequest"
+      responses:
+        "201":
+          description: Token shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePrincipalCreated"
 components:
   schemas:
     HealthResponse:
@@ -1702,6 +1869,31 @@ components:
           type: string
         cluster_id:
           type: string
+        aal:
+          type: integer
+        mfa_enabled:
+          type: boolean
+        kind:
+          type: string
+          enum:
+            - person
+            - service
+    MFAChallengeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - mfa_required
+        - mfa_challenge_id
+        - mfa_token
+      properties:
+        mfa_required:
+          type: boolean
+          enum:
+            - true
+        mfa_challenge_id:
+          type: string
+        mfa_token:
+          type: string
     CreateTokenRequest:
       type: object
       additionalProperties: false
@@ -1710,6 +1902,11 @@ components:
       properties:
         name:
           type: string
+        permissions:
+          type: array
+          items:
+            type: string
+          description: Must be a subset of the creator grants. Empty inherits the creator role.
     CreateTokenResponse:
       type: object
       additionalProperties: false
@@ -3129,4 +3326,199 @@ components:
             - succeeded
             - failed
             - unsupported
+    MFAVerifyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - mfa_challenge_id
+        - mfa_token
+        - code
+      properties:
+        mfa_challenge_id:
+          type: string
+        mfa_token:
+          type: string
+        code:
+          type: string
+    MFAConfirmRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+      properties:
+        code:
+          type: string
+    MFAStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - kind
+      properties:
+        enabled:
+          type: boolean
+        kind:
+          type: string
+    MFAEnrollResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - secret
+        - otpauth_url
+        - recovery_codes
+        - enabled
+      properties:
+        kind:
+          type: string
+        secret:
+          type: string
+        otpauth_url:
+          type: string
+        recovery_codes:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+    AuditListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - action
+        - result
+        - created_at
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        result:
+          type: string
+        created_at:
+          type: string
+        actor_user_id:
+          type: string
+    GroupListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+    Group:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        member_ids:
+          type: array
+          items:
+            type: string
+    CreateGroupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    AddGroupMemberRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+    BindGroupRoleRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum:
+            - operator
+            - viewer
+    ServicePrincipalListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServicePrincipal"
+    ServicePrincipal:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - user_id
+        - kind
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - service
+    CreateServicePrincipalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    ServicePrincipalCreated:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - user_id
+        - token
+        - kind
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+        token:
+          type: string
+        kind:
+          type: string
+          enum:
+            - service
 

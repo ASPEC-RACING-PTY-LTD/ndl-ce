@@ -76,6 +76,14 @@ func run(args []string) error {
   update preflight
   update checkpoint
   update rollback --confirm rollback-update
+  user mfa
+  user mfa enroll
+  user mfa confirm --code CODE
+  user mfa verify --challenge-id ID --token TOKEN --code CODE
+  group add --name NAME
+  group list
+  group member add --id ID --user-id USER
+  group role bind --id ID --role operator|viewer
 `)
 		return nil
 	}
@@ -136,6 +144,10 @@ func run(args []string) error {
 		return cmdBackup(args[1:])
 	case "update":
 		return cmdUpdate(args[1:])
+	case "user":
+		return cmdUser(args[1:])
+	case "group":
+		return cmdGroup(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -785,6 +797,77 @@ func cmdUpdate(args []string) error {
 		return postJSON("/api/v1/updates/rollback", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl update check|apply|preflight|checkpoint|rollback")
+	}
+}
+
+func cmdUser(args []string) error {
+	if len(args) == 0 || args[0] != "mfa" {
+		return fmt.Errorf("usage: nodalctl user mfa [enroll|confirm|verify]")
+	}
+	rest := args[1:]
+	if len(rest) == 0 {
+		return cmdGet("/api/v1/mfa")
+	}
+	switch rest[0] {
+	case "enroll":
+		return postJSON("/api/v1/mfa/enroll", map[string]any{}, true)
+	case "confirm":
+		f := parseFlags(rest[1:])
+		if f["code"] == "" {
+			return fmt.Errorf("usage: nodalctl user mfa confirm --code CODE")
+		}
+		return postJSON("/api/v1/mfa/confirm", map[string]any{"code": f["code"]}, true)
+	case "verify":
+		f := parseFlags(rest[1:])
+		challenge := firstNonEmpty(f["challenge-id"], f["mfa-challenge-id"])
+		token := firstNonEmpty(f["token"], f["mfa-token"])
+		if challenge == "" || token == "" || f["code"] == "" {
+			return fmt.Errorf("usage: nodalctl user mfa verify --challenge-id ID --token TOKEN --code CODE")
+		}
+		return postJSON("/api/v1/auth/mfa/verify", map[string]any{
+			"mfa_challenge_id": challenge,
+			"mfa_token":        token,
+			"code":             f["code"],
+		}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl user mfa [enroll|confirm|verify]")
+	}
+}
+
+func cmdGroup(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: nodalctl group add --name NAME")
+	}
+	switch args[0] {
+	case "add":
+		f := parseFlags(args[1:])
+		if f["name"] == "" {
+			return fmt.Errorf("usage: nodalctl group add --name NAME")
+		}
+		return postJSON("/api/v1/groups", map[string]any{"name": f["name"]}, true)
+	case "list":
+		return cmdGet("/api/v1/groups")
+	case "member":
+		if len(args) < 2 || args[1] != "add" {
+			return fmt.Errorf("usage: nodalctl group member add --id ID --user-id USER")
+		}
+		f := parseFlags(args[2:])
+		userID := firstNonEmpty(f["user-id"], f["user_id"])
+		if f["id"] == "" || userID == "" {
+			return fmt.Errorf("usage: nodalctl group member add --id ID --user-id USER")
+		}
+		return postJSON("/api/v1/groups/"+f["id"]+"/members", map[string]any{"user_id": userID}, true)
+	case "role":
+		if len(args) < 2 || args[1] != "bind" {
+			return fmt.Errorf("usage: nodalctl group role bind --id ID --role operator|viewer")
+		}
+		f := parseFlags(args[2:])
+		if f["id"] == "" || f["role"] == "" {
+			return fmt.Errorf("usage: nodalctl group role bind --id ID --role operator|viewer")
+		}
+		return postJSON("/api/v1/groups/"+f["id"]+"/roles", map[string]any{"role": f["role"]}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl group add --name NAME")
 	}
 }
 

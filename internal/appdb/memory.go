@@ -9,40 +9,49 @@ import (
 
 // Memory is an in-process Store for tests.
 type Memory struct {
-	mu              sync.Mutex
-	cluster         *Cluster
-	setup           *SetupToken
-	users           map[string]User
-	roles           map[string][]string
-	binds           map[string][]string
-	sess            map[string]Session
-	tokens          map[string]APIToken
-	node            *Node
-	audit           []AuditEvent
-	inventory       map[string]HardwareInventory
-	observations    []NodeObservation
-	operations      []Operation
-	events          []Event
-	pools           map[string]StoragePool
-	volumes         map[string]Volume
-	library         map[string]LibraryItem
-	networks        map[string]Network
-	addresses       map[string]Address
-	reservations    map[string]DHCPReservation
-	workloads       map[string]Workload
-	workloadDisks   map[string]WorkloadDisk
-	workloadNICs    map[string]WorkloadNIC
-	vmCidata        map[string]VMCidata
-	vmFirmware      map[string]VMFirmware
-	ioSessions      map[string]IOSession
-	certificate     *Certificate
-	snapshots       map[string]Snapshot
-	backupTargets   map[string]BackupTarget
-	backupCreds     map[string]string
-	backupPolicies  map[string]BackupPolicy
-	backupRuns      map[string]BackupRun
-	backupArtifacts map[string]BackupArtifact
-	updateOps       map[string]UpdateOperation
+	mu                sync.Mutex
+	cluster           *Cluster
+	setup             *SetupToken
+	users             map[string]User
+	roles             map[string][]string
+	binds             map[string][]string
+	sess              map[string]Session
+	tokens            map[string]APIToken
+	node              *Node
+	audit             []AuditEvent
+	inventory         map[string]HardwareInventory
+	observations      []NodeObservation
+	operations        []Operation
+	events            []Event
+	pools             map[string]StoragePool
+	volumes           map[string]Volume
+	library           map[string]LibraryItem
+	networks          map[string]Network
+	addresses         map[string]Address
+	reservations      map[string]DHCPReservation
+	workloads         map[string]Workload
+	workloadDisks     map[string]WorkloadDisk
+	workloadNICs      map[string]WorkloadNIC
+	vmCidata          map[string]VMCidata
+	vmFirmware        map[string]VMFirmware
+	ioSessions        map[string]IOSession
+	certificate       *Certificate
+	snapshots         map[string]Snapshot
+	backupTargets     map[string]BackupTarget
+	backupCreds       map[string]string
+	backupPolicies    map[string]BackupPolicy
+	backupRuns        map[string]BackupRun
+	backupArtifacts   map[string]BackupArtifact
+	updateOps         map[string]UpdateOperation
+	groups            map[string]Group
+	groupMembers      map[string][]string
+	groupRoles        map[string][]string
+	mfaMethods        map[string]MFAMethod
+	mfaSecrets        map[string]string
+	mfaRecovery       map[string][]string
+	mfaChallenges     map[string]MFAChallenge
+	servicePrincipals map[string]ServicePrincipal
+	volumeEnc         map[string]VolumeEncryption
 }
 
 // NewMemory returns an empty store.
@@ -126,6 +135,9 @@ func (m *Memory) CreateUser(_ context.Context, u User) error {
 			return fmt.Errorf("user exists")
 		}
 	}
+	if u.Kind == "" {
+		u.Kind = UserKindPerson
+	}
 	m.users[u.ID] = u
 	return nil
 }
@@ -206,6 +218,13 @@ func (m *Memory) UserRoles(_ context.Context, userID string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := append([]string{}, m.binds[userID]...)
+	for gid, members := range m.groupMembers {
+		for _, uid := range members {
+			if uid == userID {
+				out = append(out, m.groupRoles[gid]...)
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -303,6 +322,12 @@ func (m *Memory) GetNode(_ context.Context, clusterID string) (*Node, error) {
 func (m *Memory) InsertAudit(_ context.Context, e AuditEvent) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if e.ID == "" {
+		e.ID = fmt.Sprintf("audit-%d", len(m.audit)+1)
+	}
+	if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
 	m.audit = append(m.audit, e)
 	return nil
 }

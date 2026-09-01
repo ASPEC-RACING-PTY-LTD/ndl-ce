@@ -73,10 +73,12 @@ type Server struct {
 }
 
 type principal struct {
-	User   appdb.User
-	Roles  []string
-	Grants []string
-	SessID string
+	User    appdb.User
+	Roles   []string
+	Grants  []string
+	SessID  string
+	AAL     int
+	TokenID string
 }
 
 func (s *Server) now() time.Time {
@@ -176,6 +178,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/updates/checkpoint", s.checkpointUpdates)
 	mux.HandleFunc("POST /api/v1/updates/apply", s.applyUpdates)
 	mux.HandleFunc("POST /api/v1/updates/rollback", s.rollbackUpdates)
+	mux.HandleFunc("POST /api/v1/auth/mfa/verify", s.verifyMFA)
+	mux.HandleFunc("GET /api/v1/mfa", s.getMFA)
+	mux.HandleFunc("POST /api/v1/mfa/enroll", s.enrollMFA)
+	mux.HandleFunc("POST /api/v1/mfa/confirm", s.confirmMFA)
+	mux.HandleFunc("GET /api/v1/audit", s.listAudit)
+	mux.HandleFunc("GET /api/v1/groups", s.listGroups)
+	mux.HandleFunc("POST /api/v1/groups", s.createGroup)
+	mux.HandleFunc("POST /api/v1/groups/{id}/members", s.addGroupMember)
+	mux.HandleFunc("POST /api/v1/groups/{id}/roles", s.bindGroupRole)
+	mux.HandleFunc("GET /api/v1/service-principals", s.listServicePrincipals)
+	mux.HandleFunc("POST /api/v1/service-principals", s.createServicePrincipal)
+	mux.HandleFunc("POST /api/v1/secrets/reveal", s.revealSecret)
+	mux.HandleFunc("POST /api/v1/cluster/destroy", s.destroyCluster)
+	mux.HandleFunc("POST /api/v1/storage/volumes/{id}/unlock", s.unlockVolume)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}
@@ -335,12 +351,12 @@ func (s *Server) setupClaim(w http.ResponseWriter, r *http.Request) {
 			HostPlatform: plat,
 		})
 	}
-	if err := s.issueSession(w, r, user); err != nil {
+	if err := s.issueSession(w, r, user, 1); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.audit(r, cluster.ID, user.ID, "setup.claim", "ok", "")
-	s.writeMe(w, r, user)
+	s.writeMe(w, r, user, 1)
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -375,13 +391,28 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
+	if user.Kind == appdb.UserKindService {
+		s.lock().Fail(key, s.now())
+		s.audit(r, cluster.ID, user.ID, "auth.login", "denied", "service principal")
+		writeErr(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "mfa state is unavailable")
+		return
+	}
+	if method != nil && method.Enabled {
+		s.writeMFAChallenge(w, r, *user)
+		return
+	}
 	s.lock().Success(key)
-	if err := s.issueSession(w, r, *user); err != nil {
+	if err := s.issueSession(w, r, *user, 1); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.audit(r, cluster.ID, user.ID, "auth.login", "ok", "")
-	s.writeMe(w, r, *user)
+	s.writeMe(w, r, *user, 1)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -406,7 +437,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	s.writeMe(w, r, p.User)
+	s.writeMe(w, r, p.User, p.AAL)
 }
 
 func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
@@ -415,11 +446,18 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
 	}
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
+	}
+	for _, perm := range req.Permissions {
+		if !rbac.Authorize(p.Grants, perm) {
+			writeErr(w, http.StatusForbidden, "token permissions cannot exceed the creator")
+			return
+		}
 	}
 	raw, err := secutil.RandomHex(24)
 	if err != nil {
@@ -428,12 +466,13 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 	plain := "ndl_" + raw
 	tok := appdb.APIToken{
-		ID:        uuid.NewString(),
-		ClusterID: p.User.ClusterID,
-		UserID:    p.User.ID,
-		Name:      strings.TrimSpace(req.Name),
-		TokenHash: secutil.HashSHA256(plain),
-		Prefix:    plain[:8],
+		ID:          uuid.NewString(),
+		ClusterID:   p.User.ClusterID,
+		UserID:      p.User.ID,
+		Name:        strings.TrimSpace(req.Name),
+		TokenHash:   secutil.HashSHA256(plain),
+		Prefix:      plain[:8],
+		Permissions: req.Permissions,
 	}
 	if err := s.Store.CreateToken(r.Context(), tok); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -490,7 +529,7 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 		if err != nil || u == nil {
 			return nil, errors.New("invalid token")
 		}
-		return s.asPrincipal(r.Context(), *u, "")
+		return s.asPrincipal(r.Context(), *u, "", 1, row.ID, row.Permissions)
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
@@ -504,10 +543,10 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 	if err != nil || u == nil {
 		return nil, errors.New("invalid session")
 	}
-	return s.asPrincipal(r.Context(), *u, sess.ID)
+	return s.asPrincipal(r.Context(), *u, sess.ID, sess.AAL, "", nil)
 }
 
-func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string) (*principal, error) {
+func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string, aal int, tokenID string, tokenPerms []string) (*principal, error) {
 	roles, err := s.Store.UserRoles(ctx, u.ID)
 	if err != nil {
 		return nil, err
@@ -517,13 +556,28 @@ func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string) (
 	for _, role := range roles {
 		grants = append(grants, cat.PermissionsForRole(role)...)
 	}
-	return &principal{User: u, Roles: roles, Grants: grants, SessID: sessID}, nil
+	if len(tokenPerms) > 0 {
+		filtered := make([]string, 0, len(tokenPerms))
+		for _, perm := range tokenPerms {
+			if rbac.Authorize(grants, perm) {
+				filtered = append(filtered, perm)
+			}
+		}
+		grants = filtered
+	}
+	if aal <= 0 {
+		aal = 1
+	}
+	return &principal{User: u, Roles: roles, Grants: grants, SessID: sessID, AAL: aal, TokenID: tokenID}, nil
 }
 
-func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb.User) error {
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb.User, aal int) error {
 	raw, err := randomCookie()
 	if err != nil {
 		return err
+	}
+	if aal <= 0 {
+		aal = 1
 	}
 	sess := appdb.Session{
 		ID:        uuid.NewString(),
@@ -531,6 +585,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 		UserID:    user.ID,
 		TokenHash: secutil.HashSHA256(raw),
 		ExpiresAt: s.now().Add(sessionTTL),
+		AAL:       aal,
 	}
 	if err := s.Store.CreateSession(r.Context(), sess); err != nil {
 		return err
@@ -547,14 +602,24 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 	return nil
 }
 
-func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User) {
+func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User, aal int) {
 	roles, _ := s.Store.UserRoles(r.Context(), user.ID)
+	mfaEnabled := false
+	if method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID); err == nil && method != nil && method.Enabled {
+		mfaEnabled = true
+	}
+	if aal <= 0 {
+		aal = 1
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id":    user.ID,
-		"username":   user.Username,
-		"roles":      roles,
-		"edition":    edition,
-		"cluster_id": user.ClusterID,
+		"user_id":     user.ID,
+		"username":    user.Username,
+		"roles":       roles,
+		"edition":     edition,
+		"cluster_id":  user.ClusterID,
+		"aal":         aal,
+		"mfa_enabled": mfaEnabled,
+		"kind":        firstNonEmpty(user.Kind, appdb.UserKindPerson),
 	})
 }
 

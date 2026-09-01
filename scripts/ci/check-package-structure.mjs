@@ -64,6 +64,9 @@ if (!changelog.includes("nodal (0.1.10)") || !changelog.includes("Phase 11 backu
 if (!changelog.includes("nodal (0.1.11)") || !changelog.includes("Phase 12 platform updates")) {
   errors.push("changelog must include nodal (0.1.11) Phase 12 platform updates");
 }
+if (!changelog.includes("nodal (0.1.12)") || !changelog.includes("Phase 13 identity completion")) {
+  errors.push("changelog must include nodal (0.1.12) Phase 13 identity completion");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

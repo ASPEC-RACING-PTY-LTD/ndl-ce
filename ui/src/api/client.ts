@@ -68,13 +68,14 @@ export async function claimSetup(body: SetupClaimRequest): Promise<MeResponse> {
   );
 }
 
-export async function login(body: LoginRequest): Promise<MeResponse> {
-  return readJson<MeResponse>(
+export async function login(body: LoginRequest): Promise<MeResponse | import("../generated/openapi").MFAChallengeResponse> {
+  const data = await readJson<MeResponse | import("../generated/openapi").MFAChallengeResponse>(
     await request("/auth/login", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   );
+  return data;
 }
 
 export async function logout(): Promise<void> {
@@ -645,5 +646,53 @@ export async function rollbackUpdates(
       headers,
       body: JSON.stringify({}),
     }),
+  );
+}
+
+export async function verifyMfa(body: import("../generated/openapi").MFAVerifyRequest) {
+  return readJson<MeResponse>(
+    await request("/auth/mfa/verify", { method: "POST", body: JSON.stringify(body) }),
+  );
+}
+
+export async function getMfa() {
+  return readJson<import("../generated/openapi").MFAStatus>(await request("/mfa"));
+}
+
+export async function enrollMfa() {
+  return readJson<import("../generated/openapi").MFAEnrollResponse>(
+    await request("/mfa/enroll", { method: "POST", body: JSON.stringify({}) }),
+  );
+}
+
+export async function confirmMfa(code: string) {
+  return readJson<import("../generated/openapi").MFAStatus>(
+    await request("/mfa/confirm", { method: "POST", body: JSON.stringify({ code }) }),
+  );
+}
+
+export async function listAudit() {
+  return readJson<import("../generated/openapi").AuditListResponse>(await request("/audit"));
+}
+
+export async function listGroups() {
+  return readJson<import("../generated/openapi").GroupListResponse>(await request("/groups"));
+}
+
+export async function createGroup(name: string) {
+  return readJson<import("../generated/openapi").Group>(
+    await request("/groups", { method: "POST", body: JSON.stringify({ name }) }),
+  );
+}
+
+export async function addGroupMember(id: string, userId: string) {
+  return readJson(
+    await request(`/groups/${id}/members`, { method: "POST", body: JSON.stringify({ user_id: userId }) }),
+  );
+}
+
+export async function bindGroupRole(id: string, role: string) {
+  return readJson(
+    await request(`/groups/${id}/roles`, { method: "POST", body: JSON.stringify({ role }) }),
   );
 }

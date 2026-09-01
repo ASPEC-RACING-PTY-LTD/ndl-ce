@@ -1,0 +1,331 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/mfa"
+	"github.com/no-dal/ndl-ce/internal/rbac"
+	"github.com/no-dal/ndl-ce/internal/secutil"
+)
+
+func TestMFAEnrollChallengeAndViewerAuditDenied(t *testing.T) {
+	s, mem, token := testServer(t)
+	now := time.Date(2026, 9, 1, 15, 0, 5, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("enroll %d %s", res.StatusCode, b)
+	}
+	var enrolled struct {
+		Secret string `json:"secret"`
+	}
+	if err := json.Unmarshal(b, &enrolled); err != nil || enrolled.Secret == "" {
+		t.Fatal(string(b))
+	}
+	code := mfa.Code(enrolled.Secret, now)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/confirm", strings.NewReader(`{"code":"`+code+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusOK {
+		b, _ = io.ReadAll(res.Body)
+		t.Fatalf("confirm %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"admin","password":"correct-horse"}`))
+	lb, _ := io.ReadAll(login.Body)
+	_ = login.Body.Close()
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("login %d %s", login.StatusCode, lb)
+	}
+	var challenge struct {
+		Required bool   `json:"mfa_required"`
+		ID       string `json:"mfa_challenge_id"`
+		Token    string `json:"mfa_token"`
+	}
+	if err := json.Unmarshal(lb, &challenge); err != nil || !challenge.Required {
+		t.Fatalf("%s", lb)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/auth/mfa/verify", strings.NewReader(`{"mfa_challenge_id":"`+challenge.ID+`","mfa_token":"`+challenge.Token+`","code":"`+code+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	mb, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("verify %d %s", res.StatusCode, mb)
+	}
+	var me map[string]any
+	if err := json.Unmarshal(mb, &me); err != nil {
+		t.Fatal(err)
+	}
+	if me["aal"] != float64(2) || me["mfa_enabled"] != true {
+		t.Fatalf("%s", mb)
+	}
+
+	cluster, _ := mem.GetCluster(context.Background())
+	hash, _ := auth.HashPassword("password1")
+	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}
+	_ = mem.CreateUser(context.Background(), u)
+	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Viewer)
+	vlogin, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
+	var viewCookie string
+	for _, c := range vlogin.Cookies() {
+		if c.Name == sessionCookie {
+			viewCookie = c.Value
+		}
+	}
+	_ = vlogin.Body.Close()
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/audit", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: viewCookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer audit %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
+func TestTokenPermissionsCannotExceedCreator(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_ = claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op"}
+	_ = mem.CreateUser(context.Background(), op)
+	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Operator)
+	plain := "ndl_op_phase13"
+	_ = mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: op.ID, Name: "op",
+		TokenHash: secutil.HashSHA256(plain), Prefix: "ndl_op",
+	})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/tokens", strings.NewReader(`{"name":"x","permissions":["*"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+plain)
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("operator * token %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+}
+
+func TestServicePrincipalCannotPasswordLogin(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/service-principals", strings.NewReader(`{"name":"backup"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("%d %s", res.StatusCode, b)
+	}
+	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"svc-backup","password":"x"}`))
+	if login.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("service login %d", login.StatusCode)
+	}
+	_ = login.Body.Close()
+}
+
+func TestClusterDestroyRequiresStepUp(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/destroy", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "destroy-cluster")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("aal1 destroy %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
+func TestGroupCreateAndLostMFARecover(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/groups", strings.NewReader(`{"name":"ops"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("group %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	cluster, _ := mem.GetCluster(context.Background())
+	admin, _ := mem.GetUserByName(context.Background(), cluster.ID, "admin")
+	now := time.Date(2026, 9, 1, 15, 0, 5, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var enrolled struct {
+		Secret string `json:"secret"`
+	}
+	_ = json.Unmarshal(b, &enrolled)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/confirm", strings.NewReader(`{"code":"`+mfa.Code(enrolled.Secret, now)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = res.Body.Close()
+	_ = mem.DeleteUserMFA(context.Background(), admin.ID)
+	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"admin","password":"correct-horse"}`))
+	lb, _ := io.ReadAll(login.Body)
+	_ = login.Body.Close()
+	if strings.Contains(string(lb), `"mfa_required":true`) {
+		t.Fatalf("recover must clear MFA: %s", lb)
+	}
+}
+
+func TestOperatorCanEnrollMFAAndCannotBindAdmin(t *testing.T) {
+	s, mem, token := testServer(t)
+	now := time.Date(2026, 9, 1, 15, 0, 5, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_ = claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	hash, _ := auth.HashPassword("password1")
+	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op13", PasswordHash: hash}
+	_ = mem.CreateUser(context.Background(), op)
+	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Operator)
+	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"op13","password":"password1"}`))
+	var opCookie string
+	for _, c := range login.Cookies() {
+		if c.Name == sessionCookie {
+			opCookie = c.Value
+		}
+	}
+	_ = login.Body.Close()
+	if opCookie == "" {
+		t.Fatal("operator cookie")
+	}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: opCookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("operator enroll %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups", strings.NewReader(`{"name":"ops"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: opCookie})
+	res, _ = ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("operator group %d %s", res.StatusCode, b)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(b, &created); err != nil || created.ID == "" {
+		t.Fatal(string(b))
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+created.ID+"/roles", strings.NewReader(`{"role":"admin"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: opCookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		b, _ = io.ReadAll(res.Body)
+		t.Fatalf("admin group bind %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+created.ID+"/roles", strings.NewReader(`{"role":"operator"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: opCookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusOK {
+		b, _ = io.ReadAll(res.Body)
+		t.Fatalf("operator bind %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+}
+
+func TestEnabledMFACannotBeReplacedWithoutRecover(t *testing.T) {
+	s, mem, token := testServer(t)
+	now := time.Date(2026, 9, 1, 15, 0, 5, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var enrolled struct {
+		Secret string `json:"secret"`
+	}
+	_ = json.Unmarshal(b, &enrolled)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/confirm", strings.NewReader(`{"code":"`+mfa.Code(enrolled.Secret, now)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("confirm %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusConflict {
+		b, _ = io.ReadAll(res.Body)
+		t.Fatalf("re-enroll %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	cluster, _ := mem.GetCluster(context.Background())
+	admin, _ := mem.GetUserByName(context.Background(), cluster.ID, "admin")
+	plain := "ndl_admin_mfa"
+	_ = mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: admin.ID, Name: "t",
+		TokenHash: secutil.HashSHA256(plain), Prefix: "ndl_adm",
+	})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+plain)
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		b, _ = io.ReadAll(res.Body)
+		t.Fatalf("token enroll %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+}

@@ -28,10 +28,20 @@ export interface MeResponse {
   roles: string[];
   edition: string;
   cluster_id?: string;
+  aal?: number;
+  mfa_enabled?: boolean;
+  kind?: "person" | "service";
+}
+
+export interface MFAChallengeResponse {
+  mfa_required: true;
+  mfa_challenge_id: string;
+  mfa_token: string;
 }
 
 export interface CreateTokenRequest {
   name: string;
+  permissions?: string[];
 }
 
 export interface CreateTokenResponse {
@@ -617,6 +627,86 @@ export interface UpdateCheckpoint {
   status: "succeeded" | "failed" | "unsupported";
 }
 
+export interface MFAVerifyRequest {
+  mfa_challenge_id: string;
+  mfa_token: string;
+  code: string;
+}
+
+export interface MFAConfirmRequest {
+  code: string;
+}
+
+export interface MFAStatus {
+  enabled: boolean;
+  kind: string;
+}
+
+export interface MFAEnrollResponse {
+  kind: string;
+  secret: string;
+  otpauth_url: string;
+  recovery_codes: string[];
+  enabled: boolean;
+}
+
+export interface AuditListResponse {
+  items: AuditEvent[];
+}
+
+export interface AuditEvent {
+  id: string;
+  action: string;
+  result: string;
+  created_at: string;
+  actor_user_id?: string;
+}
+
+export interface GroupListResponse {
+  items: Group[];
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  member_ids?: string[];
+}
+
+export interface CreateGroupRequest {
+  name: string;
+}
+
+export interface AddGroupMemberRequest {
+  user_id: string;
+}
+
+export interface BindGroupRoleRequest {
+  role: "operator" | "viewer";
+}
+
+export interface ServicePrincipalListResponse {
+  items: ServicePrincipal[];
+}
+
+export interface ServicePrincipal {
+  id: string;
+  name: string;
+  user_id: string;
+  kind: "service";
+}
+
+export interface CreateServicePrincipalRequest {
+  name: string;
+}
+
+export interface ServicePrincipalCreated {
+  id: string;
+  name: string;
+  user_id: string;
+  token: string;
+  kind: "service";
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -766,3 +856,21 @@ export type CheckpointUpdatesPath = "/api/v1/updates/checkpoint";
 export type ApplyUpdatesPath = "/api/v1/updates/apply";
 
 export type RollbackUpdatesPath = "/api/v1/updates/rollback";
+
+export type VerifyMfaPath = "/api/v1/auth/mfa/verify";
+
+export type GetMfaPath = "/api/v1/mfa";
+
+export type EnrollMfaPath = "/api/v1/mfa/enroll";
+
+export type ConfirmMfaPath = "/api/v1/mfa/confirm";
+
+export type ListAuditPath = "/api/v1/audit";
+
+export type ListGroupsPath = "/api/v1/groups";
+
+export type AddGroupMemberPath = "/api/v1/groups/{id}/members";
+
+export type BindGroupRolePath = "/api/v1/groups/{id}/roles";
+
+export type ListServicePrincipalsPath = "/api/v1/service-principals";

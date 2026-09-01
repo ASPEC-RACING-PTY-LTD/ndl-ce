@@ -79,4 +79,16 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, NodeUpdate) || Authorize(view, NodeUpdate) {
 		t.Fatal("operator may update the node; viewer may not")
 	}
+	if Authorize(view, AuditRead) || Authorize(op, AuditRead) {
+		t.Fatal("viewer and operator must not read audit")
+	}
+	if !Authorize(op, IdentityMFA) || !Authorize(view, IdentityMFA) {
+		t.Fatal("people may enroll MFA")
+	}
+	if !Authorize(op, IdentityGroupManage) || Authorize(view, IdentityGroupManage) {
+		t.Fatal("operator groups; viewer not")
+	}
+	if Authorize(op, SecretReveal) || Authorize(op, ClusterDestroy) || Authorize(op, IdentityService) {
+		t.Fatal("step-up and service principals stay admin")
+	}
 }
