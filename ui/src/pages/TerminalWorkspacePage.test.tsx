@@ -246,6 +246,71 @@ describe("Terminal workspace", () => {
     expect(screen.getByRole("tab", { name: /alpine \(3\)/i })).toBeVisible();
   });
 
+  it("does not reconnect same-target sessions when switching tabs", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
+    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitConnected();
+    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
+    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitFor(() => expect(created.length).toBe(2));
+    await waitFor(() => expect(sockets.length).toBe(2));
+    expect(new Set(screen.getAllByRole("tab").map((el) => el.getAttribute("data-io-session"))).size).toBe(2);
+    expect(new Set(screen.getAllByRole("tab").map((el) => el.getAttribute("data-tab-id"))).size).toBe(2);
+
+    sockets[0]?.pushCwd("/tmp");
+    sockets[1]?.pushCwd("/etc");
+    const first = screen.getAllByRole("tab")[0];
+    const second = screen.getAllByRole("tab")[1];
+    fireEvent.click(first);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/tmp/));
+    const createdAt = created.length;
+    const openCount = () => sockets.filter((s) => s.readyState === 1).length;
+    expect(openCount()).toBe(2);
+    for (let i = 0; i < 8; i += 1) {
+      fireEvent.click(i % 2 === 0 ? second : first);
+    }
+    expect(created.length).toBe(createdAt);
+    expect(openCount()).toBe(2);
+    fireEvent.click(first);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/tmp/));
+    fireEvent.click(second);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/etc/));
+
+    fireEvent.click(first);
+    fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /close session/i }));
+    expect(openCount()).toBe(1);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/etc/));
+    expect(created.length).toBe(createdAt);
+  });
+
+  it("opens independent host sessions against the same node", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
+    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    await clickTarget("node", "node-1");
+    await waitConnected();
+    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
+    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    await clickTarget("node", "node-1");
+    await waitFor(() => expect(created.length).toBe(2));
+    expect(created.every((c) => c.path.includes("/nodes/node-1/terminal/sessions"))).toBe(true);
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(new Set(screen.getAllByRole("tab").map((el) => el.getAttribute("data-io-session"))).size).toBe(2);
+    sockets[0]?.pushCwd("/root");
+    sockets[1]?.pushCwd("/var");
+    fireEvent.click(screen.getAllByRole("tab")[0]);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/root/));
+    fireEvent.click(screen.getAllByRole("tab")[1]);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/var/));
+    expect(sockets.filter((s) => s.readyState === 1)).toHaveLength(2);
+  });
+
   it("opens host and workload sessions together with distinct identity", async () => {
     installIO();
     await openWorkspace();

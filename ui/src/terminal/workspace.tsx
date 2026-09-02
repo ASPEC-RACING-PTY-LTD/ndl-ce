@@ -116,6 +116,10 @@ function sendPtySize(tabId: string): void {
   if (!rt || !term || !socket || socket.readyState !== WebSocket.OPEN) {
     return;
   }
+  const parent = term.element?.parentElement;
+  if (!parent || parent === rt.holder || parent.classList.contains("term-hold")) {
+    return;
+  }
   const cols = term.cols;
   const rows = term.rows;
   if (!cols || !rows || (cols === rt.lastCols && rows === rt.lastRows)) {

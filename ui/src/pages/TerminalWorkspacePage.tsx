@@ -115,6 +115,9 @@ export function TerminalWorkspacePage() {
               role="tab"
               aria-selected={tab.tabId === activeId}
               className={"term-tab" + (tab.tabId === activeId ? " is-active" : "") + (tab.target.kind === "node" ? " is-host" : "")}
+              data-tab-id={tab.tabId}
+              data-io-session={tab.ioSessionId || ""}
+              data-session-target={`${tab.target.kind}:${tab.target.id}`}
               title={`${tab.title} · ${tab.target.typeLabel} · ${statusLabel(tab.state)}`}
               onClick={() => setActive(tab.tabId)}
               onContextMenu={(event) => {

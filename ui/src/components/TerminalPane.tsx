@@ -77,6 +77,8 @@ export function TerminalPane({
   const tab = tabs.find((t) => t.tabId === activeId) ?? null;
   const lastFit = useRef({ w: 0, h: 0, id: "" });
   const size = termStyle(pref, limit);
+  const slotEls = useRef(new Map<string, HTMLElement>());
+  const attachKey = tabs.map((t) => `${t.tabId}:${t.state}:${t.ioSessionId ?? ""}`).join("|");
 
   const measureLimit = useCallback(() => {
     const el = holder.current;
@@ -112,6 +114,25 @@ export function TerminalPane({
     measureLimit();
   }, [pref, measureLimit, activeId]);
 
+  const bindSlot = useCallback(
+    (tabId: string, el: HTMLElement | null) => {
+      if (el) {
+        slotEls.current.set(tabId, el);
+        attach(tabId, el);
+        return;
+      }
+      slotEls.current.delete(tabId);
+      detach(tabId);
+    },
+    [attach, detach],
+  );
+
+  useLayoutEffect(() => {
+    for (const [tabId, el] of slotEls.current) {
+      attach(tabId, el);
+    }
+  }, [attachKey, attach]);
+
   useLayoutEffect(() => {
     if (!activeId) {
       return;
@@ -131,15 +152,13 @@ export function TerminalPane({
     if (!el || !activeId) {
       return;
     }
-    attach(activeId, el);
     lastFit.current = { w: 0, h: 0, id: "" };
     applyAndFit();
     const stop = observeTermLayout(el, applyAndFit);
     return () => {
       stop();
-      detach(activeId);
     };
-  }, [activeId, tab?.state, attach, detach, applyAndFit]);
+  }, [activeId, applyAndFit]);
 
   async function onDropFiles(list: FileList | null) {
     const files = list ? Array.from(list) : [];
@@ -383,6 +402,18 @@ export function TerminalPane({
         }}
       >
         {dropActive ? <div className="term-drop">Drop files to upload into this session directory</div> : null}
+        <div className="term-slots">
+          {tabs.map((item) => (
+            <div
+              key={item.tabId}
+              className={"term-slot" + (item.tabId === activeId ? " is-active" : "")}
+              data-term-slot={item.tabId}
+              data-io-session={item.ioSessionId || ""}
+              data-active={item.tabId === activeId ? "true" : "false"}
+              ref={(el) => bindSlot(item.tabId, el)}
+            />
+          ))}
+        </div>
         <button
           className="term-resize"
           type="button"
