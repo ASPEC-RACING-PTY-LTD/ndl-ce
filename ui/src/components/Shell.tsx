@@ -23,6 +23,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Compute",
     items: [
       { href: "/workloads", label: "Workloads", match: (p) => p === "/workloads" || p.startsWith("/workloads/") },
+      { href: "/terminal", label: "Terminal", match: (p) => p === "/terminal" },
       { href: "/stacks", label: "Stacks", match: (p) => p === "/stacks" || p.startsWith("/stacks/") },
       { href: "/templates", label: "Templates", match: (p) => p === "/templates" },
     ],
@@ -91,6 +92,9 @@ const TAB_LABELS: Record<string, string> = {
 function crumbs(path: string): { href: string; label: string }[] {
   if (path === "/") {
     return [{ href: "/", label: "Dashboard" }];
+  }
+  if (path === "/terminal") {
+    return [{ href: "/terminal", label: "Terminal" }];
   }
   if (path === "/workloads/new/vm") {
     return [

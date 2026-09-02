@@ -189,6 +189,8 @@ export function navIcon(label: string): IconName {
       return "dashboard";
     case "Workloads":
       return "workloads";
+    case "Terminal":
+      return "terminal";
     case "Node":
       return "node";
     case "Storage":

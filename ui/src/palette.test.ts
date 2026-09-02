@@ -12,6 +12,7 @@ describe("command palette authorization", () => {
     expect(actions.some((a) => a.id === "updates")).toBe(false);
     expect(actions.some((a) => a.id === "tasks")).toBe(true);
     expect(actions.some((a) => a.id === "dashboard")).toBe(true);
+    expect(actions.some((a) => a.id === "terminal")).toBe(true);
   });
 
   it("lists Create VM for operator and admin", () => {

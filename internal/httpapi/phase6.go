@@ -72,7 +72,7 @@ func (s *Server) createNodeTerminal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
-	s.createTerminal(w, r, p, appdb.IOTargetHost, node.ID, "/")
+	s.createTerminal(w, r, p, appdb.IOTargetHost, node.ID, "/", node.ID)
 }
 
 func (s *Server) createWorkloadTerminal(w http.ResponseWriter, r *http.Request) {
@@ -85,10 +85,14 @@ func (s *Server) createWorkloadTerminal(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
-	s.createTerminal(w, r, p, wl.Kind, wl.ID, jail)
+	nodeID := wl.NodeID
+	if nodeID == "" {
+		nodeID = wl.OwnerNodeID
+	}
+	s.createTerminal(w, r, p, wl.Kind, wl.ID, jail, nodeID)
 }
 
-func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, p *principal, targetKind, targetID, jail string) {
+func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, p *principal, targetKind, targetID, jail, nodeID string) {
 	var req createTermRequest
 	if r.ContentLength > 0 {
 		_ = readJSON(r, &req)
@@ -117,13 +121,37 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, p *princ
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "terminal.open", "ok", auditFilesPath(targetKind, cwd)+" "+row.ID)
-	writeJSON(w, http.StatusCreated, map[string]any{
+	out := map[string]any{
 		"id": row.ID, "target_kind": row.TargetKind, "target_id": row.TargetID,
 		"kind": row.Kind, "cwd": row.CWD, "state": row.State,
 		"expires_at": row.ExpiresAt.UTC().Format(time.RFC3339),
 		"ticket":     ticket, "jail_root": jail,
 		"ws_path": "/api/v1/io/sessions/" + row.ID + "/ws",
-	})
+	}
+	if nodeID != "" {
+		out["node_id"] = nodeID
+	}
+	writeJSON(w, http.StatusCreated, out)
+}
+
+func (s *Server) listIOSessions(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.TerminalOpen)
+	if err != nil {
+		return
+	}
+	rows, err := s.Store.ListIOSessions(r.Context(), p.User.ClusterID, p.User.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		if row.Kind != appdb.IOKindTerminal {
+			continue
+		}
+		items = append(items, ioSessionJSON(row))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Server) getIOSession(w http.ResponseWriter, r *http.Request) {

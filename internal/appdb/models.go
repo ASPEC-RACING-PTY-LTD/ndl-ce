@@ -144,6 +144,7 @@ type Store interface {
 	CreateIOSession(ctx context.Context, s IOSession) error
 	GetIOSession(ctx context.Context, clusterID, id string) (*IOSession, error)
 	GetIOSessionByTicketHash(ctx context.Context, ticketHash string) (*IOSession, error)
+	ListIOSessions(ctx context.Context, clusterID, userID string) ([]IOSession, error)
 	UpdateIOSession(ctx context.Context, s IOSession) error
 
 	GetCertificate(ctx context.Context, clusterID string) (*Certificate, error)

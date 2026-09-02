@@ -991,6 +991,10 @@ export async function createTerminalSession(
   );
 }
 
+export async function listIOSessions(): Promise<{ items: import("./phase6").IOSession[] }> {
+  return readJson(await request("/io/sessions"));
+}
+
 export async function listFiles(
   kind: "node" | "workload",
   id: string,

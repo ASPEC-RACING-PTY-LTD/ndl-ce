@@ -248,6 +248,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/console/sessions", s.createVMConsole)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/terminal/sessions", s.createNodeTerminal)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/terminal/sessions", s.createWorkloadTerminal)
+	mux.HandleFunc("GET /api/v1/io/sessions", s.listIOSessions)
 	mux.HandleFunc("GET /api/v1/io/sessions/{id}", s.getIOSession)
 	mux.HandleFunc("GET /api/v1/io/sessions/{id}/ws", s.ioSessionWS)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/files", s.nodeFilesList)

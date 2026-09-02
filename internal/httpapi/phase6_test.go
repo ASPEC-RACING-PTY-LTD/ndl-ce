@@ -329,6 +329,109 @@ func TestCTTerminalOperatorAndViewer(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestMultipleCTTerminalSessionsAreIndependent(t *testing.T) {
+	_, mem, ts, _, _, wlID := seedPhase6(t)
+	op := loginRole(t, ts, mem, "oper", rbac.Operator)
+	res := doCookie(t, ts, op, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("first %d", res.StatusCode)
+	}
+	var a map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&a)
+	_ = res.Body.Close()
+	res = doCookie(t, ts, op, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("second %d", res.StatusCode)
+	}
+	var b map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&b)
+	_ = res.Body.Close()
+	res = doCookie(t, ts, op, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("third %d", res.StatusCode)
+	}
+	var c map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&c)
+	_ = res.Body.Close()
+	idA, _ := a["id"].(string)
+	idB, _ := b["id"].(string)
+	idC, _ := c["id"].(string)
+	if idA == "" || idA == idB || idB == idC || idA == idC {
+		t.Fatalf("sessions must have distinct ids %q %q %q", idA, idB, idC)
+	}
+	if a["target_id"] != b["target_id"] {
+		t.Fatal("same target required")
+	}
+	res = doCookie(t, ts, op, "GET", "/api/v1/io/sessions", "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d", res.StatusCode)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	_ = json.NewDecoder(res.Body).Decode(&listed)
+	_ = res.Body.Close()
+	if len(listed.Items) < 3 {
+		t.Fatalf("list %d", len(listed.Items))
+	}
+	cluster, _ := mem.GetCluster(context.Background())
+	gotA, err := mem.GetIOSession(context.Background(), cluster.ID, idA)
+	if err != nil || gotA == nil {
+		t.Fatal(err)
+	}
+	gotB, err := mem.GetIOSession(context.Background(), cluster.ID, idB)
+	if err != nil || gotB == nil {
+		t.Fatal("sibling missing")
+	}
+	gotA.State = appdb.IOStateEnded
+	ended := time.Now().UTC()
+	gotA.EndedAt = &ended
+	if err := mem.UpdateIOSession(context.Background(), *gotA); err != nil {
+		t.Fatal(err)
+	}
+	againB, _ := mem.GetIOSession(context.Background(), cluster.ID, idB)
+	if againB == nil || againB.State == appdb.IOStateEnded {
+		t.Fatal("closing one session must not end a sibling")
+	}
+}
+
+func TestViewerCannotListIOSessions(t *testing.T) {
+	_, mem, ts, _, _, _ := seedPhase6(t)
+	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	res := doCookie(t, ts, view, "GET", "/api/v1/io/sessions", "")
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer list %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
+func TestHostAndWorkloadTerminalSessionsTogether(t *testing.T) {
+	_, _, ts, admin, nodeID, wlID := seedPhase6(t)
+	res := doCookie(t, ts, admin, "POST", "/api/v1/nodes/"+nodeID+"/terminal/sessions", `{}`)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("host %d", res.StatusCode)
+	}
+	var host map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&host)
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("workload %d", res.StatusCode)
+	}
+	var wl map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&wl)
+	_ = res.Body.Close()
+	if host["id"] == wl["id"] {
+		t.Fatal("distinct session ids required")
+	}
+	if host["node_id"] != nodeID {
+		t.Fatalf("host node_id %v", host["node_id"])
+	}
+	if wl["node_id"] != nodeID {
+		t.Fatalf("workload node_id %v", wl["node_id"])
+	}
+}
+
 func TestViewerFilesReadNoDownload(t *testing.T) {
 	s, mem, ts, admin, _, wlID := seedPhase6(t)
 	view := loginRole(t, ts, mem, "view", rbac.Viewer)

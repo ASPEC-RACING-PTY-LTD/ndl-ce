@@ -41,4 +41,14 @@ func TestIOSessionMemoryRoundTrip(t *testing.T) {
 	if again.State != IOStateConnected || again.ConnectedAt == nil {
 		t.Fatalf("%+v", again)
 	}
+	row2 := row
+	row2.ID = uuid.NewString()
+	row2.TicketHash = "def456"
+	if err := m.CreateIOSession(context.Background(), row2); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := m.ListIOSessions(context.Background(), clusterID, userID)
+	if err != nil || len(listed) != 2 {
+		t.Fatalf("list %d %v", len(listed), err)
+	}
 }

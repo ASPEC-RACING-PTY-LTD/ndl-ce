@@ -42,6 +42,28 @@ func (p *Postgres) GetIOSessionByTicketHash(ctx context.Context, ticketHash stri
 	return scanIOSession(row)
 }
 
+func (p *Postgres) ListIOSessions(ctx context.Context, clusterID, userID string) ([]IOSession, error) {
+	rows, err := p.DB.QueryContext(ctx, ioSessionSelect+`
+WHERE cluster_id=$1 AND user_id=$2
+ORDER BY created_at DESC
+LIMIT 100`, clusterID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []IOSession
+	for rows.Next() {
+		s, err := scanIOSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
+			out = append(out, *s)
+		}
+	}
+	return out, rows.Err()
+}
+
 func (p *Postgres) UpdateIOSession(ctx context.Context, s IOSession) error {
 	_, err := p.DB.ExecContext(ctx, `
 UPDATE io_sessions

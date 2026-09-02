@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -57,6 +58,23 @@ func (m *Memory) GetIOSessionByTicketHash(_ context.Context, ticketHash string) 
 		}
 	}
 	return nil, nil
+}
+
+func (m *Memory) ListIOSessions(_ context.Context, clusterID, userID string) ([]IOSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]IOSession, 0)
+	for _, s := range m.ioSessions {
+		if s.ClusterID != clusterID || s.UserID != userID {
+			continue
+		}
+		cp := s
+		out = append(out, cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out, nil
 }
 
 func (m *Memory) UpdateIOSession(_ context.Context, s IOSession) error {

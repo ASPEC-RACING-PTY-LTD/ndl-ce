@@ -2053,6 +2053,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IOSession"
+  /io/sessions:
+    get:
+      operationId: listIOSessions
+      summary: List the caller's terminal sessions without tickets
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /io/sessions/{id}:
     get:
       operationId: getIOSession
@@ -6009,6 +6021,10 @@ components:
         ticket:
           type: string
         ws_path:
+          type: string
+        node_id:
+          type: string
+        jail_root:
           type: string
     FileEntry:
       type: object

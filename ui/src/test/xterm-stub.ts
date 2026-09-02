@@ -3,6 +3,7 @@ export class Terminal {
 
   constructor() {
     this.element = document.createElement("div");
+    this.element.dataset.testid = "xterm";
   }
 
   loadAddon() {}

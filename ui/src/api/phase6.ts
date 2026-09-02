@@ -8,6 +8,7 @@ export type IOSession = {
   reason?: string;
   ticket?: string;
   jail_root?: string;
+  node_id?: string;
   ws_path?: string;
   expires_at?: string;
 };

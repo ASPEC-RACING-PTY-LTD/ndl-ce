@@ -32,6 +32,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   },
   { id: "dashboard", label: "Dashboard", href: "/", keywords: ["home", "overview"] },
   { id: "workloads", label: "Workloads", href: "/workloads", keywords: ["vm", "container"] },
+  { id: "terminal", label: "Jump to Terminal", href: "/terminal", keywords: ["shell", "pty", "console", "quick switch"] },
   { id: "stacks", label: "Stacks", href: "/stacks", keywords: ["compose", "multi-container", "oci"] },
   {
     id: "import-stack",

@@ -482,7 +482,9 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: /guest agent/i })).toBeVisible();
     expect(screen.getByText(/not_installed/i)).toBeVisible();
     expect(screen.getAllByText(/nodal guest is not connected/i).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: /^terminal$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/terminal \(unavailable\)/i)).toBeVisible();
+    const io = screen.getByRole("navigation", { name: /vm io/i });
+    expect(io.querySelector('a[href$="/terminal"]')).toBeNull();
   });
 
   it("enables VM Terminal and Files when the guest agent is ok", async () => {
@@ -507,7 +509,8 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^web$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^terminal$/i })).toBeVisible();
+    const io = screen.getByRole("navigation", { name: /vm io/i });
+    expect(io.querySelector('a[href$="/terminal"]')).toBeTruthy();
     expect(screen.getByRole("link", { name: /^files$/i })).toBeVisible();
   });
 

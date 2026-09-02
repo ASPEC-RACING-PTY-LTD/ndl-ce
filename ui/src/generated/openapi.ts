@@ -936,6 +936,8 @@ export interface IOSession {
   state: string;
   ticket?: string;
   ws_path?: string;
+  node_id?: string;
+  jail_root?: string;
 }
 
 export interface FileEntry {
@@ -2060,6 +2062,8 @@ export type CreateNodeTerminalSessionPath = "/api/v1/nodes/{id}/terminal/session
 export type CreateWorkloadConsoleSessionPath = "/api/v1/workloads/{id}/console/sessions";
 
 export type CreateWorkloadTerminalSessionPath = "/api/v1/workloads/{id}/terminal/sessions";
+
+export type ListIOSessionsPath = "/api/v1/io/sessions";
 
 export type GetIOSessionPath = "/api/v1/io/sessions/{id}";
 

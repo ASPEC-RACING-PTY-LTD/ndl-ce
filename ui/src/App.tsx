@@ -12,6 +12,8 @@ import { NetworkPage } from "./pages/NetworkPage";
 import { StoragePage } from "./pages/StoragePage";
 import { FilesPage } from "./pages/FilesPage";
 import { TerminalPage } from "./pages/TerminalPage";
+import { TerminalWorkspaceProvider } from "./terminal/workspace";
+import { TerminalWorkspacePage } from "./pages/TerminalWorkspacePage";
 import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
 import { OciCreatePage } from "./pages/OciCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
@@ -94,6 +96,9 @@ function matchPage(path: string) {
   }
   if (path === "/templates") {
     return <TemplatesPage />;
+  }
+  if (path === "/terminal") {
+    return <TerminalWorkspacePage />;
   }
   if (/^\/workloads\/[^/]+\/console$/.test(path)) {
     return <ConsolePage />;
@@ -225,7 +230,11 @@ function AppRoutes() {
     return <Redirect to={session.setupOpen ? "/setup" : "/login"} />;
   }
 
-  return <Shell>{matchPage(path)}</Shell>;
+  return (
+    <Shell>
+      <TerminalWorkspaceProvider>{matchPage(path)}</TerminalWorkspaceProvider>
+    </Shell>
+  );
 }
 
 export function App() {

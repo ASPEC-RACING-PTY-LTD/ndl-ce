@@ -166,4 +166,13 @@ describe("Terminal file drop", () => {
     expect(sent.join("")).not.toContain("slow.txt");
     expect(hung).toBe(true);
   });
+
+  it("asks before pasting three or more lines", async () => {
+    installIO();
+    await openTerminal();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const termEl = await screen.findByTestId("xterm");
+    fireEvent.paste(termEl, { clipboardData: { getData: () => "a\nb\nc" } });
+    expect(confirm).toHaveBeenCalled();
+  });
 });
