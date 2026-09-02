@@ -66,6 +66,11 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface IdentityCompletionRefusal {
+  error: string;
+  status: "not_implemented" | "not_configured" | "unsupported";
+}
+
 export interface NodeListResponse {
   items: NodeSummary[];
 }
@@ -1979,6 +1984,8 @@ export type ListStorageVolumesPath = "/api/v1/storage/volumes";
 
 export type GetStorageVolumePath = "/api/v1/storage/volumes/{id}";
 
+export type UnlockVolumePath = "/api/v1/storage/volumes/{id}/unlock";
+
 export type ListStorageImagesPath = "/api/v1/storage/images";
 
 export type GetStorageImagePath = "/api/v1/storage/images/{id}";
@@ -2008,6 +2015,8 @@ export type CreateWireGuardPeerPath = "/api/v1/cluster/wg/peers";
 export type OpenClusterSessionPath = "/api/v1/cluster/sessions";
 
 export type GetClusterPath = "/api/v1/cluster";
+
+export type DestroyClusterPath = "/api/v1/cluster/destroy";
 
 export type GetClusterHAPath = "/api/v1/cluster/ha";
 
@@ -2278,6 +2287,8 @@ export type AddGroupMemberPath = "/api/v1/groups/{id}/members";
 export type BindGroupRolePath = "/api/v1/groups/{id}/roles";
 
 export type ListServicePrincipalsPath = "/api/v1/service-principals";
+
+export type RevealSecretPath = "/api/v1/secrets/reveal";
 
 export type GetZfsRuntimePath = "/api/v1/storage/zfs";
 

@@ -37,6 +37,8 @@ jobs:
         run: node scripts/ci/check-package-structure.mjs
       - name: CI policy
         run: node scripts/ci/check-ci-policy.mjs
+      - name: OpenAPI routes
+        run: node scripts/ci/check-openapi-routes.mjs
       - name: ShellCheck
         run: |
           shellcheck packaging/bootstrap/get-nodal.sh \

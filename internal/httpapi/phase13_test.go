@@ -393,3 +393,161 @@ func TestEnabledMFACannotBeReplacedWithoutRecover(t *testing.T) {
 	}
 	_ = res.Body.Close()
 }
+
+func enrollAdminAAL2(t *testing.T, s *Server, ts *httptest.Server, cookie string) string {
+	t.Helper()
+	now := time.Date(2026, 9, 1, 15, 0, 5, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("enroll %d %s", res.StatusCode, b)
+	}
+	var enrolled struct {
+		Secret string `json:"secret"`
+	}
+	if err := json.Unmarshal(b, &enrolled); err != nil || enrolled.Secret == "" {
+		t.Fatal(string(b))
+	}
+	code := mfa.Code(enrolled.Secret, now)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/confirm", strings.NewReader(`{"code":"`+code+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusOK {
+		b, _ = io.ReadAll(res.Body)
+		t.Fatalf("confirm %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	login, err := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"admin","password":"correct-horse"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lb, _ := io.ReadAll(login.Body)
+	_ = login.Body.Close()
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("login %d %s", login.StatusCode, lb)
+	}
+	var challenge struct {
+		Required bool   `json:"mfa_required"`
+		ID       string `json:"mfa_challenge_id"`
+		Token    string `json:"mfa_token"`
+	}
+	if err := json.Unmarshal(lb, &challenge); err != nil || !challenge.Required {
+		t.Fatalf("%s", lb)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/auth/mfa/verify", strings.NewReader(`{"mfa_challenge_id":"`+challenge.ID+`","mfa_token":"`+challenge.Token+`","code":"`+code+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	mb, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("verify %d %s", res.StatusCode, mb)
+	}
+	var aal2 string
+	for _, c := range res.Cookies() {
+		if c.Name == sessionCookie {
+			aal2 = c.Value
+		}
+	}
+	if aal2 == "" {
+		t.Fatal("aal2 cookie")
+	}
+	return aal2
+}
+
+func TestIdentityCompletionStaysHonestAfterAAL2(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	aal2 := enrollAdminAAL2(t, s, ts, cookie)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/destroy", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "destroy-cluster")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: aal2})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(b), `"status":"not_implemented"`) {
+		t.Fatalf("destroy %d %s", res.StatusCode, b)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/secrets/reveal", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: aal2})
+	res, _ = ts.Client().Do(req)
+	b, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(b), `"status":"not_configured"`) {
+		t.Fatalf("reveal %d %s", res.StatusCode, b)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes/"+uuid.NewString()+"/unlock", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: aal2})
+	res, _ = ts.Client().Do(req)
+	b, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(b), `"status":"not_configured"`) {
+		t.Fatalf("unlock %d %s", res.StatusCode, b)
+	}
+}
+
+func TestSecretRevealAndVolumeUnlockRequireStepUp(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/secrets/reveal", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("aal1 reveal %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes/"+uuid.NewString()+"/unlock", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("aal1 unlock %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
+func TestAPITokenCannotPassIdentityCompletionAAL(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_ = claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	admin, _ := mem.GetUserByName(context.Background(), cluster.ID, "admin")
+	plain := "ndl_aal_token"
+	_ = mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: admin.ID, Name: "t",
+		TokenHash: secutil.HashSHA256(plain), Prefix: "ndl_aal",
+	})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/destroy", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "destroy-cluster")
+	req.Header.Set("Authorization", "Bearer "+plain)
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("token destroy %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+}

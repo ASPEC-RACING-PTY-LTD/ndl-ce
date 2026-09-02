@@ -463,6 +463,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StorageVolume"
+  /storage/volumes/{id}/unlock:
+    post:
+      operationId: unlockVolume
+      summary: Directory volume unlock is honest 422. LUKS and ZFS native encryption are later backends.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "403":
+          description: Step-up authentication is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Not configured or unsupported for this volume class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityCompletionRefusal"
   /storage/images:
     get:
       operationId: listStorageImages
@@ -763,6 +786,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClusterInventoryResponse"
+  /cluster/destroy:
+    post:
+      operationId: destroyCluster
+      summary: Cluster destroy stays not implemented after AAL 2. CE must not wipe the appliance.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - destroy-cluster
+      responses:
+        "403":
+          description: Step-up authentication is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Confirm missing, or not implemented in Community Edition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityCompletionRefusal"
   /cluster/ha:
     get:
       operationId: getClusterHA
@@ -3614,6 +3662,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServicePrincipalCreated"
+  /secrets/reveal:
+    post:
+      operationId: revealSecret
+      summary: Named secret reveal is not configured. AAL 2 is required. Secrets never appear in list JSON.
+      responses:
+        "403":
+          description: Step-up authentication is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Reveal is not configured for this name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityCompletionRefusal"
   /storage/zfs:
     get:
       operationId: getZfsRuntime
@@ -4266,6 +4331,21 @@ components:
       properties:
         error:
           type: string
+    IdentityCompletionRefusal:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+        - status
+      properties:
+        error:
+          type: string
+        status:
+          type: string
+          enum:
+            - not_implemented
+            - not_configured
+            - unsupported
     NodeListResponse:
       type: object
       additionalProperties: false
