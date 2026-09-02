@@ -59,6 +59,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Viewer command palette test retries Ctrl+K until the dialog is open. The shortcut listener is attached after first paint.
   * Cluster OpenSession fails closed if the session row cannot be recorded. A 200 does not invent session_id.
   * Rolling update and policy apply fail closed if step or run persist fails. A 2xx body is not a substitute for the stored row.
+  * Store install 201 fails closed if the installation row cannot be updated to succeeded. USB/PCI attach fails closed if workload spec persist fails.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

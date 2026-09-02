@@ -244,6 +244,10 @@ func TestPhase18USBInventoryAttachAndPCI(t *testing.T) {
 		t.Fatalf("attach usb %d %s", ok.StatusCode, b)
 	}
 	_ = ok.Body.Close()
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl == nil || !strings.Contains(string(wl.SpecJSON), "1-2") {
+		t.Fatalf("usb must land in spec %+v", wl)
+	}
 	list2, _ := http.NewRequest("GET", ts.URL+"/api/v1/nodes/"+node.ID+"/usb", nil)
 	list2.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	listed, _ = ts.Client().Do(list2)
@@ -273,6 +277,10 @@ func TestPhase18USBInventoryAttachAndPCI(t *testing.T) {
 		t.Fatalf("pci attach %d %s", pciOK.StatusCode, b)
 	}
 	_ = pciOK.Body.Close()
+	wl, _ = mem.GetWorkload(context.Background(), clusterID, id)
+	if wl == nil || !strings.Contains(string(wl.SpecJSON), "0000:03:00.0") {
+		t.Fatalf("pci must land in spec %+v", wl)
+	}
 	if len(s.VM.(*fakeVM).launch.GPUs) == 0 {
 		t.Fatal("vfio host was not applied")
 	}
@@ -482,5 +490,61 @@ func TestPhase18FailedVFIORollsBackAssignment(t *testing.T) {
 		if a.WorkloadID == id {
 			t.Fatalf("failed ApplyVFIO left assignment %+v", a)
 		}
+	}
+}
+
+type failUpdateWorkloadSpecStore struct {
+	appdb.Store
+}
+
+func (f failUpdateWorkloadSpecStore) UpdateWorkloadSpec(context.Context, appdb.Workload) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase18USBAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "usb-persist")
+	id := created["id"].(string)
+	s.Store = failUpdateWorkloadSpecStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/usb", strings.NewReader(`{"address":"1-2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("usb spec persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record USB spec") {
+		t.Fatalf("usb spec persist body %s", raw)
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl != nil && strings.Contains(string(wl.SpecJSON), "1-2") {
+		t.Fatalf("failed spec persist must not rewrite USB into spec %+v", wl)
+	}
+}
+
+func TestPhase18PCIAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-persist")
+	id := created["id"].(string)
+	s.Store = failUpdateWorkloadSpecStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("pci spec persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record PCI spec") {
+		t.Fatalf("pci spec persist body %s", raw)
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl != nil && strings.Contains(string(wl.SpecJSON), "0000:03:00.0") {
+		t.Fatalf("failed spec persist must not rewrite PCI into spec %+v", wl)
 	}
 }

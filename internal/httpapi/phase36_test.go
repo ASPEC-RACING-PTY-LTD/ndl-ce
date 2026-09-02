@@ -55,6 +55,10 @@ func TestPhase36OfficialSampleInstallsFromManifest(t *testing.T) {
 	if inst["status"] != appdb.StoreInstallOK || inst["workload_id"] == "" || inst["stack_id"] == "" {
 		t.Fatalf("%s", raw)
 	}
+	got, err := mem.GetStoreInstallation(context.Background(), clusterID, inst["id"].(string))
+	if err != nil || got == nil || got.Status != appdb.StoreInstallOK || got.WorkloadID == "" {
+		t.Fatalf("install row %+v %v", got, err)
+	}
 	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
 	if len(wls) != 1 || wls[0].Kind != oci.KindOCI {
 		t.Fatalf("workloads %+v", wls)
@@ -248,5 +252,50 @@ storage:
 	vols, _ := mem.ListVolumes(context.Background(), clusterID, "")
 	if len(vols) != 0 {
 		t.Fatalf("rollback left volumes %+v", vols)
+	}
+}
+
+type failUpdateStoreInstallationStore struct {
+	appdb.Store
+}
+
+func (f failUpdateStoreInstallationStore) UpdateStoreInstallation(context.Context, appdb.StoreInstallation) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase36InstallFailsClosedWhenRowPersistFails(t *testing.T) {
+	s, mem, ts, cookie, _, _, _ := phase22Ready(t)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+	s.Store = failUpdateStoreInstallationStore{Store: mem}
+
+	body, _ := json.Marshal(map[string]any{"name": "sample-web"})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("install persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record store installation") {
+		t.Fatalf("install persist body %s", raw)
 	}
 }

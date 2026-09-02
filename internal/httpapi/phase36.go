@@ -197,7 +197,10 @@ func (s *Server) installStoreApp(w http.ResponseWriter, r *http.Request) {
 	job.StackID = stackID
 	job.WorkloadID = workloadID
 	job.Reason = "installed from manifest; hooks call existing backup and compute APIs; AI actions are declarations"
-	_ = s.Store.UpdateStoreInstallation(r.Context(), job)
+	if err := s.Store.UpdateStoreInstallation(r.Context(), job); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record store installation")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "store.install", "ok", job.ID)
 	writeJSON(w, http.StatusCreated, s.storeInstallJSON(job, pkg))
 }

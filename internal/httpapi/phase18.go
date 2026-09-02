@@ -617,7 +617,10 @@ func (s *Server) attachUSB(w http.ResponseWriter, r *http.Request) {
 	}
 	spec, _ := vmspec.Parse(row.SpecJSON)
 	spec.USBs = append(spec.USBs, usb)
-	_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes})
+	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record USB spec")
+		return
+	}
 	launchUSB := vmspec.LaunchUSB{Address: usb.Address, Vendor: strings.ToLower(usb.Vendor), Product: strings.ToLower(usb.Product), ID: vmspec.USBDeviceID(usb.Address)}
 	if s.VM != nil {
 		if err := s.VM.ApplyUSB(r.Context(), row.ID, []vmspec.LaunchUSB{launchUSB}); err != nil {
@@ -704,7 +707,10 @@ func (s *Server) attachPCI(w http.ResponseWriter, r *http.Request) {
 	if !foundHost {
 		spec.PCIHosts = append(spec.PCIHosts, id)
 	}
-	_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes})
+	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record PCI spec")
+		return
+	}
 	if s.VM != nil {
 		hosts := pciGroupHosts(id, parsed)
 		if err := s.VM.ApplyVFIO(r.Context(), row.ID, hosts); err != nil {
