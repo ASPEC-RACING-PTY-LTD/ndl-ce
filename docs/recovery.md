@@ -367,6 +367,14 @@ Logs use typed journalctl argv for allowlisted units only.
 If the agent is down, the UI shows Stale or Unavailable, not invented charts.
 Local webhook URLs are secrets. Optional SMTP stays not_configured until a host is set.
 
+## License (Phase 43)
+
+CE does not require a key. Settings, License stores a key only when the
+operator enters one. The licensing API is contacted only then. If that
+API is unreachable, status is grace or unreachable. Workloads are not
+stopped. Clearing the key returns the surface to absent CE.
+
+
 
 
 

@@ -1,3 +1,9 @@
+nodal (1.0.0) UNRELEASED; urgency=medium
+
+  * Phase 43 CE 1.0: license-activation surface, operator docs, and API freeze. The license stub does nothing unless a key is present. An unreachable licensing API uses grace and does not stop workloads. This tree does not embed EE blobs or mint production apt signatures here. Signed install remains the documented HTTPS repo and keyring path.
+
+ -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
 nodal (0.1.41) UNRELEASED; urgency=medium
 
   * Phase 42 AI Plan Operate Automate: reviewable existing-API plans, ask profile cannot operate, missing permissions stop the plan, audit remains, never a shell, automate binds to Phase 40 policies

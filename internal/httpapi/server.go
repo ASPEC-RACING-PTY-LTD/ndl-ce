@@ -45,6 +45,11 @@ type Observer interface {
 	GetMetrics(ctx context.Context, from, to time.Time) (metrics.QueryResult, error)
 }
 
+// LicenseProbe talks to a licensing API only when a key is present.
+type LicenseProbe interface {
+	Check(ctx context.Context, key string) error
+}
+
 // LogsRPC reads typed journalctl output from the agent.
 type LogsRPC interface {
 	GetLogs(ctx context.Context, unit string, lines int, since time.Time) (journald.Result, error)
@@ -52,50 +57,51 @@ type LogsRPC interface {
 
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
-	Store       appdb.Store
-	Lockout     *auth.Lockout
-	Agent       Agent
-	Observer    Observer
-	Logs        LogsRPC
-	HTTPClient  *http.Client
-	Storage     StorageRPC
-	Network     NetworkRPC
-	Workloads   WorkloadRPC
-	IO          IORPC
-	QEMU        QemuRPC
-	VM          VMRPC
-	OCI         OCIRPC
-	Backup      BackupRPC
-	Object      ObjectRPC
-	Verify      VerifyRPC
-	Update      UpdateRPC
-	GPU         GPURPC
-	ZFS         ZFSRPC
-	LVM         LVMRPC
-	Datastore   DatastoreRPC
-	Distributed DistributedRPC
-	K8sProcs    func() []string
-	OSDProcs    func() []string
-	AICompleter ai.Completer
-	Hub         *EventHub
-	Migrate     migrate.Runtime
-	UI          fs.FS
-	Now         func() time.Time
-	SetupHash   string
-	AllowedUID  uint32
-	TLSRequired bool
-	TLSServing  bool // true when this process is listening with TLS
-	CertDirty   bool // true when on-disk material changed since TLSServing
-	TLSListen   string
-	HTTPListen  string
-	HTTPSURL    string
-	CertDir     ndltls.Dir
-	ClusterCA   cluster.CA
-	LeaseHolder string
-	Challenges  *ndltls.ChallengeMem
-	backupMu    sync.Mutex
-	nightlyBusy atomic.Bool
-	alertBusy   atomic.Bool
+	Store        appdb.Store
+	Lockout      *auth.Lockout
+	Agent        Agent
+	Observer     Observer
+	Logs         LogsRPC
+	HTTPClient   *http.Client
+	Storage      StorageRPC
+	Network      NetworkRPC
+	Workloads    WorkloadRPC
+	IO           IORPC
+	QEMU         QemuRPC
+	VM           VMRPC
+	OCI          OCIRPC
+	Backup       BackupRPC
+	Object       ObjectRPC
+	Verify       VerifyRPC
+	Update       UpdateRPC
+	GPU          GPURPC
+	ZFS          ZFSRPC
+	LVM          LVMRPC
+	Datastore    DatastoreRPC
+	Distributed  DistributedRPC
+	K8sProcs     func() []string
+	OSDProcs     func() []string
+	AICompleter  ai.Completer
+	LicenseProbe LicenseProbe
+	Hub          *EventHub
+	Migrate      migrate.Runtime
+	UI           fs.FS
+	Now          func() time.Time
+	SetupHash    string
+	AllowedUID   uint32
+	TLSRequired  bool
+	TLSServing   bool // true when this process is listening with TLS
+	CertDirty    bool // true when on-disk material changed since TLSServing
+	TLSListen    string
+	HTTPListen   string
+	HTTPSURL     string
+	CertDir      ndltls.Dir
+	ClusterCA    cluster.CA
+	LeaseHolder  string
+	Challenges   *ndltls.ChallengeMem
+	backupMu     sync.Mutex
+	nightlyBusy  atomic.Bool
+	alertBusy    atomic.Bool
 }
 
 type principal struct {
@@ -212,6 +218,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/ai/plans", s.createAIPlan)
 	mux.HandleFunc("GET /api/v1/ai/plans/{id}", s.getAIPlan)
 	mux.HandleFunc("POST /api/v1/ai/plans/{id}/approve", s.approveAIPlan)
+	mux.HandleFunc("GET /api/v1/settings/license", s.getLicense)
+	mux.HandleFunc("POST /api/v1/settings/license", s.activateLicense)
+	mux.HandleFunc("POST /api/v1/settings/license/clear", s.clearLicense)
 	mux.HandleFunc("POST /api/v1/cluster/join-tokens", s.createJoinToken)
 	mux.HandleFunc("POST /api/v1/cluster/join", s.joinCluster)
 	mux.HandleFunc("POST /api/v1/cluster/nodes/{id}/revoke", s.revokeClusterNode)

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.41
-  description: Phase 42 AI Plan Operate Automate, plus prior northbound API.
+  version: 1.0.0
+  description: Phase 43 CE 1.0 license surface and API freeze, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -1385,6 +1385,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AIPlan"
+  /settings/license:
+    get:
+      operationId: getLicense
+      summary: License-activation surface. Absent means Community Edition. Never returns the full key.
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+    post:
+      operationId: activateLicense
+      summary: Store a key and contact the licensing API only then. Unreachable API uses grace. Workloads are not stopped.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - activate-license
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LicenseActivateRequest"
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+  /settings/license/clear:
+    post:
+      operationId: clearLicense
+      summary: Clear the stored key. Returns the surface to Community Edition. Workloads stay running.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - clear-license
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -7916,6 +7970,51 @@ components:
         prompt:
           type: string
         profile_id:
+          type: string
+    LicenseStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - edition
+        - status
+        - reason
+        - has_key
+        - workloads_stopped
+        - ee_blobs
+        - contacts_api
+      properties:
+        edition:
+          type: string
+          enum:
+            - ce
+        status:
+          type: string
+          enum:
+            - absent
+            - grace
+            - unreachable
+            - active
+        reason:
+          type: string
+        has_key:
+          type: boolean
+        key_suffix:
+          type: string
+        workloads_stopped:
+          type: boolean
+        ee_blobs:
+          type: boolean
+        contacts_api:
+          type: boolean
+        last_checked:
+          type: string
+    LicenseActivateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+      properties:
+        key:
           type: string
 
 

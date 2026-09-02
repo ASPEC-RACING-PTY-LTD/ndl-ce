@@ -107,6 +107,8 @@ type Memory struct {
 	aiProfiles         map[string]AIProfile
 	aiPlans            map[string]AIPlan
 	aiPlanSteps        map[string]AIPlanStep
+	licenseState       map[string]LicenseState
+	licenseKeys        map[string]string
 }
 
 // NewMemory returns an empty store.

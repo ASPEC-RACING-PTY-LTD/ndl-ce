@@ -52,13 +52,16 @@ func run(args []string) error {
   policy list
   policy create --name NAME [--threshold N]
   policy apply --id ID [--confirm apply-policy]
-	ai ask --prompt TEXT [--profile-id ID]
+  ai ask --prompt TEXT [--profile-id ID]
   ai plan --prompt TEXT [--profile-id ID]
   ai approve --id ID --confirm approve-plan
   ai provider list
   ai provider add --name NAME [--kind KIND] [--endpoint URL] [--model MODEL]
   ai profile list
   ai profile add --name NAME [--provider-id ID]
+  license show
+  license activate --key KEY --confirm activate-license
+  license clear --confirm clear-license
   app list
   app import FILE
   app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]
@@ -202,6 +205,8 @@ func run(args []string) error {
 		return cmdPolicy(args[1:])
 	case "ai":
 		return cmdAI(args[1:])
+	case "license":
+		return cmdLicense(args[1:])
 	case "app":
 		return cmdApp(args[1:])
 	case "task":
@@ -933,6 +938,33 @@ func cmdAI(args []string) error {
 		}
 	default:
 		return fmt.Errorf("usage: nodalctl ai ask|plan|approve|provider|profile")
+	}
+}
+
+func cmdLicense(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl license show|activate|clear")
+	}
+	switch args[0] {
+	case "show":
+		return cmdGet("/api/v1/settings/license")
+	case "activate":
+		f := parseFlags(args[1:])
+		if f["key"] == "" {
+			return fmt.Errorf("usage: nodalctl license activate --key KEY --confirm activate-license")
+		}
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/settings/license", map[string]any{"key": f["key"]}, true)
+	case "clear":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/settings/license/clear", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl license show|activate|clear")
 	}
 }
 

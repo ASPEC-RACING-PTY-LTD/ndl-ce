@@ -1810,6 +1810,22 @@ export interface AIPlanCreateRequest {
   profile_id?: string;
 }
 
+export interface LicenseStatus {
+  edition: "ce";
+  status: "absent" | "grace" | "unreachable" | "active";
+  reason: string;
+  has_key: boolean;
+  key_suffix?: string;
+  workloads_stopped: boolean;
+  ee_blobs: boolean;
+  contacts_api: boolean;
+  last_checked?: string;
+}
+
+export interface LicenseActivateRequest {
+  key: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -1955,6 +1971,10 @@ export type ListAIPlansPath = "/api/v1/ai/plans";
 export type GetAIPlanPath = "/api/v1/ai/plans/{id}";
 
 export type ApproveAIPlanPath = "/api/v1/ai/plans/{id}/approve";
+
+export type GetLicensePath = "/api/v1/settings/license";
+
+export type ClearLicensePath = "/api/v1/settings/license/clear";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

@@ -290,6 +290,47 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: live kubelet join; wrap K8s workloads as No-dal-visible
 - Audit follow-up: feature-install still does not name kubelet; VMs/CTs remain independent
 
+## Phase 39
+
+- Package: 0.1.38
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (external RBD consumed as pool type distributed, fake RBD VM disk handles, cluster down leaves volumes unavailable, OSD bring-up is a typed extra-disk action that does not start by default). FIXTURE: Memory plus fake RBD. NOT PHYSICALLY VALIDATED: live Ceph/`rbd map`/systemd `ceph-osd` on this Ubuntu Cloud host
+- Audit follow-up: enabling distributed storage does not start ceph-osd; feature-install argv still does not name ceph-osd/ceph-volume
+
+## Phase 40
+
+- Package: 0.1.39
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (storage-pressure policy enqueues workload.migrate, YAML banned keys, optional X-Nodal-Confirm apply-policy, service identity nodal-automation). FIXTURE: Memory. NOT AN LLM LOOP. Agent has no policy engine.
+- Audit follow-up: automation routes are GET/POST /api/v1/policies, not networks/policies
+
+## Phase 41
+
+- Package: 0.1.40
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (read-only Ask, profile without events.read/metrics.read is 403, provider down still returns local citations, secrets redacted). FIXTURE: fake Completer. NOT PHYSICALLY VALIDATED: live OpenAI/Anthropic/Gemini/Ollama
+- Audit follow-up: Ask cannot mutate or Host.Exec
+
+## Phase 42
+
+- Package: 0.1.41
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (keyword planner to existing APIs, Host.Exec-shaped prompts 422, ask profiles cannot operate, missing permission stops the plan, automate binds to Phase 40 create_policy). FIXTURE: deterministic planner. NOT A LIVE LLM.
+- Audit follow-up: plans execute existing APIs only
+
+## Phase 43
+
+- Package: 1.0.0
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (absent license does not contact the licensing API, unreachable key uses grace, workloads_stopped stays false, full key never returned, viewer cannot activate, Settings License and Docs pages). FIXTURE: injected LicenseProbe. NOT PHYSICALLY VALIDATED: Debian 13 physical checklist, production apt signatures, live licensing API
+- Honesty: virt and physical checklists are documents. CE does not require a key. No EE blobs. Ubuntu is not Tier 1. Signed install remains the documented HTTPS repo and keyring path.
+
+
 
 
 

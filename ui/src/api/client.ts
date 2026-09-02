@@ -420,6 +420,30 @@ export async function approveAIPlan(id: string): Promise<import("../generated/op
   );
 }
 
+export async function getLicense(): Promise<import("../generated/openapi").LicenseStatus> {
+  return readJson(await request("/settings/license"));
+}
+
+export async function activateLicense(key: string): Promise<import("../generated/openapi").LicenseStatus> {
+  return readJson(
+    await request("/settings/license", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "activate-license" },
+      body: JSON.stringify({ key }),
+    }),
+  );
+}
+
+export async function clearLicense(): Promise<import("../generated/openapi").LicenseStatus> {
+  return readJson(
+    await request("/settings/license/clear", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "clear-license" },
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

@@ -65,6 +65,8 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "automation", label: "Automation", href: "/automation", keywords: ["policy", "storage", "pressure", "migrate"] },
   { id: "ask", label: "Ask", href: "/ask", keywords: ["ai", "assistant", "diagnose"] },
   { id: "plans", label: "Plans", href: "/plans", keywords: ["ai", "approve", "operate", "automate"] },
+  { id: "license", label: "License", href: "/settings/license", keywords: ["license", "ee", "key", "activation", "ce"] },
+  { id: "docs", label: "Docs", href: "/docs", keywords: ["docs", "install", "backup", "cluster", "store", "ai", "recovery"] },
   { id: "events", label: "Events", href: "/events", keywords: ["timeline"] },
   { id: "alerts", label: "Alerts", href: "/alerts", keywords: ["notify"] },
   { id: "backups", label: "Backups", href: "/backups", keywords: ["restore"] },

@@ -67,6 +67,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(view, SettingsTLSRead) || !Authorize(op, SettingsTLSRead) {
 		t.Fatal("tls status is readable")
 	}
+	if !Authorize(view, SettingsLicenseRead) || Authorize(view, SettingsLicenseManage) || Authorize(op, SettingsLicenseManage) {
+		t.Fatal("only admin may activate a license; CE status is readable")
+	}
+	if !Authorize(op, SettingsLicenseRead) {
+		t.Fatal("operator may read license status")
+	}
 	if !Authorize(op, ComputeSnapshot) || !Authorize(op, StorageSnapshot) {
 		t.Fatal("operator snapshots")
 	}

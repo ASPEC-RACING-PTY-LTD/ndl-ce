@@ -358,6 +358,10 @@ type Store interface {
 	UpdateAIPlan(ctx context.Context, p AIPlan) error
 	ListAIPlanSteps(ctx context.Context, clusterID, planID string) ([]AIPlanStep, error)
 	UpdateAIPlanStep(ctx context.Context, st AIPlanStep) error
+
+	GetLicenseState(ctx context.Context, clusterID string) (*LicenseState, string, error)
+	PutLicenseState(ctx context.Context, st LicenseState, key string) error
+	ClearLicense(ctx context.Context, clusterID string) error
 }
 
 // Cluster is the appliance cluster of one.

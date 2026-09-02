@@ -26,6 +26,8 @@ import { StorePage } from "./pages/StorePage";
 import { AutomationPage } from "./pages/AutomationPage";
 import { AskPage } from "./pages/AskPage";
 import { PlansPage } from "./pages/PlansPage";
+import { LicensePage } from "./pages/LicensePage";
+import { DocsPage } from "./pages/DocsPage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
@@ -160,6 +162,10 @@ function AppRoutes() {
     page = <AskPage />;
   } else if (path === "/plans") {
     page = <PlansPage />;
+  } else if (path === "/settings/license") {
+    page = <LicensePage />;
+  } else if (path === "/docs") {
+    page = <DocsPage />;
   } else if (path === "/settings/certificates") {
     page = <CertificatePage />;
   } else if (path === "/settings/updates") {

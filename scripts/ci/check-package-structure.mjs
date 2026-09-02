@@ -39,6 +39,14 @@ const required = [
   "docs/install.md",
   "docs/uninstall.md",
   "docs/recovery.md",
+  "docs/ce-1.0.md",
+  "docs/backup.md",
+  "docs/cluster.md",
+  "docs/store.md",
+  "docs/ai.md",
+  "docs/api-compatibility.md",
+  "docs/checklists/ce-1.0-virt.md",
+  "docs/checklists/ce-1.0-physical.md",
   "internal/hostos/hostos.go",
   "internal/hostos/debian/debian.go",
 ];
@@ -130,6 +138,14 @@ if (!existsSync("migrations/0038_phase42.sql")) {
   const planSql = readFileSync("migrations/0038_phase42.sql", "utf8");
   if (!planSql.includes("ai_plans") || !planSql.includes("ai_plan_steps")) {
     errors.push("phase 42 migration must add ai_plans and ai_plan_steps");
+  }
+}
+if (!existsSync("migrations/0039_phase43.sql")) {
+  errors.push("missing migrations/0039_phase43.sql license_state");
+} else {
+  const licSql = readFileSync("migrations/0039_phase43.sql", "utf8");
+  if (!licSql.includes("license_state") || !licSql.includes("secrets.license_keys")) {
+    errors.push("phase 43 migration must add license_state and secret keys");
   }
 }
 if (!existsSync("store/official/sample-web.yaml")) {
@@ -259,6 +275,9 @@ if (!changelog.includes("nodal (0.1.40)") || !changelog.includes("Phase 41 AI As
 }
 if (!changelog.includes("nodal (0.1.41)") || !changelog.includes("Phase 42 AI Plan")) {
   errors.push("changelog must include nodal (0.1.41) Phase 42 AI Plan");
+}
+if (!changelog.includes("nodal (1.0.0)") || !changelog.includes("Phase 43 CE 1.0")) {
+  errors.push("changelog must include nodal (1.0.0) Phase 43 CE 1.0");
 }
 
 const control = existsSync("packaging/debian/control")

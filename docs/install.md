@@ -10,7 +10,8 @@ different objects. This page is the **host** install.
 
 The three host install paths install the same `nodal` metapackage
 (`ndl-control`, `ndl-agent`, `ndl-ui`, `nodalctl`), start the same
-units, and finish at the same `/setup` page.
+units, and finish at the same `/setup` page. Community Edition does
+not require a license key. See [ce-1.0.md](ce-1.0.md).
 
 - Path A: existing Debian 13 amd64, add the signed repo, `apt-get install -y nodal`.
 - Path B: one-line bootstrap below.
