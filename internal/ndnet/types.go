@@ -107,6 +107,7 @@ type Plan struct {
 	Kind              string
 	BridgeName        string
 	UplinkIfName      string
+	EgressIfName      string
 	IPv4CIDR          string
 	Gateway           string
 	DHCPStart         string
@@ -130,6 +131,7 @@ type Preview struct {
 	Kind              string   `json:"kind"`
 	BridgeName        string   `json:"bridge_name"`
 	UplinkIfName      string   `json:"uplink_ifname,omitempty"`
+	EgressIfName      string   `json:"egress_ifname,omitempty"`
 	IPv4CIDR          string   `json:"ipv4_cidr,omitempty"`
 	Gateway           string   `json:"gateway,omitempty"`
 	Danger            string   `json:"danger"`
@@ -153,6 +155,7 @@ type ApplyResult struct {
 	Kind              string   `json:"kind"`
 	BridgeName        string   `json:"bridge_name"`
 	UplinkIfName      string   `json:"uplink_ifname,omitempty"`
+	EgressIfName      string   `json:"egress_ifname,omitempty"`
 	IPv4CIDR          string   `json:"ipv4_cidr,omitempty"`
 	Gateway           string   `json:"gateway,omitempty"`
 	Status            string   `json:"status"`

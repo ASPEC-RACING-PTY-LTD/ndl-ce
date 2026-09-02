@@ -53,6 +53,7 @@ func reattachQEMU(eng *qemu.Engine) {
 func recoverStaleNetwork(dataDir string) {
 	eng := &ndnet.Engine{StateDir: filepath.Join(dataDir, "net")}
 	_ = eng.RecoverStale(time.Now().UTC())
+	_ = eng.RestoreNAT(context.Background())
 }
 
 func scrapeMetrics(ms *metrics.Store, dataDir string) {

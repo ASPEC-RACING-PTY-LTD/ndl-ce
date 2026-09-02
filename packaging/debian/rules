@@ -65,6 +65,7 @@ override_dh_auto_install:
 	install -m 0644 $(MODROOT)/systemd/nodal-workloads.target debian/tmp/lib/systemd/system/nodal-workloads.target
 	install -m 0644 $(MODROOT)/systemd/ndl-network-rollback.service debian/tmp/lib/systemd/system/ndl-network-rollback.service
 	install -m 0644 $(MODROOT)/systemd/ndl-dnsmasq@.service debian/tmp/lib/systemd/system/ndl-dnsmasq@.service
+	install -m 0644 $(MODROOT)/systemd/ndl-nat@.service debian/tmp/lib/systemd/system/ndl-nat@.service
 	install -m 0644 $(MODROOT)/systemd/nodal-ct@.service debian/tmp/lib/systemd/system/nodal-ct@.service
 	install -m 0644 $(MODROOT)/systemd/nodal-vm@.service debian/tmp/lib/systemd/system/nodal-vm@.service
 	install -m 0644 $(MODROOT)/systemd/nodal-oci@.service debian/tmp/lib/systemd/system/nodal-oci@.service

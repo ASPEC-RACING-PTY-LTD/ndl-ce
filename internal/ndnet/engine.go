@@ -118,7 +118,7 @@ func (e *Engine) DryRun(_ context.Context, spec Spec) (Preview, error) {
 		return Preview{}, err
 	}
 	if plan.NAT {
-		if err := e.checkNFT(plan.NFT); err != nil {
+		if err := e.checkNFT(plan); err != nil {
 			return Preview{}, err
 		}
 	}
@@ -145,7 +145,7 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		return ApplyResult{}, fmt.Errorf("management ifindex changed during plan")
 	}
 	if plan.NAT {
-		if err := e.checkNFT(plan.NFT); err != nil {
+		if err := e.checkNFT(plan); err != nil {
 			return ApplyResult{}, err
 		}
 	}
@@ -197,7 +197,13 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		_ = e.stopDnsmasq(ctx, plan.NetworkID)
 	}
 	if plan.NAT {
-		if err := e.applyNFT(plan.NFT); err != nil {
+		if err := e.enableForwarding(); err != nil {
+			return fail(err)
+		}
+		if err := e.applyNFT(plan); err != nil {
+			return fail(err)
+		}
+		if err := e.startNAT(ctx, plan.NetworkID); err != nil {
 			return fail(err)
 		}
 	}
@@ -226,7 +232,7 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		Name:              plan.Name,
 		Kind:              plan.Kind,
 		BridgeName:        plan.BridgeName,
-		UplinkIfName:      plan.UplinkIfName,
+		UplinkIfName:      firstNonEmpty(plan.UplinkIfName, plan.EgressIfName),
 		IPv4CIDR:          plan.IPv4CIDR,
 		Gateway:           plan.Gateway,
 		Status:            StatusAvailable,
@@ -237,6 +243,7 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		ManagementIfName:  after.ManagementIfName,
 		RollbackArmed:     armed,
 		Warnings:          plan.Warnings,
+		EgressIfName:      plan.EgressIfName,
 	}, nil
 }
 
@@ -280,6 +287,16 @@ func (e *Engine) Observe(_ context.Context, hints []Hint) (Observation, error) {
 			if item.Status == StatusAvailable && !item.DHCPRunning {
 				item.Status = StatusWarning
 				item.Warnings = append(item.Warnings, "isolated DHCP is not running")
+			}
+			if hint.Kind == KindIsolatedNAT {
+				if e.readForwarding() != "1" {
+					item.Status = StatusWarning
+					item.Warnings = append(item.Warnings, "IPv4 forwarding is not enabled")
+				}
+				if !e.nftPresent(hint.NetworkID) {
+					item.Status = StatusWarning
+					item.Warnings = append(item.Warnings, "isolated NAT rules are not persisted")
+				}
 			}
 		} else if e.dnsmasqPresent(hint.NetworkID) || e.dnsmasqRunning(hint.NetworkID) {
 			item.Status = StatusWarning
@@ -464,27 +481,81 @@ func (e *Engine) stopDnsmasq(ctx context.Context, id string) error {
 	return e.run(ctx, "/usr/bin/systemctl", "stop", "ndl-dnsmasq@"+id+".service")
 }
 
-func (e *Engine) checkNFT(rules string) error {
-	if rules == "" {
+func (e *Engine) checkNFT(plan Plan) error {
+	if plan.NFT == "" {
 		return nil
 	}
-	path, err := e.writeNFTFile(rules)
+	path, err := e.writeNFTNamed(plan.NetworkID+".check.nft", plan.NFT)
 	if err != nil {
 		return err
 	}
-	return e.run(context.Background(), "/usr/sbin/nft", "-c", "-f", path)
+	err = e.run(context.Background(), NFTBin, "-c", "-f", path)
+	_ = os.Remove(path)
+	return err
 }
 
-func (e *Engine) applyNFT(rules string) error {
-	if rules == "" {
-		return nil
+func (e *Engine) applyNFT(plan Plan) error {
+	if plan.NFT == "" {
+		return fmt.Errorf("isolated-nat nftables rules are empty")
 	}
-	path, err := e.writeNFTFile(rules)
+	path, err := e.writeNFTNamed(plan.NetworkID+".nft", plan.NFT)
 	if err != nil {
 		return err
 	}
-	_ = e.run(context.Background(), "/usr/sbin/nft", "delete", "table", "inet", "ndl")
-	return e.run(context.Background(), "/usr/sbin/nft", "-f", path)
+	if destroy := renderNFTDestroy(plan); destroy != "" {
+		if _, err := e.writeNFTNamed(plan.NetworkID+".destroy.nft", destroy); err != nil {
+			return err
+		}
+	}
+	if err := e.run(context.Background(), NFTBin, "-c", "-f", path); err != nil {
+		return err
+	}
+	return e.run(context.Background(), NFTBin, "-f", path)
+}
+
+func (e *Engine) nftPresent(id string) bool {
+	_, err := os.Stat(filepath.Join(e.stateDir(), "nft", id+".nft"))
+	return err == nil
+}
+
+func (e *Engine) startNAT(ctx context.Context, id string) error {
+	if _, err := uuidParse(id); err != nil {
+		return err
+	}
+	unit := "ndl-nat@" + id + ".service"
+	_ = e.run(ctx, "/usr/bin/systemctl", "reset-failed", unit)
+	_ = e.run(ctx, "/usr/bin/systemctl", "enable", unit)
+	return e.run(ctx, "/usr/bin/systemctl", "start", unit)
+}
+
+func (e *Engine) stopNAT(ctx context.Context, id string) error {
+	if _, err := uuidParse(id); err != nil {
+		return nil
+	}
+	unit := "ndl-nat@" + id + ".service"
+	_ = e.run(ctx, "/usr/bin/systemctl", "disable", "--now", unit)
+	return e.run(ctx, "/usr/bin/systemctl", "stop", unit)
+}
+
+// RestoreNAT reapplies persisted isolated-nat tables and IPv4 forwarding.
+func (e *Engine) RestoreNAT(ctx context.Context) error {
+	dir := filepath.Join(e.stateDir(), "nft")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	any := false
+	for _, ent := range entries {
+		if ent.IsDir() || !natPersistName(ent.Name()) {
+			continue
+		}
+		any = true
+		_ = e.run(ctx, NFTBin, "-f", filepath.Join(dir, ent.Name()))
+	}
+	if !any {
+		return nil
+	}
+	return e.enableForwarding()
 }
 
 func (e *Engine) probeManagement(host HostView, plan Plan) error {
@@ -524,7 +595,44 @@ func (e *Engine) revertOwned(ctx context.Context, plan Plan) error {
 	}
 	_ = os.Remove(filepath.Join(e.stateDir(), "dnsmasq", plan.NetworkID+".conf"))
 	_ = e.stopDnsmasq(ctx, plan.NetworkID)
+	if plan.NAT || e.nftPresent(plan.NetworkID) {
+		_ = e.removeNAT(ctx, plan)
+	}
 	return e.reloadNetworkd()
+}
+
+// Delete removes No-dal-owned files, NAT rules, and forwarding for one network.
+func (e *Engine) Delete(ctx context.Context, spec Spec) error {
+	id := strings.TrimSpace(spec.NetworkID)
+	plan := Plan{NetworkID: id, Kind: spec.Kind, NAT: spec.Kind == KindIsolatedNAT}
+	if br, err := BridgeName(id); err == nil {
+		plan.BridgeName = br
+	}
+	switch spec.Kind {
+	case KindLANBridge:
+		plan.Files = lanBridgeFiles(id, plan.BridgeName, spec.UplinkIfName)
+	default:
+		plan.Files = []File{
+			{RelPath: persistName(id, ".netdev")},
+			{RelPath: persistName(id, ".network")},
+		}
+	}
+	return e.revertOwned(ctx, plan)
+}
+
+func (e *Engine) removeNAT(ctx context.Context, plan Plan) error {
+	_ = e.stopNAT(ctx, plan.NetworkID)
+	destroy := renderNFTDestroy(plan)
+	if destroy != "" {
+		path, err := e.writeNFTNamed(plan.NetworkID+".destroy.nft", destroy)
+		if err == nil {
+			_ = e.run(ctx, NFTBin, "-f", path)
+		}
+	}
+	_ = os.Remove(filepath.Join(e.stateDir(), "nft", plan.NetworkID+".nft"))
+	_ = os.Remove(filepath.Join(e.stateDir(), "nft", plan.NetworkID+".destroy.nft"))
+	_ = os.Remove(filepath.Join(e.stateDir(), "nft", plan.NetworkID+".check.nft"))
+	return e.disableForwardingIfUnused()
 }
 
 func (e *Engine) dnsmasqRunning(id string) bool {
@@ -536,10 +644,6 @@ func (e *Engine) dnsmasqRunning(id string) bool {
 		return false
 	}
 	return e.run(context.Background(), "/usr/bin/systemctl", "is-active", "--quiet", unit) == nil
-}
-
-func (e *Engine) writeNFTFile(rules string) (string, error) {
-	return e.writeNFTNamed("ndl.nft", rules)
 }
 
 func (e *Engine) writeNFTNamed(name, rules string) (string, error) {

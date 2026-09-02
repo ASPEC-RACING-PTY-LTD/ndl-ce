@@ -58,6 +58,19 @@ func BuildPlan(spec Spec, host HostView) (Plan, error) {
 		plan.DHCP = true
 		plan.DNS = true
 		plan.NAT = spec.Kind == KindIsolatedNAT
+		if plan.NAT {
+			egress := strings.TrimSpace(host.DefaultRouteIf)
+			if !ValidIfName(egress) {
+				return Plan{}, fmt.Errorf("isolated-nat requires a default IPv4 route to determine egress")
+			}
+			if sameIface(egress, bridge) {
+				return Plan{}, fmt.Errorf("isolated-nat egress cannot be the isolated bridge")
+			}
+			if isLoopback(egress) {
+				return Plan{}, fmt.Errorf("isolated-nat egress cannot be loopback")
+			}
+			plan.EgressIfName = egress
+		}
 		if err := validateReservations(spec.Reservations, n, gw); err != nil {
 			return Plan{}, err
 		}
@@ -124,7 +137,7 @@ func isolatedFiles(id, bridge string, gw net.IP, n *net.IPNet, nat bool) []File 
 	netdev := "[NetDev]\nName=" + bridge + "\nKind=bridge\n"
 	network := "[Match]\nName=" + bridge + "\n\n[Link]\nRequiredForOnline=no\nActivationPolicy=always-up\n\n[Network]\nAddress=" + fmt.Sprintf("%s/%d", gw.String(), ones) + "\nDHCP=no\nLinkLocalAddressing=no\nConfigureWithoutCarrier=yes\nIgnoreCarrierLoss=yes\n"
 	if nat {
-		network += "IPForward=yes\n"
+		network += "IPForward=yes\nIPv4Forwarding=yes\n"
 	}
 	return []File{
 		{RelPath: persistName(id, ".netdev"), Body: netdev},
@@ -155,6 +168,7 @@ func PreviewOf(plan Plan) Preview {
 		Kind:              plan.Kind,
 		BridgeName:        plan.BridgeName,
 		UplinkIfName:      plan.UplinkIfName,
+		EgressIfName:      plan.EgressIfName,
 		IPv4CIDR:          plan.IPv4CIDR,
 		Gateway:           plan.Gateway,
 		Danger:            plan.Class.Danger,

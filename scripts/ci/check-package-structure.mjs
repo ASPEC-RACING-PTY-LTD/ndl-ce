@@ -30,6 +30,7 @@ const required = [
   "systemd/nodal-workloads.target",
   "systemd/ndl-network-rollback.service",
   "systemd/ndl-dnsmasq@.service",
+  "systemd/ndl-nat@.service",
   "systemd/nodal-ct@.service",
   "systemd/nodal-vm@.service",
   "systemd/nodal-oci@.service",
@@ -411,6 +412,9 @@ if (!/DeviceAllow=char-pts rw/.test(agentUnit) || !/DeviceAllow=\/dev\/ptmx rw/.
 const agentInstall = existsSync("packaging/debian/ndl-agent.install")
   ? readFileSync("packaging/debian/ndl-agent.install", "utf8")
   : "";
+if (!agentInstall.includes("ndl-nat@.service")) {
+  errors.push("ndl-agent.install must install ndl-nat@.service");
+}
 if (!agentInstall.includes("nodal-ct@.service")) {
   errors.push("ndl-agent.install must install nodal-ct@.service");
 }
@@ -432,6 +436,9 @@ if (!agentInstall.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
 const rules = existsSync("packaging/debian/rules")
   ? readFileSync("packaging/debian/rules", "utf8")
   : "";
+if (!rules.includes("ndl-nat@.service")) {
+  errors.push("debian/rules must install ndl-nat@.service");
+}
 if (!rules.includes("nodal-ct@.service")) {
   errors.push("debian/rules must install nodal-ct@.service");
 }
@@ -540,6 +547,19 @@ if (/libvirt/i.test(postinst)) {
 }
 if (/^RuntimeDirectory=ndl\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl");
+}
+
+const natUnit = existsSync("systemd/ndl-nat@.service")
+  ? readFileSync("systemd/ndl-nat@.service", "utf8")
+  : "";
+if (!natUnit.includes("ExecStart=/usr/sbin/nft -f /var/lib/ndl/net/nft/%i.nft")) {
+  errors.push("ndl-nat@.service must apply persisted nftables with nft -f");
+}
+if (/flush ruleset/.test(natUnit) || /ens18/.test(natUnit)) {
+  errors.push("ndl-nat@.service must not flush ruleset or hardcode ens18");
+}
+if (!natUnit.includes("WantedBy=multi-user.target")) {
+  errors.push("ndl-nat@.service must remain enabled across reboot");
 }
 
 const socket = existsSync("systemd/ndl-agent.socket")
