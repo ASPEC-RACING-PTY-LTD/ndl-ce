@@ -600,6 +600,36 @@ describe("App", () => {
     expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
   });
 
+  it("renders the store catalog with official sample install", async () => {
+    window.history.replaceState({}, "", "/store");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/store/apps": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "pkg-1",
+              name: "sample-web",
+              version: "1.0.0",
+              class: "official",
+              title: "Sample Web",
+              summary: "Official sample",
+              gpu_optional: true,
+              image: "docker.io/library/caddy:2.8.4",
+            },
+          ],
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^store$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^store$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^sample web$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^install$/i })).toBeVisible();
+  });
+
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {
     window.history.replaceState({}, "", "/workloads/vm-1/snapshots");
     mockApi({

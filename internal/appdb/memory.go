@@ -84,6 +84,8 @@ type Memory struct {
 	rollingPlans      map[string]RollingPlan
 	rollingSteps      map[string]RollingStep
 	features          map[string]Feature
+	storePackages     map[string]StorePackage
+	storeInstalls     map[string]StoreInstallation
 	nodeGroups        map[string]NodeGroup
 	nodeGroupMembers  map[string][]string
 	nodeMaint         map[string]NodeMaintenance

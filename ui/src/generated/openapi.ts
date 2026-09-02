@@ -422,6 +422,59 @@ export interface FeatureList {
   reason?: string;
 }
 
+export interface StoreApp {
+  id: string;
+  name: string;
+  version: string;
+  class: "community" | "verified" | "official";
+  title?: string;
+  summary?: string;
+  unsigned?: boolean;
+  warning?: string;
+  gpu_optional?: boolean;
+  deployment_kind?: string;
+  image?: string;
+  hooks?: Record<string, unknown>;
+  ai_actions?: Record<string, unknown>[];
+}
+
+export interface StoreAppList {
+  items: StoreApp[];
+}
+
+export interface StoreImportRequest {
+  manifest: string;
+}
+
+export interface StoreInstallRequest {
+  name?: string;
+  pool_id?: string;
+  network_id?: string;
+  node_id?: string;
+  cpus?: number;
+  memory_bytes?: number;
+  gpu_id?: string;
+}
+
+export interface StoreInstallation {
+  id: string;
+  package_id: string;
+  status: "queued" | "running" | "installed" | "failed" | "rolled_back";
+  stack_id?: string;
+  workload_id?: string;
+  kubelet_started?: boolean;
+  reason?: string;
+  warning?: string;
+  node_id?: string;
+  finished_at?: string;
+  name?: string;
+  class?: string;
+}
+
+export interface StoreInstallationList {
+  items: StoreInstallation[];
+}
+
 export interface JoinTokenCreateRequest {
   ttl_seconds?: number;
 }
@@ -1611,6 +1664,16 @@ export type ListFeaturesPath = "/api/v1/features";
 export type EnableFeaturePath = "/api/v1/features/{id}/enable";
 
 export type DisableFeaturePath = "/api/v1/features/{id}/disable";
+
+export type ListStoreAppsPath = "/api/v1/store/apps";
+
+export type ImportStoreAppPath = "/api/v1/store/apps/import";
+
+export type GetStoreAppPath = "/api/v1/store/apps/{id}";
+
+export type InstallStoreAppPath = "/api/v1/store/apps/{id}/install";
+
+export type ListStoreInstallationsPath = "/api/v1/store/installations";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

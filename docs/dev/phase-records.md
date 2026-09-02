@@ -263,6 +263,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: Kubernetes runtime Phase 38; Store Phase 36 must not grow a root script runner
 - Audit follow-up: no Store root helper; feature install is typed HostUpdate only
 
+## Phase 36
+
+- Package: 0.1.35
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (official sample-web installs via manifest to stack plus OCI, run bash rejected, unsigned Community warns, failed pull rolls back stack and workloads). FIXTURE: Memory plus fakeOCI. NOT PHYSICALLY VALIDATED: live registry pull of caddy:2.8.4; Store UI deploy on Debian 13
+- Follow-up: signatures and Verified class Phase 37; upgrade/rollback version graph
+- Audit follow-up: no helper-script runner
+
 
 
 

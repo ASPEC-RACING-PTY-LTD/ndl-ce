@@ -251,7 +251,7 @@ func TestUpdatesPreflightStoreHook(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("%d %s", res.StatusCode, b)
 	}
-	if !strings.Contains(string(b), "store_compatibility") || !strings.Contains(string(b), "Phase 36") {
+	if !strings.Contains(string(b), "store_compatibility") || !strings.Contains(string(b), "Helper scripts") {
 		t.Fatalf("%s", b)
 	}
 	var body map[string]any

@@ -197,7 +197,7 @@ rollback require `X-Nodal-Confirm`. Checkpoint writes `/var/lib/ndl` plus
 a PostgreSQL dump when the Debian adapter can run those typed argv lists.
 
 Kernel rollback is GRUB previous-entry (`grub-reboot 1`), not a QEMU guest
-action. Store app compatibility is not implemented (Phase 36).
+action. Store packages are declarative; helper scripts are rejected.
 
 `nodalctl update check` and `nodalctl update apply --confirm apply-update`
 are the CLI paths.
@@ -256,6 +256,22 @@ Disable needs confirm when workloads exist and does not delete them.
 1. Fresh `apt-get install nodal` does not pull GPU, Kubernetes, Ceph, or AI.
 2. Tiny-node Kubernetes enable without confirm is refused. Kubelet stays down.
 3. Disable with confirm leaves OCI workloads running.
+
+## No-dal Store (Phase 36)
+
+Store packages are YAML manifests. `run: bash` and helper script keys are
+rejected. Install maps to stack plus OCI create. Failed install deletes
+the stack and workloads it created. Unsigned Community packages warn.
+Signatures are Phase 37.
+
+`nodalctl app list`, `nodalctl app import FILE`, and
+`nodalctl app install --id ID` are the CLI paths.
+
+### Recovery matrix (Store)
+
+1. Official sample-web installs from the bundled manifest only.
+2. A manifest with `run: bash` is refused.
+3. A failed OCI pull rolls back stack and workload rows.
 
 ## Identity completion (Phase 13)
 

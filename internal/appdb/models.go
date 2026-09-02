@@ -305,6 +305,15 @@ type Store interface {
 	ListFeatures(ctx context.Context, clusterID string) ([]Feature, error)
 	GetFeature(ctx context.Context, clusterID, id string) (*Feature, error)
 	UpsertFeature(ctx context.Context, f Feature) error
+
+	UpsertStorePackage(ctx context.Context, p StorePackage) error
+	ListStorePackages(ctx context.Context, clusterID string) ([]StorePackage, error)
+	GetStorePackage(ctx context.Context, clusterID, id string) (*StorePackage, error)
+	GetStorePackageByName(ctx context.Context, clusterID, name, version string) (*StorePackage, error)
+	CreateStoreInstallation(ctx context.Context, in StoreInstallation) error
+	GetStoreInstallation(ctx context.Context, clusterID, id string) (*StoreInstallation, error)
+	ListStoreInstallations(ctx context.Context, clusterID string) ([]StoreInstallation, error)
+	UpdateStoreInstallation(ctx context.Context, in StoreInstallation) error
 }
 
 // Cluster is the appliance cluster of one.

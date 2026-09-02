@@ -46,6 +46,9 @@ func run(args []string) error {
   feature list
   feature enable NAME [--confirm enable-k8s]
   feature disable NAME [--confirm disable-feature]
+  app list
+  app import FILE
+  app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]
   cluster join-token create
   cluster join --token TOKEN [--url URL] [--hostname HOST]
   cluster node revoke --id ID
@@ -175,6 +178,8 @@ func run(args []string) error {
 		return cmdCluster(args[1:])
 	case "feature":
 		return cmdFeature(args[1:])
+	case "app":
+		return cmdApp(args[1:])
 	case "task":
 		if len(args) < 2 || args[1] != "list" {
 			return fmt.Errorf("usage: nodalctl task list")
@@ -734,6 +739,35 @@ func cmdFeature(args []string) error {
 		return postJSON("/api/v1/features/"+args[1]+"/disable", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl feature list|enable NAME|disable NAME")
+	}
+}
+
+func cmdApp(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl app list|import FILE|install --id ID")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/store/apps")
+	case "import":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl app import FILE")
+		}
+		raw, err := os.ReadFile(args[1])
+		if err != nil {
+			return err
+		}
+		return postJSON("/api/v1/store/apps/import", map[string]any{"manifest": string(raw)}, true)
+	case "install":
+		f := parseFlags(args[1:])
+		id := f["id"]
+		if id == "" {
+			return fmt.Errorf("usage: nodalctl app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]")
+		}
+		body := map[string]any{"name": f["name"], "pool_id": f["pool-id"], "network_id": f["network-id"], "node_id": f["node-id"]}
+		return postJSON("/api/v1/store/apps/"+id+"/install", body, true)
+	default:
+		return fmt.Errorf("usage: nodalctl app list|import FILE|install --id ID")
 	}
 }
 

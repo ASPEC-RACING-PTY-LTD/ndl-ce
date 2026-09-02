@@ -1,3 +1,9 @@
+nodal (0.1.35) UNRELEASED; urgency=medium
+
+  * Phase 36 No-dal Store: declarative manifests, official sample-web install maps to stack plus OCI, reject run bash, failed install rolls back objects, unsigned Community warns
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.34) UNRELEASED; urgency=medium
 
   * Phase 35 feature modules: optional OCI, GPU, Kubernetes, distributed storage, and AI packages stay out of the nodal metapackage, typed feature-install update, Kubernetes on a tiny node needs confirm and does not start kubelet, disable leaves workloads

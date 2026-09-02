@@ -118,4 +118,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, FeatureRead) || !Authorize(op, FeatureManage) {
 		t.Fatal("operator may enable features")
 	}
+	if !Authorize(view, StoreRead) || Authorize(view, StoreInstall) {
+		t.Fatal("viewer store is read-only")
+	}
+	if !Authorize(op, StoreRead) || !Authorize(op, StoreInstall) {
+		t.Fatal("operator may install store apps")
+	}
 }

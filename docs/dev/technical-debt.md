@@ -230,6 +230,12 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Feature package apt apply is not run on this Ubuntu Cloud host. Why not blocking: HostUpdate returns unavailable and the catalog still records opt-in; Debian 13 signed-repo install is the product path.
 - LOW. Kubernetes runtime is not started. Why not blocking: Phase 38 owns kubelet; this phase is installer UX and the tiny-node confirm gate.
 
+## Phase 36
+
+- MEDIUM. Live registry pull of the official sample image is not in this Cloud job. Why not blocking: fakeOCI proves manifest-to-stack mapping; the sample image pin is declarative.
+- LOW. Store upgrade/rollback version graph is not implemented. Why not blocking: failed install rollback is the recovery gate; upgrade is a later catalog operation.
+
+
 
 
 

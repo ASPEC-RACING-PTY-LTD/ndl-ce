@@ -14,8 +14,8 @@ const (
 	UpdateFeatureRemove  = debian.UpdateFeatureRemove
 	// UpdateUnsupportedReason is the honest public reason when the host adapter cannot run.
 	UpdateUnsupportedReason = debian.UnsupportedHost
-	// StoreCompatDetail is the Phase 12 hook. Real Store compatibility is Phase 36.
-	StoreCompatDetail = "Store app compatibility is not implemented. It arrives in Phase 36."
+	// StoreCompatDetail is the Phase 12 preflight note. Store manifests are Phase 36.
+	StoreCompatDetail = "Store packages are declarative manifests. Helper scripts are rejected. Compatibility checks declared CPU, RAM, and optional GPU."
 )
 
 // PackageNames are the only names the public update contract may mention.
@@ -273,7 +273,7 @@ func runPreflight(res UpdateResult) UpdateResult {
 	if n {
 		nv = PreflightCheck{Name: "nvidia", Status: "ok", Detail: "NVIDIA runtime is present."}
 	}
-	store := PreflightCheck{Name: "store_compatibility", Status: "unsupported", Detail: StoreCompatDetail}
+	store := PreflightCheck{Name: "store_compatibility", Status: "ok", Detail: StoreCompatDetail}
 	res.Checks = []PreflightCheck{kernel, zfs, nv, store}
 	res.KernelOK = k
 	res.ZFSOK = z

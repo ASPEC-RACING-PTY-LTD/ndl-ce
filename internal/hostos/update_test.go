@@ -87,7 +87,7 @@ func TestRunUpdatePreflightIncludesStoreHook(t *testing.T) {
 	for _, c := range res.Checks {
 		if c.Name == "store_compatibility" {
 			found = true
-			if c.Status != "unsupported" || !strings.Contains(c.Detail, "Phase 36") {
+			if c.Status != "ok" || !strings.Contains(c.Detail, "Helper scripts") {
 				t.Fatalf("%+v", c)
 			}
 		}

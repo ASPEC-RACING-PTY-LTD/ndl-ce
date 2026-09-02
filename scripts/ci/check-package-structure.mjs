@@ -84,6 +84,22 @@ if (!existsSync("migrations/0032_phase35.sql")) {
     errors.push("phase 35 migration must add features and document that kubelet is not started");
   }
 }
+if (!existsSync("migrations/0033_phase36.sql")) {
+  errors.push("missing migrations/0033_phase36.sql store packages");
+} else {
+  const storeSql = readFileSync("migrations/0033_phase36.sql", "utf8");
+  if (!storeSql.includes("store_packages") || !storeSql.includes("store_installations")) {
+    errors.push("phase 36 migration must add store_packages and store_installations");
+  }
+}
+if (!existsSync("store/official/sample-web.yaml")) {
+  errors.push("missing store/official/sample-web.yaml official sample manifest");
+} else {
+  const sample = readFileSync("store/official/sample-web.yaml", "utf8");
+  if (/run:\s*bash|helper:/.test(sample) || !sample.includes("kind: oci")) {
+    errors.push("official sample must be a declarative OCI manifest without helper scripts");
+  }
+}
 if (!existsSync("packaging/iso/mkosi.conf")) {
   errors.push("missing packaging/iso/mkosi.conf Debian installer ISO contract");
 } else {
@@ -182,6 +198,9 @@ if (!changelog.includes("nodal (0.1.33)") || !changelog.includes("Phase 34 HA fo
 }
 if (!changelog.includes("nodal (0.1.34)") || !changelog.includes("Phase 35 feature modules")) {
   errors.push("changelog must include nodal (0.1.34) Phase 35 feature modules");
+}
+if (!changelog.includes("nodal (0.1.35)") || !changelog.includes("Phase 36 No-dal Store")) {
+  errors.push("changelog must include nodal (0.1.35) Phase 36 No-dal Store");
 }
 
 const control = existsSync("packaging/debian/control")
