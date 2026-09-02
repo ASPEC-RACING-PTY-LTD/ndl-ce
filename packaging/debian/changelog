@@ -23,7 +23,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Policy automation binds the seeded automation role and unbinds leftover Operator so the service identity cannot inherit tokens, feature manage, compute delete, or backups.
   * Workload delete requires compute.delete. A token scoped to compute.lifecycle can still start and stop and cannot delete.
   * Workload clone requires compute.create. PATCH of CPUs, memory, firmware, or cloud-init requires compute.modify. desired_power stays on compute.lifecycle.
-  * Workloads contextual-nav test waits for the route change so a detached main-nav click cannot flake CI.
+  * Workloads contextual-nav test retries the main-nav click until Back to Main Menu is visible. A detached anchor can change the pathname without a popstate, which would leave Dashboard mounted.
   * Agent Files for a system container uses last-applied rootfs and fails closed when that record is missing instead of trusting client jail_root. Create and clone refuse an unclean rootfs_path before mkdir.
   * Alert webhook delivery resolves hostnames and refuses loopback, link-local, unique-local, and RFC1918 addresses. Mixed records fail closed. Delivery does not follow HTTP redirects.
   * Migration archive extract restores only user.* xattrs. security.* and trusted.* from a tar cannot land on the host.

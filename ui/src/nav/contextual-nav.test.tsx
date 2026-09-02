@@ -158,10 +158,11 @@ describe("contextual navigation", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^dashboard$/i })).toBeVisible();
     await waitFor(() => {
-      fireEvent.click(screen.getByRole("link", { name: /^workloads$/i }));
-      expect(window.location.pathname).toBe("/workloads");
+      if (!screen.queryByRole("button", { name: /back to main menu/i })) {
+        fireEvent.click(screen.getByRole("link", { name: /^workloads$/i }));
+      }
+      expect(screen.getByRole("button", { name: /back to main menu/i })).toBeVisible();
     });
-    expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
     expect(screen.queryByRole("navigation", { name: /appliance/i })).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /^workloads$/i })).toBeVisible();
     expect(document.querySelectorAll("nav.sidebar-nav")).toHaveLength(1);
