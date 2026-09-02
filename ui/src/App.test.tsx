@@ -327,7 +327,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^network$/i })).toBeVisible();
     expect(await screen.findByRole("heading", { name: /first-run guest network/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /create network/i })).toBeVisible();
-    expect(screen.getByText(/eth0/)).toBeVisible();
+    expect(await screen.findByText(/eth0/)).toBeVisible();
     expect(screen.getByText(/ifindex 2/i)).toBeVisible();
   });
 
