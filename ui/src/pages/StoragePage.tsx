@@ -21,6 +21,7 @@ import {
 } from "../api/client";
 import type { DatastoreRuntime, DistributedRuntime, LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
 import { Field } from "../components/Field";
+import { PageHeader } from "../components/PageHeader";
 import { formatBytes } from "../format";
 import { useSession } from "../session";
 
@@ -310,14 +311,11 @@ export function StoragePage() {
 
   return (
     <section className="page page-wide" aria-labelledby="storage-heading">
-      <header className="page-header">
-        <h1 id="storage-heading">Storage</h1>
-        <p className="page-kicker">
-          Directory remains the default. ZFS, LVM-thin, NFS/SMB/iSCSI, and distributed RBD are optional. Hosts
-          without those tools keep Directory. zpool import -f and vgexport are refused. Passwords
-          are stored in secrets, not unit files.
-        </p>
-      </header>
+      <PageHeader
+        id="storage-heading"
+        title="Storage"
+        kicker="Directory remains the default. ZFS, LVM-thin, NFS/SMB/iSCSI, and distributed RBD are optional. Hosts without those tools keep Directory. zpool import -f and vgexport are refused. Passwords are stored in secrets, not unit files."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
@@ -328,8 +326,8 @@ export function StoragePage() {
           <h2>{firstRun ? "First-run storage pool" : "Create Directory pool"}</h2>
           {firstRun ? (
             <p className="lede">
-              This installation has no usable storage pool yet. Create a Directory pool. Workloads
-              cannot start until a later phase, but images and disks can be stored now.
+              This installation has no usable storage pool yet. Create a Directory pool. Images and disks
+              can be stored now. Workloads need a usable pool before they can start.
             </p>
           ) : (
             <p className="lede">
@@ -464,7 +462,7 @@ export function StoragePage() {
           <p className="lede">
             NFS and SMB are compute and library mounts. iSCSI is a raw LUN for one VM disk. If the
             share is down, volumes stay unavailable and are not deleted. Incremental send is not a
-            network datastore capability. Backup destinations remain a separate Phase 11 target.
+            network datastore capability. Backup destinations are configured on the Backups page.
           </p>
           {datastores?.host_supported === false ? (
             <p className="banner banner-warn" role="status">

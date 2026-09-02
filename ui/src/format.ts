@@ -24,6 +24,8 @@ export function honestStatus(value?: string): string {
       return "Failed";
     case "succeeded":
       return "Succeeded";
+    case "completed":
+      return "Succeeded";
     case "warning":
       return "Warning";
     case "unavailable":
@@ -50,6 +52,15 @@ export function honestStatus(value?: string): string {
       return "Pending";
     case "creating":
       return "Creating";
+    case "starting":
+      return "Starting";
+    case "stopping":
+      return "Stopping";
+    case "ok":
+    case "healthy":
+      return "Healthy";
+    case "degraded":
+      return "Degraded";
     case "ready":
     case "Ready":
       return "Ready";
@@ -59,6 +70,49 @@ export function honestStatus(value?: string): string {
     default:
       return value && value.length > 0 ? value : "Not reported";
   }
+}
+
+export function formatPercent(ratio?: number): string {
+  if (ratio == null || !Number.isFinite(ratio)) {
+    return "Not reported";
+  }
+  const pct = ratio <= 1.5 ? ratio * 100 : ratio;
+  return `${pct.toFixed(pct >= 10 ? 0 : 1)}%`;
+}
+
+export function formatTempMilliC(value?: number): string {
+  if (value == null || !Number.isFinite(value)) {
+    return "Not reported";
+  }
+  return `${(value / 1000).toFixed(1)} C`;
+}
+
+export function formatMbps(value?: number): string {
+  if (value == null || !Number.isFinite(value)) {
+    return "Not reported";
+  }
+  return `${value} Mbps`;
+}
+
+export function formatNicState(value?: string): string {
+  switch (value) {
+    case "up":
+      return "Up";
+    case "down":
+      return "Down";
+    default:
+      return value && value.length > 0 ? value : "Not reported";
+  }
+}
+
+export function formatMetricValue(name: string, value: number, unit?: string): string {
+  if (unit === "bytes" || name.includes("bytes")) {
+    return formatBytes(value);
+  }
+  if (unit === "ratio" || name.includes("ratio")) {
+    return formatPercent(value);
+  }
+  return String(value);
 }
 
 export function formatWhen(value?: string): string {

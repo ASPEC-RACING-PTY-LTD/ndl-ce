@@ -1,7 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getTimeline, listEvents } from "../api/client";
 import type { EventItem } from "../api/phase2";
+import { ErrorState, LoadingState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
+import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
 import { formatWhen } from "../format";
+import { eventHeadline, payloadFacts } from "../humanize";
 
 type TimelineItem = {
   kind: string;
@@ -16,6 +21,8 @@ type TimelineItem = {
 export function EventsPage() {
   const [items, setItems] = useState<EventItem[] | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -25,8 +32,9 @@ export function EventsPage() {
           setItems(value);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unavailable");
           setItems([]);
         }
       });
@@ -37,6 +45,11 @@ export function EventsPage() {
         }
       })
       .catch(() => undefined);
+    if (typeof EventSource === "undefined") {
+      return () => {
+        cancelled = true;
+      };
+    }
     const stream = new EventSource("/api/v1/events/stream", { withCredentials: true });
     stream.onmessage = (msg) => {
       try {
@@ -58,46 +71,72 @@ export function EventsPage() {
     };
   }, []);
 
+  const filtered = useMemo(() => {
+    const list = items ?? [];
+    const q = filter.trim().toLowerCase();
+    if (!q) {
+      return list;
+    }
+    return list.filter((item) => eventHeadline(item.type, item.payload).toLowerCase().includes(q));
+  }, [filter, items]);
+
   return (
-    <section className="page page-wide" aria-labelledby="events-heading">
-      <header className="page-header">
-        <h1 id="events-heading">Events</h1>
-        <p className="page-kicker">Platform events plus a change timeline from events, tasks, and audit.</p>
-      </header>
-      <article className="panel">
+    <section className="page" aria-labelledby="events-heading">
+      <PageHeader
+        id="events-heading"
+        title="Events"
+        kicker="Platform events plus a change timeline from events, tasks, and audit."
+      />
+      {error ? <ErrorState>{error}</ErrorState> : null}
+      <section className="section">
         <h2>What changed</h2>
         {timeline.length === 0 ? (
           <p>No timeline entries in this window.</p>
         ) : (
-          <ul className="plain-list">
+          <ul className="activity-list">
             {timeline.map((item) => (
               <li key={item.kind + item.id}>
-                <strong>{item.kind}</strong> {item.title}{" "}
+                <span>
+                  <strong>{item.kind}</strong> {item.title}
+                  {item.result ? ` ${item.result}` : ""}
+                  {item.state ? ` ${item.state}` : ""}
+                </span>
                 <span className="muted">{formatWhen(item.created_at)}</span>
-                {item.result ? ` ${item.result}` : ""}
-                {item.state ? ` ${item.state}` : ""}
               </li>
             ))}
           </ul>
         )}
-      </article>
-      <article className="panel">
+      </section>
+      <div className="stack">
         <h2>Live events</h2>
+        <label className="search-field">
+          <Icon name="search" size={14} />
+          <input
+            className="field-input"
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by type"
+            aria-label="Filter events"
+          />
+        </label>
         {items == null ? (
-          <p>Collecting</p>
-        ) : items.length === 0 ? (
-          <p>No events yet.</p>
+          <LoadingState />
         ) : (
-          <ul className="plain-list">
-            {items.map((item) => (
-              <li key={item.id}>
-                <strong>{item.type}</strong>{" "}
-                <span className="muted">{formatWhen(item.created_at)}</span>
-              </li>
-            ))}
-          </ul>
+          <ResourceTable
+            headers={["Event", "Detail", "When"]}
+            empty={<p>No events yet.</p>}
+            rows={filtered.map((item) => {
+              const facts = payloadFacts(item.payload);
+              return [
+                eventHeadline(item.type, item.payload),
+                facts.length ? facts.map((f) => `${f.label} ${f.value}`).join(" · ") : "No extra detail",
+                formatWhen(item.created_at),
+              ];
+            })}
+          />
         )}
-      </article>
+      </div>
     </section>
   );
 }

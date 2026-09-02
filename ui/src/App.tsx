@@ -1,10 +1,12 @@
 import { useEffect } from "react";
+import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MePage } from "./pages/MePage";
 import { NodePage } from "./pages/NodePage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { SetupPage } from "./pages/SetupPage";
 import { NetworkPage } from "./pages/NetworkPage";
 import { StoragePage } from "./pages/StoragePage";
@@ -59,6 +61,127 @@ function Redirect({ to }: { to: string }) {
   return <GateNotice>Redirecting</GateNotice>;
 }
 
+function matchPage(path: string) {
+  if (path === "/me") {
+    return <MePage />;
+  }
+  if (path === "/tasks") {
+    return <TasksPage />;
+  }
+  if (path === "/events" || path === "/node/events") {
+    return <EventsPage />;
+  }
+  if (path === "/alerts") {
+    return <AlertsPage />;
+  }
+  if (path === "/storage") {
+    return <StoragePage />;
+  }
+  if (path === "/network") {
+    return <NetworkPage />;
+  }
+  if (path === "/workloads/new/system-container") {
+    return <WorkloadCreatePage />;
+  }
+  if (path === "/workloads/new/oci") {
+    return <OciCreatePage />;
+  }
+  if (path === "/workloads/new/vm") {
+    return <VmCreatePage />;
+  }
+  if (path === "/workloads/import") {
+    return <ImportVMPage />;
+  }
+  if (path === "/templates") {
+    return <TemplatesPage />;
+  }
+  if (/^\/workloads\/[^/]+\/console$/.test(path)) {
+    return <ConsolePage />;
+  }
+  if (/^\/workloads\/[^/]+\/terminal$/.test(path)) {
+    return <TerminalPage />;
+  }
+  if (/^\/workloads\/[^/]+\/files$/.test(path)) {
+    return <FilesPage />;
+  }
+  if (/^\/workloads\/[^/]+\/snapshots$/.test(path)) {
+    return <SnapshotsPage />;
+  }
+  if (/^\/nodes\/[^/]+\/terminal$/.test(path)) {
+    return <TerminalPage />;
+  }
+  if (/^\/nodes\/[^/]+\/files$/.test(path)) {
+    return <FilesPage />;
+  }
+  if (/^\/workloads\/[^/]+\/gpus$/.test(path)) {
+    return <GpuPage />;
+  }
+  if (path.startsWith("/workloads/") && path !== "/workloads") {
+    return <WorkloadDetailPage />;
+  }
+  if (path === "/workloads") {
+    return <WorkloadsPage />;
+  }
+  if (path === "/stacks") {
+    return <StacksPage />;
+  }
+  if (path.startsWith("/stacks/")) {
+    return <StackDetailPage />;
+  }
+  if (path === "/node" || path.startsWith("/node/")) {
+    return <NodePage />;
+  }
+  if (path === "/settings/cluster") {
+    return <ClusterPage />;
+  }
+  if (path === "/settings/features") {
+    return <FeaturesPage />;
+  }
+  if (path === "/settings/kubernetes") {
+    return <KubernetesPage />;
+  }
+  if (path === "/store") {
+    return <StorePage />;
+  }
+  if (path === "/automation") {
+    return <AutomationPage />;
+  }
+  if (path === "/ask") {
+    return <AskPage />;
+  }
+  if (path === "/plans") {
+    return <PlansPage />;
+  }
+  if (path === "/settings/license") {
+    return <LicensePage />;
+  }
+  if (path === "/docs") {
+    return <DocsPage />;
+  }
+  if (path === "/settings/certificates") {
+    return <CertificatePage />;
+  }
+  if (path === "/settings/updates") {
+    return <UpdatesPage />;
+  }
+  if (path === "/settings/mfa") {
+    return <MFAPage />;
+  }
+  if (path === "/groups") {
+    return <GroupsPage />;
+  }
+  if (path === "/audit") {
+    return <AuditPage />;
+  }
+  if (path === "/backups") {
+    return <BackupsPage />;
+  }
+  if (path === "/") {
+    return <DashboardPage />;
+  }
+  return <NotFoundPage />;
+}
+
 function AppRoutes() {
   const path = usePath();
   const session = useSession();
@@ -70,7 +193,8 @@ function AppRoutes() {
   if (session.status === "error") {
     return (
       <div className="auth-screen">
-        <section className="panel auth-panel" aria-labelledby="session-error-heading">
+        <AuthBrand />
+        <main className="panel auth-panel" aria-labelledby="session-error-heading">
           <h1 id="session-error-heading">Cannot reach the appliance</h1>
           <p className="banner banner-error" role="alert">
             {session.message}
@@ -78,7 +202,7 @@ function AppRoutes() {
           <button className="btn btn-primary" type="button" onClick={() => void session.refresh()}>
             Try again
           </button>
-        </section>
+        </main>
       </div>
     );
   }
@@ -101,86 +225,7 @@ function AppRoutes() {
     return <Redirect to={session.setupOpen ? "/setup" : "/login"} />;
   }
 
-  let page = <DashboardPage />;
-  if (path === "/me") {
-    page = <MePage />;
-  } else if (path === "/tasks") {
-    page = <TasksPage />;
-  } else if (path === "/events" || path === "/node/events") {
-    page = <EventsPage />;
-  } else if (path === "/alerts") {
-    page = <AlertsPage />;
-  } else if (path === "/storage") {
-    page = <StoragePage />;
-  } else if (path === "/network") {
-    page = <NetworkPage />;
-  } else if (path === "/workloads/new/system-container") {
-    page = <WorkloadCreatePage />;
-  } else if (path === "/workloads/new/oci") {
-    page = <OciCreatePage />;
-  } else if (path === "/workloads/new/vm") {
-    page = <VmCreatePage />;
-  } else if (path === "/workloads/import") {
-    page = <ImportVMPage />;
-  } else if (path === "/templates") {
-    page = <TemplatesPage />;
-  } else if (/^\/workloads\/[^/]+\/console$/.test(path)) {
-    page = <ConsolePage />;
-  } else if (/^\/workloads\/[^/]+\/terminal$/.test(path)) {
-    page = <TerminalPage />;
-  } else if (/^\/workloads\/[^/]+\/files$/.test(path)) {
-    page = <FilesPage />;
-  } else if (/^\/workloads\/[^/]+\/snapshots$/.test(path)) {
-    page = <SnapshotsPage />;
-  } else if (/^\/nodes\/[^/]+\/terminal$/.test(path)) {
-    page = <TerminalPage />;
-  } else if (/^\/nodes\/[^/]+\/files$/.test(path)) {
-    page = <FilesPage />;
-  } else if (/^\/workloads\/[^/]+\/gpus$/.test(path)) {
-    page = <GpuPage />;
-  } else if (path.startsWith("/workloads/") && path !== "/workloads") {
-    page = <WorkloadDetailPage />;
-  } else if (path === "/workloads") {
-    page = <WorkloadsPage />;
-  } else if (path === "/stacks") {
-    page = <StacksPage />;
-  } else if (path.startsWith("/stacks/")) {
-    page = <StackDetailPage />;
-  } else if (path === "/node" || path.startsWith("/node/")) {
-    page = <NodePage />;
-  } else if (path === "/settings/cluster") {
-    page = <ClusterPage />;
-  } else if (path === "/settings/features") {
-    page = <FeaturesPage />;
-  } else if (path === "/settings/kubernetes") {
-    page = <KubernetesPage />;
-  } else if (path === "/store") {
-    page = <StorePage />;
-  } else if (path === "/automation") {
-    page = <AutomationPage />;
-  } else if (path === "/ask") {
-    page = <AskPage />;
-  } else if (path === "/plans") {
-    page = <PlansPage />;
-  } else if (path === "/settings/license") {
-    page = <LicensePage />;
-  } else if (path === "/docs") {
-    page = <DocsPage />;
-  } else if (path === "/settings/certificates") {
-    page = <CertificatePage />;
-  } else if (path === "/settings/updates") {
-    page = <UpdatesPage />;
-  } else if (path === "/settings/mfa") {
-    page = <MFAPage />;
-  } else if (path === "/groups") {
-    page = <GroupsPage />;
-  } else if (path === "/audit") {
-    page = <AuditPage />;
-  } else if (path === "/backups") {
-    page = <BackupsPage />;
-  }
-
-  return <Shell>{page}</Shell>;
+  return <Shell>{matchPage(path)}</Shell>;
 }
 
 export function App() {

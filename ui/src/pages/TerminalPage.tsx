@@ -3,7 +3,9 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { createTerminalSession } from "../api/client";
+import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
+import { PageHeader } from "../components/PageHeader";
 import { workloadGuestIOReason } from "../guestIO";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
@@ -164,8 +166,8 @@ export function TerminalPage() {
 
   if (unsupported) {
     return (
-      <section className="page">
-        <h1>Terminal</h1>
+      <section className="page" aria-labelledby="term-heading">
+        <PageHeader id="term-heading" title="Terminal" />
         <p className="banner banner-warn" role="status">
           {unsupported}
         </p>
@@ -176,8 +178,8 @@ export function TerminalPage() {
 
   if (!canOpen) {
     return (
-      <section className="page">
-        <h1>Terminal</h1>
+      <section className="page" aria-labelledby="term-heading">
+        <PageHeader id="term-heading" title="Terminal" />
         <p className="banner banner-error" role="alert">
           {host ? "Host terminal requires admin." : "Terminal requires operator or admin."}
         </p>
@@ -190,12 +192,7 @@ export function TerminalPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="term-heading">
-      <header className="page-header">
-        <h1 id="term-heading">Terminal</h1>
-        <p className="page-kicker">
-          {status} · cwd {cwd}
-        </p>
-      </header>
+      <PageHeader id="term-heading" title="Terminal" kicker={`${status} · cwd ${cwd}`} />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
@@ -205,11 +202,12 @@ export function TerminalPage() {
         <Link href={backHref}>Back</Link>
         <Link href={filesHref}>Open Files</Link>
       </nav>
-      <div className="btn-row">
-        <button className="btn" type="button" onClick={() => setTicketKey((n) => n + 1)}>
+      <div className="btn-row is-flush">
+        <button className="btn btn-sm btn-secondary" type="button" onClick={() => setTicketKey((n) => n + 1)}>
           Reconnect
         </button>
-        <button className="btn" type="button" onClick={() => navigate(`${filesHref}?path=${encodeURIComponent(cwd)}`)}>
+        <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate(`${filesHref}?path=${encodeURIComponent(cwd)}`)}>
+          <Icon name="files" size={14} />
           Open Files here
         </button>
       </div>

@@ -1,20 +1,34 @@
 import { useEffect, useState } from "react";
-import { attachWorkloadUSB, createTemplate, exportWorkload, getWorkload, getWorkloadGuest, getWorkloadLogs, listNodeUSB, migrateWorkload, patchWorkload, workloadAction } from "../api/client";
+import {
+  attachWorkloadUSB,
+  createTemplate,
+  exportWorkload,
+  getWorkload,
+  getWorkloadGuest,
+  getWorkloadLogs,
+  listNodeUSB,
+  migrateWorkload,
+  patchWorkload,
+  workloadAction,
+} from "../api/client";
 import type { USBDeviceRow, WorkloadGuest } from "../api/client";
 import type { Workload } from "../api/phase5";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ErrorState, LoadingState } from "../components/EmptyState";
 import { Field } from "../components/Field";
+import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
+import { PageHeader } from "../components/PageHeader";
+import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes, honestStatus } from "../format";
+import { kindLabel } from "../labels";
+import { canMutate } from "../rbac";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
 
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
-
 function workloadIDFromPath(): string {
   const parts = currentPath().split("/").filter(Boolean);
-  return parts[0] === "workloads" ? parts[1] ?? "" : "";
+  return parts[0] === "workloads" ? (parts[1] ?? "") : "";
 }
 
 export function WorkloadDetailPage() {
@@ -36,6 +50,7 @@ export function WorkloadDetailPage() {
   const [logStatus, setLogStatus] = useState<string>("");
   const [logMessage, setLogMessage] = useState<string>("");
   const [showLogs, setShowLogs] = useState(false);
+  const [confirm, setConfirm] = useState<"delete" | null>(null);
 
   async function reload() {
     const w = await getWorkload(id);
@@ -84,12 +99,22 @@ export function WorkloadDetailPage() {
       if (action === "delete" && item?.kind === "vm") {
         if (!window.confirm("Delete this VM configuration? Attached volumes are preserved.")) {
           setBusy(false);
+          setConfirm(null);
           return;
         }
       }
-      const next = await workloadAction(id, action, undefined, action === "delete" && item?.kind === "vm" ? "delete" : undefined);
+      const next = await workloadAction(
+        id,
+        action,
+        undefined,
+        action === "delete" && item?.kind === "vm" ? "delete" : undefined,
+      );
       if (action === "clone") {
         navigate(`/workloads/${next.id}`);
+        return;
+      }
+      if (action === "delete") {
+        navigate("/workloads");
         return;
       }
       await reload();
@@ -97,6 +122,7 @@ export function WorkloadDetailPage() {
       setError(err instanceof Error ? err.message : "Action failed");
     } finally {
       setBusy(false);
+      setConfirm(null);
     }
   }
 
@@ -138,31 +164,62 @@ export function WorkloadDetailPage() {
     return (
       <section className="page">
         <h1>Workload</h1>
-        {error ? (
-          <p className="banner banner-error" role="alert">
-            {error}
-          </p>
-        ) : (
-          <p>Collecting</p>
-        )}
+        {error ? <ErrorState>{error}</ErrorState> : <LoadingState />}
       </section>
     );
   }
 
   const ipv4 = item.nics?.[0]?.ipv4;
   const mac = item.nics?.[0]?.mac;
+  const guestOk = guest?.nodal_ga?.state === "ok";
 
   return (
     <section className="page page-wide" aria-labelledby="workload-heading">
-      <header className="page-header">
-        <h1 id="workload-heading">{item.name}</h1>
-        <p className="page-kicker">{item.kind}</p>
-      </header>
+      <PageHeader
+        id="workload-heading"
+        title={item.name}
+        kicker={
+          <>
+            {kindLabel(item.kind)} · <StatusBadge status={item.status} />
+          </>
+        }
+        actions={
+          mutate ? (
+            <div className="btn-row is-flush">
+              <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => void onAction("start")}>
+                <Icon name="start" size={14} />
+                Start
+              </button>
+              <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => void onAction("stop")}>
+                <Icon name="stop" size={14} />
+                Stop
+              </button>
+              <button className="btn btn-sm btn-ghost" type="button" disabled={busy} onClick={() => void onAction("restart")}>
+                <Icon name="restart" size={14} />
+                Restart
+              </button>
+              <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={() => setConfirm("delete")}>
+                <Icon name="delete" size={14} />
+                Delete
+              </button>
+            </div>
+          ) : null
+        }
+      />
       {item.kind === "system-container" ? (
         <nav className="subnav" aria-label="Workload IO">
-          <Link href={`/workloads/${item.id}/terminal`}>Terminal</Link>
-          <Link href={`/workloads/${item.id}/files`}>Files</Link>
-          <Link href={`/workloads/${item.id}/snapshots`}>Snapshots</Link>
+          <Link href={`/workloads/${item.id}/terminal`}>
+            <Icon name="terminal" size={14} />
+            Terminal
+          </Link>
+          <Link href={`/workloads/${item.id}/files`}>
+            <Icon name="files" size={14} />
+            Files
+          </Link>
+          <Link href={`/workloads/${item.id}/snapshots`}>
+            <Icon name="snapshots" size={14} />
+            Snapshots
+          </Link>
           {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
         </nav>
       ) : item.kind === "oci" ? (
@@ -176,7 +233,7 @@ export function WorkloadDetailPage() {
         <>
           <nav className="subnav" aria-label="VM IO">
             <Link href={`/workloads/${item.id}/console`}>Console</Link>
-            {guest?.nodal_ga.state === "ok" ? (
+            {guestOk ? (
               <>
                 <Link href={`/workloads/${item.id}/terminal`}>Terminal</Link>
                 <Link href={`/workloads/${item.id}/files`}>Files</Link>
@@ -190,9 +247,10 @@ export function WorkloadDetailPage() {
             <Link href={`/workloads/${item.id}/snapshots`}>Snapshots</Link>
             {mutate ? <Link href={`/workloads/${item.id}/gpus`}>GPUs</Link> : null}
           </nav>
-          {guest?.nodal_ga.state === "ok" ? null : (
+          {guestOk ? null : (
             <p className="banner banner-warn" role="status">
-              {guest?.nodal_ga.reason || "VM Terminal and Files stay disabled until the Guest Agent is installed and connected."}
+              {guest?.nodal_ga?.reason ||
+                "VM Terminal and Files stay disabled until the Guest Agent is installed and connected."}
             </p>
           )}
           <article className="panel">
@@ -200,11 +258,18 @@ export function WorkloadDetailPage() {
             <dl className="definition-list">
               <div>
                 <dt>qemu-ga</dt>
-                <dd>{guest?.qemu_ga.state ?? "Collecting"}{guest?.qemu_ga.reason ? ` (${guest.qemu_ga.reason})` : ""}</dd>
+                <dd>
+                  {guest?.qemu_ga.state ?? "Collecting"}
+                  {guest?.qemu_ga.reason ? ` (${guest.qemu_ga.reason})` : ""}
+                </dd>
               </div>
               <div>
                 <dt>No-dal Guest Agent</dt>
-                <dd>{guest?.nodal_ga.state ?? "Collecting"}{guest?.nodal_ga.version ? ` ${guest.nodal_ga.version}` : ""}{guest?.nodal_ga.reason ? ` (${guest.nodal_ga.reason})` : ""}</dd>
+                <dd>
+                  {guest?.nodal_ga.state ?? "Collecting"}
+                  {guest?.nodal_ga.version ? ` ${guest.nodal_ga.version}` : ""}
+                  {guest?.nodal_ga.reason ? ` (${guest.nodal_ga.reason})` : ""}
+                </dd>
               </div>
               <div>
                 <dt>Guest OS</dt>
@@ -218,8 +283,14 @@ export function WorkloadDetailPage() {
             {guest?.nodal_ga.state === "not_installed" || guest?.nodal_ga.state === "unavailable" || !guest ? (
               <div>
                 <h3>Install inside the guest</h3>
-                <p>{guest?.install?.linux || "Install the ndl-guest package inside the Linux guest and enable ndl-guest.service. The virtio-serial channel org.nodal.guest.0 is attached to every No-dal VM."}</p>
-                <p>{guest?.install?.windows || "Install ndl-guest.exe inside Windows guests for shutdown, IP, and Files. PTY stays on Console."}</p>
+                <p>
+                  {guest?.install?.linux ||
+                    "Install the ndl-guest package inside the Linux guest and enable ndl-guest.service. The virtio-serial channel org.nodal.guest.0 is attached to every No-dal VM."}
+                </p>
+                <p>
+                  {guest?.install?.windows ||
+                    "Install ndl-guest.exe inside Windows guests for shutdown, IP, and Files. PTY stays on Console."}
+                </p>
                 <pre className="code-block">sudo apt install ndl-guest && sudo systemctl enable --now ndl-guest</pre>
               </div>
             ) : null}
@@ -255,17 +326,15 @@ export function WorkloadDetailPage() {
           )}
         </article>
       ) : null}
-      {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <article className="panel">
+      {error ? <ErrorState>{error}</ErrorState> : null}
+      <section className="section">
         <h2>Summary</h2>
-        <dl className="definition-list">
+        <dl className="definition-list compact">
           <div>
             <dt>Status</dt>
-            <dd>{honestStatus(item.status)}</dd>
+            <dd>
+              <StatusBadge status={item.status} />
+            </dd>
           </div>
           {item.kind === "oci" ? (
             <div>
@@ -347,20 +416,11 @@ export function WorkloadDetailPage() {
             <dd>{item.migrate_ready ? "yes" : "no"}</dd>
           </div>
         </dl>
-      </article>
+      </section>
       {mutate ? (
         <article className="panel">
           <h2>Lifecycle</h2>
           <div className="btn-row">
-            <button className="btn" type="button" disabled={busy} onClick={() => void onAction("start")}>
-              Start
-            </button>
-            <button className="btn" type="button" disabled={busy} onClick={() => void onAction("stop")}>
-              Stop
-            </button>
-            <button className="btn" type="button" disabled={busy} onClick={() => void onAction("restart")}>
-              Restart
-            </button>
             {item.kind === "vm" ? (
               <>
                 <button className="btn" type="button" disabled={busy} onClick={() => void onAction("force-stop")}>
@@ -404,9 +464,6 @@ export function WorkloadDetailPage() {
                 Clone
               </button>
             )}
-            <button className="btn" type="button" disabled={busy} onClick={() => void onAction("delete")}>
-              Delete
-            </button>
           </div>
         </article>
       ) : null}
@@ -414,17 +471,25 @@ export function WorkloadDetailPage() {
         <article className="panel">
           <h2>Migrate</h2>
           <p className="page-kicker">
-            Live is VM-only over QMP. A failed live migrate leaves the source running. CT and OCI use offline. Dest agent is required; this page does not start a second copy on the current node.
+            Live is VM-only over QMP. A failed live migrate leaves the source running. CT and OCI use offline. Dest
+            agent is required; this page does not start a second copy on the current node.
           </p>
           <Field id="wl-dest" label="Dest node id" value={destNode} onChange={(e) => setDestNode(e.target.value)} />
           {item.kind === "vm" ? (
             <fieldset className="field">
               <legend>Mode</legend>
               <label>
-                <input type="radio" name="migrate-mode" checked={migrateMode === "live"} onChange={() => setMigrateMode("live")} /> Live
+                <input type="radio" name="migrate-mode" checked={migrateMode === "live"} onChange={() => setMigrateMode("live")} />{" "}
+                Live
               </label>
               <label>
-                <input type="radio" name="migrate-mode" checked={migrateMode === "offline"} onChange={() => setMigrateMode("offline")} /> Offline
+                <input
+                  type="radio"
+                  name="migrate-mode"
+                  checked={migrateMode === "offline"}
+                  onChange={() => setMigrateMode("offline")}
+                />{" "}
+                Offline
               </label>
             </fieldset>
           ) : (
@@ -473,15 +538,17 @@ export function WorkloadDetailPage() {
       {mutate ? (
         <article className="panel">
           <h2>Spec</h2>
-          <Field id="wl-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
-          <Field
-            id="wl-mem"
-            label="Memory (MiB)"
-            type="number"
-            min={64}
-            value={memoryMiB}
-            onChange={(e) => setMemoryMiB(e.target.value)}
-          />
+          <div className="field-row">
+            <Field id="wl-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
+            <Field
+              id="wl-mem"
+              label="Memory (MiB)"
+              type="number"
+              min={64}
+              value={memoryMiB}
+              onChange={(e) => setMemoryMiB(e.target.value)}
+            />
+          </div>
           <div className="btn-row">
             <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void onSave()}>
               Save spec
@@ -489,6 +556,16 @@ export function WorkloadDetailPage() {
           </div>
         </article>
       ) : null}
+      <ConfirmDialog
+        open={confirm === "delete"}
+        title="Delete workload"
+        confirmLabel="Delete"
+        danger
+        onClose={() => setConfirm(null)}
+        onConfirm={() => void onAction("delete")}
+      >
+        <p>Delete {item.name}? This cannot be undone.</p>
+      </ConfirmDialog>
     </section>
   );
 }

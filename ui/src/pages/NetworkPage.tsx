@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { applyNetwork, applyPolicy, createBond, createNetwork, createPolicy, createVLAN, listNetworks } from "../api/client";
 import type { ConfirmRequired, Network, NetworkBond, NetworkNIC, NetworkPolicy, NetworkVLAN } from "../api/phase4";
 import { Field } from "../components/Field";
+import { PageHeader } from "../components/PageHeader";
 import { useSession } from "../session";
 
 function canMutate(roles: string[] | undefined): boolean {
@@ -185,13 +186,11 @@ export function NetworkPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="network-heading">
-      <header className="page-header">
-        <h1 id="network-heading">Network</h1>
-        <p className="page-kicker">
-          Isolated, isolated-NAT, and LAN-bridge networks. VLAN access ports, bonds, and guest policies
-          are optional. Isolated is the safe default. Policies cannot drop management INPUT.
-        </p>
-      </header>
+      <PageHeader
+        id="network-heading"
+        title="Network"
+        kicker="Isolated, isolated-NAT, and LAN-bridge networks. VLAN access ports, bonds, and guest policies are optional. Isolated is the safe default. Policies cannot drop management INPUT."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

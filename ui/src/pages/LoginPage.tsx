@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { ApiError, login, verifyMfa } from "../api/client";
 import type { MFAChallengeResponse } from "../generated/openapi";
+import { AuthBrand } from "../components/AuthBrand";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { navigate } from "../router";
@@ -55,11 +56,8 @@ export function LoginPage() {
 
   return (
     <div className="auth-screen">
-      <header className="auth-brand">
-        <p className="wordmark">No-dal</p>
-        <p className="auth-edition">Community Edition. License activation is not required.</p>
-      </header>
-      <section className="panel auth-panel" aria-labelledby="login-heading">
+      <AuthBrand />
+      <main className="panel auth-panel" aria-labelledby="login-heading">
         <h1 id="login-heading">{challenge ? "Authenticator" : "Sign in"}</h1>
         <p className="lede">
           {challenge
@@ -116,7 +114,7 @@ export function LoginPage() {
             First-time appliance? <Link href="/setup">Create the first administrator</Link>
           </p>
         ) : null}
-      </section>
+      </main>
     </div>
   );
 }

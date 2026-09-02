@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { GetHealthPath } from "./generated/openapi";
@@ -101,8 +101,14 @@ const defaultRoutes = {
 };
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
   window.history.replaceState({}, "", "/");
+  try {
+    localStorage.clear();
+  } catch {
+    // jsdom may not expose Storage after global stubs are restored.
+  }
 });
 
 describe("App", () => {
@@ -176,8 +182,10 @@ describe("App", () => {
     expect(await screen.findByText(/debian gnu\/linux 13/i)).toBeVisible();
     expect(screen.getByText(/none detected/i)).toBeVisible();
     expect(screen.getAllByText(/collecting data/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/community edition\. license activation is not required\./i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /log out/i })).toBeVisible();
+    expect(screen.getByText(/^CE$/)).toBeVisible();
+    expect(screen.getByRole("navigation", { name: /appliance/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^admin$/i }));
+    expect(screen.getByRole("menuitem", { name: /log out/i })).toBeVisible();
     expect(screen.queryByText(/ci works/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/12 running/i)).not.toBeInTheDocument();

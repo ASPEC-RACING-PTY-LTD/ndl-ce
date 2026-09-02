@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiError, patchMe } from "../api/client";
+import { PageHeader } from "../components/PageHeader";
 import { useSession } from "../session";
 import { uxLevel, type UXLevel } from "../ux";
 
@@ -48,42 +49,41 @@ export function MePage() {
   }
 
   return (
-    <section className="page" aria-labelledby="me-heading">
-      <header className="page-header">
-        <h1 id="me-heading">Account</h1>
-        <p className="page-kicker">Identity for the current session</p>
-      </header>
-      <dl className="panel definition-list">
-        <div>
-          <dt>Username</dt>
-          <dd>{user.username}</dd>
-        </div>
-        <div>
-          <dt>User ID</dt>
-          <dd>
-            <code>{user.user_id}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Roles</dt>
-          <dd>{user.roles.length > 0 ? user.roles.join(", ") : "None"}</dd>
-        </div>
-        <div>
-          <dt>Edition</dt>
-          <dd>{user.edition}</dd>
-        </div>
-        {user.cluster_id ? (
+    <section className="page form-narrow" aria-labelledby="me-heading">
+      <PageHeader id="me-heading" title="Account" kicker="Identity for the current session" />
+      <section className="section">
+        <dl className="definition-list">
           <div>
-            <dt>Cluster ID</dt>
+            <dt>Username</dt>
+            <dd>{user.username}</dd>
+          </div>
+          <div>
+            <dt>User ID</dt>
             <dd>
-              <code>{user.cluster_id}</code>
+              <code>{user.user_id}</code>
             </dd>
           </div>
-        ) : null}
-      </dl>
-      <article className="panel">
+          <div>
+            <dt>Roles</dt>
+            <dd>{user.roles.length > 0 ? user.roles.join(", ") : "None"}</dd>
+          </div>
+          <div>
+            <dt>Edition</dt>
+            <dd>{user.edition}</dd>
+          </div>
+          {user.cluster_id ? (
+            <div>
+              <dt>Cluster ID</dt>
+              <dd>
+                <code>{user.cluster_id}</code>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </section>
+      <section className="section stack">
         <h2>Operator UX</h2>
-        <p className="field-hint">
+        <p className="lede">
           Guided, Advanced, and Expert change how forms are shown. They never change authorization.
         </p>
         {error ? (
@@ -110,7 +110,7 @@ export function MePage() {
           ))}
         </fieldset>
         {level === "expert" && !alreadyAcked ? (
-          <label className="field-label">
+          <label className="check-row">
             <input type="checkbox" checked={ack} onChange={(event) => setAck(event.target.checked)} /> I understand
             Expert mode does not grant extra permissions and only shows more of the same APIs.
           </label>
@@ -121,7 +121,7 @@ export function MePage() {
             Save UX preferences
           </button>
         </div>
-      </article>
+      </section>
     </section>
   );
 }

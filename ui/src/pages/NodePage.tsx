@@ -15,6 +15,7 @@ import type { Capability, HardwareResponse, MetricsResponse, NodeSummary } from 
 import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
 import { Field } from "../components/Field";
+import { PageHeader } from "../components/PageHeader";
 import { GpuPage } from "./GpuPage";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { usePath } from "../router";
@@ -96,13 +97,11 @@ export function NodePage() {
 
   return (
     <section className="page page-wide" aria-labelledby="node-heading">
-      <header className="page-header">
-        <h1 id="node-heading">Node</h1>
-        <p className="page-kicker">
-          {nodes.host_os || "Host OS not reported"} · {honestStatus(nodes.status)}
-          {nodes.stale ? " (stale)" : ""}
-        </p>
-      </header>
+      <PageHeader
+        id="node-heading"
+        title="Node"
+        kicker={`${nodes.host_os || "Host OS not reported"} · ${honestStatus(nodes.status)}${nodes.stale ? " (stale)" : ""}`}
+      />
       <nav className="subnav" aria-label="Node sections">
         <Link href="/node" aria-current={tab === "summary" ? "page" : undefined}>
           Summary
