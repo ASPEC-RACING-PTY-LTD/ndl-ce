@@ -243,7 +243,11 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 	if req.DesiredPower == "running" {
 		if err := s.ensureVMStorageAvailable(r.Context(), p.User.ClusterID, row.ID); err != nil {
 			_ = s.Store.UpdateWorkloadObserved(r.Context(), appdb.Workload{ID: row.ID, Status: qemu.StatusUnavailable, Reason: err.Error()})
-		} else if _, err := s.VM.LifecycleVM(r.Context(), row.ID, "start", spec.Autostart); err != nil {
+			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		if _, err := s.VM.LifecycleVM(r.Context(), row.ID, "start", spec.Autostart); err != nil {
 			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return

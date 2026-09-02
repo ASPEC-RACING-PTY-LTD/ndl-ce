@@ -216,6 +216,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		CPUs: req.CPUs, MemoryBytes: req.MemoryBytes, VolumeID: ids.VolumeID,
 		RootfsPath: rootfs, NetworkID: netw.ID, BridgeName: netw.BridgeName,
 		MAC: mac, Privileged: req.Privileged, UIDMap: lxc.DefaultUIDMap, GIDMap: lxc.DefaultGIDMap,
+		NoStart: req.DesiredPower == "stopped",
 	})
 	if err != nil {
 		s.finishOp(r.Context(), op, "failed", mustCreateMsg(ids), 0)
@@ -509,7 +510,12 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if s.Workloads != nil {
+	if row.Kind == oci.KindOCI {
+		if err := s.applyOCIDesiredPower(r.Context(), next); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+	} else if row.Kind == lxc.KindSystemContainer && s.Workloads != nil {
 		disks, _ := s.Store.ListWorkloadDisks(r.Context(), p.User.ClusterID, row.ID)
 		nics, _ := s.Store.ListWorkloadNICs(r.Context(), p.User.ClusterID, row.ID)
 		rootfs := ""
@@ -534,16 +540,26 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 				bridge = netw.BridgeName
 			}
 		}
-		_, _ = s.Workloads.CreateCT(r.Context(), lxc.Spec{
+		if _, err := s.Workloads.CreateCT(r.Context(), lxc.Spec{
 			WorkloadID: row.ID, Name: next.Name, ImagePin: next.ImagePin, CPUs: next.CPUs,
 			MemoryBytes: next.MemoryBytes, VolumeID: volID, RootfsPath: rootfs, NetworkID: netID,
 			BridgeName: bridge, MAC: mac, Privileged: next.Privileged, UIDMap: next.UIDMap, GIDMap: next.GIDMap,
 			GPUDevices: s.gpuDeviceNodes(r.Context(), p.User.ClusterID, row.ID),
-		})
+			NoStart:    next.DesiredPower == "stopped",
+		}); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
 		if next.DesiredPower == "stopped" {
-			_, _ = s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "stop"})
+			if _, err := s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "stop"}); err != nil {
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
 		} else if next.DesiredPower == "running" {
-			_, _ = s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "start"})
+			if _, err := s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "start"}); err != nil {
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
 		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "workload.update", "ok", row.ID)
@@ -553,6 +569,20 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		updated = &next
 	}
 	writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *updated))
+}
+
+func (s *Server) applyOCIDesiredPower(ctx context.Context, row appdb.Workload) error {
+	action := ""
+	switch row.DesiredPower {
+	case "stopped":
+		action = "stop"
+	case "running":
+		action = "start"
+	default:
+		return nil
+	}
+	_, err := s.ociRPC().LifecycleOCI(ctx, oci.LifecycleRequest{WorkloadID: row.ID, Action: action})
+	return err
 }
 
 func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.Workload, name string) (lxc.LifecycleRequest, error) {

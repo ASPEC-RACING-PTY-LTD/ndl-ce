@@ -13,22 +13,26 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
 type fakeWorkloads struct {
-	created lxc.Result
-	life    lxc.Result
-	obs     lxc.Observation
-	err     error
-	creates int
-	vols    []string
+	created  lxc.Result
+	life     lxc.Result
+	obs      lxc.Observation
+	err      error
+	creates  int
+	vols     []string
+	lastSpec lxc.Spec
+	lastLife lxc.LifecycleRequest
 }
 
 func (f *fakeWorkloads) CreateCT(_ context.Context, spec lxc.Spec) (lxc.Result, error) {
 	f.creates++
+	f.lastSpec = spec
 	f.vols = append(f.vols, spec.VolumeID)
 	res := f.created
 	if res.WorkloadID == "" {
@@ -41,13 +45,18 @@ func (f *fakeWorkloads) CreateCT(_ context.Context, spec lxc.Spec) (lxc.Result, 
 		res.MAC = spec.MAC
 	}
 	if res.Status == "" {
-		res.Status = lxc.StatusRunning
+		if spec.NoStart {
+			res.Status = lxc.StatusStopped
+		} else {
+			res.Status = lxc.StatusRunning
+		}
 	}
 	res.ImageVerified = true
 	return res, f.err
 }
 
 func (f *fakeWorkloads) LifecycleCT(_ context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
+	f.lastLife = req
 	res := f.life
 	if res.WorkloadID == "" {
 		if req.Action == "clone" {
@@ -297,5 +306,108 @@ func TestCTCreateRejectsEscapingRootfsLocator(t *testing.T) {
 	}
 	if fw.creates != 0 {
 		t.Fatal("agent must not receive an escaped rootfs")
+	}
+}
+
+func TestCTCreateStoppedDoesNotStart(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"alpine-stopped","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	if !fw.lastSpec.NoStart {
+		t.Fatal("stopped create must pass NoStart")
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created["desired_power"] != "stopped" || created["status"] != lxc.StatusStopped {
+		t.Fatalf("stopped create %+v", created)
+	}
+}
+
+func TestCTPatchFailsClosedWhenApplyFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	id := uuid.NewString()
+	_ = mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID,
+		Name: "ct", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped,
+		ImagePin: "alpine/3.21/amd64/default", DesiredPower: "stopped",
+	})
+	s.Workloads = &fakeWorkloads{err: errBadRequest("agent apply failed")}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("patch apply %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestOCIPatchDoesNotCreateCT(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	id := uuid.NewString()
+	_ = mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID,
+		Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped, DesiredPower: "stopped",
+		ImagePin: "busybox:1",
+	})
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.OCI = &fakeOCI{runtime: &oci.FakeRuntime{}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2,"desired_power":"running"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("oci patch %d %s", res.StatusCode, raw)
+	}
+	if fw.creates != 0 {
+		t.Fatal("OCI patch must not call CreateCT")
 	}
 }

@@ -359,6 +359,55 @@ func TestVMConsoleTicketAndStorageUnavailable(t *testing.T) {
 	_ = blocked.Body.Close()
 }
 
+func TestVMCreateRunningRefusesUnavailableStorage(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &poisonPrepVM{mem: mem, clusterID: cluster.ID}
+	s.VM = vm
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","network_id":"` + netID + `","pool_id":"` + poolID + `","desired_power":"running"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("create-and-start unavailable %d %s", res.StatusCode, raw)
+	}
+	if len(vm.actions) != 0 {
+		t.Fatalf("must not start with unavailable storage: %v", vm.actions)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(wls) != 1 || wls[0].Status != qemu.StatusUnavailable {
+		t.Fatalf("workload must remain unavailable, got %+v", wls)
+	}
+}
+
+type poisonPrepVM struct {
+	fakeVM
+	mem       *appdb.Memory
+	clusterID string
+}
+
+func (p *poisonPrepVM) PrepareVM(ctx context.Context, req agentrpc.VMPrepareRequest) (qemu.Result, error) {
+	vols, _ := p.mem.ListVolumes(ctx, p.clusterID, "")
+	for _, v := range vols {
+		v.Status = storage.StatusUnavailable
+		_ = p.mem.UpdateVolumeObserved(ctx, v)
+	}
+	return p.fakeVM.PrepareVM(ctx, req)
+}
+
 func TestVMPatchRequiresStopAndMACPersist(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

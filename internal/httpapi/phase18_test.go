@@ -119,6 +119,12 @@ func TestPhase18CloneNewUUIDsAndMAC(t *testing.T) {
 	if len(volsAfter) <= len(volsBefore) {
 		t.Fatal("clone must create a new volume")
 	}
+	if cloned["desired_power"] != "running" {
+		t.Fatalf("clone desired_power %v", cloned["desired_power"])
+	}
+	if cloned["status"] != qemu.StatusRunning {
+		t.Fatalf("clone status %v", cloned["status"])
+	}
 }
 
 func TestPhase18ImportRollbackAndRBAC(t *testing.T) {

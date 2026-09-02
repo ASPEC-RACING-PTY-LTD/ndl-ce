@@ -155,9 +155,17 @@ func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Wor
 		s.rollbackAdoptedVM(ctx, clusterID, newID, newVolID, dest)
 		return nil, err
 	}
+	if err := s.ensureVMStorageAvailable(ctx, clusterID, newID); err != nil {
+		_ = s.Store.UpdateWorkloadObserved(ctx, appdb.Workload{ID: newID, Status: qemu.StatusUnavailable, Reason: err.Error()})
+		return nil, err
+	}
 	if _, err := s.VM.LifecycleVM(ctx, newID, "start", spec.Autostart); err != nil {
 		return nil, err
 	}
+	_ = s.Store.UpdateWorkloadSpec(ctx, appdb.Workload{
+		ID: newID, CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, DesiredPower: "running",
+		SpecJSON: vmspec.MustJSON(spec), Autostart: spec.Autostart, Firmware: spec.Firmware,
+	})
 	_ = s.Store.UpdateWorkloadObserved(ctx, appdb.Workload{ID: newID, Status: qemu.StatusRunning})
 	cloned, _ := s.Store.GetWorkload(ctx, clusterID, newID)
 	if cloned == nil {
