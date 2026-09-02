@@ -100,6 +100,14 @@ if (!existsSync("migrations/0034_phase37.sql")) {
     errors.push("phase 37 migration must add package signatures and scan results");
   }
 }
+if (!existsSync("migrations/0035_phase39.sql")) {
+  errors.push("missing migrations/0035_phase39.sql distributed pools and OSDs");
+} else {
+  const distSql = readFileSync("migrations/0035_phase39.sql", "utf8");
+  if (!distSql.includes("distributed_pools") || !distSql.includes("distributed_osds") || !distSql.includes("secrets.distributed_credentials")) {
+    errors.push("phase 39 migration must add distributed pools, OSD rows, and secret keys");
+  }
+}
 if (!existsSync("store/official/sample-web.yaml")) {
   errors.push("missing store/official/sample-web.yaml official sample manifest");
 } else {

@@ -82,7 +82,7 @@ Depends: ndl-agent, ${misc:Depends}
 Suggests: ceph
 Description: Optional distributed storage package set for No-dal
  Not a Phase 1 dependency. Enable with nodalctl feature enable distributed_storage.
- Does not start Ceph.
+ Does not start Ceph. OSD bring-up is a separate typed action.
 
 Package: nodal-feature-ai
 Architecture: all

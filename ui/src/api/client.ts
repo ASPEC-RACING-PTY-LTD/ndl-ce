@@ -505,6 +505,40 @@ export async function createISCSI(body: { name: string; iqn: string; portal: str
   );
 }
 
+export async function distributedRuntime(): Promise<import("./phase3").DistributedRuntime> {
+  return readJson(await request("/storage/distributed"));
+}
+
+export async function attachDistributed(body: {
+  name: string;
+  locator: string;
+  user?: string;
+  cephx_key: string;
+}): Promise<import("./phase3").StoragePool> {
+  return readJson(
+    await request("/storage/distributed", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function createDistributedOSD(body: { disk: string; pool_id?: string }): Promise<{
+  id: string;
+  disk: string;
+  status: string;
+  reason?: string;
+  osd_started?: boolean;
+}> {
+  return readJson(
+    await request("/storage/distributed/osds", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "start-ceph-osd" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getPool(id: string): Promise<import("./phase3").StoragePool> {
   return readJson(await request(`/storage/pools/${id}`));
 }

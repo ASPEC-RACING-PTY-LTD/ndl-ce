@@ -52,6 +52,12 @@ func (s *Server) snapshotCapability(kind string, depth int, backend string) map[
 			"chain_depth": depth, "reason": iscsiSnapReason,
 		}
 	}
+	if backend == storage.BackendDistributed {
+		return map[string]any{
+			"supported": false, "mechanism": "", "chain_max": 0,
+			"chain_depth": depth, "reason": distSnapReason,
+		}
+	}
 	if kind != vmspec.KindVM {
 		return map[string]any{
 			"supported": false, "mechanism": "", "chain_max": qemu.ChainMax,
@@ -88,7 +94,7 @@ func (s *Server) listSnapshots(w http.ResponseWriter, r *http.Request) {
 	backend := ""
 	if vol, pool, _, locErr := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row); locErr == nil {
 		backend = pool.BackendType
-		if backend != storage.BackendZFS && backend != storage.BackendLVM {
+		if backend != storage.BackendZFS && backend != storage.BackendLVM && backend != storage.BackendISCSI && backend != storage.BackendDistributed {
 			depth = overlayChainDepth(vol.BackendRef, items)
 		}
 	}
@@ -136,6 +142,10 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	if pool.BackendType == storage.BackendISCSI {
 		writeErr(w, http.StatusUnprocessableEntity, iscsiSnapReason)
+		return
+	}
+	if pool.BackendType == storage.BackendDistributed {
+		writeErr(w, http.StatusUnprocessableEntity, distSnapReason)
 		return
 	}
 	if row.Kind == lxc.KindSystemContainer || row.Kind != vmspec.KindVM {

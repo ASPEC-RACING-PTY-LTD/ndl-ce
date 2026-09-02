@@ -55,7 +55,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
     require: "mutate",
   },
   { id: "tasks", label: "Jump to tasks", href: "/tasks", keywords: ["task", "operation", "job"] },
-  { id: "storage", label: "Storage", href: "/storage", keywords: ["pool", "volume"] },
+  { id: "storage", label: "Storage", href: "/storage", keywords: ["pool", "volume", "rbd", "ceph"] },
   { id: "network", label: "Network", href: "/network", keywords: ["bridge", "nic"] },
   { id: "node", label: "Node", href: "/node", keywords: ["host", "hardware"] },
   { id: "cluster", label: "Cluster", href: "/settings/cluster", keywords: ["join", "worker", "node"] },

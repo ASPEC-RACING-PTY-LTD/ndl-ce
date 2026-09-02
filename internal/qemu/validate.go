@@ -50,6 +50,12 @@ func ValidateDiskPath(diskPath string) error {
 		if strings.HasPrefix(cleaned, storage.LVMMountRoot+"/") {
 			return nil
 		}
+		if err := storage.ValidateRBDPath(cleaned); err == nil {
+			return nil
+		}
+		if err := storage.ValidateNBDPath(cleaned); err == nil {
+			return nil
+		}
 		return fmt.Errorf("disk_path must be under the storage root")
 	}
 	return nil

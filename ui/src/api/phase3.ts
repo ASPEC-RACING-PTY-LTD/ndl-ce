@@ -92,3 +92,17 @@ export type DatastoreRuntime = {
   reason?: string;
   packages?: string[];
 };
+
+export type DistributedRuntime = {
+  backend?: string;
+  incremental_send?: boolean;
+  directory_default?: boolean;
+  keys_in_list_json?: boolean;
+  feature_enabled?: boolean;
+  osd_process?: boolean;
+  osd_started?: boolean;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  vm_disk_rbd?: boolean;
+};

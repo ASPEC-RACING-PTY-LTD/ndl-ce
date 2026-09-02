@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import {
   createPool,
   createVolume,
+  attachDistributed,
+  createDistributedOSD,
   createISCSI,
   createLVM,
   createNFS,
   createSMB,
   createZFS,
   datastoreRuntime,
+  distributedRuntime,
   importZFS,
   listImages,
   listPools,
@@ -16,7 +19,7 @@ import {
   uploadImage,
   zfsRuntime,
 } from "../api/client";
-import type { DatastoreRuntime, LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
+import type { DatastoreRuntime, DistributedRuntime, LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
 import { Field } from "../components/Field";
 import { formatBytes } from "../format";
 import { useSession } from "../session";
@@ -69,6 +72,12 @@ export function StoragePage() {
   const [iscsiName, setIscsiName] = useState("iscsi-lun");
   const [iscsiIQN, setIscsiIQN] = useState("");
   const [iscsiPortal, setIscsiPortal] = useState("");
+  const [distributed, setDistributed] = useState<DistributedRuntime | null>(null);
+  const [distName, setDistName] = useState("ceph");
+  const [distLocator, setDistLocator] = useState("");
+  const [distUser, setDistUser] = useState("admin");
+  const [distKey, setDistKey] = useState("");
+  const [osdDisk, setOsdDisk] = useState("");
 
   async function reload() {
     const listed = await listPools();
@@ -84,18 +93,20 @@ export function StoragePage() {
       setSelected(first);
     }
     const poolId = first;
-    const [vols, imgs, runtime, lvmStatus, dsStatus] = await Promise.all([
+    const [vols, imgs, runtime, lvmStatus, dsStatus, distStatus] = await Promise.all([
       listVolumes(poolId),
       listImages(poolId),
       zfsRuntime().catch(() => null),
       lvmRuntime().catch(() => null),
       datastoreRuntime().catch(() => null),
+      distributedRuntime().catch(() => null),
     ]);
     setVolumes(vols);
     setImages(imgs);
     setZfs(runtime);
     setLvm(lvmStatus);
     setDatastores(dsStatus);
+    setDistributed(distStatus);
   }
 
   useEffect(() => {
@@ -226,6 +237,40 @@ export function StoragePage() {
     }
   }
 
+  async function onAttachDistributed() {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await attachDistributed({
+        name: distName,
+        locator: distLocator,
+        user: distUser,
+        cephx_key: distKey,
+      });
+      setDistKey("");
+      setSelected(created.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Distributed attach failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCreateOSD() {
+    setBusy(true);
+    setError(null);
+    try {
+      await createDistributedOSD({ disk: osdDisk, pool_id: selected || undefined });
+      setOsdDisk("");
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "OSD bring-up failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onCreateVolume() {
     if (!pool) {
       return;
@@ -268,7 +313,7 @@ export function StoragePage() {
       <header className="page-header">
         <h1 id="storage-heading">Storage</h1>
         <p className="page-kicker">
-          Directory remains the default. ZFS, LVM-thin, and NFS/SMB/iSCSI are optional. Hosts
+          Directory remains the default. ZFS, LVM-thin, NFS/SMB/iSCSI, and distributed RBD are optional. Hosts
           without those tools keep Directory. zpool import -f and vgexport are refused. Passwords
           are stored in secrets, not unit files.
         </p>
@@ -503,6 +548,75 @@ export function StoragePage() {
             />
             <button className="btn" type="submit" disabled={busy || !iscsiIQN || !iscsiPortal}>
               Add iSCSI target
+            </button>
+          </form>
+        </article>
+      ) : null}
+      {mutate ? (
+        <article className="panel">
+          <h2>Distributed storage</h2>
+          <p className="lede">
+            Attach an external Ceph cluster and use an RBD as a VM disk. Enabling the feature does not start
+            ceph-osd. OSD bring-up is a separate typed action on an extra disk. Keys stay in secrets.
+          </p>
+          {distributed?.host_supported === false ? (
+            <p className="banner banner-warn" role="status">
+              {distributed.reason || "Distributed storage runtime uses the Debian 13 adapter."}
+            </p>
+          ) : null}
+          {distributed?.osd_started ? (
+            <p className="banner" role="status">
+              A ceph-osd process is running. Default install does not start OSDs.
+            </p>
+          ) : (
+            <p className="banner" role="status">
+              {distributed?.reason || "OSD bring-up is a typed action. Enabling distributed storage does not start ceph-osd."}
+            </p>
+          )}
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onAttachDistributed();
+            }}
+          >
+            <Field id="dist-name" label="Pool name" value={distName} onChange={(e) => setDistName(e.target.value)} />
+            <Field
+              id="dist-locator"
+              label="Monitor locator"
+              value={distLocator}
+              onChange={(e) => setDistLocator(e.target.value)}
+              hint="mon[:port][,mon2[:port]]/pool. This is a locator, not identity."
+            />
+            <Field id="dist-user" label="Cephx user" value={distUser} onChange={(e) => setDistUser(e.target.value)} />
+            <Field
+              id="dist-key"
+              label="Cephx key"
+              type="password"
+              value={distKey}
+              onChange={(e) => setDistKey(e.target.value)}
+              hint="Stored in secrets. Never returned in list JSON or placed in argv."
+            />
+            <button className="btn btn-primary" type="submit" disabled={busy || !distLocator || !distKey}>
+              Attach distributed pool
+            </button>
+          </form>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onCreateOSD();
+            }}
+          >
+            <Field
+              id="osd-disk"
+              label="OSD extra disk"
+              value={osdDisk}
+              onChange={(e) => setOsdDisk(e.target.value)}
+              hint="A by-id extra-disk path. The host root disk is refused. Sends X-Nodal-Confirm: start-ceph-osd."
+            />
+            <button className="btn" type="submit" disabled={busy || !osdDisk}>
+              Bring up OSD
             </button>
           </form>
         </article>

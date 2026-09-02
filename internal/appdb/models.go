@@ -226,6 +226,14 @@ type Store interface {
 	UpsertDatastoreSecret(ctx context.Context, poolID, username, password string) error
 	DatastoreSecret(ctx context.Context, poolID string) (username, password string, err error)
 
+	UpsertDistributedPool(ctx context.Context, d DistributedPool) error
+	GetDistributedPool(ctx context.Context, poolID string) (*DistributedPool, error)
+	UpsertDistributedSecret(ctx context.Context, poolID, cephxKey string) error
+	DistributedSecret(ctx context.Context, poolID string) (string, error)
+	CreateDistributedOSD(ctx context.Context, o DistributedOSD) error
+	ListDistributedOSDs(ctx context.Context, clusterID string) ([]DistributedOSD, error)
+	UpdateDistributedOSD(ctx context.Context, o DistributedOSD) error
+
 	CreateAlertRule(ctx context.Context, r AlertRule) error
 	ListAlertRules(ctx context.Context, clusterID string) ([]AlertRule, error)
 	GetAlertRule(ctx context.Context, clusterID, id string) (*AlertRule, error)

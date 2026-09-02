@@ -1543,6 +1543,42 @@ export interface ISCSICreateRequest {
   portal: string;
 }
 
+export interface DistributedRuntime {
+  backend?: string;
+  incremental_send?: boolean;
+  directory_default?: boolean;
+  keys_in_list_json?: boolean;
+  feature_enabled?: boolean;
+  osd_process?: boolean;
+  osd_started?: boolean;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  vm_disk_rbd?: boolean;
+  osds?: DistributedOSD[];
+}
+
+export interface DistributedAttachRequest {
+  name: string;
+  locator: string;
+  user?: string;
+  cephx_key: string;
+}
+
+export interface DistributedOSDRequest {
+  disk: string;
+  pool_id?: string;
+}
+
+export interface DistributedOSD {
+  id?: string;
+  disk?: string;
+  status?: string;
+  reason?: string;
+  pool_id?: string;
+  osd_started?: boolean;
+}
+
 export interface LogsResponse {
   status: string;
   unit?: string;
@@ -1943,6 +1979,14 @@ export type CreateNfsPath = "/api/v1/storage/nfs";
 export type CreateSmbPath = "/api/v1/storage/smb";
 
 export type CreateIscsiPath = "/api/v1/storage/iscsi";
+
+export type GetDistributedRuntimePath = "/api/v1/storage/distributed";
+
+export type CreateDistributedOsdPath = "/api/v1/storage/distributed/osds";
+
+export type StartDistributedOsdPath = "/api/v1/storage/distributed/osds/start";
+
+export type StopDistributedOsdPath = "/api/v1/storage/distributed/osds/stop";
 
 export type ListRegistriesPath = "/api/v1/registries";
 

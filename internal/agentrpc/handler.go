@@ -45,6 +45,7 @@ type Handler struct {
 	ZFS           *storage.ZFSEngine
 	LVM           *storage.LVMEngine
 	Datastore     *storage.DatastoreEngine
+	Distributed   *storage.DistributedEngine
 	Journal       *journald.Engine
 	SkipHostCmds  bool
 	GuestSocketFn func(id string) string
@@ -198,6 +199,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execLVMPool(ctx, req.Msg.GetLvmPool())
 	case req.Msg.GetDatastore() != nil:
 		return h.execDatastore(ctx, req.Msg.GetDatastore())
+	case req.Msg.GetDistributed() != nil:
+		return h.execDistributed(ctx, req.Msg.GetDistributed())
 	case req.Msg.GetNetAdvanced() != nil:
 		return h.execNetAdvanced(ctx, req.Msg.GetNetAdvanced())
 	case req.Msg.GetWireguard() != nil:

@@ -182,6 +182,7 @@ message ExecuteRequest {
     NetAdvanced net_advanced = 36;
     WireGuard wireguard = 37;
     ComputeMigrate compute_migrate = 38;
+    Distributed distributed = 39;
   }
 }
 
@@ -297,6 +298,23 @@ message Datastore {
   string username = 6;
   string password = 7;
   string iqn = 8;
+}
+
+message Distributed {
+  string action = 1;
+  string pool_id = 2;
+  string locator = 3;
+  string ceph_pool = 4;
+  string ceph_user = 5;
+  string cephx_key = 6;
+  string keyring_path = 7;
+  string volume_id = 8;
+  string class = 9;
+  int64 size_bytes = 10;
+  string disk = 11;
+  string image = 12;
+  string backend_ref = 13;
+  string root_device = 14;
 }
 
 message NetAdvanced {

@@ -55,6 +55,23 @@ func TestValidateDiskPathAcceptsZVol(t *testing.T) {
 	}
 }
 
+func TestValidateDiskPathAcceptsRBD(t *testing.T) {
+	dev := "/dev/rbd/rbd/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if err := ValidateDiskPath(dev); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	if _, err := e.compile(argvSecSpec(dev, "raw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDiskPath("/dev/nbd0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDiskPath("/dev/sda"); err == nil {
+		t.Fatal("generic /dev")
+	}
+}
+
 func TestValidateDiskPathAcceptsThinLV(t *testing.T) {
 	dev := "/dev/ndlvg/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 	if err := ValidateDiskPath(dev); err != nil {

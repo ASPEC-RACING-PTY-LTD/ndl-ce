@@ -255,7 +255,7 @@ func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload) (bool, []m
 
 func sharedBackend(kind string) bool {
 	switch kind {
-	case storage.BackendNFS, storage.BackendSMB, storage.BackendISCSI, storage.BackendZFS:
+	case storage.BackendNFS, storage.BackendSMB, storage.BackendISCSI, storage.BackendZFS, storage.BackendDistributed:
 		return true
 	default:
 		return false

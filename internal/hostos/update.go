@@ -14,6 +14,8 @@ const (
 	UpdateFeatureRemove   = debian.UpdateFeatureRemove
 	UpdateK8sRuntimeStart = debian.UpdateK8sRuntimeStart
 	UpdateK8sRuntimeStop  = debian.UpdateK8sRuntimeStop
+	UpdateOSDStart        = debian.UpdateOSDStart
+	UpdateOSDStop         = debian.UpdateOSDStop
 	// UpdateUnsupportedReason is the honest public reason when the host adapter cannot run.
 	UpdateUnsupportedReason = debian.UnsupportedHost
 	// StoreCompatDetail is the Phase 12 preflight note. Store manifests are Phase 36.
@@ -178,6 +180,10 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 		return runK8sRuntime(ctx, res, exec, true)
 	case debian.UpdateK8sRuntimeStop:
 		return runK8sRuntime(ctx, res, exec, false)
+	case debian.UpdateOSDStart:
+		return runOSDRuntime(ctx, res, exec, true)
+	case debian.UpdateOSDStop:
+		return runOSDRuntime(ctx, res, exec, false)
 	default:
 		res.Supported = false
 		res.Status = "failed"
@@ -406,6 +412,30 @@ func runK8sRuntime(ctx context.Context, res UpdateResult, exec ExecFunc, start b
 		res.Reason = "kubelet start was requested via systemd"
 	} else {
 		res.Reason = "kubelet stop was requested via systemd. Virtual machines were not stopped."
+	}
+	return res, nil
+}
+
+func runOSDRuntime(ctx context.Context, res UpdateResult, exec ExecFunc, start bool) (UpdateResult, error) {
+	argv := debian.OSDRuntimeArgv(start)
+	if exec == nil {
+		res.Status = "succeeded"
+		res.Reason = "OSD runtime argv was planned. Host commands were not run. ceph-osd is not started."
+		return res, nil
+	}
+	if _, err := exec(ctx, argv); err != nil {
+		res.Status = "failed"
+		if start {
+			res.Reason = "ceph-osd start failed"
+		} else {
+			res.Reason = "ceph-osd stop failed"
+		}
+		return res, nil
+	}
+	if start {
+		res.Reason = "ceph-osd start was requested via systemd"
+	} else {
+		res.Reason = "ceph-osd stop was requested via systemd. Virtual machines were not stopped."
 	}
 	return res, nil
 }

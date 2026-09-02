@@ -16,6 +16,8 @@ const (
 	UpdateFeatureRemove   = "feature-remove"
 	UpdateK8sRuntimeStart = "k8s-runtime-start"
 	UpdateK8sRuntimeStop  = "k8s-runtime-stop"
+	UpdateOSDStart        = "ceph-osd-start"
+	UpdateOSDStop         = "ceph-osd-stop"
 	ChannelStable         = "stable"
 	UnsupportedHost       = "Platform updates use the Debian 13 adapter and the signed nodal repository. This host is not Debian 13 amd64."
 )
@@ -85,6 +87,15 @@ func K8sRuntimeArgv(start bool) []string {
 		action = "start"
 	}
 	return []string{"/usr/bin/systemctl", action, "kubelet"}
+}
+
+// OSDRuntimeArgv starts or stops ceph-osd.target via systemd. It is not feature-install.
+func OSDRuntimeArgv(start bool) []string {
+	action := "stop"
+	if start {
+		action = "start"
+	}
+	return []string{"/usr/bin/systemctl", action, "ceph-osd.target"}
 }
 
 // CheckArgv refreshes signed package indexes. It does not install.

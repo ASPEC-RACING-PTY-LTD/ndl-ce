@@ -72,6 +72,14 @@ func TestUpdateArgvNeverShell(t *testing.T) {
 	if !contains(stop, "stop") || contains(stop, "bash") {
 		t.Fatalf("%v", stop)
 	}
+	dist, err := FeatureInstallArgv("nodal-feature-distributed-storage", true)
+	if err != nil || contains(dist, "ceph-osd") || contains(dist, "ceph-volume") || contains(dist, "rbd") {
+		t.Fatalf("feature install must not start Ceph: %v %v", dist, err)
+	}
+	osdStart := OSDRuntimeArgv(true)
+	if osdStart[0] != "/usr/bin/systemctl" || !contains(osdStart, "ceph-osd.target") {
+		t.Fatalf("%v", osdStart)
+	}
 }
 
 func contains(argv []string, want string) bool {

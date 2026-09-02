@@ -278,6 +278,9 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /lvm-thin/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /create lvm-thin pool/i })).toBeVisible();
     expect(screen.getByText(/directory remains the default/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^distributed storage$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /attach distributed pool/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /bring up osd/i })).toBeVisible();
   });
 
   it("shows isolated network first-run and create form", async () => {

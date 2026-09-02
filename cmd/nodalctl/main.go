@@ -75,6 +75,9 @@ func run(args []string) error {
   storage nfs add --name NAME --locator SERVER:/EXPORT
   storage smb add --name NAME --locator //SERVER/SHARE [--username USER]
   storage iscsi add --name NAME --iqn IQN --portal HOST:3260
+  storage distributed attach --name NAME --locator MON[,MON]/POOL [--user USER] [--key KEY]
+  storage distributed osd --disk PATH --confirm start-ceph-osd
+  storage distributed runtime
   network list
   network create --name NAME --kind KIND [--cidr CIDR] [--uplink IF] [--dry-run] [--confirm-ifname IF]
   network apply --id ID [--dry-run] [--confirm-ifname IF]
@@ -433,7 +436,7 @@ func sessionFile() string {
 
 func cmdStorage(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: nodalctl storage pool|volume|image|zfs|lvm|nfs|smb|iscsi ...")
+		return fmt.Errorf("usage: nodalctl storage pool|volume|image|zfs|lvm|nfs|smb|iscsi|distributed ...")
 	}
 	switch args[0] + " " + args[1] {
 	case "pool list":
@@ -498,6 +501,32 @@ func cmdStorage(args []string) error {
 			return fmt.Errorf("usage: nodalctl storage iscsi add --name NAME --iqn IQN --portal HOST:3260")
 		}
 		return postJSON("/api/v1/storage/iscsi", map[string]any{"name": f["name"], "iqn": f["iqn"], "portal": f["portal"]}, true)
+	case "distributed attach":
+		f := parseFlags(args[2:])
+		if f["name"] == "" || f["locator"] == "" {
+			return fmt.Errorf("usage: nodalctl storage distributed attach --name NAME --locator MON[,MON]/POOL [--user USER]")
+		}
+		body := map[string]any{"name": f["name"], "locator": f["locator"], "user": f["user"], "cephx_key": firstNonEmpty(f["key"], f["cephx-key"])}
+		return postJSON("/api/v1/storage/distributed", body, true)
+	case "distributed runtime":
+		return cmdGet("/api/v1/storage/distributed")
+	case "distributed osd":
+		f := parseFlags(args[2:])
+		if f["disk"] == "" {
+			return fmt.Errorf("usage: nodalctl storage distributed osd --disk PATH --confirm start-ceph-osd")
+		}
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/storage/distributed/osds", map[string]any{"disk": f["disk"], "pool_id": f["pool-id"]}, true)
+	case "distributed osd-start":
+		f := parseFlags(args[2:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/storage/distributed/osds/start", map[string]any{}, true)
+	case "distributed osd-stop":
+		return postJSON("/api/v1/storage/distributed/osds/stop", map[string]any{}, true)
 	default:
 		return fmt.Errorf("unknown storage command")
 	}

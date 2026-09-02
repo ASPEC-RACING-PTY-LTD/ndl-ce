@@ -277,6 +277,15 @@ func HostVolumePath(backendType, rootPath, backendRef string) (string, error) {
 		}
 		return cleaned, nil
 	}
+	if backendType == BackendDistributed {
+		if err := ValidateRBDPath(backendRef); err == nil {
+			return backendRef, nil
+		}
+		if err := ValidateNBDPath(backendRef); err == nil {
+			return backendRef, nil
+		}
+		return "", fmt.Errorf("distributed locator is invalid")
+	}
 	return JoinUnder(rootPath, backendRef)
 }
 
@@ -289,6 +298,9 @@ func QEMUFormat(backendType, format string) string {
 		return "raw"
 	}
 	if backendType == BackendISCSI {
+		return "raw"
+	}
+	if backendType == BackendDistributed || format == FormatRBD || format == FormatNBD {
 		return "raw"
 	}
 	if format == "" {

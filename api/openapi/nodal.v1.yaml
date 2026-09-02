@@ -3070,6 +3070,88 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StoragePool"
+  /storage/distributed:
+    get:
+      operationId: getDistributedRuntime
+      summary: Distributed storage runtime. Enabling the feature does not start ceph-osd.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedRuntime"
+    post:
+      operationId: attachDistributed
+      summary: Attach an external Ceph/RBD cluster. Keys stay in secrets and are never list JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DistributedAttachRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/distributed/osds:
+    post:
+      operationId: createDistributedOsd
+      summary: OSD bring-up on an extra disk. Confirm required. Does not start by default with the feature.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - start-ceph-osd
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DistributedOSDRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedOSD"
+  /storage/distributed/osds/start:
+    post:
+      operationId: startDistributedOsd
+      summary: Start ceph-osd.target after the feature is enabled. Confirm required. VMs are not started.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - start-ceph-osd
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedRuntime"
+  /storage/distributed/osds/stop:
+    post:
+      operationId: stopDistributedOsd
+      summary: Stop ceph-osd.target. Virtual machines and system containers are not stopped.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedRuntime"
   /registries:
     get:
       operationId: listRegistries
@@ -7038,6 +7120,78 @@ components:
           type: string
         portal:
           type: string
+    DistributedRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          type: string
+        incremental_send:
+          type: boolean
+        directory_default:
+          type: boolean
+        keys_in_list_json:
+          type: boolean
+        feature_enabled:
+          type: boolean
+        osd_process:
+          type: boolean
+        osd_started:
+          type: boolean
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        vm_disk_rbd:
+          type: boolean
+        osds:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistributedOSD"
+    DistributedAttachRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - locator
+        - cephx_key
+      properties:
+        name:
+          type: string
+        locator:
+          type: string
+        user:
+          type: string
+        cephx_key:
+          type: string
+    DistributedOSDRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - disk
+      properties:
+        disk:
+          type: string
+        pool_id:
+          type: string
+    DistributedOSD:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        disk:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        pool_id:
+          type: string
+        osd_started:
+          type: boolean
     LogsResponse:
       type: object
       additionalProperties: false

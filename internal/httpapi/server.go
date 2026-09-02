@@ -72,7 +72,9 @@ type Server struct {
 	ZFS         ZFSRPC
 	LVM         LVMRPC
 	Datastore   DatastoreRPC
+	Distributed DistributedRPC
 	K8sProcs    func() []string
+	OSDProcs    func() []string
 	Hub         *EventHub
 	Migrate     migrate.Runtime
 	UI          fs.FS
@@ -306,6 +308,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/storage/nfs", s.createNFS)
 	mux.HandleFunc("POST /api/v1/storage/smb", s.createSMB)
 	mux.HandleFunc("POST /api/v1/storage/iscsi", s.createISCSI)
+	mux.HandleFunc("GET /api/v1/storage/distributed", s.distributedRuntime)
+	mux.HandleFunc("POST /api/v1/storage/distributed", s.attachDistributed)
+	mux.HandleFunc("POST /api/v1/storage/distributed/osds", s.createDistributedOSD)
+	mux.HandleFunc("POST /api/v1/storage/distributed/osds/start", s.startDistributedOSD)
+	mux.HandleFunc("POST /api/v1/storage/distributed/osds/stop", s.stopDistributedOSD)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}
