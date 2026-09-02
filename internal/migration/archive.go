@@ -122,6 +122,8 @@ func ExtractTar(r io.Reader, dest string, maxTotal int64) error {
 	}
 }
 
+// restoreXattrs applies only user.* xattrs. security.* and trusted.* from a
+// tar would otherwise land on the host because the agent extracts as root.
 func restoreXattrs(path string, hdr *tar.Header) {
 	if hdr == nil {
 		return
@@ -134,7 +136,10 @@ func restoreXattrs(path string, hdr *tar.Header) {
 		if n, ok := strings.CutPrefix(k, "LIBARCHIVE.xattr."); ok {
 			name = n
 		}
-		if name == "" || strings.Contains(name, "..") {
+		if name == "" || strings.Contains(name, "..") || strings.ContainsAny(name, "=\x00") {
+			continue
+		}
+		if !strings.HasPrefix(name, "user.") {
 			continue
 		}
 		_ = unix.Setxattr(path, name, []byte(v), 0)
@@ -230,7 +235,7 @@ func WriteTar(dir, dest string) error {
 					hdr.PAXRecords = map[string]string{}
 				}
 				for _, nm := range splitXattrNames(names[:n]) {
-					if nm == "" {
+					if nm == "" || !strings.HasPrefix(nm, "user.") {
 						continue
 					}
 					vsz, err := unix.Lgetxattr(p, nm, nil)

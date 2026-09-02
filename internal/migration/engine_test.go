@@ -12,6 +12,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 type fakeSource struct {
@@ -167,6 +169,39 @@ func TestArchiveTraversalAndSymlinkEscape(t *testing.T) {
 	_ = tw.Close()
 	if err := ExtractTar(bytes.NewReader(buf.Bytes()), dir, 1<<20); err == nil {
 		t.Fatal("device")
+	}
+}
+
+func TestExtractTarIgnoresPrivilegedXattrs(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	hdr := &tar.Header{
+		Name: "bin", Size: 2, Mode: 0755, Typeflag: tar.TypeReg,
+		PAXRecords: map[string]string{
+			"SCHILY.xattr.security.capability":        "pwn",
+			"LIBARCHIVE.xattr.trusted.overlay.opaque": "y",
+			"SCHILY.xattr.user.comment":               "ok",
+		},
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("hi")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	if err := ExtractTar(bytes.NewReader(buf.Bytes()), dest, 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dest, "bin")
+	if n, err := unix.Getxattr(target, "security.capability", make([]byte, 256)); err == nil && n > 0 {
+		t.Fatal("security.capability must not restore")
+	}
+	if n, err := unix.Getxattr(target, "trusted.overlay.opaque", make([]byte, 256)); err == nil && n > 0 {
+		t.Fatal("trusted xattr must not restore")
 	}
 }
 
