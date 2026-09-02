@@ -155,6 +155,14 @@ ON CONFLICT (user_id, role_id) DO NOTHING`, clusterID, userID, roleName, uuid.Ne
 	return err
 }
 
+func (p *Postgres) UnbindRole(ctx context.Context, clusterID, userID, roleName string) error {
+	_, err := p.DB.ExecContext(ctx, `
+DELETE FROM role_bindings b
+USING roles r
+WHERE b.role_id = r.id AND r.cluster_id = $1 AND b.user_id = $2 AND r.name = $3`, clusterID, userID, roleName)
+	return err
+}
+
 func (p *Postgres) UserRoles(ctx context.Context, userID string) ([]string, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT r.name

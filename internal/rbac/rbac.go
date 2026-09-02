@@ -7,6 +7,8 @@ const (
 	Admin    = "admin"
 	Operator = "operator"
 	Viewer   = "viewer"
+	// Automation is the Phase 40 service identity. It is not a login role.
+	Automation = "automation"
 )
 
 // Permissions used in Phase 1. Later phases add more names.
@@ -112,6 +114,8 @@ func (Catalog) PermissionsForRole(role string) []string {
 		}
 	case Viewer:
 		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead}
+	case Automation:
+		return PermissionsForAutomation()
 	default:
 		return nil
 	}
@@ -143,8 +147,9 @@ func Authorize(grants []string, permission string) bool {
 func SeedRoles() map[string][]string {
 	c := New()
 	return map[string][]string{
-		Admin:    c.PermissionsForRole(Admin),
-		Operator: c.PermissionsForRole(Operator),
-		Viewer:   c.PermissionsForRole(Viewer),
+		Admin:      c.PermissionsForRole(Admin),
+		Operator:   c.PermissionsForRole(Operator),
+		Viewer:     c.PermissionsForRole(Viewer),
+		Automation: c.PermissionsForRole(Automation),
 	}
 }

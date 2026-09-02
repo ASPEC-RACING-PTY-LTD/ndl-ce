@@ -211,24 +211,39 @@ func (s *Server) ensureAutomationActor(ctx context.Context, clusterID string) (s
 	if err != nil {
 		return "", err
 	}
-	if u != nil {
-		return u.ID, nil
-	}
-	row := appdb.User{
-		ID: uuid.NewString(), ClusterID: clusterID, Username: name, PasswordHash: "!", Kind: appdb.UserKindService,
-	}
-	if err := s.Store.CreateUser(ctx, row); err != nil {
-		existing, _ := s.Store.GetUserByName(ctx, clusterID, name)
-		if existing != nil {
-			return existing.ID, nil
+	if u == nil {
+		row := appdb.User{
+			ID: uuid.NewString(), ClusterID: clusterID, Username: name, PasswordHash: "!", Kind: appdb.UserKindService,
 		}
+		if err := s.Store.CreateUser(ctx, row); err != nil {
+			existing, _ := s.Store.GetUserByName(ctx, clusterID, name)
+			if existing == nil {
+				return "", err
+			}
+			u = existing
+		} else {
+			u = &row
+			_ = s.Store.CreateServicePrincipal(ctx, appdb.ServicePrincipal{
+				ID: uuid.NewString(), ClusterID: clusterID, UserID: row.ID, Name: automation.ActorName,
+			})
+		}
+	}
+	if err := s.Store.UnbindRole(ctx, clusterID, u.ID, rbac.Operator); err != nil {
 		return "", err
 	}
-	_ = s.Store.BindRole(ctx, clusterID, row.ID, rbac.Operator)
-	_ = s.Store.CreateServicePrincipal(ctx, appdb.ServicePrincipal{
-		ID: uuid.NewString(), ClusterID: clusterID, UserID: row.ID, Name: automation.ActorName,
-	})
-	return row.ID, nil
+	if err := s.Store.BindRole(ctx, clusterID, u.ID, rbac.Automation); err != nil {
+		return "", err
+	}
+	roles, rerr := s.Store.UserRoles(ctx, u.ID)
+	if rerr != nil {
+		return "", rerr
+	}
+	for _, name := range roles {
+		if name == rbac.Automation {
+			return u.ID, nil
+		}
+	}
+	return "", fmt.Errorf("automation role is not bound")
 }
 
 func automationPolicyJSON(p appdb.Policy) map[string]any {

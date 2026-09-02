@@ -20,6 +20,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * System container create and clone join rootfs under the pool with HostVolumePath. An absolute or parent-directory volume locator is refused instead of path.Join discarding the pool root.
   * VM create with desired_power running fails closed when storage is unavailable instead of returning 201. Clone records desired_power running after start. System container create honors desired_power stopped. PATCH does not apply CT create to OCI workloads and fails closed when the CT agent apply fails.
   * Storage-pressure policy apply records failed migrate operations instead of leaving them queued and marking the run succeeded. Dest-agent-not-connected stays queued. Approved AI plan steps finish their task rows as succeeded or failed instead of leaving them queued.
+  * Policy automation binds the seeded automation role and unbinds leftover Operator so the service identity cannot inherit tokens, feature manage, compute delete, or backups.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

@@ -270,7 +270,32 @@ func (m *Memory) EnsureRoles(_ context.Context, clusterID string, roles map[stri
 func (m *Memory) BindRole(_ context.Context, _, userID, roleName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.binds == nil {
+		m.binds = map[string][]string{}
+	}
+	for _, existing := range m.binds[userID] {
+		if existing == roleName {
+			return nil
+		}
+	}
 	m.binds[userID] = append(m.binds[userID], roleName)
+	return nil
+}
+
+func (m *Memory) UnbindRole(_ context.Context, _, userID, roleName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur := m.binds[userID]
+	if len(cur) == 0 {
+		return nil
+	}
+	kept := cur[:0]
+	for _, r := range cur {
+		if r != roleName {
+			kept = append(kept, r)
+		}
+	}
+	m.binds[userID] = kept
 	return nil
 }
 

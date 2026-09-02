@@ -25,6 +25,7 @@ type Store interface {
 
 	EnsureRoles(ctx context.Context, clusterID string, roles map[string][]string) error
 	BindRole(ctx context.Context, clusterID, userID, roleName string) error
+	UnbindRole(ctx context.Context, clusterID, userID, roleName string) error
 	UserRoles(ctx context.Context, userID string) ([]string, error)
 
 	CreateSession(ctx context.Context, s Session) error

@@ -178,4 +178,8 @@ func TestPermissionsForAutomationIsNarrowerThanOperator(t *testing.T) {
 	if !Authorize(got, ComputeMigrate) || !Authorize(got, PolicyApply) {
 		t.Fatal("automation reuses compute.migrate and policy.apply")
 	}
+	seed := SeedRoles()
+	if len(seed[Automation]) == 0 || seed[Automation][0] != PolicyApply {
+		t.Fatalf("seed automation %v", seed[Automation])
+	}
 }

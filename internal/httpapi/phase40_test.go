@@ -114,6 +114,67 @@ func TestPhase40StoragePressureCreatesVisibleOperation(t *testing.T) {
 	if actor == nil || actor.Kind != appdb.UserKindService {
 		t.Fatal("policies must run as service identity")
 	}
+	roles, _ := mem.UserRoles(context.Background(), actor.ID)
+	if len(roles) != 1 || roles[0] != rbac.Automation {
+		t.Fatalf("automation role %v", roles)
+	}
+	grants := rbac.New().PermissionsForRole(roles[0])
+	if rbac.Authorize(grants, rbac.ComputeDelete) || rbac.Authorize(grants, rbac.IdentityTokenCreate) || rbac.Authorize(grants, rbac.FeatureManage) {
+		t.Fatal("automation must not inherit Operator")
+	}
+}
+
+func TestPhase40AutomationStripsOperatorBind(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	u := appdb.User{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Username: "svc-" + automation.ActorName,
+		PasswordHash: "!", Kind: appdb.UserKindService,
+	}
+	if err := mem.CreateUser(context.Background(), u); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Operator); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UnbindRole(context.Background(), cluster.ID, "missing-user", rbac.Operator); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/policies", strings.NewReader(`{"name":"pressure","kind":"storage_pressure","action":"enqueue_migrate_low_priority","threshold_percent":85}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	policyID, _ := created["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/policies/"+policyID+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("apply %d %s", res.StatusCode, raw)
+	}
+
+	roles, _ := mem.UserRoles(context.Background(), u.ID)
+	if len(roles) != 1 || roles[0] != rbac.Automation {
+		t.Fatalf("leftover operator bind %v", roles)
+	}
 }
 
 func TestPhase40RequireApprovalNeedsConfirm(t *testing.T) {
