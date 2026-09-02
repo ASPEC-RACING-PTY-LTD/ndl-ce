@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -271,5 +272,53 @@ func TestNetworkDryRunDoesNotPersist(t *testing.T) {
 	items, _ := mem.ListNetworks(context.Background(), cluster.ID)
 	if len(items) != 0 {
 		t.Fatal("dry-run persisted a network")
+	}
+}
+
+type failUpdateNetworkObservedStore struct {
+	appdb.Store
+}
+
+func (f failUpdateNetworkObservedStore) UpdateNetworkObserved(context.Context, appdb.Network) error {
+	return errors.New("persist failed")
+}
+
+func TestNetworkApplyFailsClosedWhenObservedPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	s.Network = fakeNet{
+		preview: ndnet.Preview{Kind: ndnet.KindIsolated, Danger: ndnet.DangerSafe, DHCP: true},
+		apply:   ndnet.ApplyResult{Kind: ndnet.KindIsolated, Status: ndnet.StatusAvailable, BridgeName: "ndldeadbeef", DHCP: true},
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks", strings.NewReader(`{"name":"guests","kind":"isolated"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpdateNetworkObservedStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/networks/"+created["id"].(string)+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("apply persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record network") {
+		t.Fatalf("apply persist body %s", raw)
 	}
 }

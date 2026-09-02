@@ -216,7 +216,10 @@ func (s *Server) applyNetwork(w http.ResponseWriter, r *http.Request) {
 		idx := res.ManagementIfIndex
 		n.ManagementIfIndex = &idx
 	}
-	_ = s.Store.UpdateNetworkObserved(r.Context(), *n)
+	if err := s.Store.UpdateNetworkObserved(r.Context(), *n); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record network")
+		return
+	}
 	s.finishOp(r.Context(), op, "succeeded", "network applied", 100)
 	s.audit(r, p.User.ClusterID, p.User.ID, "network.apply", "ok", n.ID)
 	s.emitEvent(r.Context(), p.User.ClusterID, n.NodeID, "network.applied", map[string]string{"network_id": n.ID})
