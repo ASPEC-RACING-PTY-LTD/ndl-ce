@@ -156,7 +156,11 @@ describe("contextual navigation", () => {
     window.history.replaceState({}, "", "/");
     mockApi(admin);
     render(<App />);
-    fireEvent.click(await screen.findByRole("link", { name: /^workloads$/i }));
+    expect(await screen.findByRole("heading", { name: /^dashboard$/i })).toBeVisible();
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("link", { name: /^workloads$/i }));
+      expect(window.location.pathname).toBe("/workloads");
+    });
     expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
     expect(screen.queryByRole("navigation", { name: /appliance/i })).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /^workloads$/i })).toBeVisible();
