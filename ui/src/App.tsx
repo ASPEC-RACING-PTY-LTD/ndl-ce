@@ -21,6 +21,7 @@ import { ConsolePage } from "./pages/ConsolePage";
 import { CertificatePage } from "./pages/CertificatePage";
 import { ClusterPage } from "./pages/ClusterPage";
 import { FeaturesPage } from "./pages/FeaturesPage";
+import { KubernetesPage } from "./pages/KubernetesPage";
 import { StorePage } from "./pages/StorePage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
 import { BackupsPage } from "./pages/BackupsPage";
@@ -146,6 +147,8 @@ function AppRoutes() {
     page = <ClusterPage />;
   } else if (path === "/settings/features") {
     page = <FeaturesPage />;
+  } else if (path === "/settings/kubernetes") {
+    page = <KubernetesPage />;
   } else if (path === "/store") {
     page = <StorePage />;
   } else if (path === "/settings/certificates") {

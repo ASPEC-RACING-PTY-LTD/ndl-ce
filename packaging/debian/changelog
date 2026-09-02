@@ -1,3 +1,9 @@
+nodal (0.1.37) UNRELEASED; urgency=medium
+
+  * Phase 38 optional Kubernetes: default install has no kube process, VMs and CTs do not require Kubernetes, feature enable kubernetes does not start kubelet, start-kubelet is a separate typed action and stays unstarted on this host
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.36) UNRELEASED; urgency=medium
 
   * Phase 37 Store trust pipeline: Ed25519 signatures, tamper fails closed, scan report with honest CVE unavailable, verified-only install policy, revoked signing key stops new installs without deleting running workloads

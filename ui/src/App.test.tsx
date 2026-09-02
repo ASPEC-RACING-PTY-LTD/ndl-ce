@@ -600,6 +600,32 @@ describe("App", () => {
     expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
   });
 
+  it("renders the kubernetes page with no kube process by default", async () => {
+    window.history.replaceState({}, "", "/settings/kubernetes");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/kubernetes": {
+        status: 200,
+        body: {
+          enabled: false,
+          kubelet_started: false,
+          kube_process: false,
+          state: "absent",
+          vm_requires_k8s: false,
+          ct_requires_k8s: false,
+          reason: "Kubernetes is not enabled. Virtual machines and system containers do not require it.",
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^kubernetes$/i })).toBeVisible();
+    expect(await screen.findByText(/kubelet started no/i)).toBeVisible();
+    expect(screen.getByText(/kube process no/i)).toBeVisible();
+    expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
+  });
+
   it("renders the store catalog with official sample install", async () => {
     window.history.replaceState({}, "", "/store");
     mockApi({

@@ -26,6 +26,10 @@ func TestCatalogDefaultSmall(t *testing.T) {
 	if !ok || !k8s.RequiresK8sAck || k8s.StartsRuntime {
 		t.Fatalf("%+v", k8s)
 	}
+	alias, ok := Lookup("kubernetes")
+	if !ok || alias.ID != IDK8s {
+		t.Fatalf("kubernetes alias %+v", alias)
+	}
 	if !TinyNode(0) || !TinyNode(TinyK8sMemoryBytes) || TinyNode(TinyK8sMemoryBytes+1) {
 		t.Fatal("tiny node floor")
 	}

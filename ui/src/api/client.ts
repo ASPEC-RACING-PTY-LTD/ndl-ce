@@ -243,6 +243,29 @@ export async function listFeatures(): Promise<import("../generated/openapi").Fea
   return readJson(await request("/features"));
 }
 
+export async function getKubernetes(): Promise<import("../generated/openapi").KubernetesStatus> {
+  return readJson(await request("/kubernetes"));
+}
+
+export async function startKubernetes(): Promise<import("../generated/openapi").KubernetesStatus> {
+  return readJson(
+    await request("/kubernetes/start", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "start-kubelet" },
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function stopKubernetes(): Promise<import("../generated/openapi").KubernetesStatus> {
+  return readJson(
+    await request("/kubernetes/stop", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function enableFeature(
   id: string,
   confirm?: string,

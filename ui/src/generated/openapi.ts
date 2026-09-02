@@ -406,7 +406,7 @@ export interface Feature {
   core: boolean;
   package?: string;
   package_status: "not_configured" | "unavailable" | "installed" | "removed";
-  runtime_status: "not_started" | "installed";
+  runtime_status: "not_started" | "installed" | "running";
   starts_runtime: boolean;
   kubelet_started: boolean;
   workload_count: number;
@@ -420,6 +420,18 @@ export interface FeatureList {
   base_install: "light";
   gpu_optional: boolean;
   reason?: string;
+}
+
+export interface KubernetesStatus {
+  enabled: boolean;
+  kubelet_started: boolean;
+  kube_process: boolean;
+  state?: "absent" | "detected";
+  package_status?: string;
+  runtime_status?: string;
+  reason?: string;
+  vm_requires_k8s: boolean;
+  ct_requires_k8s: boolean;
 }
 
 export interface StoreApp {
@@ -1729,6 +1741,12 @@ export type ListFeaturesPath = "/api/v1/features";
 export type EnableFeaturePath = "/api/v1/features/{id}/enable";
 
 export type DisableFeaturePath = "/api/v1/features/{id}/disable";
+
+export type GetKubernetesPath = "/api/v1/kubernetes";
+
+export type StartKubernetesPath = "/api/v1/kubernetes/start";
+
+export type StopKubernetesPath = "/api/v1/kubernetes/stop";
 
 export type ListStoreAppsPath = "/api/v1/store/apps";
 

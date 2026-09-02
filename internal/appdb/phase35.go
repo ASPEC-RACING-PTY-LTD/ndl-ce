@@ -13,6 +13,7 @@ const (
 	FeatureInstalled     = "installed"
 	FeatureRemoved       = "removed"
 	FeatureNotStarted    = "not_started"
+	FeatureRunning       = "running"
 )
 
 // Feature is one optional or core module row.

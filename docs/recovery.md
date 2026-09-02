@@ -290,6 +290,22 @@ paths.
 2. Revoked signing key refuses new installs.
 3. Unsigned Community is refused when policy is verified-only.
 
+## Optional Kubernetes (Phase 38)
+
+Kubernetes is an optional feature. Default install has no kubelet
+process. Virtual machines and system containers do not require it.
+`nodalctl feature enable kubernetes` installs the optional package and
+does not start kubelet. `nodalctl kubernetes start --confirm start-kubelet`
+is a separate typed action.
+
+Disable leaves workloads running. Stop kubelet does not stop VMs.
+
+### Recovery matrix (Kubernetes)
+
+1. Fresh status shows kube_process false and kubelet_started false.
+2. Enable without start leaves kubelet down.
+3. Stop does not stop virtual machines.
+
 
 ## Identity completion (Phase 13)
 

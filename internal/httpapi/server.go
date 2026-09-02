@@ -72,6 +72,7 @@ type Server struct {
 	ZFS         ZFSRPC
 	LVM         LVMRPC
 	Datastore   DatastoreRPC
+	K8sProcs    func() []string
 	Hub         *EventHub
 	Migrate     migrate.Runtime
 	UI          fs.FS
@@ -178,6 +179,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/features", s.listFeatures)
 	mux.HandleFunc("POST /api/v1/features/{id}/enable", s.enableFeature)
 	mux.HandleFunc("POST /api/v1/features/{id}/disable", s.disableFeature)
+	mux.HandleFunc("GET /api/v1/kubernetes", s.getKubernetes)
+	mux.HandleFunc("POST /api/v1/kubernetes/start", s.startKubernetes)
+	mux.HandleFunc("POST /api/v1/kubernetes/stop", s.stopKubernetes)
 	mux.HandleFunc("GET /api/v1/store/apps", s.listStoreApps)
 	mux.HandleFunc("GET /api/v1/store/apps/{id}", s.getStoreApp)
 	mux.HandleFunc("POST /api/v1/store/apps/import", s.importStoreApp)

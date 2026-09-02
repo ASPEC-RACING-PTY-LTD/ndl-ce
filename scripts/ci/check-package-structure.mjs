@@ -213,6 +213,9 @@ if (!changelog.includes("nodal (0.1.35)") || !changelog.includes("Phase 36 No-da
 if (!changelog.includes("nodal (0.1.36)") || !changelog.includes("Phase 37 Store trust")) {
   errors.push("changelog must include nodal (0.1.36) Phase 37 Store trust");
 }
+if (!changelog.includes("nodal (0.1.37)") || !changelog.includes("Phase 38 optional Kubernetes")) {
+  errors.push("changelog must include nodal (0.1.37) Phase 38 optional Kubernetes");
+}
 
 const control = existsSync("packaging/debian/control")
   ? readFileSync("packaging/debian/control", "utf8")

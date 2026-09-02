@@ -46,6 +46,9 @@ func run(args []string) error {
   feature list
   feature enable NAME [--confirm enable-k8s]
   feature disable NAME [--confirm disable-feature]
+  kubernetes show
+  kubernetes start --confirm start-kubelet
+  kubernetes stop
   app list
   app import FILE
   app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]
@@ -180,6 +183,8 @@ func run(args []string) error {
 		return cmdCluster(args[1:])
 	case "feature":
 		return cmdFeature(args[1:])
+	case "kubernetes":
+		return cmdKubernetes(args[1:])
 	case "app":
 		return cmdApp(args[1:])
 	case "task":
@@ -734,7 +739,7 @@ func cmdFeature(args []string) error {
 		return cmdGet("/api/v1/features")
 	case "enable":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: nodalctl feature enable oci|gpu|k8s|distributed_storage|ai [--confirm enable-k8s]")
+			return fmt.Errorf("usage: nodalctl feature enable oci|gpu|k8s|kubernetes|distributed_storage|ai [--confirm enable-k8s]")
 		}
 		f := parseFlags(args[2:])
 		if f["confirm"] != "" {
@@ -752,6 +757,26 @@ func cmdFeature(args []string) error {
 		return postJSON("/api/v1/features/"+args[1]+"/disable", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl feature list|enable NAME|disable NAME")
+	}
+}
+
+func cmdKubernetes(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl kubernetes show|start|stop")
+	}
+	switch args[0] {
+	case "show":
+		return cmdGet("/api/v1/kubernetes")
+	case "start":
+		f := parseFlags(args[1:])
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/kubernetes/start", map[string]any{}, true)
+	case "stop":
+		return postJSON("/api/v1/kubernetes/stop", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl kubernetes show|start|stop")
 	}
 }
 

@@ -15,7 +15,7 @@ const (
 	// TinyK8sMemoryBytes is the RAM floor for Kubernetes without confirm.
 	// At or below this, enable requires X-Nodal-Confirm: enable-k8s.
 	TinyK8sMemoryBytes  uint64 = 8 << 30
-	K8sNotStartedReason        = "Kubernetes runtime is Phase 38. Enabling the module does not start kubelet."
+	K8sNotStartedReason        = "Kubernetes runtime is optional. Enabling the module does not start kubelet."
 	GPUOptionalReason          = "GPU services are optional. Phase 14 assignment stays available without this package."
 	DistStorageReason          = "Distributed storage is an optional package set. Ceph is not started here."
 	AIReason                   = "AI services are an optional package set. Models are not started here."
@@ -48,9 +48,12 @@ func Catalog() []Module {
 	}
 }
 
-// Lookup returns a catalog module.
+// Lookup returns a catalog module. "kubernetes" is an alias for k8s.
 func Lookup(id string) (Module, bool) {
 	want := strings.TrimSpace(id)
+	if want == "kubernetes" {
+		want = IDK8s
+	}
 	for _, m := range Catalog() {
 		if m.ID == want {
 			return m, true

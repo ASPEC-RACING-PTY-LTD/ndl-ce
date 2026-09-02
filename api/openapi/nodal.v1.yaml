@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.36
-  description: Phase 37 Store trust pipeline, plus prior northbound API.
+  version: 0.1.37
+  description: Phase 38 optional Kubernetes runtime, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -917,6 +917,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Feature"
+  /kubernetes:
+    get:
+      operationId: getKubernetes
+      summary: Kubernetes optional runtime status. Default install has no kube process.
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesStatus"
+  /kubernetes/start:
+    post:
+      operationId: startKubernetes
+      summary: Start kubelet only after the Kubernetes feature is enabled. Confirm required.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - start-kubelet
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesStatus"
+  /kubernetes/stop:
+    post:
+      operationId: stopKubernetes
+      summary: Stop kubelet. Virtual machines and system containers are not stopped.
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesStatus"
   /store/apps:
     get:
       operationId: listStoreApps
@@ -4251,6 +4292,7 @@ components:
           enum:
             - not_started
             - installed
+            - running
         starts_runtime:
           type: boolean
         kubelet_started:
@@ -4283,6 +4325,37 @@ components:
           type: boolean
         reason:
           type: string
+    KubernetesStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - kubelet_started
+        - kube_process
+        - vm_requires_k8s
+        - ct_requires_k8s
+      properties:
+        enabled:
+          type: boolean
+        kubelet_started:
+          type: boolean
+        kube_process:
+          type: boolean
+        state:
+          type: string
+          enum:
+            - absent
+            - detected
+        package_status:
+          type: string
+        runtime_status:
+          type: string
+        reason:
+          type: string
+        vm_requires_k8s:
+          type: boolean
+        ct_requires_k8s:
+          type: boolean
     StoreApp:
       type: object
       additionalProperties: false

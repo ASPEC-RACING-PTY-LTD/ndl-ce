@@ -64,6 +64,14 @@ func TestUpdateArgvNeverShell(t *testing.T) {
 	if strings.Contains(joinedFeat, "systemctl") || strings.Contains(joinedFeat, "kubelet") {
 		t.Fatalf("feature install must not start k8s: %s", joinedFeat)
 	}
+	start := K8sRuntimeArgv(true)
+	if start[0] != "/usr/bin/systemctl" || !contains(start, "start") || !contains(start, "kubelet") {
+		t.Fatalf("%v", start)
+	}
+	stop := K8sRuntimeArgv(false)
+	if !contains(stop, "stop") || contains(stop, "bash") {
+		t.Fatalf("%v", stop)
+	}
 }
 
 func contains(argv []string, want string) bool {

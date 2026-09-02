@@ -240,6 +240,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Live CVE scanner is not installed on this control node. Why not blocking: the scan report is visible and records vulnerability as unavailable rather than a fake pass.
 - LOW. Production No-dal signing CA is not shipped. Why not blocking: each cluster generates Official Ed25519 keys; private material stays in secrets and is never returned.
 
+## Phase 38
+
+- MEDIUM. Live kubelet is not started on this Ubuntu Cloud host. Why not blocking: start is a typed HostUpdate that returns unavailable and kubelet_started stays false; Debian 13 systemd is the product path.
+- LOW. No-dal does not wrap arbitrary Kubernetes pods as first-class workloads yet. Why not blocking: VMs and CTs remain the default compute and do not require Kubernetes.
+
 
 
 

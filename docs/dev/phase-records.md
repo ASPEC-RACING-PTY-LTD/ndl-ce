@@ -281,6 +281,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: live CVE scanner; upgrade/rollback version graph
 - Audit follow-up: private signing keys never returned; no helper-script runner
 
+## Phase 38
+
+- Package: 0.1.37
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (default kubernetes status has no kube process and kubelet_started false, feature enable kubernetes alias does not start kubelet, start-kubelet on this Ubuntu host stays unstarted, stop does not stop VMs). FIXTURE: injected process list plus fakeUpdate. NOT PHYSICALLY VALIDATED: systemd start kubelet on Debian 13; kubeadm cluster
+- Follow-up: live kubelet join; wrap K8s workloads as No-dal-visible
+- Audit follow-up: feature-install still does not name kubelet; VMs/CTs remain independent
+
 
 
 

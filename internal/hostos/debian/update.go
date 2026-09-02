@@ -6,16 +6,18 @@ import (
 )
 
 const (
-	UpdateCheck          = "check"
-	UpdateStatus         = "status"
-	UpdatePreflight      = "preflight"
-	UpdateCheckpoint     = "checkpoint"
-	UpdateApply          = "apply"
-	UpdateRollback       = "rollback"
-	UpdateFeatureInstall = "feature-install"
-	UpdateFeatureRemove  = "feature-remove"
-	ChannelStable        = "stable"
-	UnsupportedHost      = "Platform updates use the Debian 13 adapter and the signed nodal repository. This host is not Debian 13 amd64."
+	UpdateCheck           = "check"
+	UpdateStatus          = "status"
+	UpdatePreflight       = "preflight"
+	UpdateCheckpoint      = "checkpoint"
+	UpdateApply           = "apply"
+	UpdateRollback        = "rollback"
+	UpdateFeatureInstall  = "feature-install"
+	UpdateFeatureRemove   = "feature-remove"
+	UpdateK8sRuntimeStart = "k8s-runtime-start"
+	UpdateK8sRuntimeStop  = "k8s-runtime-stop"
+	ChannelStable         = "stable"
+	UnsupportedHost       = "Platform updates use the Debian 13 adapter and the signed nodal repository. This host is not Debian 13 amd64."
 )
 
 // PackageNames are the only packages the Phase 12 update adapter may mention.
@@ -74,6 +76,15 @@ func FeatureRemoveArgv(pkg string, dryRun bool) ([]string, error) {
 		argv = append(argv, "--dry-run")
 	}
 	return append(argv, "remove", pkg), nil
+}
+
+// K8sRuntimeArgv starts or stops kubelet via systemd. It is not feature-install.
+func K8sRuntimeArgv(start bool) []string {
+	action := "stop"
+	if start {
+		action = "start"
+	}
+	return []string{"/usr/bin/systemctl", action, "kubelet"}
 }
 
 // CheckArgv refreshes signed package indexes. It does not install.
