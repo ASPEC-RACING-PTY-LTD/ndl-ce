@@ -422,8 +422,11 @@ func destVolumeLocator(dest *appdb.Node, vol *appdb.Volume, src string, pools []
 	if class == "" {
 		class = storage.ClassVMDisk
 	}
-	destPath := path.Join(destRoot, "volumes", class, name)
-	if destPath == src || destPath == "" {
+	if !storage.ValidClass(class) {
+		return "", fmt.Errorf(destLocatorMissing)
+	}
+	destPath, err := storage.JoinUnder(destRoot, path.Join("volumes", class, name))
+	if err != nil || destPath == src || destPath == "" {
 		return "", fmt.Errorf(destLocatorMissing)
 	}
 	return destPath, nil

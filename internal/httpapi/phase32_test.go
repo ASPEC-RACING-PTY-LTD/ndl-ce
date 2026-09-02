@@ -473,3 +473,15 @@ func TestPhase32DestDiskLocatorDiffersAndZFSIsNotShared(t *testing.T) {
 		t.Fatalf("missing volume must fail closed: %v", err)
 	}
 }
+
+func TestDestVolumeLocatorRejectsClassEscape(t *testing.T) {
+	dest := &appdb.Node{ID: uuid.NewString()}
+	vol := &appdb.Volume{ID: uuid.NewString(), Class: "../../etc"}
+	pools := []appdb.StoragePool{{
+		NodeID: dest.ID, RootPath: storage.DefaultPoolPath, BackendType: storage.BackendDirectory,
+	}}
+	got, err := destVolumeLocator(dest, vol, "/src", pools)
+	if err == nil || !strings.Contains(err.Error(), destLocatorMissing) || got != "" {
+		t.Fatalf("class escape must fail closed: %q %v", got, err)
+	}
+}
