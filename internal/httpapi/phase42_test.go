@@ -314,3 +314,18 @@ func TestPhase42PolicyPlanUsesAutomationValidation(t *testing.T) {
 		t.Fatalf("banned action must not insert a second policy %d", len(pols))
 	}
 }
+
+func TestExistingAPIErrorNoStatusIsFailure(t *testing.T) {
+	s, _, _ := testServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/workloads", nil)
+	code, raw := s.invokeExistingAPI(r, func(http.ResponseWriter, *http.Request) {}, http.MethodPost, "/api/v1/workloads", []byte(`{}`), "")
+	if err := existingAPIError(code, raw); err == nil {
+		t.Fatal("silent handler")
+	}
+	if err := existingAPIError(http.StatusCreated, []byte(`{"id":"x"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if existingAPIID([]byte(`{"name":"x"}`), "id") != "" {
+		t.Fatal("missing id")
+	}
+}

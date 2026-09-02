@@ -257,7 +257,11 @@ func (s *Server) executeCreateWorkload(r *http.Request, body map[string]any) (st
 	if err := existingAPIError(code, out); err != nil {
 		return "", err
 	}
-	return existingAPIID(out, "id"), nil
+	id := existingAPIID(out, "id")
+	if id == "" {
+		return "", errPlan("workload id is missing")
+	}
+	return id, nil
 }
 
 type planError string
@@ -337,7 +341,10 @@ func (c *captureResponse) WriteHeader(status int) {
 }
 
 func existingAPIError(code int, raw []byte) error {
-	if code == 0 || code < 400 {
+	if code == 0 {
+		return errPlan("existing API produced no HTTP status")
+	}
+	if code < 400 {
 		return nil
 	}
 	var m map[string]string
