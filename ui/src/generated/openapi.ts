@@ -434,6 +434,12 @@ export interface StoreApp {
   gpu_optional?: boolean;
   deployment_kind?: string;
   image?: string;
+  signed?: boolean;
+  payload_sha256?: string;
+  key_id?: string;
+  trust_class?: string;
+  verify_status?: string;
+  verify_reason?: string;
   hooks?: Record<string, unknown>;
   ai_actions?: Record<string, unknown>[];
 }
@@ -473,6 +479,65 @@ export interface StoreInstallation {
 
 export interface StoreInstallationList {
   items: StoreInstallation[];
+}
+
+export interface StoreSignRequest {
+  key_id: string;
+}
+
+export interface StoreSignature {
+  id: string;
+  package_id: string;
+  key_id: string;
+  algorithm: string;
+  payload_sha256: string;
+}
+
+export interface StoreScanCheck {
+  kind: string;
+  status: "pass" | "fail" | "warn" | "unavailable";
+  detail: string;
+}
+
+export interface StoreVerifyResult {
+  id: string;
+  package_id: string;
+  status: "pass" | "fail";
+  reason?: string;
+  trust_class?: string;
+  key_id?: string;
+  kubelet_started?: boolean;
+  checks?: StoreScanCheck[];
+}
+
+export interface StoreScanList {
+  items: StoreScanCheck[];
+  status?: string;
+  reason?: string;
+  trust_class?: string;
+  verification_id?: string;
+}
+
+export interface StoreCreateKeyRequest {
+  name: string;
+  class?: "verified" | "official";
+}
+
+export interface StoreSigningKey {
+  id: string;
+  name: string;
+  class: string;
+  status: "active" | "revoked";
+  public_key: string;
+  revoked_at?: string;
+}
+
+export interface StoreSigningKeyList {
+  items: StoreSigningKey[];
+}
+
+export interface StorePolicy {
+  install_policy: "community-allowed" | "verified-only";
 }
 
 export interface JoinTokenCreateRequest {
@@ -1673,7 +1738,19 @@ export type GetStoreAppPath = "/api/v1/store/apps/{id}";
 
 export type InstallStoreAppPath = "/api/v1/store/apps/{id}/install";
 
+export type SignStoreAppPath = "/api/v1/store/apps/{id}/sign";
+
+export type VerifyStoreAppPath = "/api/v1/store/apps/{id}/verify";
+
+export type GetStoreAppScansPath = "/api/v1/store/apps/{id}/scans";
+
 export type ListStoreInstallationsPath = "/api/v1/store/installations";
+
+export type ListStoreKeysPath = "/api/v1/store/keys";
+
+export type RevokeStoreKeyPath = "/api/v1/store/keys/{id}/revoke";
+
+export type GetStorePolicyPath = "/api/v1/store/policy";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

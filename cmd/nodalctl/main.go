@@ -49,6 +49,8 @@ func run(args []string) error {
   app list
   app import FILE
   app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]
+  app verify --id ID
+  app policy [--set community-allowed|verified-only]
   cluster join-token create
   cluster join --token TOKEN [--url URL] [--hostname HOST]
   cluster node revoke --id ID
@@ -330,6 +332,17 @@ func cmdRecover(args []string) error {
 
 func postJSON(path string, body any, saveSession bool) error {
 	resp, err := do("POST", path, body, saveSession)
+	if err != nil {
+		return err
+	}
+	if len(resp) > 0 {
+		fmt.Println(string(resp))
+	}
+	return nil
+}
+
+func putJSON(path string, body any, saveSession bool) error {
+	resp, err := do("PUT", path, body, saveSession)
 	if err != nil {
 		return err
 	}
@@ -744,7 +757,7 @@ func cmdFeature(args []string) error {
 
 func cmdApp(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl app list|import FILE|install --id ID")
+		return fmt.Errorf("usage: nodalctl app list|import FILE|install --id ID|verify --id ID|policy")
 	}
 	switch args[0] {
 	case "list":
@@ -766,8 +779,21 @@ func cmdApp(args []string) error {
 		}
 		body := map[string]any{"name": f["name"], "pool_id": f["pool-id"], "network_id": f["network-id"], "node_id": f["node-id"]}
 		return postJSON("/api/v1/store/apps/"+id+"/install", body, true)
+	case "verify":
+		f := parseFlags(args[1:])
+		id := f["id"]
+		if id == "" {
+			return fmt.Errorf("usage: nodalctl app verify --id ID")
+		}
+		return postJSON("/api/v1/store/apps/"+id+"/verify", map[string]any{}, true)
+	case "policy":
+		f := parseFlags(args[1:])
+		if f["set"] != "" {
+			return putJSON("/api/v1/store/policy", map[string]any{"install_policy": f["set"]}, true)
+		}
+		return cmdGet("/api/v1/store/policy")
 	default:
-		return fmt.Errorf("usage: nodalctl app list|import FILE|install --id ID")
+		return fmt.Errorf("usage: nodalctl app list|import FILE|install --id ID|verify --id ID|policy")
 	}
 }
 

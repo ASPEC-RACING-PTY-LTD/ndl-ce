@@ -314,6 +314,21 @@ type Store interface {
 	GetStoreInstallation(ctx context.Context, clusterID, id string) (*StoreInstallation, error)
 	ListStoreInstallations(ctx context.Context, clusterID string) ([]StoreInstallation, error)
 	UpdateStoreInstallation(ctx context.Context, in StoreInstallation) error
+
+	CreateSigningKey(ctx context.Context, k SigningKey, privateB64 string) error
+	GetSigningKey(ctx context.Context, clusterID, id string) (*SigningKey, error)
+	GetSigningKeyByName(ctx context.Context, clusterID, name string) (*SigningKey, error)
+	ListSigningKeys(ctx context.Context, clusterID string) ([]SigningKey, error)
+	RevokeSigningKey(ctx context.Context, clusterID, id string, at time.Time) error
+	SigningPrivate(ctx context.Context, clusterID, id string) (string, error)
+	CreatePackageSignature(ctx context.Context, s PackageSignature) error
+	LatestPackageSignature(ctx context.Context, clusterID, packageID string) (*PackageSignature, error)
+	CreateStoreVerification(ctx context.Context, v StoreVerification) error
+	LatestStoreVerification(ctx context.Context, clusterID, packageID string) (*StoreVerification, error)
+	CreateScanResults(ctx context.Context, rows []ScanResult) error
+	ListScanResults(ctx context.Context, clusterID, verificationID string) ([]ScanResult, error)
+	GetStorePolicy(ctx context.Context, clusterID string) (*StorePolicy, error)
+	SetStorePolicy(ctx context.Context, p StorePolicy) error
 }
 
 // Cluster is the appliance cluster of one.

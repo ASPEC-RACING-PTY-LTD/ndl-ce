@@ -593,7 +593,7 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^features$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^features$/i })).toBeVisible();
-    expect(screen.getByText(/base install light/i)).toBeVisible();
+    expect(await screen.findByText(/base install light/i)).toBeVisible();
     expect(screen.getByRole("heading", { name: /^gpu services$/i })).toBeVisible();
     expect(screen.getByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^install$/i }).length).toBeGreaterThan(0);
@@ -618,16 +618,20 @@ describe("App", () => {
               summary: "Official sample",
               gpu_optional: true,
               image: "docker.io/library/caddy:2.8.4",
+              signed: true,
             },
           ],
         },
       },
+      "/api/v1/store/policy": { status: 200, body: { install_policy: "community-allowed" } },
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^store$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^store$/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^sample web$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^sample web$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^install$/i })).toBeVisible();
+    expect(screen.getByText(/official badge/i)).toBeVisible();
+    expect(screen.getByText(/install policy community-allowed/i)).toBeVisible();
   });
 
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {

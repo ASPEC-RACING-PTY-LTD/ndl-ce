@@ -69,6 +69,7 @@ const (
 	FeatureManage       = "feature.manage"
 	StoreRead           = "store.read"
 	StoreInstall        = "store.install"
+	StoreVerify         = "store.verify"
 	All                 = "*"
 )
 
@@ -93,7 +94,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot, ComputeGPUAssign, ComputeMigrate,
 			BackupRead, BackupCreate, BackupRestore, NodeUpdate, ClusterJoin, NodeRevoke,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
-			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall,
+			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify,
 		}
 	case Viewer:
 		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead}

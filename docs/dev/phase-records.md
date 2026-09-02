@@ -272,6 +272,15 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Follow-up: signatures and Verified class Phase 37; upgrade/rollback version graph
 - Audit follow-up: no helper-script runner
 
+## Phase 37
+
+- Package: 0.1.36
+- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
+- Coverage: PROVEN IN CLOUD (official sample verify pass with scan report including CVE unavailable, tampered YAML fails closed, verified-only refuses unsigned, revoked key stops new installs and leaves running workloads). FIXTURE: Memory plus Ed25519 cluster keys. NOT PHYSICALLY VALIDATED: live Trivy/Grype; production No-dal CA
+- Follow-up: live CVE scanner; upgrade/rollback version graph
+- Audit follow-up: private signing keys never returned; no helper-script runner
+
 
 
 

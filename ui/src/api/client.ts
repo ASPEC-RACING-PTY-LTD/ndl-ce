@@ -297,6 +297,34 @@ export async function installStoreApp(
   );
 }
 
+export async function verifyStoreApp(id: string): Promise<import("../generated/openapi").StoreVerifyResult> {
+  return readJson(
+    await request(`/store/apps/${id}/verify`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
+export async function getStoreAppScans(id: string): Promise<import("../generated/openapi").StoreScanList> {
+  return readJson(await request(`/store/apps/${id}/scans`));
+}
+
+export async function getStorePolicy(): Promise<import("../generated/openapi").StorePolicy> {
+  return readJson(await request("/store/policy"));
+}
+
+export async function setStorePolicy(
+  body: import("../generated/openapi").StorePolicy,
+): Promise<import("../generated/openapi").StorePolicy> {
+  return readJson(
+    await request("/store/policy", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

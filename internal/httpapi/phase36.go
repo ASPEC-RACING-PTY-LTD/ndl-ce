@@ -39,7 +39,7 @@ func (s *Server) listStoreApps(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	s.seedOfficialStore(r.Context(), p.User.ClusterID)
+	s.ensureOfficialTrust(r.Context(), p.User.ClusterID)
 	items, err := s.Store.ListStorePackages(r.Context(), p.User.ClusterID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -47,7 +47,7 @@ func (s *Server) listStoreApps(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		out = append(out, s.storePackageJSON(item))
+		out = append(out, s.storePackageJSON(r.Context(), item))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
@@ -57,13 +57,13 @@ func (s *Server) getStoreApp(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	s.seedOfficialStore(r.Context(), p.User.ClusterID)
+	s.ensureOfficialTrust(r.Context(), p.User.ClusterID)
 	item, err := s.Store.GetStorePackage(r.Context(), p.User.ClusterID, r.PathValue("id"))
 	if err != nil || item == nil {
 		writeErr(w, http.StatusNotFound, "store package not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.storePackageJSON(*item))
+	writeJSON(w, http.StatusOK, s.storePackageJSON(r.Context(), *item))
 }
 
 func (s *Server) importStoreApp(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func (s *Server) importStoreApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "store.import", "ok", row.ID)
-	out := s.storePackageJSON(row)
+	out := s.storePackageJSON(r.Context(), row)
 	if warn != "" {
 		out["warning"] = warn
 	}
@@ -112,10 +112,14 @@ func (s *Server) installStoreApp(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	s.seedOfficialStore(r.Context(), p.User.ClusterID)
+	s.ensureOfficialTrust(r.Context(), p.User.ClusterID)
 	pkg, err := s.Store.GetStorePackage(r.Context(), p.User.ClusterID, r.PathValue("id"))
 	if err != nil || pkg == nil {
 		writeErr(w, http.StatusNotFound, "store package not found")
+		return
+	}
+	if err := s.enforceStoreTrust(r.Context(), p.User.ClusterID, *pkg); err != nil {
+		writeErr(w, statusFor(err), err.Error())
 		return
 	}
 	m, err := appmanifest.ParseYAML([]byte(pkg.ManifestYAML))
@@ -256,7 +260,7 @@ func (s *Server) rollbackStoreStack(ctx context.Context, clusterID, stackID stri
 	_ = s.Store.DeleteStack(ctx, clusterID, stackID)
 }
 
-func (s *Server) storePackageJSON(p appdb.StorePackage) map[string]any {
+func (s *Server) storePackageJSON(ctx context.Context, p appdb.StorePackage) map[string]any {
 	out := map[string]any{
 		"id": p.ID, "name": p.Name, "version": p.Version, "class": p.Class,
 		"title": p.Title, "summary": p.Summary, "unsigned": p.UnsignedWarning,
@@ -272,6 +276,18 @@ func (s *Server) storePackageJSON(p appdb.StorePackage) map[string]any {
 	}
 	if p.UnsignedWarning {
 		out["warning"] = communityUnsignedWarn
+	}
+	if sig, _ := s.Store.LatestPackageSignature(ctx, p.ClusterID, p.ID); sig != nil {
+		out["signed"] = true
+		out["payload_sha256"] = sig.PayloadSHA256
+		out["key_id"] = sig.KeyID
+	} else {
+		out["signed"] = false
+	}
+	if v, _ := s.Store.LatestStoreVerification(ctx, p.ClusterID, p.ID); v != nil {
+		out["trust_class"] = v.TrustClass
+		out["verify_status"] = v.Status
+		out["verify_reason"] = v.Reason
 	}
 	return out
 }

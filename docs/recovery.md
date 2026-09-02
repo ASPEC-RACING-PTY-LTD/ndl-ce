@@ -273,6 +273,24 @@ Signatures are Phase 37.
 2. A manifest with `run: bash` is refused.
 3. A failed OCI pull rolls back stack and workload rows.
 
+## Store trust (Phase 37)
+
+Packages are signed with cluster Ed25519 keys. Tampered YAML fails
+closed. Revoking a key stops new installs that need that signature.
+Running workloads are left running. `verified-only` refuses unsigned
+Community packages. The scan report is visible; CVE scanning is
+unavailable unless a scanner is installed.
+
+`nodalctl app verify --id ID` and `nodalctl app policy` are the CLI
+paths.
+
+### Recovery matrix (Store trust)
+
+1. Tampered manifest signature is refused.
+2. Revoked signing key refuses new installs.
+3. Unsigned Community is refused when policy is verified-only.
+
+
 ## Identity completion (Phase 13)
 
 TOTP is the working MFA method. WebAuthn is not implemented. Login returns

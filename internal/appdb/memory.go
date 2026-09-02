@@ -86,6 +86,12 @@ type Memory struct {
 	features          map[string]Feature
 	storePackages     map[string]StorePackage
 	storeInstalls     map[string]StoreInstallation
+	signingKeys       map[string]SigningKey
+	signingSecrets    map[string]string
+	packageSigs       map[string]PackageSignature
+	storeVerifies     map[string]StoreVerification
+	scanResults       map[string]ScanResult
+	storePolicies     map[string]StorePolicy
 	nodeGroups        map[string]NodeGroup
 	nodeGroupMembers  map[string][]string
 	nodeMaint         map[string]NodeMaintenance

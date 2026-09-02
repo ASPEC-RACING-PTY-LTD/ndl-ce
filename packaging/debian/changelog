@@ -1,3 +1,9 @@
+nodal (0.1.36) UNRELEASED; urgency=medium
+
+  * Phase 37 Store trust pipeline: Ed25519 signatures, tamper fails closed, scan report with honest CVE unavailable, verified-only install policy, revoked signing key stops new installs without deleting running workloads
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
 nodal (0.1.35) UNRELEASED; urgency=medium
 
   * Phase 36 No-dal Store: declarative manifests, official sample-web install maps to stack plus OCI, reject run bash, failed install rolls back objects, unsigned Community warns

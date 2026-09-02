@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.35
-  description: Phase 36 Store manifests, plus prior northbound API.
+  version: 0.1.36
+  description: Phase 37 Store trust pipeline, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -985,6 +985,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StoreInstallation"
+  /store/apps/{id}/sign:
+    post:
+      operationId: signStoreApp
+      summary: Sign a Store package with a cluster signing key. Private keys are never returned.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreSignRequest"
+      responses:
+        "201":
+          description: Signature recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSignature"
+  /store/apps/{id}/verify:
+    post:
+      operationId: verifyStoreApp
+      summary: Verify signatures and run the static scan report. Tamper fails closed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Verification passed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreVerifyResult"
+        "422":
+          description: Tamper or failed checks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreVerifyResult"
+  /store/apps/{id}/scans:
+    get:
+      operationId: getStoreAppScans
+      summary: Latest scan report for a Store package
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scan report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreScanList"
   /store/installations:
     get:
       operationId: listStoreInstallations
@@ -996,6 +1059,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StoreInstallationList"
+  /store/keys:
+    get:
+      operationId: listStoreKeys
+      summary: Public Store signing keys. Private material is never returned.
+      responses:
+        "200":
+          description: Keys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSigningKeyList"
+    post:
+      operationId: createStoreKey
+      summary: Create a cluster Store signing key. Private key stays in secrets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreCreateKeyRequest"
+      responses:
+        "201":
+          description: Public key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSigningKey"
+  /store/keys/{id}/revoke:
+    post:
+      operationId: revokeStoreKey
+      summary: Revoke a signing key. New installs that require it fail closed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - revoke-store-key
+      responses:
+        "200":
+          description: Revoked key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSigningKey"
+  /store/policy:
+    get:
+      operationId: getStorePolicy
+      summary: Store install trust policy
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorePolicy"
+    put:
+      operationId: setStorePolicy
+      summary: Set community-allowed or verified-only install policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorePolicy"
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorePolicy"
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -4177,6 +4318,18 @@ components:
           type: string
         image:
           type: string
+        signed:
+          type: boolean
+        payload_sha256:
+          type: string
+        key_id:
+          type: string
+        trust_class:
+          type: string
+        verify_status:
+          type: string
+        verify_reason:
+          type: string
         hooks:
           type: object
           additionalProperties: true
@@ -4269,6 +4422,159 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StoreInstallation"
+    StoreSignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - key_id
+      properties:
+        key_id:
+          type: string
+    StoreSignature:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - package_id
+        - key_id
+        - algorithm
+        - payload_sha256
+      properties:
+        id:
+          type: string
+        package_id:
+          type: string
+        key_id:
+          type: string
+        algorithm:
+          type: string
+        payload_sha256:
+          type: string
+    StoreScanCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - status
+        - detail
+      properties:
+        kind:
+          type: string
+        status:
+          type: string
+          enum:
+            - pass
+            - fail
+            - warn
+            - unavailable
+        detail:
+          type: string
+    StoreVerifyResult:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - package_id
+        - status
+      properties:
+        id:
+          type: string
+        package_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pass
+            - fail
+        reason:
+          type: string
+        trust_class:
+          type: string
+        key_id:
+          type: string
+        kubelet_started:
+          type: boolean
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreScanCheck"
+    StoreScanList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreScanCheck"
+        status:
+          type: string
+        reason:
+          type: string
+        trust_class:
+          type: string
+        verification_id:
+          type: string
+    StoreCreateKeyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        class:
+          type: string
+          enum:
+            - verified
+            - official
+    StoreSigningKey:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - class
+        - status
+        - public_key
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        class:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - revoked
+        public_key:
+          type: string
+        revoked_at:
+          type: string
+    StoreSigningKeyList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreSigningKey"
+    StorePolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - install_policy
+      properties:
+        install_policy:
+          type: string
+          enum:
+            - community-allowed
+            - verified-only
     JoinTokenCreateRequest:
       type: object
       additionalProperties: false

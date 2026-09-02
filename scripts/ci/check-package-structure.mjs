@@ -92,6 +92,14 @@ if (!existsSync("migrations/0033_phase36.sql")) {
     errors.push("phase 36 migration must add store_packages and store_installations");
   }
 }
+if (!existsSync("migrations/0034_phase37.sql")) {
+  errors.push("missing migrations/0034_phase37.sql store signatures and scan results");
+} else {
+  const trustSql = readFileSync("migrations/0034_phase37.sql", "utf8");
+  if (!trustSql.includes("store_package_signatures") || !trustSql.includes("store_scan_results")) {
+    errors.push("phase 37 migration must add package signatures and scan results");
+  }
+}
 if (!existsSync("store/official/sample-web.yaml")) {
   errors.push("missing store/official/sample-web.yaml official sample manifest");
 } else {
@@ -201,6 +209,9 @@ if (!changelog.includes("nodal (0.1.34)") || !changelog.includes("Phase 35 featu
 }
 if (!changelog.includes("nodal (0.1.35)") || !changelog.includes("Phase 36 No-dal Store")) {
   errors.push("changelog must include nodal (0.1.35) Phase 36 No-dal Store");
+}
+if (!changelog.includes("nodal (0.1.36)") || !changelog.includes("Phase 37 Store trust")) {
+  errors.push("changelog must include nodal (0.1.36) Phase 37 Store trust");
 }
 
 const control = existsSync("packaging/debian/control")

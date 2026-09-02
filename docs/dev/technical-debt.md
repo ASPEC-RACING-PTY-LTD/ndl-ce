@@ -235,6 +235,11 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Live registry pull of the official sample image is not in this Cloud job. Why not blocking: fakeOCI proves manifest-to-stack mapping; the sample image pin is declarative.
 - LOW. Store upgrade/rollback version graph is not implemented. Why not blocking: failed install rollback is the recovery gate; upgrade is a later catalog operation.
 
+## Phase 37
+
+- MEDIUM. Live CVE scanner is not installed on this control node. Why not blocking: the scan report is visible and records vulnerability as unavailable rather than a fake pass.
+- LOW. Production No-dal signing CA is not shipped. Why not blocking: each cluster generates Official Ed25519 keys; private material stays in secrets and is never returned.
+
 
 
 
