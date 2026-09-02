@@ -43,6 +43,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Migration import path and xml_path must be under No-dal storage, staging, or /tmp. OpenAPI documents the create-source token field and the start fields the handlers already use.
   * ACME directory URLs must be https without userinfo. A failed probe does not persist credentials that GET /certs would list.
   * Files upload expected sha256 must match the digest field. A substring of the JSON result is not a checksum.
+  * OpenAPI documents Files dest_path jail, write-only SMTP password, and HA replica host:port.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

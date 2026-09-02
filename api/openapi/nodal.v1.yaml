@@ -5031,6 +5031,7 @@ components:
       properties:
         endpoint:
           type: string
+          description: Replica host:port. Not a DSN. Credentials stay in the dsn field.
         dsn:
           type: string
           description: Stored as a secret. Never returned.
@@ -6454,6 +6455,7 @@ components:
           type: string
         dest_path:
           type: string
+          description: Copy or rename dest. Parent-directory segments are refused. The server jail is the authority.
         mode:
           type: integer
         uid:
@@ -6464,6 +6466,7 @@ components:
           type: string
         expected_sha256:
           type: string
+          description: Existing file digest for compare-and-swap before mutate.
     FileMutationResponse:
       type: object
       additionalProperties: true
@@ -8264,6 +8267,7 @@ components:
           type: string
         smtp_password:
           type: string
+          description: Write-only. Never returned after save.
     WorkloadGuestResponse:
       type: object
       additionalProperties: false
