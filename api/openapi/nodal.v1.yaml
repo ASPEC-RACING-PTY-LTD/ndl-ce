@@ -6858,6 +6858,13 @@ components:
             - aws
             - b2
             - minio
+        locator:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+          description: Write-only. Never returned after save. For object targets this is the secret access key.
         endpoint:
           type: string
           description: Object-store endpoint without userinfo. Access keys stay in username and password.
