@@ -248,6 +248,34 @@ func TestPhase23R2HTTPEndpointRejected(t *testing.T) {
 	}
 }
 
+func TestPhase23ObjectTargetRefusesCredentials(t *testing.T) {
+	s, _, token := testServer(t)
+	s.Object = newFakeObject()
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	cookie := claimAdmin(t, ts, token)
+	for _, body := range []string{
+		`{"name":"r2","kind":"r2","endpoint":"https://akid:secret@account.r2.cloudflarestorage.com","bucket":"ndl","username":"akid","password":"secret","no_check_bucket":true}`,
+		`{"name":"minio","kind":"minio","endpoint":"http://minio:minio123@127.0.0.1:9000","bucket":"ndl","username":"minio","password":"minio123","no_check_bucket":true}`,
+	} {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status %d %s for %s", res.StatusCode, raw, body)
+		}
+		if strings.Contains(string(raw), "secret") || strings.Contains(string(raw), "minio123") {
+			t.Fatalf("secret echoed %s", raw)
+		}
+	}
+}
+
 type sizedZFS struct {
 	fakeZFS
 }

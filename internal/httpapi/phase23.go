@@ -83,6 +83,9 @@ func validateObjectTarget(kind, endpoint, bucket string) error {
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
 		return errBadRequest("endpoint must be an http(s) URL")
 	}
+	if u.User != nil {
+		return errBadRequest("endpoint must not include credentials")
+	}
 	if kind != appdb.BackupMinIO && u.Scheme != "https" {
 		return errBadRequest("https endpoint is required except for minio test fixtures")
 	}

@@ -111,6 +111,26 @@ func TestPhase21RegistryNeverReturnsPassword(t *testing.T) {
 	}
 }
 
+func TestPhase21RegistryURLRefusesCredentials(t *testing.T) {
+	_, _, ts, cookie, _, _ := phase21Ready(t)
+	body := `{"name":"private","url":"https://u:s3cret@registry.example","username":"u","password":"s3cret"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/registries", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "s3cret") {
+		t.Fatalf("secret echoed %s", raw)
+	}
+}
+
 func TestPhase21OCICreatePullsWithCredsAndShowsHealth(t *testing.T) {
 	_, mem, ts, cookie, clusterID, fo := phase21Ready(t)
 	regID := uuid.NewString()

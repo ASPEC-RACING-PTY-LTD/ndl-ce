@@ -130,8 +130,11 @@ func ValidateRegistryURL(raw string, allowInsecure bool) error {
 		return fmt.Errorf("registry url is required")
 	}
 	u, err := url.Parse(raw)
-	if err != nil {
+	if err != nil || u.Host == "" {
 		return fmt.Errorf("registry url is invalid")
+	}
+	if u.User != nil {
+		return fmt.Errorf("registry url must not include credentials")
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "https":
