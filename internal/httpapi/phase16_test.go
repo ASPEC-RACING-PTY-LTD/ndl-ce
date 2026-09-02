@@ -335,3 +335,32 @@ func TestNotifySkipsWebhookResolvedToPrivateIP(t *testing.T) {
 		t.Fatalf("private resolution must not POST: %d", hits)
 	}
 }
+
+func TestWebhookClientDoesNotFollowRedirect(t *testing.T) {
+	allowWebhookLoopbackForTest = true
+	t.Cleanup(func() { allowWebhookLoopbackForTest = false })
+	var privateHits int
+	private := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		privateHits++
+	}))
+	defer private.Close()
+	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, private.URL+"/secret", http.StatusFound)
+	}))
+	defer public.Close()
+	req, err := http.NewRequest(http.MethodPost, public.URL, strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := webhookHTTPClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if privateHits != 0 {
+		t.Fatal("redirect to another origin must not be followed")
+	}
+	if res.StatusCode != http.StatusFound {
+		t.Fatalf("status %d", res.StatusCode)
+	}
+}
