@@ -25,6 +25,7 @@ import { KubernetesPage } from "./pages/KubernetesPage";
 import { StorePage } from "./pages/StorePage";
 import { AutomationPage } from "./pages/AutomationPage";
 import { AskPage } from "./pages/AskPage";
+import { PlansPage } from "./pages/PlansPage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
@@ -157,6 +158,8 @@ function AppRoutes() {
     page = <AutomationPage />;
   } else if (path === "/ask") {
     page = <AskPage />;
+  } else if (path === "/plans") {
+    page = <PlansPage />;
   } else if (path === "/settings/certificates") {
     page = <CertificatePage />;
   } else if (path === "/settings/updates") {

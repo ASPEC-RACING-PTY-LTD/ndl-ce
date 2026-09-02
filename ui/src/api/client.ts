@@ -395,6 +395,31 @@ export async function askAI(
   );
 }
 
+export async function listAIPlans(): Promise<import("../generated/openapi").AIPlanList> {
+  return readJson(await request("/ai/plans"));
+}
+
+export async function createAIPlan(
+  body: import("../generated/openapi").AIPlanCreateRequest,
+): Promise<import("../generated/openapi").AIPlan> {
+  return readJson(
+    await request("/ai/plans", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function approveAIPlan(id: string): Promise<import("../generated/openapi").AIPlan> {
+  return readJson(
+    await request(`/ai/plans/${id}/approve`, {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "approve-plan" },
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

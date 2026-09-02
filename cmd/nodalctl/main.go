@@ -52,7 +52,9 @@ func run(args []string) error {
   policy list
   policy create --name NAME [--threshold N]
   policy apply --id ID [--confirm apply-policy]
-  ai ask --prompt TEXT [--profile-id ID]
+	ai ask --prompt TEXT [--profile-id ID]
+  ai plan --prompt TEXT [--profile-id ID]
+  ai approve --id ID --confirm approve-plan
   ai provider list
   ai provider add --name NAME [--kind KIND] [--endpoint URL] [--model MODEL]
   ai profile list
@@ -862,7 +864,7 @@ func cmdPolicy(args []string) error {
 
 func cmdAI(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl ai ask|provider|profile")
+		return fmt.Errorf("usage: nodalctl ai ask|plan|approve|provider|profile")
 	}
 	switch args[0] {
 	case "ask":
@@ -873,6 +875,24 @@ func cmdAI(args []string) error {
 		}
 		body := map[string]any{"prompt": prompt, "profile_id": f["profile-id"]}
 		return postJSON("/api/v1/ai/ask", body, true)
+	case "plan":
+		f := parseFlags(args[1:])
+		prompt := f["prompt"]
+		if prompt == "" {
+			return fmt.Errorf("usage: nodalctl ai plan --prompt TEXT [--profile-id ID]")
+		}
+		body := map[string]any{"prompt": prompt, "profile_id": f["profile-id"]}
+		return postJSON("/api/v1/ai/plans", body, true)
+	case "approve":
+		f := parseFlags(args[1:])
+		id := f["id"]
+		if id == "" {
+			return fmt.Errorf("usage: nodalctl ai approve --id ID --confirm approve-plan")
+		}
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/ai/plans/"+id+"/approve", map[string]any{}, true)
 	case "provider":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: nodalctl ai provider list|add")
@@ -912,7 +932,7 @@ func cmdAI(args []string) error {
 			return fmt.Errorf("usage: nodalctl ai profile list|add")
 		}
 	default:
-		return fmt.Errorf("usage: nodalctl ai ask|provider|profile")
+		return fmt.Errorf("usage: nodalctl ai ask|plan|approve|provider|profile")
 	}
 }
 

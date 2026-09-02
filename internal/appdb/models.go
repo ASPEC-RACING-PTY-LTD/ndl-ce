@@ -351,6 +351,13 @@ type Store interface {
 	CreateAIProfile(ctx context.Context, p AIProfile) error
 	ListAIProfiles(ctx context.Context, clusterID string) ([]AIProfile, error)
 	GetAIProfile(ctx context.Context, clusterID, id string) (*AIProfile, error)
+
+	CreateAIPlan(ctx context.Context, p AIPlan, steps []AIPlanStep) error
+	GetAIPlan(ctx context.Context, clusterID, id string) (*AIPlan, error)
+	ListAIPlans(ctx context.Context, clusterID string, limit int) ([]AIPlan, error)
+	UpdateAIPlan(ctx context.Context, p AIPlan) error
+	ListAIPlanSteps(ctx context.Context, clusterID, planID string) ([]AIPlanStep, error)
+	UpdateAIPlanStep(ctx context.Context, st AIPlanStep) error
 }
 
 // Cluster is the appliance cluster of one.

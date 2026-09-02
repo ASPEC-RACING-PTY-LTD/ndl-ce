@@ -49,7 +49,10 @@ func TestNormalizeRejectsUnknown(t *testing.T) {
 	if _, err := NormalizeKind("shell"); err == nil {
 		t.Fatal("shell kind")
 	}
-	if _, err := NormalizeMode("operate"); err == nil {
-		t.Fatal("operate is phase 42")
+	if _, err := NormalizeMode("exec"); err == nil {
+		t.Fatal("exec mode")
+	}
+	if mode, err := NormalizeMode("operate"); err != nil || mode != ModeOperate {
+		t.Fatalf("operate %v %v", mode, err)
 	}
 }

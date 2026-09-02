@@ -85,6 +85,7 @@ const defaultRoutes = {
   "/api/v1/policies": { status: 200, body: { items: [] } },
   "/api/v1/policy-runs": { status: 200, body: { items: [] } },
   "/api/v1/ai/ask": { status: 200, body: { answer: "", citations: [], provider_status: "not_configured", mutate: false } },
+  "/api/v1/ai/plans": { status: 200, body: { items: [] } },
 };
 
 afterEach(() => {
@@ -710,6 +711,42 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^ask$/i })).toBeVisible();
     expect(screen.getByText(/cannot host.exec/i)).toBeVisible();
     expect(screen.getByText(/offline install has no ai vendor/i)).toBeVisible();
+  });
+
+  it("renders the plans page as a reviewable existing-API preview", async () => {
+    window.history.replaceState({}, "", "/plans");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/ai/plans": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "plan-1",
+              prompt: "install a database on node-02",
+              status: "preview",
+              actor_type: "ai",
+              steps: [
+                {
+                  id: "step-1",
+                  method: "POST",
+                  path: "/api/v1/workloads",
+                  permission: "compute.create",
+                  status: "preview",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^plans$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^plans$/i })).toBeVisible();
+    expect(await screen.findByText(/\/api\/v1\/workloads/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^approve$/i })).toBeVisible();
+    expect(screen.getByText(/cannot host.exec/i)).toBeVisible();
   });
 
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {

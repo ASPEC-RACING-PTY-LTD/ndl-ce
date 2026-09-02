@@ -124,6 +124,14 @@ if (!existsSync("migrations/0037_phase41.sql")) {
     errors.push("phase 41 migration must add ai_providers, ai_profiles, and secret keys");
   }
 }
+if (!existsSync("migrations/0038_phase42.sql")) {
+  errors.push("missing migrations/0038_phase42.sql ai_plans");
+} else {
+  const planSql = readFileSync("migrations/0038_phase42.sql", "utf8");
+  if (!planSql.includes("ai_plans") || !planSql.includes("ai_plan_steps")) {
+    errors.push("phase 42 migration must add ai_plans and ai_plan_steps");
+  }
+}
 if (!existsSync("store/official/sample-web.yaml")) {
   errors.push("missing store/official/sample-web.yaml official sample manifest");
 } else {
@@ -248,6 +256,9 @@ if (!changelog.includes("nodal (0.1.39)") || !changelog.includes("Phase 40 autom
 }
 if (!changelog.includes("nodal (0.1.40)") || !changelog.includes("Phase 41 AI Ask")) {
   errors.push("changelog must include nodal (0.1.40) Phase 41 AI Ask");
+}
+if (!changelog.includes("nodal (0.1.41)") || !changelog.includes("Phase 42 AI Plan")) {
+  errors.push("changelog must include nodal (0.1.41) Phase 42 AI Plan");
 }
 
 const control = existsSync("packaging/debian/control")

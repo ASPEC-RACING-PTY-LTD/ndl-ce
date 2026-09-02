@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.40
-  description: Phase 41 AI Ask, plus prior northbound API.
+  version: 0.1.41
+  description: Phase 42 AI Plan Operate Automate, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -1317,6 +1317,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AIAskResponse"
+  /ai/plans:
+    get:
+      operationId: listAIPlans
+      summary: List reviewable AI plans of existing APIs
+      responses:
+        "200":
+          description: Plans
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlanList"
+    post:
+      operationId: createAIPlan
+      summary: Compile a prompt into existing API steps. Never a shell.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIPlanCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlan"
+  /ai/plans/{id}:
+    get:
+      operationId: getAIPlan
+      summary: Get one plan preview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlan"
+  /ai/plans/{id}/approve:
+    post:
+      operationId: approveAIPlan
+      summary: Execute a previewed plan with confirm. Partial failure stops. Audit remains.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - approve-plan
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlan"
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -7712,6 +7780,7 @@ components:
           type: string
           enum:
             - ask
+            - operate
         grants:
           type: array
           items:
@@ -7781,6 +7850,72 @@ components:
         mutate:
           type: boolean
         service_identity:
+          type: string
+    AIPlanStep:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        ordinal:
+          type: integer
+        action:
+          type: string
+        permission:
+          type: string
+        method:
+          type: string
+        path:
+          type: string
+        title:
+          type: string
+        body:
+          type: object
+        status:
+          type: string
+        reason:
+          type: string
+        operation_id:
+          type: string
+    AIPlan:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        status:
+          type: string
+        actor_type:
+          type: string
+        reason:
+          type: string
+        profile_id:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIPlanStep"
+    AIPlanList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIPlan"
+    AIPlanCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+        profile_id:
           type: string
 
 

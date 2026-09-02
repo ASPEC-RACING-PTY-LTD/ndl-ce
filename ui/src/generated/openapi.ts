@@ -1741,7 +1741,7 @@ export interface AIProfile {
   id?: string;
   name?: string;
   provider_id?: string;
-  mode?: "ask";
+  mode?: "ask" | "operate";
   grants?: string[];
 }
 
@@ -1775,6 +1775,39 @@ export interface AIAskResponse {
   mode?: string;
   mutate?: boolean;
   service_identity?: string;
+}
+
+export interface AIPlanStep {
+  id?: string;
+  ordinal?: number;
+  action?: string;
+  permission?: string;
+  method?: string;
+  path?: string;
+  title?: string;
+  body?: Record<string, unknown>;
+  status?: string;
+  reason?: string;
+  operation_id?: string;
+}
+
+export interface AIPlan {
+  id?: string;
+  prompt?: string;
+  status?: string;
+  actor_type?: string;
+  reason?: string;
+  profile_id?: string;
+  steps?: AIPlanStep[];
+}
+
+export interface AIPlanList {
+  items: AIPlan[];
+}
+
+export interface AIPlanCreateRequest {
+  prompt: string;
+  profile_id?: string;
 }
 
 export type GetHealthPath = "/api/v1/health";
@@ -1916,6 +1949,12 @@ export type ListAIProvidersPath = "/api/v1/ai/providers";
 export type ListAIProfilesPath = "/api/v1/ai/profiles";
 
 export type AskAIPath = "/api/v1/ai/ask";
+
+export type ListAIPlansPath = "/api/v1/ai/plans";
+
+export type GetAIPlanPath = "/api/v1/ai/plans/{id}";
+
+export type ApproveAIPlanPath = "/api/v1/ai/plans/{id}/approve";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

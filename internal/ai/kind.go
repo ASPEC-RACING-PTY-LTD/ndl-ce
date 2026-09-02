@@ -14,8 +14,11 @@ const (
 	KindCompatible = "openai_compatible"
 	KindPrivate    = "private"
 	ModeAsk        = "ask"
+	ModeOperate    = "operate"
 	GrantEvents    = "events.read"
 	GrantMetrics   = "metrics.read"
+	ApproveConfirm = "approve-plan"
+	ActorTypeAI    = "ai"
 )
 
 var kinds = []string{KindOpenAI, KindAnthropic, KindGemini, KindOllama, KindLocal, KindCompatible, KindPrivate}
@@ -40,7 +43,7 @@ func NormalizeMode(mode string) (string, error) {
 	if m == "" {
 		m = ModeAsk
 	}
-	if m != ModeAsk {
+	if m != ModeAsk && m != ModeOperate {
 		return "", fmt.Errorf("profile mode is unsupported")
 	}
 	return m, nil
