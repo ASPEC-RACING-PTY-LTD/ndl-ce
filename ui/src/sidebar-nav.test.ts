@@ -33,6 +33,16 @@ describe("sidebar-nav scrollbar", () => {
     expect(css).toContain(".sidebar-nav::-webkit-scrollbar");
   });
 
+  it("lets the terminal fill remaining layout instead of a fixed viewport offset", () => {
+    const page = rule(".page-term {");
+    expect(page).toContain("height: 100%");
+    expect(page).not.toContain("100vh - 5.5rem");
+    const wrap = rule(".term-wrap {");
+    expect(wrap).toContain("resize: none");
+    expect(wrap).not.toContain("min-height: 24rem");
+    expect(css).toContain('.page-term .term-wrap[data-term-size="manual"]');
+  });
+
   it("truncates long contextual names without a second native scrollbar", () => {
     const label = rule(".ctx-item-label {");
     expect(label).toContain("text-overflow: ellipsis");

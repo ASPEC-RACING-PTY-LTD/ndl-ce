@@ -1,4 +1,4 @@
-import { cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { MeResponse } from "../api/types";
@@ -118,6 +118,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
   xhrMode = "ok";
   hung = false;
+  window.history.replaceState({}, "", "/");
+  try {
+    localStorage.clear();
+  } catch {
+    // ignore
+  }
 });
 
 describe("Terminal file drop", () => {
@@ -174,5 +180,79 @@ describe("Terminal file drop", () => {
     const termEl = await screen.findByTestId("xterm");
     fireEvent.paste(termEl, { clipboardData: { getData: () => "a\nb\nc" } });
     expect(confirm).toHaveBeenCalled();
+  });
+});
+
+function stubRect(el: Element, box: { top: number; left: number; width: number; height: number }) {
+  vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
+    x: box.left,
+    y: box.top,
+    top: box.top,
+    left: box.left,
+    width: box.width,
+    height: box.height,
+    bottom: box.top + box.height,
+    right: box.left + box.width,
+    toJSON() {
+      return {};
+    },
+  });
+}
+
+function dispatchPointer(target: EventTarget, type: string, init: MouseEventInit & { pointerId?: number }) {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+  Object.defineProperty(event, "pointerId", { configurable: true, value: init.pointerId ?? 1 });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+}
+
+describe("Terminal sizing", () => {
+  it("fills remaining space by default and keeps a resize handle", async () => {
+    installIO();
+    await openTerminal();
+    const wrap = screen.getByTestId("term-wrap");
+    expect(wrap.dataset.termSize).toBe("auto");
+    expect(wrap.style.height).toMatch(/px$/);
+    expect(parseFloat(wrap.style.height)).toBeGreaterThanOrEqual(200);
+    expect(screen.getByRole("button", { name: /resize terminal/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^reset size$/i })).not.toBeInTheDocument();
+  });
+
+  it("persists a dragged size across a new session and can reset to fill", async () => {
+    installIO();
+    await openTerminal();
+    const wrap = screen.getByTestId("term-wrap");
+    const main = wrap.closest(".shell-main");
+    expect(main).toBeTruthy();
+    stubRect(main as Element, { top: 0, left: 0, width: 1200, height: 900 });
+    stubRect(wrap, { top: 160, left: 80, width: 480, height: 320 });
+    const handle = screen.getByRole("button", { name: /resize terminal/i });
+    dispatchPointer(handle, "pointerdown", { button: 0, buttons: 1, clientX: 560, clientY: 480, detail: 1, pointerId: 1 });
+    dispatchPointer(handle, "pointermove", { button: 0, buttons: 1, clientX: 680, clientY: 600, pointerId: 1 });
+    dispatchPointer(handle, "pointerup", { button: 0, buttons: 0, pointerId: 1 });
+    expect(await screen.findByRole("button", { name: /^reset size$/i })).toBeVisible();
+    expect(wrap.dataset.termSize).toBe("manual");
+    expect(wrap.style.width).toBe("600px");
+    expect(wrap.style.height).toBe("440px");
+    const stored = JSON.parse(localStorage.getItem("ndl-term-size") || "{}") as { mode: string; width: number; height: number };
+    expect(stored.mode).toBe("manual");
+    expect(stored.width).toBe(600);
+    expect(stored.height).toBe(440);
+
+    cleanup();
+    installIO();
+    await openTerminal();
+    const restored = screen.getByTestId("term-wrap");
+    expect(restored.dataset.termSize).toBe("manual");
+    expect(restored.style.width).toBe("600px");
+    expect(restored.style.height).toBe("440px");
+    expect(screen.getByRole("button", { name: /^reset size$/i })).toBeVisible();
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: /resize terminal/i }));
+    expect(restored.dataset.termSize).toBe("auto");
+    expect(restored.style.width).toBe("100%");
+    expect(screen.queryByRole("button", { name: /^reset size$/i })).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("ndl-term-size") || "{}").mode).toBe("auto");
   });
 });

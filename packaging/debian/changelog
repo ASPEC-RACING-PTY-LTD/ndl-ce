@@ -6,6 +6,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Files is a workload file manager with Monaco editing, bulk operations, and typed copy/chmod/chown. Terminal drag-and-drop uploads through the file API and inserts shell-escaped paths without executing them.
   * Terminal is a first-class workspace of independent PTY sessions. Quick Switch opens a new session against any authorized target, including one that already has tabs. Host identity stays distinct from workload shells.
   * Workloads opens a contextual operator sidebar in the same region as main navigation. Back to Main Menu restores the global sidebar without dropping Terminal workspace sessions. Hosts appear beside containers and VMs. The workload table remains on Manage.
+  * Terminal fills remaining viewport space by default and can be dragged from a corner handle. The chosen size is a local workspace preference. Double-click the handle or Reset size restores fill-available behavior.
   * ndl-agent.service grants CAP_SETFCAP and CAP_SYS_PTRACE for typed lxc-attach of unprivileged system containers. NoNewPrivileges stays yes. DevicePolicy stays closed. The bounding set is not unrestricted.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000

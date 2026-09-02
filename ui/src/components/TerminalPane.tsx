@@ -1,11 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { mkdirFile, uploadFile } from "../api/client";
 import { Link } from "./Link";
 import { joinPath, uploadDirFromCwd } from "../files/paths";
 import { shellEscapeAll } from "../files/shell";
+import {
+  clampTermSize,
+  layoutLimit,
+  loadTermSize,
+  observeTermLayout,
+  saveTermSize,
+  termStyle,
+  type TermSizePref,
+} from "../terminal/size";
 import { statusLabel } from "../terminal/types";
 import { useTerminalWorkspace } from "../terminal/workspace";
 import type { TermTab } from "../terminal/types";
+
+function eventPoint(ev: {
+  clientX?: number;
+  clientY?: number;
+  nativeEvent?: { clientX?: number; clientY?: number };
+}): { x: number; y: number } | null {
+  const x = ev.clientX ?? ev.nativeEvent?.clientX;
+  const y = ev.clientY ?? ev.nativeEvent?.clientY;
+  if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+  return { x, y };
+}
 
 function identityMeta(tab: TermTab): string {
   const bits = [tab.target.typeLabel];
@@ -42,7 +64,67 @@ export function TerminalPane({
   const holder = useRef<HTMLDivElement>(null);
   const [dropActive, setDropActive] = useState(false);
   const [uploadNote, setUploadNote] = useState<string | null>(null);
+  const [pref, setPref] = useState<TermSizePref>(() => loadTermSize());
+  const prefRef = useRef(pref);
+  const dragging = useRef(false);
+  const drag = useRef<{
+    startW: number;
+    startH: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const [limit, setLimit] = useState({ width: 0, height: 0 });
   const tab = tabs.find((t) => t.tabId === activeId) ?? null;
+  const lastFit = useRef({ w: 0, h: 0, id: "" });
+  const size = termStyle(pref, limit);
+
+  const measureLimit = useCallback(() => {
+    const el = holder.current;
+    if (!el) {
+      return;
+    }
+    const next = layoutLimit(el);
+    setLimit((cur) => (cur.width === next.width && cur.height === next.height ? cur : next));
+  }, []);
+
+  const applyAndFit = useCallback(() => {
+    if (dragging.current) {
+      return;
+    }
+    measureLimit();
+    const el = holder.current;
+    if (!el || !activeId) {
+      return;
+    }
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (lastFit.current.id === activeId && lastFit.current.w === w && lastFit.current.h === h) {
+      return;
+    }
+    lastFit.current = { w, h, id: activeId };
+    fit(activeId);
+  }, [measureLimit, activeId, fit]);
+
+  useLayoutEffect(() => {
+    if (!dragging.current) {
+      prefRef.current = pref;
+    }
+    measureLimit();
+  }, [pref, measureLimit, activeId]);
+
+  useLayoutEffect(() => {
+    if (!activeId) {
+      return;
+    }
+    const el = holder.current;
+    const w = el?.clientWidth ?? 0;
+    const h = el?.clientHeight ?? 0;
+    if (lastFit.current.id === activeId && lastFit.current.w === w && lastFit.current.h === h) {
+      return;
+    }
+    lastFit.current = { w, h, id: activeId };
+    fit(activeId);
+  }, [activeId, size.width, size.height, fit, tab?.state]);
 
   useEffect(() => {
     const el = holder.current;
@@ -50,17 +132,14 @@ export function TerminalPane({
       return;
     }
     attach(activeId, el);
-    function onResize() {
-      if (activeId) {
-        fit(activeId);
-      }
-    }
-    window.addEventListener("resize", onResize);
+    lastFit.current = { w: 0, h: 0, id: "" };
+    applyAndFit();
+    const stop = observeTermLayout(el, applyAndFit);
     return () => {
-      window.removeEventListener("resize", onResize);
+      stop();
       detach(activeId);
     };
-  }, [activeId, tab?.state, attach, detach, fit]);
+  }, [activeId, tab?.state, attach, detach, applyAndFit]);
 
   async function onDropFiles(list: FileList | null) {
     const files = list ? Array.from(list) : [];
@@ -102,6 +181,103 @@ export function TerminalPane({
       setUploadNote(null);
       setTabError(tab.tabId, err instanceof Error ? err.message : "Upload failed");
     }
+  }
+
+  function endResize() {
+    const wrap = holder.current;
+    dragging.current = false;
+    drag.current = null;
+    wrap?.classList.remove("is-resizing");
+    document.body.classList.remove("is-term-resizing");
+    document.removeEventListener("selectstart", preventSelect);
+    const current = prefRef.current;
+    if (current.mode === "manual" && wrap) {
+      const max = layoutLimit(wrap);
+      const next = clampTermSize(current.width, current.height, max.width, max.height);
+      const manual: TermSizePref = { mode: "manual", width: next.width, height: next.height };
+      prefRef.current = manual;
+      setPref(manual);
+      saveTermSize(manual);
+    }
+    lastFit.current = { w: 0, h: 0, id: "" };
+    if (activeId) {
+      fit(activeId);
+    }
+  }
+
+  function preventSelect(ev: Event) {
+    ev.preventDefault();
+  }
+
+  function resetSize() {
+    dragging.current = false;
+    drag.current = null;
+    document.body.classList.remove("is-term-resizing");
+    document.removeEventListener("selectstart", preventSelect);
+    holder.current?.classList.remove("is-resizing");
+    const next: TermSizePref = { mode: "auto" };
+    prefRef.current = next;
+    setPref(next);
+    saveTermSize(next);
+    lastFit.current = { w: 0, h: 0, id: "" };
+    measureLimit();
+  }
+
+  function onResizePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button != null && event.button !== 0) {
+      return;
+    }
+    if (event.detail > 1) {
+      event.preventDefault();
+      resetSize();
+      return;
+    }
+    const wrap = holder.current;
+    if (!wrap) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const start = wrap.getBoundingClientRect();
+    const origin = eventPoint(event) ?? { x: start.right, y: start.bottom };
+    drag.current = { startW: start.width, startH: start.height, originX: origin.x, originY: origin.y };
+    dragging.current = true;
+    wrap.classList.add("is-resizing");
+    document.body.classList.add("is-term-resizing");
+    document.addEventListener("selectstart", preventSelect);
+    if (event.pointerId != null && event.currentTarget.setPointerCapture) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // jsdom may not implement capture
+      }
+    }
+  }
+
+  function onResizePointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    const session = drag.current;
+    const wrap = holder.current;
+    const point = eventPoint(event);
+    if (!session || !wrap || !dragging.current || !point) {
+      return;
+    }
+    event.preventDefault();
+    const max = layoutLimit(wrap);
+    const next = clampTermSize(session.startW + (point.x - session.originX), session.startH + (point.y - session.originY), max.width, max.height);
+    const manual: TermSizePref = { mode: "manual", width: next.width, height: next.height };
+    prefRef.current = manual;
+    setPref(manual);
+    lastFit.current = { w: 0, h: 0, id: "" };
+    if (activeId) {
+      fit(activeId);
+    }
+  }
+
+  function onResizePointerUp() {
+    if (!dragging.current) {
+      return;
+    }
+    endResize();
   }
 
   if (!tab) {
@@ -151,6 +327,11 @@ export function TerminalPane({
               Reconnect
             </button>
           ) : null}
+          {pref.mode === "manual" ? (
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => resetSize()}>
+              Reset size
+            </button>
+          ) : null}
           <Link className="btn btn-ghost btn-sm" href={filesHere}>
             Files here
           </Link>
@@ -183,7 +364,9 @@ export function TerminalPane({
       <div
         className={"term-wrap" + (dropActive ? " is-drop" : "")}
         data-testid="term-wrap"
+        data-term-size={pref.mode}
         ref={holder}
+        style={{ width: size.width, height: size.height }}
         onDragOver={(e) => {
           e.preventDefault();
           if (e.dataTransfer) {
@@ -200,6 +383,20 @@ export function TerminalPane({
         }}
       >
         {dropActive ? <div className="term-drop">Drop files to upload into this session directory</div> : null}
+        <button
+          className="term-resize"
+          type="button"
+          aria-label="Resize terminal. Double-click to fill available space."
+          title="Drag to resize. Double-click to fill available space."
+          onPointerDown={onResizePointerDown}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={onResizePointerUp}
+          onPointerCancel={onResizePointerUp}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            resetSize();
+          }}
+        />
       </div>
     </div>
   );

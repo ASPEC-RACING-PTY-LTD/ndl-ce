@@ -399,9 +399,11 @@ code {
 
 .shell {
   min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   grid-template-rows: 1fr;
+  overflow: hidden;
 }
 
 .shell.is-collapsed {
@@ -690,6 +692,8 @@ code {
   display: grid;
   grid-template-rows: var(--header-h) 1fr;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .shell-header {
@@ -803,6 +807,8 @@ code {
 .shell-main {
   padding: var(--space-4);
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .page {
@@ -1097,12 +1103,50 @@ th.num {
 }
 
 .term-wrap {
-  min-height: 24rem;
+  min-height: 12.5rem;
+  min-width: 20rem;
   padding: var(--space-2);
   background: oklch(0.12 0.01 230);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   position: relative;
+  overflow: hidden;
+  resize: none;
+}
+
+.term-wrap .xterm {
+  width: 100%;
+  height: 100%;
+}
+
+.term-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 0.9rem;
+  height: 0.9rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0 var(--radius) 0;
+  background:
+    linear-gradient(135deg, transparent 0 42%, var(--fg-tertiary) 42% 50%, transparent 50% 62%, var(--fg-tertiary) 62% 70%, transparent 70%);
+  opacity: 0.45;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.term-resize:hover,
+.term-wrap.is-resizing .term-resize,
+.term-resize:focus-visible {
+  opacity: 0.9;
+}
+
+.term-wrap.is-resizing,
+body.is-term-resizing {
+  cursor: nwse-resize;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .files-crumbs {
@@ -1157,11 +1201,14 @@ th.num {
 
 .page-term {
   gap: var(--space-2);
-  min-height: calc(100vh - 5.5rem);
-  grid-template-rows: auto auto 1fr;
+  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-term .term-pane {
+  flex: 1;
   min-height: 0;
 }
 
@@ -1233,9 +1280,9 @@ th.num {
 }
 
 .term-pane {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  min-height: 24rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   gap: 0.35rem;
 }
 
@@ -1363,8 +1410,14 @@ body > .term-hold[aria-hidden="true"] {
 }
 
 .page-term .term-wrap {
-  min-height: 0;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 12.5rem;
+  width: 100%;
+}
+
+.page-term .term-wrap[data-term-size="manual"] {
+  flex: 0 0 auto;
+  max-width: 100%;
 }
 
 .visually-hidden {

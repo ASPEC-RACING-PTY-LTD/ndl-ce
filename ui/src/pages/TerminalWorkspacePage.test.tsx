@@ -370,4 +370,21 @@ describe("Terminal workspace", () => {
     expect(await screen.findByRole("tab", { name: /alpine/i })).toBeVisible();
     expect(created).toHaveLength(1);
   });
+
+  it("sends a throttled PTY resize when the terminal box changes", async () => {
+    installIO();
+    window.history.replaceState({}, "", "/workloads/wl-a/terminal");
+    render(<App />);
+    await waitConnected();
+    const wrap = screen.getByTestId("term-wrap");
+    Object.defineProperty(wrap, "clientWidth", { configurable: true, value: 810 });
+    Object.defineProperty(wrap, "clientHeight", { configurable: true, value: 340 });
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => {
+      expect(sent.some((s) => s.type === 3)).toBe(true);
+    });
+    const resizes = sent.filter((s) => s.type === 3);
+    expect(resizes.length).toBeGreaterThanOrEqual(1);
+    expect(resizes.length).toBeLessThan(8);
+  });
 });

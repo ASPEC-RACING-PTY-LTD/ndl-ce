@@ -30,6 +30,9 @@ type Runtime = {
   holder: HTMLDivElement;
   closed: boolean;
   abort: AbortController | null;
+  lastCols: number;
+  lastRows: number;
+  resizeTimer: number;
 };
 
 type StoredWorkspace = {
@@ -104,6 +107,23 @@ function makeTerm(): { term: Terminal; fit: FitAddon; holder: HTMLDivElement } {
   term.loadAddon(fit);
   term.open(holder);
   return { term, fit, holder };
+}
+
+function sendPtySize(tabId: string): void {
+  const rt = runtimes.get(tabId);
+  const socket = rt?.ws;
+  const term = rt?.term;
+  if (!rt || !term || !socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  const cols = term.cols;
+  const rows = term.rows;
+  if (!cols || !rows || (cols === rt.lastCols && rows === rt.lastRows)) {
+    return;
+  }
+  rt.lastCols = cols;
+  rt.lastRows = rows;
+  socket.send(encodeFrame(3, encodeResize(rows, cols)));
 }
 
 export function TerminalWorkspaceProvider({ children }: { children: ReactNode }) {
@@ -194,6 +214,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     }
     rt.closed = true;
     rt.abort?.abort();
+    window.clearTimeout(rt.resizeTimer);
     rt.ws?.close();
     rt.term.dispose();
     rt.holder.remove();
@@ -213,6 +234,9 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           holder: made.holder,
           closed: false,
           abort: null,
+          lastCols: 0,
+          lastRows: 0,
+          resizeTimer: 0,
         };
         runtimes.set(tab.tabId, rt);
         rt.term.onData((data) => {
@@ -226,11 +250,13 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
             ev.preventDefault();
           }
         });
-        rt.term.onResize((size) => {
-          const socket = runtimes.get(tab.tabId)?.ws;
-          if (socket?.readyState === WebSocket.OPEN) {
-            socket.send(encodeFrame(3, encodeResize(size.rows, size.cols)));
+        rt.term.onResize(() => {
+          const current = runtimes.get(tab.tabId);
+          if (!current) {
+            return;
           }
+          window.clearTimeout(current.resizeTimer);
+          current.resizeTimer = window.setTimeout(() => sendPtySize(tab.tabId), 32);
         });
       }
       rt.closed = false;
@@ -256,7 +282,15 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           current.send = (data: string) => {
             ws.send(encodeFrame(1, encoder.encode(data)));
           };
-          ws.onopen = () => patch(tab.tabId, { state: "active" });
+          ws.onopen = () => {
+            patch(tab.tabId, { state: "active" });
+            try {
+              current.fit.fit();
+            } catch {
+              // jsdom has no canvas
+            }
+            sendPtySize(tab.tabId);
+          };
           ws.onerror = () => patch(tab.tabId, { error: "Terminal socket failed" });
           ws.onclose = () => {
             if (!current.closed) {
@@ -453,6 +487,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     } catch {
       // jsdom has no canvas
     }
+    sendPtySize(tabId);
   }, []);
 
   const detach = useCallback((tabId: string) => {
@@ -479,6 +514,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     } catch {
       // jsdom has no canvas
     }
+    sendPtySize(tabId);
   }, []);
 
   const setTabError = useCallback(
