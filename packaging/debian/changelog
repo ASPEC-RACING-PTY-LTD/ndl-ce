@@ -1,6 +1,7 @@
 nodal (1.0.0) UNRELEASED; urgency=medium
 
   * Phase 43 CE 1.0: license-activation surface, operator docs, and API freeze. The license stub does nothing unless a key is present. An unreachable licensing API uses grace and does not stop workloads. This tree does not embed EE blobs or mint production apt signatures here. Signed install remains the documented HTTPS repo and keyring path. CE 1.0 hardware gates are not yet passed; this entry stays UNRELEASED.
+  * ndl-agent.service grants CAP_SETFCAP and CAP_SYS_PTRACE for typed lxc-attach of unprivileged system containers. NoNewPrivileges stays yes. DevicePolicy stays closed. The bounding set is not unrestricted.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

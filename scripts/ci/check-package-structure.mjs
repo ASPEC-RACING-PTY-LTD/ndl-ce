@@ -396,8 +396,11 @@ if (!agentUnit.includes("NoNewPrivileges=yes")) {
 if (!agentUnit.includes("DevicePolicy=closed")) {
   errors.push("ndl-agent.service must set DevicePolicy=closed");
 }
-if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SYS_ADMIN\s*$/m.test(agentUnit)) {
-  errors.push("ndl-agent.service must use the Phase 6 typed capability set");
+if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE\s*$/m.test(agentUnit)) {
+  errors.push("ndl-agent.service must use the typed lxc-attach capability set including CAP_SETFCAP and CAP_SYS_PTRACE");
+}
+if (/CapabilityBoundingSet=~/.test(agentUnit) || /DevicePolicy=auto/.test(agentUnit) || /NoNewPrivileges=no/.test(agentUnit)) {
+  errors.push("ndl-agent.service must not ship an unrestricted bounding set, DevicePolicy=auto, or NoNewPrivileges=no");
 }
 if (/qemu-system|ndl-qemu-launch/.test(agentUnit)) {
   errors.push("ndl-agent.service must not parent QEMU");

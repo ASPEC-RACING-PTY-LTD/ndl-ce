@@ -25,8 +25,8 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 
 ## Phase 6
 
-- MEDIUM. Agent CapabilityBoundingSet now includes CAP_SYS_ADMIN for typed lxc-attach setns only.
-  Why not blocking: there is still no generic host execution RPC; DevicePolicy remains closed.
+- MEDIUM. Agent CapabilityBoundingSet includes CAP_SYS_ADMIN, CAP_SETFCAP, and CAP_SYS_PTRACE for typed lxc-attach of unprivileged system containers.
+  Why not blocking: there is still no generic host execution RPC; DevicePolicy remains closed; NoNewPrivileges remains yes.
 - LOW. Browser tickets use the `ndl.ticket.` WebSocket subprotocol because browsers cannot set `X-Nodal-Ticket`. Query-string tickets are rejected.
 - LOW. Folder archive download was left for Phase 17 and remains deferred: Phase 17 Agent is None, so no new zip RPC.
 - LOW. VM Terminal and Files were deferred to Phase 20. Why not blocking: Phase 20 now enables those tabs when nodal_ga is ok.
