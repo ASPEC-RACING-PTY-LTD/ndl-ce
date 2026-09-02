@@ -1255,8 +1255,8 @@ describe("App", () => {
 
     expect(await screen.findByRole("link", { name: /^gpu$/i })).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^gpus$/i })).toBeVisible();
-    expect(screen.getByText(/0000:02:00.1 audio/i)).toBeVisible();
-    expect(screen.getByText(/creating a workload without a gpu does not attach \/dev\/dri/i)).toBeVisible();
+    expect(await screen.findByText(/0000:02:00.1 audio/i)).toBeVisible();
+    expect(await screen.findByText(/creating a workload without a gpu does not attach \/dev\/dri/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^assign gpu$/i })).not.toBeInTheDocument();
   });
 
