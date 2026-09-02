@@ -5927,8 +5927,23 @@ components:
         iso_library_id:
           type: string
         nocloud:
+          $ref: "#/components/schemas/NoCloud"
+        balloon:
+          type: boolean
+        secure_boot:
+          type: boolean
+        spec:
           type: object
           additionalProperties: true
+          description: VM spec object. USB and PCI from this field are ignored on create.
+        secret_refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/OCISecretRef"
+        volumes:
+          type: array
+          items:
+            $ref: "#/components/schemas/OCIVolumeMount"
         placement:
           type: string
         node_id:
@@ -6138,6 +6153,51 @@ components:
         memory_bytes:
           type: integer
           format: int64
+    NoCloud:
+      type: object
+      additionalProperties: false
+      properties:
+        enable:
+          type: boolean
+        hostname:
+          type: string
+        username:
+          type: string
+        ssh_authorized_keys:
+          type: array
+          items:
+            type: string
+        password:
+          type: string
+          description: Write-only. Never returned in workload JSON.
+        user_data:
+          type: string
+        network_config:
+          type: string
+    OCISecretRef:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - secret_id
+      properties:
+        name:
+          type: string
+        secret_id:
+          type: string
+    OCIVolumeMount:
+      type: object
+      additionalProperties: false
+      required:
+        - volume_id
+        - container_path
+      properties:
+        volume_id:
+          type: string
+        container_path:
+          type: string
+        read_only:
+          type: boolean
     UpdateWorkloadRequest:
       type: object
       additionalProperties: false
@@ -6154,6 +6214,10 @@ components:
           type: boolean
         firmware:
           type: string
+        iso_library_id:
+          type: string
+        nocloud:
+          $ref: "#/components/schemas/NoCloud"
     CloneWorkloadRequest:
       type: object
       additionalProperties: false

@@ -108,6 +108,9 @@ func (f Files) SaveJoinMaterial(clusterID, nodeID string, caPEM, certPEM, keyPEM
 }
 
 // LoadClientTLS returns optional mTLS material written by SaveJoinMaterial.
+// RootCAs is a clone of the system pool plus the cluster CA. Northbound HTTPS
+// still uses the appliance certificate; replacing system roots with cluster-ca
+// only would fail that handshake after join.
 func (f Files) LoadClientTLS() (*tls.Config, error) {
 	certPEM, err := os.ReadFile(filepath.Join(f.Dir, "node.crt"))
 	if err != nil {
@@ -131,12 +134,18 @@ func (f Files) LoadClientTLS() (*tls.Config, error) {
 		MinVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},
 	}
-	if caPEM, err := os.ReadFile(filepath.Join(f.Dir, "cluster-ca.crt")); err == nil {
-		pool := x509.NewCertPool()
-		if pool.AppendCertsFromPEM(caPEM) {
-			cfg.RootCAs = pool
-		}
+	caPEM, err := os.ReadFile(filepath.Join(f.Dir, "cluster-ca.crt"))
+	if err != nil {
+		return cfg, nil
 	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	} else {
+		pool = pool.Clone()
+	}
+	_ = pool.AppendCertsFromPEM(caPEM)
+	cfg.RootCAs = pool
 	return cfg, nil
 }
 

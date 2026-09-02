@@ -200,7 +200,7 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 
 - MEDIUM. Live two-box join over TLS and WireGuard is not in this Cloud job. Why not blocking: HTTP join, token reuse, writer lease, and inventory are proven with Memory plus an ephemeral CA.
 - LOW. Worker Execute still uses the local unix agent on the control node. Why not blocking: placement and remote apply remain Phase 31.
-- LOW. Cluster CA is issued and stored on disk; northbound HTTPS is still the existing appliance certificate. Why not blocking: join returns node mTLS material; wrapping Execute in mTLS is follow-up.
+- LOW. Cluster CA is issued and stored on disk; northbound HTTPS is still the existing appliance certificate. Join client TLS keeps system roots and adds the cluster CA so appliance certificates still verify after node.crt is written. Why not blocking: wrapping Execute in mTLS is follow-up.
 
 ## Phase 31
 

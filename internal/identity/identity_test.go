@@ -1,6 +1,8 @@
 package identity
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,5 +73,26 @@ func TestLoadClientTLSUsesJoinMaterial(t *testing.T) {
 	cfg, err = f.LoadClientTLS()
 	if err != nil || cfg == nil || len(cfg.Certificates) != 1 || cfg.RootCAs == nil {
 		t.Fatalf("join mTLS material %+v %v", cfg, err)
+	}
+	sys, err := x509.SystemCertPool()
+	if err != nil || sys == nil || len(sys.Subjects()) == 0 {
+		t.Skip("no system roots in this environment")
+	}
+	if len(cfg.RootCAs.Subjects()) < len(sys.Subjects()) {
+		t.Fatal("join mTLS must keep system roots for northbound HTTPS")
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	nodeCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := nodeCert.Verify(x509.VerifyOptions{
+		Roots:     cfg.RootCAs,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}); err != nil {
+		t.Fatalf("cluster CA must still verify node certs: %v", err)
 	}
 }

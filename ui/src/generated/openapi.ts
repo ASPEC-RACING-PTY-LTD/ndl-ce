@@ -756,7 +756,12 @@ export interface CreateWorkloadRequest {
   autostart?: boolean;
   cloud_image_id?: string;
   iso_library_id?: string;
-  nocloud?: Record<string, unknown>;
+  nocloud?: NoCloud;
+  balloon?: boolean;
+  secure_boot?: boolean;
+  spec?: Record<string, unknown>;
+  secret_refs?: OCISecretRef[];
+  volumes?: OCIVolumeMount[];
   placement?: string;
   node_id?: string;
   node_group_id?: string;
@@ -847,6 +852,27 @@ export interface PatchStackMemberRequest {
   memory_bytes?: number;
 }
 
+export interface NoCloud {
+  enable?: boolean;
+  hostname?: string;
+  username?: string;
+  ssh_authorized_keys?: string[];
+  password?: string;
+  user_data?: string;
+  network_config?: string;
+}
+
+export interface OCISecretRef {
+  name: string;
+  secret_id: string;
+}
+
+export interface OCIVolumeMount {
+  volume_id: string;
+  container_path: string;
+  read_only?: boolean;
+}
+
 export interface UpdateWorkloadRequest {
   name?: string;
   cpus?: number;
@@ -854,6 +880,8 @@ export interface UpdateWorkloadRequest {
   desired_power?: string;
   autostart?: boolean;
   firmware?: string;
+  iso_library_id?: string;
+  nocloud?: NoCloud;
 }
 
 export interface CloneWorkloadRequest {
