@@ -54,6 +54,9 @@ func TestLinuxGuestPTYAndFiles(t *testing.T) {
 	if _, err := cli.FilesPut("etc/motd", 0o644, []byte("hello-guest")); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := cli.FilesOp("chmod", "etc/motd", "", 0o600); err != nil {
+		t.Fatal(err)
+	}
 	got, _, err := cli.FilesGet("etc/motd")
 	if err != nil || string(got) != "hello-guest" {
 		t.Fatalf("%s %v", got, err)

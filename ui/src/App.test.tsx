@@ -4,6 +4,10 @@ import { App } from "./App";
 import type { GetHealthPath } from "./generated/openapi";
 import type { MeResponse } from "./api/types";
 
+vi.mock("./components/FileEditor", () => ({
+  FileEditor: () => null,
+}));
+
 const admin: MeResponse = {
   user_id: "user-1",
   username: "admin",
@@ -408,7 +412,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /^files$/i })).toBeVisible();
     expect(await screen.findByText("etc")).toBeVisible();
-    expect(screen.getByText(/upload here/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^upload$/i })).toBeVisible();
     expect(screen.queryByText(/fake session/i)).not.toBeInTheDocument();
   });
 

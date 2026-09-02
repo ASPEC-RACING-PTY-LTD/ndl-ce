@@ -25,10 +25,18 @@ export function ConfirmDialog({
       return;
     }
     if (open && !node.open) {
-      node.showModal();
+      if (typeof node.showModal === "function") {
+        node.showModal();
+      } else {
+        node.setAttribute("open", "");
+      }
     }
     if (!open && node.open) {
-      node.close();
+      if (typeof node.close === "function") {
+        node.close();
+      } else {
+        node.removeAttribute("open");
+      }
     }
   }, [open]);
 

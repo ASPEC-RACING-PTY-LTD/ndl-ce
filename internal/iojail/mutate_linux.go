@@ -88,6 +88,32 @@ func renameBeneath(root, src, dest string) error {
 	return unix.Renameat(int(sfd.Fd()), srcBase, int(dfd.Fd()), destBase)
 }
 
+func chmodBeneath(root, rel string, mode fs.FileMode) error {
+	parent, base := splitRel(rel)
+	if base == "" || base == "." || base == ".." {
+		return fmt.Errorf("chmod path is required")
+	}
+	pfd, err := openDirBeneath(root, parent)
+	if err != nil {
+		return err
+	}
+	defer pfd.Close()
+	return unix.Fchmodat(int(pfd.Fd()), base, uint32(mode.Perm()), unix.AT_SYMLINK_NOFOLLOW)
+}
+
+func chownBeneath(root, rel string, uid, gid int) error {
+	parent, base := splitRel(rel)
+	if base == "" || base == "." || base == ".." {
+		return fmt.Errorf("chown path is required")
+	}
+	pfd, err := openDirBeneath(root, parent)
+	if err != nil {
+		return err
+	}
+	defer pfd.Close()
+	return unix.Fchownat(int(pfd.Fd()), base, uid, gid, unix.AT_SYMLINK_NOFOLLOW)
+}
+
 func openDirBeneath(root, rel string) (*os.File, error) {
 	rel, err := cleanRel(rel)
 	if err != nil {

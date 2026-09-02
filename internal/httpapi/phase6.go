@@ -2,12 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,9 +48,13 @@ type createTermRequest struct {
 }
 
 type fileMutation struct {
-	Path     string `json:"path"`
-	DestPath string `json:"dest_path"`
-	Mode     uint32 `json:"mode"`
+	Path           string `json:"path"`
+	DestPath       string `json:"dest_path"`
+	Mode           uint32 `json:"mode"`
+	UID            *int   `json:"uid"`
+	GID            *int   `json:"gid"`
+	ExpectedMtime  string `json:"expected_mtime"`
+	ExpectedSHA256 string `json:"expected_sha256"`
 }
 
 func (s *Server) createNodeTerminal(w http.ResponseWriter, r *http.Request) {
@@ -284,6 +292,18 @@ func (s *Server) nodeFilesDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) nodeFilesMove(w http.ResponseWriter, r *http.Request) {
 	s.nodeFiles(w, r, rbac.FilesModify, "rename")
 }
+func (s *Server) nodeFilesCopy(w http.ResponseWriter, r *http.Request) {
+	s.nodeFiles(w, r, rbac.FilesCreate, "copy")
+}
+func (s *Server) nodeFilesChmod(w http.ResponseWriter, r *http.Request) {
+	s.nodeFiles(w, r, rbac.FilesPermissions, "chmod")
+}
+func (s *Server) nodeFilesChown(w http.ResponseWriter, r *http.Request) {
+	s.nodeFiles(w, r, rbac.FilesOwnership, "chown")
+}
+func (s *Server) nodeFilesContent(w http.ResponseWriter, r *http.Request) {
+	s.nodeFiles(w, r, rbac.FilesRead, "content")
+}
 
 func (s *Server) workloadFilesList(w http.ResponseWriter, r *http.Request) {
 	s.workloadFiles(w, r, rbac.FilesRead, "list")
@@ -305,6 +325,18 @@ func (s *Server) workloadFilesDelete(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) workloadFilesMove(w http.ResponseWriter, r *http.Request) {
 	s.workloadFiles(w, r, rbac.FilesModify, "rename")
+}
+func (s *Server) workloadFilesCopy(w http.ResponseWriter, r *http.Request) {
+	s.workloadFiles(w, r, rbac.FilesCreate, "copy")
+}
+func (s *Server) workloadFilesChmod(w http.ResponseWriter, r *http.Request) {
+	s.workloadFiles(w, r, rbac.FilesPermissions, "chmod")
+}
+func (s *Server) workloadFilesChown(w http.ResponseWriter, r *http.Request) {
+	s.workloadFiles(w, r, rbac.FilesOwnership, "chown")
+}
+func (s *Server) workloadFilesContent(w http.ResponseWriter, r *http.Request) {
+	s.workloadFiles(w, r, rbac.FilesRead, "content")
 }
 
 func (s *Server) nodeFiles(w http.ResponseWriter, r *http.Request, perm, action string) {
@@ -351,7 +383,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		})
 		if err != nil {
 			s.audit(r, p.User.ClusterID, p.User.ID, "files.download", "denied", auditFilesPath(kind, rel))
-			writeErr(w, http.StatusBadGateway, err.Error())
+			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
 		}
 		defer rc.Close()
@@ -360,7 +392,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		w.Header().Set("Content-Disposition", `attachment; filename="`+attachmentName(rel)+`"`)
 		_, _ = io.Copy(w, rc)
 	case "upload":
-		upPath, body, closer, sha, err := readFileUpload(r)
+		upPath, body, closer, sha, expectedMtime, err := readFileUpload(r)
 		if closer != nil {
 			defer closer()
 		}
@@ -371,19 +403,25 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		if upPath != "" {
 			rel = upPath
 		}
+		if err := s.enforceExpected(r.Context(), kind, id, jail, rel, expectedMtime, sha); err != nil {
+			writeErr(w, filesHTTPStatus(err), err.Error())
+			return
+		}
 		raw, err := s.IO.FilesPut(r.Context(), agentrpc.FilesPutCall{
 			TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
 		}, body, sha)
 		if err != nil {
 			s.audit(r, p.User.ClusterID, p.User.ID, "files.upload", "denied", auditFilesPath(kind, rel))
-			writeErr(w, http.StatusBadGateway, err.Error())
+			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
 		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "files.upload", "ok", auditFilesPath(kind, rel))
 		writeJSON(w, http.StatusCreated, json.RawMessage(raw))
-	case "list", "stat", "mkdir", "delete", "rename":
+	case "content":
+		s.serveFileContent(w, r, p, kind, id, jail, rel)
+	case "list", "stat", "mkdir", "delete", "rename", "copy", "chmod", "chown":
 		mut := fileMutation{Path: rel}
-		if action == "mkdir" || action == "delete" || action == "rename" {
+		if action != "list" && action != "stat" {
 			if r.Body != nil && r.ContentLength != 0 {
 				_ = readJSON(r, &mut)
 			}
@@ -391,21 +429,38 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		if mut.Path == "" {
 			mut.Path = rel
 		}
+		if err := s.enforceExpected(r.Context(), kind, id, jail, mut.Path, mut.ExpectedMtime, mut.ExpectedSHA256); err != nil {
+			writeErr(w, filesHTTPStatus(err), err.Error())
+			return
+		}
+		dest := mut.DestPath
+		if action == "chown" {
+			uid, gid := -1, -1
+			if mut.UID != nil {
+				uid = *mut.UID
+			}
+			if mut.GID != nil {
+				gid = *mut.GID
+			}
+			if dest == "" {
+				dest = fmt.Sprintf("%d:%d", uid, gid)
+			}
+		}
 		raw, err := s.IO.FilesOp(r.Context(), agentrpc.FilesCall{
 			TargetKind: kind, TargetID: id, JailRoot: jail,
-			Action: action, Path: mut.Path, DestPath: mut.DestPath, Mode: mut.Mode,
+			Action: action, Path: mut.Path, DestPath: dest, Mode: mut.Mode,
 		})
 		if err != nil {
 			if action == "delete" {
 				s.audit(r, p.User.ClusterID, p.User.ID, "files.delete", "denied", auditFilesPath(kind, mut.Path))
 			}
-			writeErr(w, http.StatusBadGateway, err.Error())
+			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
 		}
 		if action == "delete" {
 			s.audit(r, p.User.ClusterID, p.User.ID, "files.delete", "ok", auditFilesPath(kind, mut.Path))
 		}
-		if action == "mkdir" {
+		if action == "mkdir" || action == "copy" {
 			writeJSON(w, http.StatusCreated, json.RawMessage(raw))
 			return
 		}
@@ -486,6 +541,144 @@ func (s *Server) sessionJail(ctx context.Context, clusterID string, row appdb.IO
 	return s.workloadJail(ctx, clusterID, *wl)
 }
 
+func (s *Server) serveFileContent(w http.ResponseWriter, r *http.Request, p *principal, kind, id, jail, rel string) {
+	raw, err := s.IO.FilesOp(r.Context(), agentrpc.FilesCall{
+		TargetKind: kind, TargetID: id, JailRoot: jail, Action: "stat", Path: rel,
+	})
+	if err != nil {
+		writeErr(w, filesHTTPStatus(err), err.Error())
+		return
+	}
+	var st struct {
+		Name    string `json:"name"`
+		Type    string `json:"type"`
+		Size    int64  `json:"size"`
+		Mode    uint32 `json:"mode"`
+		UID     uint32 `json:"uid"`
+		GID     uint32 `json:"gid"`
+		Owner   string `json:"owner"`
+		Group   string `json:"group"`
+		ModTime string `json:"mtime"`
+		Path    string `json:"path"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		writeErr(w, http.StatusBadGateway, "stat is unreadable")
+		return
+	}
+	if st.Type == "dir" {
+		writeErr(w, http.StatusBadRequest, "path is a directory")
+		return
+	}
+	max := int64(iojail.PreviewMaxBytes)
+	if n, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("max_bytes")), 10, 64); err == nil && n > 0 && n < max {
+		max = n
+	}
+	out := map[string]any{
+		"name": st.Name, "type": st.Type, "size": st.Size, "mode": st.Mode,
+		"uid": st.UID, "gid": st.GID, "owner": st.Owner, "group": st.Group,
+		"mtime": st.ModTime, "path": st.Path, "editable": false, "binary": false,
+		"too_large": false,
+	}
+	if st.Size > iojail.PreviewMaxBytes {
+		out["too_large"] = true
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	rc, err := s.IO.FilesGet(r.Context(), agentrpc.FilesGetCall{
+		TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
+	})
+	if err != nil {
+		writeErr(w, filesHTTPStatus(err), err.Error())
+		return
+	}
+	defer rc.Close()
+	limited := io.LimitReader(rc, max+1)
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		writeErr(w, filesHTTPStatus(err), err.Error())
+		return
+	}
+	if int64(len(body)) > max {
+		out["too_large"] = true
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	sum := sha256.Sum256(body)
+	out["sha256"] = hex.EncodeToString(sum[:])
+	if iojail.LooksBinary(st.Name, body) {
+		out["binary"] = true
+		s.audit(r, p.User.ClusterID, p.User.ID, "files.read", "ok", auditFilesPath(kind, rel))
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	out["encoding"] = "utf-8"
+	out["content"] = string(body)
+	out["editable"] = st.Size <= iojail.EditorMaxBytes && int64(len(body)) <= iojail.EditorMaxBytes
+	s.audit(r, p.User.ClusterID, p.User.ID, "files.read", "ok", auditFilesPath(kind, rel))
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) enforceExpected(ctx context.Context, kind, id, jail, rel, expectedMtime, expectedSHA string) error {
+	expectedMtime = strings.TrimSpace(expectedMtime)
+	expectedSHA = strings.TrimSpace(expectedSHA)
+	if expectedMtime == "" && expectedSHA == "" {
+		return nil
+	}
+	raw, err := s.IO.FilesOp(ctx, agentrpc.FilesCall{
+		TargetKind: kind, TargetID: id, JailRoot: jail, Action: "stat", Path: rel,
+	})
+	if err != nil {
+		return fmt.Errorf("file changed on disk: %w", err)
+	}
+	var st struct {
+		ModTime string `json:"mtime"`
+		Type    string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return fmt.Errorf("file changed on disk")
+	}
+	if expectedMtime != "" && st.ModTime != "" && st.ModTime != expectedMtime {
+		return fmt.Errorf("file changed on disk")
+	}
+	if expectedSHA == "" || st.Type == "dir" {
+		return nil
+	}
+	rc, err := s.IO.FilesGet(ctx, agentrpc.FilesGetCall{
+		TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
+	})
+	if err != nil {
+		return fmt.Errorf("file changed on disk: %w", err)
+	}
+	defer rc.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, rc); err != nil {
+		return err
+	}
+	if !strings.EqualFold(expectedSHA, hex.EncodeToString(h.Sum(nil))) {
+		return fmt.Errorf("file changed on disk")
+	}
+	return nil
+}
+
+func filesHTTPStatus(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "file changed"):
+		return http.StatusConflict
+	case strings.Contains(msg, "escapes"), strings.Contains(msg, "denied by host"):
+		return http.StatusForbidden
+	case strings.Contains(msg, "no such file"), strings.Contains(msg, "not found"):
+		return http.StatusNotFound
+	case strings.Contains(msg, "permission denied"):
+		return http.StatusForbidden
+	default:
+		return http.StatusBadGateway
+	}
+}
+
 func attachmentName(rel string) string {
 	name := path.Base(strings.ReplaceAll(rel, `\`, "/"))
 	name = strings.Map(func(r rune) rune {
@@ -508,27 +701,34 @@ func filePath(r *http.Request) string {
 	return p
 }
 
-func readFileUpload(r *http.Request) (rel string, body io.Reader, closer func(), sha string, err error) {
+func readFileUpload(r *http.Request) (rel string, body io.Reader, closer func(), sha, expectedMtime string, err error) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			return "", nil, nil, "", err
+			return "", nil, nil, "", "", err
 		}
 		rel = strings.TrimSpace(r.FormValue("path"))
 		sha = strings.TrimSpace(r.FormValue("sha256"))
+		expectedMtime = strings.TrimSpace(r.FormValue("expected_mtime"))
+		if expectedMtime == "" {
+			expectedMtime = strings.TrimSpace(r.FormValue("expected_mtime"))
+		}
+		if v := strings.TrimSpace(r.FormValue("expected_sha256")); v != "" {
+			sha = v
+		}
 		f, hdr, err := r.FormFile("file")
 		if err != nil {
-			return "", nil, nil, "", err
+			return "", nil, nil, "", "", err
 		}
 		if rel == "" && hdr != nil {
 			rel = hdr.Filename
 		}
-		return rel, f, func() { _ = f.Close() }, sha, nil
+		return rel, f, func() { _ = f.Close() }, sha, expectedMtime, nil
 	}
 	if strings.Contains(ct, "application/json") {
-		return "", nil, nil, "", errors.New("upload must be multipart or a raw body")
+		return "", nil, nil, "", "", errors.New("upload must be multipart or a raw body")
 	}
-	return strings.TrimSpace(r.URL.Query().Get("path")), r.Body, func() { _ = r.Body.Close() }, "", nil
+	return strings.TrimSpace(r.URL.Query().Get("path")), r.Body, func() { _ = r.Body.Close() }, "", strings.TrimSpace(r.Header.Get("X-Nodal-Expected-Mtime")), nil
 }
 
 func wsTicket(r *http.Request) string {

@@ -21,7 +21,8 @@ func (h *Handler) FilesOp(ctx context.Context, req *connect.Request[agentv1.File
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	if isGuestJail(root) {
-		raw, err := h.guestFilesOp(ctx, req.Msg.GetTargetId(), req.Msg.GetAction(), req.Msg.GetPath(), req.Msg.GetDestPath(), req.Msg.GetMode())
+		dest := req.Msg.GetDestPath()
+		raw, err := h.guestFilesOp(ctx, req.Msg.GetTargetId(), req.Msg.GetAction(), req.Msg.GetPath(), dest, req.Msg.GetMode())
 		if err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
@@ -210,7 +211,7 @@ func (h *Handler) AttachTerminal(ctx context.Context, stream *connect.BidiStream
 		for {
 			cwd, ok := sess.CWD()
 			if ok {
-				_ = sendTerm(stream, first, ndlterm.TypeCWD, []byte(cwd))
+				_ = sendTerm(stream, first, ndlterm.TypeCWD, []byte(jailRelCWD(root, cwd)))
 			}
 			select {
 			case <-ctx.Done():

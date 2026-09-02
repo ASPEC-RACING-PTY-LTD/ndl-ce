@@ -930,6 +930,57 @@ th.num {
   background: oklch(0.12 0.01 230);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  position: relative;
+}
+
+.files-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  align-items: center;
+}
+
+.files-crumbs .btn {
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.files-toolbar {
+  margin-top: var(--space-2);
+}
+
+.files-editor {
+  margin: var(--space-3) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: oklch(0.145 0.016 230);
+}
+
+.files-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.files-editor-bar .muted,
+.muted {
+  color: var(--fg-tertiary);
+  font-size: 0.75rem;
+}
+
+.term-drop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: oklch(0.145 0.016 230 / 0.82);
+  color: var(--fg-primary);
+  font-weight: 650;
+  pointer-events: none;
 }
 
 .visually-hidden {

@@ -1000,39 +1000,135 @@ export async function listFiles(
   return readJson(await request(`/${prefix}/${id}/files?path=${encodeURIComponent(path)}`));
 }
 
+export async function statFile(kind: "node" | "workload", id: string, path: string): Promise<import("./phase6").FileEntry> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  return readJson(await request(`/${prefix}/${id}/files/stat?path=${encodeURIComponent(path)}`));
+}
+
+export async function readFileContent(
+  kind: "node" | "workload",
+  id: string,
+  path: string,
+): Promise<import("./phase6").FileContent> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  return readJson(await request(`/${prefix}/${id}/files/content?path=${encodeURIComponent(path)}`));
+}
+
+async function mutateFile(
+  kind: "node" | "workload",
+  id: string,
+  action: "mkdir" | "delete" | "move" | "copy" | "chmod" | "chown",
+  body: import("./phase6").FileMutation,
+): Promise<void> {
+  const prefix = kind === "node" ? "nodes" : "workloads";
+  await readJson(
+    await request(`/${prefix}/${id}/files/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function mkdirFile(kind: "node" | "workload", id: string, path: string): Promise<void> {
-  const prefix = kind === "node" ? "nodes" : "workloads";
-  await readJson(
-    await request(`/${prefix}/${id}/files/mkdir`, {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    }),
-  );
+  await mutateFile(kind, id, "mkdir", { path });
 }
 
-export async function deleteFile(kind: "node" | "workload", id: string, path: string): Promise<void> {
-  const prefix = kind === "node" ? "nodes" : "workloads";
-  await readJson(
-    await request(`/${prefix}/${id}/files/delete`, {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    }),
-  );
+export async function deleteFile(
+  kind: "node" | "workload",
+  id: string,
+  path: string,
+  expectedMtime?: string,
+): Promise<void> {
+  await mutateFile(kind, id, "delete", { path, expected_mtime: expectedMtime });
 }
 
-export async function uploadFile(kind: "node" | "workload", id: string, path: string, file: File): Promise<void> {
+export async function moveFile(
+  kind: "node" | "workload",
+  id: string,
+  path: string,
+  destPath: string,
+): Promise<void> {
+  await mutateFile(kind, id, "move", { path, dest_path: destPath });
+}
+
+export async function copyFile(
+  kind: "node" | "workload",
+  id: string,
+  path: string,
+  destPath: string,
+): Promise<void> {
+  await mutateFile(kind, id, "copy", { path, dest_path: destPath });
+}
+
+export async function chmodFile(
+  kind: "node" | "workload",
+  id: string,
+  path: string,
+  mode: number,
+): Promise<void> {
+  await mutateFile(kind, id, "chmod", { path, mode });
+}
+
+export async function chownFile(
+  kind: "node" | "workload",
+  id: string,
+  path: string,
+  uid: number,
+  gid: number,
+): Promise<void> {
+  await mutateFile(kind, id, "chown", { path, uid, gid });
+}
+
+export type UploadProgress = { loaded: number; total: number };
+
+export async function uploadFile(
+  kind: "node" | "workload",
+  id: string,
+  path: string,
+  file: File,
+  opts?: { expectedMtime?: string; signal?: AbortSignal; onProgress?: (p: UploadProgress) => void },
+): Promise<void> {
   const prefix = kind === "node" ? "nodes" : "workloads";
   const data = new FormData();
   data.append("path", path);
   data.append("file", file);
-  const res = await fetch(`/api/v1/${prefix}/${id}/files/upload`, {
-    method: "POST",
-    credentials: "include",
-    body: data,
-  });
-  if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res));
+  if (opts?.expectedMtime) {
+    data.append("expected_mtime", opts.expectedMtime);
   }
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/v1/${prefix}/${id}/files/upload`);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (ev) => {
+      opts?.onProgress?.({ loaded: ev.loaded, total: ev.total || file.size });
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      let message = `Request failed (${xhr.status})`;
+      try {
+        const parsed = JSON.parse(xhr.responseText) as { error?: string };
+        if (parsed.error) {
+          message = parsed.error;
+        }
+      } catch {
+        // not JSON
+      }
+      reject(new ApiError(xhr.status, message));
+    };
+    xhr.onerror = () => reject(new ApiError(0, "Upload failed"));
+    xhr.onabort = () => reject(new ApiError(0, "Upload cancelled"));
+    if (opts?.signal) {
+      if (opts.signal.aborted) {
+        xhr.abort();
+        return;
+      }
+      opts.signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.send(data);
+  });
 }
 
 export async function downloadFile(kind: "node" | "workload", id: string, path: string, filename: string): Promise<void> {

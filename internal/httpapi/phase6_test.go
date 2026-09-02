@@ -1,20 +1,25 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/iojail"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -35,11 +40,37 @@ func (f *fakeIO) record(kind, jail, path, action string) {
 	f.lastAct = action
 }
 
+func (f *fakeIO) join(rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if strings.Contains(rel, "\x00") {
+		return "", fmt.Errorf("path contains a NUL")
+	}
+	for _, r := range rel {
+		if r < 32 || r == 127 {
+			return "", fmt.Errorf("path contains a control character")
+		}
+	}
+	if rel == "" || rel == "." || rel == "/" {
+		return f.root, nil
+	}
+	rel = strings.TrimPrefix(rel, "/")
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("path escapes the jail")
+	}
+	out := filepath.Join(f.root, filepath.FromSlash(clean))
+	relOut, err := filepath.Rel(f.root, out)
+	if err != nil || strings.HasPrefix(relOut, "..") {
+		return "", fmt.Errorf("path escapes the jail")
+	}
+	return out, nil
+}
+
 func (f *fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMessage, error) {
 	f.record(call.TargetKind, call.JailRoot, call.Path, call.Action)
-	p := filepath.Join(f.root, filepath.FromSlash(strings.TrimPrefix(call.Path, "/")))
-	if call.Path == "" || call.Path == "." {
-		p = f.root
+	p, err := f.join(call.Path)
+	if err != nil {
+		return nil, err
 	}
 	switch call.Action {
 	case "list":
@@ -70,7 +101,10 @@ func (f *fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMe
 		if info.IsDir() {
 			kind = "dir"
 		}
-		return json.Marshal(map[string]any{"name": info.Name(), "type": kind, "size": info.Size(), "path": call.Path})
+		return json.Marshal(map[string]any{
+			"name": info.Name(), "type": kind, "size": info.Size(), "path": call.Path,
+			"mode": uint32(info.Mode().Perm()), "mtime": info.ModTime().UTC().Format(time.RFC3339),
+		})
 	case "mkdir":
 		if err := os.MkdirAll(p, 0o755); err != nil {
 			return nil, err
@@ -82,11 +116,37 @@ func (f *fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMe
 		}
 		return json.Marshal(map[string]any{"ok": true, "path": call.Path})
 	case "rename":
-		dest := filepath.Join(f.root, filepath.FromSlash(strings.TrimPrefix(call.DestPath, "/")))
+		dest, jerr := f.join(call.DestPath)
+		if jerr != nil {
+			return nil, jerr
+		}
 		if err := os.Rename(p, dest); err != nil {
 			return nil, err
 		}
 		return json.Marshal(map[string]any{"ok": true, "path": call.DestPath})
+	case "copy":
+		dest, jerr := f.join(call.DestPath)
+		if jerr != nil {
+			return nil, jerr
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(dest, b, 0o644); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"ok": true, "path": call.DestPath})
+	case "chmod":
+		if err := os.Chmod(p, os.FileMode(call.Mode).Perm()); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"ok": true, "path": call.Path, "mode": call.Mode})
+	case "chown":
+		return json.Marshal(map[string]any{"ok": true, "path": call.Path})
 	default:
 		return nil, errUnavailable("unknown action")
 	}
@@ -94,7 +154,10 @@ func (f *fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMe
 
 func (f *fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Reader, _ string) (json.RawMessage, error) {
 	f.record(call.TargetKind, call.JailRoot, call.Path, "upload")
-	dest := filepath.Join(f.root, filepath.FromSlash(strings.TrimPrefix(call.Path, "/")))
+	dest, err := f.join(call.Path)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return nil, err
 	}
@@ -110,7 +173,10 @@ func (f *fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Re
 
 func (f *fakeIO) FilesGet(_ context.Context, call agentrpc.FilesGetCall) (io.ReadCloser, error) {
 	f.record(call.TargetKind, call.JailRoot, call.Path, "download")
-	dest := filepath.Join(f.root, filepath.FromSlash(strings.TrimPrefix(call.Path, "/")))
+	dest, err := f.join(call.Path)
+	if err != nil {
+		return nil, err
+	}
 	return os.Open(dest)
 }
 
@@ -352,4 +418,215 @@ func TestTicketHeaderOnlyAndOrigin(t *testing.T) {
 	}
 	_ = got2.Body.Close()
 	_ = ticket
+}
+
+func TestWorkloadFilesCRUDCopyContentAndConflict(t *testing.T) {
+	s, mem, ts, admin, _, wlID := seedPhase6(t)
+	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	root := s.IO.(*fakeIO).root
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files?path=.", "")
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("list %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/mkdir", `{"path":"etc"}`)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("mkdir %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/copy", `{"path":"hello.txt","dest_path":"etc/hello.txt"}`)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("copy %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/move", `{"path":"etc/hello.txt","dest_path":"etc/renamed.txt"}`)
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("move %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files/content?path=hello.txt", "")
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("content %d %s", res.StatusCode, b)
+	}
+	var content map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&content)
+	_ = res.Body.Close()
+	if content["content"] != "hi" || content["binary"] == true {
+		t.Fatalf("content %+v", content)
+	}
+	mtime, _ := content["mtime"].(string)
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/delete", `{"path":"hello.txt","expected_mtime":"1999-01-01T00:00:00Z"}`)
+	if res.StatusCode != http.StatusConflict {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("stale delete %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/delete", `{"path":"hello.txt","expected_mtime":"`+mtime+`"}`)
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("delete %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	if err := os.MkdirAll(filepath.Join(root, "tree", "n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tree", "n", "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/delete", `{"path":"tree"}`)
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("recursive delete %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, view, "POST", "/api/v1/workloads/"+wlID+"/files/delete", `{"path":"etc"}`)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer delete %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
+func TestWorkloadFilesBinaryContent(t *testing.T) {
+	s, _, ts, admin, _, wlID := seedPhase6(t)
+	root := s.IO.(*fakeIO).root
+	if err := os.WriteFile(filepath.Join(root, "blob.bin"), []byte("a\x00b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files/content?path=blob.bin", "")
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("binary content %d %s", res.StatusCode, b)
+	}
+	var content map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&content)
+	_ = res.Body.Close()
+	if content["binary"] != true {
+		t.Fatalf("binary %+v", content)
+	}
+	if _, ok := content["content"]; ok {
+		t.Fatal("binary payload must not include text content")
+	}
+}
+
+func postMultipart(t *testing.T, ts *httptest.Server, cookie, urlPath, rel, name, body string) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	if err := w.WriteField("path", rel); err != nil {
+		t.Fatal(err)
+	}
+	fw, err := w.CreateFormFile("file", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest("POST", ts.URL+urlPath, &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func TestWorkloadFilesUploadLargeTraversalAndChmod(t *testing.T) {
+	s, mem, ts, admin, _, wlID := seedPhase6(t)
+	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	root := s.IO.(*fakeIO).root
+
+	res := postMultipart(t, ts, admin, "/api/v1/workloads/"+wlID+"/files/upload", "created.txt", "created.txt", "hello-upload")
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("upload %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	got, err := os.ReadFile(filepath.Join(root, "created.txt"))
+	if err != nil || string(got) != "hello-upload" {
+		t.Fatalf("uploaded %s %v", got, err)
+	}
+
+	res = doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files/content?path=created.txt", "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("read %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+
+	huge := bytes.Repeat([]byte("a"), iojail.PreviewMaxBytes+1)
+	if err := os.WriteFile(filepath.Join(root, "huge.txt"), huge, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res = doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files/content?path=huge.txt", "")
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("huge %d %s", res.StatusCode, b)
+	}
+	var content map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&content)
+	_ = res.Body.Close()
+	if content["too_large"] != true {
+		t.Fatalf("too_large %+v", content)
+	}
+	if _, ok := content["content"]; ok {
+		t.Fatal("huge files must not include text content")
+	}
+
+	preview := bytes.Repeat([]byte("b"), iojail.EditorMaxBytes+8)
+	if err := os.WriteFile(filepath.Join(root, "preview.txt"), preview, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res = doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files/content?path=preview.txt", "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("preview %d", res.StatusCode)
+	}
+	content = map[string]any{}
+	_ = json.NewDecoder(res.Body).Decode(&content)
+	_ = res.Body.Close()
+	if content["editable"] != false || content["too_large"] == true {
+		t.Fatalf("editor fallback %+v", content)
+	}
+	if _, ok := content["content"]; !ok {
+		t.Fatal("preview should include text")
+	}
+
+	res = doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files?path=../etc/passwd", "")
+	if res.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("traversal list %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/mkdir", `{"path":"../escape"}`)
+	if res.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("traversal mkdir %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	res = doCookie(t, ts, view, "POST", "/api/v1/workloads/"+wlID+"/files/chmod", `{"path":"created.txt","mode":384}`)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer chmod %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/chmod", `{"path":"created.txt","mode":384}`)
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("admin chmod %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
 }

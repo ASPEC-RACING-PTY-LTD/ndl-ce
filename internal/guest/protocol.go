@@ -84,6 +84,8 @@ type FilesParams struct {
 	Path    string `json:"path,omitempty"`
 	Dest    string `json:"dest_path,omitempty"`
 	Mode    uint32 `json:"mode,omitempty"`
+	UID     int    `json:"uid,omitempty"`
+	GID     int    `json:"gid,omitempty"`
 	DataB64 string `json:"data_b64,omitempty"`
 }
 

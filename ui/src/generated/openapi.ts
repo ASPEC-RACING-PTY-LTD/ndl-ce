@@ -943,6 +943,12 @@ export interface FileEntry {
   type: string;
   size?: number;
   path?: string;
+  mode?: number;
+  mtime?: string;
+  uid?: number;
+  gid?: number;
+  owner?: string;
+  group?: string;
 }
 
 export interface FileListResponse {
@@ -954,11 +960,34 @@ export interface FileMutationRequest {
   path?: string;
   dest_path?: string;
   mode?: number;
+  uid?: number;
+  gid?: number;
+  expected_mtime?: string;
+  expected_sha256?: string;
 }
 
 export interface FileMutationResponse {
   ok?: boolean;
   path?: string;
+}
+
+export interface FileContentResponse {
+  name?: string;
+  type?: string;
+  size?: number;
+  path?: string;
+  mode?: number;
+  mtime?: string;
+  uid?: number;
+  gid?: number;
+  owner?: string;
+  group?: string;
+  sha256?: string;
+  encoding?: string;
+  content?: string;
+  binary?: boolean;
+  too_large?: boolean;
+  editable?: boolean;
 }
 
 export interface StartLabQemuProtoRequest {
@@ -2050,6 +2079,14 @@ export type DeleteNodeFilePath = "/api/v1/nodes/{id}/files/delete";
 
 export type MoveNodeFilePath = "/api/v1/nodes/{id}/files/move";
 
+export type CopyNodeFilePath = "/api/v1/nodes/{id}/files/copy";
+
+export type ChmodNodeFilePath = "/api/v1/nodes/{id}/files/chmod";
+
+export type ChownNodeFilePath = "/api/v1/nodes/{id}/files/chown";
+
+export type ContentNodeFilePath = "/api/v1/nodes/{id}/files/content";
+
 export type ListWorkloadFilesPath = "/api/v1/workloads/{id}/files";
 
 export type StatWorkloadFilePath = "/api/v1/workloads/{id}/files/stat";
@@ -2063,6 +2100,14 @@ export type MkdirWorkloadFilePath = "/api/v1/workloads/{id}/files/mkdir";
 export type DeleteWorkloadFilePath = "/api/v1/workloads/{id}/files/delete";
 
 export type MoveWorkloadFilePath = "/api/v1/workloads/{id}/files/move";
+
+export type CopyWorkloadFilePath = "/api/v1/workloads/{id}/files/copy";
+
+export type ChmodWorkloadFilePath = "/api/v1/workloads/{id}/files/chmod";
+
+export type ChownWorkloadFilePath = "/api/v1/workloads/{id}/files/chown";
+
+export type ContentWorkloadFilePath = "/api/v1/workloads/{id}/files/content";
 
 export type GetLabQemuProtoPath = "/api/v1/lab/qemu-proto";
 

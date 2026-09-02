@@ -2,10 +2,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
-import { createTerminalSession } from "../api/client";
+import { createTerminalSession, mkdirFile, uploadFile } from "../api/client";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
+import { uploadDirFromCwd, joinPath } from "../files/paths";
+import { shellEscapeAll } from "../files/shell";
 import { workloadGuestIOReason } from "../guestIO";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
@@ -30,12 +32,20 @@ export function TerminalPage() {
   const canOpen = host ? roles?.includes("admin") : Boolean(roles?.includes("admin") || roles?.includes("operator"));
   const wrap = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
+  const sendRef = useRef<(data: string) => void>(() => {});
+  const cwdRef = useRef("/");
+  const jailRef = useRef("");
+  const abortRef = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Connecting");
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [ticketKey, setTicketKey] = useState(0);
   const [cwd, setCwd] = useState(cwdFromQuery);
   const [ready, setReady] = useState(kind === "node");
+  const [dropActive, setDropActive] = useState(false);
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
+
+  cwdRef.current = cwd;
 
   useEffect(() => {
     if (kind !== "workload") {
@@ -97,6 +107,7 @@ export function TerminalPage() {
         if (!created.ticket || !created.id) {
           throw new Error("session ticket was not returned");
         }
+        jailRef.current = created.jail_root ?? "";
         const proto = window.location.protocol === "https:" ? "wss" : "ws";
         ws = new WebSocket(`${proto}://${window.location.host}/api/v1/io/sessions/${created.id}/ws`, [
           `ndl.ticket.${created.ticket}`,
@@ -109,6 +120,10 @@ export function TerminalPage() {
           }
         };
         ws.onerror = () => setError("Terminal socket failed");
+        const encoder = new TextEncoder();
+        sendRef.current = (data: string) => {
+          ws?.send(encodeFrame(1, encoder.encode(data)));
+        };
         ws.onmessage = (ev) => {
           const bytes = ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : new Uint8Array();
           const frame = decodeFrame(bytes);
@@ -129,7 +144,7 @@ export function TerminalPage() {
           }
         };
         term.onData((data) => {
-          ws?.send(encodeFrame(1, new TextEncoder().encode(data)));
+          sendRef.current(data);
         });
         term.attachCustomKeyEventHandler((ev) => {
           if (ev.type === "paste" || (ev.ctrlKey && ev.key === "v")) {
@@ -163,6 +178,46 @@ export function TerminalPage() {
     // cwd is the start directory for a new ticket, not a live effect input.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canOpen, ready, unsupported, kind, id, ticketKey]);
+
+  async function onDropFiles(list: FileList | null) {
+    const files = list ? Array.from(list) : [];
+    if (files.length === 0) {
+      return;
+    }
+    const located = uploadDirFromCwd(cwdRef.current, jailRef.current);
+    const destDir = located.path;
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
+    setError(null);
+    setUploadNote(`Uploading 0/${files.length} to ${destDir}`);
+    try {
+      if (located.fallback) {
+        try {
+          await mkdirFile(kind, id, destDir);
+        } catch {
+          // directory may already exist
+        }
+      }
+      const uploaded: string[] = [];
+      for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        setUploadNote(`Uploading ${i + 1}/${files.length}: ${file.name}`);
+        const dest = joinPath(destDir, file.name);
+        await uploadFile(kind, id, dest, file, { signal: abort.signal });
+        uploaded.push(dest.startsWith("/") ? dest : `/${dest}`);
+      }
+      if (located.fallback) {
+        setUploadNote(`Uploaded to ${destDir} because the shell cwd is not available.`);
+      } else {
+        setUploadNote(`Uploaded ${uploaded.length} file(s) to ${destDir}`);
+      }
+      sendRef.current(shellEscapeAll(uploaded));
+    } catch (err) {
+      setUploadNote(null);
+      setError(err instanceof Error ? err.message : "Upload failed");
+    }
+  }
 
   if (unsupported) {
     return (
@@ -198,6 +253,21 @@ export function TerminalPage() {
           {error}
         </p>
       ) : null}
+      {uploadNote ? (
+        <p className="banner" role="status">
+          {uploadNote}{" "}
+          <button
+            className="btn btn-sm btn-ghost"
+            type="button"
+            onClick={() => {
+              abortRef.current?.abort();
+              setUploadNote(null);
+            }}
+          >
+            Cancel upload
+          </button>
+        </p>
+      ) : null}
       <nav className="subnav" aria-label="IO">
         <Link href={backHref}>Back</Link>
         <Link href={filesHref}>Open Files</Link>
@@ -211,7 +281,27 @@ export function TerminalPage() {
           Open Files here
         </button>
       </div>
-      <div className="term-wrap" ref={wrap} />
+      <div
+        className="term-wrap"
+        data-testid="term-wrap"
+        ref={wrap}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = "copy";
+          }
+          setDropActive(true);
+        }}
+        onDragLeave={() => setDropActive(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropActive(false);
+          void onDropFiles(e.dataTransfer.files);
+        }}
+      >
+        {dropActive ? <div className="term-drop">Drop files to upload into the current directory</div> : null}
+      </div>
     </section>
   );
 }

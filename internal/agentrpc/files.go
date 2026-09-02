@@ -10,8 +10,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/no-dal/ndl-ce/internal/iojail"
 	"github.com/no-dal/ndl-ce/internal/lxc"
@@ -25,6 +25,10 @@ type fileEntry struct {
 	Type    string `json:"type"`
 	Size    int64  `json:"size"`
 	Mode    uint32 `json:"mode"`
+	UID     uint32 `json:"uid,omitempty"`
+	GID     uint32 `json:"gid,omitempty"`
+	Owner   string `json:"owner,omitempty"`
+	Group   string `json:"group,omitempty"`
 	ModTime string `json:"mtime"`
 	Path    string `json:"path"`
 }
@@ -109,9 +113,43 @@ func runFilesOp(root, action, rel, dest string, mode uint32) ([]byte, error) {
 			return nil, err
 		}
 		return json.Marshal(map[string]any{"ok": true, "path": dest})
+	case "chmod":
+		if mode == 0 {
+			return nil, fmt.Errorf("mode is required")
+		}
+		if err := iojail.ChmodBeneath(root, rel, fs.FileMode(mode)); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"ok": true, "path": rel, "mode": mode})
+	case "chown":
+		uid, gid, err := parseOwnerSpec(dest)
+		if err != nil {
+			return nil, err
+		}
+		if err := iojail.ChownBeneath(root, rel, uid, gid); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"ok": true, "path": rel, "uid": uid, "gid": gid})
 	default:
 		return nil, fmt.Errorf("unknown files action %q", action)
 	}
+}
+
+func parseOwnerSpec(spec string) (uid, gid int, err error) {
+	spec = strings.TrimSpace(spec)
+	parts := strings.Split(spec, ":")
+	if len(parts) != 2 {
+		return -1, -1, fmt.Errorf("chown requires uid:gid")
+	}
+	uid64, err := strconv.ParseInt(parts[0], 10, 32)
+	if err != nil {
+		return -1, -1, fmt.Errorf("uid is invalid")
+	}
+	gid64, err := strconv.ParseInt(parts[1], 10, 32)
+	if err != nil {
+		return -1, -1, fmt.Errorf("gid is invalid")
+	}
+	return int(uid64), int(gid64), nil
 }
 
 func filesList(root, rel string) ([]byte, error) {
@@ -164,19 +202,18 @@ func statEntry(root, rel, name string) (fileEntry, error) {
 	if err != nil {
 		return fileEntry{}, err
 	}
-	kind := "file"
-	if info.IsDir() {
-		kind = "dir"
-	} else if info.Mode()&os.ModeSymlink != 0 {
-		kind = "symlink"
-	}
+	meta := iojail.MetaFromInfo(info, name, rel)
 	return fileEntry{
-		Name:    name,
-		Type:    kind,
-		Size:    info.Size(),
-		Mode:    uint32(info.Mode().Perm()),
-		ModTime: info.ModTime().UTC().Format(time.RFC3339),
-		Path:    rel,
+		Name:    meta.Name,
+		Type:    meta.Type,
+		Size:    meta.Size,
+		Mode:    meta.Mode,
+		UID:     meta.UID,
+		GID:     meta.GID,
+		Owner:   meta.Owner,
+		Group:   meta.Group,
+		ModTime: meta.ModTime,
+		Path:    meta.Path,
 	}, nil
 }
 
@@ -211,6 +248,11 @@ func filesCopy(root, src, dest string) error {
 		return err
 	}
 	_, copyErr := io.Copy(out, in)
+	if copyErr == nil {
+		if syncer, ok := any(out).(interface{ Sync() error }); ok {
+			copyErr = syncer.Sync()
+		}
+	}
 	closeErr := out.Close()
 	if copyErr != nil {
 		_ = filesDelete(root, part)
@@ -284,6 +326,13 @@ func writePartThenRename(root, rel string, mode uint32, r io.Reader, maxBytes in
 			_ = out.Close()
 			_ = filesDelete(root, part)
 			return nil, readErr
+		}
+	}
+	if syncer, ok := any(out).(interface{ Sync() error }); ok {
+		if err := syncer.Sync(); err != nil {
+			_ = out.Close()
+			_ = filesDelete(root, part)
+			return nil, err
 		}
 	}
 	if err := out.Close(); err != nil {

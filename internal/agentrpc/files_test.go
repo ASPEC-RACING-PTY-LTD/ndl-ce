@@ -176,3 +176,73 @@ func TestResolveJailVMConsoleRejectsTraversal(t *testing.T) {
 		t.Fatal("dot-dot")
 	}
 }
+
+func TestFilesOpChmodAndChownStayInJail(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runFilesOp(root, "chmod", "a.txt", "", 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(root, "a.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %o", info.Mode().Perm())
+	}
+	if _, err := runFilesOp(root, "chmod", "../a.txt", "", 0o777); err == nil {
+		t.Fatal("chmod escape must fail")
+	}
+	if _, err := runFilesOp(root, "chown", "../a.txt", "0:0", 0); err == nil {
+		t.Fatal("chown escape must fail")
+	}
+}
+
+func TestFilesOpPermissionDenied(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file mode bits")
+	}
+	root := t.TempDir()
+	locked := filepath.Join(root, "locked.txt")
+	if err := os.WriteFile(locked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o644) })
+	if _, err := runFilesOp(root, "stat", "locked.txt", "", 0); err == nil {
+		t.Fatal("stat of an unreadable file must fail")
+	}
+}
+
+func TestFilesOpRecursiveDelete(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "tree", "n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tree", "n", "f.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runFilesOp(root, "delete", "tree", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "tree")); !os.IsNotExist(err) {
+		t.Fatal("tree must be gone")
+	}
+}
+
+func TestJailRelCWD(t *testing.T) {
+	jail := "/var/lib/ndl/storage/pool/volumes/ct"
+	if got := jailRelCWD(jail, filepath.Join(jail, "root")); got != "/root" {
+		t.Fatalf("got %s", got)
+	}
+	if got := jailRelCWD(jail, "/home/user"); got != "/home/user" {
+		t.Fatalf("guest-style cwd %s", got)
+	}
+	if got := jailRelCWD("guest:/", "/etc"); got != "/etc" {
+		t.Fatalf("guest jail %s", got)
+	}
+}

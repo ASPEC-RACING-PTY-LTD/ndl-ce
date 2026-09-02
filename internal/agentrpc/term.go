@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -104,6 +105,34 @@ func hostStartDir(root, cwd string) (string, error) {
 		return root, nil
 	}
 	return abs, nil
+}
+
+// jailRelCWD maps a host-visible /proc cwd into a path beneath the
+// workload jail. Guest jails already report guest paths.
+func jailRelCWD(jail, cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return "/"
+	}
+	if isGuestJail(jail) {
+		if !strings.HasPrefix(cwd, "/") {
+			return "/" + cwd
+		}
+		return cwd
+	}
+	jail = filepath.Clean(jail)
+	cleaned := filepath.Clean(cwd)
+	if jail == "/" {
+		return filepath.ToSlash(cleaned)
+	}
+	rel, err := filepath.Rel(jail, cleaned)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(cleaned)
+	}
+	if rel == "." {
+		return "/"
+	}
+	return "/" + filepath.ToSlash(rel)
 }
 
 func cwdTick() <-chan time.Time {

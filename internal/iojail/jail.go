@@ -39,6 +39,11 @@ func cleanRel(rel string) (string, error) {
 	if strings.Contains(rel, "\x00") {
 		return "", fmt.Errorf("path contains a NUL")
 	}
+	for _, r := range rel {
+		if r < 32 || r == 127 {
+			return "", fmt.Errorf("path contains a control character")
+		}
+	}
 	clean := filepath.ToSlash(filepath.Clean(rel))
 	if clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("path escapes the jail")

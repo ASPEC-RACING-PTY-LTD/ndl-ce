@@ -13,13 +13,17 @@ import (
 
 // FilesCall is a typed jail operation sent to the agent.
 type FilesCall struct {
-	TargetKind string
-	TargetID   string
-	JailRoot   string
-	Action     string
-	Path       string
-	DestPath   string
-	Mode       uint32
+	TargetKind     string
+	TargetID       string
+	JailRoot       string
+	Action         string
+	Path           string
+	DestPath       string
+	Mode           uint32
+	UID            int
+	GID            int
+	ExpectedMtime  string
+	ExpectedSHA256 string
 }
 
 // FilesPutCall begins a chunked write.
@@ -56,9 +60,13 @@ type TermConn interface {
 }
 
 func (c Client) FilesOp(ctx context.Context, call FilesCall) (json.RawMessage, error) {
+	dest := call.DestPath
+	if call.Action == "chown" && dest == "" {
+		dest = fmt.Sprintf("%d:%d", call.UID, call.GID)
+	}
 	res, err := c.rpc().FilesOp(ctx, connect.NewRequest(&agentv1.FilesOpRequest{
 		TargetKind: call.TargetKind, TargetId: call.TargetID, JailRoot: call.JailRoot,
-		Action: call.Action, Path: call.Path, DestPath: call.DestPath, Mode: call.Mode,
+		Action: call.Action, Path: call.Path, DestPath: dest, Mode: call.Mode,
 	}))
 	if err != nil {
 		return nil, err

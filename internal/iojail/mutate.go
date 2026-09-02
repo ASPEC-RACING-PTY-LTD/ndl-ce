@@ -84,6 +84,42 @@ func RenameBeneath(root, src, dest string) error {
 	return renameBeneath(root, src, dest)
 }
 
+// ChmodBeneath sets permission bits under root without following the
+// final symlink.
+func ChmodBeneath(root, rel string, mode fs.FileMode) error {
+	rel, err := cleanRel(rel)
+	if err != nil {
+		return err
+	}
+	if rel == "." {
+		return fmt.Errorf("chmod path is required")
+	}
+	if planned, jerr := joinUnder(root, rel); jerr == nil {
+		if err := deniedHost(root, planned); err != nil {
+			return err
+		}
+	}
+	return chmodBeneath(root, rel, mode)
+}
+
+// ChownBeneath sets uid/gid under root without following the final symlink.
+// uid or gid of -1 leaves that id unchanged.
+func ChownBeneath(root, rel string, uid, gid int) error {
+	rel, err := cleanRel(rel)
+	if err != nil {
+		return err
+	}
+	if rel == "." {
+		return fmt.Errorf("chown path is required")
+	}
+	if planned, jerr := joinUnder(root, rel); jerr == nil {
+		if err := deniedHost(root, planned); err != nil {
+			return err
+		}
+	}
+	return chownBeneath(root, rel, uid, gid)
+}
+
 func removePortable(root, rel string) error {
 	abs, err := joinUnder(root, rel)
 	if err != nil {
@@ -182,4 +218,40 @@ func renamePortable(root, src, dest string) error {
 		}
 	}
 	return os.Rename(srcAbs, destAbs)
+}
+
+func chmodPortable(root, rel string, mode fs.FileMode) error {
+	abs, err := joinUnder(root, rel)
+	if err != nil {
+		return err
+	}
+	if err := deniedHost(root, abs); err != nil {
+		return err
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to chmod a symlink")
+	}
+	return os.Chmod(abs, mode.Perm())
+}
+
+func chownPortable(root, rel string, uid, gid int) error {
+	abs, err := joinUnder(root, rel)
+	if err != nil {
+		return err
+	}
+	if err := deniedHost(root, abs); err != nil {
+		return err
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("refusing to chown a symlink")
+	}
+	return os.Chown(abs, uid, gid)
 }

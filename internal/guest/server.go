@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -196,9 +197,46 @@ func (h *Host) filesOp(params json.RawMessage) (json.RawMessage, error) {
 			return nil, err
 		}
 		return okResult(map[string]any{"ok": true, "path": p.Dest}), nil
+	case "chmod":
+		if p.Mode == 0 {
+			return nil, fmt.Errorf("mode is required")
+		}
+		if err := iojail.ChmodBeneath(root, p.Path, fs.FileMode(p.Mode)); err != nil {
+			return nil, err
+		}
+		return okResult(map[string]any{"ok": true, "path": p.Path, "mode": p.Mode}), nil
+	case "chown":
+		uid, gid, err := parseGuestOwner(p)
+		if err != nil {
+			return nil, err
+		}
+		if err := iojail.ChownBeneath(root, p.Path, uid, gid); err != nil {
+			return nil, err
+		}
+		return okResult(map[string]any{"ok": true, "path": p.Path, "uid": uid, "gid": gid}), nil
 	default:
 		return nil, fmt.Errorf("unknown files action %q", p.Action)
 	}
+}
+
+func parseGuestOwner(p FilesParams) (uid, gid int, err error) {
+	spec := strings.TrimSpace(p.Dest)
+	if spec == "" && (p.UID != 0 || p.GID != 0) {
+		return p.UID, p.GID, nil
+	}
+	parts := strings.Split(spec, ":")
+	if len(parts) != 2 {
+		return -1, -1, fmt.Errorf("chown requires uid:gid")
+	}
+	u, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return -1, -1, fmt.Errorf("uid is invalid")
+	}
+	g, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return -1, -1, fmt.Errorf("gid is invalid")
+	}
+	return u, g, nil
 }
 
 func (h *Host) filesPut(params json.RawMessage) (json.RawMessage, error) {
@@ -226,6 +264,13 @@ func (h *Host) filesPut(params json.RawMessage) (json.RawMessage, error) {
 		_ = out.Close()
 		_ = iojail.RemoveBeneath(h.root(), part)
 		return nil, err
+	}
+	if syncer, ok := any(out).(interface{ Sync() error }); ok {
+		if err := syncer.Sync(); err != nil {
+			_ = out.Close()
+			_ = iojail.RemoveBeneath(h.root(), part)
+			return nil, err
+		}
 	}
 	if err := out.Close(); err != nil {
 		_ = iojail.RemoveBeneath(h.root(), part)
@@ -452,15 +497,22 @@ func filesStatMap(root, rel, name string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	kind := "file"
-	if info.IsDir() {
-		kind = "dir"
+	meta := iojail.MetaFromInfo(info, name, rel)
+	out := map[string]any{
+		"name": meta.Name, "type": meta.Type, "size": meta.Size,
+		"mode": meta.Mode, "path": meta.Path, "mtime": meta.ModTime,
 	}
-	return map[string]any{
-		"name": name, "type": kind, "size": info.Size(),
-		"mode": uint32(info.Mode().Perm()), "path": rel,
-		"mtime": info.ModTime().UTC().Format(time.RFC3339),
-	}, nil
+	if meta.Owner != "" {
+		out["owner"] = meta.Owner
+	}
+	if meta.Group != "" {
+		out["group"] = meta.Group
+	}
+	if meta.UID != 0 || meta.GID != 0 || meta.Owner != "" {
+		out["uid"] = meta.UID
+		out["gid"] = meta.GID
+	}
+	return out, nil
 }
 
 func filesCopy(root, src, dest string) error {

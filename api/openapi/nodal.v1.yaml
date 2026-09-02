@@ -2225,6 +2225,93 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileMutationResponse"
+  /nodes/{id}/files/copy:
+    post:
+      operationId: copyNodeFile
+      summary: Copy a host path. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "201":
+          description: Copied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /nodes/{id}/files/chmod:
+    post:
+      operationId: chmodNodeFile
+      summary: Change host path mode. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Mode set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /nodes/{id}/files/chown:
+    post:
+      operationId: chownNodeFile
+      summary: Change host path owner. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Owner set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /nodes/{id}/files/content:
+    get:
+      operationId: contentNodeFile
+      summary: Read a host text file for the editor. Admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Content or binary/too-large metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileContentResponse"
   /workloads/{id}/files:
     get:
       operationId: listWorkloadFiles
@@ -2367,6 +2454,93 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files/copy:
+    post:
+      operationId: copyWorkloadFile
+      summary: Copy a CT or VM guest path
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "201":
+          description: Copied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files/chmod:
+    post:
+      operationId: chmodWorkloadFile
+      summary: Change CT or VM guest path mode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Mode set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files/chown:
+    post:
+      operationId: chownWorkloadFile
+      summary: Change CT or VM guest path owner
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileMutationRequest"
+      responses:
+        "200":
+          description: Owner set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMutationResponse"
+  /workloads/{id}/files/content:
+    get:
+      operationId: contentWorkloadFile
+      summary: Read a CT or VM guest text file for the editor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Content or binary/too-large metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileContentResponse"
   /lab/qemu-proto:
     get:
       operationId: getLabQemuProto
@@ -5851,6 +6025,18 @@ components:
           type: integer
         path:
           type: string
+        mode:
+          type: integer
+        mtime:
+          type: string
+        uid:
+          type: integer
+        gid:
+          type: integer
+        owner:
+          type: string
+        group:
+          type: string
     FileListResponse:
       type: object
       additionalProperties: false
@@ -5873,6 +6059,14 @@ components:
           type: string
         mode:
           type: integer
+        uid:
+          type: integer
+        gid:
+          type: integer
+        expected_mtime:
+          type: string
+        expected_sha256:
+          type: string
     FileMutationResponse:
       type: object
       additionalProperties: true
@@ -5881,6 +6075,42 @@ components:
           type: boolean
         path:
           type: string
+    FileContentResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        size:
+          type: integer
+        path:
+          type: string
+        mode:
+          type: integer
+        mtime:
+          type: string
+        uid:
+          type: integer
+        gid:
+          type: integer
+        owner:
+          type: string
+        group:
+          type: string
+        sha256:
+          type: string
+        encoding:
+          type: string
+        content:
+          type: string
+        binary:
+          type: boolean
+        too_large:
+          type: boolean
+        editable:
+          type: boolean
     StartLabQemuProtoRequest:
       type: object
       additionalProperties: false

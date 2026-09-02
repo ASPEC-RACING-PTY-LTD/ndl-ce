@@ -19,6 +19,15 @@ func TestCleanRelRejectsDotDot(t *testing.T) {
 	}
 }
 
+func TestCleanRelRejectsControlCharacters(t *testing.T) {
+	if _, err := cleanRel("foo\nbar"); err == nil {
+		t.Fatal("newline must fail")
+	}
+	if _, err := cleanRel("foo\x1bbar"); err == nil {
+		t.Fatal("escape must fail")
+	}
+}
+
 func TestOpenBeneathStaysInRoot(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "ok.txt"), []byte("hi"), 0o644); err != nil {
