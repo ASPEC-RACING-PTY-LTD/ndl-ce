@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -109,6 +110,10 @@ func TestLVMCreateRefusesRootDiskAndHasNoIncrementalSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	poolID := pool["id"].(string)
+	vg, err := mem.GetLVMVG(context.Background(), poolID)
+	if err != nil || vg == nil || vg.VGUUID != "AbCdEfGh0123" || vg.VGName != "ndlvg" {
+		t.Fatalf("vg identity %+v %v", vg, err)
+	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", strings.NewReader(`{"pool_id":"`+poolID+`","class":"vm-disk","size_bytes":1073741824}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -334,5 +339,36 @@ func TestLVMCreateDoesNotInventPendingUUID(t *testing.T) {
 	}
 	if pool["status"] != storage.StatusUnavailable {
 		t.Fatalf("status %s", b)
+	}
+}
+
+type failUpsertLVMVGStore struct {
+	appdb.Store
+}
+
+func (f failUpsertLVMVGStore) UpsertLVMVG(context.Context, appdb.LVMVG) error {
+	return errors.New("persist failed")
+}
+
+func TestLVMCreateFailsClosedWhenIdentityPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.LVM = &fakeLVM{}
+	s.Store = failUpsertLVMVGStore{Store: mem}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/lvm/create", strings.NewReader(`{"name":"ndlvg","disks":["/dev/disk/by-id/wwn-0x5000"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("lvm persist %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record volume group identity") {
+		t.Fatalf("lvm persist body %s", b)
 	}
 }

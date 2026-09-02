@@ -55,7 +55,10 @@ func (s *Server) startKubernetes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	row.UpdatedAt = s.now()
-	_ = s.Store.UpsertFeature(r.Context(), row)
+	if err := s.Store.UpsertFeature(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record kubelet status")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "k8s.start", "ok", features.IDK8s)
 	writeJSON(w, http.StatusOK, s.kubernetesJSON(r, p.User.ClusterID))
 }
@@ -79,7 +82,10 @@ func (s *Server) stopKubernetes(w http.ResponseWriter, r *http.Request) {
 		row.Reason = res.Reason + " Virtual machines and system containers were not stopped."
 	}
 	row.UpdatedAt = s.now()
-	_ = s.Store.UpsertFeature(r.Context(), row)
+	if err := s.Store.UpsertFeature(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record kubelet status")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "k8s.stop", "ok", features.IDK8s)
 	writeJSON(w, http.StatusOK, s.kubernetesJSON(r, p.User.ClusterID))
 }

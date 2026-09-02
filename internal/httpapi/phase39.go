@@ -328,7 +328,10 @@ func (s *Server) startDistributedOSD(w http.ResponseWriter, r *http.Request) {
 		row.Reason = firstNonEmpty(res.Reason, "ceph-osd was not started. This host cannot run the Debian ceph-osd unit.")
 	}
 	row.UpdatedAt = s.now()
-	_ = s.Store.UpsertFeature(r.Context(), row)
+	if err := s.Store.UpsertFeature(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record OSD status")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.distributed.osd.start", "ok", features.IDDistStorage)
 	s.distributedRuntime(w, r)
 }
@@ -353,7 +356,10 @@ func (s *Server) stopDistributedOSD(w http.ResponseWriter, r *http.Request) {
 		row.Reason = res.Reason + " Virtual machines and system containers were not stopped."
 	}
 	row.UpdatedAt = s.now()
-	_ = s.Store.UpsertFeature(r.Context(), row)
+	if err := s.Store.UpsertFeature(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record OSD status")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.distributed.osd.stop", "ok", features.IDDistStorage)
 	s.distributedRuntime(w, r)
 }

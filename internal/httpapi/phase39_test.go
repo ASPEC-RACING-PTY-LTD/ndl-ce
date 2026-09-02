@@ -371,3 +371,30 @@ func TestPhase39OSDFailsClosedWhenPersistFails(t *testing.T) {
 		t.Fatalf("osd persist body %s", raw)
 	}
 }
+
+func TestPhase39OSDStartFailsClosedWhenStatusPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	s.Distributed = &fakeDistributed{up: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	enableDistributed(t, ts, cookie)
+	s.Store = failUpsertFeatureStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/distributed/osds/start", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, storage.StartOSDConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("osd start persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record OSD status") {
+		t.Fatalf("osd start persist body %s", raw)
+	}
+}

@@ -3,12 +3,14 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/k8s"
@@ -161,5 +163,50 @@ func TestPhase38StartDoesNotInventKubeProcess(t *testing.T) {
 		if c.Action == hostos.UpdateK8sRuntimeStart && c.PackageName != "" {
 			t.Fatalf("start must not name a package %+v", c)
 		}
+	}
+}
+
+type failUpsertFeatureStore struct {
+	appdb.Store
+}
+
+func (f failUpsertFeatureStore) UpsertFeature(context.Context, appdb.Feature) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase38StartFailsClosedWhenStatusPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	inv := debianInv()
+	inv.Memory = inventory.Memory{TotalBytes: 16 << 30}
+	seedNode(t, mem, cluster.ID, inv, false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/features/k8s/enable", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("enable %d %s", res.StatusCode, raw)
+	}
+
+	s.Store = failUpsertFeatureStore{Store: mem}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/kubernetes/start", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, k8s.StartConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("start persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record kubelet status") {
+		t.Fatalf("start persist body %s", raw)
 	}
 }

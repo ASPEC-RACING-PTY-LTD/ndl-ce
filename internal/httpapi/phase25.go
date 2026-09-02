@@ -140,7 +140,10 @@ func (s *Server) createLVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if guid != "" {
-		_ = s.Store.UpsertLVMVG(r.Context(), appdb.LVMVG{PoolID: poolID, VGUUID: guid, VGName: req.Name, ThinPool: storage.LVMThinPoolName})
+		if err := s.Store.UpsertLVMVG(r.Context(), appdb.LVMVG{PoolID: poolID, VGUUID: guid, VGName: req.Name, ThinPool: storage.LVMThinPoolName}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record volume group identity")
+			return
+		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.lvm.create", "ok", poolID)
 	writeJSON(w, http.StatusCreated, poolJSON(row))
