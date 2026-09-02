@@ -223,10 +223,13 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessID := uuid.NewString()
-	_ = s.Store.CreateRemoteSession(r.Context(), appdb.RemoteSession{
+	if err := s.Store.CreateRemoteSession(r.Context(), appdb.RemoteSession{
 		ID: sessID, ClusterID: cluster.ID, NodeID: remote.ID,
 		ListenAddr: remote.ListenAddr, WGPublicKey: remote.WGPublicKey, LastSeenAt: now,
-	})
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record cluster session")
+		return
+	}
 	_ = s.Store.UpdateWGPeerObserved(r.Context(), appdb.WGPeer{
 		ID: peer.ID, ClusterID: cluster.ID, PublicKey: peer.PublicKey, IfaceName: peer.IfaceName,
 		PrivateKeyPath: peer.PrivateKeyPath, LastHandshakeUnix: req.HandshakeUnix,

@@ -1283,9 +1283,13 @@ describe("App", () => {
     });
 
     render(<App />);
-    expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeVisible();
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    expect(await screen.findByRole("dialog", { name: /command palette/i })).toBeVisible();
+    expect(await screen.findByRole("button", { name: /^search$/i })).toBeVisible();
+    await waitFor(() => {
+      if (!screen.queryByRole("dialog", { name: /command palette/i })) {
+        fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      }
+      expect(screen.getByRole("dialog", { name: /command palette/i })).toBeVisible();
+    });
     expect(screen.queryByRole("button", { name: /^create vm$/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /jump to tasks/i })).toBeVisible();
   });

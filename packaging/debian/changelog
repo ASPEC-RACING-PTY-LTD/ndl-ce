@@ -56,6 +56,8 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * LVM create fails closed if volume-group identity cannot be recorded. Kubelet and ceph-osd start/stop fail closed if feature runtime status cannot be recorded.
   * HA fence and promote fail closed if HA state persist fails. Replica configure already required that persist.
   * Node group create fails closed if member persist fails. A 201 does not mean node_ids were stored.
+  * Viewer command palette test retries Ctrl+K until the dialog is open. The shortcut listener is attached after first paint.
+  * Cluster OpenSession fails closed if the session row cannot be recorded. A 200 does not invent session_id.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

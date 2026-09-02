@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -324,5 +326,51 @@ func TestPhase28OpenSessionAcceptsClusterClientCert(t *testing.T) {
 	s.Handler().ServeHTTP(rec, hreq)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("mTLS session %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+type failCreateRemoteSessionStore struct {
+	appdb.Store
+}
+
+func (f failCreateRemoteSessionStore) CreateRemoteSession(context.Context, appdb.RemoteSession) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase28OpenSessionFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"persist-session"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failCreateRemoteSessionStore{Store: mem}
+
+	sessBody := `{"peer_id":"` + created["id"].(string) + `","pairing_token":"` + created["pairing_token"].(string) + `","listen_addr":"10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("session persist %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not record cluster session") {
+		t.Fatalf("session persist body %s", body)
 	}
 }
