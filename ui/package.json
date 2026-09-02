@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint --max-warnings 0",
+    "lint:copy": "node ../scripts/ci/check-ui-copy.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

@@ -36,9 +36,7 @@ export function SetupPage() {
       });
       navigate("/", { replace: true });
     } catch (err) {
-      setFormError(
-        err instanceof ApiError ? err.message : "Setup could not be completed.",
-      );
+      setFormError(err instanceof ApiError ? err.message : "Setup could not be completed.");
     } finally {
       setBusy(false);
     }
@@ -48,13 +46,13 @@ export function SetupPage() {
     <div className="auth-screen">
       <header className="auth-brand">
         <p className="wordmark">No-dal</p>
-        <p className="auth-edition">Community Edition. License activation is not required.</p>
+        <p className="auth-edition">Community Edition</p>
       </header>
-      <section className="panel auth-panel" aria-labelledby="setup-heading">
+      <main className="panel auth-panel" aria-labelledby="setup-heading">
         <h1 id="setup-heading">Create the first administrator</h1>
         <p className="lede">
-          Use the one-time setup token printed when the appliance was installed.
-          This claim can be used only once.
+          Use the one-time setup token printed when the appliance was installed. This claim can be
+          used only once.
         </p>
         <form className="form" onSubmit={(event) => void onSubmit(event)} noValidate>
           {formError ? (
@@ -113,7 +111,7 @@ export function SetupPage() {
             {busy ? "Creating administrator" : "Create administrator"}
           </button>
         </form>
-      </section>
+      </main>
     </div>
   );
 }

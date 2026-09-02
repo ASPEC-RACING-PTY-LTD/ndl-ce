@@ -11,6 +11,7 @@ import type { FileEntry } from "../api/phase6";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { formatBytes } from "../format";
+import { fileTypeLabel } from "../labels";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
 
@@ -50,7 +51,7 @@ export function FilesPage() {
     void getWorkload(id)
       .then((w) => {
         if (!cancelled && w.kind !== "system-container") {
-          setUnsupported("VM Files is Phase 20 and is not implemented.");
+          setUnsupported("Files are not available for this workload type.");
         }
       })
       .catch((err) => {
@@ -110,7 +111,7 @@ export function FilesPage() {
       setMkdirName("");
       await reload(path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "mkdir failed");
+      setError(err instanceof Error ? err.message : "Create folder failed");
     } finally {
       setBusy(false);
     }
@@ -205,7 +206,7 @@ export function FilesPage() {
         <div className="btn-row">
           <Field id="mkdir" label="New folder" value={mkdirName} onChange={(e) => setMkdirName(e.target.value)} />
           <button className="btn btn-primary" type="button" disabled={busy || !mkdirName} onClick={() => void onMkdir()}>
-            mkdir
+            Create folder
           </button>
         </div>
       ) : null}
@@ -232,7 +233,7 @@ export function FilesPage() {
                       entry.name
                     )}
                   </td>
-                  <td>{entry.type}</td>
+                  <td>{fileTypeLabel(entry.type)}</td>
                   <td>{entry.type === "dir" ? "" : formatBytes(entry.size)}</td>
                   <td>
                     <div className="btn-row">

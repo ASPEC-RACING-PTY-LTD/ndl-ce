@@ -42,7 +42,7 @@ export function TerminalPage() {
           return;
         }
         if (w.kind !== "system-container") {
-          setUnsupported("VM Terminal is Phase 20 and is not implemented.");
+          setUnsupported("Terminal is not available for this workload type.");
           setReady(false);
           return;
         }
@@ -81,7 +81,7 @@ export function TerminalPage() {
       try {
         const created = await createTerminalSession(kind, id, cwd);
         if (!created.ticket || !created.id) {
-          throw new Error("session ticket was not returned");
+          throw new Error("The terminal session could not be opened.");
         }
         const proto = window.location.protocol === "https:" ? "wss" : "ws";
         ws = new WebSocket(`${proto}://${window.location.host}/api/v1/io/sessions/${created.id}/ws`, [

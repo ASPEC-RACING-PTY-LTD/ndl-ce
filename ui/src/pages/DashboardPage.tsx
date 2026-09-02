@@ -1,22 +1,37 @@
 import { useEffect, useState } from "react";
-import { getNodeMetrics, listEvents, listNetworks, listNodes, listPools, listTasks, listWorkloads } from "../api/client";
+import {
+  getHealth,
+  getNodeMetrics,
+  listEvents,
+  listNetworks,
+  listNodes,
+  listPools,
+  listTasks,
+  listWorkloads,
+} from "../api/client";
 import type { EventItem, MetricsResponse, NodeSummary, TaskItem } from "../api/phase2";
-import { MetricChart } from "../components/MetricChart";
+import type { StoragePool } from "../api/phase3";
+import { ErrorState } from "../components/EmptyState";
 import { Link } from "../components/Link";
-import { formatBytes, formatWhen, honestStatus } from "../format";
-import { useSession } from "../session";
+import { MetricChart } from "../components/MetricChart";
+import { PageHeader } from "../components/PageHeader";
+import { StatusBadge } from "../components/StatusBadge";
+import { formatBytes } from "../format";
+import { eventTypeLabel, metricLabel, taskKindLabel } from "../labels";
 
 export function DashboardPage() {
-  const session = useSession();
-  const username = session.status === "ready" ? session.user?.username : undefined;
   const [node, setNode] = useState<NodeSummary | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [pools, setPools] = useState<StoragePool[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [needStorage, setNeedStorage] = useState(false);
   const [needNetwork, setNeedNetwork] = useState(false);
   const [needWorkload, setNeedWorkload] = useState(false);
+  const [workloadCounts, setWorkloadCounts] = useState({ running: 0, stopped: 0, other: 0 });
+  const [healthOk, setHealthOk] = useState<boolean | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,13 +43,14 @@ export function DashboardPage() {
           return;
         }
         setNode(first);
-        const [ev, tk, met, pools, nets, wls] = await Promise.all([
+        const [ev, tk, met, listedPools, nets, wls, health] = await Promise.all([
           listEvents().catch(() => []),
           listTasks().catch(() => []),
           first ? getNodeMetrics(first.id).catch(() => null) : Promise.resolve(null),
           listPools().catch(() => ({ items: [] })),
           listNetworks().catch(() => ({ items: [] })),
           listWorkloads().catch(() => ({ items: [] })),
+          getHealth().catch(() => null),
         ]);
         if (cancelled) {
           return;
@@ -42,15 +58,24 @@ export function DashboardPage() {
         setEvents(ev.slice(0, 5));
         setTasks(tk.slice(0, 5));
         setMetrics(met);
-        const usable = (pools.items ?? []).some((p) => p.status === "available" || p.status === "warning");
+        setPools(listedPools.items ?? []);
+        const usable = (listedPools.items ?? []).some((p) => p.status === "available" || p.status === "warning");
         setNeedStorage(!usable);
         const netReady = (nets.items ?? []).some((n) => n.status === "available" || n.status === "warning");
         setNeedNetwork(!netReady);
-        const haveWL = (wls.items ?? []).length > 0;
-        setNeedWorkload(usable && netReady && !haveWL);
+        const items = wls.items ?? [];
+        setNeedWorkload(usable && netReady && items.length === 0);
+        setWorkloadCounts({
+          running: items.filter((w) => w.status === "running").length,
+          stopped: items.filter((w) => w.status === "stopped").length,
+          other: items.filter((w) => w.status !== "running" && w.status !== "stopped").length,
+        });
+        setHealthOk(health?.status === "ok");
+        setLoaded(true);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
+          setLoaded(true);
         }
       }
     })();
@@ -61,135 +86,157 @@ export function DashboardPage() {
 
   const cpuSeries = metrics?.series.find((s) => s.name === "cpu.busy_ratio");
   const memSeries = metrics?.series.find((s) => s.name === "memory.used_bytes");
+  const usableBytes = pools.reduce((sum, p) => sum + (p.usable_bytes ?? 0), 0);
+  const allocatedBytes = pools.reduce((sum, p) => sum + (p.allocated_bytes ?? 0), 0);
+  const attention = [
+    needStorage ? { href: "/storage", text: "No usable storage pool yet. Create a Directory pool on the Storage page." } : null,
+    needNetwork ? { href: "/network", text: "No guest network yet. Create an isolated network on the Network page." } : null,
+    needWorkload
+      ? { href: "/workloads", text: "Storage and network are ready. Create a system container on the Workloads page." }
+      : null,
+  ].filter((item): item is { href: string; text: string } => Boolean(item));
+  const failedTasks = tasks.filter((t) => t.state === "failed");
 
   return (
-    <section className="page page-wide" aria-labelledby="dashboard-heading">
-      <header className="page-header">
-        <h1 id="dashboard-heading">Dashboard</h1>
-        {username ? <p className="page-kicker">Signed in as {username}</p> : null}
-      </header>
-      {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+    <section className="page" aria-labelledby="dashboard-heading">
+      <PageHeader id="dashboard-heading" title="Dashboard" kicker="Appliance health" />
+      {error ? <ErrorState>{error}</ErrorState> : null}
+      <div className="card-grid">
+        <article className="panel">
+          <h2>Health</h2>
+          <dl className="definition-list compact">
+            <div>
+              <dt>Node</dt>
+              <dd>
+                {node ? <StatusBadge status={node.status} /> : loaded ? "Not enrolled" : "Loading"}
+                {node?.stale ? " (stale)" : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>Control plane</dt>
+              <dd>
+                {healthOk == null ? "Loading" : healthOk ? <StatusBadge status="ok" label="Available" /> : "Unavailable"}
+              </dd>
+            </div>
+            <div>
+              <dt>Workloads</dt>
+              <dd>
+                {workloadCounts.running} running, {workloadCounts.stopped} stopped
+                {workloadCounts.other ? `, ${workloadCounts.other} other` : ""}
+              </dd>
+            </div>
+          </dl>
+        </article>
+        <article className="panel">
+          <h2>Capacity</h2>
+          <dl className="definition-list compact">
+            <div>
+              <dt>Memory</dt>
+              <dd>{node ? formatBytes(node.memory_bytes) : "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Storage usable</dt>
+              <dd>{pools.length ? formatBytes(usableBytes) : "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Storage allocated</dt>
+              <dd>{pools.length ? formatBytes(allocatedBytes) : "Not reported"}</dd>
+            </div>
+          </dl>
+        </article>
+        <article className="panel">
+          <h2>{metricLabel("cpu.busy_ratio")}</h2>
+          <Meter series={cpuSeries} overall={metrics?.status} />
+        </article>
+        <article className="panel">
+          <h2>{metricLabel("memory.used_bytes")}</h2>
+          <Meter series={memSeries} overall={metrics?.status} />
+        </article>
+      </div>
+      {attention.length > 0 || failedTasks.length > 0 ? (
+        <article className="panel stack">
+          <h2>Attention</h2>
+          {attention.map((item) => (
+            <p key={item.href} className="banner banner-warn" role="status">
+              {item.text} <Link href={item.href}>Open</Link>
+            </p>
+          ))}
+          {failedTasks.map((task) => (
+            <p key={task.id} className="banner banner-error" role="alert">
+              {taskKindLabel(task.kind)} failed{task.message ? `: ${task.message}` : ""}
+            </p>
+          ))}
+        </article>
       ) : null}
-      {needStorage ? (
-        <p className="banner banner-warn" role="status">
-          No usable storage pool yet. Create a Directory pool on the{" "}
-          <Link href="/storage">Storage</Link> page.
-        </p>
-      ) : null}
-      {needNetwork ? (
-        <p className="banner banner-warn" role="status">
-          No guest network yet. Create an isolated network on the{" "}
-          <Link href="/network">Network</Link> page.
-        </p>
-      ) : null}
-      {needWorkload ? (
-        <p className="banner banner-warn" role="status">
-          Storage and network are ready. Create a system container on the{" "}
-          <Link href="/workloads">Workloads</Link> page.
-        </p>
-      ) : null}
-      {!node ? (
-        <div className="panel empty-panel">
-          <p className="empty-title">Collecting</p>
+      {!node && loaded ? (
+        <article className="panel empty-panel">
+          <p className="empty-title">No local node</p>
           <p>The local node has not reported inventory yet.</p>
-        </div>
-      ) : (
-        <div className="card-grid">
-          <article className="panel">
-            <h2>Local node</h2>
-            <dl className="definition-list">
-              <div>
-                <dt>Name</dt>
-                <dd>{node.name}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>{honestStatus(node.status)}</dd>
-              </div>
-              <div>
-                <dt>Host OS</dt>
-                <dd>{node.host_os || "Not reported"}</dd>
-              </div>
-              <div>
-                <dt>CPU</dt>
-                <dd>
-                  {node.cpu_model || "Not reported"}
-                  {node.cpu_cores ? ` (${node.cpu_cores} cores, ${node.cpu_threads ?? "?"} threads)` : ""}
-                </dd>
-              </div>
-              <div>
-                <dt>Memory</dt>
-                <dd>{formatBytes(node.memory_bytes)}</dd>
-              </div>
-              <div>
-                <dt>Disks</dt>
-                <dd>
-                  {node.status === "collecting"
-                    ? "Collecting"
-                    : `${node.disk_count ?? "Not reported"} (${formatBytes(node.disk_bytes)})`}
-                </dd>
-              </div>
-              <div>
-                <dt>NICs</dt>
-                <dd>{node.status === "collecting" ? "Collecting" : String(node.nic_count ?? "Not reported")}</dd>
-              </div>
-              <div>
-                <dt>GPU</dt>
-                <dd>{node.gpu_present ? `${node.gpu_count} detected` : "None detected"}</dd>
-              </div>
-            </dl>
-            <p>
-              <Link href="/node">Node details</Link>
-            </p>
-          </article>
-          <article className="panel">
-            <h2>CPU</h2>
-            <Meter series={cpuSeries} overall={metrics?.status} />
-          </article>
-          <article className="panel">
-            <h2>Memory</h2>
-            <Meter series={memSeries} overall={metrics?.status} />
-          </article>
-          <article className="panel">
-            <h2>Recent events</h2>
-            {events.length === 0 ? (
-              <p>No events yet.</p>
-            ) : (
-              <ul className="plain-list">
-                {events.map((e) => (
-                  <li key={e.id}>
-                    {e.type} <span className="muted">{formatWhen(e.created_at)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p>
-              <Link href="/events">All events</Link>
-            </p>
-          </article>
-          <article className="panel">
-            <h2>Recent tasks</h2>
-            {tasks.length === 0 ? (
-              <p>No tasks yet.</p>
-            ) : (
-              <ul className="plain-list">
-                {tasks.map((t) => (
-                  <li key={t.id}>
-                    {t.kind} {t.state}
-                    {t.stage ? ` (${t.stage})` : ""}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p>
-              <Link href="/tasks">All tasks</Link>
-            </p>
-          </article>
-        </div>
-      )}
+        </article>
+      ) : null}
+      {node ? (
+        <article className="panel">
+          <h2>Node</h2>
+          <dl className="definition-list compact">
+            <div>
+              <dt>Name</dt>
+              <dd>
+                <Link href="/node">{node.name}</Link>
+              </dd>
+            </div>
+            <div>
+              <dt>Host OS</dt>
+              <dd>{node.host_os || "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>CPU</dt>
+              <dd>
+                {node.cpu_model || "Not reported"}
+                {node.cpu_cores ? ` (${node.cpu_cores} cores, ${node.cpu_threads ?? "?"} threads)` : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>GPU</dt>
+              <dd>{node.gpu_present ? `${node.gpu_count} detected` : "None detected"}</dd>
+            </div>
+          </dl>
+        </article>
+      ) : null}
+      <div className="card-grid">
+        <article className="panel">
+          <h2>Recent events</h2>
+          {events.length === 0 ? (
+            <p>No events yet.</p>
+          ) : (
+            <ul className="plain-list">
+              {events.map((e) => (
+                <li key={e.id}>{eventTypeLabel(e.type)}</li>
+              ))}
+            </ul>
+          )}
+          <p>
+            <Link href="/events">All events</Link>
+          </p>
+        </article>
+        <article className="panel">
+          <h2>Recent tasks</h2>
+          {tasks.length === 0 ? (
+            <p>No tasks yet.</p>
+          ) : (
+            <ul className="plain-list">
+              {tasks.map((t) => (
+                <li key={t.id}>
+                  {taskKindLabel(t.kind)} <StatusBadge status={t.state} />
+                  {t.message ? ` ${t.message}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p>
+            <Link href="/tasks">All tasks</Link>
+          </p>
+        </article>
+      </div>
     </section>
   );
 }

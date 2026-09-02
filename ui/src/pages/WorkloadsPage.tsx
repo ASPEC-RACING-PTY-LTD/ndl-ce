@@ -1,20 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listWorkloads } from "../api/client";
 import type { Workload } from "../api/phase5";
+import { ErrorState, LoadingState } from "../components/EmptyState";
 import { Link } from "../components/Link";
-import { honestStatus } from "../format";
+import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
+import { StatusBadge } from "../components/StatusBadge";
+import { formatBytes } from "../format";
+import { kindLabel, osLabel } from "../labels";
+import { canMutate } from "../rbac";
 import { useSession } from "../session";
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
 
 export function WorkloadsPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
-  const [items, setItems] = useState<Workload[]>([]);
+  const [items, setItems] = useState<Workload[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +30,7 @@ export function WorkloadsPage() {
       .catch((err) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
+          setItems([]);
         }
       });
     return () => {
@@ -34,36 +38,64 @@ export function WorkloadsPage() {
     };
   }, []);
 
+  const filtered = useMemo(() => {
+    const list = items ?? [];
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      return list;
+    }
+    return list.filter((w) => w.name.toLowerCase().includes(q));
+  }, [items, query]);
+
   return (
-    <section className="page page-wide" aria-labelledby="workloads-heading">
-      <header className="page-header">
-        <h1 id="workloads-heading">Workloads</h1>
-        <p className="page-kicker">System containers. VMs are a later phase.</p>
-      </header>
-      {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {mutate ? (
-        <p>
-          <Link href="/workloads/new/system-container">Create system container</Link>
-        </p>
-      ) : null}
-      <article className="panel">
-        <h2>System containers</h2>
-        {items.length === 0 ? (
-          <p>No system containers yet.</p>
+    <section className="page" aria-labelledby="workloads-heading">
+      <PageHeader
+        id="workloads-heading"
+        title="Workloads"
+        kicker="System containers on this appliance"
+        actions={
+          mutate ? (
+            <Link className="btn btn-primary" href="/workloads/new/system-container">
+              Create system container
+            </Link>
+          ) : null
+        }
+      />
+      {error ? <ErrorState>{error}</ErrorState> : null}
+      <article className="panel stack">
+        <input
+          className="field-input"
+          type="search"
+          placeholder="Search by name"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search workloads"
+        />
+        {items == null ? (
+          <LoadingState />
         ) : (
-          <ul className="plain-list">
-            {items.map((w) => (
-              <li key={w.id}>
-                <Link href={`/workloads/${w.id}`}>{w.name}</Link> {w.kind} {honestStatus(w.status)}
-                {w.image_pin ? ` ${w.image_pin}` : ""}
-                {w.nics?.[0]?.ipv4 ? ` ${w.nics[0].ipv4}` : ""}
-              </li>
-            ))}
-          </ul>
+          <ResourceTable
+            headers={["Name", "Type", "Status", "Image", "IPv4", "Memory"]}
+            empty={
+              <p>
+                No system containers yet. Create a storage pool and guest network first if this
+                appliance is new, then create a system container.
+              </p>
+            }
+            rows={filtered.map((w) => [
+              <Link key="name" href={`/workloads/${w.id}`}>
+                {w.name}
+              </Link>,
+              kindLabel(w.kind),
+              <span key="st">
+                <StatusBadge status={w.status} />
+                {w.status === "warning" || w.status === "failed" ? ` ${w.reason || ""}` : ""}
+              </span>,
+              osLabel(w.image_pin),
+              w.nics?.[0]?.ipv4 || "Not reported",
+              formatBytes(w.memory_bytes),
+            ])}
+          />
         )}
       </article>
     </section>

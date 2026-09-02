@@ -8,13 +8,16 @@ import {
   uploadImage,
 } from "../api/client";
 import type { LibraryItem, StoragePool, StorageVolume } from "../api/phase3";
+import { ErrorState } from "../components/EmptyState";
 import { Field } from "../components/Field";
+import { SelectField } from "../components/form/SelectField";
+import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
+import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes } from "../format";
+import { kindLabel } from "../labels";
+import { canMutate } from "../rbac";
 import { useSession } from "../session";
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
 
 function capacityLabel(value: number | null | undefined, status: string): string {
   if (status === "unavailable") {
@@ -43,6 +46,7 @@ export function StoragePage() {
   const [kind, setKind] = useState("iso");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   async function reload() {
     const listed = await listPools();
@@ -61,16 +65,17 @@ export function StoragePage() {
     const [vols, imgs] = await Promise.all([listVolumes(poolId), listImages(poolId)]);
     setVolumes(vols);
     setImages(imgs);
+    setLoaded(true);
   }
 
   useEffect(() => {
     let cancelled = false;
-    void reload()
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unavailable");
-        }
-      });
+    void reload().catch((err) => {
+      if (!cancelled) {
+        setError(err instanceof Error ? err.message : "Unavailable");
+        setLoaded(true);
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -90,7 +95,7 @@ export function StoragePage() {
   }, [selected]);
 
   const pool = pools.find((p) => p.id === selected) ?? pools[0];
-  const firstRun = pools.length === 0;
+  const firstRun = loaded && pools.length === 0;
 
   async function onCreatePool() {
     setBusy(true);
@@ -144,23 +149,16 @@ export function StoragePage() {
   }
 
   return (
-    <section className="page page-wide" aria-labelledby="storage-heading">
-      <header className="page-header">
-        <h1 id="storage-heading">Storage</h1>
-        <p className="page-kicker">Directory pools, volumes, and the image library.</p>
-      </header>
-      {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+    <section className="page" aria-labelledby="storage-heading">
+      <PageHeader id="storage-heading" title="Storage" kicker="Directory pools, volumes, and the image library." />
+      {error ? <ErrorState>{error}</ErrorState> : null}
       {firstRun || mutate ? (
-        <article className="panel">
+        <article className="panel form-narrow">
           <h2>{firstRun ? "First-run storage pool" : "Create Directory pool"}</h2>
           {firstRun ? (
             <p className="lede">
-              This installation has no usable storage pool yet. Create a Directory pool. Workloads
-              cannot start until a later phase, but images and disks can be stored now.
+              This installation has no usable storage pool yet. Create a Directory pool so images and
+              disks can be stored.
             </p>
           ) : (
             <p className="lede">
@@ -195,72 +193,51 @@ export function StoragePage() {
       ) : null}
       <article className="panel">
         <h2>Pools</h2>
-        {pools.length === 0 ? (
-          <p>No storage pools.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Backend</th>
-                  <th>Usable</th>
-                  <th>Allocated</th>
-                  <th>Provisioned</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pools.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <button className="btn btn-ghost" type="button" onClick={() => setSelected(p.id)}>
-                        {p.name}
-                      </button>
-                    </td>
-                    <td>{p.status}</td>
-                    <td>{p.backend_type}</td>
-                    <td>{capacityLabel(p.usable_bytes, p.status)}</td>
-                    <td>{capacityLabel(p.allocated_bytes, p.status)}</td>
-                    <td>{capacityLabel(p.provisioned_bytes, p.status)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <ResourceTable
+          headers={["Name", "Status", "Backend", "Usable", "Allocated", "Snapshots"]}
+          empty={<p>No storage pools.</p>}
+          rows={pools.map((p) => [
+            <button key={p.id} className="btn btn-ghost btn-sm" type="button" onClick={() => setSelected(p.id)}>
+              {p.name}
+            </button>,
+            <span key="st">
+              <StatusBadge status={p.status} />
+              {p.warning_text?.[0] ? <span className="picker-meta"> {p.warning_text[0]}</span> : null}
+            </span>,
+            kindLabel(p.backend_type),
+            capacityLabel(p.usable_bytes, p.status),
+            capacityLabel(p.allocated_bytes, p.status),
+            p.capabilities?.snapshots ? "Available" : "Unavailable",
+          ])}
+        />
       </article>
       {pool ? (
         <article className="panel">
           <h2>{pool.name}</h2>
-          <dl className="definition-list">
+          <dl className="definition-list compact">
             <div>
-              <dt>Identity</dt>
-              <dd>
-                <code>{pool.id}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Locator</dt>
+              <dt>Path</dt>
               <dd>
                 <code>{pool.locator || "Not reported"}</code>
               </dd>
             </div>
             <div>
               <dt>Backend</dt>
-              <dd>{pool.backend_type}</dd>
+              <dd>{kindLabel(pool.backend_type)}</dd>
             </div>
             <div>
               <dt>Status</dt>
-              <dd>{pool.status}</dd>
+              <dd>
+                <StatusBadge status={pool.status} />
+              </dd>
             </div>
             <div>
               <dt>Classes</dt>
-              <dd>{(pool.storage_classes ?? []).join(", ")}</dd>
+              <dd>{(pool.storage_classes ?? []).map(kindLabel).join(", ") || "Not reported"}</dd>
             </div>
             <div>
-              <dt>Incremental send</dt>
-              <dd>{pool.capabilities?.incremental_send ? "Yes" : "No"}</dd>
+              <dt>Snapshots</dt>
+              <dd>{pool.capabilities?.snapshots ? "Available" : "Unavailable"}</dd>
             </div>
           </dl>
           {(pool.warning_text ?? []).map((text) => (
@@ -287,15 +264,12 @@ export function StoragePage() {
                 void onCreateVolume();
               }}
             >
-              <label className="field">
-                <span className="field-label">Class</span>
-                <select className="field-input" value={volClass} onChange={(e) => setVolClass(e.target.value)}>
-                  <option value="vm-disk">vm-disk</option>
-                  <option value="container-root">container-root</option>
-                  <option value="template">template</option>
-                  <option value="backup-staging">backup-staging</option>
-                </select>
-              </label>
+              <SelectField id="vol-class" label="Class" value={volClass} onChange={(e) => setVolClass(e.target.value)}>
+                <option value="vm-disk">{kindLabel("vm-disk")}</option>
+                <option value="container-root">{kindLabel("container-root")}</option>
+                <option value="template">{kindLabel("template")}</option>
+                <option value="backup-staging">{kindLabel("backup-staging")}</option>
+              </SelectField>
               <Field
                 id="vol-size"
                 label="Size (GiB)"
@@ -318,20 +292,13 @@ export function StoragePage() {
                 void onUpload();
               }}
             >
-              <label className="field">
-                <span className="field-label">Kind</span>
-                <select className="field-input" value={kind} onChange={(e) => setKind(e.target.value)}>
-                  <option value="iso">ISO</option>
-                  <option value="cloud-image">cloud-image</option>
-                </select>
-              </label>
+              <SelectField id="img-kind" label="Kind" value={kind} onChange={(e) => setKind(e.target.value)}>
+                <option value="iso">ISO</option>
+                <option value="cloud-image">{kindLabel("cloud-image")}</option>
+              </SelectField>
               <label className="field">
                 <span className="field-label">File</span>
-                <input
-                  className="field-input"
-                  type="file"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
+                <input className="field-input" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               </label>
               <button className="btn btn-primary" type="submit" disabled={busy || !file || pool.status === "unavailable"}>
                 Upload
@@ -342,73 +309,29 @@ export function StoragePage() {
       ) : null}
       <article className="panel">
         <h2>Volumes</h2>
-        {volumes.length === 0 ? (
-          <p>No volumes.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>UUID</th>
-                  <th>Class</th>
-                  <th>Status</th>
-                  <th>Provisioned</th>
-                  <th>Allocated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {volumes.map((v) => (
-                  <tr key={v.id}>
-                    <td>
-                      <code>{v.id}</code>
-                    </td>
-                    <td>{v.class}</td>
-                    <td>{v.status}</td>
-                    <td>{capacityLabel(v.size_bytes, v.status)}</td>
-                    <td>{capacityLabel(v.allocated_bytes, v.status)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <ResourceTable
+          headers={["Class", "Status", "Provisioned", "Allocated"]}
+          empty={<p>No volumes.</p>}
+          rows={volumes.map((v) => [
+            kindLabel(v.class),
+            <StatusBadge key={v.id} status={v.status} />,
+            capacityLabel(v.size_bytes, v.status),
+            capacityLabel(v.allocated_bytes, v.status),
+          ])}
+        />
       </article>
       <article className="panel">
         <h2>Image library</h2>
-        {images.length === 0 ? (
-          <p>No library items.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>UUID</th>
-                  <th>Name</th>
-                  <th>Kind</th>
-                  <th>Size</th>
-                  <th>Checksum</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {images.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <code>{item.id}</code>
-                    </td>
-                    <td>{item.display_name}</td>
-                    <td>{item.kind}</td>
-                    <td>{capacityLabel(item.size_bytes, item.status)}</td>
-                    <td>
-                      <code>{item.checksum_sha256.slice(0, 12)}</code>
-                    </td>
-                    <td>{item.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <ResourceTable
+          headers={["Name", "Kind", "Size", "Status"]}
+          empty={<p>No library items.</p>}
+          rows={images.map((item) => [
+            item.display_name,
+            kindLabel(item.kind),
+            capacityLabel(item.size_bytes, item.status),
+            <StatusBadge key={item.id} status={item.status} />,
+          ])}
+        />
       </article>
     </section>
   );

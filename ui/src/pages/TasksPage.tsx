@@ -1,65 +1,35 @@
-import { useEffect, useState } from "react";
 import { listTasks } from "../api/client";
-import type { TaskItem } from "../api/phase2";
-import { formatWhen, honestStatus } from "../format";
+import { ErrorState, LoadingState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
+import { StatusBadge } from "../components/StatusBadge";
+import { formatWhen } from "../format";
+import { taskKindLabel } from "../labels";
+import { useQuery } from "../query";
 
 export function TasksPage() {
-  const [items, setItems] = useState<TaskItem[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void listTasks()
-      .then((value) => {
-        if (!cancelled) {
-          setItems(value);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setItems([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, error, loading } = useQuery("tasks-page", () => listTasks(), 5000);
 
   return (
-    <section className="page page-wide" aria-labelledby="tasks-heading">
-      <header className="page-header">
-        <h1 id="tasks-heading">Tasks</h1>
-        <p className="page-kicker">Operations reported by the control plane. Progress is not invented.</p>
-      </header>
+    <section className="page" aria-labelledby="tasks-heading">
+      <PageHeader id="tasks-heading" title="Tasks" kicker="Operations reported by the control plane." />
+      {error ? <ErrorState>{error}</ErrorState> : null}
       <article className="panel">
-        {items == null ? (
-          <p>Collecting</p>
-        ) : items.length === 0 ? (
-          <p>No tasks yet.</p>
+        {loading && !data ? (
+          <LoadingState />
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Kind</th>
-                  <th>State</th>
-                  <th>Stage</th>
-                  <th>Progress</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.kind}</td>
-                    <td>{honestStatus(item.state)}</td>
-                    <td>{item.stage || "Not reported"}</td>
-                    <td>{item.progress == null ? "Not reported" : `${item.progress}%`}</td>
-                    <td>{formatWhen(item.updated_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResourceTable
+            headers={["Kind", "State", "Stage", "Progress", "Message", "Updated"]}
+            empty={<p>No tasks yet.</p>}
+            rows={(data ?? []).map((item) => [
+              taskKindLabel(item.kind),
+              <StatusBadge key={item.id} status={item.state} />,
+              item.stage || "Not reported",
+              item.progress == null ? "Not reported" : `${item.progress}%`,
+              item.message || "Not reported",
+              formatWhen(item.updated_at),
+            ])}
+          />
         )}
       </article>
     </section>

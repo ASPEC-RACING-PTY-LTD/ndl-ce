@@ -7,10 +7,14 @@ import {
   listNodes,
 } from "../api/client";
 import type { Capability, HardwareResponse, MetricsResponse, NodeSummary } from "../api/phase2";
-import { MetricChart } from "../components/MetricChart";
+import { LoadingState } from "../components/EmptyState";
 import { Link } from "../components/Link";
-import { formatBytes, formatWhen, honestStatus } from "../format";
-import { usePath } from "../router";
+import { MetricChart } from "../components/MetricChart";
+import { PageHeader } from "../components/PageHeader";
+import { StatusBadge } from "../components/StatusBadge";
+import { formatBytes, formatWhen } from "../format";
+import { capabilityLabel, hardwareKeyLabel, metricLabel } from "../labels";
+import { currentPath } from "../router";
 
 type Inventory = {
   host?: Record<string, unknown>;
@@ -26,8 +30,19 @@ type Inventory = {
   firmware?: Record<string, unknown>;
 };
 
+function nodeTab(): "summary" | "hardware" | "metrics" {
+  const path = currentPath();
+  if (path.endsWith("/hardware") || path.startsWith("/node/hardware")) {
+    return "hardware";
+  }
+  if (path.endsWith("/metrics") || path.startsWith("/node/metrics")) {
+    return "metrics";
+  }
+  return "summary";
+}
+
 export function NodePage() {
-  const path = usePath();
+  const tab = nodeTab();
   const [nodes, setNodes] = useState<NodeSummary | "loading" | "missing">("loading");
   const [id, setId] = useState<string | null>(null);
 
@@ -39,12 +54,15 @@ export function NodePage() {
         if (cancelled) {
           return;
         }
-        if (!items[0]) {
+        const parts = currentPath().split("/").filter(Boolean);
+        const fromPath = parts[0] === "nodes" ? parts[1] : undefined;
+        const chosen = items.find((n) => n.id === fromPath) ?? items[0];
+        if (!chosen) {
           setNodes("missing");
           return;
         }
-        setId(items[0].id);
-        setNodes(items[0]);
+        setId(chosen.id);
+        setNodes(chosen);
       } catch {
         if (!cancelled) {
           setNodes("missing");
@@ -60,7 +78,7 @@ export function NodePage() {
     return (
       <section className="page">
         <h1>Node</h1>
-        <p>Collecting</p>
+        <LoadingState />
       </section>
     );
   }
@@ -73,35 +91,27 @@ export function NodePage() {
     );
   }
 
-  const tab = path.startsWith("/node/hardware")
-    ? "hardware"
-    : path.startsWith("/node/metrics")
-      ? "metrics"
-      : path.startsWith("/node/events")
-        ? "events"
-        : "summary";
-
   return (
-    <section className="page page-wide" aria-labelledby="node-heading">
-      <header className="page-header">
-        <h1 id="node-heading">Node</h1>
-        <p className="page-kicker">
-          {nodes.host_os || "Host OS not reported"} · {honestStatus(nodes.status)}
-          {nodes.stale ? " (stale)" : ""}
-        </p>
-      </header>
+    <section className="page" aria-labelledby="node-heading">
+      <PageHeader
+        id="node-heading"
+        title="Node"
+        kicker={
+          <>
+            {nodes.host_os || "Host OS not reported"} · <StatusBadge status={nodes.status} />
+            {nodes.stale ? " (stale)" : ""}
+          </>
+        }
+      />
       <nav className="subnav" aria-label="Node sections">
-        <Link href="/node" aria-current={tab === "summary" ? "page" : undefined}>
+        <Link href={`/nodes/${id}`} aria-current={tab === "summary" ? "page" : undefined}>
           Summary
         </Link>
-        <Link href="/node/hardware" aria-current={tab === "hardware" ? "page" : undefined}>
+        <Link href={`/nodes/${id}/hardware`} aria-current={tab === "hardware" ? "page" : undefined}>
           Hardware
         </Link>
-        <Link href="/node/metrics" aria-current={tab === "metrics" ? "page" : undefined}>
+        <Link href={`/nodes/${id}/metrics`} aria-current={tab === "metrics" ? "page" : undefined}>
           Metrics
-        </Link>
-        <Link href="/events" aria-current={tab === "events" ? "page" : undefined}>
-          Events
         </Link>
         <Link href={`/nodes/${id}/terminal`}>Terminal</Link>
         <Link href={`/nodes/${id}/files`}>Files</Link>
@@ -152,8 +162,7 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
           <div>
             <dt>Topology</dt>
             <dd>
-              {node.cpu_sockets ?? "?"} sockets, {node.cpu_cores ?? "?"} cores,{" "}
-              {node.cpu_threads ?? "?"} threads
+              {node.cpu_sockets ?? "?"} sockets, {node.cpu_cores ?? "?"} cores, {node.cpu_threads ?? "?"} threads
             </dd>
           </div>
           <div>
@@ -165,6 +174,9 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
             <dd>{formatWhen(node.observed_at)}</dd>
           </div>
         </dl>
+        <p>
+          <Link href="/events">Events</Link>
+        </p>
       </article>
       <article className="panel">
         <h2>Capabilities</h2>
@@ -174,7 +186,7 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
           <ul className="plain-list">
             {caps.map((c) => (
               <li key={c.id}>
-                {c.id}: {honestStatus(c.status)}
+                {capabilityLabel(c.id)}: <StatusBadge status={c.status} />
                 {c.detail ? ` (${c.detail})` : ""}
               </li>
             ))}
@@ -203,16 +215,16 @@ function NodeHardwareView({ id }: { id: string }) {
   }, [id]);
 
   if (!hw) {
-    return <p>Collecting</p>;
+    return <LoadingState />;
   }
   if (!hw.inventory) {
-    return <p>{hw.message || honestStatus(hw.status)}</p>;
+    return <p>{hw.message || "Not reported"}</p>;
   }
   const inv = hw.inventory as Inventory;
   return (
     <div className="stack">
       {hw.stale ? (
-        <p className="banner" role="status">
+        <p className="banner banner-warn" role="status">
           This inventory is stale. Values are the last observation, not zeros.
         </p>
       ) : null}
@@ -225,12 +237,7 @@ function NodeHardwareView({ id }: { id: string }) {
       <HardwareTable title="USB" rows={inv.usb ?? []} keys={["address", "vendor", "product", "name"]} />
       <HardwareTable title="Temperatures" rows={inv.temperatures ?? []} keys={["id", "name", "label", "milli_c", "status"]} empty="Unavailable" />
       <HardwareTable title="Firmware" rows={[inv.firmware ?? {}]} keys={["sys_vendor", "product", "board", "bios_vendor", "bios_version", "status"]} />
-      <HardwareTable
-        title="IOMMU groups"
-        rows={iommuRows(inv.iommu)}
-        keys={["id", "devices"]}
-        empty={iommuEmpty(inv.iommu)}
-      />
+      <HardwareTable title="IOMMU groups" rows={iommuRows(inv.iommu)} keys={["id", "devices"]} empty={iommuEmpty(inv.iommu)} />
     </div>
   );
 }
@@ -253,7 +260,11 @@ function NodeMetricsView({ id }: { id: string }) {
   }, [id]);
 
   if (!metrics) {
-    return <p>Collecting data</p>;
+    return (
+      <p className="chart-empty" role="status">
+        Collecting data
+      </p>
+    );
   }
   if (metrics.status === "stale") {
     return <p className="chart-empty">Stale</p>;
@@ -262,13 +273,17 @@ function NodeMetricsView({ id }: { id: string }) {
     return <p className="chart-empty">Unavailable</p>;
   }
   if (!metrics.series.length) {
-    return <p className="chart-empty">Collecting data</p>;
+    return (
+      <p className="chart-empty" role="status">
+        Collecting data
+      </p>
+    );
   }
   return (
     <div className="card-grid">
       {metrics.series.map((series) => (
         <article className="panel" key={series.name}>
-          <h2>{series.name}</h2>
+          <h2>{metricLabel(series.name)}</h2>
           <MetricChart series={series} />
         </article>
       ))}
@@ -299,7 +314,7 @@ function HardwareTable({
             <thead>
               <tr>
                 {keys.map((k) => (
-                  <th key={k}>{k.replaceAll("_", " ")}</th>
+                  <th key={k}>{hardwareKeyLabel(k)}</th>
                 ))}
               </tr>
             </thead>

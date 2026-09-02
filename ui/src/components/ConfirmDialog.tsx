@@ -1,0 +1,66 @@
+import { useEffect, useRef, type ReactNode } from "react";
+
+export function ConfirmDialog({
+  open,
+  title,
+  children,
+  confirmLabel = "Confirm",
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) {
+      return;
+    }
+    if (open && !node.open) {
+      node.showModal();
+    }
+    if (!open && node.open) {
+      node.close();
+    }
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      className="dialog-backdrop"
+      aria-labelledby="confirm-title"
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target === ref.current) {
+          onClose();
+        }
+      }}
+    >
+      <form
+        className="dialog-panel stack"
+        method="dialog"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onConfirm();
+        }}
+      >
+        <h2 id="confirm-title">{title}</h2>
+        {children}
+        <div className="btn-row">
+          <button className="btn btn-ghost" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" type="submit">
+            {confirmLabel}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}

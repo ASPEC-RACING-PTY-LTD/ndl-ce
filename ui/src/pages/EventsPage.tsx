@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listEvents } from "../api/client";
 import type { EventItem } from "../api/phase2";
+import { ErrorState, LoadingState } from "../components/EmptyState";
+import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
 import { formatWhen } from "../format";
+import { eventTypeLabel } from "../labels";
 
 export function EventsPage() {
   const [items, setItems] = useState<EventItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -14,11 +20,17 @@ export function EventsPage() {
           setItems(value);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unavailable");
           setItems([]);
         }
       });
+    if (typeof EventSource === "undefined") {
+      return () => {
+        cancelled = true;
+      };
+    }
     const stream = new EventSource("/api/v1/events/stream", { withCredentials: true });
     stream.onmessage = (msg) => {
       try {
@@ -40,26 +52,36 @@ export function EventsPage() {
     };
   }, []);
 
+  const filtered = useMemo(() => {
+    const list = items ?? [];
+    const q = filter.trim().toLowerCase();
+    if (!q) {
+      return list;
+    }
+    return list.filter((item) => eventTypeLabel(item.type).toLowerCase().includes(q));
+  }, [filter, items]);
+
   return (
-    <section className="page page-wide" aria-labelledby="events-heading">
-      <header className="page-header">
-        <h1 id="events-heading">Events</h1>
-        <p className="page-kicker">Platform events. Audit history is a separate record.</p>
-      </header>
-      <article className="panel">
+    <section className="page" aria-labelledby="events-heading">
+      <PageHeader id="events-heading" title="Events" kicker="Platform events for this appliance." />
+      {error ? <ErrorState>{error}</ErrorState> : null}
+      <article className="panel stack">
+        <input
+          className="field-input"
+          type="search"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by type"
+          aria-label="Filter events"
+        />
         {items == null ? (
-          <p>Collecting</p>
-        ) : items.length === 0 ? (
-          <p>No events yet.</p>
+          <LoadingState />
         ) : (
-          <ul className="plain-list">
-            {items.map((item) => (
-              <li key={item.id}>
-                <strong>{item.type}</strong>{" "}
-                <span className="muted">{formatWhen(item.created_at)}</span>
-              </li>
-            ))}
-          </ul>
+          <ResourceTable
+            headers={["Type", "When"]}
+            empty={<p>No events yet.</p>}
+            rows={filtered.map((item) => [eventTypeLabel(item.type), formatWhen(item.created_at)])}
+          />
         )}
       </article>
     </section>

@@ -38,9 +38,9 @@ export function LoginPage() {
     <div className="auth-screen">
       <header className="auth-brand">
         <p className="wordmark">No-dal</p>
-        <p className="auth-edition">Community Edition. License activation is not required.</p>
+        <p className="auth-edition">Community Edition</p>
       </header>
-      <section className="panel auth-panel" aria-labelledby="login-heading">
+      <main className="panel auth-panel" aria-labelledby="login-heading">
         <h1 id="login-heading">Sign in</h1>
         <p className="lede">Sign in with the administrator account created during setup.</p>
         <form className="form" onSubmit={(event) => void onSubmit(event)} noValidate>
@@ -78,7 +78,7 @@ export function LoginPage() {
             First-time appliance? <Link href="/setup">Create the first administrator</Link>
           </p>
         ) : null}
-      </section>
+      </main>
     </div>
   );
 }
