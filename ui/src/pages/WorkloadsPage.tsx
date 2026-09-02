@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { listWorkloads } from "../api/client";
 import type { Workload } from "../api/phase5";
-import { ErrorState, LoadingState } from "../components/EmptyState";
+import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
@@ -56,37 +57,47 @@ export function WorkloadsPage() {
         actions={
           mutate ? (
             <Link className="btn btn-primary" href="/workloads/new/system-container">
+              <Icon name="create" size={14} />
               Create system container
             </Link>
           ) : null
         }
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
-      <article className="panel stack">
-        <input
-          className="field-input"
-          type="search"
-          placeholder="Search by name"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search workloads"
-        />
+      <div className="stack">
+        <div className="toolbar">
+          <label className="search-field">
+            <Icon name="search" size={14} />
+            <input
+              className="field-input"
+              type="search"
+              placeholder="Search by name"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search workloads"
+            />
+          </label>
+        </div>
         {items == null ? (
           <LoadingState />
         ) : (
           <ResourceTable
             headers={["Name", "Type", "Status", "Image", "IPv4", "Memory"]}
+            numeric={[5]}
             empty={
-              <p>
-                No system containers yet. Create a storage pool and guest network first if this
-                appliance is new, then create a system container.
-              </p>
+              <EmptyState title="No system containers yet">
+                Create a storage pool and guest network first if this appliance is new, then create a
+                system container.
+              </EmptyState>
             }
             rows={filtered.map((w) => [
               <Link key="name" href={`/workloads/${w.id}`}>
                 {w.name}
               </Link>,
-              kindLabel(w.kind),
+              <span key="kind" className="type-cell">
+                <Icon name="workloads" size={14} />
+                {kindLabel(w.kind)}
+              </span>,
               <span key="st">
                 <StatusBadge status={w.status} />
                 {w.status === "warning" || w.status === "failed" ? ` ${w.reason || ""}` : ""}
@@ -97,7 +108,7 @@ export function WorkloadsPage() {
             ])}
           />
         )}
-      </article>
+      </div>
     </section>
   );
 }

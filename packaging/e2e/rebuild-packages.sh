@@ -32,7 +32,7 @@ go version
 BUILD=/tmp/nodal-rebuild
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
-for item in cmd gen internal migrations proto systemd packaging ui api go.mod go.sum; do
+for item in cmd gen internal migrations proto systemd packaging ui api store go.mod go.sum; do
   if [ -e "$SRC/$item" ]; then
     cp -a "$SRC/$item" "$BUILD/"
   fi

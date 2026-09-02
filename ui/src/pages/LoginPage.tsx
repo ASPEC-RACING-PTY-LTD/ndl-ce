@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
+import { AuthBrand } from "../components/AuthBrand";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { navigate } from "../router";
@@ -36,10 +37,7 @@ export function LoginPage() {
 
   return (
     <div className="auth-screen">
-      <header className="auth-brand">
-        <p className="wordmark">No-dal</p>
-        <p className="auth-edition">Community Edition</p>
-      </header>
+      <AuthBrand />
       <main className="panel auth-panel" aria-labelledby="login-heading">
         <h1 id="login-heading">Sign in</h1>
         <p className="lede">Sign in with the administrator account created during setup.</p>

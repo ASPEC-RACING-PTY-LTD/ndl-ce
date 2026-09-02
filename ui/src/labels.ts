@@ -98,6 +98,16 @@ export function hardwareKeyLabel(key: string): string {
       return "BIOS vendor";
     case "bios_version":
       return "BIOS version";
+    case "architecture":
+      return "Architecture";
+    case "transport":
+      return "Transport";
+    case "class":
+      return "Class";
+    case "driver":
+      return "Driver";
+    case "ifindex":
+      return "Index";
     default:
       return key.replaceAll("_", " ");
   }

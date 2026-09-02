@@ -4,6 +4,7 @@ import type { HealthResponse } from "../api/types";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
+import { Icon, navIcon } from "./Icon";
 import { Link } from "./Link";
 import { AccountMenu } from "./shell/AccountMenu";
 import { TaskIndicator } from "./shell/TaskIndicator";
@@ -35,6 +36,15 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
+const TAB_LABELS: Record<string, string> = {
+  terminal: "Terminal",
+  files: "Files",
+  settings: "Settings",
+  snapshots: "Snapshots",
+  hardware: "Hardware",
+  metrics: "Metrics",
+};
+
 function crumbs(path: string): { href: string; label: string }[] {
   if (path === "/") {
     return [{ href: "/", label: "Dashboard" }];
@@ -48,14 +58,20 @@ function crumbs(path: string): { href: string; label: string }[] {
   if (path.startsWith("/workloads/")) {
     const parts = path.split("/").filter(Boolean);
     const base = `/workloads/${parts[1]}`;
-    const trail = [{ href: "/workloads", label: "Workloads" }, { href: base, label: parts[1] }];
+    const trail = [{ href: "/workloads", label: "Workloads" }, { href: base, label: "Workload" }];
     if (parts[2]) {
-      trail.push({ href: path, label: parts[2][0].toUpperCase() + parts[2].slice(1) });
+      trail.push({ href: path, label: TAB_LABELS[parts[2]] ?? parts[2] });
     }
     return trail;
   }
   if (path.startsWith("/nodes/") || path.startsWith("/node")) {
-    return [{ href: "/node", label: "Node" }];
+    const parts = path.split("/").filter(Boolean);
+    const trail = [{ href: "/node", label: "Node" }];
+    const tab = parts[parts.length - 1];
+    if (TAB_LABELS[tab]) {
+      trail.push({ href: path, label: TAB_LABELS[tab] });
+    }
+    return trail;
   }
   const top = GROUPS.flatMap((g) => g.items).find((item) => item.match(path));
   return top ? [{ href: top.href, label: top.label }] : [{ href: path, label: "Not found" }];
@@ -104,6 +120,7 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   const healthOk = health?.status === "ok";
+  const healthLabel = healthOk ? "Healthy" : health ? "Degraded" : "Unavailable";
 
   return (
     <div className={collapsed ? "shell is-collapsed" : "shell"}>
@@ -112,6 +129,9 @@ export function Shell({ children }: { children: ReactNode }) {
       </a>
       <aside className="sidebar">
         <div className="sidebar-brand">
+          <Link href="/" className="brand-mark" aria-label="No-dal">
+            N
+          </Link>
           <Link href="/" className="wordmark">
             No-dal
           </Link>
@@ -127,8 +147,10 @@ export function Shell({ children }: { children: ReactNode }) {
                   href={item.href}
                   className="nav-link"
                   aria-label={item.label}
+                  title={item.label}
                   aria-current={item.match(path) ? "page" : undefined}
                 >
+                  <Icon name={navIcon(item.label)} />
                   <span className="nav-link-label">{item.label}</span>
                 </Link>
               ))}
@@ -136,22 +158,23 @@ export function Shell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <button
-          className="btn btn-ghost btn-sm sidebar-collapse"
+          className="btn btn-ghost btn-sm btn-icon sidebar-collapse"
           type="button"
           aria-expanded={!collapsed}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={toggleSidebar}
         >
-          {collapsed ? ">>" : "<<"}
+          <Icon name={collapsed ? "expand" : "collapse"} />
         </button>
       </aside>
       <div className="shell-body">
         <header className="shell-header">
           <nav className="shell-crumbs" aria-label="Breadcrumb">
             {crumbs(path).map((crumb, i) => (
-              <span key={crumb.href}>
+              <span key={`${crumb.href}-${crumb.label}`}>
                 {i > 0 ? <span className="muted"> / </span> : null}
-                <Link href={crumb.href} className="crumb">
+                <Link href={crumb.href} className="crumb" aria-current={i === crumbs(path).length - 1 ? "page" : undefined}>
                   {crumb.label}
                 </Link>
               </span>
@@ -159,10 +182,11 @@ export function Shell({ children }: { children: ReactNode }) {
           </nav>
           <div className="shell-tools">
             <span
-              className={`health-dot ${healthOk ? "is-ok" : health ? "is-warn" : "is-bad"}`}
+              className={`health-chip ${healthOk ? "is-ok" : health ? "is-warn" : "is-bad"}`}
               title={healthOk ? "Control plane is available" : "Control plane health is unavailable"}
             >
-              {healthOk ? "Healthy" : "Control plane"}
+              <Icon name={healthOk ? "success" : health ? "warning" : "error"} size={14} />
+              {healthLabel}
             </span>
             <TaskIndicator />
             {user ? <AccountMenu user={user} /> : null}

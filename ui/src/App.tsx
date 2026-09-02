@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
@@ -99,6 +100,7 @@ function AppRoutes() {
   if (session.status === "error") {
     return (
       <div className="auth-screen">
+        <AuthBrand />
         <main className="panel auth-panel" aria-labelledby="session-error-heading">
           <h1 id="session-error-heading">Cannot reach the appliance</h1>
           <p className="banner banner-error" role="alert">

@@ -5,6 +5,7 @@ import type { Workload } from "../api/phase5";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import { Field } from "../components/Field";
+import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
@@ -133,29 +134,36 @@ export function WorkloadDetailPage() {
       <PageHeader
         id="workload-heading"
         title={item.name}
-        kicker={kindLabel(item.kind)}
+        kicker={
+          <>
+            {kindLabel(item.kind)} · <StatusBadge status={item.status} />
+          </>
+        }
         actions={
-          <div className="btn-row" style={{ marginTop: 0 }}>
+          <div className="btn-row is-flush">
             <button
-              className="btn btn-sm"
+              className="btn btn-sm btn-secondary"
               type="button"
               disabled={!mutate || busy || item.status === "running"}
               onClick={() => void onAction("start")}
             >
+              <Icon name="start" size={14} />
               Start
             </button>
             <button
-              className="btn btn-sm"
+              className="btn btn-sm btn-secondary"
               type="button"
               disabled={!mutate || busy || item.status === "stopped"}
               onClick={() => void onAction("stop")}
             >
+              <Icon name="stop" size={14} />
               Stop
             </button>
-            <button className="btn btn-sm" type="button" disabled={!mutate || busy} onClick={() => void onAction("restart")}>
+            <button className="btn btn-sm btn-ghost" type="button" disabled={!mutate || busy} onClick={() => void onAction("restart")}>
+              <Icon name="restart" size={14} />
               Restart
             </button>
-            <button className="btn btn-sm" type="button" disabled={!mutate || busy} onClick={() => setConfirm("clone")}>
+            <button className="btn btn-sm btn-ghost" type="button" disabled={!mutate || busy} onClick={() => setConfirm("clone")}>
               Clone
             </button>
             <button
@@ -164,6 +172,7 @@ export function WorkloadDetailPage() {
               disabled={!mutate || busy}
               onClick={() => setConfirm("delete")}
             >
+              <Icon name="delete" size={14} />
               Delete
             </button>
             {!mutate ? <p className="field-hint">{mutateHint(roles)}</p> : null}
@@ -175,13 +184,21 @@ export function WorkloadDetailPage() {
           <Link href={`/workloads/${item.id}`} aria-current={tab === "summary" ? "page" : undefined}>
             Summary
           </Link>
-          <Link href={`/workloads/${item.id}/terminal`}>Terminal</Link>
-          <Link href={`/workloads/${item.id}/files`}>Files</Link>
+          <Link href={`/workloads/${item.id}/terminal`}>
+            <Icon name="terminal" size={14} />
+            Terminal
+          </Link>
+          <Link href={`/workloads/${item.id}/files`}>
+            <Icon name="files" size={14} />
+            Files
+          </Link>
           <Link href={`/workloads/${item.id}/snapshots`} aria-current={tab === "snapshots" ? "page" : undefined}>
+            <Icon name="snapshots" size={14} />
             Snapshots
           </Link>
           {mutate ? (
             <Link href={`/workloads/${item.id}/settings`} aria-current={tab === "settings" ? "page" : undefined}>
+              <Icon name="settings" size={14} />
               Settings
             </Link>
           ) : null}
@@ -193,7 +210,7 @@ export function WorkloadDetailPage() {
       )}
       {error ? <ErrorState>{error}</ErrorState> : null}
       {tab === "summary" || !isCT ? (
-        <article className="panel">
+        <section className="section">
           <h2>Summary</h2>
           <dl className="definition-list compact">
             <div>
@@ -227,41 +244,45 @@ export function WorkloadDetailPage() {
             </div>
             <div>
               <dt>Privileged</dt>
-              <dd>{item.privileged ? "yes" : "no"}</dd>
+              <dd>{item.privileged ? "Yes" : "No"}</dd>
             </div>
           </dl>
-        </article>
+        </section>
       ) : null}
       {tab === "snapshots" && isCT ? (
-        <article className="panel stack">
+        <section className="section stack">
           <h2>Snapshots</h2>
           {snapshotsSupported ? (
             <p>No snapshots yet.</p>
           ) : (
             <p>
-              Snapshots are supported for system containers, but this container uses Directory
-              storage. Move or recreate it on a snapshot-capable pool such as ZFS to enable
-              snapshots. Snapshot actions are not available on this pool.
+              Snapshots are supported for system containers, but this container uses{" "}
+              {pool?.name ? `${pool.name} (` : ""}
+              Directory storage
+              {pool?.name ? ")" : ""}. Move or recreate it on a snapshot-capable pool such as ZFS to
+              enable snapshots. Snapshot actions are not available on this pool.
             </p>
           )}
-        </article>
+        </section>
       ) : null}
       {tab === "settings" && mutate ? (
-        <article className="panel form form-narrow">
+        <section className="section form form-narrow">
           <PageHeader
             id="wl-settings-heading"
             title="Settings"
             actions={<UxModeToggle value={mode} onChange={setMode} />}
           />
-          <Field id="wl-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
-          <Field
-            id="wl-mem"
-            label="Memory (MiB)"
-            type="number"
-            min={64}
-            value={memoryMiB}
-            onChange={(e) => setMemoryMiB(e.target.value)}
-          />
+          <div className="field-row">
+            <Field id="wl-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
+            <Field
+              id="wl-mem"
+              label="Memory (MiB)"
+              type="number"
+              min={64}
+              value={memoryMiB}
+              onChange={(e) => setMemoryMiB(e.target.value)}
+            />
+          </div>
           {isAdvanced(mode) ? (
             <dl className="definition-list">
               <div>
@@ -270,11 +291,11 @@ export function WorkloadDetailPage() {
               </div>
               <div>
                 <dt>Service</dt>
-                <dd>{item.unit_active ? "active" : "inactive"}</dd>
+                <dd>{item.unit_active ? "Active" : "Inactive"}</dd>
               </div>
               <div>
                 <dt>Migrate ready</dt>
-                <dd>{item.migrate_ready ? "yes" : "no"}</dd>
+                <dd>{item.migrate_ready ? "Yes" : "No"}</dd>
               </div>
             </dl>
           ) : null}
@@ -289,12 +310,13 @@ export function WorkloadDetailPage() {
               Save
             </button>
           </div>
-        </article>
+        </section>
       ) : null}
       <ConfirmDialog
         open={confirm === "delete"}
         title="Delete workload"
         confirmLabel="Delete"
+        danger
         onClose={() => setConfirm(null)}
         onConfirm={() => void onAction("delete")}
       >

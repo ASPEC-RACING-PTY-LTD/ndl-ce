@@ -8,11 +8,12 @@ import {
 } from "../api/client";
 import type { Capability, HardwareResponse, MetricsResponse, NodeSummary } from "../api/phase2";
 import { LoadingState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
-import { MetricChart } from "../components/MetricChart";
+import { lastPoint, MetricChart } from "../components/MetricChart";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
-import { formatBytes, formatWhen } from "../format";
+import { formatBytes, formatMbps, formatMetricValue, formatNicState, formatTempMilliC, formatWhen } from "../format";
 import { capabilityLabel, hardwareKeyLabel, metricLabel } from "../labels";
 import { currentPath } from "../router";
 
@@ -76,17 +77,16 @@ export function NodePage() {
 
   if (nodes === "loading") {
     return (
-      <section className="page">
-        <h1>Node</h1>
+      <section className="page" aria-labelledby="node-heading">
+        <PageHeader id="node-heading" title="Node" />
         <LoadingState />
       </section>
     );
   }
   if (nodes === "missing" || !id) {
     return (
-      <section className="page">
-        <h1>Node</h1>
-        <p>No local node is enrolled yet.</p>
+      <section className="page" aria-labelledby="node-heading">
+        <PageHeader id="node-heading" title="Node" kicker="No local node is enrolled yet" />
       </section>
     );
   }
@@ -113,8 +113,14 @@ export function NodePage() {
         <Link href={`/nodes/${id}/metrics`} aria-current={tab === "metrics" ? "page" : undefined}>
           Metrics
         </Link>
-        <Link href={`/nodes/${id}/terminal`}>Terminal</Link>
-        <Link href={`/nodes/${id}/files`}>Files</Link>
+        <Link href={`/nodes/${id}/terminal`}>
+          <Icon name="terminal" size={14} />
+          Terminal
+        </Link>
+        <Link href={`/nodes/${id}/files`}>
+          <Icon name="files" size={14} />
+          Files
+        </Link>
       </nav>
       {tab === "summary" ? <NodeSummaryView id={id} fallback={nodes} /> : null}
       {tab === "hardware" ? <NodeHardwareView id={id} /> : null}
@@ -143,10 +149,10 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
   }, [id]);
 
   return (
-    <div className="card-grid">
-      <article className="panel">
+    <div className="split-grid">
+      <section className="section">
         <h2>Summary</h2>
-        <dl className="definition-list">
+        <dl className="definition-list compact">
           <div>
             <dt>Name</dt>
             <dd>{node.name}</dd>
@@ -162,7 +168,8 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
           <div>
             <dt>Topology</dt>
             <dd>
-              {node.cpu_sockets ?? "?"} sockets, {node.cpu_cores ?? "?"} cores, {node.cpu_threads ?? "?"} threads
+              {node.cpu_sockets ?? "Not reported"} sockets, {node.cpu_cores ?? "Not reported"} cores,{" "}
+              {node.cpu_threads ?? "Not reported"} threads
             </dd>
           </div>
           <div>
@@ -177,8 +184,8 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
         <p>
           <Link href="/events">Events</Link>
         </p>
-      </article>
-      <article className="panel">
+      </section>
+      <section className="section">
         <h2>Capabilities</h2>
         {caps.length === 0 ? (
           <p>Not reported</p>
@@ -192,7 +199,7 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
             ))}
           </ul>
         )}
-      </article>
+      </section>
     </div>
   );
 }
@@ -280,13 +287,21 @@ function NodeMetricsView({ id }: { id: string }) {
     );
   }
   return (
-    <div className="card-grid">
-      {metrics.series.map((series) => (
-        <article className="panel" key={series.name}>
-          <h2>{metricLabel(series.name)}</h2>
-          <MetricChart series={series} />
-        </article>
-      ))}
+    <div className="meter-grid">
+      {metrics.series.map((series) => {
+        const now = lastPoint(series);
+        return (
+          <div className="meter" key={series.name}>
+            <div className="meter-head">
+              <h2>{metricLabel(series.name)}</h2>
+              <span className="meter-value">
+                {now != null ? formatMetricValue(series.name, now, series.unit) : "Collecting"}
+              </span>
+            </div>
+            <MetricChart series={series} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -304,7 +319,7 @@ function HardwareTable({
 }) {
   const usable = rows.filter((row) => Object.keys(row).length > 0);
   return (
-    <article className="panel">
+    <section className="section">
       <h2>{title}</h2>
       {usable.length === 0 ? (
         <p>{empty || "Not reported"}</p>
@@ -322,7 +337,7 @@ function HardwareTable({
               {usable.map((row, i) => (
                 <tr key={i}>
                   {keys.map((k) => (
-                    <td key={k}>{cell(row[k])}</td>
+                    <td key={k}>{cell(row[k], k)}</td>
                   ))}
                 </tr>
               ))}
@@ -330,7 +345,7 @@ function HardwareTable({
           </table>
         </div>
       )}
-    </article>
+    </section>
   );
 }
 
@@ -350,12 +365,21 @@ function iommuEmpty(iommu?: Record<string, unknown>): string {
   return "Not reported";
 }
 
-function cell(value: unknown): ReactNode {
+function cell(value: unknown, key?: string): ReactNode {
   if (value == null || value === "") {
     return "Not reported";
   }
+  if (key === "milli_c" && typeof value === "number") {
+    return formatTempMilliC(value);
+  }
+  if (key === "speed_mbps" && typeof value === "number") {
+    return formatMbps(value);
+  }
+  if (key === "state" && typeof value === "string") {
+    return formatNicState(value);
+  }
   if (typeof value === "boolean") {
-    return value ? "yes" : "no";
+    return value ? "Yes" : "No";
   }
   if (typeof value === "number") {
     if (value > 1024 * 1024) {

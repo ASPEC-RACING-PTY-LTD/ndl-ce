@@ -2,16 +2,17 @@ import type { ReactNode } from "react";
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="panel empty-panel">
+    <div className="empty-panel">
       <p className="empty-title">{title}</p>
-      {children ? <p>{children}</p> : null}
+      {children ? <p className="lede">{children}</p> : null}
     </div>
   );
 }
 
 export function LoadingState({ label = "Loading" }: { label?: string }) {
   return (
-    <p role="status" aria-busy="true">
+    <p className="loading-state" role="status" aria-busy="true">
+      <span className="loading-dot" />
       {label}
     </p>
   );

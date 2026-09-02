@@ -18,7 +18,7 @@ export function MePage() {
   return (
     <section className="page form-narrow" aria-labelledby="me-heading">
       <PageHeader id="me-heading" title="Account" kicker="Identity for the current session" />
-      <article className="panel">
+      <section className="section">
         <dl className="definition-list">
           <div>
             <dt>Username</dt>
@@ -56,8 +56,8 @@ export function MePage() {
             ) : null}
           </dl>
         ) : null}
-      </article>
-      <article className="panel stack">
+      </section>
+      <section className="section stack">
         <h2>Preferences</h2>
         <p className="lede">
           Default configuration level for create and settings screens. Individual screens can
@@ -70,7 +70,7 @@ export function MePage() {
             setUxLevelDefault(next);
           }}
         />
-      </article>
+      </section>
     </section>
   );
 }

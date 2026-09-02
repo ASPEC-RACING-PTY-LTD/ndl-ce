@@ -150,10 +150,10 @@ export function StoragePage() {
 
   return (
     <section className="page" aria-labelledby="storage-heading">
-      <PageHeader id="storage-heading" title="Storage" kicker="Directory pools, volumes, and the image library." />
+      <PageHeader id="storage-heading" title="Storage" kicker="Directory pools, volumes, and the image library" />
       {error ? <ErrorState>{error}</ErrorState> : null}
       {firstRun || mutate ? (
-        <article className="panel form-narrow">
+        <article className="form-narrow">
           <h2>{firstRun ? "First-run storage pool" : "Create Directory pool"}</h2>
           {firstRun ? (
             <p className="lede">
@@ -191,28 +191,27 @@ export function StoragePage() {
           )}
         </article>
       ) : null}
-      <article className="panel">
+      <section className="section">
         <h2>Pools</h2>
         <ResourceTable
           headers={["Name", "Status", "Backend", "Usable", "Allocated", "Snapshots"]}
+          numeric={[3, 4]}
+          selected={pools.findIndex((p) => p.id === selected)}
           empty={<p>No storage pools.</p>}
           rows={pools.map((p) => [
             <button key={p.id} className="btn btn-ghost btn-sm" type="button" onClick={() => setSelected(p.id)}>
               {p.name}
             </button>,
-            <span key="st">
-              <StatusBadge status={p.status} />
-              {p.warning_text?.[0] ? <span className="picker-meta"> {p.warning_text[0]}</span> : null}
-            </span>,
+            <StatusBadge key="st" status={p.status} />,
             kindLabel(p.backend_type),
             capacityLabel(p.usable_bytes, p.status),
             capacityLabel(p.allocated_bytes, p.status),
-            p.capabilities?.snapshots ? "Available" : "Unavailable",
+            <StatusBadge key="snap" status={p.capabilities?.snapshots ? "available" : "unavailable"} />,
           ])}
         />
-      </article>
+      </section>
       {pool ? (
-        <article className="panel">
+        <section className="section">
           <h2>{pool.name}</h2>
           <dl className="definition-list compact">
             <div>
@@ -237,7 +236,9 @@ export function StoragePage() {
             </div>
             <div>
               <dt>Snapshots</dt>
-              <dd>{pool.capabilities?.snapshots ? "Available" : "Unavailable"}</dd>
+              <dd>
+                <StatusBadge status={pool.capabilities?.snapshots ? "available" : "unavailable"} />
+              </dd>
             </div>
           </dl>
           {(pool.warning_text ?? []).map((text) => (
@@ -251,11 +252,11 @@ export function StoragePage() {
               {pool.reason ? ` ${pool.reason}` : ""}
             </p>
           ) : null}
-        </article>
+        </section>
       ) : null}
       {pool && mutate ? (
-        <div className="card-grid">
-          <article className="panel">
+        <div className="split-grid">
+          <section className="section">
             <h2>Create volume</h2>
             <form
               className="form"
@@ -264,26 +265,28 @@ export function StoragePage() {
                 void onCreateVolume();
               }}
             >
-              <SelectField id="vol-class" label="Class" value={volClass} onChange={(e) => setVolClass(e.target.value)}>
-                <option value="vm-disk">{kindLabel("vm-disk")}</option>
-                <option value="container-root">{kindLabel("container-root")}</option>
-                <option value="template">{kindLabel("template")}</option>
-                <option value="backup-staging">{kindLabel("backup-staging")}</option>
-              </SelectField>
-              <Field
-                id="vol-size"
-                label="Size (GiB)"
-                type="number"
-                min={1}
-                value={volSizeGiB}
-                onChange={(e) => setVolSizeGiB(e.target.value)}
-              />
+              <div className="field-row">
+                <SelectField id="vol-class" label="Class" value={volClass} onChange={(e) => setVolClass(e.target.value)}>
+                  <option value="vm-disk">{kindLabel("vm-disk")}</option>
+                  <option value="container-root">{kindLabel("container-root")}</option>
+                  <option value="template">{kindLabel("template")}</option>
+                  <option value="backup-staging">{kindLabel("backup-staging")}</option>
+                </SelectField>
+                <Field
+                  id="vol-size"
+                  label="Size (GiB)"
+                  type="number"
+                  min={1}
+                  value={volSizeGiB}
+                  onChange={(e) => setVolSizeGiB(e.target.value)}
+                />
+              </div>
               <button className="btn btn-primary" type="submit" disabled={busy || pool.status === "unavailable"}>
                 Create volume
               </button>
             </form>
-          </article>
-          <article className="panel">
+          </section>
+          <section className="section">
             <h2>Upload image</h2>
             <form
               className="form"
@@ -292,25 +295,28 @@ export function StoragePage() {
                 void onUpload();
               }}
             >
-              <SelectField id="img-kind" label="Kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option value="iso">ISO</option>
-                <option value="cloud-image">{kindLabel("cloud-image")}</option>
-              </SelectField>
-              <label className="field">
-                <span className="field-label">File</span>
-                <input className="field-input" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-              </label>
+              <div className="field-row">
+                <SelectField id="img-kind" label="Kind" value={kind} onChange={(e) => setKind(e.target.value)}>
+                  <option value="iso">ISO</option>
+                  <option value="cloud-image">{kindLabel("cloud-image")}</option>
+                </SelectField>
+                <label className="field">
+                  <span className="field-label">File</span>
+                  <input className="field-input" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                </label>
+              </div>
               <button className="btn btn-primary" type="submit" disabled={busy || !file || pool.status === "unavailable"}>
                 Upload
               </button>
             </form>
-          </article>
+          </section>
         </div>
       ) : null}
-      <article className="panel">
+      <section className="section">
         <h2>Volumes</h2>
         <ResourceTable
           headers={["Class", "Status", "Provisioned", "Allocated"]}
+          numeric={[2, 3]}
           empty={<p>No volumes.</p>}
           rows={volumes.map((v) => [
             kindLabel(v.class),
@@ -319,8 +325,8 @@ export function StoragePage() {
             capacityLabel(v.allocated_bytes, v.status),
           ])}
         />
-      </article>
-      <article className="panel">
+      </section>
+      <section className="section">
         <h2>Image library</h2>
         <ResourceTable
           headers={["Name", "Kind", "Size", "Status"]}
@@ -332,7 +338,7 @@ export function StoragePage() {
             <StatusBadge key={item.id} status={item.status} />,
           ])}
         />
-      </article>
+      </section>
     </section>
   );
 }

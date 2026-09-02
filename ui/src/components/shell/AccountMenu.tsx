@@ -3,12 +3,14 @@ import type { MeResponse } from "../../api/types";
 import { roleLabel } from "../../labels";
 import { navigate } from "../../router";
 import { useSession } from "../../session";
+import { Icon } from "../Icon";
 import { Link } from "../Link";
 
 export function AccountMenu({ user }: { user: MeResponse }) {
   const session = useSession();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const initial = (user.username[0] ?? "?").toUpperCase();
 
   useEffect(() => {
     if (!open) {
@@ -40,12 +42,17 @@ export function AccountMenu({ user }: { user: MeResponse }) {
   return (
     <div className="menu" ref={root}>
       <button
-        className="btn btn-ghost btn-sm"
+        className="account-chip"
         type="button"
+        aria-label={user.username}
         aria-expanded={open}
         aria-haspopup="true"
+        title={user.username}
         onClick={() => setOpen((v) => !v)}
       >
+        <span className="account-initial" aria-hidden="true">
+          {initial}
+        </span>
         {user.username}
       </button>
       {open ? (
@@ -54,6 +61,7 @@ export function AccountMenu({ user }: { user: MeResponse }) {
             {user.roles.length ? user.roles.map(roleLabel).join(", ") : "No roles"}
           </p>
           <Link href="/me" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="account" size={14} />
             Account
           </Link>
           <button type="button" role="menuitem" onClick={() => void onLogout()}>

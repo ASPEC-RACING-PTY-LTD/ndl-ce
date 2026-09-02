@@ -4,10 +4,14 @@ export function ResourceTable({
   headers,
   rows,
   empty,
+  numeric = [],
+  selected,
 }: {
   headers: ReactNode[];
   rows: ReactNode[][];
   empty?: ReactNode;
+  numeric?: number[];
+  selected?: number;
 }) {
   if (rows.length === 0) {
     return empty ? <>{empty}</> : <p>None yet.</p>;
@@ -18,15 +22,19 @@ export function ResourceTable({
         <thead>
           <tr>
             {headers.map((header, i) => (
-              <th key={i}>{header}</th>
+              <th key={i} className={numeric.includes(i) ? "num" : undefined}>
+                {header}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={i} className={selected === i ? "is-selected" : undefined}>
               {row.map((cell, j) => (
-                <td key={j}>{cell}</td>
+                <td key={j} className={numeric.includes(j) ? "num" : undefined}>
+                  {cell}
+                </td>
               ))}
             </tr>
           ))}

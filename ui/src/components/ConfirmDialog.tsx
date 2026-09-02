@@ -5,6 +5,7 @@ export function ConfirmDialog({
   title,
   children,
   confirmLabel = "Confirm",
+  danger = false,
   onConfirm,
   onClose,
 }: {
@@ -12,6 +13,7 @@ export function ConfirmDialog({
   title: string;
   children: ReactNode;
   confirmLabel?: string;
+  danger?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -56,7 +58,7 @@ export function ConfirmDialog({
           <button className="btn btn-ghost" type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary" type="submit">
+          <button className={danger ? "btn btn-danger" : "btn btn-primary"} type="submit">
             {confirmLabel}
           </button>
         </div>

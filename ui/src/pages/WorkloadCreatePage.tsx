@@ -4,6 +4,7 @@ import type { Network } from "../api/phase4";
 import type { StoragePool } from "../api/phase3";
 import { ErrorState } from "../components/EmptyState";
 import { Field } from "../components/Field";
+import { Icon } from "../components/Icon";
 import { NetworkPicker } from "../components/form/NetworkPicker";
 import { OsImagePicker } from "../components/form/OsImagePicker";
 import { StoragePicker } from "../components/form/StoragePicker";
@@ -104,7 +105,7 @@ export function WorkloadCreatePage() {
         actions={<UxModeToggle value={mode} onChange={setMode} />}
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
-      <article className="panel form form-narrow">
+      <article className="form form-narrow">
         <Field id="ct-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
         <OsImagePicker
           id="ct-pin"
@@ -115,15 +116,17 @@ export function WorkloadCreatePage() {
           expert={isExpert(mode)}
         />
         {isAdvanced(mode) && !isExpert(mode) ? <p className="picker-meta">{pin}</p> : null}
-        <Field id="ct-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
-        <Field
-          id="ct-mem"
-          label="Memory (MiB)"
-          type="number"
-          min={64}
-          value={memoryMiB}
-          onChange={(e) => setMemoryMiB(e.target.value)}
-        />
+        <div className="field-row">
+          <Field id="ct-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
+          <Field
+            id="ct-mem"
+            label="Memory (MiB)"
+            type="number"
+            min={64}
+            value={memoryMiB}
+            onChange={(e) => setMemoryMiB(e.target.value)}
+          />
+        </div>
         <StoragePicker
           id="ct-pool"
           label="Storage"
@@ -142,9 +145,9 @@ export function WorkloadCreatePage() {
         />
         {isAdvanced(mode) ? (
           admin ? (
-            <label className="field-label">
-              <input type="checkbox" checked={privileged} onChange={(e) => setPrivileged(e.target.checked)} /> Privileged
-              (administrator only)
+            <label className="check-row">
+              <input type="checkbox" checked={privileged} onChange={(e) => setPrivileged(e.target.checked)} />
+              Privileged (administrator only)
             </label>
           ) : (
             <p className="field-hint">Privileged containers are administrator-only.</p>
@@ -166,6 +169,7 @@ export function WorkloadCreatePage() {
             disabled={busy || !mutate || !networkID}
             onClick={() => void onCreate()}
           >
+            <Icon name="create" size={14} />
             Create system container
           </button>
         </div>

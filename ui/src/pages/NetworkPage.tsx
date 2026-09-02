@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { applyNetwork, createNetwork, listNetworks } from "../api/client";
 import type { ConfirmRequired, Network, NetworkNIC, NetworkPreview } from "../api/phase4";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ErrorState } from "../components/EmptyState";
+import { ErrorState, LoadingState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { SelectField } from "../components/form/SelectField";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
 import { StatusBadge } from "../components/StatusBadge";
+import { formatNicState } from "../format";
 import { kindLabel } from "../labels";
 import { canMutate, mutateHint } from "../rbac";
 import { useSession } from "../session";
@@ -161,7 +162,7 @@ export function NetworkPage() {
       <PageHeader
         id="network-heading"
         title="Network"
-        kicker="Isolated, isolated with NAT, and LAN bridge. Isolated is the safe default."
+        kicker="Isolated, isolated with NAT, and LAN bridge. Isolated is the safe default"
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
       {firstRun ? (
@@ -171,19 +172,21 @@ export function NetworkPage() {
         </p>
       ) : null}
       {firstRun || mutate ? (
-        <article className="panel form-narrow">
+        <article className="form-narrow">
           <h2>{firstRun ? "First-run guest network" : "Create network"}</h2>
           <div className="form">
-            <Field id="net-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-            <SelectField id="net-kind" label="Type" value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="isolated">Isolated (DHCP on a No-dal bridge)</option>
-              <option value="isolated-nat">Isolated with NAT</option>
-              <option value="lan-bridge">LAN bridge (no DHCP)</option>
-            </SelectField>
+            <div className="field-row">
+              <Field id="net-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+              <SelectField id="net-kind" label="Type" value={kind} onChange={(e) => setKind(e.target.value)}>
+                <option value="isolated">Isolated (DHCP on a No-dal bridge)</option>
+                <option value="isolated-nat">Isolated with NAT</option>
+                <option value="lan-bridge">LAN bridge (no DHCP)</option>
+              </SelectField>
+            </div>
             {kind !== "lan-bridge" ? (
               <Field id="net-cidr" label="IPv4 CIDR" value={cidr} onChange={(e) => setCidr(e.target.value)} />
             ) : (
-              <>
+              <div className="field-row">
                 <Field
                   id="net-uplink"
                   label="Uplink interface"
@@ -198,11 +201,11 @@ export function NetworkPage() {
                   onChange={(e) => setTyped(e.target.value)}
                   hint="Required when the uplink is the management NIC or the only physical NIC."
                 />
-              </>
+              </div>
             )}
             {mutateHint(roles) ? <p className="field-hint">{mutateHint(roles)}</p> : null}
             <div className="btn-row">
-              <button className="btn" type="button" disabled={busy} onClick={() => void onDryRun()}>
+              <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => void onDryRun()}>
                 Dry-run
               </button>
               <button className="btn btn-primary" type="button" disabled={busy || !mutate} onClick={() => void onCreate()}>
@@ -219,12 +222,10 @@ export function NetworkPage() {
           </div>
         </article>
       ) : null}
-      <article className="panel">
+      <section className="section">
         <h2>Networks</h2>
         {items == null ? (
-          <p role="status" aria-busy="true">
-            Loading
-          </p>
+          <LoadingState />
         ) : (
           <ResourceTable
             headers={["Name", "Type", "Status", "Bridge", "DHCP", "Actions"]}
@@ -241,7 +242,7 @@ export function NetworkPage() {
               net.bridge_name || "Not reported",
               net.dhcp ? "On" : "Off",
               mutate ? (
-                <button key="ap" className="btn btn-ghost btn-sm" type="button" onClick={() => void onApply(net.id)}>
+                <button key="ap" className="btn btn-sm btn-ghost" type="button" onClick={() => void onApply(net.id)}>
                   Apply
                 </button>
               ) : (
@@ -250,8 +251,8 @@ export function NetworkPage() {
             ])}
           />
         )}
-      </article>
-      <article className="panel">
+      </section>
+      <section className="section">
         <h2>Host NICs</h2>
         <ResourceTable
           headers={["Name", "Index", "State", "Addresses"]}
@@ -259,11 +260,11 @@ export function NetworkPage() {
           rows={nics.map((nic) => [
             nic.name,
             nic.ifindex ?? "Not reported",
-            nic.state || "Not reported",
+            formatNicState(nic.state),
             nic.addresses?.join(", ") || "Not reported",
           ])}
         />
-      </article>
+      </section>
       <ConfirmDialog
         open={confirmOpen}
         title="Confirm network change"

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { listEvents } from "../api/client";
 import type { EventItem } from "../api/phase2";
 import { ErrorState, LoadingState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
 import { formatWhen } from "../format";
-import { eventTypeLabel } from "../labels";
+import { eventHeadline, payloadFacts } from "../humanize";
 
 export function EventsPage() {
   const [items, setItems] = useState<EventItem[] | null>(null);
@@ -58,32 +59,42 @@ export function EventsPage() {
     if (!q) {
       return list;
     }
-    return list.filter((item) => eventTypeLabel(item.type).toLowerCase().includes(q));
+    return list.filter((item) => eventHeadline(item.type, item.payload).toLowerCase().includes(q));
   }, [filter, items]);
 
   return (
     <section className="page" aria-labelledby="events-heading">
-      <PageHeader id="events-heading" title="Events" kicker="Platform events for this appliance." />
+      <PageHeader id="events-heading" title="Events" kicker="What changed on this appliance" />
       {error ? <ErrorState>{error}</ErrorState> : null}
-      <article className="panel stack">
-        <input
-          className="field-input"
-          type="search"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by type"
-          aria-label="Filter events"
-        />
+      <div className="stack">
+        <label className="search-field">
+          <Icon name="search" size={14} />
+          <input
+            className="field-input"
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by type"
+            aria-label="Filter events"
+          />
+        </label>
         {items == null ? (
           <LoadingState />
         ) : (
           <ResourceTable
-            headers={["Type", "When"]}
+            headers={["Event", "Detail", "When"]}
             empty={<p>No events yet.</p>}
-            rows={filtered.map((item) => [eventTypeLabel(item.type), formatWhen(item.created_at)])}
+            rows={filtered.map((item) => {
+              const facts = payloadFacts(item.payload);
+              return [
+                eventHeadline(item.type, item.payload),
+                facts.length ? facts.map((f) => `${f.label} ${f.value}`).join(" · ") : "No extra detail",
+                formatWhen(item.created_at),
+              ];
+            })}
           />
         )}
-      </article>
+      </div>
     </section>
   );
 }

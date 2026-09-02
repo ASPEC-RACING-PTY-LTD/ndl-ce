@@ -8,8 +8,13 @@ import {
   uploadFile,
 } from "../api/client";
 import type { FileEntry } from "../api/phase6";
+import { ActionMenu } from "../components/ActionMenu";
+import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
+import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
+import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
 import { formatBytes } from "../format";
 import { fileTypeLabel } from "../labels";
 import { currentPath, navigate } from "../router";
@@ -126,7 +131,7 @@ export function FilesPage() {
       await deleteFile(kind, id, joinPath(path, entry.name));
       await reload(path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "delete failed");
+      setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setBusy(false);
     }
@@ -136,14 +141,14 @@ export function FilesPage() {
     try {
       await downloadFile(kind, id, joinPath(path, entry.name), entry.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "download failed");
+      setError(err instanceof Error ? err.message : "Download failed");
     }
   }
 
   if (unsupported) {
     return (
-      <section className="page">
-        <h1>Files</h1>
+      <section className="page" aria-labelledby="files-heading">
+        <PageHeader id="files-heading" title="Files" />
         <p className="banner banner-warn" role="status">
           {unsupported}
         </p>
@@ -154,8 +159,8 @@ export function FilesPage() {
 
   if (!canRead) {
     return (
-      <section className="page">
-        <h1>Files</h1>
+      <section className="page" aria-labelledby="files-heading">
+        <PageHeader id="files-heading" title="Files" />
         <p className="banner banner-error" role="alert">
           {host ? "Host files require admin." : "Files require at least viewer."}
         </p>
@@ -168,10 +173,7 @@ export function FilesPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="files-heading">
-      <header className="page-header">
-        <h1 id="files-heading">Files</h1>
-        <p className="page-kicker">{path}</p>
-      </header>
+      <PageHeader id="files-heading" title="Files" kicker={path} />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
@@ -181,13 +183,13 @@ export function FilesPage() {
         <Link href={backHref}>Back</Link>
         <Link href={termHref}>Terminal</Link>
       </nav>
-      <div className="btn-row">
-        <button className="btn" type="button" onClick={() => void reload(parentPath(path))}>
+      <div className="btn-row is-flush">
+        <button className="btn btn-sm btn-secondary" type="button" onClick={() => void reload(parentPath(path))}>
           Up
         </button>
         {canWrite ? (
           <>
-            <label className="btn">
+            <label className="btn btn-sm btn-secondary">
               Upload Here
               <input
                 className="visually-hidden"
@@ -196,66 +198,61 @@ export function FilesPage() {
                 disabled={busy}
               />
             </label>
-            <button className="btn" type="button" onClick={() => navigate(termHref)}>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate(termHref)}>
+              <Icon name="terminal" size={14} />
               Terminal Here
             </button>
           </>
         ) : null}
       </div>
       {canWrite ? (
-        <div className="btn-row">
-          <Field id="mkdir" label="New folder" value={mkdirName} onChange={(e) => setMkdirName(e.target.value)} />
-          <button className="btn btn-primary" type="button" disabled={busy || !mkdirName} onClick={() => void onMkdir()}>
+        <div className="btn-row is-flush">
+          <Field
+            id="mkdir"
+            className="field-inline"
+            label="New folder"
+            value={mkdirName}
+            onChange={(e) => setMkdirName(e.target.value)}
+          />
+          <button className="btn btn-sm btn-primary" type="button" disabled={busy || !mkdirName} onClick={() => void onMkdir()}>
+            <Icon name="create" size={14} />
             Create folder
           </button>
         </div>
       ) : null}
-      <article className="panel">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.name}>
-                  <td>
-                    {entry.type === "dir" ? (
-                      <button className="btn btn-ghost" type="button" onClick={() => void reload(joinPath(path, entry.name))}>
-                        {entry.name}
-                      </button>
-                    ) : (
-                      entry.name
-                    )}
-                  </td>
-                  <td>{fileTypeLabel(entry.type)}</td>
-                  <td>{entry.type === "dir" ? "" : formatBytes(entry.size)}</td>
-                  <td>
-                    <div className="btn-row">
-                      {entry.type !== "dir" && canDownload ? (
-                        <button className="btn" type="button" onClick={() => void onDownload(entry)}>
-                          Download
-                        </button>
-                      ) : null}
-                      {canWrite ? (
-                        <button className="btn" type="button" onClick={() => void onDelete(entry)}>
-                          Delete
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {entries.length === 0 ? <p className="muted">This directory is empty.</p> : null}
-        </div>
-      </article>
+      <section className="section">
+        <ResourceTable
+          headers={["Name", "Type", "Size", <span key="act" className="visually-hidden">Actions</span>]}
+          numeric={[2]}
+          empty={<EmptyState title="This directory is empty." />}
+          rows={entries.map((entry) => {
+            const actions: { label: string; onClick: () => void; danger?: boolean }[] = [];
+            if (entry.type !== "dir" && canDownload) {
+              actions.push({ label: "Download", onClick: () => void onDownload(entry) });
+            }
+            if (canWrite) {
+              actions.push({ label: "Delete", onClick: () => void onDelete(entry), danger: true });
+            }
+            return [
+              entry.type === "dir" ? (
+                <button
+                  key={entry.name}
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  onClick={() => void reload(joinPath(path, entry.name))}
+                >
+                  {entry.name}
+                </button>
+              ) : (
+                entry.name
+              ),
+              fileTypeLabel(entry.type),
+              entry.type === "dir" ? "" : formatBytes(entry.size),
+              <ActionMenu key="actions" items={actions} />,
+            ];
+          })}
+        />
+      </section>
     </section>
   );
 }
