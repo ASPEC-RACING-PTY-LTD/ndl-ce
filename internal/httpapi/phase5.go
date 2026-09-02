@@ -387,7 +387,11 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 	} else {
 		row = *existing
 	}
-	return pool, netw, path.Join(pool.RootPath, row.BackendRef), &row, nil
+	loc, locErr := storage.HostVolumePath(row.BackendType, pool.RootPath, row.BackendRef)
+	if locErr != nil {
+		return nil, nil, "", nil, errConflict("volume locator is invalid")
+	}
+	return pool, netw, loc, &row, nil
 }
 
 func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
@@ -603,9 +607,13 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 		SizeBytes: lxc.DefaultRootSize, Status: storage.StatusAvailable,
 		BackendType: storage.BackendDirectory, BackendRef: backend,
 	})
+	loc, locErr := storage.HostVolumePath(pool.BackendType, pool.RootPath, backend)
+	if locErr != nil {
+		return lxc.LifecycleRequest{}, errConflict("volume locator is invalid")
+	}
 	req := lxc.LifecycleRequest{
 		WorkloadID: src.ID, Action: "clone", CloneID: cloneID, CloneVolumeID: cloneVol,
-		CloneRootfsPath: path.Join(pool.RootPath, backend), CloneMAC: lxc.MACFromUUID(cloneID), CloneName: name,
+		CloneRootfsPath: loc, CloneMAC: lxc.MACFromUUID(cloneID), CloneName: name,
 	}
 	return req, nil
 }

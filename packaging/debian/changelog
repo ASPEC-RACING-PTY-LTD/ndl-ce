@@ -17,6 +17,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * A fenced writer cannot renew or clear the lease; mutate APIs refuse both the fenced holder and a standby until promote. Partitioned OS root marks the parent disk so ZFS/LVM/OSD create cannot wipe it. Files names reject empty and parent-directory segments before they reach the jail.
   * Overlay snapshot rollback refuses a running VM like ZFS and LVM. Template create records the new overlay as the volume tip. recover-admin fails closed when the user row is missing. MFA challenges and recovery codes are consumed before a session is issued. Migration cancel and retry fail closed when job persist fails.
   * Mutating APIs refuse a fenced writer and a standby until promote; fence and promote stay reachable. Overlay flatten refuses a running VM. Restore of a system container is refused instead of using the VM replace path.
+  * System container create and clone join rootfs under the pool with HostVolumePath. An absolute or parent-directory volume locator is refused instead of path.Join discarding the pool root.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
