@@ -41,7 +41,7 @@ func run(args []string) error {
   cluster ha
   cluster ha replica --endpoint HOST [--dsn DSN]
   cluster fence --confirm fence
-	cluster promote --confirm promote
+  cluster promote --confirm promote
   cluster update [--confirm cluster-update]
   feature list
   feature enable NAME [--confirm enable-k8s]
@@ -434,7 +434,7 @@ func do(method, path string, body any, useSession bool) ([]byte, error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, Transport: nodalTransport()}
+	client := nodalHTTPClient(jar)
 	if f := strings.TrimSpace(os.Getenv("NODAL_CONFIRM")); f != "" && req.Header.Get("X-Nodal-Confirm") == "" {
 		req.Header.Set("X-Nodal-Confirm", f)
 	}
@@ -607,7 +607,7 @@ func cmdUploadImage(poolID, kind, file string) error {
 	if tok := os.Getenv("NODAL_TOKEN"); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := nodalHTTPClient(nil).Do(req)
 	if err != nil {
 		return err
 	}
@@ -1164,7 +1164,7 @@ func cmdClusterJoin(args []string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Transport: nodalTransport()}
+	client := nodalHTTPClient(nil)
 	res, err := client.Do(req)
 	if err != nil {
 		return err
@@ -1215,6 +1215,9 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+	if f := strings.TrimSpace(os.Getenv("NODAL_CONFIRM")); f != "" && req.Header.Get("X-Nodal-Confirm") == "" {
+		req.Header.Set("X-Nodal-Confirm", f)
+	}
 	if saveSession {
 		if c, err := os.ReadFile(sessionFile()); err == nil {
 			req.Header.Set("Cookie", strings.TrimSpace(string(c)))
@@ -1223,7 +1226,7 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 			req.Header.Set("Authorization", "Bearer "+tok)
 		}
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := nodalHTTPClient(nil).Do(req)
 	if err != nil {
 		return err
 	}
@@ -1560,6 +1563,10 @@ func cmdLab(args []string) error {
 	default:
 		return fmt.Errorf("usage: nodalctl lab qemu-proto start|status|stop|kill")
 	}
+}
+
+func nodalHTTPClient(jar http.CookieJar) *http.Client {
+	return &http.Client{Jar: jar, Transport: nodalTransport()}
 }
 
 func nodalTransport() http.RoundTripper {
