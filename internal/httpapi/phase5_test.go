@@ -247,6 +247,61 @@ func TestWorkloadViewerReadOnlyAndOperatorDeniedPrivileged(t *testing.T) {
 	_ = clRes.Body.Close()
 }
 
+func TestLifecycleTokenCannotDeleteWorkload(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	id := uuid.NewString()
+	_ = mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID,
+		Name: "ct", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped,
+		ImagePin: "alpine/3.21/amd64/default", DesiredPower: "stopped",
+	})
+	s.Workloads = &fakeWorkloads{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_ = claimAdmin(t, ts, token)
+	admin, err := mem.GetUserByName(context.Background(), cluster.ID, "admin")
+	if err != nil || admin == nil {
+		t.Fatal("admin user")
+	}
+	plain := "ndl_lifecycle_only"
+	if err := mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: admin.ID, Name: "life",
+		TokenHash: secutil.HashSHA256(plain), Prefix: "ndl_lf",
+		Permissions: []string{rbac.ComputeLifecycle, rbac.ComputeRead},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.Header.Set("Authorization", "Bearer "+plain)
+	res, err := ts.Client().Do(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("lifecycle start %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	del, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/delete", strings.NewReader("{}"))
+	del.Header.Set("Content-Type", "application/json")
+	del.Header.Set("Authorization", "Bearer "+plain)
+	res, err = ts.Client().Do(del)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("lifecycle must not delete %d %s", res.StatusCode, b)
+	}
+}
+
 func TestWorkloadLifecycleStart(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

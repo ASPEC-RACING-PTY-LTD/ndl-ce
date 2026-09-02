@@ -397,7 +397,11 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 
 func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, err := s.require(w, r, rbac.ComputeLifecycle)
+		need := rbac.ComputeLifecycle
+		if action == "delete" {
+			need = rbac.ComputeDelete
+		}
+		p, err := s.require(w, r, need)
 		if err != nil {
 			return
 		}

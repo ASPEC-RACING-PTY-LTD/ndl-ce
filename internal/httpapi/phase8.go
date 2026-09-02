@@ -573,7 +573,12 @@ func (s *Server) vmLifecycle(w http.ResponseWriter, r *http.Request, p *principa
 		s.cloneVM(w, r, p, row)
 		return
 	}
-	if !rbac.Authorize(p.Grants, perm) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
+	if action == "delete" {
+		if !rbac.Authorize(p.Grants, rbac.ComputeDelete) {
+			writeErr(w, http.StatusForbidden, "forbidden")
+			return
+		}
+	} else if !rbac.Authorize(p.Grants, perm) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
