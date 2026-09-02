@@ -4903,6 +4903,7 @@ components:
           type: string
         endpoint:
           type: string
+          description: WireGuard host:port without userinfo. Credentials are not stored in this field.
         allowed_ips:
           type: string
         persistent_keepalive:
@@ -4941,6 +4942,7 @@ components:
           type: string
         endpoint:
           type: string
+          description: WireGuard host:port without userinfo.
         local_address:
           type: string
         worker_address:
@@ -4963,6 +4965,12 @@ components:
           $ref: "#/components/schemas/WGPeer"
         worker:
           $ref: "#/components/schemas/WGPeer"
+        worker_private_key:
+          type: string
+          description: Shown once at create. Never listed later.
+        pairing_token:
+          type: string
+          description: Shown once at create. Pairing tokens are not join tokens. Never listed later.
         warning:
           type: string
     ClusterInventoryResponse:

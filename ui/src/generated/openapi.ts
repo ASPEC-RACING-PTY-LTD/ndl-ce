@@ -343,6 +343,8 @@ export interface WGPeerCreateResponse {
   role?: string;
   local?: WGPeer;
   worker?: WGPeer;
+  worker_private_key?: string;
+  pairing_token?: string;
   warning?: string;
 }
 

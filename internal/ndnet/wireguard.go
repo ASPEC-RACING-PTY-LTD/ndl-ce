@@ -308,15 +308,25 @@ func validateWGPeer(p WGPeerSpec) error {
 			return err
 		}
 	}
-	if p.Endpoint != "" {
-		host, port, ok := strings.Cut(p.Endpoint, ":")
-		if !ok || host == "" || strings.ContainsAny(host, " \t\n") {
-			return fmt.Errorf("peer endpoint is invalid")
-		}
-		n, err := strconv.Atoi(port)
-		if err != nil || n < 1 || n > 65535 {
-			return fmt.Errorf("peer endpoint port is invalid")
-		}
+	return ValidWGEndpoint(p.Endpoint)
+}
+
+// ValidWGEndpoint reports a WireGuard host:port without userinfo.
+func ValidWGEndpoint(endpoint string) error {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return nil
+	}
+	if strings.Contains(endpoint, "@") || strings.Contains(endpoint, "/") {
+		return fmt.Errorf("peer endpoint must be host:port without credentials")
+	}
+	host, port, ok := strings.Cut(endpoint, ":")
+	if !ok || host == "" || strings.ContainsAny(host, " \t\n") {
+		return fmt.Errorf("peer endpoint is invalid")
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("peer endpoint port is invalid")
 	}
 	return nil
 }

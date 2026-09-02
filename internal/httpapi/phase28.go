@@ -68,6 +68,10 @@ func (s *Server) createWGPeer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	if err := ndnet.ValidWGEndpoint(req.Endpoint); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	localAddr := firstNonEmpty(strings.TrimSpace(req.LocalAddress), "10.64.8.1/24")
 	workerAddr := firstNonEmpty(strings.TrimSpace(req.WorkerAddress), "10.64.8.2/24")
 	port := req.ListenPort

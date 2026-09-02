@@ -81,6 +81,28 @@ func TestWGApplySkipHostCmdsUnavailable(t *testing.T) {
 	}
 }
 
+func TestValidWGEndpointRefusesCredentials(t *testing.T) {
+	if err := ValidWGEndpoint("203.0.113.8:51820"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidWGEndpoint(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidWGEndpoint("user@203.0.113.8:51820"); err == nil {
+		t.Fatal("userinfo")
+	}
+	if err := ValidWGEndpoint("https://203.0.113.8:51820"); err == nil {
+		t.Fatal("url")
+	}
+	_, peerPub, err := GenerateWGKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWGPeer(WGPeerSpec{PublicKey: peerPub, Endpoint: "user:SECRET@203.0.113.8:51820"}); err == nil {
+		t.Fatal("userinfo peer")
+	}
+}
+
 func TestWGLoopbackHandshakeReady(t *testing.T) {
 	a := testEngine(t, testHost())
 	b := testEngine(t, testHost())
