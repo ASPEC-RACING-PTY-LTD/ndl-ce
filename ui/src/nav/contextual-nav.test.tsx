@@ -237,14 +237,15 @@ describe("contextual navigation", () => {
     window.history.replaceState({}, "", "/workloads");
     mockApi(admin);
     render(<App />);
+    expect(await screen.findByRole("treeitem", { name: /alpine/i })).toBeVisible();
     const search = await screen.findByLabelText(/^search targets$/i);
     fireEvent.change(search, { target: { value: "sound" } });
-    expect(screen.getByRole("treeitem", { name: /sounddock/i })).toBeVisible();
+    expect(await screen.findByRole("treeitem", { name: /sounddock/i })).toBeVisible();
     expect(screen.queryByRole("treeitem", { name: /alpine/i })).not.toBeInTheDocument();
     fireEvent.change(search, { target: { value: "virtual" } });
-    expect(screen.getByRole("treeitem", { name: /ubuntu/i })).toBeVisible();
+    expect(await screen.findByRole("treeitem", { name: /ubuntu/i })).toBeVisible();
     fireEvent.change(search, { target: { value: "no-dal-01" } });
-    expect(navTarget("node", "node-1")).toBeVisible();
+    expect(await findNavTarget("node", "node-1")).toBeVisible();
     expect(navTarget("workload", "wl-a")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^virtual machines$/i }));
     expect(screen.getByRole("button", { name: /^virtual machines$/i })).toHaveAttribute("aria-expanded", "false");
@@ -296,7 +297,7 @@ describe("contextual navigation", () => {
     expect(screen.getByLabelText(/collapse sidebar/i).closest(".sidebar-footer")).toBeTruthy();
     expect(document.querySelectorAll(".ctx-item").length).toBeGreaterThan(50);
     fireEvent.change(await screen.findByLabelText(/^search targets$/i), { target: { value: "bulk-205" } });
-    expect(screen.getByRole("treeitem", { name: /bulk-205/i })).toBeVisible();
+    expect(await screen.findByRole("treeitem", { name: /bulk-205/i })).toBeVisible();
     expect(screen.queryByText(/showing 200 of/i)).not.toBeInTheDocument();
   });
 
@@ -317,8 +318,10 @@ describe("contextual navigation", () => {
     window.history.replaceState({}, "", "/workloads");
     mockApi(admin);
     render(<App />);
+    expect(await screen.findByRole("treeitem", { name: /alpine/i })).toBeVisible();
     const search = await screen.findByLabelText(/^search targets$/i);
     fireEvent.change(search, { target: { value: "alp" } });
+    expect(await screen.findByRole("treeitem", { name: /alpine/i })).toBeVisible();
     fireEvent.keyDown(search, { key: "Enter" });
     expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
   });
