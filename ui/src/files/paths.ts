@@ -6,6 +6,18 @@ export function joinPath(base: string, name: string): string {
   return `${base.replace(/\/+$/, "")}/${n}`;
 }
 
+export function relName(name: string): string {
+  const n = name.trim().replace(/\\/g, "/");
+  if (!n) {
+    throw new Error("Name is required");
+  }
+  const parts = n.split("/").filter((p) => p !== "");
+  if (parts.length === 0 || parts.some((p) => p === "." || p === "..")) {
+    throw new Error("Name must stay inside the current directory");
+  }
+  return n.replace(/^\/+/, "");
+}
+
 export function parentPath(p: string): string {
   const clean = p.replace(/\/+$/, "");
   const i = clean.lastIndexOf("/");

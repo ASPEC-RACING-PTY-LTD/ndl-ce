@@ -58,7 +58,7 @@ func (p *Postgres) RevokeNode(ctx context.Context, clusterID, id string, at time
 	if at.IsZero() {
 		at = time.Now().UTC()
 	}
-	res, err := p.DB.ExecContext(ctx, `UPDATE nodes SET revoked_at=$3 WHERE cluster_id=$1 AND id=$2 AND revoked_at IS NULL`, clusterID, id, at)
+	res, err := p.DB.ExecContext(ctx, `UPDATE nodes SET revoked_at=COALESCE(revoked_at, $3) WHERE cluster_id=$1 AND id=$2`, clusterID, id, at)
 	if err != nil {
 		return err
 	}
@@ -138,9 +138,9 @@ ON CONFLICT (cluster_id) DO UPDATE SET
   holder_id = EXCLUDED.holder_id,
   expires_at = EXCLUDED.expires_at,
   fenced = false
-WHERE cluster_leases.holder_id = EXCLUDED.holder_id
-   OR cluster_leases.expires_at < now()
-   OR cluster_leases.fenced = true`,
+WHERE (cluster_leases.holder_id = EXCLUDED.holder_id AND cluster_leases.fenced = false)
+   OR (cluster_leases.expires_at < now() AND cluster_leases.fenced = false)
+   OR (cluster_leases.fenced = true AND cluster_leases.holder_id <> EXCLUDED.holder_id)`,
 		clusterID, holderID, expiresAt)
 	if err != nil {
 		return err

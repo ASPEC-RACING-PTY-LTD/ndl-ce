@@ -370,6 +370,33 @@ func TestCollectBlockNVMe(t *testing.T) {
 	}
 }
 
+func TestCollectBlockPartitionedRootMarksParentDisk(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"proc/mounts":                              "/dev/sda1 / ext4 rw,relatime 0 0\n/dev/sdb1 /mnt/data ext4 rw 0 0\n",
+		"sys/class/block/sda/size":                 "3907029168\n",
+		"sys/class/block/sda/queue/rotational":     "1\n",
+		"sys/class/block/sda1/partition":           "1\n",
+		"sys/class/block/sdb/size":                 "3907029168\n",
+		"sys/class/block/sdb/queue/rotational":     "1\n",
+		"sys/class/block/sdb1/partition":           "1\n",
+		"sys/class/block/nvme0n1/size":             "1953525168\n",
+		"sys/class/block/nvme0n1/queue/rotational": "0\n",
+		"sys/class/block/nvme0n1p1/partition":      "1\n",
+	})
+	inv := collectFixture(t, root, missingTools)
+	sda := mustBlock(t, inv.BlockDevices, "sda")
+	if sda.MountHint != "/" {
+		t.Fatalf("partitioned root must mark parent disk, mount_hint=%q", sda.MountHint)
+	}
+	sdb := mustBlock(t, inv.BlockDevices, "sdb")
+	if sdb.MountHint == "/" {
+		t.Fatal("data disk must not inherit OS root")
+	}
+	if parentBlockName("sda1") != "sda" || parentBlockName("nvme0n1p2") != "nvme0n1" || parentBlockName("nvme0n1") != "nvme0n1" {
+		t.Fatalf("parentBlockName sda1=%s nvme0n1p2=%s nvme0n1=%s", parentBlockName("sda1"), parentBlockName("nvme0n1p2"), parentBlockName("nvme0n1"))
+	}
+}
+
 func namesOf(devs []BlockDevice) []string {
 	out := make([]string, len(devs))
 	for i, d := range devs {

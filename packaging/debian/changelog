@@ -14,6 +14,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * ndl-ui try-restarts ndl-control after configure. The control plane rereads index.html from disk, sends Cache-Control: no-cache for the shell, immutable caching for hashed /assets/, and 404s missing hashed files instead of SPA HTML.
   * Terminal workspace keeps each tab's xterm and PTY mounted while switching. Inactive sessions stay full-size and hidden instead of being parked in a 1px holder that resized the live shell.
   * Host Files cannot rename or follow a symlink into denied prefixes. Rename onto an existing directory fails instead of deleting that tree. Restore-as-new of extra data disks is refused like clone. Migrate fails closed when a disk volume is missing. Join cert failure revokes the orphan node. Node revoke fails closed if the CA serial cannot be recorded.
+  * A fenced writer cannot renew or clear the lease; mutate APIs refuse both the fenced holder and a standby until promote. Partitioned OS root marks the parent disk so ZFS/LVM/OSD create cannot wipe it. Files names reject empty and parent-directory segments before they reach the jail.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

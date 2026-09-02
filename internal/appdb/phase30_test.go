@@ -44,6 +44,9 @@ func TestMemorySecondLeaseFails(t *testing.T) {
 	if err := m.FenceLease(t.Context(), clusterID, time.Now().UTC().Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
+	if err := m.AcquireLease(t.Context(), clusterID, "writer-a", exp); err != ErrLeaseHeld {
+		t.Fatalf("fenced holder must not reclaim: %v", err)
+	}
 	if err := m.AcquireLease(t.Context(), clusterID, "writer-b", exp); err != nil {
 		t.Fatalf("standby after fence: %v", err)
 	}

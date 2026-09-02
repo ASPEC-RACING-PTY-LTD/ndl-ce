@@ -334,6 +334,42 @@ func TestPhase30SecondWriterLeaseRefusesWrites(t *testing.T) {
 	}
 }
 
+func TestPhase30FencedWriterCannotIssueJoinTokens(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	exp := time.Now().UTC().Add(time.Minute)
+	if err := mem.AcquireLease(t.Context(), clusterRow.ID, "writer-a", exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.FenceLease(t.Context(), clusterRow.ID, time.Now().UTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	s.LeaseHolder = "writer-a"
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict || !strings.Contains(strings.ToLower(string(body)), "fenced") {
+		t.Fatalf("fenced writer %d %s", res.StatusCode, body)
+	}
+	s.LeaseHolder = "writer-b"
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("standby before promote %d %s", res.StatusCode, body)
+	}
+}
+
 func mintJoin(t *testing.T, ts *httptest.Server, cookie, hostname string) (string, string) {
 	t.Helper()
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))

@@ -21,7 +21,7 @@ import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
-import { breadcrumbs, displayPath, joinPath, parentPath } from "../files/paths";
+import { breadcrumbs, displayPath, joinPath, parentPath, relName } from "../files/paths";
 import { formatBytes } from "../format";
 import { workloadGuestIOReason } from "../guestIO";
 import { fileTypeLabel } from "../labels";
@@ -224,9 +224,9 @@ export function FilesPage() {
     setError(null);
     try {
       if (dialog.kind === "mkdir") {
-        await mkdirFile(kind, id, joinPath(path, dialogValue.trim()));
+        await mkdirFile(kind, id, joinPath(path, relName(dialogValue)));
       } else if (dialog.kind === "create") {
-        const name = dialogValue.trim();
+        const name = relName(dialogValue);
         const dest = joinPath(path, name);
         await uploadFile(kind, id, dest, new File([""], name, { type: "text/plain" }));
         setDialog(null);
@@ -235,7 +235,7 @@ export function FilesPage() {
         await openEditor({ name, type: "file", size: 0, path: dest });
         return;
       } else if (dialog.kind === "rename") {
-        await moveFile(kind, id, joinPath(path, dialog.entry.name), joinPath(path, dialogValue.trim()));
+        await moveFile(kind, id, joinPath(path, dialog.entry.name), joinPath(path, relName(dialogValue)));
       } else if (dialog.kind === "move") {
         for (const entry of dialog.entries) {
           await moveFile(kind, id, joinPath(path, entry.name), joinPath(dialogValue.trim() || path, entry.name));

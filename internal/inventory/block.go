@@ -106,7 +106,52 @@ func mountHints(mounts string) map[string]string {
 			out[name] = fields[1]
 		}
 	}
+	for name, mp := range out {
+		if mp != "/" {
+			continue
+		}
+		parent := parentBlockName(name)
+		if parent != name {
+			if _, exists := out[parent]; !exists {
+				out[parent] = "/"
+			}
+		}
+	}
 	return out
+}
+
+// parentBlockName maps a partition (sda1, nvme0n1p2) to its disk. Whole disks stay unchanged.
+func parentBlockName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return name
+	}
+	if nvmeNamespace.MatchString(name) {
+		return name
+	}
+	if strings.HasPrefix(name, "nvme") {
+		if i := strings.LastIndex(name, "p"); i > 0 && allDigits(name[i+1:]) {
+			base := name[:i]
+			if nvmeNamespace.MatchString(base) {
+				return base
+			}
+		}
+		return name
+	}
+	if strings.Contains(name, "p") && (strings.HasPrefix(name, "mmcblk") || strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "nbd")) {
+		if i := strings.LastIndex(name, "p"); i > 0 && allDigits(name[i+1:]) {
+			return name[:i]
+		}
+		return name
+	}
+	i := len(name)
+	for i > 0 && name[i-1] >= '0' && name[i-1] <= '9' {
+		i--
+	}
+	if i > 0 && i < len(name) {
+		return name[:i]
+	}
+	return name
 }
 
 func readBool01(fs FS, p string) *bool {

@@ -137,7 +137,12 @@ func (m *Memory) AcquireLease(_ context.Context, clusterID, holderID string, exp
 	defer m.mu.Unlock()
 	now := time.Now().UTC()
 	if m.clusterLease != nil && m.clusterLease.ClusterID == clusterID {
-		if m.clusterLease.HolderID != holderID && now.Before(m.clusterLease.ExpiresAt) {
+		cur := m.clusterLease
+		if cur.Fenced {
+			if cur.HolderID == holderID {
+				return ErrLeaseHeld
+			}
+		} else if cur.HolderID != holderID && now.Before(cur.ExpiresAt) {
 			return ErrLeaseHeld
 		}
 	}

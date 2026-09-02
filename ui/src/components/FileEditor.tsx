@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, downloadFile, uploadFile } from "../api/client";
 import type { FileContent } from "../api/phase6";
 import { languageFromName } from "../files/language";
-import { joinPath, parentPath } from "../files/paths";
+import { joinPath, parentPath, relName } from "../files/paths";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Field } from "./Field";
 
@@ -209,9 +209,13 @@ export function FileEditor({
         confirmLabel="Save"
         onClose={() => setSaveAsOpen(false)}
         onConfirm={() => {
-          const dest = joinPath(parentPath(originalPath), saveAsName.trim());
-          setSaveAsOpen(false);
-          void save(dest);
+          try {
+            const dest = joinPath(parentPath(originalPath), relName(saveAsName));
+            setSaveAsOpen(false);
+            void save(dest);
+          } catch (err) {
+            onError(err instanceof Error ? err.message : "Name is invalid");
+          }
         }}
       >
         <Field id="save-as-name" label="New name" value={saveAsName} onChange={(e) => setSaveAsName(e.target.value)} />

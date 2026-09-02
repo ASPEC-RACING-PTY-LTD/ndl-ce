@@ -181,7 +181,7 @@ func (s *Server) createZFS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	poolID := uuid.NewString()
-	res, err := s.zfs().ZFSPool(r.Context(), storage.ZFSOp{Action: "create-pool", PoolID: poolID, Name: req.Name, Disks: disks})
+	res, err := s.zfs().ZFSPool(r.Context(), storage.ZFSOp{Action: "create-pool", PoolID: poolID, Name: req.Name, Disks: disks, RootDevice: rootDev})
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

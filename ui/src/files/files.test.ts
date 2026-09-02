@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breadcrumbs, joinPath, parentPath, uploadDirFromCwd } from "./paths";
+import { breadcrumbs, joinPath, parentPath, relName, uploadDirFromCwd } from "./paths";
 import { languageFromName } from "./language";
 import { shellEscape, shellEscapeAll } from "./shell";
 
@@ -9,6 +9,14 @@ describe("file paths", () => {
     expect(joinPath("/var", "log")).toBe("/var/log");
     expect(parentPath("/var/log")).toBe("/var");
     expect(parentPath("etc")).toBe("/");
+  });
+
+  it("refuses empty and parent-directory names", () => {
+    expect(() => relName("")).toThrow(/required/i);
+    expect(() => relName("..")).toThrow(/inside/i);
+    expect(() => relName("foo/../etc")).toThrow(/inside/i);
+    expect(relName("readme.txt")).toBe("readme.txt");
+    expect(relName("foo/bar")).toBe("foo/bar");
   });
 
   it("builds breadcrumbs", () => {

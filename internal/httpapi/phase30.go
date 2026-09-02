@@ -31,8 +31,9 @@ func (s *Server) requireWriter(w http.ResponseWriter, r *http.Request, clusterID
 	if lease == nil {
 		return true
 	}
-	if s.now().After(lease.ExpiresAt) {
-		return true
+	if lease.Fenced {
+		writeErr(w, http.StatusConflict, "cluster writer is fenced")
+		return false
 	}
 	if lease.HolderID != s.LeaseHolder {
 		writeErr(w, http.StatusConflict, "this process is not the cluster writer")
