@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -138,6 +139,14 @@ func TestPhase39AttachFakeRBDAndClusterDown(t *testing.T) {
 		t.Fatalf("%s", raw)
 	}
 	poolID, _ := pool["id"].(string)
+	dp, err := mem.GetDistributedPool(context.Background(), poolID)
+	if err != nil || dp == nil || dp.Locator == "" || dp.CephPool != "rbd" {
+		t.Fatalf("distributed locator %+v %v", dp, err)
+	}
+	key, err := mem.DistributedSecret(context.Background(), poolID)
+	if err != nil || key != "AQBfakekeyvalue0123456789abcd==" {
+		t.Fatalf("stored cephx %q %v", key, err)
+	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", strings.NewReader(`{"pool_id":"`+poolID+`","class":"vm-disk","size_bytes":1073741824}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -247,5 +256,118 @@ func TestPhase39OSDBringUpConfirmAndRootDisk(t *testing.T) {
 	feat, _ := mem.GetFeature(context.Background(), cluster.ID, features.IDDistStorage)
 	if feat != nil && feat.RuntimeStatus == appdb.FeatureRunning {
 		t.Fatalf("feature enable must not mark OSD running %+v", feat)
+	}
+	osds, err := mem.ListDistributedOSDs(context.Background(), cluster.ID)
+	if err != nil || len(osds) != 1 || osds[0].Disk != "/dev/disk/by-id/wwn-0x5000" {
+		t.Fatalf("osd row %+v %v", osds, err)
+	}
+}
+
+type failUpsertDistributedPoolStore struct {
+	appdb.Store
+}
+
+func (f failUpsertDistributedPoolStore) UpsertDistributedPool(context.Context, appdb.DistributedPool) error {
+	return errors.New("persist failed")
+}
+
+type failUpsertDistributedSecretStore struct {
+	appdb.Store
+}
+
+func (f failUpsertDistributedSecretStore) UpsertDistributedSecret(context.Context, string, string) error {
+	return errors.New("persist failed")
+}
+
+type failCreateDistributedOSDStore struct {
+	appdb.Store
+}
+
+func (f failCreateDistributedOSDStore) CreateDistributedOSD(context.Context, appdb.DistributedOSD) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase39AttachFailsClosedWhenLocatorPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	s.Distributed = &fakeDistributed{up: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	enableDistributed(t, ts, cookie)
+	s.Store = failUpsertDistributedPoolStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/distributed", strings.NewReader(`{"name":"ceph","locator":"mon.example/rbd","cephx_key":"AQBfakekeyvalue0123456789abcd=="}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("attach persist %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "AQBfake") {
+		t.Fatalf("key leaked %s", raw)
+	}
+	if !strings.Contains(string(raw), "could not record distributed pool") {
+		t.Fatalf("attach persist body %s", raw)
+	}
+}
+
+func TestPhase39AttachFailsClosedWhenSecretPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	s.Distributed = &fakeDistributed{up: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	enableDistributed(t, ts, cookie)
+	s.Store = failUpsertDistributedSecretStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/distributed", strings.NewReader(`{"name":"ceph","locator":"mon.example/rbd","cephx_key":"AQBfakekeyvalue0123456789abcd=="}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("secret persist %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "AQBfake") {
+		t.Fatalf("key leaked %s", raw)
+	}
+	if !strings.Contains(string(raw), "could not record distributed credentials") {
+		t.Fatalf("secret persist body %s", raw)
+	}
+}
+
+func TestPhase39OSDFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	s.Distributed = &fakeDistributed{up: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	enableDistributed(t, ts, cookie)
+	s.Store = failCreateDistributedOSDStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/distributed/osds", strings.NewReader(`{"disk":"/dev/disk/by-id/wwn-0x5000"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, storage.StartOSDConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("osd persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record OSD") {
+		t.Fatalf("osd persist body %s", raw)
 	}
 }

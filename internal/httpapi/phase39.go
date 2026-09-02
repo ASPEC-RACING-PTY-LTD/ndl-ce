@@ -182,10 +182,16 @@ func (s *Server) attachDistributed(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not record storage pool")
 		return
 	}
-	_ = s.Store.UpsertDistributedPool(r.Context(), appdb.DistributedPool{
+	if err := s.Store.UpsertDistributedPool(r.Context(), appdb.DistributedPool{
 		PoolID: poolID, ClusterID: p.User.ClusterID, Locator: locator, CephPool: pool, CephUser: user,
-	})
-	_ = s.Store.UpsertDistributedSecret(r.Context(), poolID, key)
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record distributed pool")
+		return
+	}
+	if err := s.Store.UpsertDistributedSecret(r.Context(), poolID, key); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record distributed credentials")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.distributed.attach", "ok", poolID)
 	out := poolJSON(row)
 	writeJSON(w, http.StatusCreated, out)
@@ -280,7 +286,10 @@ func (s *Server) createDistributedOSD(w http.ResponseWriter, r *http.Request) {
 	if res.OSDStarted {
 		row.Status = appdb.FeatureRunning
 	}
-	_ = s.Store.CreateDistributedOSD(r.Context(), row)
+	if err := s.Store.CreateDistributedOSD(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record OSD")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.distributed.osd", "ok", row.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id": row.ID, "disk": row.Disk, "status": row.Status, "reason": row.Reason,

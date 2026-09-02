@@ -50,6 +50,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Backup copy dest is an allowed artifact locator such as /var/lib/ndl/backups. qemu-img convert for a VM disk still requires the storage root.
   * OpenAPI documents Directory pool backend_type routing and the library image upload fields the handlers already use.
   * NFS/SMB/iSCSI create fails closed if datastore or SMB credential persist fails. A 201 does not mean credentials were stored.
+  * Distributed attach fails closed if locator or cephx persist fails. OSD create fails closed if the OSD row cannot be recorded.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
