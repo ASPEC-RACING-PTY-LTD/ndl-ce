@@ -691,14 +691,13 @@ func (s *Server) vmLifecycle(w http.ResponseWriter, r *http.Request, p *principa
 	writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *updated))
 }
 
-func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, row appdb.Workload) {
-	if !rbac.Authorize(p.Grants, rbac.ComputeModify) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
+func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, row appdb.Workload, req patchWorkloadRequest) {
+	if patchSpecChange(req) && !rbac.Authorize(p.Grants, rbac.ComputeModify) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	var req patchWorkloadRequest
-	if err := readJSON(r, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request")
+	if req.DesiredPower != "" && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
+		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	prev, err := vmspec.Parse(row.SpecJSON)

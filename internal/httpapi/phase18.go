@@ -36,7 +36,7 @@ func firmwareCodeForSpec(spec vmspec.Spec) (string, error) {
 }
 
 func (s *Server) cloneVM(w http.ResponseWriter, r *http.Request, p *principal, src appdb.Workload) {
-	if !rbac.Authorize(p.Grants, rbac.ComputeCreate) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
+	if !rbac.Authorize(p.Grants, rbac.ComputeCreate) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}

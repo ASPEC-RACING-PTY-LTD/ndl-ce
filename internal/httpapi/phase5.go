@@ -401,6 +401,9 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 		if action == "delete" {
 			need = rbac.ComputeDelete
 		}
+		if action == "clone" {
+			need = rbac.ComputeCreate
+		}
 		p, err := s.require(w, r, need)
 		if err != nil {
 			return
@@ -481,8 +484,39 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 	}
 }
 
+func patchSpecChange(req patchWorkloadRequest) bool {
+	return req.Name != "" || req.CPUs > 0 || req.MemoryBytes > 0 || req.Firmware != "" || req.Autostart != nil || req.ISOLibraryID != nil || req.NoCloud != nil
+}
+
+func (s *Server) authorizeWorkloadPatch(w http.ResponseWriter, r *http.Request, req patchWorkloadRequest) (*principal, error) {
+	p, err := s.principal(r)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "not authenticated")
+		return nil, err
+	}
+	spec := patchSpecChange(req)
+	power := req.DesiredPower != ""
+	if spec && !rbac.Authorize(p.Grants, rbac.ComputeModify) {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return nil, errors.New("forbidden")
+	}
+	if (!spec || power) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return nil, errors.New("forbidden")
+	}
+	if !s.enforceWriter(w, r, p.User.ClusterID) {
+		return nil, errors.New("not cluster writer")
+	}
+	return p, nil
+}
+
 func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.ComputeLifecycle)
+	var req patchWorkloadRequest
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	p, err := s.authorizeWorkloadPatch(w, r, req)
 	if err != nil {
 		return
 	}
@@ -492,12 +526,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if row.Kind == vmspec.KindVM {
-		s.patchVM(w, r, p, *row)
-		return
-	}
-	var req patchWorkloadRequest
-	if err := readJSON(r, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid request")
+		s.patchVM(w, r, p, *row, req)
 		return
 	}
 	next := *row

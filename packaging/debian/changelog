@@ -22,6 +22,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Storage-pressure policy apply records failed migrate operations instead of leaving them queued and marking the run succeeded. Dest-agent-not-connected stays queued. Approved AI plan steps finish their task rows as succeeded or failed instead of leaving them queued.
   * Policy automation binds the seeded automation role and unbinds leftover Operator so the service identity cannot inherit tokens, feature manage, compute delete, or backups.
   * Workload delete requires compute.delete. A token scoped to compute.lifecycle can still start and stop and cannot delete.
+  * Workload clone requires compute.create. PATCH of CPUs, memory, firmware, or cloud-init requires compute.modify. desired_power stays on compute.lifecycle.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

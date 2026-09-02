@@ -302,6 +302,95 @@ func TestLifecycleTokenCannotDeleteWorkload(t *testing.T) {
 	}
 }
 
+func TestLifecycleTokenCannotCloneOrPatchSpec(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	id := uuid.NewString()
+	_ = mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID,
+		Name: "ct", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped,
+		ImagePin: "alpine/3.21/amd64/default", DesiredPower: "stopped", CPUs: 1,
+	})
+	s.Workloads = &fakeWorkloads{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_ = claimAdmin(t, ts, token)
+	admin, err := mem.GetUserByName(context.Background(), cluster.ID, "admin")
+	if err != nil || admin == nil {
+		t.Fatal("admin user")
+	}
+	life := "ndl_life_patch"
+	if err := mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: admin.ID, Name: "life",
+		TokenHash: secutil.HashSHA256(life), Prefix: "ndl_lp",
+		Permissions: []string{rbac.ComputeLifecycle, rbac.ComputeRead},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mod := "ndl_modify_patch"
+	if err := mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: admin.ID, Name: "mod",
+		TokenHash: secutil.HashSHA256(mod), Prefix: "ndl_md",
+		Permissions: []string{rbac.ComputeModify, rbac.ComputeRead},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cpu, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2}`))
+	cpu.Header.Set("Content-Type", "application/json")
+	cpu.Header.Set("Authorization", "Bearer "+life)
+	res, err := ts.Client().Do(cpu)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("lifecycle must not patch spec %d %s", res.StatusCode, b)
+	}
+
+	power, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"desired_power":"running"}`))
+	power.Header.Set("Content-Type", "application/json")
+	power.Header.Set("Authorization", "Bearer "+life)
+	res, err = ts.Client().Do(power)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("lifecycle may patch desired_power %d %s", res.StatusCode, b)
+	}
+
+	clone, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"copy"}`))
+	clone.Header.Set("Content-Type", "application/json")
+	clone.Header.Set("Authorization", "Bearer "+life)
+	res, err = ts.Client().Do(clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("lifecycle must not clone %d %s", res.StatusCode, b)
+	}
+
+	cpu, _ = http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2}`))
+	cpu.Header.Set("Content-Type", "application/json")
+	cpu.Header.Set("Authorization", "Bearer "+mod)
+	res, err = ts.Client().Do(cpu)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("modify may patch spec %d %s", res.StatusCode, b)
+	}
+}
+
 func TestWorkloadLifecycleStart(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
