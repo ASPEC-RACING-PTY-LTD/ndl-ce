@@ -5713,7 +5713,6 @@ components:
       additionalProperties: false
       required:
         - peer_id
-        - pairing_token
       properties:
         peer_id:
           type: string
@@ -5723,12 +5722,14 @@ components:
           type: string
         listen_addr:
           type: string
+          description: Remote listen host:port without userinfo. Empty is allowed.
         wg_public_key:
           type: string
         handshake_unix:
           type: integer
         pairing_token:
           type: string
+          description: Required for first pair. Reconnect may use an established LastSeenAt or a verified client certificate instead.
     OpenClusterSessionResponse:
       type: object
       additionalProperties: false

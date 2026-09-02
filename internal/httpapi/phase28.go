@@ -198,9 +198,14 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "public key does not match peer")
 		return
 	}
+	listen := strings.TrimSpace(req.ListenAddr)
+	if err := ndnet.ValidListenAddr(listen); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	now := s.now()
 	seen := now
-	remote.ListenAddr = strings.TrimSpace(req.ListenAddr)
+	remote.ListenAddr = listen
 	if req.WGPublicKey != "" {
 		remote.WGPublicKey = req.WGPublicKey
 	}

@@ -52,6 +52,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * NFS/SMB/iSCSI create fails closed if datastore or SMB credential persist fails. A 201 does not mean credentials were stored.
   * Distributed attach fails closed if locator or cephx persist fails. OSD create fails closed if the OSD row cannot be recorded.
   * ZFS import and create fail closed if zpool GUID identity cannot be recorded. A 201 does not skip GetZFSPoolByGUID uniqueness.
+  * Cluster session listen_addr must be host:port without userinfo. Credentials stay out of listed remote node JSON. Pairing token is optional on reconnect.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

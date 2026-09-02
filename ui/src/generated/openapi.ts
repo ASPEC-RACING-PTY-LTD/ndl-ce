@@ -648,7 +648,7 @@ export interface OpenClusterSessionRequest {
   listen_addr?: string;
   wg_public_key?: string;
   handshake_unix?: number;
-  pairing_token: string;
+  pairing_token?: string;
 }
 
 export interface OpenClusterSessionResponse {

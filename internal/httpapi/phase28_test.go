@@ -157,6 +157,64 @@ func TestPhase28WGEndpointRefusesCredentials(t *testing.T) {
 	}
 }
 
+func TestPhase28ListenAddrRefusesCredentials(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"leaky-listen"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	peerID := created["id"].(string)
+	pairing := created["pairing_token"].(string)
+
+	sessBody := `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"user:SECRET@10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("userinfo %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), "SECRET") {
+		t.Fatalf("must not echo leftover secret %s", body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if strings.Contains(string(body), "SECRET") {
+		t.Fatalf("listen_addr must not persist credentials %s", body)
+	}
+
+	sessBody = `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("host:port %d %s", res.StatusCode, body)
+	}
+}
+
 func TestPhase28GuestsKeepRunningWhenTunnelDown(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Network = fakeNet{}

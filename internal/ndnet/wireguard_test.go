@@ -103,6 +103,21 @@ func TestValidWGEndpointRefusesCredentials(t *testing.T) {
 	}
 }
 
+func TestValidListenAddrRefusesCredentials(t *testing.T) {
+	if err := ValidListenAddr("10.64.8.2:9444"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidListenAddr(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidListenAddr("user@10.64.8.2:9444"); err == nil {
+		t.Fatal("userinfo")
+	}
+	if err := ValidListenAddr("https://10.64.8.2:9444"); err == nil {
+		t.Fatal("url")
+	}
+}
+
 func TestWGLoopbackHandshakeReady(t *testing.T) {
 	a := testEngine(t, testHost())
 	b := testEngine(t, testHost())

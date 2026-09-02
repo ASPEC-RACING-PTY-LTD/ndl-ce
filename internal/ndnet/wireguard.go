@@ -311,24 +311,33 @@ func validateWGPeer(p WGPeerSpec) error {
 	return ValidWGEndpoint(p.Endpoint)
 }
 
-// ValidWGEndpoint reports a WireGuard host:port without userinfo.
-func ValidWGEndpoint(endpoint string) error {
-	endpoint = strings.TrimSpace(endpoint)
-	if endpoint == "" {
+func validHostPort(value, kind string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return nil
 	}
-	if strings.Contains(endpoint, "@") || strings.Contains(endpoint, "/") {
-		return fmt.Errorf("peer endpoint must be host:port without credentials")
+	if strings.Contains(value, "@") || strings.Contains(value, "/") {
+		return fmt.Errorf("%s must be host:port without credentials", kind)
 	}
-	host, port, ok := strings.Cut(endpoint, ":")
+	host, port, ok := strings.Cut(value, ":")
 	if !ok || host == "" || strings.ContainsAny(host, " \t\n") {
-		return fmt.Errorf("peer endpoint is invalid")
+		return fmt.Errorf("%s is invalid", kind)
 	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
-		return fmt.Errorf("peer endpoint port is invalid")
+		return fmt.Errorf("%s port is invalid", kind)
 	}
 	return nil
+}
+
+// ValidWGEndpoint reports a WireGuard host:port without userinfo.
+func ValidWGEndpoint(endpoint string) error {
+	return validHostPort(endpoint, "peer endpoint")
+}
+
+// ValidListenAddr reports a remote listen host:port without userinfo.
+func ValidListenAddr(addr string) error {
+	return validHostPort(addr, "listen address")
 }
 
 func parseWGAddress(cidr string) error {
