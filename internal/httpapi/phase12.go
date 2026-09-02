@@ -131,7 +131,7 @@ func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	res, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "check", Channel: hostos.ChannelStable, DryRun: true})
+	res, _, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "check", Channel: hostos.ChannelStable, DryRun: true})
 	items := make([]map[string]any, 0, len(res.Items))
 	for _, it := range res.Items {
 		items = append(items, map[string]any{
@@ -156,7 +156,7 @@ func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	res, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "preflight", Channel: hostos.ChannelStable, DryRun: true})
+	res, _, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "preflight", Channel: hostos.ChannelStable, DryRun: true})
 	checks := make([]map[string]any, 0, len(res.Checks))
 	for _, c := range res.Checks {
 		name, status, detail := c.Name, c.Status, c.Detail
@@ -188,7 +188,7 @@ func (s *Server) checkpointUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := uuid.NewString()
-	res, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "checkpoint", Channel: hostos.ChannelStable, CheckpointID: id})
+	res, _, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "checkpoint", Channel: hostos.ChannelStable, CheckpointID: id})
 	status := res.Status
 	if !res.Supported {
 		status = appdb.UpdateUnsupported
@@ -214,7 +214,11 @@ func (s *Server) applyUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
-	_, op := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, updateOperationJSON(op))
 }
 
@@ -228,7 +232,11 @@ func (s *Server) rollbackUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
-	_, op := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "rollback", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "rollback", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, updateOperationJSON(op))
 }
 
@@ -245,7 +253,7 @@ func (s *Server) recordedControlVersion(ctx context.Context, clusterID string) s
 	return ""
 }
 
-func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation) {
+func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation, error) {
 	now := s.now()
 	op := appdb.UpdateOperation{
 		ID:        uuid.NewString(),
@@ -293,12 +301,14 @@ func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateReq
 			op.Packages = names
 		}
 	}
-	_ = s.Store.UpdateUpdateOperation(r.Context(), op)
+	if err := s.Store.UpdateUpdateOperation(r.Context(), op); err != nil {
+		return res, op, errInternal("could not record update operation")
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "update."+req.Action, op.Status, op.ID)
 	payload, _ := json.Marshal(map[string]string{"status": op.Status})
 	_ = s.Store.InsertEvent(r.Context(), appdb.Event{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Type: "update." + req.Action,
 		Payload: payload, CreatedAt: time.Now().UTC(),
 	})
-	return res, op
+	return res, op, nil
 }

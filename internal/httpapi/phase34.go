@@ -339,14 +339,14 @@ func (s *Server) runClusterUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		drain, err := s.execRollingDrain(r, p.User.ClusterID, plan.ID, n, ord)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "could not record rolling step")
+			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		steps = append(steps, drain)
 		ord++
 		upd, err := s.execRollingUpdate(r, p, plan.ID, n, ord)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "could not record rolling step")
+			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		steps = append(steps, upd)
@@ -408,7 +408,7 @@ func (s *Server) execRollingDrain(r *http.Request, clusterID, planID string, n a
 		}
 	}
 	if err := s.Store.CreateRollingStep(r.Context(), st); err != nil {
-		return st, err
+		return st, errInternal("could not record rolling step")
 	}
 	return st, nil
 }
@@ -422,12 +422,15 @@ func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string,
 		st.Status = appdb.RollingUnavailable
 		st.Reason = workerUpdateReason
 		if err := s.Store.CreateRollingStep(r.Context(), st); err != nil {
-			return st, err
+			return st, errInternal("could not record rolling step")
 		}
 		return st, nil
 	}
 	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
-	_, op := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	if err != nil {
+		return st, err
+	}
 	st.UpdateOperationID = op.ID
 	st.Status = op.Status
 	st.Reason = op.Error
@@ -435,7 +438,7 @@ func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string,
 		st.Status = appdb.RollingSucceeded
 	}
 	if err := s.Store.CreateRollingStep(r.Context(), st); err != nil {
-		return st, err
+		return st, errInternal("could not record rolling step")
 	}
 	return st, nil
 }

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -116,7 +117,7 @@ func TestUpdatesCheckIsAlwaysDryRun(t *testing.T) {
 }
 
 func TestUpdatesApplyRequiresConfirm(t *testing.T) {
-	s, _, token := testServer(t)
+	s, mem, token := testServer(t)
 	s.Update = &fakeUpdate{}
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
@@ -149,6 +150,11 @@ func TestUpdatesApplyRequiresConfirm(t *testing.T) {
 	}
 	if op["status"] != "unsupported" || op["action"] != "apply" || op["dry_run"] != false {
 		t.Fatalf("%s", b)
+	}
+	cluster, _ := mem.GetCluster(context.Background())
+	stored, err := mem.GetLatestUpdateOperation(context.Background(), cluster.ID)
+	if err != nil || stored == nil || stored.Action != "apply" || stored.Status != "unsupported" {
+		t.Fatalf("apply row %+v %v", stored, err)
 	}
 }
 
@@ -335,5 +341,36 @@ func TestUpdatesApplySupportedDoesNotStopGuests(t *testing.T) {
 	}
 	if op["status"] != "succeeded" || op["action"] != "apply" {
 		t.Fatalf("%s", b)
+	}
+}
+
+type failUpdateUpdateOperationStore struct {
+	appdb.Store
+}
+
+func (f failUpdateUpdateOperationStore) UpdateUpdateOperation(context.Context, appdb.UpdateOperation) error {
+	return errors.New("persist failed")
+}
+
+func TestUpdatesApplyFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failUpdateUpdateOperationStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/apply", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "apply-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("apply persist %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record update operation") {
+		t.Fatalf("apply persist body %s", b)
 	}
 }
