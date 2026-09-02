@@ -485,3 +485,49 @@ func TestDestVolumeLocatorRejectsClassEscape(t *testing.T) {
 		t.Fatalf("class escape must fail closed: %q %v", got, err)
 	}
 }
+
+func TestMigrateDisksRejectsRelativeSourceEscape(t *testing.T) {
+	s, mem, _ := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: clusterRow.ID, Name: "box-b", Role: "worker"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	destPool := appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: worker.ID, Name: "dest",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}
+	if err := mem.CreateStoragePool(t.Context(), destPool); err != nil {
+		t.Fatal(err)
+	}
+	srcPool := appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, Name: "src",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}
+	if err := mem.CreateStoragePool(t.Context(), srcPool); err != nil {
+		t.Fatal(err)
+	}
+	vol := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, PoolID: srcPool.ID,
+		Class: storage.ClassVMDisk, BackendRef: "../../etc/passwd",
+	}
+	if err := mem.CreateVolume(t.Context(), vol); err != nil {
+		t.Fatal(err)
+	}
+	wl := appdb.Workload{ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, Name: "escape-vm", Kind: "vm"}
+	if err := mem.CreateWorkload(t.Context(), wl); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: wl.ID, VolumeID: vol.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, copies, err := s.migrateDisks(t.Context(), wl, &worker)
+	if err == nil || !strings.Contains(err.Error(), "volume locator is invalid") || copies != nil {
+		t.Fatalf("relative source escape must fail closed: %+v %v", copies, err)
+	}
+}

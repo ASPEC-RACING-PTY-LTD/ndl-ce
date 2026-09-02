@@ -381,7 +381,11 @@ func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload, dest *appd
 		}
 		src := vol.BackendRef
 		if src != "" && !strings.HasPrefix(src, "/") && root != "" {
-			src = path.Join(root, src)
+			joined, err := storage.JoinUnder(root, src)
+			if err != nil {
+				return false, nil, fmt.Errorf("volume locator is invalid")
+			}
+			src = joined
 		}
 		if sharedVolume(backend, src, ds) {
 			out = append(out, migrate.VolumeCopy{VolumeID: vol.ID, SourcePath: src, DestPath: src})

@@ -30,7 +30,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * OpenAPI documents the existing AAL 2 cluster.destroy, secrets.reveal, and volume unlock paths. They stay honest 422. CI fails if the HTTP mux and the freeze spec drift.
   * Approved AI plans create policies through POST /api/v1/policies instead of writing the store beside that handler.
   * nodalctl workload, network, and image upload use the same TLS client as login so a generated appliance certificate is not rejected.
-  * Offline migrate dest locators join under the dest pool root. An invalid volume class cannot walk out of that pool.
+  * Offline migrate dest locators join under the dest pool root. An invalid volume class cannot walk out of that pool. Relative source BackendRef is joined the same way.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
