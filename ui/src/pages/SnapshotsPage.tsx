@@ -151,7 +151,12 @@ export function SnapshotsPage() {
       </header>
 
       <nav className="subnav" aria-label="Workload">
-        <Link href={`/workloads/${id}`}>Back to workload</Link>
+        <Link href={`/workloads/${id}`}>Summary</Link>
+        <Link href={`/workloads/${id}/terminal`}>Terminal</Link>
+        <Link href={`/workloads/${id}/files`}>Files</Link>
+        <Link href={`/workloads/${id}/snapshots`} aria-current="page">
+          Snapshots
+        </Link>
         {workload ? <span className="muted">{workload.name}</span> : null}
       </nav>
 

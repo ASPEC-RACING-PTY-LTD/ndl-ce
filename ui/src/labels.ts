@@ -4,6 +4,8 @@ export function kindLabel(kind?: string): string {
       return "System container";
     case "vm":
       return "Virtual machine";
+    case "oci":
+      return "OCI";
     case "isolated":
       return "Isolated";
     case "isolated-nat":

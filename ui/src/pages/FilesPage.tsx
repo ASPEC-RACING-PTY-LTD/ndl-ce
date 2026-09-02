@@ -313,7 +313,7 @@ export function FilesPage() {
 
   const termHref = host ? `/nodes/${id}/terminal` : `/workloads/${id}/terminal`;
   const termHereHref = `${termHref}?cwd=${encodeURIComponent(path)}`;
-  const backHref = host ? "/node" : `/workloads/${id}`;
+  const summaryHref = host ? `/nodes/${id}` : `/workloads/${id}`;
   const crumbs = breadcrumbs(displayPath(path));
   const deleteDirs = dialog?.kind === "delete" ? dialog.entries.filter((e) => e.type === "dir") : [];
 
@@ -374,8 +374,11 @@ export function FilesPage() {
         </p>
       ) : null}
       <nav className="subnav" aria-label="IO">
-        <Link href={backHref}>Back</Link>
+        <Link href={summaryHref}>Summary</Link>
         <Link href={termHref}>Terminal</Link>
+        <Link href={host ? `/nodes/${id}/files` : `/workloads/${id}/files`} aria-current="page">
+          Files
+        </Link>
       </nav>
       <nav className="files-crumbs" aria-label="Path">
         {crumbs.map((c) => (

@@ -32,4 +32,10 @@ describe("sidebar-nav scrollbar", () => {
     expect(css.split("::-webkit-scrollbar").length - 1).toBe(1);
     expect(css).toContain(".sidebar-nav::-webkit-scrollbar");
   });
+
+  it("truncates long contextual names without a second native scrollbar", () => {
+    const label = rule(".ctx-item-label {");
+    expect(label).toContain("text-overflow: ellipsis");
+    expect(label).toContain("overflow: hidden");
+  });
 });

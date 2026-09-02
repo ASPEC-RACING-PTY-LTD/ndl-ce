@@ -11,6 +11,7 @@ import { SetupPage } from "./pages/SetupPage";
 import { NetworkPage } from "./pages/NetworkPage";
 import { StoragePage } from "./pages/StoragePage";
 import { FilesPage } from "./pages/FilesPage";
+import { HostOperatePage } from "./pages/HostOperatePage";
 import { TerminalPage } from "./pages/TerminalPage";
 import { TerminalWorkspaceProvider } from "./terminal/workspace";
 import { TerminalWorkspacePage } from "./pages/TerminalWorkspacePage";
@@ -117,6 +118,9 @@ function matchPage(path: string) {
   }
   if (/^\/nodes\/[^/]+\/files$/.test(path)) {
     return <FilesPage />;
+  }
+  if (/^\/nodes\/[^/]+$/.test(path)) {
+    return <HostOperatePage />;
   }
   if (/^\/workloads\/[^/]+\/gpus$/.test(path)) {
     return <GpuPage />;

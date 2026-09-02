@@ -159,6 +159,10 @@ export function ConsolePage() {
         </p>
       ) : null}
       <nav className="subnav" aria-label="Console mode">
+        <Link href={`/workloads/${id}`}>Summary</Link>
+        <Link href={`/workloads/${id}/console`} aria-current="page">
+          Console
+        </Link>
         <button className="btn" type="button" onClick={() => setMode("serial")}>
           Serial
         </button>
@@ -168,7 +172,6 @@ export function ConsolePage() {
         <button className="btn" type="button" onClick={() => setTicketKey((n) => n + 1)}>
           Reconnect
         </button>
-        <Link href={`/workloads/${id}`}>Back to VM</Link>
       </nav>
       {mode === "serial" ? <div className="term-wrap" ref={wrap} /> : <canvas ref={canvas} width={800} height={600} />}
     </section>

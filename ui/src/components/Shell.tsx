@@ -1,7 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getHealth } from "../api/client";
 import type { HealthResponse } from "../api/types";
-import { usePath } from "../router";
+import { WorkloadsNavigator } from "../nav/WorkloadsNavigator";
+import { isWorkloadsContext, selectedTargetFromPath, viewFromPath } from "../nav/match";
+import { isMainNavPreferred, saveLastView } from "../nav/prefs";
+import { useHistoryState, usePath } from "../router";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
 import { CommandPalette } from "./CommandPalette";
@@ -31,7 +34,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Infrastructure",
     items: [
-      { href: "/node", label: "Node", match: (p) => p === "/node" || p.startsWith("/node/") || p.startsWith("/nodes/") },
+      { href: "/node", label: "Node", match: (p) => p === "/node" || (p.startsWith("/node/") && !p.startsWith("/nodes/")) },
       { href: "/storage", label: "Storage", match: (p) => p === "/storage" || p.startsWith("/storage/") },
       { href: "/network", label: "Network", match: (p) => p === "/network" || p.startsWith("/network/") },
       { href: "/settings/cluster", label: "Cluster", match: (p) => p === "/settings/cluster" },
@@ -138,7 +141,19 @@ function crumbs(path: string): { href: string; label: string }[] {
       { href: path, label: "Stack" },
     ];
   }
-  if (path.startsWith("/nodes/") || path.startsWith("/node")) {
+  if (path.startsWith("/nodes/")) {
+    const parts = path.split("/").filter(Boolean);
+    const base = `/nodes/${parts[1]}`;
+    const trail = [
+      { href: "/workloads", label: "Workloads" },
+      { href: base, label: "Host" },
+    ];
+    if (parts[2]) {
+      trail.push({ href: path, label: TAB_LABELS[parts[2]] ?? parts[2] });
+    }
+    return trail;
+  }
+  if (path.startsWith("/node")) {
     const parts = path.split("/").filter(Boolean);
     const trail = [{ href: "/node", label: "Node" }];
     const tab = parts[parts.length - 1];
@@ -153,7 +168,9 @@ function crumbs(path: string): { href: string; label: string }[] {
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePath();
+  const historyState = useHistoryState();
   const session = useSession();
+  const workloadsCtx = isWorkloadsContext(path) && !isMainNavPreferred(historyState);
   const user = session.status === "ready" ? session.user : null;
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -201,6 +218,12 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    if (selectedTargetFromPath(path)) {
+      saveLastView(viewFromPath(path));
+    }
+  }, [path]);
+
   function toggleSidebar() {
     setCollapsed((cur) => {
       const next = !cur;
@@ -228,25 +251,29 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
           <span className="edition-badge">CE</span>
         </div>
-        <nav className="sidebar-nav" aria-label="Appliance">
-          {GROUPS.map((group) => (
-            <div className="nav-group" key={group.label}>
-              <p className="nav-group-label">{group.label}</p>
-              {group.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="nav-link"
-                  aria-label={item.label}
-                  title={item.label}
-                  aria-current={item.match(path) ? "page" : undefined}
-                >
-                  <Icon name={navIcon(item.label)} />
-                  <span className="nav-link-label">{item.label}</span>
-                </Link>
-              ))}
-            </div>
-          ))}
+        <nav className="sidebar-nav" aria-label={workloadsCtx ? "Workloads" : "Appliance"}>
+          {workloadsCtx ? (
+            <WorkloadsNavigator />
+          ) : (
+            GROUPS.map((group) => (
+              <div className="nav-group" key={group.label}>
+                <p className="nav-group-label">{group.label}</p>
+                {group.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="nav-link"
+                    aria-label={item.label}
+                    title={item.label}
+                    aria-current={item.match(path) ? "page" : undefined}
+                  >
+                    <Icon name={navIcon(item.label)} />
+                    <span className="nav-link-label">{item.label}</span>
+                  </Link>
+                ))}
+              </div>
+            ))
+          )}
         </nav>
         <button
           className="btn btn-ghost btn-sm btn-icon sidebar-collapse"

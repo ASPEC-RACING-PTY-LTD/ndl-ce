@@ -118,7 +118,9 @@ export function TerminalPane({
     ? `/nodes/${encodeURIComponent(tab.target.id)}/files`
     : `/workloads/${encodeURIComponent(tab.target.id)}/files`;
   const filesHere = `${filesHref}?path=${encodeURIComponent(tab.cwd || "/")}`;
-  const backHref = host ? "/node" : `/workloads/${encodeURIComponent(tab.target.id)}`;
+  const backHref = host
+    ? `/nodes/${encodeURIComponent(tab.target.id)}`
+    : `/workloads/${encodeURIComponent(tab.target.id)}`;
 
   return (
     <div className={"term-pane" + (host ? " is-host" : "")}>
@@ -142,7 +144,7 @@ export function TerminalPane({
             </Link>
           ) : null}
           <Link className="btn btn-ghost btn-sm" href={backHref}>
-            {host ? "Node" : "Workload"}
+            {host ? "Host" : "Workload"}
           </Link>
           {tab.state === "disconnected" || tab.state === "closed" ? (
             <button className="btn btn-ghost btn-sm" type="button" onClick={() => reconnect(tab.tabId)}>

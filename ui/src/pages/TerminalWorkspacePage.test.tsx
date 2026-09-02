@@ -276,6 +276,12 @@ describe("Terminal workspace", () => {
     expect(created).toHaveLength(1);
     fireEvent.click(screen.getByRole("link", { name: /^workloads$/i }));
     expect(await screen.findByRole("heading", { name: /workloads/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /back to main menu/i }));
+    fireEvent.click(screen.getByRole("link", { name: /^storage$/i }));
+    expect(await screen.findByRole("heading", { name: /^storage$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("link", { name: /^workloads$/i }));
+    expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /back to main menu/i }));
     fireEvent.click(screen.getByRole("link", { name: /^terminal$/i }));
     expect(await screen.findByRole("tab", { name: /alpine/i })).toBeVisible();
     expect(created).toHaveLength(1);

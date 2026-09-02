@@ -5,6 +5,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * ndl-control relinquishes its writer lease on SIGTERM so a package upgrade or systemd restart can start immediately. Packaging no longer stops the unit on upgrade; dh_installsystemd restarts it once.
   * Files is a workload file manager with Monaco editing, bulk operations, and typed copy/chmod/chown. Terminal drag-and-drop uploads through the file API and inserts shell-escaped paths without executing them.
   * Terminal is a first-class workspace of independent PTY sessions. Quick Switch opens a new session against any authorized target, including one that already has tabs. Host identity stays distinct from workload shells.
+  * Workloads opens a contextual operator sidebar in the same region as main navigation. Back to Main Menu restores the global sidebar without dropping Terminal workspace sessions. Hosts appear beside containers and VMs. The workload table remains on Manage.
   * ndl-agent.service grants CAP_SETFCAP and CAP_SYS_PTRACE for typed lxc-attach of unprivileged system containers. NoNewPrivileges stays yes. DevicePolicy stays closed. The bounding set is not unrestricted.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000

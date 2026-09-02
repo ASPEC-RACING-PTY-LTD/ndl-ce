@@ -208,6 +208,9 @@ export function WorkloadDetailPage() {
       />
       {item.kind === "system-container" ? (
         <nav className="subnav" aria-label="Workload IO">
+          <Link href={`/workloads/${item.id}`} aria-current="page">
+            Summary
+          </Link>
           <Link href={`/workloads/${item.id}/terminal`}>
             <Icon name="terminal" size={14} />
             Terminal
@@ -224,6 +227,9 @@ export function WorkloadDetailPage() {
         </nav>
       ) : item.kind === "oci" ? (
         <nav className="subnav" aria-label="OCI IO">
+          <Link href={`/workloads/${item.id}`} aria-current="page">
+            Summary
+          </Link>
           <button type="button" className="btn btn-ghost" onClick={() => setShowLogs((v) => !v)}>
             {showLogs ? "Hide logs" : "Logs"}
           </button>
@@ -232,6 +238,9 @@ export function WorkloadDetailPage() {
       ) : (
         <>
           <nav className="subnav" aria-label="VM IO">
+            <Link href={`/workloads/${item.id}`} aria-current="page">
+              Summary
+            </Link>
             <Link href={`/workloads/${item.id}/console`}>Console</Link>
             {guestOk ? (
               <>

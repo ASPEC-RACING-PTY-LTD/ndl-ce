@@ -132,8 +132,11 @@ export function TerminalPage() {
         </p>
       ) : null}
       <nav className="subnav" aria-label="IO">
-        <Link href={host ? "/node" : `/workloads/${id}`}>Back</Link>
-        <Link href={host ? `/nodes/${id}/files` : `/workloads/${id}/files`}>Open Files</Link>
+        <Link href={host ? `/nodes/${id}` : `/workloads/${id}`}>Summary</Link>
+        <Link href={host ? `/nodes/${id}/terminal` : `/workloads/${id}/terminal`} aria-current="page">
+          Terminal
+        </Link>
+        <Link href={host ? `/nodes/${id}/files` : `/workloads/${id}/files`}>Files</Link>
         <Link href="/terminal">Open in Terminal workspace</Link>
       </nav>
       <TerminalPane workspaceLink />
