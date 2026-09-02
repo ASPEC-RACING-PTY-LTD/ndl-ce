@@ -11,6 +11,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Terminal fills remaining viewport space by default and can be dragged from a corner handle. The chosen size is a local workspace preference. Double-click the handle or Reset size restores fill-available behavior.
   * ndl-agent.service grants CAP_SETFCAP and CAP_SYS_PTRACE for typed lxc-attach of unprivileged system containers. NoNewPrivileges stays yes. DevicePolicy stays closed. The bounding set is not unrestricted.
   * Fail the Debian UI package unless Vite rebuilds dist during dh_auto_build. rebuild-packages.sh and the e2e builders discard any copied ui/dist so a stale frontend cannot be packed.
+  * ndl-ui try-restarts ndl-control after configure. The control plane rereads index.html from disk, sends Cache-Control: no-cache for the shell, immutable caching for hashed /assets/, and 404s missing hashed files instead of SPA HTML.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

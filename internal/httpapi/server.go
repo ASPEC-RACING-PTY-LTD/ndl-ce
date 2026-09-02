@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -371,23 +372,50 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) spa() http.Handler {
-	index, err := fs.ReadFile(s.UI, "index.html")
-	if err != nil {
-		index = []byte("<!doctype html><title>No-dal</title>")
-	}
 	fileServer := http.FileServer(http.FS(s.UI))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
 			return
 		}
-		if _, err := fs.Stat(s.UI, strings.TrimPrefix(r.URL.Path, "/")); err == nil && r.URL.Path != "/" {
+		rel := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if rel == "" || rel == "index.html" {
+			s.writeUIIndex(w)
+			return
+		}
+		if _, err := fs.Stat(s.UI, rel); err == nil {
+			if strings.HasPrefix(rel, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(index)
+		if strings.HasPrefix(rel, "assets/") || uiLooksLikeStaticAsset(rel) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		s.writeUIIndex(w)
 	})
+}
+
+func (s *Server) writeUIIndex(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	index, err := fs.ReadFile(s.UI, "index.html")
+	if err != nil {
+		index = []byte("<!doctype html><title>No-dal</title>")
+	}
+	_, _ = w.Write(index)
+}
+
+func uiLooksLikeStaticAsset(rel string) bool {
+	base := rel
+	if i := strings.LastIndex(rel, "/"); i >= 0 {
+		base = rel[i+1:]
+	}
+	return strings.Contains(base, ".")
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

@@ -86,7 +86,8 @@ build_debs() {
     "$BUILD/debian/ndl-control.postinst" \
     "$BUILD/debian/ndl-control.postrm" \
     "$BUILD/debian/ndl-agent.postinst" \
-    "$BUILD/debian/ndl-agent.postrm"
+    "$BUILD/debian/ndl-agent.postrm" \
+    "$BUILD/debian/ndl-ui.postinst"
 
   rm -f /tmp/nodal_*.deb /tmp/ndl-*.deb /tmp/nodalctl_*.deb /tmp/nodal-*.deb
   (
@@ -198,6 +199,16 @@ inspect_agent_postrm() {
   inspect_script ndl-agent postrm "$path"
   if grep -E 'remove\|upgrade\|deconfigure' "$path" >/dev/null; then
     fail "generated ndl-agent.postrm must not stop ndl-agent on upgrade"
+  fi
+}
+
+inspect_ui_postinst() {
+  path=$1
+  inspect_script ndl-ui postinst "$path"
+  grep -q 'try-restart' "$path" || fail "generated ndl-ui.postinst missing try-restart"
+  grep -q 'ndl-control.service' "$path" || fail "generated ndl-ui.postinst missing ndl-control.service"
+  if grep -E '^[[:space:]]*systemctl[[:space:]]+start.*ndl-control' "$path" >/dev/null; then
+    fail "generated ndl-ui.postinst must not systemctl start ndl-control"
   fi
 }
 
@@ -345,11 +356,13 @@ done
 EXTRACT=${EXTRACT_DIR:-/tmp/nodal-maintainer-extract}
 extract_scripts "$CTRL" "$EXTRACT/ndl-control"
 extract_scripts "$AGENT" "$EXTRACT/ndl-agent"
+extract_scripts "$UI_DEB" "$EXTRACT/ndl-ui"
 
 inspect_control_postinst "$EXTRACT/ndl-control/postinst"
 inspect_control_postrm "$EXTRACT/ndl-control/postrm"
 inspect_agent_postinst "$EXTRACT/ndl-agent/postinst"
 inspect_agent_postrm "$EXTRACT/ndl-agent/postrm"
+inspect_ui_postinst "$EXTRACT/ndl-ui/postinst"
 inspect_ui_deb "$UI_DEB"
 
 prove_stray_prose_rejected

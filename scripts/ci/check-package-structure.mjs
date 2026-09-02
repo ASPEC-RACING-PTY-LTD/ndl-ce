@@ -23,6 +23,7 @@ const required = [
   "packaging/debian/ndl-control.postrm",
   "packaging/debian/ndl-agent.postinst",
   "packaging/debian/ndl-agent.postrm",
+  "packaging/debian/ndl-ui.postinst",
   "packaging/e2e/check-maintainer-scripts.sh",
   "packaging/e2e/check-control-upgrade.sh",
   "packaging/e2e/check-ui-build.sh",
@@ -724,6 +725,7 @@ for (const name of [
   "ndl-control.postrm",
   "ndl-agent.postinst",
   "ndl-agent.postrm",
+  "ndl-ui.postinst",
 ]) {
   const rel = `packaging/debian/${name}`;
   if (!existsSync(rel)) continue;
@@ -759,6 +761,9 @@ if (!generatedCheck.includes('rm -rf "$BUILD/ui/dist"')) {
 if (!generatedCheck.includes("usr/share/ndl/ui/assets")) {
   errors.push("check-maintainer-scripts.sh must inspect ndl-ui Vite assets in the built deb");
 }
+if (!generatedCheck.includes("inspect_ui_postinst") || !generatedCheck.includes("try-restart")) {
+  errors.push("check-maintainer-scripts.sh must inspect generated ndl-ui.postinst try-restart of ndl-control");
+}
 
 const postinstControlPkg = existsSync("packaging/debian/ndl-control.postinst")
   ? readFileSync("packaging/debian/ndl-control.postinst", "utf8")
@@ -783,6 +788,19 @@ const postrmAgentPkg = existsSync("packaging/debian/ndl-agent.postrm")
   : "";
 if (/remove\|upgrade\|deconfigure/.test(postrmAgentPkg)) {
   errors.push("ndl-agent.postrm must not stop ndl-agent on upgrade");
+}
+
+const postinstUIPkg = existsSync("packaging/debian/ndl-ui.postinst")
+  ? readFileSync("packaging/debian/ndl-ui.postinst", "utf8")
+  : "";
+if (!postinstUIPkg.includes("try-restart") || !postinstUIPkg.includes("ndl-control.service")) {
+  errors.push("ndl-ui.postinst must try-restart ndl-control after installing UI files");
+}
+if (/systemctl\s+start[^\n]*ndl-control/.test(postinstUIPkg)) {
+  errors.push("ndl-ui.postinst must try-restart, not start, ndl-control");
+}
+if (/cluster_leases/.test(postinstUIPkg)) {
+  errors.push("ndl-ui.postinst must not delete writer lease rows");
 }
 
 const postinstControl = existsSync("packaging/lib/ndl/postinst-control.sh")

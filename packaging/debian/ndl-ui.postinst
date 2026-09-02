@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+# Files are already unpacked at configure. Restart the process that
+# serves /usr/share/ndl/ui so an ndl-ui-only upgrade cannot leave a
+# previously read index.html in memory. Guests do not require
+# ndl-control. try-restart is a no-op when the unit is inactive.
+restart_ui_host() {
+  if [ ! -d /run/systemd/system ] || ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  if command -v deb-systemd-invoke >/dev/null 2>&1; then
+    deb-systemd-invoke try-restart ndl-control.service >/dev/null 2>&1 || true
+  else
+    systemctl try-restart ndl-control.service >/dev/null 2>&1 || true
+  fi
+}
+
+case "$1" in
+  configure)
+    restart_ui_host
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

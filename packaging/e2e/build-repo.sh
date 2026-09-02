@@ -44,7 +44,8 @@ chmod +x "$BUILD/debian/rules" \
   "$BUILD/debian/ndl-control.postinst" \
   "$BUILD/debian/ndl-control.postrm" \
   "$BUILD/debian/ndl-agent.postinst" \
-  "$BUILD/debian/ndl-agent.postrm"
+  "$BUILD/debian/ndl-agent.postrm" \
+  "$BUILD/debian/ndl-ui.postinst"
 
 rm -f /tmp/nodal_*.deb /tmp/ndl-*.deb /tmp/nodalctl_*.deb /tmp/nodal-*.deb
 cd "$BUILD"
