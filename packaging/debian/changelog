@@ -55,6 +55,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Cluster session listen_addr must be host:port without userinfo. Credentials stay out of listed remote node JSON. Pairing token is optional on reconnect.
   * LVM create fails closed if volume-group identity cannot be recorded. Kubelet and ceph-osd start/stop fail closed if feature runtime status cannot be recorded.
   * HA fence and promote fail closed if HA state persist fails. Replica configure already required that persist.
+  * Node group create fails closed if member persist fails. A 201 does not mean node_ids were stored.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

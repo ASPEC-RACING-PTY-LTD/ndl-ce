@@ -177,7 +177,14 @@ func (s *Server) createNodeGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, id := range req.NodeIDs {
-		_ = s.Store.AddNodeGroupMember(r.Context(), p.User.ClusterID, g.ID, id)
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if err := s.Store.AddNodeGroupMember(r.Context(), p.User.ClusterID, g.ID, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record node group members")
+			return
+		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "node.group.create", "ok", g.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": g.ID, "name": g.Name})

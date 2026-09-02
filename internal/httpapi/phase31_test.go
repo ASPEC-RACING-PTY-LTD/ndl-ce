@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -212,4 +214,60 @@ func mustInvJSON(inv inventory.Inventory) []byte {
 func fmtString(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+type failAddNodeGroupMemberStore struct {
+	appdb.Store
+}
+
+func (f failAddNodeGroupMemberStore) AddNodeGroupMember(context.Context, string, string, string) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase31NodeGroupCreateRecordsMembers(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/node-groups", strings.NewReader(`{"name":"gpu","node_ids":["`+node.ID+`"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	members, err := mem.ListNodeGroupMembers(t.Context(), cluster.ID, created["id"].(string))
+	if err != nil || len(members) != 1 || members[0] != node.ID {
+		t.Fatalf("members %+v %v", members, err)
+	}
+}
+
+func TestPhase31NodeGroupCreateFailsClosedWhenMemberPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	s.Store = failAddNodeGroupMemberStore{Store: mem}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/node-groups", strings.NewReader(`{"name":"gpu","node_ids":["`+node.ID+`"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("member persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record node group members") {
+		t.Fatalf("member persist body %s", raw)
+	}
 }
