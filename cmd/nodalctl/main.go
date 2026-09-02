@@ -52,6 +52,11 @@ func run(args []string) error {
   policy list
   policy create --name NAME [--threshold N]
   policy apply --id ID [--confirm apply-policy]
+  ai ask --prompt TEXT [--profile-id ID]
+  ai provider list
+  ai provider add --name NAME [--kind KIND] [--endpoint URL] [--model MODEL]
+  ai profile list
+  ai profile add --name NAME [--provider-id ID]
   app list
   app import FILE
   app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]
@@ -193,6 +198,8 @@ func run(args []string) error {
 		return cmdKubernetes(args[1:])
 	case "policy":
 		return cmdPolicy(args[1:])
+	case "ai":
+		return cmdAI(args[1:])
 	case "app":
 		return cmdApp(args[1:])
 	case "task":
@@ -850,6 +857,62 @@ func cmdPolicy(args []string) error {
 		return postJSON("/api/v1/policies/"+id+"/apply", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl policy list|create|apply")
+	}
+}
+
+func cmdAI(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl ai ask|provider|profile")
+	}
+	switch args[0] {
+	case "ask":
+		f := parseFlags(args[1:])
+		prompt := f["prompt"]
+		if prompt == "" {
+			return fmt.Errorf("usage: nodalctl ai ask --prompt TEXT [--profile-id ID]")
+		}
+		body := map[string]any{"prompt": prompt, "profile_id": f["profile-id"]}
+		return postJSON("/api/v1/ai/ask", body, true)
+	case "provider":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl ai provider list|add")
+		}
+		switch args[1] {
+		case "list":
+			return cmdGet("/api/v1/ai/providers")
+		case "add":
+			f := parseFlags(args[2:])
+			if f["name"] == "" {
+				return fmt.Errorf("usage: nodalctl ai provider add --name NAME [--kind KIND] [--endpoint URL] [--model MODEL]")
+			}
+			kind := f["kind"]
+			if kind == "" {
+				kind = "local"
+			}
+			body := map[string]any{"name": f["name"], "kind": kind, "endpoint": f["endpoint"], "model": f["model"], "api_key": f["key"]}
+			return postJSON("/api/v1/ai/providers", body, true)
+		default:
+			return fmt.Errorf("usage: nodalctl ai provider list|add")
+		}
+	case "profile":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl ai profile list|add")
+		}
+		switch args[1] {
+		case "list":
+			return cmdGet("/api/v1/ai/profiles")
+		case "add":
+			f := parseFlags(args[2:])
+			if f["name"] == "" {
+				return fmt.Errorf("usage: nodalctl ai profile add --name NAME [--provider-id ID]")
+			}
+			body := map[string]any{"name": f["name"], "provider_id": f["provider-id"], "mode": "ask"}
+			return postJSON("/api/v1/ai/profiles", body, true)
+		default:
+			return fmt.Errorf("usage: nodalctl ai profile list|add")
+		}
+	default:
+		return fmt.Errorf("usage: nodalctl ai ask|provider|profile")
 	}
 }
 

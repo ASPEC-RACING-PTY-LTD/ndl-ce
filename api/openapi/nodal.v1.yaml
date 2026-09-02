@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.39
-  description: Phase 40 automation engine, plus prior northbound API.
+  version: 0.1.40
+  description: Phase 41 AI Ask, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -1246,6 +1246,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AutomationPolicyRunList"
+  /ai/providers:
+    get:
+      operationId: listAIProviders
+      summary: List BYO AI providers. API keys are never returned.
+      responses:
+        "200":
+          description: Providers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProviderList"
+    post:
+      operationId: createAIProvider
+      summary: Add a BYO provider. The API key stays in secrets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProviderCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProvider"
+  /ai/profiles:
+    get:
+      operationId: listAIProfiles
+      summary: List AI permission profiles
+      responses:
+        "200":
+          description: Profiles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProfileList"
+    post:
+      operationId: createAIProfile
+      summary: Create an Ask profile. Plan and Operate are a later phase.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProfileCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProfile"
+  /ai/ask:
+    post:
+      operationId: askAI
+      summary: Read-only Ask. Cites events and metrics. No mutate. Provider down still returns local citations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIAskRequest"
+      responses:
+        "200":
+          description: Answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIAskResponse"
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -7575,4 +7646,141 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AutomationPolicyRun"
+    AIProvider:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - openai
+            - anthropic
+            - gemini
+            - ollama
+            - local
+            - openai_compatible
+            - private
+        endpoint:
+          type: string
+        model:
+          type: string
+        enabled:
+          type: boolean
+        has_credentials:
+          type: boolean
+    AIProviderList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIProvider"
+    AIProviderCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        endpoint:
+          type: string
+        model:
+          type: string
+        api_key:
+          type: string
+    AIProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider_id:
+          type: string
+        mode:
+          type: string
+          enum:
+            - ask
+        grants:
+          type: array
+          items:
+            type: string
+    AIProfileList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIProfile"
+    AIProfileCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        provider_id:
+          type: string
+        mode:
+          type: string
+        grants:
+          type: array
+          items:
+            type: string
+    AICitation:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        ref:
+          type: string
+        summary:
+          type: string
+    AIAskRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+        profile_id:
+          type: string
+    AIAskResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/AICitation"
+        provider_status:
+          type: string
+        provider_kind:
+          type: string
+        mode:
+          type: string
+        mutate:
+          type: boolean
+        service_identity:
+          type: string
+
 

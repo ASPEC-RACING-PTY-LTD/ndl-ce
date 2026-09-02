@@ -1715,6 +1715,68 @@ export interface AutomationPolicyRunList {
   items: AutomationPolicyRun[];
 }
 
+export interface AIProvider {
+  id?: string;
+  name?: string;
+  kind?: "openai" | "anthropic" | "gemini" | "ollama" | "local" | "openai_compatible" | "private";
+  endpoint?: string;
+  model?: string;
+  enabled?: boolean;
+  has_credentials?: boolean;
+}
+
+export interface AIProviderList {
+  items: AIProvider[];
+}
+
+export interface AIProviderCreateRequest {
+  name: string;
+  kind?: string;
+  endpoint?: string;
+  model?: string;
+  api_key?: string;
+}
+
+export interface AIProfile {
+  id?: string;
+  name?: string;
+  provider_id?: string;
+  mode?: "ask";
+  grants?: string[];
+}
+
+export interface AIProfileList {
+  items: AIProfile[];
+}
+
+export interface AIProfileCreateRequest {
+  name: string;
+  provider_id?: string;
+  mode?: string;
+  grants?: string[];
+}
+
+export interface AICitation {
+  kind?: string;
+  ref?: string;
+  summary?: string;
+}
+
+export interface AIAskRequest {
+  prompt: string;
+  profile_id?: string;
+}
+
+export interface AIAskResponse {
+  answer?: string;
+  citations?: AICitation[];
+  provider_status?: string;
+  provider_kind?: string;
+  mode?: string;
+  mutate?: boolean;
+  service_identity?: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -1848,6 +1910,12 @@ export type ListAutomationPoliciesPath = "/api/v1/policies";
 export type ApplyAutomationPolicyPath = "/api/v1/policies/{id}/apply";
 
 export type ListAutomationPolicyRunsPath = "/api/v1/policy-runs";
+
+export type ListAIProvidersPath = "/api/v1/ai/providers";
+
+export type ListAIProfilesPath = "/api/v1/ai/profiles";
+
+export type AskAIPath = "/api/v1/ai/ask";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

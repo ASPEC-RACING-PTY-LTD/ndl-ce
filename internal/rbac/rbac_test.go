@@ -130,4 +130,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, PolicyRead) || !Authorize(op, PolicyApply) {
 		t.Fatal("operator may apply policies")
 	}
+	if !Authorize(view, AIAsk) || Authorize(view, AIManage) {
+		t.Fatal("viewer ai is ask-only")
+	}
+	if !Authorize(op, AIAsk) || !Authorize(op, AIManage) {
+		t.Fatal("operator may manage ai providers")
+	}
 }

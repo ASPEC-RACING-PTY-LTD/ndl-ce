@@ -343,6 +343,14 @@ type Store interface {
 	ListScanResults(ctx context.Context, clusterID, verificationID string) ([]ScanResult, error)
 	GetStorePolicy(ctx context.Context, clusterID string) (*StorePolicy, error)
 	SetStorePolicy(ctx context.Context, p StorePolicy) error
+
+	CreateAIProvider(ctx context.Context, p AIProvider, apiKey string) error
+	ListAIProviders(ctx context.Context, clusterID string) ([]AIProvider, error)
+	GetAIProvider(ctx context.Context, clusterID, id string) (*AIProvider, error)
+	AIProviderKey(ctx context.Context, clusterID, id string) (string, error)
+	CreateAIProfile(ctx context.Context, p AIProfile) error
+	ListAIProfiles(ctx context.Context, clusterID string) ([]AIProfile, error)
+	GetAIProfile(ctx context.Context, clusterID, id string) (*AIProfile, error)
 }
 
 // Cluster is the appliance cluster of one.

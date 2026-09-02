@@ -102,6 +102,9 @@ type Memory struct {
 	migrateJobs        map[string]MigrateJob
 	policies           map[string]Policy
 	policyRuns         map[string]PolicyRun
+	aiProviders        map[string]AIProvider
+	aiProviderKeys     map[string]string
+	aiProfiles         map[string]AIProfile
 }
 
 // NewMemory returns an empty store.

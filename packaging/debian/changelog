@@ -1,3 +1,9 @@
+nodal (0.1.40) UNRELEASED; urgency=medium
+
+  * Phase 41 AI Ask: provider-neutral read-only assistant cites events and metrics, BYO providers optional, API keys stay in secrets, profile without read cannot query, provider down leaves the platform working
+
+ -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
 nodal (0.1.39) UNRELEASED; urgency=medium
 
   * Phase 40 automation engine: deterministic storage-pressure policies enqueue visible workload.migrate tasks, optional approval, service identity, no Host.Exec, no agent policy engine, not an LLM loop

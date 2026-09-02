@@ -72,6 +72,8 @@ const (
 	StoreVerify         = "store.verify"
 	PolicyRead          = "policy.read"
 	PolicyApply         = "policy.apply"
+	AIAsk               = "ai.ask"
+	AIManage            = "ai.manage"
 	All                 = "*"
 )
 
@@ -96,10 +98,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot, ComputeGPUAssign, ComputeMigrate,
 			BackupRead, BackupCreate, BackupRestore, NodeUpdate, ClusterJoin, NodeRevoke,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
-			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify, PolicyRead, PolicyApply,
+			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify, PolicyRead, PolicyApply, AIAsk, AIManage,
 		}
 	case Viewer:
-		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead}
+		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk}
 	default:
 		return nil
 	}

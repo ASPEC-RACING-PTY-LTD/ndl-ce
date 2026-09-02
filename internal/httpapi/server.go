@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/ai"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/cluster"
@@ -75,6 +76,7 @@ type Server struct {
 	Distributed DistributedRPC
 	K8sProcs    func() []string
 	OSDProcs    func() []string
+	AICompleter ai.Completer
 	Hub         *EventHub
 	Migrate     migrate.Runtime
 	UI          fs.FS
@@ -201,6 +203,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/policies", s.createAutomationPolicy)
 	mux.HandleFunc("POST /api/v1/policies/{id}/apply", s.applyAutomationPolicy)
 	mux.HandleFunc("GET /api/v1/policy-runs", s.listPolicyRuns)
+	mux.HandleFunc("GET /api/v1/ai/providers", s.listAIProviders)
+	mux.HandleFunc("POST /api/v1/ai/providers", s.createAIProvider)
+	mux.HandleFunc("GET /api/v1/ai/profiles", s.listAIProfiles)
+	mux.HandleFunc("POST /api/v1/ai/profiles", s.createAIProfile)
+	mux.HandleFunc("POST /api/v1/ai/ask", s.aiAsk)
 	mux.HandleFunc("POST /api/v1/cluster/join-tokens", s.createJoinToken)
 	mux.HandleFunc("POST /api/v1/cluster/join", s.joinCluster)
 	mux.HandleFunc("POST /api/v1/cluster/nodes/{id}/revoke", s.revokeClusterNode)

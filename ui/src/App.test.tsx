@@ -84,6 +84,7 @@ const defaultRoutes = {
   "/api/v1/storage/images": { status: 200, body: { items: [] } },
   "/api/v1/policies": { status: 200, body: { items: [] } },
   "/api/v1/policy-runs": { status: 200, body: { items: [] } },
+  "/api/v1/ai/ask": { status: 200, body: { answer: "", citations: [], provider_status: "not_configured", mutate: false } },
 };
 
 afterEach(() => {
@@ -695,6 +696,20 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^apply policy$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^create policy$/i })).toBeVisible();
     expect(screen.getByText(/not an llm loop/i)).toBeVisible();
+  });
+
+  it("renders the ask page as read-only without a vendor", async () => {
+    window.history.replaceState({}, "", "/ask");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^ask$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^ask$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^ask$/i })).toBeVisible();
+    expect(screen.getByText(/cannot host.exec/i)).toBeVisible();
+    expect(screen.getByText(/offline install has no ai vendor/i)).toBeVisible();
   });
 
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {

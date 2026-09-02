@@ -384,6 +384,17 @@ export async function applyAutomationPolicy(
   );
 }
 
+export async function askAI(
+  body: import("../generated/openapi").AIAskRequest,
+): Promise<import("../generated/openapi").AIAskResponse> {
+  return readJson(
+    await request("/ai/ask", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }
