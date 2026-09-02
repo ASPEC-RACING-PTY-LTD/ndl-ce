@@ -58,6 +58,10 @@ func (s *Server) createAIProvider(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	if err := ai.ValidateEndpoint(kind, req.Endpoint); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	row := appdb.AIProvider{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name, Kind: kind,
 		Endpoint: strings.TrimSpace(req.Endpoint), Model: strings.TrimSpace(req.Model), Enabled: true,

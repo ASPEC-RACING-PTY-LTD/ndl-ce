@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -34,9 +35,17 @@ func (h HTTPCompleter) Complete(ctx context.Context, req CompleteRequest) (strin
 	if req.Kind == KindLocal || strings.TrimSpace(req.Endpoint) == "" {
 		return "", fmt.Errorf("provider endpoint is not configured")
 	}
+	if err := ValidateEndpoint(req.Kind, req.Endpoint); err != nil {
+		return "", err
+	}
 	client := h.Client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 	body, _ := json.Marshal(map[string]any{
 		"model":    firstNonEmpty(req.Model, "local"),
@@ -79,4 +88,28 @@ func firstNonEmpty(v ...string) string {
 		}
 	}
 	return ""
+}
+
+// ValidateEndpoint accepts empty (complete still requires a URL) or an http(s)
+// URL with a host. Userinfo is refused so API keys stay in secrets, not list JSON.
+func ValidateEndpoint(kind, endpoint string) error {
+	k, err := NormalizeKind(kind)
+	if err != nil {
+		return err
+	}
+	raw := strings.TrimSpace(endpoint)
+	if k == KindLocal || raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("provider endpoint is invalid")
+	}
+	if u.User != nil {
+		return fmt.Errorf("provider endpoint must not include credentials")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("provider endpoint must be http or https")
+	}
+	return nil
 }

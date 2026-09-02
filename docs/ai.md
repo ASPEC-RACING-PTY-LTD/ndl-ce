@@ -27,4 +27,5 @@ Storage-pressure intent binds to the Phase 40 policy engine. It is not
 an LLM loop.
 
 BYO providers: OpenAI, Anthropic, Gemini, Ollama, local,
-openai-compatible, private. API keys stay in secrets.
+openai-compatible, private. API keys stay in secrets. Provider endpoints
+are http(s) URLs without userinfo.

@@ -229,3 +229,27 @@ func TestPhase41ProviderDownStillWorks(t *testing.T) {
 		t.Fatalf("viewer create provider %d", res.StatusCode)
 	}
 }
+
+func TestPhase41ProviderEndpointRefusesCredentials(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	for _, body := range []string{
+		`{"name":"file","kind":"openai_compatible","endpoint":"file:///etc/passwd"}`,
+		`{"name":"userinfo","kind":"openai_compatible","endpoint":"https://sk-secret:x@api.example/v1"}`,
+	} {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/providers", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status %d %s for %s", res.StatusCode, raw, body)
+		}
+		if strings.Contains(string(raw), "sk-secret") {
+			t.Fatalf("secret echoed %s", raw)
+		}
+	}
+}

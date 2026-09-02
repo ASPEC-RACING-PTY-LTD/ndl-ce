@@ -8444,6 +8444,7 @@ components:
           type: string
         endpoint:
           type: string
+          description: http(s) URL without userinfo. API keys use api_key.
         model:
           type: string
         api_key:
