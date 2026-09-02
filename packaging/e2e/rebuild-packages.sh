@@ -111,5 +111,7 @@ EOF
 
 sign_release dists/trixie
 chmod -R a+rX "$OUT/debian" "$OUT/debs" "$OUT/gpg"
+DEB_DIR="$OUT/debs" "$SRC/packaging/e2e/check-maintainer-scripts.sh"
+
 echo "Rebuilt packages:"
 ls -l "$OUT/debs"

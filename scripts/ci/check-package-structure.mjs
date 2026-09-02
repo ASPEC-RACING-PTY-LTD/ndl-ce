@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 
 const errors = [];
 const required = [
@@ -22,6 +22,8 @@ const required = [
   "packaging/debian/ndl-control.postrm",
   "packaging/debian/ndl-agent.postinst",
   "packaging/debian/ndl-agent.postrm",
+  "packaging/e2e/check-maintainer-scripts.sh",
+  "packaging/e2e/check-control-upgrade.sh",
   "packaging/lib/ndl/postinst-control.sh",
   "packaging/bootstrap/get-nodal.sh",
   "systemd/ndl-control.service",
@@ -612,11 +614,88 @@ if (rebuildRepo.includes("quick-gen-key")) {
 if (rebuildRepo && !rebuildRepo.includes('rm -rf "$OUT/debs"')) {
   errors.push("rebuild-packages.sh must clean $OUT/debs before copying new packages");
 }
+if (rebuildRepo && !rebuildRepo.includes("check-maintainer-scripts.sh")) {
+  errors.push("rebuild-packages.sh must inspect generated maintainer scripts from built debs");
+}
+
+const debhelperToken = "#DEBHELPER#";
+const maintainerScript = /\.(postinst|postrm|preinst|prerm)$/;
+const debhelperMentionAllow = new Set([
+  "packaging/e2e/check-maintainer-scripts.sh",
+  "scripts/ci/check-package-structure.mjs",
+]);
+
+function walkRelFiles(dir, acc = []) {
+  if (!existsSync(dir)) return acc;
+  for (const name of readdirSync(dir)) {
+    const rel = `${dir}/${name}`;
+    let st;
+    try {
+      st = statSync(rel);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      if (name === "out" || name === "signing" || name === "gocache" || name === "node_modules") {
+        continue;
+      }
+      walkRelFiles(rel, acc);
+      continue;
+    }
+    if (st.isFile()) acc.push(rel);
+  }
+  return acc;
+}
+
+for (const rel of [...walkRelFiles("packaging"), ...walkRelFiles("scripts/ci")]) {
+  const text = readFileSync(rel, "utf8");
+  if (!text.includes(debhelperToken)) continue;
+  if (debhelperMentionAllow.has(rel)) continue;
+  const lines = text.split("\n");
+  lines.forEach((line, idx) => {
+    if (!line.includes(debhelperToken)) return;
+    if (!maintainerScript.test(rel) || line.trim() !== debhelperToken) {
+      errors.push(
+        `${rel}:${idx + 1} accidental ${debhelperToken} token; maintainer scripts may only use a lone token line`,
+      );
+    }
+  });
+}
+
+for (const name of [
+  "ndl-control.postinst",
+  "ndl-control.postrm",
+  "ndl-agent.postinst",
+  "ndl-agent.postrm",
+]) {
+  const rel = `packaging/debian/${name}`;
+  if (!existsSync(rel)) continue;
+  const lone = readFileSync(rel, "utf8")
+    .split("\n")
+    .filter((line) => line.trim() === debhelperToken);
+  if (lone.length !== 1) {
+    errors.push(`${rel} must contain exactly one lone ${debhelperToken} token`);
+  }
+}
+
+const generatedCheck = existsSync("packaging/e2e/check-maintainer-scripts.sh")
+  ? readFileSync("packaging/e2e/check-maintainer-scripts.sh", "utf8")
+  : "";
+if (!generatedCheck.includes("dpkg-buildpackage") || !generatedCheck.includes("dpkg-deb")) {
+  errors.push("check-maintainer-scripts.sh must build a real .deb and extract generated maintainer scripts");
+}
+if (!generatedCheck.includes("sh -n") || !generatedCheck.includes("restarts it once after configure")) {
+  errors.push("check-maintainer-scripts.sh must syntax-check generated scripts and reject stray prose");
+}
+if (/\bsed\s+-i\b/.test(generatedCheck) || /sed\s+[^\n]*#DEBHELPER#/.test(generatedCheck)) {
+  errors.push("check-maintainer-scripts.sh must not rewrite packaging source with sed");
+}
+
 const postinstControlPkg = existsSync("packaging/debian/ndl-control.postinst")
   ? readFileSync("packaging/debian/ndl-control.postinst", "utf8")
   : "";
 if (/systemctl\s+start[^\n]*ndl-control/.test(postinstControlPkg)) {
-  errors.push("ndl-control.postinst must not start ndl-control; dh_installsystemd #DEBHELPER# restarts it once");
+  errors.push("ndl-control.postinst must not start ndl-control; the automatic systemd helper restarts it once");
 }
 if (/cluster_leases/.test(postinstControlPkg)) {
   errors.push("ndl-control.postinst must not delete writer lease rows");
