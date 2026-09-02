@@ -42,11 +42,16 @@ func (h *Handler) resolveJail(targetKind, targetID, requested string) (string, e
 		}
 		return filepath.Clean(requested), nil
 	case iojail.TargetCT, "workload":
-		if h.Workloads != nil && strings.TrimSpace(targetID) != "" {
-			applied, err := h.Workloads.LastApplied(targetID)
-			if err == nil && applied.Spec.RootfsPath != "" {
-				return filepath.Clean(applied.Spec.RootfsPath), nil
+		if h.Workloads != nil {
+			id := strings.TrimSpace(targetID)
+			if id == "" {
+				return "", fmt.Errorf("target_id is required for a system container")
 			}
+			applied, err := h.Workloads.LastApplied(id)
+			if err != nil || strings.TrimSpace(applied.Spec.RootfsPath) == "" {
+				return "", fmt.Errorf("system container jail is unavailable")
+			}
+			return filepath.Clean(applied.Spec.RootfsPath), nil
 		}
 		if strings.TrimSpace(requested) == "" {
 			return "", fmt.Errorf("jail_root is required for a system container")

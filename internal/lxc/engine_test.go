@@ -365,3 +365,39 @@ func TestCreateIdempotentSameWorkloadID(t *testing.T) {
 		t.Fatal(applied.Spec.VolumeID)
 	}
 }
+
+func TestCreateRejectsUncleanRootfsPath(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	unclean := e.DataDir + "/rootfs/" + id + "/../escape"
+	_, err := e.Create(context.Background(), Spec{
+		WorkloadID: id, Name: "bad", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: uuid.NewString(), RootfsPath: unclean,
+	})
+	if err == nil {
+		t.Fatal("unclean rootfs_path must fail before mkdir")
+	}
+	if _, err := os.Stat(filepath.Join(e.DataDir, "rootfs", "escape")); err == nil {
+		t.Fatal("must not mkdir the cleaned parent")
+	}
+}
+
+func TestCloneRejectsUncleanRootfsPath(t *testing.T) {
+	e := testEngine(t)
+	src := uuid.NewString()
+	root := filepath.Join(e.DataDir, "rootfs", src)
+	if _, err := e.Create(context.Background(), Spec{
+		WorkloadID: src, Name: "src", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: uuid.NewString(), RootfsPath: root,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.Clone(context.Background(), LifecycleRequest{
+		WorkloadID: src, Action: "clone", CloneID: uuid.NewString(),
+		CloneVolumeID: uuid.NewString(), CloneRootfsPath: "/tmp/ndl-clone/../etc",
+		CloneName: "dst",
+	})
+	if err == nil {
+		t.Fatal("unclean clone rootfs_path must fail before mkdir")
+	}
+}

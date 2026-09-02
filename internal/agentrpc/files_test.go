@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/internal/iojail"
+	"github.com/no-dal/ndl-ce/internal/lxc"
 )
 
 func TestFilesOpJailAndCRUD(t *testing.T) {
@@ -247,5 +249,58 @@ func TestJailRelCWD(t *testing.T) {
 	}
 	if got := jailRelCWD("guest:/", "/etc"); got != "/etc" {
 		t.Fatalf("guest jail %s", got)
+	}
+}
+
+func writeCTLastApplied(t *testing.T, dataDir, id, rootfs string) {
+	t.Helper()
+	row := lxc.Applied{
+		SchemaVersion: lxc.LastAppliedSchema,
+		Spec:          lxc.Spec{WorkloadID: id, RootfsPath: rootfs},
+	}
+	raw, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dataDir, "workloads", id, "last-applied.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(raw, '\n'), 0o640); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolveJailCTUsesLastAppliedNotClientRoot(t *testing.T) {
+	dir := t.TempDir()
+	id := uuid.NewString()
+	rootfs := filepath.Join(dir, "storage", "ct")
+	if err := os.MkdirAll(rootfs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeCTLastApplied(t, dir, id, rootfs)
+	h := &Handler{Workloads: &lxc.Engine{DataDir: dir}}
+	got, err := h.resolveJail(iojail.TargetCT, id, "/etc")
+	if err != nil || got != filepath.Clean(rootfs) {
+		t.Fatalf("client jail_root must not override last-applied: %q %v", got, err)
+	}
+}
+
+func TestResolveJailCTFailsClosedWithoutLastApplied(t *testing.T) {
+	h := &Handler{Workloads: &lxc.Engine{DataDir: t.TempDir()}}
+	id := uuid.NewString()
+	if _, err := h.resolveJail(iojail.TargetCT, id, "/etc"); err == nil {
+		t.Fatal("missing last-applied must not trust client jail_root")
+	}
+	if _, err := h.resolveJail(iojail.TargetCT, "", "/etc"); err == nil {
+		t.Fatal("empty target_id must fail closed")
+	}
+}
+
+func TestResolveJailCTWithoutEngineUsesRequested(t *testing.T) {
+	h := &Handler{}
+	got, err := h.resolveJail(iojail.TargetCT, uuid.NewString(), "/tmp/jail")
+	if err != nil || got != "/tmp/jail" {
+		t.Fatalf("tests without an engine still use requested jail: %q %v", got, err)
 	}
 }

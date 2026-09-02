@@ -79,6 +79,9 @@ func normalizeSpec(spec Spec) (Spec, error) {
 	if strings.TrimSpace(spec.RootfsPath) == "" {
 		return Spec{}, fmt.Errorf("rootfs_path is required")
 	}
+	if err := validateRootfsPath(spec.RootfsPath); err != nil {
+		return Spec{}, err
+	}
 	if spec.CPUs < 1 {
 		spec.CPUs = DefaultCPUs
 	}
@@ -250,6 +253,9 @@ func (e *Engine) Clone(ctx context.Context, req LifecycleRequest) (Result, error
 		dst.MAC = req.CloneMAC
 	} else {
 		dst.MAC = MACFromUUID(dst.WorkloadID)
+	}
+	if err := validateRootfsPath(dst.RootfsPath); err != nil {
+		return Result{}, err
 	}
 	if err := os.MkdirAll(dst.RootfsPath, 0o750); err != nil {
 		return Result{}, err
