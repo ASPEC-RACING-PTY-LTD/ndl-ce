@@ -88,13 +88,26 @@ build_debs() {
     "$BUILD/debian/ndl-agent.postrm"
 
   rm -f /tmp/nodal_*.deb /tmp/ndl-*.deb /tmp/nodalctl_*.deb /tmp/nodal-*.deb
-  cd "$BUILD"
-  dpkg-buildpackage -us -uc -b --no-sign
+  (
+    cd "$BUILD"
+    dpkg-buildpackage -us -uc -b --no-sign
+  ) >&2
   rm -f "$OUT_DEBS"/*.deb
-  cp -a /tmp/nodal_*.deb /tmp/ndl-*.deb /tmp/nodalctl_*.deb "$OUT_DEBS/" 2>/dev/null || true
-  ls "$OUT_DEBS"/ndl-control_*.deb >/dev/null 2>&1 || fail "ndl-control .deb was not built"
-  ls "$OUT_DEBS"/ndl-agent_*.deb >/dev/null 2>&1 || fail "ndl-agent .deb was not built"
-  echo "$OUT_DEBS"
+  cp -a /tmp/nodal_*.deb /tmp/ndl-*.deb /tmp/nodalctl_*.deb "$OUT_DEBS/"
+  ctrl=
+  for f in "$OUT_DEBS"/ndl-control_*.deb; do
+    [ -f "$f" ] || continue
+    ctrl=$f
+    break
+  done
+  [ -n "$ctrl" ] || fail "ndl-control .deb was not built"
+  agent=
+  for f in "$OUT_DEBS"/ndl-agent_*.deb; do
+    [ -f "$f" ] || continue
+    agent=$f
+    break
+  done
+  [ -n "$agent" ] || fail "ndl-agent .deb was not built"
 }
 
 extract_scripts() {
@@ -112,7 +125,7 @@ reject_stray_prose() {
   if grep -nE '^[[:space:]]*restarts[[:space:]]' "$path" >/dev/null; then
     fail "$pkg $script contains executable stray prose starting with restarts"
   fi
-  if grep -nF 'restarts it once after configure' "$path" >/dev/null; then
+  if grep -nE '^[[:space:]]*restarts it once after configure' "$path" >/dev/null; then
     fail "$pkg $script contains leftover comment text as executable shell"
   fi
   if awk '
@@ -190,6 +203,31 @@ run_as_root() {
   fi
 }
 
+prove_stray_prose_rejected() {
+  sample=$(mktemp)
+  printf '%s\n' '#!/bin/sh' 'set -e' '  restarts it once after configure.' > "$sample"
+  if sh -n "$sample"; then
+    :
+  else
+    rm -f "$sample"
+    fail "stray prose must be syntactically valid shell so sh -n alone is not enough"
+  fi
+  if grep -nE '^[[:space:]]*restarts[[:space:]]' "$sample" >/dev/null \
+    && grep -nE '^[[:space:]]*restarts it once after configure' "$sample" >/dev/null; then
+    :
+  else
+    rm -f "$sample"
+    fail "stray prose detector missed executable leftover comment text"
+  fi
+  if command -v unshare >/dev/null 2>&1 && run_as_root true >/dev/null 2>&1; then
+    if run_as_root unshare -m /bin/sh "$sample" configure; then
+      rm -f "$sample"
+      fail "configure must fail when leftover comment text is executable shell"
+    fi
+  fi
+  rm -f "$sample"
+}
+
 run_generated_configure() {
   script=$1
   name=$2
@@ -231,9 +269,18 @@ EOS
 audit_source_templates
 
 if [ -z "$DEB_DIR" ]; then
-  DEB_DIR=$(build_debs /tmp/nodal-maintainer-debs)
-elif ! ls "$DEB_DIR"/ndl-control_*.deb >/dev/null 2>&1; then
-  DEB_DIR=$(build_debs "$DEB_DIR")
+  DEB_DIR=/tmp/nodal-maintainer-debs
+  build_debs "$DEB_DIR"
+else
+  have_ctrl=
+  for f in "$DEB_DIR"/ndl-control_*.deb; do
+    [ -f "$f" ] || continue
+    have_ctrl=$f
+    break
+  done
+  if [ -z "$have_ctrl" ]; then
+    build_debs "$DEB_DIR"
+  fi
 fi
 
 CTRL=
@@ -260,8 +307,10 @@ inspect_control_postrm "$EXTRACT/ndl-control/postrm"
 inspect_agent_postinst "$EXTRACT/ndl-agent/postinst"
 inspect_agent_postrm "$EXTRACT/ndl-agent/postrm"
 
+prove_stray_prose_rejected
+# Only execute generated ndl-control.postinst. The agent postinst creates
+# users and directories; inspecting it is enough.
 run_generated_configure "$EXTRACT/ndl-control/postinst" ndl-control
-run_generated_configure "$EXTRACT/ndl-agent/postinst" ndl-agent
 
 echo "MAINTAINER_SCRIPT_OK"
 echo "Inspected generated scripts from $CTRL and $AGENT"
