@@ -366,7 +366,7 @@ func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload, dest *appd
 	for _, d := range disks {
 		vol, _ := s.Store.GetVolume(ctx, wl.ClusterID, d.VolumeID)
 		if vol == nil {
-			continue
+			return false, nil, fmt.Errorf("workload volume is missing")
 		}
 		pool, _ := s.Store.GetStoragePool(ctx, wl.ClusterID, vol.PoolID)
 		backend := ""

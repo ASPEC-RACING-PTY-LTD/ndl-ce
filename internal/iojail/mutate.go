@@ -76,6 +76,11 @@ func RenameBeneath(root, src, dest string) error {
 	if src == "." || dest == "." {
 		return fmt.Errorf("cannot rename the jail root")
 	}
+	if planned, jerr := joinUnder(root, src); jerr == nil {
+		if err := deniedHost(root, planned); err != nil {
+			return err
+		}
+	}
 	if planned, jerr := joinUnder(root, dest); jerr == nil {
 		if err := deniedHost(root, planned); err != nil {
 			return err
@@ -212,8 +217,11 @@ func renamePortable(root, src, dest string) error {
 	if err := deniedHost(root, destAbs); err != nil {
 		return err
 	}
-	if _, err := os.Lstat(destAbs); err == nil {
-		if err := RemoveBeneath(root, dest); err != nil {
+	if info, err := os.Lstat(destAbs); err == nil {
+		if info.IsDir() {
+			return fmt.Errorf("destination exists")
+		}
+		if err := os.Remove(destAbs); err != nil {
 			return err
 		}
 	}

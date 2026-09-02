@@ -948,6 +948,15 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	if err != nil {
 		return "", err
 	}
+	spec, specErr := vmspec.Parse(src.SpecJSON)
+	if specErr != nil {
+		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}
+	}
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleData && d.VolumeID != "" && d.VolumeID != vol.ID {
+			return "", errUnprocessable("restore of additional data disks is not implemented")
+		}
+	}
 	newID := uuid.NewString()
 	newVolID := uuid.NewString()
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
@@ -993,10 +1002,6 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 		if err := s.Store.CreateVolume(ctx, newVol); err != nil {
 			return "", err
 		}
-	}
-	spec, err := vmspec.Parse(src.SpecJSON)
-	if err != nil {
-		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}
 	}
 	spec.Name = uniqueRestoredName(spec.Name, newID)
 	spec.CloudImageID = ""

@@ -84,7 +84,6 @@ func renameBeneath(root, src, dest string) error {
 		return err
 	}
 	defer dfd.Close()
-	_ = RemoveBeneath(root, dest)
 	return unix.Renameat(int(sfd.Fd()), srcBase, int(dfd.Fd()), destBase)
 }
 

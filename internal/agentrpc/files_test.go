@@ -124,6 +124,9 @@ func TestFilesOpHostDeny(t *testing.T) {
 	if _, err := runFilesOp("/", "stat", "var/lib/ndl/setup.token", "", 0); err == nil {
 		t.Fatal("setup.token must be denied")
 	}
+	if _, err := runFilesOp("/", "rename", "var/lib/ndl/host.key", "tmp/ndl-out", 0); err == nil {
+		t.Fatal("rename of host.key must be denied")
+	}
 }
 
 func TestWritePartThenRenameSHA(t *testing.T) {

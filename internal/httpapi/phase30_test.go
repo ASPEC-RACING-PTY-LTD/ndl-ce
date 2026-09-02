@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -198,6 +200,111 @@ func TestPhase30RevokeWorkerAndRefuseControl(t *testing.T) {
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err == nil {
+		t.Fatal("revoked node serial must fail closed")
+	}
+}
+
+func TestPhase30JoinCertFailureRevokesOrphanNode(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("token create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	joinToken, _ := created["token"].(string)
+	if joinToken == "" {
+		t.Fatal("token shown once")
+	}
+
+	bad := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(bad, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.ClusterCA.Dir = bad
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/join", strings.NewReader(`{"token":"`+joinToken+`","hostname":"box-b"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("join cert fail %d %s", res.StatusCode, body)
+	}
+	nodes, _ := mem.ListClusterNodes(t.Context(), clusterRow.ID)
+	unrevoked := 0
+	for _, n := range nodes {
+		if n.RevokedAt == nil {
+			unrevoked++
+			if n.ID != control.ID {
+				t.Fatalf("orphan worker must be revoked: %+v", n)
+			}
+		}
+	}
+	if unrevoked != 1 {
+		t.Fatalf("only the control node should remain: %+v", nodes)
+	}
+}
+
+func TestPhase30RevokeFailsClosedWhenCAWriteFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	workerID, certPEM := mintJoin(t, ts, cookie, "box-b")
+
+	blockPath := filepath.Join(s.ClusterCA.Dir, "revoked")
+	if err := os.WriteFile(blockPath, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+workerID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("blocked revoke %d %s", res.StatusCode, body)
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err != nil {
+		t.Fatalf("certificate must stay valid until CA revoke succeeds: %v", err)
+	}
+	if err := os.Remove(blockPath); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+workerID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("retry revoke %d %s", res.StatusCode, body)
 	}
 	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err == nil {
 		t.Fatal("revoked node serial must fail closed")

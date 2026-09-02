@@ -458,4 +458,18 @@ func TestPhase32DestDiskLocatorDiffersAndZFSIsNotShared(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), destLocatorMissing) {
 		t.Fatalf("missing dest pool must fail closed: %v", err)
 	}
+
+	missingWL := appdb.Workload{ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, Name: "ghost-vm", Kind: "vm"}
+	if err := mem.CreateWorkload(t.Context(), missingWL); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: missingWL.ID, VolumeID: uuid.NewString(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.migrateDisks(t.Context(), missingWL, &worker)
+	if err == nil || !strings.Contains(err.Error(), "workload volume is missing") {
+		t.Fatalf("missing volume must fail closed: %v", err)
+	}
 }

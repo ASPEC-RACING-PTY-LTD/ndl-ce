@@ -202,6 +202,8 @@ func (s *Server) joinCluster(w http.ResponseWriter, r *http.Request) {
 	}
 	certPEM, keyPEM, err := s.ClusterCA.IssueNode(nodeID, s.now())
 	if err != nil {
+		_ = s.Store.RevokeNode(r.Context(), cl.ID, nodeID, s.now())
+		_ = s.ClusterCA.RevokeNode(nodeID)
 		writeErr(w, http.StatusInternalServerError, "could not issue node certificate")
 		return
 	}
@@ -243,7 +245,10 @@ func (s *Server) revokeClusterNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
-	_ = s.ClusterCA.RevokeNode(id)
+	if err := s.ClusterCA.RevokeNode(id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not revoke node certificate")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.node.revoke", "ok", id)
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "revoked": true})
 }

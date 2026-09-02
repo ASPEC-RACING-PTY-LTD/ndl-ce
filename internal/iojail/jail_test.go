@@ -103,3 +103,53 @@ func TestHostDeny(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRenameBeneathDeniesHostSource(t *testing.T) {
+	if err := RenameBeneath("/", "var/lib/ndl/host.key", "tmp/ndl-out"); err == nil {
+		t.Fatal("rename of host.key must be denied")
+	}
+	if err := RenameBeneath("/", "etc/ndl/x", "tmp/ndl-out"); err == nil {
+		t.Fatal("rename out of /etc/ndl must be denied")
+	}
+}
+
+func TestRenameBeneathDoesNotWipeDestinationDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "keep", "child"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "keep", "child", "x"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := RenameBeneath(root, "a.txt", "keep"); err == nil {
+		t.Fatal("rename onto a directory must fail")
+	}
+	got, err := os.ReadFile(filepath.Join(root, "keep", "child", "x"))
+	if err != nil || string(got) != "keep" {
+		t.Fatalf("destination directory must survive: %s %v", got, err)
+	}
+}
+
+func TestOpenBeneathDeniesInJailSymlinkToHostPrefix(t *testing.T) {
+	root := t.TempDir()
+	secretDir := filepath.Join(root, "denied")
+	if err := os.Mkdir(secretDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(secretDir, "host.key")
+	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(root, "link")); err != nil {
+		t.Skip(err)
+	}
+	prev := HostDenyPrefixes
+	HostDenyPrefixes = []string{secretDir}
+	t.Cleanup(func() { HostDenyPrefixes = prev })
+	if _, _, err := OpenBeneath(root, "link", os.O_RDONLY, 0); err == nil {
+		t.Fatal("symlink into a denied prefix must fail")
+	}
+}

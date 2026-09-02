@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -51,11 +52,25 @@ func OpenBeneath(root, rel string, flags int, perm os.FileMode) (*os.File, strin
 		_ = f.Close()
 		return nil, "", err
 	}
+	if real := fdPath(f); real != "" {
+		abs = real
+	}
 	if err := deniedHost(root, abs); err != nil {
 		_ = f.Close()
 		return nil, "", err
 	}
 	return f, abs, nil
+}
+
+func fdPath(f *os.File) string {
+	if f == nil {
+		return ""
+	}
+	p, err := os.Readlink("/proc/self/fd/" + strconv.Itoa(int(f.Fd())))
+	if err != nil || p == "" {
+		return ""
+	}
+	return p
 }
 
 func init() {
