@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +54,14 @@ func TestPhase32LiveMigrateMovesOwnership(t *testing.T) {
 	}
 	if got.Status != "running" {
 		t.Fatalf("dest status %s", got.Status)
+	}
+	var job map[string]any
+	if err := json.Unmarshal(raw, &job); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := mem.GetMigrateJob(t.Context(), clusterRow.ID, job["id"].(string))
+	if err != nil || stored == nil || stored.WorkloadID != wlID || stored.DestNodeID != worker.ID {
+		t.Fatalf("migrate job %+v %v", stored, err)
 	}
 	listed, _ := mem.ListWorkloads(t.Context(), clusterRow.ID)
 	if len(listed) != 1 {
@@ -529,5 +539,51 @@ func TestMigrateDisksRejectsRelativeSourceEscape(t *testing.T) {
 	_, copies, err := s.migrateDisks(t.Context(), wl, &worker)
 	if err == nil || !strings.Contains(err.Error(), "volume locator is invalid") || copies != nil {
 		t.Fatalf("relative source escape must fail closed: %+v %v", copies, err)
+	}
+}
+
+type failUpdateMigrateJobStore struct {
+	appdb.Store
+}
+
+func (f failUpdateMigrateJobStore) UpdateMigrateJob(context.Context, appdb.MigrateJob) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase32MigrateFailsClosedWhenJobPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Migrate = migrate.NewFake()
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: clusterRow.ID, Name: "box-b", Role: "worker", Hostname: "box-b"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	wlID := uuid.NewString()
+	s.Migrate.(*migrate.Fake).SetSourceRunning(wlID, true)
+	if err := mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: wlID, ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID,
+		Name: "move-me", Kind: "vm", Status: "running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failUpdateMigrateJobStore{Store: mem}
+
+	body := `{"dest_node_id":"` + worker.ID + `","mode":"live"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+wlID+"/migrate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("migrate persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record migrate job") {
+		t.Fatalf("migrate persist body %s", raw)
 	}
 }

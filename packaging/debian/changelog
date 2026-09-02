@@ -63,6 +63,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Backup run, restore, and verify fail closed if the run or artifact verify row cannot be updated. A 202 body is not a substitute for the stored status.
   * Host update apply and rollback fail closed if the update operation row cannot be updated. Rolling update surfaces that persist error instead of inventing a step.
   * AI plan approve fails closed if plan or step persist fails. A 200 body is not a substitute for the stored plan status.
+  * Workload migrate fails closed if the migrate job row cannot be created or updated. A 200 body is not a substitute for GET /migrate.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

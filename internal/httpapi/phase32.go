@@ -264,7 +264,9 @@ func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.
 		SourceNodeID: sourceID, DestNodeID: dest.ID, Mode: mode, State: "running",
 		EpochAtStart: wl.OwnershipEpoch, SourceRunning: wl.Status == "running",
 	}
-	_ = s.Store.CreateMigrateJob(ctx, job)
+	if err := s.Store.CreateMigrateJob(ctx, job); err != nil {
+		return nil, http.StatusInternalServerError, "could not record migrate job"
+	}
 	res, err := migrate.Run(ctx, s.Migrate, migrate.Request{
 		WorkloadID: wl.ID, Kind: wl.Kind, Mode: mode,
 		SourceNodeID: sourceID, DestNodeID: dest.ID, Epoch: wl.OwnershipEpoch,
@@ -303,7 +305,9 @@ func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.
 		s.finishOp(ctx, op, "failed", job.Reason, 0)
 		return migrateJobJSON(job), http.StatusConflict, job.Reason
 	}
-	_ = s.Store.UpdateMigrateJob(ctx, job)
+	if err := s.Store.UpdateMigrateJob(ctx, job); err != nil {
+		return nil, http.StatusInternalServerError, "could not record migrate job"
+	}
 	s.finishOp(ctx, op, "succeeded", res.Reason, 100)
 	cur, _ := s.Store.GetWorkload(ctx, wl.ClusterID, wl.ID)
 	if cur != nil {
