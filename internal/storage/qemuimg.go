@@ -81,6 +81,31 @@ func QEMUInfoArgv(bin, dest string) ([]string, error) {
 	return []string{bin, "info", "--output=json", dest}, nil
 }
 
+// QEMUCreateBackingArgv builds an offline external qcow2 overlay. Never used live.
+func QEMUCreateBackingArgv(bin, dest, backing string) ([]string, error) {
+	if bin == "" {
+		bin = QEMUImgPath
+	}
+	if dest == "" || backing == "" || strings.ContainsAny(dest, "\x00\n") || strings.ContainsAny(backing, "\x00\n") {
+		return nil, ErrForbiddenPath
+	}
+	if strings.Contains(dest, "..") || strings.Contains(backing, "..") {
+		return nil, ErrForbiddenPath
+	}
+	return []string{bin, "create", "-f", FormatQCOW2, "-b", backing, "-F", FormatQCOW2, dest}, nil
+}
+
+// QEMUBackingChainArgv inspects overlay depth. It does not mutate disks.
+func QEMUBackingChainArgv(bin, dest string) ([]string, error) {
+	if bin == "" {
+		bin = QEMUImgPath
+	}
+	if dest == "" || strings.ContainsAny(dest, "\x00\n") {
+		return nil, ErrForbiddenPath
+	}
+	return []string{bin, "info", "--backing-chain", "--output=json", dest}, nil
+}
+
 func defaultRunner(ctx context.Context, argv []string) (string, string, error) {
 	if len(argv) == 0 {
 		return "", "", errors.New("empty argv")

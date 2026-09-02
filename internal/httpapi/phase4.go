@@ -22,6 +22,8 @@ type NetworkRPC interface {
 	DryRunNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.Preview, error)
 	ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyResult, error)
 	GetNetworks(ctx context.Context, hints []ndnet.Hint) (ndnet.Observation, error)
+	NetAdvanced(ctx context.Context, op ndnet.AdvancedOp) (ndnet.AdvancedResult, error)
+	WireGuard(ctx context.Context, op ndnet.WGOp) (ndnet.WGResult, error)
 }
 
 type networkWriteRequest struct {
@@ -51,6 +53,10 @@ func (s *Server) listNetworks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":     out,
 		"nics":      s.inventoryNICs(r.Context(), p.User.ClusterID),
+		"vlans":     vlanListJSON(s.Store, r.Context(), p.User.ClusterID),
+		"bonds":     bondListJSON(s.Store, r.Context(), p.User.ClusterID),
+		"policies":  policyListJSON(s.Store, r.Context(), p.User.ClusterID),
+		"overlays":  overlayListJSON(s.Store, r.Context(), p.User.ClusterID),
 		"first_run": len(items) == 0,
 	})
 }
@@ -299,12 +305,12 @@ func (s *Server) authorizeDanger(w http.ResponseWriter, r *http.Request, p *prin
 	}
 	if !ndnet.ValidConfirm(p.User.ClusterID, p.User.ID, preview.Kind, ifname, token, s.now()) || !strings.EqualFold(ifname, preview.TypedIfName) {
 		writeJSON(w, http.StatusConflict, map[string]any{
-			"error":            "confirmation_required",
-			"code":             "confirmation_required",
-			"danger":           preview.Danger,
-			"typed_ifname":     preview.TypedIfName,
-			"confirm_token":    ndnet.ConfirmToken(p.User.ClusterID, p.User.ID, preview.Kind, preview.TypedIfName, s.now()),
-			"message":          "Enslaving the management NIC requires typing the interface name and sending X-Nodal-Confirm.",
+			"error":              "confirmation_required",
+			"code":               "confirmation_required",
+			"danger":             preview.Danger,
+			"typed_ifname":       preview.TypedIfName,
+			"confirm_token":      ndnet.ConfirmToken(p.User.ClusterID, p.User.ID, preview.Kind, preview.TypedIfName, s.now()),
+			"message":            "Enslaving the management NIC requires typing the interface name and sending X-Nodal-Confirm.",
 			"management_ifindex": preview.ManagementIfIndex,
 		})
 		return false
@@ -379,7 +385,7 @@ func networkJSON(n appdb.Network) map[string]any {
 		"dhcp": n.DHCP, "dns": n.DNS, "nat": n.NAT,
 		"persist_kind": n.PersistKind, "warnings": n.Warnings,
 		"management_ifindex": n.ManagementIfIndex,
-		"created_at": n.CreatedAt.UTC().Format(time.RFC3339),
+		"created_at":         n.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -389,4 +395,3 @@ func reservationJSON(r appdb.DHCPReservation) map[string]any {
 		"hostname": r.Hostname, "created_at": r.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
-

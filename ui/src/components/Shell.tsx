@@ -4,6 +4,7 @@ import type { HealthResponse } from "../api/types";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
+import { CommandPalette } from "./CommandPalette";
 import { Icon, navIcon } from "./Icon";
 import { Link } from "./Link";
 import { AccountMenu } from "./shell/AccountMenu";
@@ -19,19 +20,57 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
     items: [{ href: "/", label: "Dashboard", match: (p) => p === "/" }],
   },
   {
-    label: "Infrastructure",
+    label: "Compute",
     items: [
       { href: "/workloads", label: "Workloads", match: (p) => p === "/workloads" || p.startsWith("/workloads/") },
+      { href: "/stacks", label: "Stacks", match: (p) => p === "/stacks" || p.startsWith("/stacks/") },
+      { href: "/templates", label: "Templates", match: (p) => p === "/templates" },
+    ],
+  },
+  {
+    label: "Infrastructure",
+    items: [
       { href: "/node", label: "Node", match: (p) => p === "/node" || p.startsWith("/node/") || p.startsWith("/nodes/") },
       { href: "/storage", label: "Storage", match: (p) => p === "/storage" || p.startsWith("/storage/") },
       { href: "/network", label: "Network", match: (p) => p === "/network" || p.startsWith("/network/") },
+      { href: "/settings/cluster", label: "Cluster", match: (p) => p === "/settings/cluster" },
     ],
   },
   {
     label: "Operations",
     items: [
       { href: "/tasks", label: "Tasks", match: (p) => p === "/tasks" },
-      { href: "/events", label: "Events", match: (p) => p === "/events" },
+      { href: "/events", label: "Events", match: (p) => p === "/events" || p === "/node/events" },
+      { href: "/alerts", label: "Alerts", match: (p) => p === "/alerts" },
+      { href: "/backups", label: "Backups", match: (p) => p === "/backups" },
+      { href: "/automation", label: "Automation", match: (p) => p === "/automation" },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [
+      { href: "/ask", label: "Ask", match: (p) => p === "/ask" },
+      { href: "/plans", label: "Plans", match: (p) => p === "/plans" },
+    ],
+  },
+  {
+    label: "Catalog",
+    items: [
+      { href: "/store", label: "Store", match: (p) => p === "/store" },
+      { href: "/docs", label: "Docs", match: (p) => p === "/docs" },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { href: "/settings/features", label: "Features", match: (p) => p === "/settings/features" },
+      { href: "/settings/kubernetes", label: "Kubernetes", match: (p) => p === "/settings/kubernetes" },
+      { href: "/settings/certificates", label: "Certificates", match: (p) => p === "/settings/certificates" },
+      { href: "/settings/updates", label: "Updates", match: (p) => p === "/settings/updates" },
+      { href: "/settings/mfa", label: "MFA", match: (p) => p === "/settings/mfa" },
+      { href: "/groups", label: "Groups", match: (p) => p === "/groups" },
+      { href: "/audit", label: "Audit", match: (p) => p === "/audit" },
+      { href: "/settings/license", label: "License", match: (p) => p === "/settings/license" },
     ],
   },
 ];
@@ -43,11 +82,27 @@ const TAB_LABELS: Record<string, string> = {
   snapshots: "Snapshots",
   hardware: "Hardware",
   metrics: "Metrics",
+  console: "Console",
+  gpus: "GPUs",
+  gpu: "GPU",
+  logs: "Logs",
 };
 
 function crumbs(path: string): { href: string; label: string }[] {
   if (path === "/") {
     return [{ href: "/", label: "Dashboard" }];
+  }
+  if (path === "/workloads/new/vm") {
+    return [
+      { href: "/workloads", label: "Workloads" },
+      { href: path, label: "Create VM" },
+    ];
+  }
+  if (path === "/workloads/new/oci") {
+    return [
+      { href: "/workloads", label: "Workloads" },
+      { href: path, label: "Create OCI" },
+    ];
   }
   if (path.startsWith("/workloads/new")) {
     return [
@@ -55,14 +110,29 @@ function crumbs(path: string): { href: string; label: string }[] {
       { href: path, label: "Create system container" },
     ];
   }
+  if (path === "/workloads/import") {
+    return [
+      { href: "/workloads", label: "Workloads" },
+      { href: path, label: "Import VM" },
+    ];
+  }
   if (path.startsWith("/workloads/")) {
     const parts = path.split("/").filter(Boolean);
     const base = `/workloads/${parts[1]}`;
-    const trail = [{ href: "/workloads", label: "Workloads" }, { href: base, label: "Workload" }];
+    const trail = [
+      { href: "/workloads", label: "Workloads" },
+      { href: base, label: "Workload" },
+    ];
     if (parts[2]) {
       trail.push({ href: path, label: TAB_LABELS[parts[2]] ?? parts[2] });
     }
     return trail;
+  }
+  if (path.startsWith("/stacks/")) {
+    return [
+      { href: "/stacks", label: "Stacks" },
+      { href: path, label: "Stack" },
+    ];
   }
   if (path.startsWith("/nodes/") || path.startsWith("/node")) {
     const parts = path.split("/").filter(Boolean);
@@ -74,7 +144,7 @@ function crumbs(path: string): { href: string; label: string }[] {
     return trail;
   }
   const top = GROUPS.flatMap((g) => g.items).find((item) => item.match(path));
-  return top ? [{ href: top.href, label: top.label }] : [{ href: path, label: "Not found" }];
+  return top ? [{ href: top.href, label: top.label }] : [{ href: path, label: "Page" }];
 }
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -82,6 +152,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     const saved = storageGet(SIDEBAR_KEY);
     if (saved === "1") {
@@ -95,20 +166,35 @@ export function Shell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void getHealth()
-      .then((value) => {
+    async function tick() {
+      try {
+        const value = await getHealth();
         if (!cancelled) {
           setHealth(value);
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setHealth(null);
         }
-      });
+      }
+    }
+    void tick();
+    const id = window.setInterval(() => void tick(), 15000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
+  }, []);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   function toggleSidebar() {
@@ -121,6 +207,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const healthOk = health?.status === "ok";
   const healthLabel = healthOk ? "Healthy" : health ? "Degraded" : "Unavailable";
+  const trail = crumbs(path);
 
   return (
     <div className={collapsed ? "shell is-collapsed" : "shell"}>
@@ -171,12 +258,18 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="shell-body">
         <header className="shell-header">
           <nav className="shell-crumbs" aria-label="Breadcrumb">
-            {crumbs(path).map((crumb, i) => (
+            {trail.map((crumb, i) => (
               <span key={`${crumb.href}-${crumb.label}`}>
                 {i > 0 ? <span className="muted"> / </span> : null}
-                <Link href={crumb.href} className="crumb" aria-current={i === crumbs(path).length - 1 ? "page" : undefined}>
-                  {crumb.label}
-                </Link>
+                {i === trail.length - 1 ? (
+                  <span className="crumb" aria-current="page">
+                    {crumb.label}
+                  </span>
+                ) : (
+                  <Link href={crumb.href} className="crumb">
+                    {crumb.label}
+                  </Link>
+                )}
               </span>
             ))}
           </nav>
@@ -189,9 +282,18 @@ export function Shell({ children }: { children: ReactNode }) {
               {healthLabel}
             </span>
             <TaskIndicator />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              aria-keyshortcuts="Control+K Meta+K"
+              onClick={() => setPaletteOpen(true)}
+            >
+              Search
+            </button>
             {user ? <AccountMenu user={user} /> : null}
           </div>
         </header>
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         <main id="main" className="shell-main">
           {children}
         </main>

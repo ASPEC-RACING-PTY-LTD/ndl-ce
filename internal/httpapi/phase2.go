@@ -17,14 +17,30 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	node, inv, err := s.cachedNode(r, p.User.ClusterID)
+	nodes, err := s.Store.ListClusterNodes(r.Context(), p.User.ClusterID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	redact := redactViewer(p)
 	items := []map[string]any{}
-	if node != nil {
-		items = append(items, s.nodeSummary(node, inv, redactViewer(p)))
+	seenNames := map[string]struct{}{}
+	for i := range nodes {
+		n := nodes[i]
+		if n.RevokedAt != nil {
+			continue
+		}
+		inv, _ := s.Store.GetInventory(r.Context(), n.ID)
+		items = append(items, s.nodeSummary(&n, inv, redact))
+		seenNames[n.Name] = struct{}{}
+	}
+	remotes, _ := s.Store.ListRemoteNodes(r.Context(), p.User.ClusterID)
+	now := s.now()
+	for _, remote := range remotes {
+		if _, ok := seenNames[remote.Name]; ok {
+			continue
+		}
+		items = append(items, remoteNodeJSON(remote, now))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -39,11 +55,31 @@ func (s *Server) getNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if node == nil || node.ID != r.PathValue("id") {
+	id := r.PathValue("id")
+	if node != nil && node.ID == id {
+		writeJSON(w, http.StatusOK, s.nodeSummary(node, inv, redactViewer(p)))
+		return
+	}
+	member, err := s.Store.GetNodeByID(r.Context(), p.User.ClusterID, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if member != nil {
+		minv, _ := s.Store.GetInventory(r.Context(), member.ID)
+		writeJSON(w, http.StatusOK, s.nodeSummary(member, minv, redactViewer(p)))
+		return
+	}
+	remote, err := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if remote == nil {
 		writeErr(w, http.StatusNotFound, "node not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.nodeSummary(node, inv, redactViewer(p)))
+	writeJSON(w, http.StatusOK, remoteNodeJSON(*remote, s.now()))
 }
 
 func (s *Server) nodeHardware(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +225,9 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
+	if !s.requireTLS(w, r) {
+		return
+	}
 	p, err := s.require(w, r, rbac.EventsRead)
 	if err != nil {
 		return
@@ -276,9 +315,34 @@ func (s *Server) cachedNode(r *http.Request, clusterID string) (*appdb.Node, *ap
 
 func (s *Server) nodeSummary(node *appdb.Node, inv *appdb.HardwareInventory, redact bool) map[string]any {
 	out := map[string]any{
-		"id":     node.ID,
-		"name":   node.Name,
-		"status": "unknown",
+		"id":           node.ID,
+		"name":         node.Name,
+		"status":       "unknown",
+		"support_tier": "unknown",
+		"role":         node.Role,
+		"hostname":     node.Hostname,
+	}
+	if node.Role == "" {
+		out["role"] = "control"
+	}
+	if node.RevokedAt != nil {
+		out["revoked"] = true
+		out["revoked_at"] = node.RevokedAt.UTC().Format(time.RFC3339)
+		out["status"] = "revoked"
+	}
+	if len(node.HostPlatform) > 0 {
+		var hp struct {
+			SupportTier string `json:"support_tier"`
+			ID          string `json:"id"`
+		}
+		if json.Unmarshal(node.HostPlatform, &hp) == nil {
+			if hp.SupportTier != "" {
+				out["support_tier"] = hp.SupportTier
+			}
+			if hp.ID != "" {
+				out["host_platform"] = hp.ID
+			}
+		}
 	}
 	if parsed, ok := decodeInv(inv); ok {
 		if redact {

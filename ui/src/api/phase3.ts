@@ -20,6 +20,7 @@ export type StoragePool = {
   allocated_bytes?: number | null;
   provisioned_bytes?: number | null;
   total_bytes?: number | null;
+  metadata_percent?: number | null;
   storage_classes?: string[];
   adopted?: boolean;
 };
@@ -53,4 +54,55 @@ export type LibraryItem = {
 export type PoolListResponse = {
   items: StoragePool[];
   default_path?: string;
+};
+
+export type ZFSRuntime = {
+  backend?: string;
+  incremental_send?: boolean;
+  snapshots?: boolean;
+  directory_default?: boolean;
+  force_import?: string;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+};
+
+export type LVMRuntime = {
+  backend?: string;
+  incremental_send?: boolean;
+  snapshots?: boolean;
+  directory_default?: boolean;
+  vgexport?: string;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+};
+
+export type DatastoreRuntime = {
+  nfs?: boolean;
+  smb?: boolean;
+  iscsi?: boolean;
+  incremental_send?: boolean;
+  directory_default?: boolean;
+  passwords_in_unit_files?: boolean;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  packages?: string[];
+};
+
+export type DistributedRuntime = {
+  backend?: string;
+  incremental_send?: boolean;
+  directory_default?: boolean;
+  keys_in_list_json?: boolean;
+  feature_enabled?: boolean;
+  osd_process?: boolean;
+  osd_started?: boolean;
+  host_supported?: boolean;
+  status?: string;
+  reason?: string;
+  vm_disk_rbd?: boolean;
 };

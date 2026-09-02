@@ -2,9 +2,18 @@ export type NodeSummary = {
   id: string;
   name: string;
   status: string;
+  role?: string;
+  reason?: string;
+  listen_addr?: string;
+  wg_peer_id?: string;
+  wg_public_key?: string;
+  last_seen_at?: string;
+  last_handshake_unix?: number;
   stale?: boolean;
   observed_at?: string;
   host_os?: string;
+  support_tier?: string;
+  host_platform?: string;
   host_id?: string;
   host_version_id?: string;
   cpu_model?: string;

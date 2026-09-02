@@ -17,15 +17,17 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/iojail"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 	"github.com/no-dal/ndl-ce/internal/storage"
+	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
 const (
 	ioTicketHeader = "X-Nodal-Ticket"
 	ioTicketTTL    = 2 * time.Minute
-	vmUnsupported  = "VM Terminal and Files are Phase 20 and are not implemented"
+	vmUnsupported  = "No-dal Guest Agent is not connected"
 )
 
 // IORPC is the privileged agent surface for Files and Terminal.
@@ -106,7 +108,7 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, p *princ
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "terminal.open", "ok", row.ID)
+	s.audit(r, p.User.ClusterID, p.User.ID, "terminal.open", "ok", auditFilesPath(targetKind, cwd)+" "+row.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id": row.ID, "target_kind": row.TargetKind, "target_id": row.TargetID,
 		"kind": row.Kind, "cwd": row.CWD, "state": row.State,
@@ -117,13 +119,22 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, p *princ
 }
 
 func (s *Server) getIOSession(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.TerminalOpen)
+	p, err := s.principal(r)
 	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 	row, err := s.Store.GetIOSession(r.Context(), p.User.ClusterID, r.PathValue("id"))
 	if err != nil || row == nil {
 		writeErr(w, http.StatusNotFound, "session not found")
+		return
+	}
+	need := rbac.TerminalOpen
+	if row.Kind == appdb.IOKindConsole && row.TargetKind == appdb.IOTargetVM {
+		need = rbac.ComputeConsole
+	}
+	if !rbac.Authorize(p.Grants, need) {
+		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	if row.UserID != p.User.ID && !hasRole(p, rbac.Admin) {
@@ -134,6 +145,9 @@ func (s *Server) getIOSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
+	if !s.requireTLS(w, r) {
+		return
+	}
 	if r.URL.Query().Get("ticket") != "" || r.URL.Query().Get("X-Nodal-Ticket") != "" {
 		writeErr(w, http.StatusBadRequest, "ticket must be sent in X-Nodal-Ticket")
 		return
@@ -147,10 +161,6 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	if !rbac.Authorize(p.Grants, rbac.TerminalOpen) {
-		writeErr(w, http.StatusForbidden, "forbidden")
-		return
-	}
 	ticket := wsTicket(r)
 	if ticket == "" {
 		writeErr(w, http.StatusUnauthorized, "X-Nodal-Ticket is required")
@@ -161,11 +171,19 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid ticket")
 		return
 	}
+	need := rbac.TerminalOpen
+	if row.Kind == appdb.IOKindConsole && row.TargetKind == appdb.IOTargetVM {
+		need = rbac.ComputeConsole
+	}
+	if !rbac.Authorize(p.Grants, need) {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	if row.UserID != p.User.ID && !hasRole(p, rbac.Admin) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if s.now().After(row.ExpiresAt) && row.State == appdb.IOStatePending {
+	if s.now().After(row.ExpiresAt) && (row.State == appdb.IOStatePending || row.Kind == appdb.IOKindConsole) {
 		row.State = appdb.IOStateExpired
 		row.Reason = "ticket expired"
 		_ = s.Store.UpdateIOSession(r.Context(), *row)
@@ -186,7 +204,7 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cwd := row.CWD
-	if row.Kind == appdb.IOKindConsole {
+	if row.Kind == appdb.IOKindConsole && row.TargetKind != appdb.IOTargetVM {
 		cwd = "console"
 	}
 	conn, err := s.IO.OpenTerminal(r.Context(), agentrpc.TermOpen{
@@ -332,12 +350,12 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 			TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
 		})
 		if err != nil {
-			s.audit(r, p.User.ClusterID, p.User.ID, "files.download", "denied", err.Error())
+			s.audit(r, p.User.ClusterID, p.User.ID, "files.download", "denied", auditFilesPath(kind, rel))
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
 		defer rc.Close()
-		s.audit(r, p.User.ClusterID, p.User.ID, "files.download", "ok", rel)
+		s.audit(r, p.User.ClusterID, p.User.ID, "files.download", "ok", auditFilesPath(kind, rel))
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+attachmentName(rel)+`"`)
 		_, _ = io.Copy(w, rc)
@@ -357,11 +375,11 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 			TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
 		}, body, sha)
 		if err != nil {
-			s.audit(r, p.User.ClusterID, p.User.ID, "files.upload", "denied", err.Error())
+			s.audit(r, p.User.ClusterID, p.User.ID, "files.upload", "denied", auditFilesPath(kind, rel))
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
-		s.audit(r, p.User.ClusterID, p.User.ID, "files.upload", "ok", rel)
+		s.audit(r, p.User.ClusterID, p.User.ID, "files.upload", "ok", auditFilesPath(kind, rel))
 		writeJSON(w, http.StatusCreated, json.RawMessage(raw))
 	case "list", "stat", "mkdir", "delete", "rename":
 		mut := fileMutation{Path: rel}
@@ -379,13 +397,13 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		})
 		if err != nil {
 			if action == "delete" {
-				s.audit(r, p.User.ClusterID, p.User.ID, "files.delete", "denied", err.Error())
+				s.audit(r, p.User.ClusterID, p.User.ID, "files.delete", "denied", auditFilesPath(kind, mut.Path))
 			}
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
 		if action == "delete" {
-			s.audit(r, p.User.ClusterID, p.User.ID, "files.delete", "ok", mut.Path)
+			s.audit(r, p.User.ClusterID, p.User.ID, "files.delete", "ok", auditFilesPath(kind, mut.Path))
 		}
 		if action == "mkdir" {
 			writeJSON(w, http.StatusCreated, json.RawMessage(raw))
@@ -413,14 +431,22 @@ func (s *Server) workloadIO(ctx context.Context, clusterID, id string) (appdb.Wo
 	if err != nil || row == nil {
 		return appdb.Workload{}, "", errNotFound("workload not found")
 	}
-	if row.Kind != lxc.KindSystemContainer {
+	switch row.Kind {
+	case lxc.KindSystemContainer:
+		jail, err := s.workloadJail(ctx, clusterID, *row)
+		if err != nil {
+			return *row, "", err
+		}
+		return *row, jail, nil
+	case vmspec.KindVM:
+		jail, err := s.requireVMGuestJail(ctx, row.ID)
+		if err != nil {
+			return *row, "", err
+		}
+		return *row, jail, nil
+	default:
 		return *row, "", statusError{status: http.StatusUnprocessableEntity, msg: vmUnsupported}
 	}
-	jail, err := s.workloadJail(ctx, clusterID, *row)
-	if err != nil {
-		return *row, "", err
-	}
-	return *row, jail, nil
 }
 
 func (s *Server) workloadJail(ctx context.Context, clusterID string, w appdb.Workload) (string, error) {
@@ -446,6 +472,12 @@ func (s *Server) workloadJail(ctx context.Context, clusterID string, w appdb.Wor
 func (s *Server) sessionJail(ctx context.Context, clusterID string, row appdb.IOSession) (string, error) {
 	if row.TargetKind == appdb.IOTargetHost {
 		return "/", nil
+	}
+	if row.TargetKind == appdb.IOTargetVM {
+		if row.Kind == appdb.IOKindConsole {
+			return (&qemu.Engine{}).ConsoleSocket(row.TargetID, row.CWD)
+		}
+		return s.requireVMGuestJail(ctx, row.TargetID)
 	}
 	wl, err := s.Store.GetWorkload(ctx, clusterID, row.TargetID)
 	if err != nil || wl == nil {

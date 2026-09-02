@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { listWorkloads } from "../api/client";
 import type { Workload } from "../api/phase5";
-import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
+import { EmptyState, ErrorState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
@@ -16,7 +16,7 @@ export function WorkloadsPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
-  const [items, setItems] = useState<Workload[] | null>(null);
+  const [items, setItems] = useState<Workload[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
@@ -45,7 +45,7 @@ export function WorkloadsPage() {
     if (!q) {
       return list;
     }
-    return list.filter((w) => w.name.toLowerCase().includes(q));
+    return list.filter((w) => w.name.toLowerCase().includes(q) || (w.kind ?? "").toLowerCase().includes(q));
   }, [items, query]);
 
   return (
@@ -53,13 +53,30 @@ export function WorkloadsPage() {
       <PageHeader
         id="workloads-heading"
         title="Workloads"
-        kicker="System containers on this appliance"
+        kicker="System containers and virtual machines on this node."
         actions={
           mutate ? (
-            <Link className="btn btn-primary" href="/workloads/new/system-container">
-              <Icon name="create" size={14} />
-              Create system container
-            </Link>
+            <div className="btn-row is-flush">
+              <Link className="btn btn-primary" href="/workloads/new/system-container">
+                <Icon name="create" size={14} />
+                Create system container
+              </Link>
+              <Link className="btn btn-secondary" href="/workloads/new/oci">
+                Create OCI
+              </Link>
+              <Link className="btn btn-secondary" href="/workloads/new/vm">
+                Create VM
+              </Link>
+              <Link className="btn btn-ghost" href="/workloads/import">
+                Import VM
+              </Link>
+              <Link className="btn btn-ghost" href="/stacks">
+                Stacks
+              </Link>
+              <Link className="btn btn-ghost" href="/templates">
+                Templates
+              </Link>
+            </div>
           ) : null
         }
       />
@@ -78,36 +95,33 @@ export function WorkloadsPage() {
             />
           </label>
         </div>
-        {items == null ? (
-          <LoadingState />
-        ) : (
-          <ResourceTable
-            headers={["Name", "Type", "Status", "Image", "IPv4", "Memory"]}
-            numeric={[5]}
-            empty={
-              <EmptyState title="No system containers yet">
-                Create a storage pool and guest network first if this appliance is new, then create a
-                system container.
-              </EmptyState>
-            }
-            rows={filtered.map((w) => [
-              <Link key="name" href={`/workloads/${w.id}`}>
-                {w.name}
-              </Link>,
-              <span key="kind" className="type-cell">
-                <Icon name="workloads" size={14} />
-                {kindLabel(w.kind)}
-              </span>,
-              <span key="st">
-                <StatusBadge status={w.status} />
-                {w.status === "warning" || w.status === "failed" ? ` ${w.reason || ""}` : ""}
-              </span>,
-              osLabel(w.image_pin),
-              w.nics?.[0]?.ipv4 || "Not reported",
-              formatBytes(w.memory_bytes),
-            ])}
-          />
-        )}
+        <ResourceTable
+          headers={["Name", "Type", "Status", "Image", "IPv4", "Memory"]}
+          numeric={[5]}
+          empty={
+            <EmptyState title="No workloads yet">
+              {mutate
+                ? "Create a VM or system container when a usable storage pool and guest network are available."
+                : "No workloads are visible yet. Creating them requires operator or admin."}
+            </EmptyState>
+          }
+          rows={filtered.map((w) => [
+            <Link key="name" href={`/workloads/${w.id}`}>
+              {w.name}
+            </Link>,
+            <span key="kind" className="type-cell">
+              <Icon name="workloads" size={14} />
+              {kindLabel(w.kind)}
+            </span>,
+            <span key="st">
+              <StatusBadge status={w.status} />
+              {w.status === "warning" || w.status === "failed" ? ` ${w.reason || ""}` : ""}
+            </span>,
+            osLabel(w.image_pin),
+            w.nics?.[0]?.ipv4 || "Not reported",
+            formatBytes(w.memory_bytes),
+          ])}
+        />
       </div>
     </section>
   );

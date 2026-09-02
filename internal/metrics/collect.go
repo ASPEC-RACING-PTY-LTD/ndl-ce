@@ -12,16 +12,27 @@ import (
 
 // Collector scrapes host gauges from a live root or a fixture tree.
 type Collector struct {
-	FSRoot string // fixture or "/"
-	Store  *Store
+	FSRoot      string // fixture or "/"
+	Store       *Store
+	StorageRoot string // Statfs target; empty skips storage.avail_bytes
 
 	mu      sync.Mutex
 	prevCPU *cpuSnap
+	prevIO  *ioSnap
 }
 
 type cpuSnap struct {
 	idle  uint64
 	total uint64
+}
+
+type ioSnap struct {
+	readSectors  uint64
+	writeSectors uint64
+	readTicks    uint64
+	writeTicks   uint64
+	reads        uint64
+	writes       uint64
 }
 
 // Scrape reads proc files and records only values that were observed.
@@ -81,6 +92,37 @@ func (c *Collector) Scrape(now time.Time) error {
 		if rx, tx, ok := parseNetDev(string(raw)); ok {
 			record(MetricNetRxBytes, float64(rx))
 			record(MetricNetTxBytes, float64(tx))
+		}
+		for _, iface := range parseNetDevIfaces(string(raw)) {
+			record(netIfacePrefix+iface.Name+".rx_bytes", float64(iface.Rx))
+			record(netIfacePrefix+iface.Name+".tx_bytes", float64(iface.Tx))
+		}
+	}
+
+	if raw, err := os.ReadFile(c.procPath("proc/diskstats")); err == nil {
+		if snap, ok := parseDiskstats(string(raw)); ok {
+			c.mu.Lock()
+			prev := c.prevIO
+			c.prevIO = &snap
+			c.mu.Unlock()
+			if prev != nil {
+				dRead := snap.readSectors - prev.readSectors
+				dWrite := snap.writeSectors - prev.writeSectors
+				record(MetricIOReadBytes, float64(dRead*512))
+				record(MetricIOWriteBytes, float64(dWrite*512))
+				if snap.reads > prev.reads {
+					record(MetricDiskReadLatencyMS, float64(snap.readTicks-prev.readTicks)/float64(snap.reads-prev.reads))
+				}
+				if snap.writes > prev.writes {
+					record(MetricDiskWriteLatencyMS, float64(snap.writeTicks-prev.writeTicks)/float64(snap.writes-prev.writes))
+				}
+			}
+		}
+	}
+
+	if root := strings.TrimSpace(c.StorageRoot); root != "" {
+		if avail, ok := statfsAvail(root); ok {
+			record(MetricStorageAvailBytes, float64(avail))
 		}
 	}
 	return first
@@ -179,7 +221,25 @@ func parseMeminfo(raw string) (total, avail uint64, hasTotal, hasAvail bool) {
 }
 
 func parseNetDev(raw string) (rx, tx uint64, ok bool) {
-	parsed := false
+	ifaces := parseNetDevIfaces(raw)
+	if len(ifaces) == 0 {
+		return 0, 0, false
+	}
+	for _, iface := range ifaces {
+		rx += iface.Rx
+		tx += iface.Tx
+	}
+	return rx, tx, true
+}
+
+type netIface struct {
+	Name string
+	Rx   uint64
+	Tx   uint64
+}
+
+func parseNetDevIfaces(raw string) []netIface {
+	var out []netIface
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || !strings.Contains(line, ":") {
@@ -189,8 +249,8 @@ func parseNetDev(raw string) (rx, tx uint64, ok bool) {
 		if !found {
 			continue
 		}
-		iface = strings.TrimSpace(iface)
-		if iface == "" || iface == "lo" || strings.Contains(iface, "|") {
+		iface = sanitizeIface(strings.TrimSpace(iface))
+		if iface == "" || iface == "lo" {
 			continue
 		}
 		fields := strings.Fields(rest)
@@ -202,11 +262,63 @@ func parseNetDev(raw string) (rx, tx uint64, ok bool) {
 		if err1 != nil || err2 != nil {
 			continue
 		}
-		rx += r
-		tx += t
-		parsed = true
+		out = append(out, netIface{Name: iface, Rx: r, Tx: t})
 	}
-	return rx, tx, parsed
+	return out
+}
+
+func sanitizeIface(name string) string {
+	if len(name) > 16 {
+		name = name[:16]
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func parseDiskstats(raw string) (ioSnap, bool) {
+	var snap ioSnap
+	ok := false
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 14 {
+			continue
+		}
+		name := fields[2]
+		if skipDisk(name) {
+			continue
+		}
+		reads, err1 := parseUint(fields[3])
+		readSectors, err2 := parseUint(fields[5])
+		readTicks, err3 := parseUint(fields[6])
+		writes, err4 := parseUint(fields[7])
+		writeSectors, err5 := parseUint(fields[9])
+		writeTicks, err6 := parseUint(fields[10])
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil || err6 != nil {
+			continue
+		}
+		snap.reads += reads
+		snap.readSectors += readSectors
+		snap.readTicks += readTicks
+		snap.writes += writes
+		snap.writeSectors += writeSectors
+		snap.writeTicks += writeTicks
+		ok = true
+	}
+	return snap, ok
+}
+
+func skipDisk(name string) bool {
+	switch {
+	case strings.HasPrefix(name, "loop"), strings.HasPrefix(name, "ram"), strings.HasPrefix(name, "sr"):
+		return true
+	default:
+		return false
+	}
 }
 
 func parseUint(s string) (uint64, error) {

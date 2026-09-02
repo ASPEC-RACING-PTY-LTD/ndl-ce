@@ -26,16 +26,16 @@ const (
 
 // Compile-time privileged binary paths. Never assembled from a shell string.
 const (
-	BinLXCStart  = "/usr/bin/lxc-start"
-	BinLXCStop   = "/usr/bin/lxc-stop"
-	BinLXCInfo   = "/usr/bin/lxc-info"
+	BinLXCStart   = "/usr/bin/lxc-start"
+	BinLXCStop    = "/usr/bin/lxc-stop"
+	BinLXCInfo    = "/usr/bin/lxc-info"
 	BinLXCCopy    = "/usr/bin/lxc-copy"
 	BinLXCAttach  = "/usr/bin/lxc-attach"
 	BinLXCConsole = "/usr/bin/lxc-console"
 	BinSystemctl  = "/usr/bin/systemctl"
-	BinTar       = "/usr/bin/tar"
-	BinCP        = "/usr/bin/cp"
-	BinGPGV      = "/usr/bin/gpgv"
+	BinTar        = "/usr/bin/tar"
+	BinCP         = "/usr/bin/cp"
+	BinGPGV       = "/usr/bin/gpgv"
 )
 
 const (
@@ -51,19 +51,20 @@ const (
 // Spec is the desired system-container identity plus locators.
 // WorkloadID is the UUID identity. Paths, lxc names, and volume refs are locators.
 type Spec struct {
-	WorkloadID  string `json:"workload_id"`
-	Name        string `json:"name"`
-	ImagePin    string `json:"image_pin"`
-	CPUs        int    `json:"cpus"`
-	MemoryBytes int64  `json:"memory_bytes"`
-	VolumeID    string `json:"volume_id"`
-	RootfsPath  string `json:"rootfs_path"`
-	NetworkID   string `json:"network_id"`
-	BridgeName  string `json:"bridge_name"`
-	MAC         string `json:"mac"`
-	Privileged  bool   `json:"privileged"`
-	UIDMap      string `json:"uid_map"`
-	GIDMap      string `json:"gid_map"`
+	WorkloadID  string   `json:"workload_id"`
+	Name        string   `json:"name"`
+	ImagePin    string   `json:"image_pin"`
+	CPUs        int      `json:"cpus"`
+	MemoryBytes int64    `json:"memory_bytes"`
+	VolumeID    string   `json:"volume_id"`
+	RootfsPath  string   `json:"rootfs_path"`
+	NetworkID   string   `json:"network_id"`
+	BridgeName  string   `json:"bridge_name"`
+	MAC         string   `json:"mac"`
+	Privileged  bool     `json:"privileged"`
+	UIDMap      string   `json:"uid_map"`
+	GIDMap      string   `json:"gid_map"`
+	GPUDevices  []string `json:"gpu_devices,omitempty"`
 }
 
 // Applied is last-applied on disk.

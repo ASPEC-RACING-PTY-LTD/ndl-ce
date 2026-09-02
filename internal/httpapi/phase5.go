@@ -13,8 +13,10 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
+	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
 // WorkloadRPC is the privileged agent surface for system containers.
@@ -25,22 +27,53 @@ type WorkloadRPC interface {
 }
 
 type createWorkloadRequest struct {
-	Name         string `json:"name"`
-	Kind         string `json:"kind"`
-	ImagePin     string `json:"image_pin"`
-	CPUs         int    `json:"cpus"`
-	MemoryBytes  int64  `json:"memory_bytes"`
-	PoolID       string `json:"pool_id"`
-	NetworkID    string `json:"network_id"`
-	VolumeID     string `json:"volume_id"`
-	Privileged   bool   `json:"privileged"`
-	DesiredPower string `json:"desired_power"`
+	Name                   string            `json:"name"`
+	Kind                   string            `json:"kind"`
+	ImagePin               string            `json:"image_pin"`
+	CPUs                   int               `json:"cpus"`
+	MemoryBytes            int64             `json:"memory_bytes"`
+	PoolID                 string            `json:"pool_id"`
+	NetworkID              string            `json:"network_id"`
+	VolumeID               string            `json:"volume_id"`
+	VolumeIDs              []string          `json:"volume_ids"`
+	RegistryID             string            `json:"registry_id"`
+	Ports                  []oci.Port        `json:"ports"`
+	Env                    []oci.EnvVar      `json:"env"`
+	SecretRefs             []oci.SecretRef   `json:"secret_refs"`
+	Volumes                []oci.VolumeMount `json:"volumes"`
+	Health                 *oci.Healthcheck  `json:"health"`
+	HostPath               string            `json:"host_path"`
+	Privileged             bool              `json:"privileged"`
+	DesiredPower           string            `json:"desired_power"`
+	Firmware               string            `json:"firmware"`
+	Autostart              bool              `json:"autostart"`
+	Balloon                bool              `json:"balloon"`
+	ISOLibraryID           string            `json:"iso_library_id"`
+	CloudImageID           string            `json:"cloud_image_id"`
+	NoCloud                vmspec.NoCloud    `json:"nocloud"`
+	Spec                   json.RawMessage   `json:"spec"`
+	QEMUArgs               []string          `json:"qemu_args"`
+	Command                string            `json:"command"`
+	CommandSlice           []string          `json:"-"`
+	SecureBoot             bool              `json:"secure_boot"`
+	Placement              string            `json:"placement"`
+	NodeID                 string            `json:"node_id"`
+	NodeGroupID            string            `json:"node_group_id"`
+	RequireGPU             bool              `json:"require_gpu"`
+	RequireStorageClass    string            `json:"require_storage_class"`
+	AffinityWorkloadID     string            `json:"affinity_workload_id"`
+	AntiAffinityWorkloadID string            `json:"anti_affinity_workload_id"`
 }
 
 type patchWorkloadRequest struct {
-	CPUs         int    `json:"cpus"`
-	MemoryBytes  int64  `json:"memory_bytes"`
-	DesiredPower string `json:"desired_power"`
+	Name         string          `json:"name"`
+	CPUs         int             `json:"cpus"`
+	MemoryBytes  int64           `json:"memory_bytes"`
+	DesiredPower string          `json:"desired_power"`
+	Firmware     string          `json:"firmware"`
+	Autostart    *bool           `json:"autostart"`
+	ISOLibraryID *string         `json:"iso_library_id"`
+	NoCloud      *vmspec.NoCloud `json:"nocloud"`
 }
 
 type cloneWorkloadRequest struct {
@@ -97,12 +130,24 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Kind = normalizeKind(req.Kind)
 	req.ImagePin = strings.TrimSpace(req.ImagePin)
+	if len(req.QEMUArgs) > 0 || strings.TrimSpace(req.Command) != "" {
+		writeErr(w, http.StatusBadRequest, "raw QEMU arguments are not allowed")
+		return
+	}
+	if req.Kind == vmspec.KindVM {
+		s.createVM(w, r, p, req)
+		return
+	}
+	if req.Kind == oci.KindOCI {
+		s.createOCIWorkload(w, r, p, req)
+		return
+	}
 	if req.Name == "" || req.ImagePin == "" {
 		writeErr(w, http.StatusBadRequest, "name and image_pin are required")
 		return
 	}
 	if req.Kind != lxc.KindSystemContainer {
-		writeErr(w, http.StatusBadRequest, "kind must be system-container")
+		writeErr(w, http.StatusBadRequest, "kind must be system-container or oci")
 		return
 	}
 	if err := lxc.ValidatePin(req.ImagePin); err != nil {
@@ -114,12 +159,24 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "only admin may create privileged containers")
 		return
 	}
-	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
-	if err != nil || node == nil {
-		writeErr(w, http.StatusFailedDependency, "local node is not enrolled")
+	node, local, err := s.placeCreate(r.Context(), p.User.ClusterID, req)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
 		return
 	}
-	if s.Workloads == nil || s.Storage == nil {
+	if !local {
+		id := uuid.NewString()
+		row := remotePlacedWorkload(p.User.ClusterID, node, req, id, lxc.KindSystemContainer)
+		if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
+			writeErr(w, http.StatusConflict, "could not record workload")
+			return
+		}
+		s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
+		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
+		return
+	}
+	if s.Workloads == nil {
 		writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
 		return
 	}
@@ -177,7 +234,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		Status: res.Status, DesiredPower: req.DesiredPower, ImagePin: req.ImagePin,
 		ImageVerified: res.ImageVerified, CPUs: req.CPUs, MemoryBytes: req.MemoryBytes,
 		Privileged: req.Privileged, UIDMap: lxc.DefaultUIDMap, GIDMap: lxc.DefaultGIDMap,
-		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["offline migrate is Phase 32"]`),
+		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["live migrate of system containers is post-1.0"]`),
 		IdempotencyKey: key,
 	}
 	if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
@@ -190,6 +247,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not record workload")
 		return
 	}
+	s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
 	if volRow != nil {
 		_ = s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: volRow.ID, Role: "root",
@@ -270,7 +328,36 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		return nil, nil, "", nil, errConflict("an available network is required")
 	}
 	if existing, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existing != nil {
-		return pool, netw, path.Join(pool.RootPath, existing.BackendRef), existing, nil
+		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, existing.BackendRef)
+		if err != nil {
+			return nil, nil, "", nil, errConflict("volume locator is invalid")
+		}
+		return pool, netw, loc, existing, nil
+	}
+	if pool.BackendType == storage.BackendZFS {
+		row, err := s.createZFSVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, lxc.DefaultRootSize)
+		if err != nil {
+			return nil, nil, "", nil, err
+		}
+		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, row.BackendRef)
+		if err != nil {
+			return nil, nil, "", nil, errConflict("volume locator is invalid")
+		}
+		return pool, netw, loc, &row, nil
+	}
+	if pool.BackendType == storage.BackendLVM {
+		row, err := s.createLVMVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, lxc.DefaultRootSize)
+		if err != nil {
+			return nil, nil, "", nil, err
+		}
+		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, row.BackendRef)
+		if err != nil {
+			return nil, nil, "", nil, errConflict("volume locator is invalid")
+		}
+		return pool, netw, loc, &row, nil
+	}
+	if s.Storage == nil {
+		return nil, nil, "", nil, errUnavailable("storage agent is unavailable")
 	}
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
@@ -314,8 +401,19 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 			writeErr(w, http.StatusNotFound, "workload not found")
 			return
 		}
+		if row.Kind == vmspec.KindVM {
+			s.vmLifecycle(w, r, p, *row, action)
+			return
+		}
+		if row.Kind == oci.KindOCI {
+			s.ociLifecycle(w, r, p, *row, action)
+			return
+		}
 		if s.Workloads == nil {
 			writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
+			return
+		}
+		if !s.guardLocalApply(w, r, p.User.ClusterID, firstNonEmpty(row.DesiredNodeID, row.NodeID), action) {
 			return
 		}
 		req := lxc.LifecycleRequest{WorkloadID: row.ID, Action: action}
@@ -384,6 +482,10 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "workload not found")
 		return
 	}
+	if row.Kind == vmspec.KindVM {
+		s.patchVM(w, r, p, *row)
+		return
+	}
 	var req patchWorkloadRequest
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
@@ -411,7 +513,9 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		if len(disks) > 0 {
 			if vol, _ := s.Store.GetVolume(r.Context(), p.User.ClusterID, disks[0].VolumeID); vol != nil {
 				if pool, _ := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, vol.PoolID); pool != nil {
-					rootfs = path.Join(pool.RootPath, vol.BackendRef)
+					if loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef); err == nil {
+						rootfs = loc
+					}
 					volID = vol.ID
 				}
 			}
@@ -430,6 +534,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			WorkloadID: row.ID, Name: next.Name, ImagePin: next.ImagePin, CPUs: next.CPUs,
 			MemoryBytes: next.MemoryBytes, VolumeID: volID, RootfsPath: rootfs, NetworkID: netID,
 			BridgeName: bridge, MAC: mac, Privileged: next.Privileged, UIDMap: next.UIDMap, GIDMap: next.GIDMap,
+			GPUDevices: s.gpuDeviceNodes(r.Context(), p.User.ClusterID, row.ID),
 		})
 		if next.DesiredPower == "stopped" {
 			_, _ = s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "stop"})
@@ -466,7 +571,18 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	if err != nil || pool == nil {
 		return lxc.LifecycleRequest{}, errConflict("source pool is unavailable")
 	}
-	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID)
+	if pool.BackendType == storage.BackendZFS {
+		return lxc.LifecycleRequest{}, errUnprocessable("ZFS system container clone is not implemented")
+	}
+	if pool.BackendType == storage.BackendLVM {
+		return lxc.LifecycleRequest{}, errUnprocessable("LVM-thin system container clone is not implemented")
+	}
+	if pool.BackendType == storage.BackendISCSI {
+		return lxc.LifecycleRequest{}, errUnprocessable("iSCSI system containers are not supported")
+	}
+	if pool.BackendType == storage.BackendDistributed {
+		return lxc.LifecycleRequest{}, errUnprocessable("distributed RBD system containers are not supported")
+	}
 	cloneID := uuid.NewString()
 	cloneVol := uuid.NewString()
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
@@ -490,9 +606,6 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	req := lxc.LifecycleRequest{
 		WorkloadID: src.ID, Action: "clone", CloneID: cloneID, CloneVolumeID: cloneVol,
 		CloneRootfsPath: path.Join(pool.RootPath, backend), CloneMAC: lxc.MACFromUUID(cloneID), CloneName: name,
-	}
-	if len(nics) > 0 {
-		_ = nics
 	}
 	return req, nil
 }
@@ -541,11 +654,11 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 	nics, _ := s.Store.ListWorkloadNICs(ctx, w.ClusterID, w.ID)
 	diskOut := make([]map[string]any, 0, len(disks))
 	for _, d := range disks {
-		diskOut = append(diskOut, map[string]any{"id": d.ID, "volume_id": d.VolumeID, "role": d.Role})
+		diskOut = append(diskOut, map[string]any{"id": d.ID, "volume_id": d.VolumeID, "role": d.Role, "slot": d.Slot, "pci_addr": d.BusAddr, "read_only": d.ReadOnly, "format": d.Format})
 	}
 	nicOut := make([]map[string]any, 0, len(nics))
 	for _, n := range nics {
-		nicOut = append(nicOut, map[string]any{"id": n.ID, "network_id": n.NetworkID, "mac": n.MAC, "ipv4": n.IPv4})
+		nicOut = append(nicOut, map[string]any{"id": n.ID, "network_id": n.NetworkID, "mac": n.MAC, "ipv4": n.IPv4, "pci_addr": n.PCIAddr, "model": n.Model})
 	}
 	var pid any
 	if w.PID != nil {
@@ -559,7 +672,7 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 	if len(w.MigrateBlockers) > 0 {
 		blockers = w.MigrateBlockers
 	}
-	return map[string]any{
+	out := map[string]any{
 		"id": w.ID, "node_id": w.NodeID, "name": w.Name, "kind": w.Kind,
 		"status": w.Status, "reason": w.Reason, "desired_power": w.DesiredPower,
 		"image_pin": w.ImagePin, "image_verified": w.ImageVerified,
@@ -567,8 +680,17 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"uid_map": w.UIDMap, "gid_map": w.GIDMap, "pid": pid, "unit_active": w.UnitActive,
 		"migrate_ready": w.MigrateReady, "migrate_blockers": blockers, "devices": devices,
 		"warnings": w.Warnings, "disks": diskOut, "nics": nicOut,
-		"created_at": w.CreatedAt.UTC().Format(time.RFC3339),
+		"autostart": w.Autostart, "pending_restart": w.PendingRestart, "firmware": w.Firmware,
+		"spec": specJSON(w), "applied": appliedJSON(w),
+		"desired_node_id": w.DesiredNodeID, "owner_node_id": w.OwnerNodeID,
+		"ownership_epoch": w.OwnershipEpoch,
+		"created_at":      w.CreatedAt.UTC().Format(time.RFC3339),
 	}
+	if w.Kind == oci.KindOCI {
+		out["health"] = ociHealthFromWorkload(w)
+		out["unit"] = oci.UnitName(w.ID)
+	}
+	return out
 }
 
 func (s *Server) startOpKeyed(ctx context.Context, clusterID, nodeID, kind, stage, key, message string, progress int) appdb.Operation {
@@ -609,10 +731,18 @@ type statusError struct {
 
 func (e statusError) Error() string { return e.msg }
 
-func errNotFound(msg string) error   { return statusError{status: http.StatusNotFound, msg: msg} }
-func errConflict(msg string) error   { return statusError{status: http.StatusConflict, msg: msg} }
+func errNotFound(msg string) error { return statusError{status: http.StatusNotFound, msg: msg} }
+func errConflict(msg string) error { return statusError{status: http.StatusConflict, msg: msg} }
+func errUnprocessable(msg string) error {
+	return statusError{status: http.StatusUnprocessableEntity, msg: msg}
+}
 func errUnavailable(msg string) error {
 	return statusError{status: http.StatusBadGateway, msg: msg}
+}
+func errBadRequest(msg string) error { return statusError{status: http.StatusBadRequest, msg: msg} }
+func errForbidden(msg string) error  { return statusError{status: http.StatusForbidden, msg: msg} }
+func errFailedDependency(msg string) error {
+	return statusError{status: http.StatusFailedDependency, msg: msg}
 }
 
 func statusFor(err error) int {

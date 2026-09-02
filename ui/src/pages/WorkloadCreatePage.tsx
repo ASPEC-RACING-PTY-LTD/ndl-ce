@@ -14,14 +14,15 @@ import { FALLBACK_IMAGE_PINS, kindLabel, osLabel } from "../labels";
 import { canMutate, isAdmin, mutateHint } from "../rbac";
 import { navigate } from "../router";
 import { useSession } from "../session";
-import { getUxLevelDefault, isAdvanced, isExpert, type UxLevel } from "../ux-mode";
+import { uxLevel } from "../ux";
+import { isAdvanced, isExpert, type UxLevel } from "../ux-mode";
 
 export function WorkloadCreatePage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const admin = isAdmin(roles);
   const mutate = canMutate(roles);
-  const [mode, setMode] = useState<UxLevel>(getUxLevelDefault);
+  const [mode, setMode] = useState<UxLevel>(uxLevel(session.status === "ready" ? session.user : null));
   const [pools, setPools] = useState<StoragePool[]>([]);
   const [nets, setNets] = useState<Network[]>([]);
   const [pins, setPins] = useState<string[]>(FALLBACK_IMAGE_PINS);
@@ -101,7 +102,7 @@ export function WorkloadCreatePage() {
       <PageHeader
         id="create-ct-heading"
         title="Create system container"
-        kicker="Official Linux images. Unprivileged is the default."
+        kicker="Official LXC images. Unprivileged is the default. Guided, Advanced, and Expert post the same body."
         actions={<UxModeToggle value={mode} onChange={setMode} />}
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
@@ -129,7 +130,7 @@ export function WorkloadCreatePage() {
         </div>
         <StoragePicker
           id="ct-pool"
-          label="Storage"
+          label="Storage pool"
           pools={pools}
           value={poolID}
           onChange={setPoolID}
@@ -147,10 +148,10 @@ export function WorkloadCreatePage() {
           admin ? (
             <label className="check-row">
               <input type="checkbox" checked={privileged} onChange={(e) => setPrivileged(e.target.checked)} />
-              Privileged (administrator only)
+              Privileged (admin only, audited)
             </label>
           ) : (
-            <p className="field-hint">Privileged containers are administrator-only.</p>
+            <p className="field-hint">Privileged containers are admin-only.</p>
           )
         ) : null}
         <div className="review-box">
@@ -161,6 +162,24 @@ export function WorkloadCreatePage() {
             {privileged ? ", privileged" : ""}
           </span>
         </div>
+        {isExpert(mode) ? (
+          <pre className="code-block">
+            {JSON.stringify(
+              {
+                name,
+                kind: "system-container",
+                image_pin: pin,
+                cpus: Number(cpus) || 1,
+                memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
+                pool_id: poolID || undefined,
+                network_id: networkID,
+                privileged: admin ? privileged : false,
+              },
+              null,
+              2,
+            )}
+          </pre>
+        ) : null}
         {hint ? <p className="field-hint">{hint}</p> : null}
         <div className="btn-row">
           <button

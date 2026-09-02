@@ -12,6 +12,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
@@ -30,10 +31,12 @@ func main() {
 		Metrics:   ms,
 		Workloads: &lxc.Engine{DataDir: dir},
 		QEMU:      &qemu.Engine{DataDir: dir},
+		OCI:       &oci.Engine{DataDir: dir},
 	}
 	recoverStaleNetwork(dir)
-	go scrapeMetrics(ms)
+	go scrapeMetrics(ms, dir)
 	go h.RefreshLoop(30 * time.Second)
+	go h.SessionLoop(dir, 30*time.Second)
 	go reattachQEMU(h.QEMU)
 	if err := agentrpc.Serve(h); err != nil {
 		log.Fatal(err)
@@ -52,8 +55,8 @@ func recoverStaleNetwork(dataDir string) {
 	_ = eng.RecoverStale(time.Now().UTC())
 }
 
-func scrapeMetrics(ms *metrics.Store) {
-	col := &metrics.Collector{FSRoot: "/", Store: ms}
+func scrapeMetrics(ms *metrics.Store, dataDir string) {
+	col := &metrics.Collector{FSRoot: "/", Store: ms, StorageRoot: filepath.Join(dataDir, "storage")}
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
 	_ = col.Scrape(time.Now().UTC())

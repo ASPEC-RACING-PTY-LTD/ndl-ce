@@ -15,6 +15,7 @@ import (
 
 	"github.com/no-dal/ndl-ce/internal/iojail"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
 const filesChunk = 8 << 20
@@ -47,6 +48,33 @@ func (h *Handler) resolveJail(targetKind, targetID, requested string) (string, e
 			return "", fmt.Errorf("jail_root is required for a system container")
 		}
 		return filepath.Clean(requested), nil
+	case "vm-guest":
+		id := strings.TrimSpace(targetID)
+		if err := qemu.ValidateWorkloadID(id); err != nil {
+			return "", err
+		}
+		return guestJailRoot, nil
+	case "vm":
+		id := strings.TrimSpace(targetID)
+		if err := qemu.ValidateWorkloadID(id); err != nil {
+			return "", err
+		}
+		requested = strings.TrimSpace(requested)
+		cleaned := filepath.Clean(requested)
+		if requested == "" || isGuestJail(requested) || isGuestJail(cleaned) || cleaned == "/" || cleaned == "guest" {
+			return guestJailRoot, nil
+		}
+		p := cleaned
+		prefix := filepath.Join("/var/lib/ndl/runtime/qemu", id) + string(filepath.Separator)
+		if !strings.HasPrefix(p, prefix) || strings.Contains(p, "..") {
+			return "", fmt.Errorf("console socket is invalid")
+		}
+		switch filepath.Base(p) {
+		case "serial.sock", "vnc.sock":
+			return p, nil
+		default:
+			return "", fmt.Errorf("console socket is invalid")
+		}
 	default:
 		return "", fmt.Errorf("unsupported target kind %q", kind)
 	}

@@ -11,6 +11,24 @@ sleep 2
 systemctl is-active ndl-control ndl-agent
 test -S /run/ndl/agent.sock
 test -f /lib/systemd/system/nodal-ct@.service
+test -f /lib/systemd/system/ndl-agent.service
+grep -qx 'NoNewPrivileges=yes' /lib/systemd/system/ndl-agent.service
+grep -qx 'DevicePolicy=closed' /lib/systemd/system/ndl-agent.service
+grep -qx 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE' /lib/systemd/system/ndl-agent.service
+if grep -q 'CapabilityBoundingSet=~' /lib/systemd/system/ndl-agent.service; then
+  echo "ndl-agent.service must not ship CapabilityBoundingSet=~" >&2
+  exit 1
+fi
+if grep -q 'DevicePolicy=auto' /lib/systemd/system/ndl-agent.service; then
+  echo "ndl-agent.service must not set DevicePolicy=auto" >&2
+  exit 1
+fi
+if grep -q 'NoNewPrivileges=no' /lib/systemd/system/ndl-agent.service; then
+  echo "ndl-agent.service must keep NoNewPrivileges=yes" >&2
+  exit 1
+fi
+grep -q 'DeviceAllow=char-pts rw' /lib/systemd/system/ndl-agent.service
+grep -q 'DeviceAllow=/dev/ptmx rw' /lib/systemd/system/ndl-agent.service
 
 systemctl show -p LoadState --value lxc-net.service | grep -qx masked
 systemctl is-active lxc-net.service >/dev/null 2>&1 && exit 1 || true
@@ -139,6 +157,22 @@ if [ "$got_ip" != 1 ]; then
   exit 1
 fi
 echo "CT received isolated DHCP address"
+
+# Reproduce the packaged ndl-agent sandbox around typed lxc-attach.
+# Direct root attach already works; the Debian 13 hardware failure was the
+# agent's CapabilityBoundingSet missing CAP_SETFCAP (uid_map) and
+# CAP_SYS_PTRACE (setns). DevicePolicy stays closed. NoNewPrivileges stays yes.
+ATTACH_UID=$(systemd-run --wait --collect --pipe --quiet \
+  -p User=root \
+  -p NoNewPrivileges=yes \
+  -p 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE' \
+  -p DevicePolicy=closed \
+  -p 'DeviceAllow=char-pts rw' \
+  -p 'DeviceAllow=/dev/ptmx rw' \
+  -p 'DeviceAllow=/dev/pts rw' \
+  /usr/bin/lxc-attach -P /var/lib/ndl/runtime/lxc -n "$WL" -- /bin/sh -c 'id -u' | tr -d '\r\n')
+test "$ATTACH_UID" = "0"
+echo "typed lxc-attach succeeded under the ndl-agent sandbox"
 
 # Workloads survive control plane and agent stop.
 systemctl stop ndl-control ndl-agent

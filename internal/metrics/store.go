@@ -29,6 +29,16 @@ CREATE TABLE IF NOT EXISTS samples (
 	PRIMARY KEY (name, ts)
 );
 CREATE INDEX IF NOT EXISTS samples_ts ON samples(ts);
+CREATE TABLE IF NOT EXISTS samples_1h (
+	name TEXT NOT NULL,
+	bucket INTEGER NOT NULL,
+	sum REAL NOT NULL,
+	min REAL NOT NULL,
+	max REAL NOT NULL,
+	count INTEGER NOT NULL,
+	PRIMARY KEY (name, bucket)
+);
+CREATE INDEX IF NOT EXISTS samples_1h_bucket ON samples_1h(bucket);
 `
 
 // Open creates or reopens an agent metrics database at path.
@@ -99,6 +109,18 @@ func (s *Store) Record(name string, ts time.Time, value float64) error {
 	); err != nil {
 		return fmt.Errorf("metrics: insert: %w", err)
 	}
+	bucket := ts.Truncate(time.Hour).Unix()
+	if _, err := tx.Exec(
+		`INSERT INTO samples_1h (name, bucket, sum, min, max, count) VALUES (?, ?, ?, ?, ?, 1)
+		 ON CONFLICT(name, bucket) DO UPDATE SET
+			sum = samples_1h.sum + excluded.sum,
+			min = MIN(samples_1h.min, excluded.min),
+			max = MAX(samples_1h.max, excluded.max),
+			count = samples_1h.count + 1`,
+		name, bucket, value, value, value,
+	); err != nil {
+		return fmt.Errorf("metrics: downsample: %w", err)
+	}
 	if err := pruneTx(tx, time.Now().UTC(), s.retention, s.maxRows); err != nil {
 		return err
 	}
@@ -122,61 +144,14 @@ func (s *Store) Query(names []string, from, to time.Time) (QueryResult, error) {
 	if !from.IsZero() && from.After(to) {
 		return emptyWithNames(names), nil
 	}
-	fromMicro := int64(0)
-	if !from.IsZero() {
-		fromMicro = from.UnixMicro()
-	}
-	toMicro := to.UnixMicro()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
-	if len(names) == 0 {
-		rows, err = s.db.Query(
-			`SELECT name, ts, value FROM samples WHERE ts >= ? AND ts <= ? ORDER BY name, ts`,
-			fromMicro, toMicro,
-		)
-	} else {
-		placeholders := make([]string, len(names))
-		args := make([]any, 0, len(names)+2)
-		for i, n := range names {
-			placeholders[i] = "?"
-			args = append(args, n)
-		}
-		args = append(args, fromMicro, toMicro)
-		q := `SELECT name, ts, value FROM samples WHERE name IN (` +
-			strings.Join(placeholders, ",") +
-			`) AND ts >= ? AND ts <= ? ORDER BY name, ts`
-		rows, err = s.db.Query(q, args...)
-	}
+	useHourly := !from.IsZero() && to.Sub(from) > DownsampleAfter
+	byName, order, err := s.queryLocked(names, from, to, useHourly)
 	if err != nil {
-		return empty, fmt.Errorf("metrics: query: %w", err)
-	}
-	defer rows.Close()
-
-	byName := make(map[string][]Point)
-	var order []string
-	for rows.Next() {
-		var name string
-		var ts int64
-		var value float64
-		if err := rows.Scan(&name, &ts, &value); err != nil {
-			return empty, fmt.Errorf("metrics: scan: %w", err)
-		}
-		if _, ok := byName[name]; !ok {
-			order = append(order, name)
-		}
-		byName[name] = append(byName[name], Point{
-			Time:  time.UnixMicro(ts).UTC(),
-			Value: value,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return empty, fmt.Errorf("metrics: rows: %w", err)
+		return empty, err
 	}
 
 	now := time.Now().UTC()
@@ -199,6 +174,130 @@ func (s *Store) Query(names []string, from, to time.Time) (QueryResult, error) {
 		}
 	}
 	return QueryResult{Status: rollup(series), Series: series}, nil
+}
+
+// QueryWindow returns recorded series plus KnownNames padded as collecting.
+func (s *Store) QueryWindow(from, to time.Time) (QueryResult, error) {
+	res, err := s.Query(nil, from, to)
+	if err != nil {
+		return res, err
+	}
+	have := map[string]bool{}
+	for _, ser := range res.Series {
+		have[ser.Name] = true
+	}
+	for _, name := range KnownNames {
+		if have[name] {
+			continue
+		}
+		res.Series = append(res.Series, Series{
+			Name: name, Status: StatusCollecting, Unit: unitFor(name), Points: []Point{},
+		})
+	}
+	if len(res.Series) == 0 {
+		return QueryResult{Status: StatusCollecting, Series: []Series{}}, nil
+	}
+	res.Status = rollup(res.Series)
+	return res, nil
+}
+
+func (s *Store) queryLocked(names []string, from, to time.Time, hourly bool) (map[string][]Point, []string, error) {
+	byName := map[string][]Point{}
+	var order []string
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if hourly {
+		fromBucket := from.Truncate(time.Hour).Unix()
+		toBucket := to.Unix()
+		if len(names) == 0 {
+			rows, err = s.db.Query(
+				`SELECT name, bucket, sum, count FROM samples_1h WHERE bucket >= ? AND bucket <= ? AND count > 0 ORDER BY name, bucket`,
+				fromBucket, toBucket,
+			)
+		} else {
+			placeholders := make([]string, len(names))
+			args := make([]any, 0, len(names)+2)
+			for i, n := range names {
+				placeholders[i] = "?"
+				args = append(args, n)
+			}
+			args = append(args, fromBucket, toBucket)
+			q := `SELECT name, bucket, sum, count FROM samples_1h WHERE name IN (` +
+				strings.Join(placeholders, ",") +
+				`) AND bucket >= ? AND bucket <= ? AND count > 0 ORDER BY name, bucket`
+			rows, err = s.db.Query(q, args...)
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("metrics: query hourly: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			var bucket int64
+			var sum float64
+			var count int
+			if err := rows.Scan(&name, &bucket, &sum, &count); err != nil {
+				return nil, nil, fmt.Errorf("metrics: scan hourly: %w", err)
+			}
+			if count <= 0 {
+				continue
+			}
+			if _, ok := byName[name]; !ok {
+				order = append(order, name)
+			}
+			byName[name] = append(byName[name], Point{
+				Time:  time.Unix(bucket, 0).UTC(),
+				Value: sum / float64(count),
+			})
+		}
+		return byName, order, rows.Err()
+	}
+
+	fromMicro := int64(0)
+	if !from.IsZero() {
+		fromMicro = from.UnixMicro()
+	}
+	toMicro := to.UnixMicro()
+	if len(names) == 0 {
+		rows, err = s.db.Query(
+			`SELECT name, ts, value FROM samples WHERE ts >= ? AND ts <= ? ORDER BY name, ts`,
+			fromMicro, toMicro,
+		)
+	} else {
+		placeholders := make([]string, len(names))
+		args := make([]any, 0, len(names)+2)
+		for i, n := range names {
+			placeholders[i] = "?"
+			args = append(args, n)
+		}
+		args = append(args, fromMicro, toMicro)
+		q := `SELECT name, ts, value FROM samples WHERE name IN (` +
+			strings.Join(placeholders, ",") +
+			`) AND ts >= ? AND ts <= ? ORDER BY name, ts`
+		rows, err = s.db.Query(q, args...)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("metrics: query: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var ts int64
+		var value float64
+		if err := rows.Scan(&name, &ts, &value); err != nil {
+			return nil, nil, fmt.Errorf("metrics: scan: %w", err)
+		}
+		if _, ok := byName[name]; !ok {
+			order = append(order, name)
+		}
+		byName[name] = append(byName[name], Point{
+			Time:  time.UnixMicro(ts).UTC(),
+			Value: value,
+		})
+	}
+	return byName, order, rows.Err()
 }
 
 // Prune deletes samples older than Retention relative to now, then applies the row cap.
@@ -226,6 +325,10 @@ func pruneTx(tx *sql.Tx, now time.Time, retention time.Duration, maxRows int) er
 	cutoff := now.Add(-retention).UnixMicro()
 	if _, err := tx.Exec(`DELETE FROM samples WHERE ts < ?`, cutoff); err != nil {
 		return fmt.Errorf("metrics: prune age: %w", err)
+	}
+	hourCutoff := now.Add(-HourlyRetention).Unix()
+	if _, err := tx.Exec(`DELETE FROM samples_1h WHERE bucket < ?`, hourCutoff); err != nil {
+		return fmt.Errorf("metrics: prune hourly: %w", err)
 	}
 	if maxRows <= 0 {
 		maxRows = DefaultMaxRows

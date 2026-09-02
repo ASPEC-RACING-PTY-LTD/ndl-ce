@@ -185,9 +185,6 @@ func (e *Engine) Restart(ctx context.Context, id string) error {
 }
 
 func (e *Engine) ensureAppliedTraverse(id string) {
-	if e.SkipHostCmds {
-		return
-	}
 	applied, err := e.readApplied(id)
 	if err != nil {
 		return
@@ -262,7 +259,8 @@ func (e *Engine) Clone(ctx context.Context, req LifecycleRequest) (Result, error
 func specChanged(prev, next Spec) bool {
 	return prev.CPUs != next.CPUs || prev.MemoryBytes != next.MemoryBytes ||
 		prev.BridgeName != next.BridgeName || prev.Privileged != next.Privileged ||
-		prev.UIDMap != next.UIDMap || prev.GIDMap != next.GIDMap || prev.Name != next.Name
+		prev.UIDMap != next.UIDMap || prev.GIDMap != next.GIDMap || prev.Name != next.Name ||
+		strings.Join(prev.GPUDevices, "\n") != strings.Join(next.GPUDevices, "\n")
 }
 
 func (e *Engine) prepareRootfs(spec Spec) error {
@@ -422,7 +420,7 @@ func (e *Engine) observeOne(ctx context.Context, h Hint) Observed {
 		Status:          StatusUnavailable,
 		Reason:          "workload was not observed",
 		MigrateReady:    false,
-		MigrateBlockers: []string{"offline migrate is Phase 32"},
+		MigrateBlockers: []string{"live migrate of system containers is post-1.0"},
 		ObservedAt:      e.now(),
 	}
 	if out.Kind == "" {

@@ -52,17 +52,17 @@ func TestObserveWorkloadsMapsKindVMViaQEMUNotLXC(t *testing.T) {
 			if w.Reason == "workload was not observed" {
 				t.Fatal("vm hint must not be sent to lxc")
 			}
-			foundQEMUBlocker := false
+			foundQEMU := false
 			for _, b := range w.MigrateBlockers {
-				if b == "QEMU live migrate is not implemented" {
-					foundQEMUBlocker = true
-				}
-				if b == "offline migrate is Phase 32" {
+				if b == "offline migrate is Phase 32" || b == "live migrate of system containers is post-1.0" {
 					t.Fatal("vm hint must not receive lxc migrate blockers")
 				}
+				if b == "frozen argv is missing" || b == "cpu host does not live-migrate" {
+					foundQEMU = true
+				}
 			}
-			if !foundQEMUBlocker {
-				t.Fatalf("vm must be mapped via qemu.Engine: blockers=%v", w.MigrateBlockers)
+			if !foundQEMU && !w.MigrateReady {
+				t.Fatalf("vm must be mapped via qemu.Engine: blockers=%v ready=%v", w.MigrateBlockers, w.MigrateReady)
 			}
 		case ctID:
 			ctHits++

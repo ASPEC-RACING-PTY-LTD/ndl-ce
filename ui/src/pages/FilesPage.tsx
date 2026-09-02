@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   deleteFile,
   downloadFile,
-  getWorkload,
   listFiles,
   mkdirFile,
   uploadFile,
@@ -16,6 +15,7 @@ import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
 import { formatBytes } from "../format";
+import { workloadGuestIOReason } from "../guestIO";
 import { fileTypeLabel } from "../labels";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
@@ -40,32 +40,49 @@ export function FilesPage() {
   const host = kind === "node";
   const canWrite = host ? roles?.includes("admin") : Boolean(roles?.includes("admin") || roles?.includes("operator"));
   const canDownload = host ? roles?.includes("admin") : Boolean(roles?.includes("admin") || roles?.includes("operator"));
-  const canRead = host ? roles?.includes("admin") : Boolean(roles?.includes("admin") || roles?.includes("operator") || roles?.includes("viewer"));
+  const canRead = host
+    ? roles?.includes("admin")
+    : Boolean(roles?.includes("admin") || roles?.includes("operator") || roles?.includes("viewer"));
   const [path, setPath] = useState(pathFromQuery);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [mkdirName, setMkdirName] = useState("");
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ioReady, setIoReady] = useState(kind === "node");
 
   useEffect(() => {
     if (kind !== "workload") {
+      setIoReady(true);
       return;
     }
     let cancelled = false;
-    void getWorkload(id)
-      .then((w) => {
-        if (!cancelled && w.kind !== "system-container") {
-          setUnsupported("Files are not available for this workload type.");
+    async function check() {
+      try {
+        const reason = await workloadGuestIOReason(id);
+        if (cancelled) {
+          return;
         }
-      })
-      .catch((err) => {
+        if (reason) {
+          setUnsupported(reason);
+          setIoReady(false);
+          return;
+        }
+        setUnsupported(null);
+        setIoReady(true);
+      } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
         }
-      });
+      }
+    }
+    void check();
+    const timer = window.setInterval(() => {
+      void check();
+    }, 4000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [kind, id]);
 
@@ -76,7 +93,7 @@ export function FilesPage() {
   }
 
   useEffect(() => {
-    if (!canRead || unsupported) {
+    if (!canRead || unsupported || !ioReady) {
       return;
     }
     let cancelled = false;
@@ -89,7 +106,7 @@ export function FilesPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRead, unsupported, kind, id]);
+  }, [canRead, unsupported, ioReady, kind, id]);
 
   async function onUpload(files: FileList | null) {
     if (!files?.[0]) {
@@ -116,7 +133,7 @@ export function FilesPage() {
       setMkdirName("");
       await reload(path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create folder failed");
+      setError(err instanceof Error ? err.message : "mkdir failed");
     } finally {
       setBusy(false);
     }
@@ -131,7 +148,7 @@ export function FilesPage() {
       await deleteFile(kind, id, joinPath(path, entry.name));
       await reload(path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed");
+      setError(err instanceof Error ? err.message : "delete failed");
     } finally {
       setBusy(false);
     }
@@ -141,7 +158,7 @@ export function FilesPage() {
     try {
       await downloadFile(kind, id, joinPath(path, entry.name), entry.name);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Download failed");
+      setError(err instanceof Error ? err.message : "download failed");
     }
   }
 
@@ -169,6 +186,7 @@ export function FilesPage() {
   }
 
   const termHref = host ? `/nodes/${id}/terminal` : `/workloads/${id}/terminal`;
+  const termHereHref = `${termHref}?cwd=${encodeURIComponent(path)}`;
   const backHref = host ? "/node" : `/workloads/${id}`;
 
   return (
@@ -198,7 +216,7 @@ export function FilesPage() {
                 disabled={busy}
               />
             </label>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate(termHref)}>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => navigate(termHereHref)}>
               <Icon name="terminal" size={14} />
               Terminal Here
             </button>
@@ -216,7 +234,7 @@ export function FilesPage() {
           />
           <button className="btn btn-sm btn-primary" type="button" disabled={busy || !mkdirName} onClick={() => void onMkdir()}>
             <Icon name="create" size={14} />
-            Create folder
+            mkdir
           </button>
         </div>
       ) : null}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { listEvents } from "../api/client";
+import { getTimeline, listEvents } from "../api/client";
 import type { EventItem } from "../api/phase2";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
@@ -8,8 +8,19 @@ import { ResourceTable } from "../components/ResourceTable";
 import { formatWhen } from "../format";
 import { eventHeadline, payloadFacts } from "../humanize";
 
+type TimelineItem = {
+  kind: string;
+  id: string;
+  title: string;
+  created_at: string;
+  result?: string;
+  state?: string;
+  message?: string;
+};
+
 export function EventsPage() {
   const [items, setItems] = useState<EventItem[] | null>(null);
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
 
@@ -27,6 +38,13 @@ export function EventsPage() {
           setItems([]);
         }
       });
+    void getTimeline()
+      .then((body) => {
+        if (!cancelled) {
+          setTimeline(body.items ?? []);
+        }
+      })
+      .catch(() => undefined);
     if (typeof EventSource === "undefined") {
       return () => {
         cancelled = true;
@@ -64,9 +82,33 @@ export function EventsPage() {
 
   return (
     <section className="page" aria-labelledby="events-heading">
-      <PageHeader id="events-heading" title="Events" kicker="What changed on this appliance" />
+      <PageHeader
+        id="events-heading"
+        title="Events"
+        kicker="Platform events plus a change timeline from events, tasks, and audit."
+      />
       {error ? <ErrorState>{error}</ErrorState> : null}
+      <section className="section">
+        <h2>What changed</h2>
+        {timeline.length === 0 ? (
+          <p>No timeline entries in this window.</p>
+        ) : (
+          <ul className="activity-list">
+            {timeline.map((item) => (
+              <li key={item.kind + item.id}>
+                <span>
+                  <strong>{item.kind}</strong> {item.title}
+                  {item.result ? ` ${item.result}` : ""}
+                  {item.state ? ` ${item.state}` : ""}
+                </span>
+                <span className="muted">{formatWhen(item.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <div className="stack">
+        <h2>Live events</h2>
         <label className="search-field">
           <Icon name="search" size={14} />
           <input

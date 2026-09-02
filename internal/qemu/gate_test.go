@@ -131,6 +131,24 @@ func TestGateQemuGAChannelInArgv(t *testing.T) {
 	}
 }
 
+func TestGateNodalGuestChannelInArgv(t *testing.T) {
+	argv := gateCompile(t)
+	joined := strings.Join(argv, " ")
+	if !strings.Contains(joined, NodalGuestName) {
+		t.Fatalf("nodal guest channel %s missing: %s", NodalGuestName, joined)
+	}
+	found := false
+	for _, a := range argv {
+		if strings.Contains(a, "name="+NodalGuestName) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("virtserialport name=%s missing: %v", NodalGuestName, argv)
+	}
+}
+
 func TestGateQMPIsControlMonitor(t *testing.T) {
 	argv := gateCompile(t)
 	joined := strings.Join(argv, " ")

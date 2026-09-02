@@ -60,3 +60,36 @@ func TestReconcileStorageMarksUnavailableWithoutDelete(t *testing.T) {
 		t.Fatal("library row must remain unavailable")
 	}
 }
+
+func TestReconcileStorageKeepsZFSVolumesWhenPoolAvailable(t *testing.T) {
+	m := NewMemory()
+	cluster := uuid.NewString()
+	node := uuid.NewString()
+	poolID := uuid.NewString()
+	volID := uuid.NewString()
+	_ = m.CreateCluster(context.Background(), Cluster{ID: cluster, Name: "local"})
+	_ = m.CreateStoragePool(context.Background(), StoragePool{
+		ID: poolID, ClusterID: cluster, NodeID: node, Name: "tank",
+		BackendType: storage.BackendZFS, Status: storage.StatusAvailable, RootPath: storage.ZFSMountRoot + "/1",
+	})
+	_ = m.CreateVolume(context.Background(), Volume{
+		ID: volID, ClusterID: cluster, NodeID: node, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatZvol,
+		SizeBytes: 1 << 30, Status: storage.StatusAvailable, BackendType: storage.BackendZFS,
+		BackendRef: "/dev/zvol/tank/" + volID,
+	})
+	pools, _ := m.ListStoragePools(context.Background(), cluster)
+	_, _, err := ReconcileStorage(context.Background(), m, cluster, pools, storage.Observation{
+		Pools: []storage.ObservedPool{{
+			PoolID: poolID, BackendType: storage.BackendZFS, Status: storage.StatusAvailable,
+			Capabilities: storage.ZFSCapabilities(),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vol, _ := m.GetVolume(context.Background(), cluster, volID)
+	if vol == nil || vol.Status != storage.StatusAvailable {
+		t.Fatalf("zfs volume must stay available: %+v", vol)
+	}
+}

@@ -12,12 +12,19 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/ai"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/cluster"
+	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/migrate"
+	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 )
@@ -38,29 +45,72 @@ type Observer interface {
 	GetMetrics(ctx context.Context, from, to time.Time) (metrics.QueryResult, error)
 }
 
+// LicenseProbe talks to a licensing API only when a key is present.
+type LicenseProbe interface {
+	Check(ctx context.Context, key string) error
+}
+
+// LogsRPC reads typed journalctl output from the agent.
+type LogsRPC interface {
+	GetLogs(ctx context.Context, unit string, lines int, since time.Time) (journald.Result, error)
+}
+
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
-	Store      appdb.Store
-	Lockout    *auth.Lockout
-	Agent      Agent
-	Observer   Observer
-	Storage    StorageRPC
-	Network    NetworkRPC
-	Workloads  WorkloadRPC
-	IO         IORPC
-	QEMU       QemuRPC
-	Hub        *EventHub
-	UI         fs.FS
-	Now        func() time.Time
-	SetupHash  string
-	AllowedUID uint32
+	Store        appdb.Store
+	Lockout      *auth.Lockout
+	Agent        Agent
+	Observer     Observer
+	Logs         LogsRPC
+	HTTPClient   *http.Client
+	Storage      StorageRPC
+	Network      NetworkRPC
+	Workloads    WorkloadRPC
+	IO           IORPC
+	QEMU         QemuRPC
+	VM           VMRPC
+	OCI          OCIRPC
+	Backup       BackupRPC
+	Object       ObjectRPC
+	Verify       VerifyRPC
+	Update       UpdateRPC
+	GPU          GPURPC
+	ZFS          ZFSRPC
+	LVM          LVMRPC
+	Datastore    DatastoreRPC
+	Distributed  DistributedRPC
+	K8sProcs     func() []string
+	OSDProcs     func() []string
+	AICompleter  ai.Completer
+	LicenseProbe LicenseProbe
+	Hub          *EventHub
+	Migrate      migrate.Runtime
+	UI           fs.FS
+	Now          func() time.Time
+	SetupHash    string
+	AllowedUID   uint32
+	TLSRequired  bool
+	TLSServing   bool // true when this process is listening with TLS
+	CertDirty    bool // true when on-disk material changed since TLSServing
+	TLSListen    string
+	HTTPListen   string
+	HTTPSURL     string
+	CertDir      ndltls.Dir
+	ClusterCA    cluster.CA
+	LeaseHolder  string
+	Challenges   *ndltls.ChallengeMem
+	backupMu     sync.Mutex
+	nightlyBusy  atomic.Bool
+	alertBusy    atomic.Bool
 }
 
 type principal struct {
-	User   appdb.User
-	Roles  []string
-	Grants []string
-	SessID string
+	User    appdb.User
+	Roles   []string
+	Grants  []string
+	SessID  string
+	AAL     int
+	TokenID string
 }
 
 func (s *Server) now() time.Time {
@@ -79,13 +129,30 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/v1/me", s.me)
+	mux.HandleFunc("PATCH /api/v1/me", s.patchMe)
 	mux.HandleFunc("POST /api/v1/tokens", s.createToken)
 	mux.HandleFunc("POST /api/v1/tokens/revoke", s.revokeToken)
 	mux.HandleFunc("GET /api/v1/nodes", s.listNodes)
+	mux.HandleFunc("POST /api/v1/placement/preview", s.previewPlacement)
+	mux.HandleFunc("GET /api/v1/node-groups", s.listNodeGroups)
+	mux.HandleFunc("POST /api/v1/node-groups", s.createNodeGroup)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/maintain", s.maintainNode)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/maintain/exit", s.exitMaintenance)
 	mux.HandleFunc("GET /api/v1/nodes/{id}", s.getNode)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/hardware", s.nodeHardware)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/usb", s.listNodeUSB)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/pci", s.listNodePCI)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/capabilities", s.nodeCapabilities)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/metrics", s.nodeMetrics)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/logs", s.nodeLogs)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/smart", s.nodeSMART)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/capacity", s.nodeCapacity)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/logs", s.workloadLogs)
+	mux.HandleFunc("GET /api/v1/timeline", s.timeline)
+	mux.HandleFunc("GET /api/v1/alerts", s.listAlerts)
+	mux.HandleFunc("POST /api/v1/alerts", s.createAlert)
+	mux.HandleFunc("GET /api/v1/alerts/channels", s.listChannels)
+	mux.HandleFunc("POST /api/v1/alerts/channels", s.createChannel)
 	mux.HandleFunc("GET /api/v1/tasks", s.listTasks)
 	mux.HandleFunc("GET /api/v1/events", s.listEvents)
 	mux.HandleFunc("GET /api/v1/events/stream", s.streamEvents)
@@ -104,16 +171,81 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/networks/{id}/apply", s.applyNetwork)
 	mux.HandleFunc("GET /api/v1/networks/{id}/reservations", s.listReservations)
 	mux.HandleFunc("POST /api/v1/networks/{id}/reservations", s.createReservation)
+	mux.HandleFunc("POST /api/v1/networks/vlans", s.createVLAN)
+	mux.HandleFunc("POST /api/v1/networks/bonds", s.createBond)
+	mux.HandleFunc("POST /api/v1/networks/policies", s.createPolicy)
+	mux.HandleFunc("POST /api/v1/networks/policies/{id}/apply", s.applyPolicy)
+	mux.HandleFunc("POST /api/v1/networks/overlays", s.createOverlay)
+	mux.HandleFunc("GET /api/v1/cluster/wg", s.listWG)
+	mux.HandleFunc("POST /api/v1/cluster/wg/peers", s.createWGPeer)
+	mux.HandleFunc("POST /api/v1/cluster/sessions", s.openClusterSession)
+	mux.HandleFunc("GET /api/v1/cluster", s.getCluster)
+	mux.HandleFunc("GET /api/v1/cluster/ha", s.getClusterHA)
+	mux.HandleFunc("POST /api/v1/cluster/ha/replica", s.configureHAReplica)
+	mux.HandleFunc("POST /api/v1/cluster/ha/fence", s.fenceClusterHA)
+	mux.HandleFunc("POST /api/v1/cluster/ha/promote", s.promoteClusterHA)
+	mux.HandleFunc("GET /api/v1/cluster/update", s.getClusterUpdate)
+	mux.HandleFunc("POST /api/v1/cluster/update", s.runClusterUpdate)
+	mux.HandleFunc("GET /api/v1/features", s.listFeatures)
+	mux.HandleFunc("POST /api/v1/features/{id}/enable", s.enableFeature)
+	mux.HandleFunc("POST /api/v1/features/{id}/disable", s.disableFeature)
+	mux.HandleFunc("GET /api/v1/kubernetes", s.getKubernetes)
+	mux.HandleFunc("POST /api/v1/kubernetes/start", s.startKubernetes)
+	mux.HandleFunc("POST /api/v1/kubernetes/stop", s.stopKubernetes)
+	mux.HandleFunc("GET /api/v1/store/apps", s.listStoreApps)
+	mux.HandleFunc("GET /api/v1/store/apps/{id}", s.getStoreApp)
+	mux.HandleFunc("POST /api/v1/store/apps/import", s.importStoreApp)
+	mux.HandleFunc("POST /api/v1/store/apps/{id}/install", s.installStoreApp)
+	mux.HandleFunc("POST /api/v1/store/apps/{id}/sign", s.signStoreApp)
+	mux.HandleFunc("POST /api/v1/store/apps/{id}/verify", s.verifyStoreApp)
+	mux.HandleFunc("GET /api/v1/store/apps/{id}/scans", s.getStoreAppScans)
+	mux.HandleFunc("GET /api/v1/store/installations", s.listStoreInstalls)
+	mux.HandleFunc("GET /api/v1/store/keys", s.listStoreKeys)
+	mux.HandleFunc("POST /api/v1/store/keys", s.createStoreKey)
+	mux.HandleFunc("POST /api/v1/store/keys/{id}/revoke", s.revokeStoreKey)
+	mux.HandleFunc("GET /api/v1/store/policy", s.getStorePolicy)
+	mux.HandleFunc("PUT /api/v1/store/policy", s.setStorePolicy)
+	mux.HandleFunc("GET /api/v1/policies", s.listAutomationPolicies)
+	mux.HandleFunc("POST /api/v1/policies", s.createAutomationPolicy)
+	mux.HandleFunc("POST /api/v1/policies/{id}/apply", s.applyAutomationPolicy)
+	mux.HandleFunc("GET /api/v1/policy-runs", s.listPolicyRuns)
+	mux.HandleFunc("GET /api/v1/ai/providers", s.listAIProviders)
+	mux.HandleFunc("POST /api/v1/ai/providers", s.createAIProvider)
+	mux.HandleFunc("GET /api/v1/ai/profiles", s.listAIProfiles)
+	mux.HandleFunc("POST /api/v1/ai/profiles", s.createAIProfile)
+	mux.HandleFunc("POST /api/v1/ai/ask", s.aiAsk)
+	mux.HandleFunc("GET /api/v1/ai/plans", s.listAIPlans)
+	mux.HandleFunc("POST /api/v1/ai/plans", s.createAIPlan)
+	mux.HandleFunc("GET /api/v1/ai/plans/{id}", s.getAIPlan)
+	mux.HandleFunc("POST /api/v1/ai/plans/{id}/approve", s.approveAIPlan)
+	mux.HandleFunc("GET /api/v1/settings/license", s.getLicense)
+	mux.HandleFunc("POST /api/v1/settings/license", s.activateLicense)
+	mux.HandleFunc("POST /api/v1/settings/license/clear", s.clearLicense)
+	mux.HandleFunc("POST /api/v1/cluster/join-tokens", s.createJoinToken)
+	mux.HandleFunc("POST /api/v1/cluster/join", s.joinCluster)
+	mux.HandleFunc("POST /api/v1/cluster/nodes/{id}/revoke", s.revokeClusterNode)
 	mux.HandleFunc("GET /api/v1/workloads", s.listWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
+	mux.HandleFunc("POST /api/v1/workloads/import", s.importVM)
 	mux.HandleFunc("GET /api/v1/workloads/{id}", s.getWorkload)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/guest", s.getWorkloadGuest)
 	mux.HandleFunc("PATCH /api/v1/workloads/{id}", s.patchWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/{id}", s.patchWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/start", s.lifecycleWorkload("start"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/stop", s.lifecycleWorkload("stop"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/restart", s.lifecycleWorkload("restart"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/force-stop", s.lifecycleWorkload("force-stop"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/delete", s.lifecycleWorkload("delete"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/clone", s.lifecycleWorkload("clone"))
+	mux.HandleFunc("POST /api/v1/workloads/{id}/migrate", s.migrateWorkload)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/migrate", s.getWorkloadMigrate)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/export", s.exportVM)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/usb", s.attachUSB)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/pci", s.attachPCI)
+	mux.HandleFunc("GET /api/v1/templates", s.listTemplates)
+	mux.HandleFunc("POST /api/v1/templates", s.createTemplate)
+	mux.HandleFunc("POST /api/v1/templates/{id}/deploy", s.deployTemplate)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/console/sessions", s.createVMConsole)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/terminal/sessions", s.createNodeTerminal)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/terminal/sessions", s.createWorkloadTerminal)
 	mux.HandleFunc("GET /api/v1/io/sessions/{id}", s.getIOSession)
@@ -136,6 +268,75 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/lab/qemu-proto", s.labQemuProtoStatus)
 	mux.HandleFunc("POST /api/v1/lab/qemu-proto/stop", s.labQemuProtoStop)
 	mux.HandleFunc("POST /api/v1/lab/qemu-proto/kill", s.labQemuProtoKill)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/snapshots", s.listSnapshots)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/snapshots", s.createSnapshot)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/snapshots/flatten", s.flattenSnapshots)
+	mux.HandleFunc("POST /api/v1/snapshots/{id}/rollback", s.rollbackSnapshot)
+	mux.HandleFunc("GET /api/v1/backups/targets", s.listBackupTargets)
+	mux.HandleFunc("POST /api/v1/backups/targets", s.createBackupTarget)
+	mux.HandleFunc("GET /api/v1/backups/policies", s.listBackupPolicies)
+	mux.HandleFunc("POST /api/v1/backups/policies", s.createBackupPolicy)
+	mux.HandleFunc("GET /api/v1/backups/runs", s.listBackupRuns)
+	mux.HandleFunc("GET /api/v1/backups/artifacts", s.listBackupArtifacts)
+	mux.HandleFunc("GET /api/v1/backups/dr-export", s.exportBackupDR)
+	mux.HandleFunc("POST /api/v1/backups/run", s.runBackup)
+	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore", s.restoreBackup)
+	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/verify", s.verifyBackupArtifact)
+	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore-file", s.restoreBackupFile)
+	mux.HandleFunc("GET /api/v1/certs", s.getCerts)
+	mux.HandleFunc("POST /api/v1/certs/generate", s.generateCert)
+	mux.HandleFunc("POST /api/v1/certs/import", s.importCert)
+	mux.HandleFunc("POST /api/v1/certs/acme", s.acmeCert)
+	mux.HandleFunc("GET /api/v1/updates", s.getUpdates)
+	mux.HandleFunc("POST /api/v1/updates/check", s.checkUpdates)
+	mux.HandleFunc("POST /api/v1/updates/preflight", s.preflightUpdates)
+	mux.HandleFunc("POST /api/v1/updates/checkpoint", s.checkpointUpdates)
+	mux.HandleFunc("POST /api/v1/updates/apply", s.applyUpdates)
+	mux.HandleFunc("POST /api/v1/updates/rollback", s.rollbackUpdates)
+	mux.HandleFunc("POST /api/v1/auth/mfa/verify", s.verifyMFA)
+	mux.HandleFunc("GET /api/v1/mfa", s.getMFA)
+	mux.HandleFunc("POST /api/v1/mfa/enroll", s.enrollMFA)
+	mux.HandleFunc("POST /api/v1/mfa/confirm", s.confirmMFA)
+	mux.HandleFunc("GET /api/v1/audit", s.listAudit)
+	mux.HandleFunc("GET /api/v1/groups", s.listGroups)
+	mux.HandleFunc("POST /api/v1/groups", s.createGroup)
+	mux.HandleFunc("POST /api/v1/groups/{id}/members", s.addGroupMember)
+	mux.HandleFunc("POST /api/v1/groups/{id}/roles", s.bindGroupRole)
+	mux.HandleFunc("GET /api/v1/service-principals", s.listServicePrincipals)
+	mux.HandleFunc("POST /api/v1/service-principals", s.createServicePrincipal)
+	mux.HandleFunc("POST /api/v1/secrets/reveal", s.revealSecret)
+	mux.HandleFunc("POST /api/v1/cluster/destroy", s.destroyCluster)
+	mux.HandleFunc("POST /api/v1/storage/volumes/{id}/unlock", s.unlockVolume)
+	mux.HandleFunc("GET /api/v1/gpus", s.listGPUs)
+	mux.HandleFunc("GET /api/v1/gpus/runtime", s.gpuRuntime)
+	mux.HandleFunc("POST /api/v1/gpus/runtime/install", s.installGPURuntime)
+	mux.HandleFunc("POST /api/v1/gpus/assign", s.assignGPU)
+	mux.HandleFunc("POST /api/v1/gpus/unassign", s.unassignGPU)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/gpus", s.workloadGPUs)
+	mux.HandleFunc("GET /api/v1/registries", s.listRegistries)
+	mux.HandleFunc("POST /api/v1/registries", s.createRegistry)
+	mux.HandleFunc("GET /api/v1/stacks", s.listStacks)
+	mux.HandleFunc("POST /api/v1/stacks", s.createStack)
+	mux.HandleFunc("POST /api/v1/stacks/import", s.importStackCompose)
+	mux.HandleFunc("GET /api/v1/stacks/{id}", s.getStack)
+	mux.HandleFunc("PATCH /api/v1/stacks/{id}", s.patchStack)
+	mux.HandleFunc("DELETE /api/v1/stacks/{id}", s.deleteStack)
+	mux.HandleFunc("POST /api/v1/stacks/{id}/apply", s.applyStack)
+	mux.HandleFunc("PATCH /api/v1/stacks/{id}/members/{memberId}", s.patchStackMember)
+	mux.HandleFunc("GET /api/v1/storage/zfs", s.zfsRuntime)
+	mux.HandleFunc("POST /api/v1/storage/zfs/import", s.importZFS)
+	mux.HandleFunc("POST /api/v1/storage/zfs/create", s.createZFS)
+	mux.HandleFunc("GET /api/v1/storage/lvm", s.lvmRuntime)
+	mux.HandleFunc("POST /api/v1/storage/lvm/create", s.createLVM)
+	mux.HandleFunc("GET /api/v1/storage/datastores", s.datastoreRuntime)
+	mux.HandleFunc("POST /api/v1/storage/nfs", s.createNFS)
+	mux.HandleFunc("POST /api/v1/storage/smb", s.createSMB)
+	mux.HandleFunc("POST /api/v1/storage/iscsi", s.createISCSI)
+	mux.HandleFunc("GET /api/v1/storage/distributed", s.distributedRuntime)
+	mux.HandleFunc("POST /api/v1/storage/distributed", s.attachDistributed)
+	mux.HandleFunc("POST /api/v1/storage/distributed/osds", s.createDistributedOSD)
+	mux.HandleFunc("POST /api/v1/storage/distributed/osds/start", s.startDistributedOSD)
+	mux.HandleFunc("POST /api/v1/storage/distributed/osds/stop", s.stopDistributedOSD)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}
@@ -166,9 +367,10 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	open, _ := s.setupOpen(r.Context())
 	status := "ok"
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":     status,
-		"service":    "ndl-control",
-		"setup_open": open,
+		"status":      status,
+		"service":     "ndl-control",
+		"setup_open":  open,
+		"tls_enabled": s.TLSRequired,
 	})
 }
 
@@ -291,15 +493,16 @@ func (s *Server) setupClaim(w http.ResponseWriter, r *http.Request) {
 			ID:           nodeID,
 			ClusterID:    cluster.ID,
 			Name:         "local",
+			Role:         "control",
 			HostPlatform: plat,
 		})
 	}
-	if err := s.issueSession(w, r, user); err != nil {
+	if err := s.issueSession(w, r, user, 1); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.audit(r, cluster.ID, user.ID, "setup.claim", "ok", "")
-	s.writeMe(w, r, user)
+	s.writeMe(w, r, user, 1)
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -334,13 +537,28 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
+	if user.Kind == appdb.UserKindService {
+		s.lock().Fail(key, s.now())
+		s.audit(r, cluster.ID, user.ID, "auth.login", "denied", "service principal")
+		writeErr(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "mfa state is unavailable")
+		return
+	}
+	if method != nil && method.Enabled {
+		s.writeMFAChallenge(w, r, *user)
+		return
+	}
 	s.lock().Success(key)
-	if err := s.issueSession(w, r, *user); err != nil {
+	if err := s.issueSession(w, r, *user, 1); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.audit(r, cluster.ID, user.ID, "auth.login", "ok", "")
-	s.writeMe(w, r, *user)
+	s.writeMe(w, r, *user, 1)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -350,7 +568,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.RevokeSession(r.Context(), p.SessID)
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.cookieSecure(r), SameSite: http.SameSiteLaxMode})
 	s.audit(r, p.User.ClusterID, p.User.ID, "auth.logout", "ok", "")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -365,7 +583,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	s.writeMe(w, r, p.User)
+	s.writeMe(w, r, p.User, p.AAL)
 }
 
 func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
@@ -374,11 +592,18 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
 	}
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
+	}
+	for _, perm := range req.Permissions {
+		if !rbac.Authorize(p.Grants, perm) {
+			writeErr(w, http.StatusForbidden, "token permissions cannot exceed the creator")
+			return
+		}
 	}
 	raw, err := secutil.RandomHex(24)
 	if err != nil {
@@ -387,12 +612,13 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 	plain := "ndl_" + raw
 	tok := appdb.APIToken{
-		ID:        uuid.NewString(),
-		ClusterID: p.User.ClusterID,
-		UserID:    p.User.ID,
-		Name:      strings.TrimSpace(req.Name),
-		TokenHash: secutil.HashSHA256(plain),
-		Prefix:    plain[:8],
+		ID:          uuid.NewString(),
+		ClusterID:   p.User.ClusterID,
+		UserID:      p.User.ID,
+		Name:        strings.TrimSpace(req.Name),
+		TokenHash:   secutil.HashSHA256(plain),
+		Prefix:      plain[:8],
+		Permissions: req.Permissions,
 	}
 	if err := s.Store.CreateToken(r.Context(), tok); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -449,7 +675,7 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 		if err != nil || u == nil {
 			return nil, errors.New("invalid token")
 		}
-		return s.asPrincipal(r.Context(), *u, "")
+		return s.asPrincipal(r.Context(), *u, "", 1, row.ID, row.Permissions)
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
@@ -463,10 +689,10 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 	if err != nil || u == nil {
 		return nil, errors.New("invalid session")
 	}
-	return s.asPrincipal(r.Context(), *u, sess.ID)
+	return s.asPrincipal(r.Context(), *u, sess.ID, sess.AAL, "", nil)
 }
 
-func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string) (*principal, error) {
+func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string, aal int, tokenID string, tokenPerms []string) (*principal, error) {
 	roles, err := s.Store.UserRoles(ctx, u.ID)
 	if err != nil {
 		return nil, err
@@ -476,13 +702,28 @@ func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string) (
 	for _, role := range roles {
 		grants = append(grants, cat.PermissionsForRole(role)...)
 	}
-	return &principal{User: u, Roles: roles, Grants: grants, SessID: sessID}, nil
+	if len(tokenPerms) > 0 {
+		filtered := make([]string, 0, len(tokenPerms))
+		for _, perm := range tokenPerms {
+			if rbac.Authorize(grants, perm) {
+				filtered = append(filtered, perm)
+			}
+		}
+		grants = filtered
+	}
+	if aal <= 0 {
+		aal = 1
+	}
+	return &principal{User: u, Roles: roles, Grants: grants, SessID: sessID, AAL: aal, TokenID: tokenID}, nil
 }
 
-func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb.User) error {
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb.User, aal int) error {
 	raw, err := randomCookie()
 	if err != nil {
 		return err
+	}
+	if aal <= 0 {
+		aal = 1
 	}
 	sess := appdb.Session{
 		ID:        uuid.NewString(),
@@ -490,6 +731,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 		UserID:    user.ID,
 		TokenHash: secutil.HashSHA256(raw),
 		ExpiresAt: s.now().Add(sessionTTL),
+		AAL:       aal,
 	}
 	if err := s.Store.CreateSession(r.Context(), sess); err != nil {
 		return err
@@ -499,21 +741,40 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 		Value:    raw,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   s.cookieSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  sess.ExpiresAt,
 	})
 	return nil
 }
 
-func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User) {
+func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User, aal int) {
 	roles, _ := s.Store.UserRoles(r.Context(), user.ID)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id":    user.ID,
-		"username":   user.Username,
-		"roles":      roles,
-		"edition":    edition,
-		"cluster_id": user.ClusterID,
-	})
+	mfaEnabled := false
+	if method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID); err == nil && method != nil && method.Enabled {
+		mfaEnabled = true
+	}
+	if aal <= 0 {
+		aal = 1
+	}
+	prefs, _ := s.Store.GetUserPrefs(r.Context(), user.ID)
+	level, ack, ackAt := prefsJSON(prefs)
+	out := map[string]any{
+		"user_id":     user.ID,
+		"username":    user.Username,
+		"roles":       roles,
+		"edition":     edition,
+		"cluster_id":  user.ClusterID,
+		"aal":         aal,
+		"mfa_enabled": mfaEnabled,
+		"kind":        firstNonEmpty(user.Kind, appdb.UserKindPerson),
+		"ux_level":    level,
+		"expert_ack":  ack,
+	}
+	if ackAt != "" {
+		out["expert_ack_at"] = ackAt
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) ensureCluster(ctx context.Context) error {

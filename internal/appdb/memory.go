@@ -9,30 +9,106 @@ import (
 
 // Memory is an in-process Store for tests.
 type Memory struct {
-	mu           sync.Mutex
-	cluster      *Cluster
-	setup        *SetupToken
-	users        map[string]User
-	roles        map[string][]string
-	binds        map[string][]string
-	sess         map[string]Session
-	tokens       map[string]APIToken
-	node         *Node
-	audit        []AuditEvent
-	inventory    map[string]HardwareInventory
-	observations []NodeObservation
-	operations   []Operation
-	events       []Event
-	pools        map[string]StoragePool
-	volumes      map[string]Volume
-	library      map[string]LibraryItem
-	networks      map[string]Network
-	addresses     map[string]Address
-	reservations  map[string]DHCPReservation
-	workloads     map[string]Workload
-	workloadDisks map[string]WorkloadDisk
-	workloadNICs  map[string]WorkloadNIC
-	ioSessions    map[string]IOSession
+	mu                 sync.Mutex
+	cluster            *Cluster
+	setup              *SetupToken
+	users              map[string]User
+	roles              map[string][]string
+	binds              map[string][]string
+	sess               map[string]Session
+	tokens             map[string]APIToken
+	nodes              map[string]Node
+	audit              []AuditEvent
+	inventory          map[string]HardwareInventory
+	observations       []NodeObservation
+	operations         []Operation
+	events             []Event
+	pools              map[string]StoragePool
+	volumes            map[string]Volume
+	library            map[string]LibraryItem
+	networks           map[string]Network
+	addresses          map[string]Address
+	reservations       map[string]DHCPReservation
+	workloads          map[string]Workload
+	workloadDisks      map[string]WorkloadDisk
+	workloadNICs       map[string]WorkloadNIC
+	vmCidata           map[string]VMCidata
+	vmFirmware         map[string]VMFirmware
+	ioSessions         map[string]IOSession
+	certificate        *Certificate
+	snapshots          map[string]Snapshot
+	backupTargets      map[string]BackupTarget
+	backupCreds        map[string][2]string
+	backupPolicies     map[string]BackupPolicy
+	backupRuns         map[string]BackupRun
+	backupArtifacts    map[string]BackupArtifact
+	updateOps          map[string]UpdateOperation
+	groups             map[string]Group
+	groupMembers       map[string][]string
+	groupRoles         map[string][]string
+	mfaMethods         map[string]MFAMethod
+	mfaSecrets         map[string]string
+	mfaRecovery        map[string][]string
+	mfaChallenges      map[string]MFAChallenge
+	servicePrincipals  map[string]ServicePrincipal
+	volumeEnc          map[string]VolumeEncryption
+	gpuAssignments     map[string]GPUAssignment
+	zfsPools           map[string]ZFSPool
+	zfsDatasets        map[string]ZFSDataset
+	lvmVGs             map[string]LVMVG
+	lvmLVs             map[string]LVMLV
+	datastores         map[string]Datastore
+	datastoreSecrets   map[string][2]string
+	distributedPools   map[string]DistributedPool
+	distributedSecrets map[string]string
+	distributedOSDs    map[string]DistributedOSD
+	alertRules         map[string]AlertRule
+	notifyChannels     map[string]NotificationChannel
+	notifySecrets      map[string][2]string
+	userPrefs          map[string]UserPrefs
+	vmTemplates        map[string]VMTemplate
+	usbAttachments     map[string]USBAttachment
+	guestObs           map[string]GuestObservation
+	registries         map[string]Registry
+	registrySecrets    map[string][2]string
+	stacks             map[string]Stack
+	stackMembers       map[string]StackMember
+	netVLANs           map[string]NetworkVLAN
+	netBonds           map[string]NetworkBond
+	netPolicies        map[string]NetworkPolicy
+	netOverlays        map[string]NetworkOverlay
+	wgPeers            map[string]WGPeer
+	remoteNodes        map[string]RemoteNode
+	remoteSessions     map[string]RemoteSession
+	joinTokens         map[string]JoinToken
+	clusterLease       *ClusterLease
+	haState            map[string]HAState
+	haReplicaDSN       map[string]string
+	rollingPlans       map[string]RollingPlan
+	rollingSteps       map[string]RollingStep
+	features           map[string]Feature
+	storePackages      map[string]StorePackage
+	storeInstalls      map[string]StoreInstallation
+	signingKeys        map[string]SigningKey
+	signingSecrets     map[string]string
+	packageSigs        map[string]PackageSignature
+	storeVerifies      map[string]StoreVerification
+	scanResults        map[string]ScanResult
+	storePolicies      map[string]StorePolicy
+	nodeGroups         map[string]NodeGroup
+	nodeGroupMembers   map[string][]string
+	nodeMaint          map[string]NodeMaintenance
+	placements         map[string]WorkloadPlacement
+	migrateJobs        map[string]MigrateJob
+	policies           map[string]Policy
+	policyRuns         map[string]PolicyRun
+	aiProviders        map[string]AIProvider
+	aiProviderKeys     map[string]string
+	aiProfiles         map[string]AIProfile
+	aiPlans            map[string]AIPlan
+	aiPlanSteps        map[string]AIPlanStep
+	licenseState       map[string]LicenseState
+	licenseKeys        map[string]string
 }
 
 // NewMemory returns an empty store.
@@ -116,6 +192,9 @@ func (m *Memory) CreateUser(_ context.Context, u User) error {
 			return fmt.Errorf("user exists")
 		}
 	}
+	if u.Kind == "" {
+		u.Kind = UserKindPerson
+	}
 	m.users[u.ID] = u
 	return nil
 }
@@ -196,6 +275,13 @@ func (m *Memory) UserRoles(_ context.Context, userID string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := append([]string{}, m.binds[userID]...)
+	for gid, members := range m.groupMembers {
+		for _, uid := range members {
+			if uid == userID {
+				out = append(out, m.groupRoles[gid]...)
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -276,23 +362,28 @@ func (m *Memory) RevokeToken(_ context.Context, id, userID string) error {
 func (m *Memory) UpsertNode(_ context.Context, n Node) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.node = &n
+	if m.nodes == nil {
+		m.nodes = map[string]Node{}
+	}
+	m.nodes[n.ID] = n
 	return nil
 }
 
 func (m *Memory) GetNode(_ context.Context, clusterID string) (*Node, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.node == nil || m.node.ClusterID != clusterID {
-		return nil, nil
-	}
-	n := *m.node
-	return &n, nil
+	return controlNodeLocked(m.nodes, clusterID), nil
 }
 
 func (m *Memory) InsertAudit(_ context.Context, e AuditEvent) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if e.ID == "" {
+		e.ID = fmt.Sprintf("audit-%d", len(m.audit)+1)
+	}
+	if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
 	m.audit = append(m.audit, e)
 	return nil
 }

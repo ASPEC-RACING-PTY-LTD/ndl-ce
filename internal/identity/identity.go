@@ -2,6 +2,8 @@ package identity
 
 import (
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,6 +85,59 @@ func (f Files) SaveNode(nodeID, clusterID string) error {
 		return err
 	}
 	return writeJSON(f.NodePath(), nodeDoc{NodeID: nodeID, ClusterID: clusterID}, 0640)
+}
+
+// SaveJoinMaterial persists HTTP join identity and node mTLS material. The CA private key is not included.
+func (f Files) SaveJoinMaterial(clusterID, nodeID string, caPEM, certPEM, keyPEM []byte) error {
+	if err := f.SaveCluster(clusterID); err != nil {
+		return err
+	}
+	if err := f.SaveNode(nodeID, clusterID); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(f.Dir, 0750); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(f.Dir, "cluster-ca.crt"), caPEM, 0640); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(f.Dir, "node.crt"), certPEM, 0640); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(f.Dir, "node.key"), keyPEM, 0600)
+}
+
+// LoadClientTLS returns optional mTLS material written by SaveJoinMaterial.
+func (f Files) LoadClientTLS() (*tls.Config, error) {
+	certPEM, err := os.ReadFile(filepath.Join(f.Dir, "node.crt"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	keyPEM, err := os.ReadFile(filepath.Join(f.Dir, "node.key"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+	}
+	if caPEM, err := os.ReadFile(filepath.Join(f.Dir, "cluster-ca.crt")); err == nil {
+		pool := x509.NewCertPool()
+		if pool.AppendCertsFromPEM(caPEM) {
+			cfg.RootCAs = pool
+		}
+	}
+	return cfg, nil
 }
 
 // EnsureHostKey creates host.key if missing.

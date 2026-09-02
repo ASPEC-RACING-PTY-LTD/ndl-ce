@@ -41,6 +41,25 @@ func ReconcileStorage(ctx context.Context, st Store, clusterID string, pools []S
 			next.AllocatedBytes = seen.Capacity.AllocatedBytes
 			next.ProvisionedBytes = seen.Capacity.ProvisionedBytes
 			next.TotalBytes = seen.Capacity.TotalBytes
+			if seen.MetadataPercent != nil || seen.Backing.ThinPool != "" || seen.Backing.FSUUID != "" {
+				var backing storage.BackingIdentity
+				if len(next.Backing) > 0 {
+					_ = json.Unmarshal(next.Backing, &backing)
+				}
+				if seen.Backing.FSUUID != "" {
+					backing.FSUUID = seen.Backing.FSUUID
+				}
+				if seen.Backing.Device != "" {
+					backing.Device = seen.Backing.Device
+				}
+				if seen.Backing.ThinPool != "" {
+					backing.ThinPool = seen.Backing.ThinPool
+				}
+				if seen.MetadataPercent != nil {
+					backing.MetadataPercent = seen.MetadataPercent
+				}
+				next.Backing, _ = json.Marshal(backing)
+			}
 		}
 		if err := st.UpdateStoragePoolObserved(ctx, next); err != nil {
 			return unavailable, recovered, err
@@ -61,6 +80,12 @@ func ReconcileStorage(ctx context.Context, st Store, clusterID string, pools []S
 				v.XattrState = seen.XattrState
 				alloc := seen.Allocated
 				v.AllocatedBytes = &alloc
+			} else if next.Status == storage.StatusUnavailable {
+				v.Status = storage.StatusUnavailable
+			} else if pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM || pool.BackendType == storage.BackendNFS || pool.BackendType == storage.BackendSMB || pool.BackendType == storage.BackendISCSI {
+				if v.Status == storage.StatusUnavailable || v.Status == "" {
+					v.Status = storage.StatusAvailable
+				}
 			} else {
 				v.Status = storage.StatusUnavailable
 			}

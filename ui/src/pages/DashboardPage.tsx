@@ -21,8 +21,12 @@ import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes, formatPercent, formatWhen } from "../format";
 import { eventHeadline, humanTaskMessage } from "../humanize";
 import { metricLabel, taskKindLabel } from "../labels";
+import { useSession } from "../session";
+import { canMutate } from "../ux";
 
 export function DashboardPage() {
+  const session = useSession();
+  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
   const [node, setNode] = useState<NodeSummary | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -98,8 +102,8 @@ export function DashboardPage() {
   const attention = [
     needStorage ? { href: "/storage", text: "No usable storage pool yet. Create a Directory pool on the Storage page." } : null,
     needNetwork ? { href: "/network", text: "No guest network yet. Create an isolated network on the Network page." } : null,
-    needWorkload
-      ? { href: "/workloads", text: "Storage and network are ready. Create a system container on the Workloads page." }
+    needWorkload && mutate
+      ? { href: "/workloads", text: "Storage and network are ready. Create a VM or system container on the Workloads page." }
       : null,
   ].filter((item): item is { href: string; text: string } => Boolean(item));
   const failedTasks = tasks.filter((t) => t.state === "failed");
@@ -142,9 +146,7 @@ export function DashboardPage() {
         <div className="status-tile">
           <span className="label">Storage</span>
           <span className="value">{pools.length ? formatBytes(usableBytes) : "Not reported"}</span>
-          <span className="meta">
-            {pools.length ? `${formatBytes(allocatedBytes)} allocated` : "No pool yet"}
-          </span>
+          <span className="meta">{pools.length ? `${formatBytes(allocatedBytes)} allocated` : "No pool yet"}</span>
         </div>
       </div>
       <div className="meter-grid">

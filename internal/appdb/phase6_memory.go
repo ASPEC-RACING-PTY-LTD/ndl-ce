@@ -71,6 +71,9 @@ func (m *Memory) UpdateIOSession(_ context.Context, s IOSession) error {
 	cur.CWD = s.CWD
 	cur.ConnectedAt = s.ConnectedAt
 	cur.EndedAt = s.EndedAt
+	if !s.ExpiresAt.IsZero() {
+		cur.ExpiresAt = s.ExpiresAt
+	}
 	m.ioSessions[s.ID] = cur
 	return nil
 }

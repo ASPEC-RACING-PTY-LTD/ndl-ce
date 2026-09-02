@@ -62,18 +62,18 @@ func TestRetentionPruneRemovesOldRows(t *testing.T) {
 	if err := s.Prune(now.Add(2 * 24 * time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	res, err := s.Query(
-		[]string{"keep", "old"},
-		now.Add(-20*24*time.Hour),
-		now.Add(3*24*time.Hour),
-	)
+	keep, err := s.Query([]string{"keep"}, now.Add(-time.Hour), now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := seriesByName(res, "keep"); len(got.Points) != 1 {
+	if got := seriesByName(keep, "keep"); len(got.Points) != 1 {
 		t.Fatalf("keep should remain: %+v", got)
 	}
-	if got := seriesByName(res, "old"); len(got.Points) != 0 {
+	oldRes, err := s.Query([]string{"old"}, now.Add(-13*24*time.Hour).Add(-time.Hour), now.Add(-13*24*time.Hour).Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := seriesByName(oldRes, "old"); len(got.Points) != 0 {
 		t.Fatalf("old should be pruned: %+v", got)
 	}
 }
@@ -219,6 +219,47 @@ func TestPruneCapsGrowth(t *testing.T) {
 	}
 	if ser.Points[0].Value != 12 || ser.Points[7].Value != 19 {
 		t.Fatalf("expected oldest dropped: %+v", ser.Points)
+	}
+}
+
+func TestHourlyDownsampleDoesNotInventBuckets(t *testing.T) {
+	s := openTestStore(t)
+	base := time.Date(2026, 9, 1, 0, 15, 0, 0, time.UTC)
+	if err := s.Record(MetricCPUBusyRatio, base, 0.2); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Record(MetricCPUBusyRatio, base.Add(20*time.Minute), 0.4); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Record(MetricCPUBusyRatio, base.Add(2*time.Hour), 0.8); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Query([]string{MetricCPUBusyRatio}, base.Add(-time.Hour), base.Add(8*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ser := seriesByName(res, MetricCPUBusyRatio)
+	if len(ser.Points) != 2 {
+		t.Fatalf("hourly must not fill missing hours: %+v", ser.Points)
+	}
+	if ser.Points[0].Value < 0.29 || ser.Points[0].Value > 0.31 {
+		t.Fatalf("hour0 avg %v", ser.Points[0].Value)
+	}
+	if ser.Points[1].Value != 0.8 {
+		t.Fatalf("hour2 %v", ser.Points[1].Value)
+	}
+}
+
+func TestQueryWindowPadsKnownNames(t *testing.T) {
+	s := openTestStore(t)
+	now := time.Now().UTC()
+	res, err := s.QueryWindow(now.Add(-time.Hour), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cpu := seriesByName(res, MetricCPUBusyRatio)
+	if cpu.Status != StatusCollecting || len(cpu.Points) != 0 {
+		t.Fatalf("empty window must not fake zeros: %+v", cpu)
 	}
 }
 

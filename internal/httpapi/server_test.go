@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 )
@@ -30,7 +31,7 @@ func testServer(t *testing.T) (*Server, *appdb.Memory, string) {
 	if err := mem.EnsureRoles(context.Background(), clusterID, rbac.SeedRoles()); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Store: mem, Lockout: auth.NewLockout(), SetupHash: secutil.HashSHA256(token)}
+	s := &Server{Store: mem, Lockout: auth.NewLockout(), SetupHash: secutil.HashSHA256(token), ClusterCA: cluster.CA{Dir: t.TempDir()}}
 	return s, mem, token
 }
 

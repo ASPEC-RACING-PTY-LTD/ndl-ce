@@ -184,6 +184,9 @@ func TestUnprivilegedConfigHasIDMap(t *testing.T) {
 	if !strings.Contains(cfg, "lxc.cgroup2.memory.max") || !strings.Contains(cfg, "lxc.cgroup2.cpu.max") {
 		t.Fatal(cfg)
 	}
+	if strings.Contains(cfg, "/dev/dri") {
+		t.Fatal("create without GPU must not mount /dev/dri")
+	}
 }
 
 func TestPrivilegedConfigOmitsIDMap(t *testing.T) {
@@ -193,6 +196,69 @@ func TestPrivilegedConfigOmitsIDMap(t *testing.T) {
 	})
 	if strings.Contains(cfg, "lxc.idmap") {
 		t.Fatal(cfg)
+	}
+}
+
+func TestGPUDevicesMountRenderNode(t *testing.T) {
+	cfg := RenderConfig(Spec{
+		WorkloadID: uuid.NewString(), Name: "ct", RootfsPath: "/vol/root",
+		Privileged: true, GPUDevices: []string{"/dev/dri/renderD128"},
+	})
+	if !strings.Contains(cfg, "lxc.mount.entry = /dev/dri/renderD128") {
+		t.Fatal(cfg)
+	}
+	if strings.Contains(cfg, "c 226:*") || strings.Contains(cfg, "c 195:*") {
+		t.Fatalf("must not wildcard DRM/NVIDIA majors: %s", cfg)
+	}
+	if !strings.Contains(cfg, "lxc.cgroup2.devices.allow = c 226:128 rwm") {
+		t.Fatal(cfg)
+	}
+}
+
+func TestGPUDevicesFailClosedWithoutKnownNode(t *testing.T) {
+	cfg := RenderConfig(Spec{
+		WorkloadID: uuid.NewString(), Name: "ct", RootfsPath: "/vol/root",
+		Privileged: true, GPUDevices: []string{"/dev/dri/by-path/pci-0000:02:00.0-render"},
+	})
+	if strings.Contains(cfg, "226:*") || strings.Contains(cfg, "195:*") {
+		t.Fatalf("unknown node must not wildcard: %s", cfg)
+	}
+	if strings.Contains(cfg, "lxc.cgroup2.devices.allow") {
+		t.Fatalf("unknown node must fail closed: %s", cfg)
+	}
+}
+
+func TestApplyGPUDevicesRewritesConfig(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	vol := uuid.NewString()
+	root := filepath.Join(e.DataDir, "rootfs", id)
+	if _, err := e.Create(context.Background(), Spec{
+		WorkloadID: id, Name: "alpine", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: vol, RootfsPath: root, BridgeName: "ndldeadbeef",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := os.ReadFile(e.configPath(id))
+	if strings.Contains(string(cfg), "/dev/dri") {
+		t.Fatal("create without GPU must not mount /dev/dri")
+	}
+	if err := e.ApplyGPUDevices(id, []string{"/dev/dri/renderD128"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := os.ReadFile(e.configPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfg), "lxc.mount.entry = /dev/dri/renderD128") {
+		t.Fatal(string(cfg))
+	}
+	if err := e.ApplyGPUDevices(id, nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = os.ReadFile(e.configPath(id))
+	if strings.Contains(string(cfg), "/dev/dri") {
+		t.Fatal("unassign must drop /dev/dri")
 	}
 }
 

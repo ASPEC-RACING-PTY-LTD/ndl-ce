@@ -25,6 +25,37 @@ func TestEnrollUnsupportedHost(t *testing.T) {
 	}
 }
 
+func TestEnrollJoinTokenDoesNotMintIdentity(t *testing.T) {
+	dir := t.TempDir()
+	h := &Handler{
+		Ident: identity.Files{Dir: dir},
+		Lookup: func() (hostos.Platform, error) {
+			return hostos.DetectFrom(strings.NewReader("ID=debian\nVERSION_ID=13\nPRETTY_NAME=\"Debian GNU/Linux 13\"\n"), "amd64")
+		},
+	}
+	_, err := h.Enroll(context.Background(), connect.NewRequest(&agentv1.EnrollRequest{
+		ClusterId: "cluster-a", JoinToken: "join-secret",
+	}))
+	if err == nil {
+		t.Fatal("unix Enroll must not consume join tokens")
+	}
+	if err := h.Ident.SaveCluster("cluster-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Ident.SaveNode("node-from-http-join", "cluster-a"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.Enroll(context.Background(), connect.NewRequest(&agentv1.EnrollRequest{
+		ClusterId: "cluster-a", JoinToken: "join-secret",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Msg.GetNodeId() != "node-from-http-join" {
+		t.Fatalf("must reuse join identity %s", res.Msg.GetNodeId())
+	}
+}
+
 func TestEnrollStableNodeID(t *testing.T) {
 	dir := t.TempDir()
 	h := &Handler{
@@ -84,6 +115,17 @@ func TestHelloObservePing(t *testing.T) {
 	}
 	if _, err := h.GetMetrics(context.Background(), connect.NewRequest(&agentv1.GetMetricsRequest{})); err != nil {
 		t.Fatal(err)
+	}
+	h.SkipHostCmds = true
+	logs, err := h.GetLogs(context.Background(), connect.NewRequest(&agentv1.GetLogsRequest{Unit: "ndl-agent.service"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logs.Msg.GetStatus() != "unavailable" || len(logs.Msg.GetLines()) != 0 {
+		t.Fatalf("skip must not invent logs: %+v", logs.Msg)
+	}
+	if _, err := h.GetLogs(context.Background(), connect.NewRequest(&agentv1.GetLogsRequest{Unit: "syslog.service"})); err == nil {
+		t.Fatal("host syslog must be refused")
 	}
 	ping, err := h.Execute(context.Background(), connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_Ping{Ping: &agentv1.Ping{}},

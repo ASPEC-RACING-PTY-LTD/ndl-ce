@@ -35,6 +35,9 @@ ensure_dirs() {
   mkdir -p /etc/ndl
   chown root:ndl-control /etc/ndl
   chmod 0750 /etc/ndl
+  mkdir -p /var/lib/ndl/certs
+  chown ndl-control:ndl-control /var/lib/ndl/certs
+  chmod 0700 /var/lib/ndl/certs
 }
 
 ensure_postgres_ready() {

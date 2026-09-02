@@ -13,9 +13,33 @@ import { StoragePage } from "./pages/StoragePage";
 import { FilesPage } from "./pages/FilesPage";
 import { TerminalPage } from "./pages/TerminalPage";
 import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
+import { OciCreatePage } from "./pages/OciCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
+import { VmCreatePage } from "./pages/VmCreatePage";
+import { TemplatesPage } from "./pages/TemplatesPage";
+import { ImportVMPage } from "./pages/ImportVMPage";
+import { ConsolePage } from "./pages/ConsolePage";
+import { CertificatePage } from "./pages/CertificatePage";
+import { ClusterPage } from "./pages/ClusterPage";
+import { FeaturesPage } from "./pages/FeaturesPage";
+import { KubernetesPage } from "./pages/KubernetesPage";
+import { StorePage } from "./pages/StorePage";
+import { AutomationPage } from "./pages/AutomationPage";
+import { AskPage } from "./pages/AskPage";
+import { PlansPage } from "./pages/PlansPage";
+import { LicensePage } from "./pages/LicensePage";
+import { DocsPage } from "./pages/DocsPage";
+import { SnapshotsPage } from "./pages/SnapshotsPage";
+import { BackupsPage } from "./pages/BackupsPage";
+import { UpdatesPage } from "./pages/UpdatesPage";
+import { MFAPage } from "./pages/MFAPage";
+import { GroupsPage } from "./pages/GroupsPage";
+import { AuditPage } from "./pages/AuditPage";
+import { GpuPage } from "./pages/GpuPage";
+import { StacksPage, StackDetailPage } from "./pages/StacksPage";
 import { TasksPage } from "./pages/TasksPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
 import { SessionProvider, useSession } from "./session";
 
@@ -47,6 +71,9 @@ function matchPage(path: string) {
   if (path === "/events" || path === "/node/events") {
     return <EventsPage />;
   }
+  if (path === "/alerts") {
+    return <AlertsPage />;
+  }
   if (path === "/storage") {
     return <StoragePage />;
   }
@@ -56,23 +83,38 @@ function matchPage(path: string) {
   if (path === "/workloads/new/system-container") {
     return <WorkloadCreatePage />;
   }
-  if (/^\/workloads\/[^/]+\/(terminal|files|settings|snapshots)$/.test(path)) {
-    if (path.endsWith("/terminal")) {
-      return <TerminalPage />;
-    }
-    if (path.endsWith("/files")) {
-      return <FilesPage />;
-    }
-    return <WorkloadDetailPage />;
+  if (path === "/workloads/new/oci") {
+    return <OciCreatePage />;
   }
-  if (/^\/nodes\/[^/]+\/(terminal|files|hardware|metrics)$/.test(path) || /^\/nodes\/[^/]+$/.test(path)) {
-    if (path.endsWith("/terminal")) {
-      return <TerminalPage />;
-    }
-    if (path.endsWith("/files")) {
-      return <FilesPage />;
-    }
-    return <NodePage />;
+  if (path === "/workloads/new/vm") {
+    return <VmCreatePage />;
+  }
+  if (path === "/workloads/import") {
+    return <ImportVMPage />;
+  }
+  if (path === "/templates") {
+    return <TemplatesPage />;
+  }
+  if (/^\/workloads\/[^/]+\/console$/.test(path)) {
+    return <ConsolePage />;
+  }
+  if (/^\/workloads\/[^/]+\/terminal$/.test(path)) {
+    return <TerminalPage />;
+  }
+  if (/^\/workloads\/[^/]+\/files$/.test(path)) {
+    return <FilesPage />;
+  }
+  if (/^\/workloads\/[^/]+\/snapshots$/.test(path)) {
+    return <SnapshotsPage />;
+  }
+  if (/^\/nodes\/[^/]+\/terminal$/.test(path)) {
+    return <TerminalPage />;
+  }
+  if (/^\/nodes\/[^/]+\/files$/.test(path)) {
+    return <FilesPage />;
+  }
+  if (/^\/workloads\/[^/]+\/gpus$/.test(path)) {
+    return <GpuPage />;
   }
   if (path.startsWith("/workloads/") && path !== "/workloads") {
     return <WorkloadDetailPage />;
@@ -80,8 +122,59 @@ function matchPage(path: string) {
   if (path === "/workloads") {
     return <WorkloadsPage />;
   }
+  if (path === "/stacks") {
+    return <StacksPage />;
+  }
+  if (path.startsWith("/stacks/")) {
+    return <StackDetailPage />;
+  }
   if (path === "/node" || path.startsWith("/node/")) {
     return <NodePage />;
+  }
+  if (path === "/settings/cluster") {
+    return <ClusterPage />;
+  }
+  if (path === "/settings/features") {
+    return <FeaturesPage />;
+  }
+  if (path === "/settings/kubernetes") {
+    return <KubernetesPage />;
+  }
+  if (path === "/store") {
+    return <StorePage />;
+  }
+  if (path === "/automation") {
+    return <AutomationPage />;
+  }
+  if (path === "/ask") {
+    return <AskPage />;
+  }
+  if (path === "/plans") {
+    return <PlansPage />;
+  }
+  if (path === "/settings/license") {
+    return <LicensePage />;
+  }
+  if (path === "/docs") {
+    return <DocsPage />;
+  }
+  if (path === "/settings/certificates") {
+    return <CertificatePage />;
+  }
+  if (path === "/settings/updates") {
+    return <UpdatesPage />;
+  }
+  if (path === "/settings/mfa") {
+    return <MFAPage />;
+  }
+  if (path === "/groups") {
+    return <GroupsPage />;
+  }
+  if (path === "/audit") {
+    return <AuditPage />;
+  }
+  if (path === "/backups") {
+    return <BackupsPage />;
   }
   if (path === "/") {
     return <DashboardPage />;

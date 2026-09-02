@@ -81,28 +81,34 @@ WHERE cluster_id = $1 AND consumed_at IS NULL`, clusterID)
 }
 
 func (p *Postgres) CreateUser(ctx context.Context, u User) error {
-	_, err := p.DB.ExecContext(ctx, `INSERT INTO users (id, cluster_id, username, password_hash) VALUES ($1,$2,$3,$4)`,
-		u.ID, u.ClusterID, u.Username, u.PasswordHash)
+	if u.Kind == "" {
+		u.Kind = UserKindPerson
+	}
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO users (id, cluster_id, username, password_hash, kind) VALUES ($1,$2,$3,$4,$5)`,
+		u.ID, u.ClusterID, u.Username, u.PasswordHash, u.Kind)
 	return err
 }
 
 func (p *Postgres) GetUserByName(ctx context.Context, clusterID, username string) (*User, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, username, password_hash FROM users WHERE cluster_id=$1 AND username=$2`, clusterID, username)
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, username, password_hash, COALESCE(kind, 'person') FROM users WHERE cluster_id=$1 AND username=$2`, clusterID, username)
 	return scanUser(row)
 }
 
 func (p *Postgres) GetUser(ctx context.Context, id string) (*User, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, username, password_hash FROM users WHERE id=$1`, id)
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, username, password_hash, COALESCE(kind, 'person') FROM users WHERE id=$1`, id)
 	return scanUser(row)
 }
 
 func scanUser(row *sql.Row) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.ClusterID, &u.Username, &u.PasswordHash); err != nil {
+	if err := row.Scan(&u.ID, &u.ClusterID, &u.Username, &u.PasswordHash, &u.Kind); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
+	}
+	if u.Kind == "" {
+		u.Kind = UserKindPerson
 	}
 	return &u, nil
 }
@@ -154,7 +160,13 @@ func (p *Postgres) UserRoles(ctx context.Context, userID string) ([]string, erro
 SELECT r.name
 FROM role_bindings b
 JOIN roles r ON r.id = b.role_id
-WHERE b.user_id = $1`, userID)
+WHERE b.user_id = $1
+UNION
+SELECT r.name
+FROM group_members m
+JOIN group_role_bindings gb ON gb.group_id = m.group_id
+JOIN roles r ON r.id = gb.role_id
+WHERE m.user_id = $1`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,16 +183,19 @@ WHERE b.user_id = $1`, userID)
 }
 
 func (p *Postgres) CreateSession(ctx context.Context, s Session) error {
-	_, err := p.DB.ExecContext(ctx, `INSERT INTO sessions (id, cluster_id, user_id, token_hash, expires_at) VALUES ($1,$2,$3,$4,$5)`,
-		s.ID, s.ClusterID, s.UserID, s.TokenHash, s.ExpiresAt)
+	if s.AAL <= 0 {
+		s.AAL = 1
+	}
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO sessions (id, cluster_id, user_id, token_hash, expires_at, aal) VALUES ($1,$2,$3,$4,$5,$6)`,
+		s.ID, s.ClusterID, s.UserID, s.TokenHash, s.ExpiresAt, s.AAL)
 	return err
 }
 
 func (p *Postgres) GetSessionByHash(ctx context.Context, hash string) (*Session, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, token_hash, expires_at, revoked_at FROM sessions WHERE token_hash=$1`, hash)
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, token_hash, expires_at, revoked_at, aal FROM sessions WHERE token_hash=$1`, hash)
 	var s Session
 	var revoked sql.NullTime
-	if err := row.Scan(&s.ID, &s.ClusterID, &s.UserID, &s.TokenHash, &s.ExpiresAt, &revoked); err != nil {
+	if err := row.Scan(&s.ID, &s.ClusterID, &s.UserID, &s.TokenHash, &s.ExpiresAt, &revoked, &s.AAL); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -188,6 +203,9 @@ func (p *Postgres) GetSessionByHash(ctx context.Context, hash string) (*Session,
 	}
 	if revoked.Valid {
 		s.RevokedAt = &revoked.Time
+	}
+	if s.AAL <= 0 {
+		s.AAL = 1
 	}
 	return &s, nil
 }
@@ -203,16 +221,17 @@ func (p *Postgres) RevokeUserSessions(ctx context.Context, userID string) error 
 }
 
 func (p *Postgres) CreateToken(ctx context.Context, t APIToken) error {
-	_, err := p.DB.ExecContext(ctx, `INSERT INTO api_tokens (id, cluster_id, user_id, name, token_hash, prefix) VALUES ($1,$2,$3,$4,$5,$6)`,
-		t.ID, t.ClusterID, t.UserID, t.Name, t.TokenHash, t.Prefix)
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO api_tokens (id, cluster_id, user_id, name, token_hash, prefix, permissions) VALUES ($1,$2,$3,$4,$5,$6,COALESCE(string_to_array(NULLIF($7, ''), ','), '{}'))`,
+		t.ID, t.ClusterID, t.UserID, t.Name, t.TokenHash, t.Prefix, strings.Join(t.Permissions, ","))
 	return err
 }
 
 func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, revoked_at FROM api_tokens WHERE token_hash=$1`, hash)
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, revoked_at, COALESCE(array_to_string(permissions, ','), '') FROM api_tokens WHERE token_hash=$1`, hash)
 	var t APIToken
 	var revoked sql.NullTime
-	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &revoked); err != nil {
+	var permCSV string
+	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &revoked, &permCSV); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -220,6 +239,9 @@ func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, 
 	}
 	if revoked.Valid {
 		t.RevokedAt = &revoked.Time
+	}
+	if permCSV != "" {
+		t.Permissions = strings.Split(permCSV, ",")
 	}
 	return &t, nil
 }
@@ -237,24 +259,34 @@ func (p *Postgres) RevokeToken(ctx context.Context, id, userID string) error {
 }
 
 func (p *Postgres) UpsertNode(ctx context.Context, n Node) error {
+	role := n.Role
+	if role == "" {
+		role = "control"
+	}
+	if len(n.HostPlatform) == 0 {
+		n.HostPlatform = json.RawMessage(`{}`)
+	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO nodes (id, cluster_id, name, host_platform)
-VALUES ($1,$2,$3,$4)
-ON CONFLICT (id) DO UPDATE SET host_platform = EXCLUDED.host_platform`,
-		n.ID, n.ClusterID, n.Name, n.HostPlatform)
+INSERT INTO nodes (id, cluster_id, name, host_platform, role, hostname)
+VALUES ($1,$2,$3,$4,$5,$6)
+ON CONFLICT (id) DO UPDATE SET
+  host_platform = EXCLUDED.host_platform,
+  hostname = CASE WHEN EXCLUDED.hostname = '' THEN nodes.hostname ELSE EXCLUDED.hostname END,
+  role = CASE WHEN EXCLUDED.role = '' THEN nodes.role ELSE EXCLUDED.role END`,
+		n.ID, n.ClusterID, n.Name, n.HostPlatform, role, n.Hostname)
 	return err
 }
 
 func (p *Postgres) GetNode(ctx context.Context, clusterID string) (*Node, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, name, host_platform FROM nodes WHERE cluster_id=$1 LIMIT 1`, clusterID)
-	var n Node
-	if err := row.Scan(&n.ID, &n.ClusterID, &n.Name, &n.HostPlatform); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &n, nil
+	row := p.DB.QueryRowContext(ctx, `
+SELECT id::text, cluster_id::text, name, host_platform, COALESCE(role, 'control'), COALESCE(hostname, ''), revoked_at
+FROM nodes
+WHERE cluster_id=$1 AND revoked_at IS NULL
+ORDER BY CASE WHEN COALESCE(role, '') IN ('', 'control') THEN 0 ELSE 1 END,
+         CASE WHEN name = 'local' THEN 0 ELSE 1 END,
+         enrolled_at ASC
+LIMIT 1`, clusterID)
+	return scanNode(row)
 }
 
 func (p *Postgres) InsertAudit(ctx context.Context, e AuditEvent) error {

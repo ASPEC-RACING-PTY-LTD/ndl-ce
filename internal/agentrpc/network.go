@@ -14,7 +14,7 @@ func (h *Handler) nets() *ndnet.Engine {
 	if h.Nets != nil {
 		return h.Nets
 	}
-	return &ndnet.Engine{Render: debian.NetworkdFiles}
+	return &ndnet.Engine{Render: debian.NetworkdFiles, SkipHostCmds: h.SkipHostCmds}
 }
 
 func specFromProto(id, name, kind, cidr string, dhcp, dns bool, uplink, confirm string, reservations []byte, arm bool) ndnet.Spec {
@@ -77,4 +77,19 @@ func (h *Handler) execNetApply(ctx context.Context, m *agentv1.NetApply) (*conne
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "applied", ResultJson: mustJSON(res)}), nil
+}
+
+func (h *Handler) execNetAdvanced(ctx context.Context, m *agentv1.NetAdvanced) (*connect.Response[agentv1.ExecuteResponse], error) {
+	op := ndnet.AdvancedOp{
+		Action: m.GetAction(), ObjectID: m.GetObjectId(), NetworkID: m.GetNetworkId(), Name: m.GetName(),
+		VID: int(m.GetVlanId()), ParentIfName: m.GetParentIfname(), Mode: m.GetMode(), AccessIfName: m.GetAccessIfname(),
+		Members: m.GetMembers(), SrcMAC: m.GetSrcMac(), DstMAC: m.GetDstMac(), PolicyAction: m.GetPolicyAction(),
+		OverlayVNI: m.GetOverlayVni(), ConfirmIfName: m.GetConfirmIfname(), ArmRollback: m.GetArmRollback(),
+		BridgeName: m.GetBridgeName(),
+	}
+	res, err := h.nets().ApplyAdvanced(ctx, op)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: op.Action, ResultJson: mustJSON(res)}), nil
 }

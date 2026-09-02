@@ -41,6 +41,51 @@ func TestValidateDiskPathRejectsCommaEqualsInjection(t *testing.T) {
 	}
 }
 
+func TestValidateDiskPathAcceptsZVol(t *testing.T) {
+	zvol := "/dev/zvol/tank/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if err := ValidateDiskPath(zvol); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	if _, err := e.compile(argvSecSpec(zvol, "raw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDiskPath("/dev/sda"); err == nil {
+		t.Fatal("generic /dev")
+	}
+}
+
+func TestValidateDiskPathAcceptsRBD(t *testing.T) {
+	dev := "/dev/rbd/rbd/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if err := ValidateDiskPath(dev); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	if _, err := e.compile(argvSecSpec(dev, "raw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDiskPath("/dev/nbd0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDiskPath("/dev/sda"); err == nil {
+		t.Fatal("generic /dev")
+	}
+}
+
+func TestValidateDiskPathAcceptsThinLV(t *testing.T) {
+	dev := "/dev/ndlvg/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	if err := ValidateDiskPath(dev); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	if _, err := e.compile(argvSecSpec(dev, "raw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDiskPath("/dev/sda"); err == nil {
+		t.Fatal("generic /dev")
+	}
+}
+
 func TestValidateDiskPathRejectsOutsideStorageRoot(t *testing.T) {
 	for _, disk := range []string{
 		"/etc/passwd",
@@ -85,7 +130,10 @@ func TestValidateFrozenArgvRejectsBashMissingControlUnknownFlagsNonUUID(t *testi
 		t.Fatal("missing mode=control must be rejected")
 	}
 	if err := ValidateFrozenArgv(id, []string{BinQEMU, "-incoming", "tcp:0:4444", "-mon", "chardev=qmp0,mode=control"}); err == nil {
-		t.Fatal("unknown flag must be rejected")
+		t.Fatal("tcp incoming must be rejected")
+	}
+	if err := ValidateFrozenArgv(id, []string{BinQEMU, "-incoming", IncomingDefer, "-mon", "chardev=qmp0,mode=control"}); err != nil {
+		t.Fatalf("defer incoming must be allowed: %v", err)
 	}
 	if err := ValidateFrozenArgv(id, []string{BinQEMU, "-sandbox", "on", "-mon", "chardev=qmp0,mode=control"}); err == nil {
 		t.Fatal("unknown flag -sandbox must be rejected")

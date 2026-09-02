@@ -16,7 +16,7 @@ RestartSec=2
 # The socket unit owns /run/ndl. Do not set RuntimeDirectory=ndl here;
 # a service restart would delete agent.sock.
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SYS_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE
 DevicePolicy=closed
 DeviceAllow=char-pts rw
 DeviceAllow=/dev/ptmx rw
@@ -24,7 +24,17 @@ DeviceAllow=/dev/pts rw
 # CAP_NET_ADMIN is required for isolated-nat nftables.
 # CAP_CHOWN remaps unprivileged container rootfs onto the persisted uid map.
 # CAP_DAC_OVERRIDE writes through uid-mapped container rootfs for Files.
-# CAP_SETUID, CAP_SETGID, and CAP_SYS_ADMIN are required for typed lxc-attach.
+# CAP_SETUID and CAP_SETGID write /proc/<pid>/{u,g}id_map during typed lxc-attach.
+# CAP_SETFCAP is required since Linux 5.12 to map host uid 0 into the helper
+# user namespace LXC creates for unprivileged cgroup attach (userns_exec_minimal).
+# Without it, lxc-attach fails with "Failed to write uid mapping".
+# CAP_SYS_ADMIN is required for typed lxc-attach setns into mount/pid/net namespaces.
+# CAP_SYS_PTRACE is required to setns into another process's namespaces
+# (PTRACE_MODE_ATTACH_REALCREDS on Debian 13 / Linux 6.12).
+# DevicePolicy stays closed. Attach uses ptmx/pts already allowlisted; cgroup
+# and uid_map writes are not device nodes.
+# NoNewPrivileges stays yes. Host-root attach writes uid_map directly and does
+# not need the setuid newuidmap helper.
 # There is still no generic host execution RPC.
 # ExecStop must not stop guest workload units.
 

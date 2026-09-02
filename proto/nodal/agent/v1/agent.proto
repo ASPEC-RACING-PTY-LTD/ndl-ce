@@ -12,12 +12,15 @@ service AgentService {
   rpc Execute(ExecuteRequest) returns (ExecuteResponse);
   // Local first-node enroll. Join tokens are empty on a single node.
   rpc Enroll(EnrollRequest) returns (EnrollResponse);
-  // OpenSession is reserved for later remote-node sessions.
+  // OpenSession is the remote-worker bind. Agents also dial the control
+  // plane HTTP session path. Cluster join remains Phase 30.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   // GetInventory returns the last typed host observation.
   rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse);
   // GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
   rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+  // GetLogs returns typed journalctl output. There is no generic journal filter.
+  rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
   // GetStorage observes known Directory pools. It does not delete objects.
   rpc GetStorage(GetStorageRequest) returns (GetStorageResponse);
   // GetNetworks observes known network objects. It does not delete objects.
@@ -27,12 +30,18 @@ service AgentService {
   // UploadLibrary streams ISO or cloud-image bytes to the agent.
   rpc UploadLibrary(stream UploadLibraryRequest) returns (UploadLibraryResponse);
   // FilesOp is a typed jail operation. Path is relative to the jail root.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc FilesOp(FilesOpRequest) returns (FilesOpResponse);
   // FilesPut writes one file in chunks beneath the jail.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc FilesPut(stream FilesPutRequest) returns (FilesOpResponse);
   // FilesGet reads one file in chunks beneath the jail.
   rpc FilesGet(FilesGetRequest) returns (stream FilesGetResponse);
   // AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc AttachTerminal(stream TermFrame) returns (stream TermFrame);
 }
 
@@ -110,6 +119,19 @@ message GetMetricsResponse {
   bytes series_json = 2;
 }
 
+message GetLogsRequest {
+  string unit = 1;
+  int32 lines = 2;
+  string since = 3;
+}
+
+message GetLogsResponse {
+  string status = 1;
+  string unit = 2;
+  repeated string lines = 3;
+  string message = 4;
+}
+
 message GetStorageRequest {
   repeated StoragePoolHint storage_pools = 1;
 }
@@ -141,7 +163,239 @@ message ExecuteRequest {
     QemuProtoStart qemu_proto_start = 17;
     QemuProtoStop qemu_proto_stop = 18;
     QemuProtoStatus qemu_proto_status = 19;
+    VMPrepare vm_prepare = 20;
+    VMLifecycle vm_lifecycle = 21;
+    VMQueryPCI vm_query_pci = 22;
+    VMSnapshot vm_snapshot = 23;
+    BackupCopy backup_copy = 24;
+    HostUpdate host_update = 25;
+    GPUAssign gpu_assign = 26;
+    ZFSPool zfs_pool = 27;
+    VMHotplug vm_hotplug = 28;
+    VMGuest vm_guest = 29;
+    OCIRuntime oci_runtime = 30;
+    BackupObject backup_object = 31;
+    BackupVerify backup_verify = 32;
+    BackupExtract backup_extract = 33;
+    LVMPool lvm_pool = 34;
+    Datastore datastore = 35;
+    NetAdvanced net_advanced = 36;
+    WireGuard wireguard = 37;
+    ComputeMigrate compute_migrate = 38;
+    Distributed distributed = 39;
   }
+}
+
+message OCIRuntime {
+  string action = 1;
+  string workload_id = 2;
+  bytes spec_json = 3;
+}
+
+message VMGuest {
+  string workload_id = 1;
+  string action = 2;
+}
+
+message HostUpdate {
+  string action = 1;
+  string channel = 2;
+  string package_name = 3;
+  string version = 4;
+  bool dry_run = 5;
+  string checkpoint_id = 6;
+}
+
+message GPUAssign {
+  string action = 1;
+  string gpu_id = 2;
+  string workload_id = 3;
+  string mode = 4;
+  bool exclusive = 5;
+  repeated string pci_devices = 6;
+  repeated string device_nodes = 7;
+  bool acs_override = 8;
+  bool dry_run = 9;
+}
+
+message ZFSPool {
+  string action = 1;
+  string pool_id = 2;
+  string name = 3;
+  string guid = 4;
+  repeated string disks = 5;
+  string volume_id = 6;
+  string class = 7;
+  int64 size_bytes = 8;
+  string snapshot = 9;
+  string from_snapshot = 10;
+  bool force = 11;
+  string dest_path = 12;
+}
+
+message VMHotplug {
+  string workload_id = 1;
+  string action = 2;
+  string device_kind = 3;
+  string vendor_id = 4;
+  string product_id = 5;
+  string address = 6;
+	string pci_host = 7;
+  repeated string pci_hosts = 8;
+}
+
+message BackupCopy {
+  string action = 1;
+  string source_path = 2;
+  string dest_path = 3;
+}
+
+message BackupObject {
+  string action = 1;
+  string provider = 2;
+  string endpoint = 3;
+  string region = 4;
+  string bucket = 5;
+  string object_key = 6;
+  string source_path = 7;
+  string dest_path = 8;
+  string access_key_id = 9;
+  string secret_access_key = 10;
+  bytes encryption_key = 11;
+  bool no_check_bucket = 12;
+  string resume_upload_id = 13;
+}
+
+message BackupVerify {
+  string source_path = 1;
+  string expected_sha256 = 2;
+}
+
+message BackupExtract {
+  string source_path = 1;
+  string guest_path = 2;
+  string dest_path = 3;
+}
+
+message LVMPool {
+  string action = 1;
+  string pool_id = 2;
+  string name = 3;
+  string vg_uuid = 4;
+  repeated string disks = 5;
+  string volume_id = 6;
+  string class = 7;
+  int64 size_bytes = 8;
+  string snapshot = 9;
+}
+
+message Datastore {
+  string action = 1;
+  string pool_id = 2;
+  string kind = 3;
+  string locator = 4;
+  string portal = 5;
+  string username = 6;
+  string password = 7;
+  string iqn = 8;
+}
+
+message Distributed {
+  string action = 1;
+  string pool_id = 2;
+  string locator = 3;
+  string ceph_pool = 4;
+  string ceph_user = 5;
+  string cephx_key = 6;
+  string keyring_path = 7;
+  string volume_id = 8;
+  string class = 9;
+  int64 size_bytes = 10;
+  string disk = 11;
+  string image = 12;
+  string backend_ref = 13;
+  string root_device = 14;
+}
+
+message NetAdvanced {
+  string action = 1;
+  string object_id = 2;
+  string network_id = 3;
+  string name = 4;
+  int32 vlan_id = 5;
+  string parent_ifname = 6;
+  string mode = 7;
+  string access_ifname = 8;
+  repeated string members = 9;
+  string src_mac = 10;
+  string dst_mac = 11;
+  string policy_action = 12;
+  uint32 overlay_vni = 13;
+  string confirm_ifname = 14;
+  bool arm_rollback = 15;
+  string bridge_name = 16;
+}
+
+message WireGuard {
+  string action = 1;
+  string peer_id = 2;
+  uint32 listen_port = 3;
+  string address_cidr = 4;
+  string private_key_file = 5;
+  repeated WireGuardPeer peers = 6;
+}
+
+message WireGuardPeer {
+  string public_key = 1;
+  string endpoint = 2;
+  string allowed_ips = 3;
+  uint32 persistent_keepalive = 4;
+}
+
+message ComputeMigrate {
+  string action = 1;
+  string workload_id = 2;
+  string uri = 3;
+  string source_path = 4;
+  string dest_path = 5;
+  bytes launch_json = 6;
+  string volume_id = 7;
+  bool incoming = 8;
+  string disk_path = 9;
+  string disk_format = 10;
+  int32 cpus = 11;
+  int64 memory_bytes = 12;
+  string machine = 13;
+  string accel = 14;
+}
+
+message VMSnapshot {
+  string workload_id = 1;
+  string action = 2;
+  string overlay_path = 3;
+  string backing_path = 4;
+  int32 chain_depth = 5;
+  int32 chain_max = 6;
+}
+
+message VMPrepare {
+  string workload_id = 1;
+  bytes launch_json = 2;
+  string user_data = 3;
+  string source_path = 4;
+  string source_format = 5;
+  string dest_path = 6;
+  string dest_format = 7;
+}
+
+message VMLifecycle {
+  string workload_id = 1;
+  string action = 2;
+  bool autostart = 3;
+}
+
+message VMQueryPCI {
+  string workload_id = 1;
 }
 
 message QemuProtoStart {
@@ -279,7 +533,8 @@ message UploadLibraryResponse {
 }
 
 message EnrollRequest {
-  // Empty on the local appliance. Remote join tokens are later phases.
+  // Empty on the local appliance. Remote join uses HTTP POST /api/v1/cluster/join.
+  // If set, unix Enroll does not consume the token; it only returns identity written by join.
   string join_token = 1;
   string cluster_id = 2;
 }
@@ -290,9 +545,21 @@ message EnrollResponse {
   HostPlatform host_platform = 3;
 }
 
-message OpenSessionRequest {}
+message OpenSessionRequest {
+  string node_id = 1;
+  string cluster_id = 2;
+  string listen_addr = 3;
+  string wg_public_key = 4;
+  int64 handshake_unix = 5;
+  string peer_id = 6;
+}
 
-message OpenSessionResponse {}
+message OpenSessionResponse {
+  string session_id = 1;
+  bool accepted = 2;
+  string reason = 3;
+  string control_listen_addr = 4;
+}
 
 message FilesOpRequest {
   string target_kind = 1;

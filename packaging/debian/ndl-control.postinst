@@ -32,6 +32,10 @@ case "$1" in
   configure)
     prepare_host
     start_units
+    addr=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -n "$addr" ] || addr=127.0.0.1
+    echo "Until TLS is enabled, setup is at http://${addr}:8080/setup"
+    echo "After enabling TLS, open https://${addr}/setup"
     ;;
 esac
 

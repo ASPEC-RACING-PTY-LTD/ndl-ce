@@ -22,10 +22,16 @@ export function honestStatus(value?: string): string {
       return "Stopped";
     case "failed":
       return "Failed";
+    case "succeeded":
+      return "Succeeded";
+    case "completed":
+      return "Succeeded";
     case "warning":
       return "Warning";
     case "unavailable":
       return "Unavailable";
+    case "not_configured":
+      return "Not configured";
     case "not_reported":
       return "Not reported";
     case "collecting":
@@ -34,8 +40,18 @@ export function honestStatus(value?: string): string {
       return "Stale";
     case "unknown":
       return "Unknown";
+    case "draft":
+      return "Draft";
+    case "applying":
+      return "Applying";
+    case "applied":
+      return "Applied";
+    case "partial":
+      return "Partial";
     case "pending":
       return "Pending";
+    case "creating":
+      return "Creating";
     case "starting":
       return "Starting";
     case "stopping":
@@ -43,11 +59,14 @@ export function honestStatus(value?: string): string {
     case "ok":
     case "healthy":
       return "Healthy";
-    case "succeeded":
-    case "completed":
-      return "Succeeded";
     case "degraded":
       return "Degraded";
+    case "ready":
+    case "Ready":
+      return "Ready";
+    case "NotReady":
+    case "not_ready":
+      return "Not ready";
     default:
       return value && value.length > 0 ? value : "Not reported";
   }

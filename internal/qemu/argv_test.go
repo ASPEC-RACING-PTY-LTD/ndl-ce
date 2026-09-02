@@ -10,13 +10,13 @@ import (
 func TestCompilePinsMachineAndVolumeHandle(t *testing.T) {
 	e := &Engine{DataDir: t.TempDir()}
 	argv, err := e.compile(Spec{
-		WorkloadID: "11111111-1111-1111-1111-111111111111",
-		DiskPath:   "/var/lib/ndl/storage/p/volumes/vm-disk/11111111-1111-1111-1111-111111111111.qcow2",
-		DiskFormat: "qcow2",
-		Machine:    DefaultMachine,
-		Accel:      "tcg",
+		WorkloadID:  "11111111-1111-1111-1111-111111111111",
+		DiskPath:    "/var/lib/ndl/storage/p/volumes/vm-disk/11111111-1111-1111-1111-111111111111.qcow2",
+		DiskFormat:  "qcow2",
+		Machine:     DefaultMachine,
+		Accel:       "tcg",
 		MemoryBytes: DefaultMemory,
-		CPUs:       1,
+		CPUs:        1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +35,9 @@ func TestCompilePinsMachineAndVolumeHandle(t *testing.T) {
 		t.Fatal(joined)
 	}
 	if !strings.Contains(joined, GuestAgentName) {
+		t.Fatal(joined)
+	}
+	if !strings.Contains(joined, NodalGuestName) {
 		t.Fatal(joined)
 	}
 	if !strings.Contains(joined, "mode=control") {

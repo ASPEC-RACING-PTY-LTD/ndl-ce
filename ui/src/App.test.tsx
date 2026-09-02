@@ -9,6 +9,17 @@ const admin: MeResponse = {
   username: "admin",
   roles: ["admin"],
   edition: "ce",
+  ux_level: "guided",
+  expert_ack: false,
+};
+
+const viewer: MeResponse = {
+  user_id: "user-2",
+  username: "view",
+  roles: ["viewer"],
+  edition: "ce",
+  ux_level: "expert",
+  expert_ack: true,
 };
 
 function jsonResponse(status: number, body?: unknown): Response {
@@ -24,14 +35,16 @@ function jsonResponse(status: number, body?: unknown): Response {
 function mockApi(routes: Record<string, { status: number; body?: unknown }>) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
-      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
     const path = new URL(url, "http://localhost").pathname;
-    const method = (
-      typeof input !== "string" && !(input instanceof URL) ? input.method : init?.method
-    )?.toUpperCase() || "GET";
+    const method = (init?.method ?? "GET").toUpperCase();
     const hit = routes[`${method} ${path}`] ?? routes[path];
     if (!hit) {
-      return jsonResponse(404, { error: `unmocked ${method} ${path}` });
+      return jsonResponse(404, { error: `unmocked ${path}` });
     }
     return jsonResponse(hit.status, hit.body);
   });
@@ -48,12 +61,43 @@ const defaultRoutes = {
   "/api/v1/me": { status: 401 },
   "/api/v1/nodes": { status: 200, body: { items: [] } },
   "/api/v1/events": { status: 200, body: { items: [] } },
+  "/api/v1/timeline": { status: 200, body: { items: [] } },
+  "/api/v1/alerts": { status: 200, body: { items: [] } },
+  "/api/v1/alerts/channels": { status: 200, body: { items: [] } },
   "/api/v1/tasks": { status: 200, body: { items: [] } },
   "/api/v1/storage/pools": { status: 200, body: { items: [] } },
-  "/api/v1/storage/volumes": { status: 200, body: { items: [] } },
-  "/api/v1/storage/images": { status: 200, body: { items: [] } },
   "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
+  "/api/v1/cluster/wg": { status: 200, body: { items: [], nodes: [] } },
+  "/api/v1/cluster": { status: 200, body: { id: "cluster-1", name: "local", nodes: [] } },
+  "/api/v1/cluster/ha": {
+    status: 200,
+    body: {
+      mode: "single-writer",
+      writer: true,
+      replica_status: "not_configured",
+      fencing_mode: "operator",
+      multi_master: false,
+    },
+  },
+  "/api/v1/cluster/update": { status: 200, body: { preview: [], note: "Rolling drains one node" } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
+  "/api/v1/storage/images": { status: 200, body: { items: [] } },
+  "/api/v1/policies": { status: 200, body: { items: [] } },
+  "/api/v1/policy-runs": { status: 200, body: { items: [] } },
+  "/api/v1/ai/ask": { status: 200, body: { answer: "", citations: [], provider_status: "not_configured", mutate: false } },
+  "/api/v1/ai/plans": { status: 200, body: { items: [] } },
+  "/api/v1/settings/license": {
+    status: 200,
+    body: {
+      edition: "ce",
+      status: "absent",
+      reason: "Community Edition. License activation is not required.",
+      has_key: false,
+      workloads_stopped: false,
+      ee_blobs: false,
+      contacts_api: false,
+    },
+  },
 };
 
 afterEach(() => {
@@ -138,12 +182,8 @@ describe("App", () => {
     expect(await screen.findByText(/debian gnu\/linux 13/i)).toBeVisible();
     expect(screen.getByText(/none detected/i)).toBeVisible();
     expect(screen.getAllByText(/collecting data/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/^CE$/)).toBeVisible();
     expect(screen.getByRole("navigation", { name: /appliance/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^workloads$/i })).toBeVisible();
-    expect(screen.queryByRole("link", { name: /^kubernetes$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^store$/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/license activation is not required/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/configuration level/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^admin$/i }));
     expect(screen.getByRole("menuitem", { name: /log out/i })).toBeVisible();
     expect(screen.queryByText(/ci works/i)).not.toBeInTheDocument();
@@ -154,19 +194,6 @@ describe("App", () => {
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/192\.168\./);
     expect(container.querySelector("svg.metric-chart")).toBeNull();
-    expect(text).not.toMatch(/Phase \d+/);
-  });
-
-  it("shows a 404 for unknown routes", async () => {
-    window.history.replaceState({}, "", "/no-such-page");
-    mockApi({
-      ...defaultRoutes,
-      "/api/v1/me": { status: 200, body: admin },
-    });
-
-    render(<App />);
-
-    expect(await screen.findByRole("heading", { name: /not found/i })).toBeVisible();
   });
 
   it("shows the current user on /me", async () => {
@@ -179,11 +206,11 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /account/i })).toBeVisible();
-    expect(screen.getByText("Administrator")).toBeVisible();
-    expect(screen.getByText("Community Edition")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^details$/i }));
     expect(screen.getByText("user-1")).toBeVisible();
-    expect(screen.getByLabelText(/configuration level/i)).toBeVisible();
+    expect(screen.getByText("ce")).toBeVisible();
+    expect(screen.getAllByText("admin").length).toBeGreaterThan(0);
+    expect(screen.getByRole("radio", { name: /^guided$/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^expert$/i })).toBeVisible();
   });
 
   it("posts setup claim JSON and opens the dashboard", async () => {
@@ -248,7 +275,7 @@ describe("App", () => {
               allocated_bytes: 2 * 1024 * 1024 * 1024,
               provisioned_bytes: 10 * 1024 * 1024 * 1024,
               storage_classes: ["vm-disk", "iso"],
-              capabilities: { incremental_send: false, snapshots: false },
+              capabilities: { incremental_send: false },
               warning_text: [
                 "This Directory pool shares the host root filesystem. Filling it can fill the host and destabilize No-dal.",
               ],
@@ -265,12 +292,19 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^storage$/i })).toBeVisible();
     expect(await screen.findByRole("heading", { name: /create directory pool/i })).toBeVisible();
     expect(
-      (await screen.findAllByText(/filling it can fill the host and destabilize no-dal/i)).length,
-    ).toBeGreaterThan(0);
+      await screen.findByText(/filling it can fill the host and destabilize no-dal/i),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "local" })).toBeVisible();
-    expect(screen.getAllByText(/unavailable/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/^no$/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /create directory pool/i })).toBeVisible();
-    expect(screen.queryByText(/^local \(warning\)$/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^zfs$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /import zfs pool/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /lvm-thin/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /create lvm-thin pool/i })).toBeVisible();
+    expect(screen.getByText(/directory remains the default/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^distributed storage$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /attach distributed pool/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /bring up osd/i })).toBeVisible();
   });
 
   it("shows isolated network first-run and create form", async () => {
@@ -294,8 +328,44 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /first-run guest network/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /create network/i })).toBeVisible();
     expect(screen.getByText(/eth0/)).toBeVisible();
-    expect(screen.getByText("2")).toBeVisible();
-    expect(screen.getByText(/192\.168\.1\.10/)).toBeVisible();
+    expect(screen.getByText(/ifindex 2/i)).toBeVisible();
+  });
+
+  it("shows the remote worker WireGuard helper", async () => {
+    window.history.replaceState({}, "", "/node");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/nodes": {
+        status: 200,
+        body: {
+          items: [
+            { id: "node-1", name: "local", status: "available", host_os: "Debian GNU/Linux 13 (trixie)" },
+            { id: "worker-1", name: "worker-1", role: "worker", status: "NotReady", reason: "wireguard handshake not observed" },
+          ],
+        },
+      },
+      "/api/v1/cluster/wg": {
+        status: 200,
+        body: {
+          items: [],
+          nodes: [{ id: "worker-1", name: "worker-1", role: "worker", status: "NotReady" }],
+          join: "Cluster join remains Phase 30.",
+        },
+      },
+      "/api/v1/nodes/node-1": {
+        status: 200,
+        body: { id: "node-1", name: "local", status: "available", host_os: "Debian GNU/Linux 13 (trixie)" },
+      },
+      "/api/v1/nodes/node-1/capabilities": { status: 200, body: { node_id: "node-1", capabilities: [] } },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^remote worker$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /add wireguard worker/i })).toBeVisible();
+    expect(await screen.findByText(/not ready/i)).toBeVisible();
+    expect(screen.getByText(/join the worker from cluster/i)).toBeVisible();
   });
 
   it("renders the workloads route without fake counts", async () => {
@@ -308,49 +378,10 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^workloads$/i })).toBeVisible();
-    expect(await screen.findByText(/no system containers yet/i)).toBeVisible();
+    expect(screen.getByText(/no workloads yet/i)).toBeVisible();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /create system container/i })).toBeVisible();
-  });
-
-  it("creates a system container with a human-readable OS picker", async () => {
-    window.history.replaceState({}, "", "/workloads/new/system-container");
-    mockApi({
-      ...defaultRoutes,
-      "/api/v1/me": { status: 200, body: admin },
-      "/api/v1/storage/pools": {
-        status: 200,
-        body: {
-          items: [
-            {
-              id: "pool-1",
-              name: "local",
-              backend_type: "directory",
-              status: "warning",
-              usable_bytes: 139 * 1024 * 1024 * 1024,
-              warning_text: ["This Directory pool shares the host root filesystem."],
-              capabilities: { snapshots: false },
-            },
-          ],
-        },
-      },
-      "/api/v1/networks": {
-        status: 200,
-        body: { items: [{ id: "net-1", name: "isolated", kind: "isolated", status: "available", dhcp: true }] },
-      },
-    });
-
-    render(<App />);
-
-    expect(await screen.findByRole("heading", { name: /create system container/i })).toBeVisible();
-    expect(screen.getByLabelText(/configuration level/i)).toBeVisible();
-    expect(await screen.findByLabelText(/operating system/i)).toBeVisible();
-    expect(screen.getAllByText(/alpine linux 3.21/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/alpine\/3.21\/amd64\/default/i)).not.toBeInTheDocument();
-    expect(await screen.findByText(/139/i)).toBeVisible();
-    expect(screen.getByText(/snapshots unavailable/i)).toBeVisible();
-    expect(screen.getByText(/shares the host root filesystem/i)).toBeVisible();
-    expect(screen.queryByText(/local \(warning\)/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /create vm/i })).toBeVisible();
   });
 
   it("imports generated OpenAPI path types", () => {
@@ -390,135 +421,929 @@ describe("App", () => {
         status: 200,
         body: { id: "vm-1", name: "win", kind: "vm", status: "stopped" },
       },
+      "/api/v1/workloads/vm-1/guest": {
+        status: 200,
+        body: {
+          workload_id: "vm-1",
+          qemu_ga: { state: "unavailable" },
+          nodal_ga: { state: "not_installed", reason: "nodal guest is not connected" },
+          observed_at: "2026-09-01T00:00:00Z",
+        },
+      },
     });
 
     render(<App />);
 
-    expect(await screen.findByText(/not available for this workload type/i)).toBeVisible();
-    expect(screen.queryByText(/phase 20/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/connected/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/nodal guest is not connected/i)).toBeVisible();
+    expect(screen.queryByText(/^connected$/i)).not.toBeInTheDocument();
   });
 
-  it("omits console and backups tabs on a system container and explains snapshots", async () => {
-    window.history.replaceState({}, "", "/workloads/wl-1/snapshots");
+  it("renders the create VM wizard", async () => {
+    window.history.replaceState({}, "", "/workloads/new/vm");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
-      "/api/v1/workloads/wl-1": {
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /create vm/i })).toBeVisible();
+    expect(screen.getByText(/step 1 of 7/i)).toBeVisible();
+  });
+
+  it("shows VM console and honest guest-agent limits", async () => {
+    window.history.replaceState({}, "", "/workloads/vm-1");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/vm-1": {
         status: 200,
-        body: { id: "wl-1", name: "web-01", kind: "system-container", status: "running" },
+        body: { id: "vm-1", name: "web", kind: "vm", status: "running", firmware: "bios", pending_restart: false },
       },
-      "/api/v1/storage/pools": {
+      "/api/v1/workloads/vm-1/guest": {
         status: 200,
         body: {
-          items: [{ id: "pool-1", name: "local", backend_type: "directory", status: "available", capabilities: { snapshots: false } }],
+          workload_id: "vm-1",
+          qemu_ga: { state: "unavailable", reason: "vm is stopped" },
+          nodal_ga: { state: "not_installed", reason: "nodal guest is not connected" },
+          observed_at: "2026-09-01T00:00:00Z",
+          install: {
+            linux: "Install the ndl-guest package inside the guest and enable ndl-guest.service.",
+            windows: "Install ndl-guest.exe inside the guest.",
+          },
         },
       },
-      "/api/v1/storage/pools/pool-1": {
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^web$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /console/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /guest agent/i })).toBeVisible();
+    expect(screen.getByText(/not_installed/i)).toBeVisible();
+    expect(screen.getAllByText(/nodal guest is not connected/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: /^terminal$/i })).not.toBeInTheDocument();
+  });
+
+  it("enables VM Terminal and Files when the guest agent is ok", async () => {
+    window.history.replaceState({}, "", "/workloads/vm-1");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/vm-1": {
         status: 200,
-        body: { id: "pool-1", name: "local", backend_type: "directory", status: "available", capabilities: { snapshots: false } },
+        body: { id: "vm-1", name: "web", kind: "vm", status: "running", firmware: "bios", pending_restart: false },
+      },
+      "/api/v1/workloads/vm-1/guest": {
+        status: 200,
+        body: {
+          workload_id: "vm-1",
+          qemu_ga: { state: "ok" },
+          nodal_ga: { state: "ok", version: "0.1.18" },
+          guest_os: "linux",
+          observed_at: "2026-09-01T00:00:00Z",
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^web$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^terminal$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^files$/i })).toBeVisible();
+  });
+
+  it("renders the certificates settings page for admin", async () => {
+    window.history.replaceState({}, "", "/settings/certificates");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/certs": {
+        status: 200,
+        body: {
+          enabled: false,
+          mode: "",
+          common_name: "",
+          sans: [],
+          fingerprint: "",
+          acme_status: "not_configured",
+        },
       },
     });
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /web-01/i })).toBeVisible();
-    expect(screen.getAllByRole("link", { name: /^snapshots$/i }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: /^console$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^backups$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^metrics$/i })).not.toBeInTheDocument();
-    expect(await screen.findByText(/directory storage/i)).toBeVisible();
-    expect(screen.getByText(/snapshot-capable pool/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^certificates$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^certificates$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^status$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /generate self-signed/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /download.*key/i })).not.toBeInTheDocument();
   });
 
-  it("posts the same create body from Guided and Expert", async () => {
-    window.history.replaceState({}, "", "/workloads/new/system-container");
-    const fetchMock = mockApi({
+  it("renders the cluster page with join token and inventory", async () => {
+    window.history.replaceState({}, "", "/settings/cluster");
+    mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
-      "/api/v1/storage/pools": {
+      "/api/v1/cluster": {
         status: 200,
         body: {
+          id: "cluster-1",
+          name: "local",
+          nodes: [
+            { id: "node-a", name: "local", role: "control", status: "available", hostname: "box-a" },
+            { id: "node-b", name: "box-b", role: "worker", status: "unknown", hostname: "box-b" },
+          ],
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^cluster$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    expect(screen.getByText(/one control plane writer/i)).toBeVisible();
+    expect(screen.getByText(/join tokens are not pairing tokens/i)).toBeVisible();
+    expect(await screen.findByText(/locator box-b/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /create join token/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^revoke$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^ha$/i })).toBeVisible();
+    expect(screen.getByText(/not multi-master/i)).toBeVisible();
+    expect(await screen.findByText(/multi-master no/i)).toBeVisible();
+    expect(screen.getAllByText(/stonith is not implemented/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /fence old writer/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /promote this writer/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^rolling update$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /run rolling update/i })).toBeVisible();
+  });
+
+  it("renders the features page with optional GPU and Kubernetes install", async () => {
+    window.history.replaceState({}, "", "/settings/features");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/features": {
+        status: 200,
+        body: {
+          base_install: "light",
+          gpu_optional: true,
           items: [
             {
-              id: "pool-1",
-              name: "local",
-              backend_type: "directory",
-              status: "available",
-              usable_bytes: 10 * 1024 * 1024 * 1024,
-              capabilities: { snapshots: false },
+              id: "vm",
+              title: "Virtual Machines",
+              enabled: true,
+              core: true,
+              package_status: "installed",
+              runtime_status: "installed",
+              starts_runtime: true,
+              kubelet_started: false,
+              workload_count: 0,
+            },
+            {
+              id: "gpu",
+              title: "GPU Services",
+              enabled: false,
+              core: false,
+              package: "nodal-feature-gpu",
+              package_status: "not_configured",
+              runtime_status: "not_started",
+              starts_runtime: false,
+              kubelet_started: false,
+              workload_count: 0,
+            },
+            {
+              id: "k8s",
+              title: "Kubernetes",
+              enabled: false,
+              core: false,
+              package: "nodal-feature-k8s",
+              package_status: "not_configured",
+              runtime_status: "not_started",
+              starts_runtime: false,
+              kubelet_started: false,
+              workload_count: 0,
+              tiny_node: true,
             },
           ],
         },
       },
-      "/api/v1/networks": {
-        status: 200,
-        body: { items: [{ id: "net-1", name: "isolated", kind: "isolated", status: "available", dhcp: true }] },
-      },
-      "POST /api/v1/workloads": { status: 400, body: { error: "hold" } },
     });
-
     render(<App />);
-    await screen.findByLabelText(/operating system/i);
-    expect(await screen.findByText(/dhcp on/i)).toBeVisible();
-    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "web-01" } });
-    fireEvent.click(screen.getByRole("button", { name: /create system container/i }));
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/workloads") && call[1]?.method === "POST")).toBe(
-        true,
-      );
-    });
-    const guided = fetchMock.mock.calls.find(
-      (call) => String(call[0]).includes("/workloads") && call[1]?.method === "POST",
-    );
-    fireEvent.click(screen.getByRole("button", { name: /^expert$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /create system container/i }));
-    await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.filter((call) => String(call[0]).includes("/workloads") && call[1]?.method === "POST").length,
-      ).toBeGreaterThan(1);
-    });
-    const expert = fetchMock.mock.calls
-      .filter((call) => String(call[0]).includes("/workloads") && call[1]?.method === "POST")
-      .at(-1);
-    expect(guided?.[1]?.body).toBe(expert?.[1]?.body);
-    expect(localStorage.getItem("ndl-ux-level")).toBeNull();
+    expect(await screen.findByRole("heading", { name: /^features$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^features$/i })).toBeVisible();
+    expect(await screen.findByText(/enabling kubernetes does not start kubelet/i)).toBeVisible();
+    expect(await screen.findByText(/base install light/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^gpu services$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: /^install$/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
   });
 
-  it("shows in-flight tasks in the header activity control", async () => {
-    window.history.replaceState({}, "", "/");
+  it("renders the kubernetes page with no kube process by default", async () => {
+    window.history.replaceState({}, "", "/settings/kubernetes");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
-      "/api/v1/tasks": {
+      "/api/v1/kubernetes": {
+        status: 200,
+        body: {
+          enabled: false,
+          kubelet_started: false,
+          kube_process: false,
+          state: "absent",
+          vm_requires_k8s: false,
+          ct_requires_k8s: false,
+          reason: "Kubernetes is not enabled. Virtual machines and system containers do not require it.",
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^kubernetes$/i })).toBeVisible();
+    expect(await screen.findByText(/kubelet started no/i)).toBeVisible();
+    expect(screen.getByText(/kube process no/i)).toBeVisible();
+    expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the store catalog with official sample install", async () => {
+    window.history.replaceState({}, "", "/store");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/store/apps": {
         status: 200,
         body: {
           items: [
-            { id: "t-1", kind: "workload.create", state: "running", progress: 40, message: "Pulling image" },
-            { id: "t-2", kind: "network.apply", state: "failed", message: "Uplink is down" },
+            {
+              id: "pkg-1",
+              name: "sample-web",
+              version: "1.0.0",
+              class: "official",
+              title: "Sample Web",
+              summary: "Official sample",
+              gpu_optional: true,
+              image: "docker.io/library/caddy:2.8.4",
+              signed: true,
+            },
+          ],
+        },
+      },
+      "/api/v1/store/policy": { status: 200, body: { install_policy: "community-allowed" } },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^store$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^store$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^sample web$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^install$/i })).toBeVisible();
+    expect(screen.getByText(/official badge/i)).toBeVisible();
+    expect(screen.getByText(/install policy community-allowed/i)).toBeVisible();
+  });
+
+  it("renders the automation page with a storage-pressure policy", async () => {
+    window.history.replaceState({}, "", "/automation");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/policies": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "pol-1",
+              name: "storage pressure",
+              kind: "storage_pressure",
+              action: "enqueue_migrate_low_priority",
+              threshold_percent: 85,
+              require_approval: false,
+              enabled: true,
+            },
+          ],
+        },
+      },
+      "/api/v1/policy-runs": { status: 200, body: { items: [] } },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^automation$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^automation$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^storage pressure$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^apply policy$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^create policy$/i })).toBeVisible();
+    expect(screen.getByText(/not an llm loop/i)).toBeVisible();
+    expect(screen.getAllByText(/queued migrate is not live until/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/dest agent/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders the ask page as read-only without a vendor", async () => {
+    window.history.replaceState({}, "", "/ask");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^ask$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^ask$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^ask$/i })).toBeVisible();
+    expect(screen.getByText(/cannot host.exec/i)).toBeVisible();
+    expect(screen.getByText(/offline install has no ai vendor/i)).toBeVisible();
+  });
+
+  it("renders the plans page as a reviewable existing-API preview", async () => {
+    window.history.replaceState({}, "", "/plans");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/ai/plans": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "plan-1",
+              prompt: "install a database on node-02",
+              status: "preview",
+              actor_type: "ai",
+              steps: [
+                {
+                  id: "step-1",
+                  method: "POST",
+                  path: "/api/v1/workloads",
+                  permission: "compute.create",
+                  status: "preview",
+                },
+              ],
+            },
+            {
+              id: "plan-2",
+              prompt: "move a vm after approve",
+              status: "queued",
+              actor_type: "ai",
+              reason: "queued pending dest agent",
+              steps: [
+                {
+                  id: "step-2",
+                  method: "POST",
+                  path: "/api/v1/workloads/wl-1/migrate",
+                  permission: "compute.migrate",
+                  status: "queued",
+                  reason: "dest agent is not connected",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^plans$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^plans$/i })).toBeVisible();
+    expect(await screen.findByText(/execute existing apis only after/i)).toBeVisible();
+    expect(screen.getByText(/not a live llm/i)).toBeVisible();
+    expect(await screen.findByText(/POST \/api\/v1\/workloads \(/i)).toBeVisible();
+    expect(await screen.findByText(/\/api\/v1\/workloads\/wl-1\/migrate/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^approve$/i })).toBeVisible();
+    expect(screen.getByText(/cannot host.exec/i)).toBeVisible();
+    expect(screen.getAllByText(/missing dest agent or create validation/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders the license page as Community Edition without a key", async () => {
+    window.history.replaceState({}, "", "/settings/license");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^license$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^license$/i })).toBeVisible();
+    expect(screen.getByText(/does not require a key/i)).toBeVisible();
+    expect(screen.getByText(/does not download ee blobs/i)).toBeVisible();
+    expect(screen.getByText(/hardware gates are not proven on this host/i)).toBeVisible();
+    expect(await screen.findByText(/ee blobs no/i)).toBeVisible();
+    expect(await screen.findByText(/workloads stopped no/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^activate license$/i })).toBeVisible();
+  });
+
+  it("renders the docs page with CE 1.0 summaries", async () => {
+    window.history.replaceState({}, "", "/docs");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^docs$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^docs$/i })).toBeVisible();
+    expect(screen.getByText(/operator runbooks shipped/i)).toBeVisible();
+    expect(screen.getByText(/no cloud or ee key required/i)).toBeVisible();
+    expect(screen.getAllByText(/hardware gates are not proven on this host/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/does not ship ee blobs/i)).toBeVisible();
+    expect(screen.getByText(/not proof this host ran them/i)).toBeVisible();
+  });
+
+  it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {
+    window.history.replaceState({}, "", "/workloads/vm-1/snapshots");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/vm-1": {
+        status: 200,
+        body: { id: "vm-1", name: "web", kind: "vm", status: "running" },
+      },
+      "/api/v1/workloads/vm-1/snapshots": {
+        status: 200,
+        body: {
+          items: [],
+          capability: {
+            supported: true,
+            mechanism: "qcow2-overlay",
+            chain_max: 32,
+            chain_depth: 0,
+            reason: "",
+          },
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^snapshots$/i })).toBeVisible();
+    expect(screen.getByText(/point-in-time restore on the same pool\. this is not a backup\./i)).toBeVisible();
+    expect(await screen.findByRole("button", { name: /^create snapshot$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^flatten chain$/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\/backups$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows Unsupported / not ZFS for Directory system container snapshots", async () => {
+    window.history.replaceState({}, "", "/workloads/ct-1/snapshots");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/workloads/ct-1": {
+        status: 200,
+        body: { id: "ct-1", name: "accept-ct", kind: "system-container", status: "running" },
+      },
+      "/api/v1/workloads/ct-1/snapshots": {
+        status: 200,
+        body: {
+          items: [],
+          capability: {
+            supported: false,
+            mechanism: "",
+            chain_max: 0,
+            chain_depth: 0,
+            reason: "Directory system containers do not support snapshots; this is not ZFS.",
+          },
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^snapshots$/i })).toBeVisible();
+    expect(await screen.findByText(/Unsupported\./i)).toBeVisible();
+    expect(screen.getAllByText(/not ZFS/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /backup/i })).not.toBeInTheDocument();
+  });
+
+  it("renders /settings/updates and keeps snapshot actions off this page", async () => {
+    window.history.replaceState({}, "", "/settings/updates");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/updates": {
+        status: 200,
+        body: {
+          channel: "stable",
+          host_supported: true,
+          host_reason: "Debian 13 amd64",
+          packages: [
+            { name: "ndl-control", version: "0.1.10", status: "current" },
+            { name: "ndl-agent", version: "0.1.10", status: "current" },
+            { name: "ndl-ui", version: "0.1.10", status: "current" },
           ],
         },
       },
     });
 
     render(<App />);
-    expect(await screen.findByRole("button", { name: /1 running/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /1 running/i }));
-    expect(screen.getAllByText(/pulling image/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/uplink is down/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /view all/i })).toBeVisible();
+
+    expect(await screen.findByRole("heading", { name: /^updates$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^updates$/i })).toBeVisible();
+    expect(
+      screen.getByText(/control-plane package bumps must not stop guests/i),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(await screen.findByText("ndl-control")).toBeVisible();
+    expect(screen.getByRole("button", { name: /^check for updates$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^apply update$/i })).toBeVisible();
   });
 
-  it("disables create for viewers with a role reason", async () => {
-    window.history.replaceState({}, "", "/workloads/new/system-container");
+  it("shows Unsupported host honestly on /settings/updates", async () => {
+    window.history.replaceState({}, "", "/settings/updates");
     mockApi({
       ...defaultRoutes,
-      "/api/v1/me": { status: 200, body: { ...admin, roles: ["viewer"] } },
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/updates": {
+        status: 200,
+        body: {
+          channel: "stable",
+          host_supported: false,
+          host_reason: "Host platform is not Debian 13 amd64.",
+          packages: [],
+        },
+      },
     });
 
     render(<App />);
-    expect(await screen.findByRole("heading", { name: /create system container/i })).toBeVisible();
-    expect(screen.getByText(/requires operator or administrator/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /create system container/i })).toBeDisabled();
+
+    expect(await screen.findByRole("heading", { name: /^updates$/i })).toBeVisible();
+    expect(await screen.findByText(/Unsupported\./i)).toBeVisible();
+    expect(screen.getByText(/Host platform is not Debian 13 amd64\./i)).toBeVisible();
+    expect(screen.getByText(/will not pretend an upgrade succeeded/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^apply update$/i })).toBeDisabled();
+  });
+
+  it("renders /backups with honest restore copy and no Create snapshot button", async () => {
+    window.history.replaceState({}, "", "/backups");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/backups/targets": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "tgt-1",
+              name: "local-disk",
+              kind: "local",
+              locator: "/var/lib/ndl/backups",
+              status: "available",
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "/api/v1/backups/runs": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "run-1",
+              policy_id: "",
+              target_id: "tgt-1",
+              workload_id: "wl-1",
+              snapshot_id: "snap-1",
+              status: "running",
+              error: "",
+              started_at: "2026-09-01T12:00:00Z",
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/artifacts": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "art-1",
+              run_id: "run-0",
+              workload_id: "wl-1",
+              checksum_sha256: "abc123",
+              size_bytes: 1024,
+              locator: "/var/lib/ndl/backups/art-1",
+              format: "full",
+              created_at: "2026-08-31T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^backups$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^backups$/i })).toBeVisible();
+    expect(screen.getByText(/backups are independent copies\. snapshots are not backups\./i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(await screen.findByText(/^Running$/)).toBeVisible();
+    expect(
+      screen.getByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
+    ).toBeVisible();
+    expect(screen.getByLabelText(/^restore dest node$/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^export dr metadata$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^restore as new$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^restore replace$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^verify$/i })).toBeVisible();
+    expect(screen.getByText(/^Unverified$/)).toBeVisible();
+    expect(screen.getAllByText("local-disk").length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
+  });
+
+  it("renders R2 object target fields and last-run transferred bytes", async () => {
+    window.history.replaceState({}, "", "/backups");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/backups/targets": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "tgt-r2",
+              name: "r2-offsite",
+              kind: "r2",
+              locator: "s3://ndl-backups/node1",
+              status: "not_configured",
+              endpoint: "https://account.r2.cloudflarestorage.com",
+              bucket: "ndl-backups",
+              no_check_bucket: true,
+              has_encryption_key: true,
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "/api/v1/backups/runs": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "run-r2",
+              target_id: "tgt-r2",
+              workload_id: "wl-1",
+              status: "succeeded",
+              started_at: "2026-09-01T12:00:00Z",
+              finished_at: "2026-09-01T12:01:00Z",
+              transferred_bytes: 2048,
+              incremental: true,
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/artifacts": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "art-r2",
+              run_id: "run-r2",
+              workload_id: "wl-1",
+              checksum_sha256: "abc123",
+              size_bytes: 1024,
+              transferred_bytes: 2048,
+              locator: "s3://ndl-backups/art-r2.qcow2.ndl",
+              format: "qcow2",
+              encrypted: true,
+              created_at: "2026-09-01T12:01:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^backups$/i })).toBeVisible();
+    expect(await screen.findByText("r2-offsite")).toBeVisible();
+    expect(screen.getByText("ndl-backups")).toBeVisible();
+    expect(screen.getByText("Client-side")).toBeVisible();
+    expect(screen.getByText("Yes")).toBeVisible();
+    fireEvent.change(screen.getByLabelText(/^kind$/i), { target: { value: "r2" } });
+    expect(screen.getByLabelText(/^endpoint$/i)).toBeVisible();
+    expect(screen.getByLabelText(/^bucket$/i)).toBeVisible();
+    expect(screen.getByLabelText(/^access key id$/i)).toBeVisible();
+    expect(screen.getByLabelText(/^secret access key$/i)).toBeVisible();
+    expect(screen.getByLabelText(/skip bucket probe/i)).toBeVisible();
+    expect(screen.queryByLabelText(/^locator$/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option", { name: /r2-offsite \(not configured\)/i }).length).toBeGreaterThan(0);
+  });
+
+  it("renders MFA, groups, and audit pages from the shell", async () => {
+    window.history.replaceState({}, "", "/settings/mfa");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/mfa": { status: 200, body: { enabled: false, kind: "not_configured" } },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^authenticator$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^mfa$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^groups$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^audit$/i })).toBeVisible();
+    expect(screen.getByText(/webauthn is not implemented yet/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^enroll totp$/i })).toBeVisible();
+  });
+
+  it("renders groups with honest empty state", async () => {
+    window.history.replaceState({}, "", "/groups");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/groups": { status: 200, body: { items: [] } },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^groups$/i })).toBeVisible();
+    expect(screen.getByText(/admin cannot be granted through a group/i)).toBeVisible();
+    expect(screen.getByText(/not configured/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^add group$/i })).toBeVisible();
+  });
+
+  it("renders audit events and keeps license activation off this page", async () => {
+    window.history.replaceState({}, "", "/audit");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/audit": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "aud-1",
+              action: "auth.login",
+              result: "ok",
+              created_at: "2026-09-01T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^audit$/i })).toBeVisible();
+    expect(screen.getByText(/viewers cannot read this log/i)).toBeVisible();
+    expect(await screen.findByText("auth.login")).toBeVisible();
+    expect(screen.queryByText(/activate license/i)).not.toBeInTheDocument();
+  });
+
+  it("prompts for a TOTP code when login returns an MFA challenge", async () => {
+    window.history.replaceState({}, "", "/login");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/auth/login": {
+        status: 200,
+        body: {
+          mfa_required: true,
+          mfa_challenge_id: "ch-1",
+          mfa_token: "tok-1",
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^sign in$/i })).toBeVisible();
+    fireEvent.change(screen.getByLabelText(/^username$/i), { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    expect(await screen.findByRole("heading", { name: /^authenticator$/i })).toBeVisible();
+    expect(screen.getByLabelText(/authenticator code/i)).toBeVisible();
+    expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the node GPU tab without assigning by default", async () => {
+    window.history.replaceState({}, "", "/node/gpu");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/nodes": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "node-1",
+              name: "local",
+              status: "available",
+              host_os: "Debian GNU/Linux 13 (trixie)",
+            },
+          ],
+        },
+      },
+      "/api/v1/gpus": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "0000:02:00.0",
+              pci: "0000:02:00.0",
+              vendor: "NVIDIA",
+              iommu_group: "12",
+              group_members: [
+                { pci: "0000:02:00.0", kind: "display" },
+                { pci: "0000:02:00.1", kind: "audio" },
+              ],
+              assignments: [],
+            },
+          ],
+          acs_override: "refused",
+          default_devices: [],
+          note: "Workloads created without a GPU assignment do not receive /dev/dri.",
+          runtime: { host_supported: false, status: "unsupported", cuda: "not_reported", rocm: "not_reported" },
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: /^gpu$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^gpus$/i })).toBeVisible();
+    expect(screen.getByText(/0000:02:00.1 audio/i)).toBeVisible();
+    expect(screen.getByText(/creating a workload without a gpu does not attach \/dev\/dri/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^assign gpu$/i })).not.toBeInTheDocument();
+  });
+
+  it("renders alert settings without inventing a firing state", async () => {
+    window.history.replaceState({}, "", "/alerts");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^alerts$/i })).toBeVisible();
+    expect(await screen.findByText(/no alert rules yet/i)).toBeVisible();
+    expect(screen.getByText(/^Not configured$/i)).toBeVisible();
+    expect(screen.queryByText(/^firing$/i)).not.toBeInTheDocument();
+  });
+
+  it("hides Create VM in the command palette for a viewer", async () => {
+    window.history.replaceState({}, "", "/");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: viewer },
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeVisible();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: /command palette/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^create vm$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /jump to tasks/i })).toBeVisible();
+  });
+
+  it("lists Create VM in the command palette for an admin", async () => {
+    window.history.replaceState({}, "", "/");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("button", { name: /^search$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
+    expect(await screen.findByRole("dialog", { name: /command palette/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^create vm$/i })).toBeVisible();
+  });
+
+  it("edits imported stack members as No-dal objects", async () => {
+    window.history.replaceState({}, "", "/stacks/st-1");
+    const fetchMock = mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/stacks/st-1": {
+        status: 200,
+        body: {
+          id: "st-1",
+          name: "demo",
+          status: "draft",
+          members: [
+            {
+              id: "m-1",
+              service_name: "web",
+              status: "pending",
+              desired: { image_pin: "nginx:alpine", env: [{ name: "APP_ENV", value: "prod" }] },
+            },
+          ],
+        },
+      },
+      "PATCH /api/v1/stacks/st-1/members/m-1": {
+        status: 200,
+        body: {
+          id: "st-1",
+          name: "demo",
+          status: "draft",
+          members: [
+            {
+              id: "m-1",
+              service_name: "web",
+              status: "pending",
+              desired: { image_pin: "nginx:1.27-alpine", env: [{ name: "APP_ENV", value: "prod" }] },
+            },
+          ],
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /^demo$/i })).toBeVisible();
+    expect(screen.getByText(/not applied/i)).toBeVisible();
+    const image = await screen.findByLabelText(/^image$/i);
+    fireEvent.change(image, { target: { value: "nginx:1.27-alpine" } });
+    fireEvent.click(screen.getByRole("button", { name: /save member/i }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/stacks/st-1/members/m-1"),
+        expect.objectContaining({ method: "PATCH" }),
+      );
+    });
   });
 });

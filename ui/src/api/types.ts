@@ -2,6 +2,7 @@ export type {
   ErrorResponse,
   HealthResponse,
   LoginRequest,
+  MePatchRequest,
   MeResponse,
   SetupClaimRequest,
   SetupStatusResponse,

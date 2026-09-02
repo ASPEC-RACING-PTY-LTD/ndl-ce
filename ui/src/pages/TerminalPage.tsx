@@ -2,10 +2,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
-import { createTerminalSession, getWorkload } from "../api/client";
+import { createTerminalSession } from "../api/client";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
+import { workloadGuestIOReason } from "../guestIO";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
 
@@ -15,6 +16,10 @@ function idsFromPath(): { kind: "node" | "workload"; id: string } {
     return { kind: "node", id: parts[1] ?? "" };
   }
   return { kind: "workload", id: parts[1] ?? "" };
+}
+
+function cwdFromQuery(): string {
+  return new URLSearchParams(window.location.search).get("cwd") || "/";
 }
 
 export function TerminalPage() {
@@ -29,7 +34,7 @@ export function TerminalPage() {
   const [status, setStatus] = useState("Connecting");
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [ticketKey, setTicketKey] = useState(0);
-  const [cwd, setCwd] = useState("/");
+  const [cwd, setCwd] = useState(cwdFromQuery);
   const [ready, setReady] = useState(kind === "node");
 
   useEffect(() => {
@@ -38,25 +43,32 @@ export function TerminalPage() {
       return;
     }
     let cancelled = false;
-    void getWorkload(id)
-      .then((w) => {
+    async function check() {
+      try {
+        const reason = await workloadGuestIOReason(id);
         if (cancelled) {
           return;
         }
-        if (w.kind !== "system-container") {
-          setUnsupported("Terminal is not available for this workload type.");
+        if (reason) {
+          setUnsupported(reason);
           setReady(false);
           return;
         }
+        setUnsupported(null);
         setReady(true);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unavailable");
         }
-      });
+      }
+    }
+    void check();
+    const timer = window.setInterval(() => {
+      void check();
+    }, 4000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [kind, id]);
 
@@ -83,7 +95,7 @@ export function TerminalPage() {
       try {
         const created = await createTerminalSession(kind, id, cwd);
         if (!created.ticket || !created.id) {
-          throw new Error("The terminal session could not be opened.");
+          throw new Error("session ticket was not returned");
         }
         const proto = window.location.protocol === "https:" ? "wss" : "ws";
         ws = new WebSocket(`${proto}://${window.location.host}/api/v1/io/sessions/${created.id}/ws`, [
@@ -180,7 +192,7 @@ export function TerminalPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="term-heading">
-      <PageHeader id="term-heading" title="Terminal" kicker={`${status} · ${cwd}`} />
+      <PageHeader id="term-heading" title="Terminal" kicker={`${status} · cwd ${cwd}`} />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

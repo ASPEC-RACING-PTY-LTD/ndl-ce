@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.6
-  description: Phase 7 lab QEMU prototype plus Phase 6 northbound API. Host visibility, Directory storage, safe networking, system containers, Terminal, and Files.
+  version: 1.0.0
+  description: Phase 43 license surface; CE 1.0 hardware gates not claimed in this tree.
 servers:
   - url: /api/v1
 paths:
@@ -57,11 +57,13 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Authenticated
+          description: Authenticated or MFA challenge
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MeResponse"
+                oneOf:
+                  - $ref: "#/components/schemas/MeResponse"
+                  - $ref: "#/components/schemas/MFAChallengeResponse"
   /auth/logout:
     post:
       operationId: logout
@@ -80,6 +82,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MeResponse"
+    patch:
+      operationId: patchMe
+      summary: Update presentation preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MePatchRequest"
+      responses:
+        "200":
+          description: Identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "422":
+          description: Expert requires a one-time acknowledgement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /tokens:
     post:
       operationId: createToken
@@ -189,6 +213,139 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MetricsResponse"
+  /nodes/{id}/logs:
+    get:
+      operationId: getNodeLogs
+      summary: Typed journalctl for allowlisted units
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+  /nodes/{id}/smart:
+    get:
+      operationId: getNodeSmart
+      summary: Honest SMART status from inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SMART
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartResponse"
+  /nodes/{id}/capacity:
+    get:
+      operationId: getNodeCapacity
+      summary: Capacity forecast from storage samples
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Forecast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapacityResponse"
+  /workloads/{id}/logs:
+    get:
+      operationId: getWorkloadLogs
+      summary: Typed journalctl for a workload unit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+  /timeline:
+    get:
+      operationId: getTimeline
+      summary: Events, tasks, and authorized audit in one window
+      responses:
+        "200":
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimelineResponse"
+  /alerts:
+    get:
+      operationId: listAlerts
+      summary: Alert rules
+      responses:
+        "200":
+          description: Rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertListResponse"
+    post:
+      operationId: createAlert
+      summary: Create an alert rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertRule"
+  /alerts/channels:
+    get:
+      operationId: listAlertChannels
+      summary: Notification channels with webhook URLs redacted
+      responses:
+        "200":
+          description: Channels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelListResponse"
+    post:
+      operationId: createAlertChannel
+      summary: Create a local webhook or SMTP channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationChannel"
   /tasks:
     get:
       operationId: listTasks
@@ -465,6 +622,952 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Reservation"
+  /networks/vlans:
+    post:
+      operationId: createNetworkVlan
+      summary: Add a stacked VLAN. Access port on VID 20 is the homelab path. Management NIC requires typed confirm.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VLANCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkVLAN"
+  /networks/bonds:
+    post:
+      operationId: createNetworkBond
+      summary: Create an active-backup or LACP bond. Bonding the management NIC requires typed confirm.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BondCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkBond"
+  /networks/policies:
+    post:
+      operationId: createNetworkPolicy
+      summary: Create a guest-to-guest bridge policy. Cannot drop management INPUT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkPolicy"
+  /networks/policies/{id}/apply:
+    post:
+      operationId: applyNetworkPolicy
+      summary: Apply a guest-to-guest policy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkPolicy"
+  /networks/overlays:
+    post:
+      operationId: createNetworkOverlay
+      summary: Local VXLAN prep. Multi-node mesh is Phase 30.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverlayCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworkOverlay"
+  /cluster/wg:
+    get:
+      operationId: listWireGuard
+      summary: Pre-join WireGuard peers. Pairing tokens are not join tokens.
+      responses:
+        "200":
+          description: Peers and remote workers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WGStatusResponse"
+  /cluster/wg/peers:
+    post:
+      operationId: createWireGuardPeer
+      summary: Create a local plus worker WireGuard pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WGPeerCreateRequest"
+      responses:
+        "201":
+          description: Created. worker_private_key and pairing_token are shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WGPeerCreateResponse"
+  /cluster/sessions:
+    post:
+      operationId: openClusterSession
+      summary: Agent OpenSession dial-out. Pairing token authenticates. Not a join token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenClusterSessionRequest"
+      responses:
+        "200":
+          description: Session accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenClusterSessionResponse"
+  /cluster:
+    get:
+      operationId: getCluster
+      summary: Cluster inventory. Hostname is a locator; identity is the node UUID.
+      responses:
+        "200":
+          description: Cluster members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterInventoryResponse"
+  /cluster/ha:
+    get:
+      operationId: getClusterHA
+      summary: HA foundations status. Single writer. Not multi-master.
+      responses:
+        "200":
+          description: HA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/ha/replica:
+    post:
+      operationId: configureHAReplica
+      summary: Store a replica endpoint. DSN is a secret and is never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigureHAReplicaRequest"
+      responses:
+        "200":
+          description: Replica recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/ha/fence:
+    post:
+      operationId: fenceClusterHA
+      summary: Record that the operator isolated the old writer. STONITH is not implemented.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - fence
+      responses:
+        "200":
+          description: Lease fenced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/ha/promote:
+    post:
+      operationId: promoteClusterHA
+      summary: Take the writer lease after fence or expiry. Privileged.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - promote
+      responses:
+        "200":
+          description: This process is the writer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HAStatus"
+  /cluster/update:
+    get:
+      operationId: getClusterUpdate
+      summary: Rolling update preview and last plan
+      responses:
+        "200":
+          description: Rolling preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RollingUpdatePreview"
+    post:
+      operationId: runClusterUpdate
+      summary: Drain one node, apply Phase 12 update on this control node, then the next. Guests are not stopped.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - cluster-update
+      responses:
+        "200":
+          description: Rolling plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RollingPlan"
+  /features:
+    get:
+      operationId: listFeatures
+      summary: Feature modules. Fresh install is light. GPU and Kubernetes stay optional.
+      responses:
+        "200":
+          description: Feature catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureList"
+  /features/{id}/enable:
+    post:
+      operationId: enableFeature
+      summary: Enable an optional feature package. Kubernetes on a tiny node needs confirm and does not start kubelet.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - enable-k8s
+      responses:
+        "200":
+          description: Feature state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+  /features/{id}/disable:
+    post:
+      operationId: disableFeature
+      summary: Disable a feature. Workloads are not deleted. Confirm is required when workloads exist.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - disable-feature
+      responses:
+        "200":
+          description: Feature state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+  /kubernetes:
+    get:
+      operationId: getKubernetes
+      summary: Kubernetes optional runtime status. Default install has no kube process.
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesStatus"
+  /kubernetes/start:
+    post:
+      operationId: startKubernetes
+      summary: Start kubelet only after the Kubernetes feature is enabled. Confirm required.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - start-kubelet
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesStatus"
+  /kubernetes/stop:
+    post:
+      operationId: stopKubernetes
+      summary: Stop kubelet. Virtual machines and system containers are not stopped.
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesStatus"
+  /store/apps:
+    get:
+      operationId: listStoreApps
+      summary: Store catalog. Official sample plus imported Community manifests.
+      responses:
+        "200":
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreAppList"
+  /store/apps/import:
+    post:
+      operationId: importStoreApp
+      summary: Import a Community manifest. Rejects run bash and helper scripts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreImportRequest"
+      responses:
+        "201":
+          description: Imported package
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreApp"
+  /store/apps/{id}:
+    get:
+      operationId: getStoreApp
+      summary: One Store package
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Package
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreApp"
+  /store/apps/{id}/install:
+    post:
+      operationId: installStoreApp
+      summary: Install from manifest onto a stack and OCI workload. Failed install rolls back objects.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreInstallRequest"
+      responses:
+        "201":
+          description: Installation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreInstallation"
+  /store/apps/{id}/sign:
+    post:
+      operationId: signStoreApp
+      summary: Sign a Store package with a cluster signing key. Private keys are never returned.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreSignRequest"
+      responses:
+        "201":
+          description: Signature recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSignature"
+  /store/apps/{id}/verify:
+    post:
+      operationId: verifyStoreApp
+      summary: Verify signatures and run the static scan report. Tamper fails closed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Verification passed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreVerifyResult"
+        "422":
+          description: Tamper or failed checks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreVerifyResult"
+  /store/apps/{id}/scans:
+    get:
+      operationId: getStoreAppScans
+      summary: Latest scan report for a Store package
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scan report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreScanList"
+  /store/installations:
+    get:
+      operationId: listStoreInstallations
+      summary: Store install jobs
+      responses:
+        "200":
+          description: Installations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreInstallationList"
+  /store/keys:
+    get:
+      operationId: listStoreKeys
+      summary: Public Store signing keys. Private material is never returned.
+      responses:
+        "200":
+          description: Keys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSigningKeyList"
+    post:
+      operationId: createStoreKey
+      summary: Create a cluster Store signing key. Private key stays in secrets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreCreateKeyRequest"
+      responses:
+        "201":
+          description: Public key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSigningKey"
+  /store/keys/{id}/revoke:
+    post:
+      operationId: revokeStoreKey
+      summary: Revoke a signing key. New installs that require it fail closed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - revoke-store-key
+      responses:
+        "200":
+          description: Revoked key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreSigningKey"
+  /store/policy:
+    get:
+      operationId: getStorePolicy
+      summary: Store install trust policy
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorePolicy"
+    put:
+      operationId: setStorePolicy
+      summary: Set community-allowed or verified-only install policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorePolicy"
+      responses:
+        "200":
+          description: Policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorePolicy"
+  /policies:
+    get:
+      operationId: listAutomationPolicies
+      summary: List deterministic automation policies. Not an LLM loop.
+      responses:
+        "200":
+          description: Policies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyList"
+    post:
+      operationId: createAutomationPolicy
+      summary: Create a storage-pressure policy. Host.Exec shaped YAML is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationPolicyCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicy"
+  /policies/{id}/apply:
+    post:
+      operationId: applyAutomationPolicy
+      summary: Evaluate a policy as the automation service identity. Optional confirm when require_approval is set.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - apply-policy
+      responses:
+        "200":
+          description: Evaluated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyRun"
+        "202":
+          description: Approval required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyRun"
+  /policy-runs:
+    get:
+      operationId: listAutomationPolicyRuns
+      summary: List recent policy evaluations
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyRunList"
+  /ai/providers:
+    get:
+      operationId: listAIProviders
+      summary: List BYO AI providers. API keys are never returned.
+      responses:
+        "200":
+          description: Providers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProviderList"
+    post:
+      operationId: createAIProvider
+      summary: Add a BYO provider. The API key stays in secrets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProviderCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProvider"
+  /ai/profiles:
+    get:
+      operationId: listAIProfiles
+      summary: List AI permission profiles
+      responses:
+        "200":
+          description: Profiles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProfileList"
+    post:
+      operationId: createAIProfile
+      summary: Create an Ask profile. Plan and Operate are a later phase.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProfileCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProfile"
+  /ai/ask:
+    post:
+      operationId: askAI
+      summary: Read-only Ask. Cites events and metrics. No mutate. Provider down still returns local citations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIAskRequest"
+      responses:
+        "200":
+          description: Answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIAskResponse"
+  /ai/plans:
+    get:
+      operationId: listAIPlans
+      summary: List reviewable AI plans of existing APIs
+      responses:
+        "200":
+          description: Plans
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlanList"
+    post:
+      operationId: createAIPlan
+      summary: Compile a prompt into existing API steps. Never a shell.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIPlanCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlan"
+  /ai/plans/{id}:
+    get:
+      operationId: getAIPlan
+      summary: Get one plan preview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlan"
+  /ai/plans/{id}/approve:
+    post:
+      operationId: approveAIPlan
+      summary: Execute a previewed plan with confirm. Partial failure stops. Audit remains.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - approve-plan
+      responses:
+        "200":
+          description: Plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIPlan"
+  /settings/license:
+    get:
+      operationId: getLicense
+      summary: License-activation surface. Absent means Community Edition. Never returns the full key.
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+    post:
+      operationId: activateLicense
+      summary: Store a key and contact the licensing API only then. Unreachable API uses grace. Workloads are not stopped.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - activate-license
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LicenseActivateRequest"
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+  /settings/license/clear:
+    post:
+      operationId: clearLicense
+      summary: Clear the stored key. Returns the surface to Community Edition. Workloads stay running.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - clear-license
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+  /cluster/join-tokens:
+    post:
+      operationId: createJoinToken
+      summary: Create a single-use cluster join token. Shown once.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinTokenCreateRequest"
+      responses:
+        "201":
+          description: Token shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinTokenCreateResponse"
+  /cluster/join:
+    post:
+      operationId: joinCluster
+      summary: Join as a worker using a single-use join token. No user session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClusterJoinRequest"
+      responses:
+        "201":
+          description: Worker enrolled. node_key is shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterJoinResponse"
+  /cluster/nodes/{id}/revoke:
+    post:
+      operationId: revokeClusterNode
+      summary: Revoke a worker node. The control node cannot be revoked.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterNodeRevokeResponse"
+  /placement/preview:
+    post:
+      operationId: previewPlacement
+      summary: Preview the node a create would land on. Does not start a guest.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlacementPreviewRequest"
+      responses:
+        "200":
+          description: Chosen node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementPreviewResponse"
+  /node-groups:
+    get:
+      operationId: listNodeGroups
+      summary: List CE placement groups
+      responses:
+        "200":
+          description: Groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeGroupListResponse"
+    post:
+      operationId: createNodeGroup
+      summary: Create a placement group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeGroupCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeGroup"
+  /nodes/{id}/maintain:
+    post:
+      operationId: maintainNode
+      summary: Drain a node. Lists workloads and queues migrate jobs. Migrate engine is Phase 32.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Maintenance started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeMaintainResponse"
+  /nodes/{id}/maintain/exit:
+    post:
+      operationId: exitNodeMaintenance
+      summary: Clear maintenance mode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Maintenance cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeMaintainExitResponse"
   /workloads:
     get:
       operationId: listWorkloads
@@ -478,7 +1581,7 @@ paths:
                 $ref: "#/components/schemas/WorkloadListResponse"
     post:
       operationId: createWorkload
-      summary: Create a system container
+      summary: Create a system container, OCI application, or VM
       requestBody:
         required: true
         content:
@@ -559,6 +1662,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/{id}/guest:
+    get:
+      operationId: getWorkloadGuest
+      summary: qemu-ga and nodal_ga status for a VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Honest guest agent states
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadGuestResponse"
   /workloads/{id}/start:
     post:
       operationId: startWorkload
@@ -610,6 +1730,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/{id}/force-stop:
+    post:
+      operationId: forceStopWorkload
+      summary: Force stop a VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
   /workloads/{id}/delete:
     post:
       operationId: deleteWorkload
@@ -627,6 +1764,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/{id}/migrate:
+    post:
+      operationId: migrateWorkload
+      summary: Offline or live migrate a workload to another node
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrateWorkloadRequest"
+      responses:
+        "200":
+          description: Migrate job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrateWorkloadResponse"
+        "409":
+          description: Failed live migrate left the source running
+    get:
+      operationId: getWorkloadMigrate
+      summary: Latest migrate job for a workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Migrate job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrateWorkloadResponse"
   /workloads/{id}/clone:
     post:
       operationId: cloneWorkload
@@ -649,6 +1826,166 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/import:
+    post:
+      operationId: importWorkload
+      summary: Import a qcow2 library item as a new VM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportWorkloadRequest"
+      responses:
+        "201":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /workloads/{id}/export:
+    post:
+      operationId: exportWorkload
+      summary: Export a VM boot disk as a library disk-image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportWorkloadRequest"
+      responses:
+        "201":
+          description: Exported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageImage"
+  /workloads/{id}/usb:
+    post:
+      operationId: attachWorkloadUSB
+      summary: Attach an inventory USB device to a VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachUSBRequest"
+      responses:
+        "201":
+          description: Attached
+  /workloads/{id}/pci:
+    post:
+      operationId: attachWorkloadPCI
+      summary: Attach a non-GPU PCI device using VFIO
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachPCIRequest"
+      responses:
+        "201":
+          description: Attached
+  /templates:
+    get:
+      operationId: listTemplates
+      summary: List VM templates
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateListResponse"
+    post:
+      operationId: createTemplate
+      summary: Create a VM template from a workload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTemplateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMTemplate"
+  /templates/{id}/deploy:
+    post:
+      operationId: deployTemplate
+      summary: Deploy a template as a new VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloneWorkloadRequest"
+      responses:
+        "201":
+          description: Deployed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+  /nodes/{id}/usb:
+    get:
+      operationId: listNodeUSB
+      summary: List USB devices from host inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: USB inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/USBListResponse"
+  /nodes/{id}/pci:
+    get:
+      operationId: listNodePCI
+      summary: List non-GPU PCI devices from host inventory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PCI inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PCIListResponse"
   /nodes/{id}/terminal/sessions:
     post:
       operationId: createNodeTerminalSession
@@ -671,10 +2008,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/IOSession"
+  /workloads/{id}/console/sessions:
+    post:
+      operationId: createWorkloadConsoleSession
+      summary: Issue a ticketed VM console session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIOSessionRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IOSession"
   /workloads/{id}/terminal/sessions:
     post:
       operationId: createWorkloadTerminalSession
-      summary: Create a CT terminal ticket
+      summary: Create a CT or VM guest terminal ticket
       parameters:
         - name: id
           in: path
@@ -868,7 +2228,7 @@ paths:
   /workloads/{id}/files:
     get:
       operationId: listWorkloadFiles
-      summary: List CT files
+      summary: List CT or VM guest files
       parameters:
         - name: id
           in: path
@@ -889,7 +2249,7 @@ paths:
   /workloads/{id}/files/stat:
     get:
       operationId: statWorkloadFile
-      summary: Stat a CT path
+      summary: Stat a CT or VM guest path
       parameters:
         - name: id
           in: path
@@ -910,7 +2270,7 @@ paths:
   /workloads/{id}/files/download:
     get:
       operationId: downloadWorkloadFile
-      summary: Download a CT file
+      summary: Download a CT or VM guest file
       parameters:
         - name: id
           in: path
@@ -927,7 +2287,7 @@ paths:
   /workloads/{id}/files/upload:
     post:
       operationId: uploadWorkloadFile
-      summary: Upload a CT file
+      summary: Upload a CT or VM guest file
       parameters:
         - name: id
           in: path
@@ -944,7 +2304,7 @@ paths:
   /workloads/{id}/files/mkdir:
     post:
       operationId: mkdirWorkloadFile
-      summary: Create a CT directory
+      summary: Create a CT or VM guest directory
       parameters:
         - name: id
           in: path
@@ -966,7 +2326,7 @@ paths:
   /workloads/{id}/files/delete:
     post:
       operationId: deleteWorkloadFile
-      summary: Delete a CT path
+      summary: Delete a CT or VM guest path
       parameters:
         - name: id
           in: path
@@ -988,7 +2348,7 @@ paths:
   /workloads/{id}/files/move:
     post:
       operationId: moveWorkloadFile
-      summary: Rename a CT path
+      summary: Rename a CT or VM guest path
       parameters:
         - name: id
           in: path
@@ -1071,6 +2431,1253 @@ paths:
                 $ref: "#/components/schemas/LabQemuProtoResponse"
         "403":
           description: Forbidden
+  /workloads/{id}/snapshots:
+    get:
+      operationId: listWorkloadSnapshots
+      summary: List snapshots and capability for a workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Snapshot list and capability. Directory system containers return supported=false with an honest reason.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotListResponse"
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Workload not found
+    post:
+      operationId: createWorkloadSnapshot
+      summary: Create a point-in-time snapshot on the same pool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSnapshotRequest"
+      responses:
+        "201":
+          description: Snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Snapshots not supported for this workload (for example Directory system containers are not ZFS)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /workloads/{id}/snapshots/flatten:
+    post:
+      operationId: flattenWorkloadSnapshots
+      summary: Flatten the qcow2 overlay snapshot chain for a workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - flatten
+      responses:
+        "200":
+          description: Chain flattened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotListResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Flatten not supported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /snapshots/{id}/rollback:
+    post:
+      operationId: rollbackSnapshot
+      summary: Roll a workload back to a snapshot on the same pool
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - rollback
+      responses:
+        "200":
+          description: Rolled back
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Snapshot not found
+  /backups/targets:
+    get:
+      operationId: listBackupTargets
+      summary: List backup destinations
+      responses:
+        "200":
+          description: Backup targets. Passwords are never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTargetListResponse"
+        "401":
+          description: Unauthenticated
+    post:
+      operationId: createBackupTarget
+      summary: Create a backup destination (local, NFS, or SMB)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBackupTargetRequest"
+      responses:
+        "201":
+          description: Target created. Password is write-only and never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTarget"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /backups/policies:
+    get:
+      operationId: listBackupPolicies
+      summary: List backup policies
+      responses:
+        "200":
+          description: Backup policies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupPolicyListResponse"
+        "401":
+          description: Unauthenticated
+    post:
+      operationId: createBackupPolicy
+      summary: Create a scheduled backup policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBackupPolicyRequest"
+      responses:
+        "201":
+          description: Policy created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupPolicy"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /backups/runs:
+    get:
+      operationId: listBackupRuns
+      summary: List backup runs
+      responses:
+        "200":
+          description: Backup runs. Status is honest (running, succeeded, or failed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRunListResponse"
+        "401":
+          description: Unauthenticated
+  /backups/artifacts:
+    get:
+      operationId: listBackupArtifacts
+      summary: List backup artifacts in the catalog
+      responses:
+        "200":
+          description: Backup artifacts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupArtifactListResponse"
+        "401":
+          description: Unauthenticated
+  /backups/dr-export:
+    get:
+      operationId: exportBackupDR
+      summary: Export backup catalog metadata for disaster recovery without credentials
+      responses:
+        "200":
+          description: Cluster backup catalog without secrets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DRExportResponse"
+        "401":
+          description: Unauthenticated
+  /backups/run:
+    post:
+      operationId: runBackup
+      summary: Start a backup run for a workload to a target
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunBackupRequest"
+      responses:
+        "202":
+          description: Backup run accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRun"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Target unavailable or request invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /backups/artifacts/{id}/restore:
+    post:
+      operationId: restoreBackupArtifact
+      summary: Restore a backup artifact as a new workload or replace an existing one. Dest is target_node_id.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          description: Required when mode is replace. Value must be restore.
+          schema:
+            type: string
+            enum:
+              - restore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreBackupRequest"
+      responses:
+        "202":
+          description: Restore accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRun"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Artifact not found
+        "422":
+          description: Confirm header missing for replace, or restore not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /backups/artifacts/{id}/verify:
+    post:
+      operationId: verifyBackupArtifact
+      summary: Open-verify an artifact or restore it to an isolated throwaway workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyBackupRequest"
+      responses:
+        "202":
+          description: Verify accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupArtifact"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Artifact not found
+        "422":
+          description: Verify not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /backups/artifacts/{id}/restore-file:
+    post:
+      operationId: restoreBackupFile
+      summary: Extract one guest path from a received backup artifact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreBackupFileRequest"
+      responses:
+        "200":
+          description: Extracted file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreBackupFileResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Artifact not found
+        "422":
+          description: Extract unavailable or path invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /certs:
+    get:
+      operationId: getCerts
+      summary: TLS certificate status for the management plane
+      responses:
+        "200":
+          description: Current certificate status. Private keys are never included.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+  /certs/generate:
+    post:
+      operationId: generateCert
+      summary: Generate a self-signed management certificate
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - enable-tls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateCertRequest"
+      responses:
+        "200":
+          description: Generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /certs/import:
+    post:
+      operationId: importCert
+      summary: Import a PEM certificate and private key for the management plane
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - enable-tls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportCertRequest"
+      responses:
+        "200":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /certs/acme:
+    post:
+      operationId: acmeCert
+      summary: Configure ACME for the management certificate
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - enable-tls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcmeCertRequest"
+      responses:
+        "200":
+          description: ACME configuration accepted. Status may be pending or failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateStatus"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /updates:
+    get:
+      operationId: getUpdates
+      summary: Platform update status for this appliance
+      responses:
+        "200":
+          description: Current update channel, packages, and last operation. Host support is reported honestly.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateStatus"
+        "401":
+          description: Unauthenticated
+  /updates/check:
+    post:
+      operationId: checkUpdates
+      summary: Dry-run preview of available control-plane package updates
+      responses:
+        "200":
+          description: Update preview. Always dry_run true. Does not apply packages.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdatePreview"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Host unsupported or check not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/preflight:
+    post:
+      operationId: preflightUpdates
+      summary: Preflight checks before applying a platform update
+      responses:
+        "200":
+          description: Preflight result. Unsupported checks stay honest on non-Debian hosts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdatePreflight"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Host unsupported or preflight not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/checkpoint:
+    post:
+      operationId: checkpointUpdates
+      summary: Create a control-plane checkpoint before apply
+      responses:
+        "200":
+          description: Checkpoint result. Status may be succeeded, failed, or unsupported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateCheckpoint"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Host unsupported or checkpoint not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/apply:
+    post:
+      operationId: applyUpdates
+      summary: Apply control-plane package updates without stopping guests
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          description: Required confirmation. Value must be apply-update.
+          schema:
+            type: string
+            enum:
+              - apply-update
+      responses:
+        "200":
+          description: Apply operation accepted or completed. Status stays honest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateOperation"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Confirm header missing, host unsupported, or apply not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/rollback:
+    post:
+      operationId: rollbackUpdates
+      summary: Roll back the last control-plane package update
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          description: Required confirmation. Value must be rollback-update.
+          schema:
+            type: string
+            enum:
+              - rollback-update
+      responses:
+        "200":
+          description: Rollback operation accepted or completed. Status stays honest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateOperation"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "422":
+          description: Confirm header missing, host unsupported, or rollback not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/mfa/verify:
+    post:
+      operationId: verifyMfa
+      summary: Complete a TOTP or recovery-code challenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAVerifyRequest"
+      responses:
+        "200":
+          description: Session at AAL 2
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: Invalid challenge
+  /mfa:
+    get:
+      operationId: getMfa
+      summary: Current user MFA status
+      responses:
+        "200":
+          description: MFA status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAStatus"
+  /mfa/enroll:
+    post:
+      operationId: enrollMfa
+      summary: Start TOTP enrollment
+      responses:
+        "201":
+          description: Secret and recovery codes shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAEnrollResponse"
+  /mfa/confirm:
+    post:
+      operationId: confirmMfa
+      summary: Confirm TOTP enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAConfirmRequest"
+      responses:
+        "200":
+          description: MFA enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAStatus"
+  /audit:
+    get:
+      operationId: listAudit
+      summary: Audit browser. Requires audit.read.
+      responses:
+        "200":
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditListResponse"
+        "403":
+          description: Forbidden
+  /groups:
+    get:
+      operationId: listGroups
+      summary: List groups
+      responses:
+        "200":
+          description: Groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupListResponse"
+    post:
+      operationId: createGroup
+      summary: Create a group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroupRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+  /groups/{id}/members:
+    post:
+      operationId: addGroupMember
+      summary: Add a user to a group
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddGroupMemberRequest"
+      responses:
+        "200":
+          description: Added
+  /groups/{id}/roles:
+    post:
+      operationId: bindGroupRole
+      summary: Bind operator or viewer to a group. Admin cannot be granted through a group.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BindGroupRoleRequest"
+      responses:
+        "200":
+          description: Bound
+        "403":
+          description: Admin role refused
+  /service-principals:
+    get:
+      operationId: listServicePrincipals
+      summary: List service principals
+      responses:
+        "200":
+          description: Service principals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePrincipalListResponse"
+    post:
+      operationId: createServicePrincipal
+      summary: Create a service principal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServicePrincipalRequest"
+      responses:
+        "201":
+          description: Token shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePrincipalCreated"
+  /storage/zfs:
+    get:
+      operationId: getZfsRuntime
+      summary: ZFS runtime status. Directory remains default. Force import is refused.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZFSRuntime"
+  /storage/zfs/import:
+    post:
+      operationId: importZfs
+      summary: Import a ZFS pool by GUID. zpool import -f is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZFSImportRequest"
+      responses:
+        "201":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+        "422":
+          description: Force import refused
+  /storage/zfs/create:
+    post:
+      operationId: createZfs
+      summary: Create a ZFS pool on extra disks. The host root disk is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZFSCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/lvm:
+    get:
+      operationId: getLvmRuntime
+      summary: LVM-thin runtime status. Directory remains default. Incremental send is false. vgexport is refused.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LVMRuntime"
+  /storage/lvm/create:
+    post:
+      operationId: createLvm
+      summary: Create an LVM-thin pool on extra disks. The host root disk is refused. vgexport is never issued.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LVMCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/datastores:
+    get:
+      operationId: getDatastoreRuntime
+      summary: NFS/SMB/iSCSI runtime. Backup destinations remain Phase 11. Incremental send is false.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatastoreRuntime"
+  /storage/nfs:
+    post:
+      operationId: createNfs
+      summary: Add an NFS share as a compute/library pool. Share down stays unavailable; rows remain.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NFSCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/smb:
+    post:
+      operationId: createSmb
+      summary: Add an SMB share. Password is stored in secrets, never in unit files or list JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SMBCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/iscsi:
+    post:
+      operationId: createIscsi
+      summary: Log in to an iSCSI target and use the LUN as a VM disk handle.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ISCSICreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/distributed:
+    get:
+      operationId: getDistributedRuntime
+      summary: Distributed storage runtime. Enabling the feature does not start ceph-osd.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedRuntime"
+    post:
+      operationId: attachDistributed
+      summary: Attach an external Ceph/RBD cluster. Keys stay in secrets and are never list JSON.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DistributedAttachRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoragePool"
+  /storage/distributed/osds:
+    post:
+      operationId: createDistributedOsd
+      summary: OSD bring-up on an extra disk. Confirm required. Does not start by default with the feature.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - start-ceph-osd
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DistributedOSDRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedOSD"
+  /storage/distributed/osds/start:
+    post:
+      operationId: startDistributedOsd
+      summary: Start ceph-osd.target after the feature is enabled. Confirm required. VMs are not started.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - start-ceph-osd
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedRuntime"
+  /storage/distributed/osds/stop:
+    post:
+      operationId: stopDistributedOsd
+      summary: Stop ceph-osd.target. Virtual machines and system containers are not stopped.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistributedRuntime"
+  /registries:
+    get:
+      operationId: listRegistries
+      summary: List OCI registries (never returns passwords)
+      responses:
+        "200":
+          description: Registries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryListResponse"
+    post:
+      operationId: createRegistry
+      summary: Add an OCI registry with optional credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRegistryRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registry"
+  /stacks:
+    get:
+      operationId: listStacks
+      summary: List application stacks
+      responses:
+        "200":
+          description: Stacks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StackListResponse"
+    post:
+      operationId: createStack
+      summary: Create an empty application stack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStackRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+  /stacks/import:
+    post:
+      operationId: importStackCompose
+      summary: Import Compose YAML into an inspectable No-dal stack (Compose is not runtime SoT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportStackRequest"
+      responses:
+        "201":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+        "403":
+          description: Privileged services require admin; creating named volumes requires storage.volume.create
+  /stacks/{id}:
+    get:
+      operationId: getStack
+      summary: Get stack detail with members and workload links
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stack
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+    patch:
+      operationId: patchStack
+      summary: Update stack metadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchStackRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+    delete:
+      operationId: deleteStack
+      summary: Delete a stack (does not delete workloads)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+  /stacks/{id}/apply:
+    post:
+      operationId: applyStack
+      summary: Apply stack members as OCI workloads (idempotent; resumes partial apply)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Applied or partial
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+  /stacks/{id}/members/{memberId}:
+    patch:
+      operationId: patchStackMember
+      summary: Update an imported stack member as a No-dal object (Compose is not runtime SoT)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchStackMemberRequest"
+      responses:
+        "200":
+          description: Updated stack
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+        "403":
+          description: Privileged requires admin
+  /gpus:
+    get:
+      operationId: listGpus
+      summary: List GPUs, IOMMU group members, and assignments. gpu=all is never a valid id.
+      responses:
+        "200":
+          description: GPUs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUListResponse"
+  /gpus/runtime:
+    get:
+      operationId: getGpuRuntime
+      summary: GPU runtime install status. Debian 13 adapter only.
+      responses:
+        "200":
+          description: Runtime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPURuntime"
+  /gpus/runtime/install:
+    post:
+      operationId: installGpuRuntime
+      summary: Install GPU userland via typed Debian apt-get. Requires confirm or dry_run.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GPUInstallRequest"
+      responses:
+        "200":
+          description: Requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUAssignResult"
+        "422":
+          description: Confirm required
+  /gpus/assign:
+    post:
+      operationId: assignGpu
+      summary: Assign a GPU by PCI BDF. ACS override is refused. Two exclusive claims fail.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GPUAssignRequest"
+      responses:
+        "201":
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUAssignment"
+        "400":
+          description: gpu=all or invalid id
+        "409":
+          description: Exclusive claim conflict
+        "422":
+          description: ACS override, VFIO preconditions, or unsupported mode
+  /gpus/unassign:
+    post:
+      operationId: unassignGpu
+      summary: Drop a GPU claim and restore the host driver for VFIO.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GPUUnassignRequest"
+      responses:
+        "200":
+          description: Unassigned
+  /workloads/{id}/gpus:
+    get:
+      operationId: listWorkloadGpus
+      summary: GPU assignments for one workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUAssignmentListResponse"
 components:
   schemas:
     HealthResponse:
@@ -1090,6 +3697,8 @@ components:
           enum:
             - ndl-control
         setup_open:
+          type: boolean
+        tls_enabled:
           type: boolean
     SetupStatusResponse:
       type: object
@@ -1132,6 +3741,8 @@ components:
         - username
         - roles
         - edition
+        - ux_level
+        - expert_ack
       properties:
         user_id:
           type: string
@@ -1145,6 +3756,53 @@ components:
           type: string
         cluster_id:
           type: string
+        aal:
+          type: integer
+        mfa_enabled:
+          type: boolean
+        kind:
+          type: string
+          enum:
+            - person
+            - service
+        ux_level:
+          type: string
+          enum:
+            - guided
+            - advanced
+            - expert
+        expert_ack:
+          type: boolean
+        expert_ack_at:
+          type: string
+    MePatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ux_level:
+          type: string
+          enum:
+            - guided
+            - advanced
+            - expert
+        expert_ack:
+          type: boolean
+    MFAChallengeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - mfa_required
+        - mfa_challenge_id
+        - mfa_token
+      properties:
+        mfa_required:
+          type: boolean
+          enum:
+            - true
+        mfa_challenge_id:
+          type: string
+        mfa_token:
+          type: string
     CreateTokenRequest:
       type: object
       additionalProperties: false
@@ -1153,6 +3811,11 @@ components:
       properties:
         name:
           type: string
+        permissions:
+          type: array
+          items:
+            type: string
+          description: Must be a subset of the creator grants. Empty inherits the creator role.
     CreateTokenResponse:
       type: object
       additionalProperties: false
@@ -1207,6 +3870,16 @@ components:
           type: string
         status:
           type: string
+        support_tier:
+          type: string
+        host_platform:
+          type: string
+        role:
+          type: string
+        hostname:
+          type: string
+        revoked:
+          type: boolean
         stale:
           type: boolean
         observed_at:
@@ -1435,6 +4108,10 @@ components:
           type: integer
         provisioned_bytes:
           type: integer
+        total_bytes:
+          type: integer
+        metadata_percent:
+          type: number
     CreateStoragePoolRequest:
       type: object
       additionalProperties: false
@@ -1533,6 +4210,984 @@ components:
           items:
             type: object
             additionalProperties: true
+        vlans:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkVLAN"
+        bonds:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkBond"
+        policies:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkPolicy"
+        overlays:
+          type: array
+          items:
+            $ref: "#/components/schemas/NetworkOverlay"
+    NetworkVLAN:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        network_id:
+          type: string
+        name:
+          type: string
+        vlan_id:
+          type: integer
+        parent_ifname:
+          type: string
+        access_ifname:
+          type: string
+        mode:
+          type: string
+        locator:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+    NetworkBond:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mode:
+          type: string
+        members:
+          type: array
+          items:
+            type: string
+        locator:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+    NetworkPolicy:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        action:
+          type: string
+        src_workload_id:
+          type: string
+        dst_workload_id:
+          type: string
+        src_mac:
+          type: string
+        dst_mac:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+    NetworkOverlay:
+      type: object
+      additionalProperties: false
+      description: Local VXLAN overlay prep. Status available means prep files were written. Multi-node mesh is not claimed.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        vni:
+          type: integer
+        locator:
+          type: string
+        status:
+          type: string
+          description: available is local prep, not a live multi-node overlay.
+        reason:
+          type: string
+    VLANCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - vlan_id
+      properties:
+        name:
+          type: string
+        network_id:
+          type: string
+        vlan_id:
+          type: integer
+        parent_ifname:
+          type: string
+        access_ifname:
+          type: string
+        mode:
+          type: string
+        confirm_ifname:
+          type: string
+    BondCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - members
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+        members:
+          type: array
+          items:
+            type: string
+        confirm_ifname:
+          type: string
+    PolicyCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - src_workload_id
+        - dst_workload_id
+      properties:
+        name:
+          type: string
+        action:
+          type: string
+        src_workload_id:
+          type: string
+        dst_workload_id:
+          type: string
+    OverlayCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - vni
+      properties:
+        name:
+          type: string
+        vni:
+          type: integer
+    WGPeer:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        public_key:
+          type: string
+        listen_port:
+          type: integer
+        address_cidr:
+          type: string
+        endpoint:
+          type: string
+        allowed_ips:
+          type: string
+        persistent_keepalive:
+          type: integer
+        locator:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        last_handshake_unix:
+          type: integer
+    WGStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WGPeer"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeSummary"
+        join:
+          type: string
+    WGPeerCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        endpoint:
+          type: string
+        local_address:
+          type: string
+        worker_address:
+          type: string
+        listen_port:
+          type: integer
+    WGPeerCreateResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        local:
+          $ref: "#/components/schemas/WGPeer"
+        worker:
+          $ref: "#/components/schemas/WGPeer"
+        warning:
+          type: string
+    ClusterInventoryResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - nodes
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeSummary"
+        writer:
+          type: boolean
+        lease_holder:
+          type: string
+        lease_expires_at:
+          type: string
+    HAStatus:
+      type: object
+      additionalProperties: false
+      description: Single-writer HA foundations. multi_master is always false.
+      required:
+        - mode
+        - writer
+        - replica_status
+        - fencing_mode
+        - multi_master
+      properties:
+        mode:
+          type: string
+          enum:
+            - single-writer
+        writer:
+          type: boolean
+        replica_status:
+          type: string
+          enum:
+            - not_configured
+            - unavailable
+        replica_endpoint:
+          type: string
+        fencing_mode:
+          type: string
+          enum:
+            - operator
+        fencing_reason:
+          type: string
+        multi_master:
+          type: boolean
+          description: Always false. Multi-master is not claimed.
+        reason:
+          type: string
+        fenced_holder:
+          type: string
+        fenced_at:
+          type: string
+        promoted_holder:
+          type: string
+        promoted_at:
+          type: string
+        lease_holder:
+          type: string
+        lease_expires_at:
+          type: string
+        lease_fenced:
+          type: boolean
+    ConfigureHAReplicaRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        endpoint:
+          type: string
+        dsn:
+          type: string
+          description: Stored as a secret. Never returned.
+    RollingStep:
+      type: object
+      additionalProperties: false
+      required:
+        - node_id
+        - ordinal
+        - action
+      properties:
+        id:
+          type: string
+        node_id:
+          type: string
+        name:
+          type: string
+        ordinal:
+          type: integer
+        action:
+          type: string
+          enum:
+            - drain
+            - update
+        status:
+          type: string
+        reason:
+          type: string
+        update_operation_id:
+          type: string
+    RollingPlan:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - status
+        - steps
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        created_at:
+          type: string
+        finished_at:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/RollingStep"
+    RollingUpdatePreview:
+      type: object
+      additionalProperties: false
+      required:
+        - preview
+      properties:
+        preview:
+          type: array
+          items:
+            $ref: "#/components/schemas/RollingStep"
+        note:
+          type: string
+        plan:
+          $ref: "#/components/schemas/RollingPlan"
+    Feature:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - enabled
+        - core
+        - package_status
+        - runtime_status
+        - starts_runtime
+        - kubelet_started
+        - workload_count
+      properties:
+        id:
+          type: string
+          enum:
+            - vm
+            - ct
+            - oci
+            - gpu
+            - k8s
+            - distributed_storage
+            - ai
+        title:
+          type: string
+        enabled:
+          type: boolean
+        core:
+          type: boolean
+        package:
+          type: string
+        package_status:
+          type: string
+          enum:
+            - not_configured
+            - unavailable
+            - installed
+            - removed
+        runtime_status:
+          type: string
+          enum:
+            - not_started
+            - installed
+            - running
+        starts_runtime:
+          type: boolean
+        kubelet_started:
+          type: boolean
+        workload_count:
+          type: integer
+        tiny_node:
+          type: boolean
+        confirm:
+          type: string
+        reason:
+          type: string
+    FeatureList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - base_install
+        - gpu_optional
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Feature"
+        base_install:
+          type: string
+          enum:
+            - light
+        gpu_optional:
+          type: boolean
+        reason:
+          type: string
+    KubernetesStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - kubelet_started
+        - kube_process
+        - vm_requires_k8s
+        - ct_requires_k8s
+      properties:
+        enabled:
+          type: boolean
+        kubelet_started:
+          type: boolean
+        kube_process:
+          type: boolean
+        state:
+          type: string
+          enum:
+            - absent
+            - detected
+        package_status:
+          type: string
+        runtime_status:
+          type: string
+        reason:
+          type: string
+        vm_requires_k8s:
+          type: boolean
+        ct_requires_k8s:
+          type: boolean
+    StoreApp:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - version
+        - class
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        class:
+          type: string
+          enum:
+            - community
+            - verified
+            - official
+        title:
+          type: string
+        summary:
+          type: string
+        unsigned:
+          type: boolean
+        warning:
+          type: string
+        gpu_optional:
+          type: boolean
+        deployment_kind:
+          type: string
+        image:
+          type: string
+        signed:
+          type: boolean
+        payload_sha256:
+          type: string
+        key_id:
+          type: string
+        trust_class:
+          type: string
+        verify_status:
+          type: string
+        verify_reason:
+          type: string
+        hooks:
+          type: object
+          additionalProperties: true
+        ai_actions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    StoreAppList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreApp"
+    StoreImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - manifest
+      properties:
+        manifest:
+          type: string
+    StoreInstallRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        node_id:
+          type: string
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+        gpu_id:
+          type: string
+    StoreInstallation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - package_id
+        - status
+      properties:
+        id:
+          type: string
+        package_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - installed
+            - failed
+            - rolled_back
+        stack_id:
+          type: string
+        workload_id:
+          type: string
+        kubelet_started:
+          type: boolean
+        reason:
+          type: string
+        warning:
+          type: string
+        node_id:
+          type: string
+        finished_at:
+          type: string
+        name:
+          type: string
+        class:
+          type: string
+    StoreInstallationList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreInstallation"
+    StoreSignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - key_id
+      properties:
+        key_id:
+          type: string
+    StoreSignature:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - package_id
+        - key_id
+        - algorithm
+        - payload_sha256
+      properties:
+        id:
+          type: string
+        package_id:
+          type: string
+        key_id:
+          type: string
+        algorithm:
+          type: string
+        payload_sha256:
+          type: string
+    StoreScanCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - status
+        - detail
+      properties:
+        kind:
+          type: string
+        status:
+          type: string
+          enum:
+            - pass
+            - fail
+            - warn
+            - unavailable
+        detail:
+          type: string
+    StoreVerifyResult:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - package_id
+        - status
+      properties:
+        id:
+          type: string
+        package_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pass
+            - fail
+        reason:
+          type: string
+        trust_class:
+          type: string
+        key_id:
+          type: string
+        kubelet_started:
+          type: boolean
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreScanCheck"
+    StoreScanList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreScanCheck"
+        status:
+          type: string
+        reason:
+          type: string
+        trust_class:
+          type: string
+        verification_id:
+          type: string
+    StoreCreateKeyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        class:
+          type: string
+          enum:
+            - verified
+            - official
+    StoreSigningKey:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - class
+        - status
+        - public_key
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        class:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - revoked
+        public_key:
+          type: string
+        revoked_at:
+          type: string
+    StoreSigningKeyList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreSigningKey"
+    StorePolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - install_policy
+      properties:
+        install_policy:
+          type: string
+          enum:
+            - community-allowed
+            - verified-only
+    JoinTokenCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ttl_seconds:
+          type: integer
+    JoinTokenCreateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - token
+        - expires_at
+      properties:
+        id:
+          type: string
+        token:
+          type: string
+        expires_at:
+          type: string
+        warning:
+          type: string
+    ClusterJoinRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - token
+        - hostname
+      properties:
+        token:
+          type: string
+        hostname:
+          type: string
+        host_platform:
+          type: object
+          additionalProperties: true
+    ClusterJoinResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - cluster_id
+        - role
+      properties:
+        id:
+          type: string
+        cluster_id:
+          type: string
+        name:
+          type: string
+        hostname:
+          type: string
+        role:
+          type: string
+        token_id:
+          type: string
+        ca_cert:
+          type: string
+        node_cert:
+          type: string
+        node_key:
+          type: string
+        warning:
+          type: string
+    ClusterNodeRevokeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revoked
+      properties:
+        id:
+          type: string
+        revoked:
+          type: boolean
+    PlacementPreviewRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        placement:
+          type: string
+        node_id:
+          type: string
+        require_gpu:
+          type: boolean
+    PlacementPreviewResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - node_id
+      properties:
+        node_id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        apply_local:
+          type: boolean
+    NodeGroupListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeGroup"
+    NodeGroupCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        node_ids:
+          type: array
+          items:
+            type: string
+    NodeGroup:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        members:
+          type: array
+          items:
+            type: string
+    NodeMaintainResponse:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        maintenance:
+          type: boolean
+        warning:
+          type: string
+    NodeMaintainExitResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        maintenance:
+          type: boolean
+    OpenClusterSessionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - peer_id
+        - pairing_token
+      properties:
+        peer_id:
+          type: string
+        node_id:
+          type: string
+        cluster_id:
+          type: string
+        listen_addr:
+          type: string
+        wg_public_key:
+          type: string
+        handshake_unix:
+          type: integer
+        pairing_token:
+          type: string
+    OpenClusterSessionResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id:
+          type: string
+        accepted:
+          type: boolean
+        node_id:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
     Network:
       type: object
       additionalProperties: true
@@ -1704,13 +5359,25 @@ components:
           type: boolean
         ipv4:
           type: string
+        autostart:
+          type: boolean
+        pending_restart:
+          type: boolean
+        firmware:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+        health:
+          type: object
+          additionalProperties: true
+        unit:
+          type: string
     CreateWorkloadRequest:
       type: object
       additionalProperties: false
       required:
         - name
-        - image_pin
-        - network_id
       properties:
         name:
           type: string
@@ -1728,19 +5395,264 @@ components:
           type: string
         volume_id:
           type: string
+        volume_ids:
+          type: array
+          items:
+            type: string
+        registry_id:
+          type: string
+        ports:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        env:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        health:
+          type: object
+          additionalProperties: true
         privileged:
           type: boolean
         desired_power:
           type: string
+        firmware:
+          type: string
+        autostart:
+          type: boolean
+        cloud_image_id:
+          type: string
+        iso_library_id:
+          type: string
+        nocloud:
+          type: object
+          additionalProperties: true
+        placement:
+          type: string
+        node_id:
+          type: string
+        node_group_id:
+          type: string
+        require_gpu:
+          type: boolean
+        require_storage_class:
+          type: string
+        affinity_workload_id:
+          type: string
+        anti_affinity_workload_id:
+          type: string
+    Registry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - url
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+        insecure:
+          type: boolean
+        has_credentials:
+          type: boolean
+        status:
+          type: string
+        created_at:
+          type: string
+    RegistryListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Registry"
+    CreateRegistryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - url
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        insecure:
+          type: boolean
+    Stack:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          description: draft|applying|applied|partial|failed (never invents all-healthy)
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        has_source_compose:
+          type: boolean
+        desired:
+          type: object
+          additionalProperties: true
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/StackMember"
+    StackMember:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - service_name
+        - status
+      properties:
+        id:
+          type: string
+        service_name:
+          type: string
+        status:
+          type: string
+          description: pending|creating|ready|collecting|unavailable|failed
+        sort_order:
+          type: integer
+        workload_id:
+          type: string
+          nullable: true
+        reason:
+          type: string
+        desired:
+          type: object
+          additionalProperties: true
+        workload:
+          type: object
+          additionalProperties: true
+    StackListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stack"
+    CreateStackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    ImportStackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - compose
+      properties:
+        name:
+          type: string
+        compose:
+          type: string
+          description: Compose YAML text. Becomes inspectable stack members, not runtime SoT.
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        registry_id:
+          type: string
+        volume_map:
+          type: object
+          additionalProperties:
+            type: string
+          description: Compose named volume to existing No-dal volume UUID
+        apply:
+          type: boolean
+    PatchStackRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+    PatchStackMemberRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        image_pin:
+          type: string
+        env:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        ports:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        volumes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        privileged:
+          type: boolean
+        command:
+          type: array
+          items:
+            type: string
+        health:
+          type: object
+          additionalProperties: true
+        network_id:
+          type: string
+        registry_id:
+          type: string
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+          format: int64
     UpdateWorkloadRequest:
       type: object
       additionalProperties: false
       properties:
+        name:
+          type: string
         cpus:
           type: integer
         memory_bytes:
           type: integer
         desired_power:
+          type: string
+        autostart:
+          type: boolean
+        firmware:
           type: string
     CloneWorkloadRequest:
       type: object
@@ -1748,6 +5660,148 @@ components:
       properties:
         name:
           type: string
+    MigrateWorkloadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        dest_node_id:
+          type: string
+        mode:
+          type: string
+          enum:
+            - live
+            - offline
+    MigrateWorkloadResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        workload_id:
+          type: string
+        operation_id:
+          type: string
+        source_node_id:
+          type: string
+        dest_node_id:
+          type: string
+        mode:
+          type: string
+        state:
+          type: string
+        source_running:
+          type: boolean
+        dest_running:
+          type: boolean
+        reason:
+          type: string
+        epoch:
+          type: integer
+    ImportWorkloadRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - library_id
+        - network_id
+      properties:
+        name:
+          type: string
+        library_id:
+          type: string
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        firmware:
+          type: string
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+    ExportWorkloadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+    AttachUSBRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - address
+      properties:
+        address:
+          type: string
+    AttachPCIRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - pci
+      properties:
+        pci:
+          type: string
+    CreateTemplateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+      properties:
+        workload_id:
+          type: string
+        name:
+          type: string
+    VMTemplate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        source_workload_id:
+          type: string
+        snapshot_id:
+          type: string
+        created_at:
+          type: string
+    TemplateListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VMTemplate"
+    USBListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    PCIListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        iommu:
+          type: object
+          additionalProperties: true
     CreateIOSessionRequest:
       type: object
       additionalProperties: false
@@ -1920,3 +5974,2055 @@ components:
           type: string
         last_applied:
           $ref: "#/components/schemas/LabQemuLastApplied"
+    CertificateStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - mode
+        - common_name
+        - sans
+        - fingerprint
+        - acme_status
+      properties:
+        enabled:
+          type: boolean
+        mode:
+          type: string
+          enum:
+            - self_signed
+            - imported
+            - acme
+            - ""
+        common_name:
+          type: string
+        sans:
+          type: array
+          items:
+            type: string
+        fingerprint:
+          type: string
+        not_before:
+          type: string
+        not_after:
+          type: string
+        acme_directory:
+          type: string
+        acme_email:
+          type: string
+        acme_status:
+          type: string
+          enum:
+            - not_configured
+            - pending
+            - issued
+            - failed
+        next_renewal_at:
+          type: string
+        tls_listen:
+          type: string
+        http_listen:
+          type: string
+        https_url:
+          type: string
+        trust_note:
+          type: string
+        restart_required:
+          type: boolean
+          description: True when on-disk material is not yet served by this process. Restart ndl-control to apply.
+    GenerateCertRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - common_name
+        - sans
+      properties:
+        common_name:
+          type: string
+        sans:
+          type: array
+          items:
+            type: string
+    ImportCertRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - cert_pem
+        - key_pem
+      properties:
+        cert_pem:
+          type: string
+        key_pem:
+          type: string
+    AcmeCertRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - directory
+        - email
+        - domain
+      properties:
+        directory:
+          type: string
+        email:
+          type: string
+        domain:
+          type: string
+    Snapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - workload_id
+        - volume_id
+        - name
+        - purpose_tag
+        - mechanism
+        - backend_ref
+        - parent_id
+        - chain_depth
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+        workload_id:
+          type: string
+        volume_id:
+          type: string
+        name:
+          type: string
+        purpose_tag:
+          type: string
+        mechanism:
+          type: string
+        backend_ref:
+          type: string
+        parent_id:
+          type: string
+        chain_depth:
+          type: integer
+        status:
+          type: string
+        created_at:
+          type: string
+    SnapshotCapability:
+      type: object
+      additionalProperties: false
+      required:
+        - supported
+        - mechanism
+        - chain_max
+        - chain_depth
+        - reason
+      properties:
+        supported:
+          type: boolean
+        mechanism:
+          type: string
+          enum:
+            - qcow2-overlay
+            - ""
+        chain_max:
+          type: integer
+        chain_depth:
+          type: integer
+        reason:
+          type: string
+    SnapshotListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - capability
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Snapshot"
+        capability:
+          $ref: "#/components/schemas/SnapshotCapability"
+    CreateSnapshotRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    BackupTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - locator
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - local
+            - nfs
+            - smb
+            - s3
+            - r2
+            - aws
+            - b2
+            - minio
+        locator:
+          type: string
+        status:
+          type: string
+          enum:
+            - available
+            - unavailable
+            - not_configured
+        username:
+          type: string
+          description: Optional. Password is write-only and never returned. For object targets this is the access key id.
+        endpoint:
+          type: string
+        region:
+          type: string
+        bucket:
+          type: string
+        prefix:
+          type: string
+        no_check_bucket:
+          type: boolean
+          description: Skip HeadBucket/ListBuckets. Status stays not_configured until a successful upload.
+        has_encryption_key:
+          type: boolean
+          description: Client-side encryption key is stored in secrets. Never returned.
+    BackupTargetListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupTarget"
+    CreateBackupTargetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - kind
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - local
+            - nfs
+            - smb
+            - s3
+            - r2
+            - aws
+            - b2
+            - minio
+        locator:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+          description: Write-only. Never returned after save. For object targets this is the secret access key.
+        endpoint:
+          type: string
+        region:
+          type: string
+        bucket:
+          type: string
+        prefix:
+          type: string
+        no_check_bucket:
+          type: boolean
+        encryption_key:
+          type: string
+          description: Write-only 32-byte key or 64 hex chars. Generated if omitted for object targets. Bucket SSE is not sufficient.
+    BackupPolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - workload_id
+        - target_id
+        - schedule
+        - keep_daily
+        - keep_weekly
+        - keep_monthly
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        workload_id:
+          type: string
+        target_id:
+          type: string
+        schedule:
+          type: string
+          enum:
+            - nightly
+        keep_daily:
+          type: integer
+        keep_weekly:
+          type: integer
+        keep_monthly:
+          type: integer
+        last_run_at:
+          type: string
+    BackupPolicyListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupPolicy"
+    CreateBackupPolicyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - workload_id
+        - target_id
+        - schedule
+        - keep_daily
+        - keep_weekly
+        - keep_monthly
+      properties:
+        name:
+          type: string
+        workload_id:
+          type: string
+        target_id:
+          type: string
+        schedule:
+          type: string
+          enum:
+            - nightly
+        keep_daily:
+          type: integer
+        keep_weekly:
+          type: integer
+        keep_monthly:
+          type: integer
+    BackupRun:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - target_id
+        - workload_id
+        - status
+        - started_at
+      properties:
+        id:
+          type: string
+        policy_id:
+          type: string
+        target_id:
+          type: string
+        workload_id:
+          type: string
+        snapshot_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+            - succeeded
+            - failed
+        error:
+          type: string
+        restored_workload_id:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        transferred_bytes:
+          type: integer
+          description: Ciphertext bytes uploaded for object targets. Omitted for local copies.
+        incremental:
+          type: boolean
+          description: True when this run used ZFS send -i (or a smaller stream) against a prior artifact.
+    BackupRunListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupRun"
+    RunBackupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+        - target_id
+      properties:
+        workload_id:
+          type: string
+        target_id:
+          type: string
+        policy_id:
+          type: string
+    BackupArtifact:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - run_id
+        - workload_id
+        - checksum_sha256
+        - size_bytes
+        - locator
+        - format
+        - created_at
+      properties:
+        id:
+          type: string
+        run_id:
+          type: string
+        workload_id:
+          type: string
+        checksum_sha256:
+          type: string
+        size_bytes:
+          type: integer
+        locator:
+          type: string
+        format:
+          type: string
+        created_at:
+          type: string
+        encrypted:
+          type: boolean
+          description: True when the stored object is No-dal NDLE ciphertext. Bucket SSE is extra, not sufficient.
+        transferred_bytes:
+          type: integer
+        object_key:
+          type: string
+        parent_artifact_id:
+          type: string
+        verify_status:
+          type: string
+          enum:
+            - unverified
+            - verified
+            - failed
+          description: Catalog without a successful verify stays unverified. Checksum mismatch is unverified.
+        verify_error:
+          type: string
+        last_tested_at:
+          type: string
+        throwaway_workload_id:
+          type: string
+        locality:
+          type: string
+          enum:
+            - local
+            - object
+            - pull
+          description: local path, object key, or dest pull URL. Credentials are never stored here.
+        pull_url:
+          type: string
+          description: Locator dest can pull. No access keys. Dest agent pull is not wired in this phase.
+    BackupArtifactListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupArtifact"
+    RestoreBackupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          enum:
+            - new
+            - replace
+          description: new creates a new workload UUID. replace overwrites the existing workload and requires X-Nodal-Confirm restore.
+        target_node_id:
+          type: string
+          description: Dest node for restore new. Empty is the control node. Replace stays on the current node.
+    DRExportNode:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - role
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        hostname:
+          type: string
+        revoked:
+          type: boolean
+        revoked_at:
+          type: string
+    DRExportWorkload:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - node_id
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        node_id:
+          type: string
+        owner_node_id:
+          type: string
+        desired_node_id:
+          type: string
+        status:
+          type: string
+    DRExportTarget:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        locator:
+          type: string
+        endpoint:
+          type: string
+        region:
+          type: string
+        bucket:
+          type: string
+        prefix:
+          type: string
+    DRExportResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - cluster_id
+        - exported_at
+        - nodes
+        - workloads
+        - artifacts
+        - targets
+      properties:
+        cluster_id:
+          type: string
+        exported_at:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DRExportNode"
+        workloads:
+          type: array
+          items:
+            $ref: "#/components/schemas/DRExportWorkload"
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupArtifact"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/DRExportTarget"
+    VerifyBackupRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum:
+            - open
+            - throwaway
+          description: open is checksum plus qemu-img check. throwaway restores to a new isolated UUID and must not touch the source.
+    RestoreBackupFileRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          description: Absolute guest path. Traversal is refused.
+    RestoreBackupFileResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - artifact_id
+        - path
+        - size_bytes
+        - sha256
+        - content_base64
+      properties:
+        artifact_id:
+          type: string
+        path:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        content_base64:
+          type: string
+    UpdatePackage:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - version
+        - status
+      properties:
+        name:
+          type: string
+          enum:
+            - ndl-control
+            - ndl-agent
+            - ndl-ui
+            - nodal
+            - nodalctl
+        version:
+          type: string
+        status:
+          type: string
+          enum:
+            - current
+            - update_available
+            - unsupported
+            - not_configured
+            - not_reported
+    UpdateOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - action
+        - status
+        - dry_run
+        - started_at
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+          enum:
+            - check
+            - preflight
+            - checkpoint
+            - apply
+            - rollback
+        status:
+          type: string
+          enum:
+            - running
+            - succeeded
+            - failed
+            - unsupported
+        dry_run:
+          type: boolean
+        error:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+            enum:
+              - ndl-control
+              - ndl-agent
+              - ndl-ui
+              - nodal
+              - nodalctl
+          description: Control-plane package names only. Never package-manager verbs.
+    UpdateStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - host_supported
+        - host_reason
+        - packages
+      properties:
+        channel:
+          type: string
+          enum:
+            - stable
+        host_supported:
+          type: boolean
+        host_reason:
+          type: string
+        packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdatePackage"
+        last_operation:
+          $ref: "#/components/schemas/UpdateOperation"
+    UpdatePreviewItem:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - current_version
+        - candidate_version
+        - action
+      properties:
+        name:
+          type: string
+          enum:
+            - ndl-control
+            - ndl-agent
+            - ndl-ui
+            - nodal
+            - nodalctl
+        current_version:
+          type: string
+        candidate_version:
+          type: string
+        action:
+          type: string
+          enum:
+            - hold
+            - upgrade
+            - unsupported
+    UpdatePreview:
+      type: object
+      additionalProperties: false
+      required:
+        - channel
+        - items
+        - changelog
+        - dry_run
+      properties:
+        channel:
+          type: string
+          enum:
+            - stable
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdatePreviewItem"
+        changelog:
+          type: string
+        dry_run:
+          type: boolean
+          enum:
+            - true
+          description: Always true. Check never applies packages.
+    UpdatePreflightCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - status
+        - detail
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - ok
+            - warning
+            - failed
+            - unsupported
+        detail:
+          type: string
+    UpdatePreflight:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - checks
+        - kernel_ok
+        - zfs_ok
+        - nvidia_ok
+      properties:
+        ok:
+          type: boolean
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdatePreflightCheck"
+        kernel_ok:
+          type: boolean
+        zfs_ok:
+          type: boolean
+        nvidia_ok:
+          type: boolean
+    UpdateCheckpoint:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - locator
+        - postgres_dump
+        - status
+      properties:
+        id:
+          type: string
+        locator:
+          type: string
+        postgres_dump:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - succeeded
+            - failed
+            - unsupported
+    MFAVerifyRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - mfa_challenge_id
+        - mfa_token
+        - code
+      properties:
+        mfa_challenge_id:
+          type: string
+        mfa_token:
+          type: string
+        code:
+          type: string
+    MFAConfirmRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+      properties:
+        code:
+          type: string
+    MFAStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - kind
+      properties:
+        enabled:
+          type: boolean
+        kind:
+          type: string
+    MFAEnrollResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - secret
+        - otpauth_url
+        - recovery_codes
+        - enabled
+      properties:
+        kind:
+          type: string
+        secret:
+          type: string
+        otpauth_url:
+          type: string
+        recovery_codes:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+    AuditListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - action
+        - result
+        - created_at
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        result:
+          type: string
+        created_at:
+          type: string
+        actor_user_id:
+          type: string
+    GroupListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+    Group:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        member_ids:
+          type: array
+          items:
+            type: string
+    CreateGroupRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    AddGroupMemberRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+    BindGroupRoleRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum:
+            - operator
+            - viewer
+    ServicePrincipalListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServicePrincipal"
+    ServicePrincipal:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - user_id
+        - kind
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - service
+    CreateServicePrincipalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+    ServicePrincipalCreated:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - user_id
+        - token
+        - kind
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+        token:
+          type: string
+        kind:
+          type: string
+          enum:
+            - service
+    GPUListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - acs_override
+        - default_devices
+        - note
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPU"
+        iommu:
+          type: object
+          additionalProperties: true
+        runtime:
+          $ref: "#/components/schemas/GPURuntime"
+        acs_override:
+          type: string
+        default_devices:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+    GPU:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - pci
+      properties:
+        id:
+          type: string
+        vendor:
+          type: string
+        model:
+          type: string
+        pci:
+          type: string
+        driver:
+          type: string
+        iommu_group:
+          type: string
+        hint:
+          type: string
+        group_members:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUGroupMember"
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUAssignment"
+    GPUGroupMember:
+      type: object
+      additionalProperties: false
+      required:
+        - pci
+        - kind
+      properties:
+        pci:
+          type: string
+        class:
+          type: string
+        kind:
+          type: string
+        driver:
+          type: string
+    GPUAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - gpu_id
+        - workload_id
+        - mode
+        - exclusive
+        - status
+      properties:
+        id:
+          type: string
+        gpu_id:
+          type: string
+        workload_id:
+          type: string
+        mode:
+          type: string
+        exclusive:
+          type: boolean
+        iommu_group:
+          type: string
+        pci_devices:
+          type: array
+          items:
+            type: string
+        device_nodes:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        reason:
+          type: string
+    GPUAssignmentListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUAssignment"
+    GPUAssignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - gpu_id
+        - workload_id
+        - mode
+      properties:
+        gpu_id:
+          type: string
+        workload_id:
+          type: string
+        mode:
+          type: string
+        exclusive:
+          type: boolean
+        acs_override:
+          type: boolean
+    GPUUnassignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    GPUInstallRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        dry_run:
+          type: boolean
+    GPURuntime:
+      type: object
+      additionalProperties: false
+      required:
+        - host_supported
+        - status
+        - cuda
+        - rocm
+      properties:
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        cuda:
+          type: string
+        rocm:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+        flags:
+          type: object
+          additionalProperties:
+            type: string
+    GPUAssignResult:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+        reason:
+          type: string
+        pci_devices:
+          type: array
+          items:
+            type: string
+        device_nodes:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+        cuda:
+          type: string
+        rocm:
+          type: string
+        host_supported:
+          type: boolean
+        packages:
+          type: array
+          items:
+            type: string
+    ZFSRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          type: string
+        incremental_send:
+          type: boolean
+        snapshots:
+          type: boolean
+        directory_default:
+          type: boolean
+        force_import:
+          type: string
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+    ZFSImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - guid
+      properties:
+        guid:
+          type: string
+        name:
+          type: string
+        force:
+          type: boolean
+    ZFSCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - disks
+      properties:
+        name:
+          type: string
+        disks:
+          type: array
+          items:
+            type: string
+        force:
+          type: boolean
+    LVMRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          type: string
+        incremental_send:
+          type: boolean
+        snapshots:
+          type: boolean
+        directory_default:
+          type: boolean
+        vgexport:
+          type: string
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+        argv:
+          type: array
+          items:
+            type: string
+    LVMCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - disks
+      properties:
+        name:
+          type: string
+        disks:
+          type: array
+          items:
+            type: string
+    DatastoreRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        nfs:
+          type: boolean
+        smb:
+          type: boolean
+        iscsi:
+          type: boolean
+        incremental_send:
+          type: boolean
+        directory_default:
+          type: boolean
+        passwords_in_unit_files:
+          type: boolean
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+    NFSCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - locator
+      properties:
+        name:
+          type: string
+        locator:
+          type: string
+    SMBCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - locator
+      properties:
+        name:
+          type: string
+        locator:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+    ISCSICreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - iqn
+        - portal
+      properties:
+        name:
+          type: string
+        iqn:
+          type: string
+        locator:
+          type: string
+        portal:
+          type: string
+    DistributedRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        backend:
+          type: string
+        incremental_send:
+          type: boolean
+        directory_default:
+          type: boolean
+        keys_in_list_json:
+          type: boolean
+        feature_enabled:
+          type: boolean
+        osd_process:
+          type: boolean
+        osd_started:
+          type: boolean
+        host_supported:
+          type: boolean
+        status:
+          type: string
+        reason:
+          type: string
+        vm_disk_rbd:
+          type: boolean
+        osds:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistributedOSD"
+    DistributedAttachRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - locator
+        - cephx_key
+      properties:
+        name:
+          type: string
+        locator:
+          type: string
+        user:
+          type: string
+        cephx_key:
+          type: string
+    DistributedOSDRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - disk
+      properties:
+        disk:
+          type: string
+        pool_id:
+          type: string
+    DistributedOSD:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        disk:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        pool_id:
+          type: string
+        osd_started:
+          type: boolean
+    LogsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - lines
+      properties:
+        status:
+          type: string
+        unit:
+          type: string
+        lines:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+    SmartResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - items
+      properties:
+        status:
+          type: string
+        stale:
+          type: boolean
+        items:
+          type: array
+          items:
+            type: object
+    CapacityResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+        samples:
+          type: integer
+        last_bytes:
+          type: number
+        hours_to_zero:
+          type: number
+    TimelineResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        from:
+          type: string
+        to:
+          type: string
+    AlertListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertRule"
+    AlertRule:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - metric
+        - op
+        - threshold
+        - enabled
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        metric:
+          type: string
+        op:
+          type: string
+        threshold:
+          type: number
+        for_minutes:
+          type: integer
+        enabled:
+          type: boolean
+        last_fired_at:
+          type: string
+        created_at:
+          type: string
+    AlertCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - metric
+        - op
+        - threshold
+      properties:
+        name:
+          type: string
+        metric:
+          type: string
+        op:
+          type: string
+        threshold:
+          type: number
+        for_minutes:
+          type: integer
+    ChannelListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationChannel"
+    NotificationChannel:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - status
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        webhook_configured:
+          type: boolean
+        smtp_host:
+          type: string
+        smtp_port:
+          type: integer
+        created_at:
+          type: string
+    ChannelCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - kind
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        url:
+          type: string
+        smtp_host:
+          type: string
+        smtp_port:
+          type: integer
+        smtp_from:
+          type: string
+        smtp_username:
+          type: string
+        smtp_password:
+          type: string
+    WorkloadGuestResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+        - qemu_ga
+        - nodal_ga
+        - observed_at
+      properties:
+        workload_id:
+          type: string
+        qemu_ga:
+          $ref: "#/components/schemas/GuestChannelState"
+        nodal_ga:
+          $ref: "#/components/schemas/GuestChannelState"
+        guest_os:
+          type: string
+        guest_arch:
+          type: string
+        ipv4:
+          type: array
+          items:
+            type: string
+        observed_at:
+          type: string
+        install:
+          $ref: "#/components/schemas/GuestInstallHints"
+    GuestChannelState:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+      properties:
+        state:
+          type: string
+          enum:
+            - ok
+            - not_installed
+            - stale
+            - unavailable
+        version:
+          type: string
+        reason:
+          type: string
+    GuestInstallHints:
+      type: object
+      additionalProperties: false
+      properties:
+        linux:
+          type: string
+        windows:
+          type: string
+    AutomationPolicy:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - storage_pressure
+        action:
+          type: string
+          enum:
+            - enqueue_migrate_low_priority
+        threshold_percent:
+          type: integer
+        require_approval:
+          type: boolean
+        enabled:
+          type: boolean
+    AutomationPolicyList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationPolicy"
+    AutomationPolicyCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        action:
+          type: string
+        threshold_percent:
+          type: integer
+        require_approval:
+          type: boolean
+        yaml:
+          type: string
+    AutomationPolicyRun:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        policy_id:
+          type: string
+        actor_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - succeeded
+            - skipped
+            - denied
+        reason:
+          type: string
+        operation_ids:
+          type: array
+          items:
+            type: string
+        service_identity:
+          type: string
+    AutomationPolicyRunList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationPolicyRun"
+    AIProvider:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - openai
+            - anthropic
+            - gemini
+            - ollama
+            - local
+            - openai_compatible
+            - private
+        endpoint:
+          type: string
+        model:
+          type: string
+        enabled:
+          type: boolean
+        has_credentials:
+          type: boolean
+    AIProviderList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIProvider"
+    AIProviderCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        endpoint:
+          type: string
+        model:
+          type: string
+        api_key:
+          type: string
+    AIProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider_id:
+          type: string
+        mode:
+          type: string
+          enum:
+            - ask
+            - operate
+        grants:
+          type: array
+          items:
+            type: string
+    AIProfileList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIProfile"
+    AIProfileCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        provider_id:
+          type: string
+        mode:
+          type: string
+        grants:
+          type: array
+          items:
+            type: string
+    AICitation:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        ref:
+          type: string
+        summary:
+          type: string
+    AIAskRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+        profile_id:
+          type: string
+    AIAskResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/AICitation"
+        provider_status:
+          type: string
+        provider_kind:
+          type: string
+        mode:
+          type: string
+        mutate:
+          type: boolean
+        service_identity:
+          type: string
+    AIPlanStep:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        ordinal:
+          type: integer
+        action:
+          type: string
+        permission:
+          type: string
+        method:
+          type: string
+        path:
+          type: string
+        title:
+          type: string
+        body:
+          type: object
+        status:
+          type: string
+        reason:
+          type: string
+        operation_id:
+          type: string
+    AIPlan:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        status:
+          type: string
+        actor_type:
+          type: string
+        reason:
+          type: string
+        profile_id:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIPlanStep"
+    AIPlanList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIPlan"
+    AIPlanCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+        profile_id:
+          type: string
+    LicenseStatus:
+      type: object
+      additionalProperties: false
+      description: License-activation surface. Edition stays ce. Workloads are not stopped. EE blobs are not shipped.
+      required:
+        - edition
+        - status
+        - reason
+        - has_key
+        - workloads_stopped
+        - ee_blobs
+        - contacts_api
+      properties:
+        edition:
+          type: string
+          description: Always ce. This tree does not unlock EE.
+          enum:
+            - ce
+        status:
+          type: string
+          enum:
+            - absent
+            - grace
+            - unreachable
+            - active
+        reason:
+          type: string
+        has_key:
+          type: boolean
+        key_suffix:
+          type: string
+        workloads_stopped:
+          type: boolean
+          description: Always false. CE does not stop workloads for license state.
+        ee_blobs:
+          type: boolean
+          description: Always false. This tree does not ship EE artifacts.
+        contacts_api:
+          type: boolean
+        last_checked:
+          type: string
+    LicenseActivateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+      properties:
+        key:
+          type: string
+
+

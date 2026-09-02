@@ -24,7 +24,7 @@ for (const [name, schema] of Object.entries(schemas)) {
 
 const paths = spec.paths ?? {};
 for (const [pathKey, item] of Object.entries(paths)) {
-  const op = item.get ?? item.post ?? item.put ?? item.delete;
+  const op = item.get ?? item.post ?? item.put ?? item.patch ?? item.delete;
   const id = op?.operationId ?? pathKey.replaceAll("/", "_");
   const typeName = toPascal(id) + "Path";
   const full = (server.replace(/\/$/, "") + pathKey).replace(/\/{2,}/g, "/");
@@ -70,7 +70,9 @@ function tsType(prop) {
     return prop.enum.map((v) => JSON.stringify(v)).join(" | ");
   }
   if (prop.type === "array") {
-    return `${tsType(prop.items ?? { type: "string" })}[]`;
+    const inner = tsType(prop.items ?? { type: "string" });
+    const needsParens = inner.includes("|");
+    return `${needsParens ? `(${inner})` : inner}[]`;
   }
   switch (prop.type) {
     case "string":

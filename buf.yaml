@@ -5,6 +5,15 @@ modules:
 lint:
   use:
     - STANDARD
+  # Phase 6 Files/Terminal RPCs reuse jail types. Renaming them is a
+  # southbound wire change and is out of scope for Phase 8.
+  ignore_only:
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - proto/nodal/agent/v1/agent.proto
+    RPC_RESPONSE_STANDARD_NAME:
+      - proto/nodal/agent/v1/agent.proto
+    RPC_REQUEST_STANDARD_NAME:
+      - proto/nodal/agent/v1/agent.proto
 breaking:
   use:
     - FILE

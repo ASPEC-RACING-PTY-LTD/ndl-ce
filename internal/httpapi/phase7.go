@@ -254,7 +254,7 @@ func (s *Server) labQemuProtoStart(w http.ResponseWriter, r *http.Request) {
 			ID: id, ClusterID: p.User.ClusterID, NodeID: node.ID,
 			OwnerNodeID: node.ID, DesiredNodeID: node.ID, Name: qemuProtoName, Kind: qemu.KindVM,
 			Status: status, DesiredPower: "running", CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes,
-			Devices: devices, MigrateBlockers: json.RawMessage(`["QEMU live migrate is not implemented"]`),
+			Devices: devices, MigrateBlockers: json.RawMessage(`[]`),
 		}
 		if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
 			if existing, _ = s.Store.GetWorkloadByName(r.Context(), p.User.ClusterID, qemuProtoName); existing == nil {

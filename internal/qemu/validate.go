@@ -2,6 +2,7 @@ package qemu
 
 import (
 	"fmt"
+	"github.com/no-dal/ndl-ce/internal/storage"
 	"path"
 	"strings"
 )
@@ -12,7 +13,8 @@ var allowedLaunchFlags = map[string]struct{}{
 	"-name": {}, "-machine": {}, "-accel": {}, "-cpu": {},
 	"-smp": {}, "-m": {}, "-nodefaults": {}, "-no-user-config": {},
 	"-display": {}, "-blockdev": {}, "-device": {}, "-chardev": {},
-	"-mon": {}, "-serial": {}, "-vnc": {},
+	"-mon": {}, "-serial": {}, "-vnc": {}, "-netdev": {}, "-boot": {}, "-drive": {},
+	"-incoming": {},
 }
 
 // ValidateDiskPath requires an absolute VolumeHandle locator under the
@@ -33,6 +35,27 @@ func ValidateDiskPath(diskPath string) error {
 		return fmt.Errorf("disk_path is not a clean locator")
 	}
 	if cleaned != storageRoot && !strings.HasPrefix(cleaned, storageRoot+"/") {
+		if strings.HasPrefix(cleaned, storage.ZVolDevPrefix) {
+			return storage.ValidateZVolPath(cleaned)
+		}
+		if err := storage.ValidateLVMDevice(cleaned); err == nil {
+			return nil
+		}
+		if strings.HasPrefix(cleaned, storage.ISCSIByPath) {
+			if strings.Contains(cleaned, "..") {
+				return fmt.Errorf("disk_path is not a clean locator")
+			}
+			return nil
+		}
+		if strings.HasPrefix(cleaned, storage.LVMMountRoot+"/") {
+			return nil
+		}
+		if err := storage.ValidateRBDPath(cleaned); err == nil {
+			return nil
+		}
+		if err := storage.ValidateNBDPath(cleaned); err == nil {
+			return nil
+		}
 		return fmt.Errorf("disk_path must be under the storage root")
 	}
 	return nil
@@ -120,6 +143,14 @@ func ValidateFrozenArgv(id string, argv []string) error {
 			if _, ok := allowedLaunchFlags[a]; !ok {
 				return fmt.Errorf("frozen argv flag %s is not allowed", a)
 			}
+		}
+	}
+	for i, a := range argv {
+		if a != "-incoming" {
+			continue
+		}
+		if i+1 >= len(argv) || argv[i+1] != IncomingDefer {
+			return fmt.Errorf("incoming must be defer")
 		}
 	}
 	return nil

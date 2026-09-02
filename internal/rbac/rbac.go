@@ -11,35 +11,73 @@ const (
 
 // Permissions used in Phase 1. Later phases add more names.
 const (
-	IdentityRead        = "identity.read"
-	IdentityTokenCreate = "identity.token.create"
-	IdentityTokenRevoke = "identity.token.revoke"
-	IdentityRecover     = "identity.recover"
-	AuditRead           = "audit.read"
-	ClusterRead         = "cluster.read"
-	NodeRead            = "node.read"
-	EventsRead          = "events.read"
-	MetricsRead         = "metrics.read"
-	StorageRead         = "storage.read"
-	StoragePoolCreate   = "storage.pool.create"
-	StorageVolumeCreate = "storage.volume.create"
-	StorageImageUpload  = "storage.image.upload"
-	NetworkRead         = "network.read"
-	NetworkCreate       = "network.create"
-	NetworkApply        = "network.apply"
-	ComputeRead         = "compute.read"
-	ComputeCreate       = "compute.create"
-	ComputeLifecycle    = "compute.lifecycle"
-	TerminalOpen        = "terminal.open"
-	FilesRead           = "files.read"
-	FilesDownload       = "files.download"
-	FilesUpload         = "files.upload"
-	FilesCreate         = "files.create"
-	FilesModify         = "files.modify"
-	FilesDelete         = "files.delete"
-	FilesPermissions    = "files.permissions"
-	FilesOwnership      = "files.ownership"
-	All                 = "*"
+	IdentityRead          = "identity.read"
+	IdentityTokenCreate   = "identity.token.create"
+	IdentityTokenRevoke   = "identity.token.revoke"
+	IdentityRecover       = "identity.recover"
+	IdentityMFA           = "identity.mfa"
+	IdentityGroupManage   = "identity.group.manage"
+	IdentityService       = "identity.service"
+	SecretReveal          = "secret.reveal"
+	SecretUse             = "secret.use"
+	ClusterDestroy        = "cluster.destroy"
+	AuditRead             = "audit.read"
+	AlertRead             = "alert.read"
+	AlertManage           = "alert.manage"
+	ClusterRead           = "cluster.read"
+	NodeRead              = "node.read"
+	EventsRead            = "events.read"
+	MetricsRead           = "metrics.read"
+	StorageRead           = "storage.read"
+	StoragePoolCreate     = "storage.pool.create"
+	StorageVolumeCreate   = "storage.volume.create"
+	StorageImageUpload    = "storage.image.upload"
+	NetworkRead           = "network.read"
+	NetworkCreate         = "network.create"
+	NetworkApply          = "network.apply"
+	ComputeRead           = "compute.read"
+	ComputeCreate         = "compute.create"
+	ComputeLifecycle      = "compute.lifecycle"
+	ComputeModify         = "compute.modify"
+	ComputeGPUAssign      = "compute.gpu.assign"
+	ComputeStart          = "compute.start"
+	ComputeStop           = "compute.stop"
+	ComputeDelete         = "compute.delete"
+	ComputeConsole        = "compute.console"
+	ComputeSnapshot       = "compute.snapshot"
+	ComputeMigrate        = "compute.migrate"
+	StorageSnapshot       = "storage.snapshot"
+	BackupRead            = "backup.read"
+	BackupCreate          = "backup.create"
+	BackupRestore         = "backup.restore"
+	NodeUpdate            = "node.update"
+	NodeRevoke            = "node.revoke"
+	ClusterJoin           = "cluster.join"
+	ClusterPromote        = "cluster.promote"
+	TerminalOpen          = "terminal.open"
+	FilesRead             = "files.read"
+	FilesDownload         = "files.download"
+	FilesUpload           = "files.upload"
+	FilesCreate           = "files.create"
+	FilesModify           = "files.modify"
+	FilesDelete           = "files.delete"
+	FilesPermissions      = "files.permissions"
+	FilesOwnership        = "files.ownership"
+	SettingsTLSRead       = "settings.tls.read"
+	SettingsTLSManage     = "settings.tls.manage"
+	FeatureRead           = "feature.read"
+	FeatureManage         = "feature.manage"
+	StoreRead             = "store.read"
+	StoreInstall          = "store.install"
+	StoreVerify           = "store.verify"
+	PolicyRead            = "policy.read"
+	PolicyApply           = "policy.apply"
+	PolicyRun             = "policy.run"
+	AIAsk                 = "ai.ask"
+	AIManage              = "ai.manage"
+	SettingsLicenseRead   = "settings.license.read"
+	SettingsLicenseManage = "settings.license.manage"
+	All                   = "*"
 )
 
 // Catalog is deny-by-default.
@@ -55,18 +93,31 @@ func (Catalog) PermissionsForRole(role string) []string {
 		return []string{All}
 	case Operator:
 		return []string{
-			IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, ClusterRead,
-			NodeRead, EventsRead, MetricsRead,
+			IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, IdentityMFA, IdentityGroupManage, ClusterRead,
+			NodeRead, EventsRead, MetricsRead, AlertRead, AlertManage,
 			StorageRead, StoragePoolCreate, StorageVolumeCreate, StorageImageUpload,
 			NetworkRead, NetworkCreate, NetworkApply,
 			ComputeRead, ComputeCreate, ComputeLifecycle,
+			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot, ComputeGPUAssign, ComputeMigrate,
+			BackupRead, BackupCreate, BackupRestore, NodeUpdate, ClusterJoin, NodeRevoke,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
+			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify, PolicyRead, PolicyApply, PolicyRun, AIAsk, AIManage,
+			SettingsLicenseRead,
 		}
 	case Viewer:
-		return []string{IdentityRead, ClusterRead, NodeRead, EventsRead, MetricsRead, StorageRead, NetworkRead, ComputeRead, FilesRead}
+		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead}
 	default:
 		return nil
 	}
+}
+
+// PermissionsForAutomation is the grant list for the automation service
+// identity. Operator is too broad for that actor (tokens, feature manage,
+// compute delete, backups). Bind this list rather than Operator. PolicyRun
+// names the narrow evaluate grant; the list reuses PolicyApply and
+// ComputeMigrate only.
+func PermissionsForAutomation() []string {
+	return []string{PolicyApply, ComputeMigrate, ComputeRead, NodeRead, StorageRead}
 }
 
 // Authorize reports whether grants include permission.

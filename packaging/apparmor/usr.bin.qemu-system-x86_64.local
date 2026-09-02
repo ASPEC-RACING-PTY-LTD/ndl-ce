@@ -1,4 +1,6 @@
-# No-dal Phase 7 QEMU sockets and VolumeHandle disks.
+# No-dal QEMU sockets, VolumeHandle disks, firmware, and cidata.
 /var/lib/ndl/runtime/qemu/** rw,
 /var/lib/ndl/workloads/** r,
 /var/lib/ndl/storage/** rwk,
+/usr/share/OVMF/** r,
+/usr/share/qemu/OVMF_CODE*.fd r,

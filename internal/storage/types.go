@@ -24,6 +24,7 @@ const (
 const (
 	LibraryISO        = "iso"
 	LibraryCloudImage = "cloud-image"
+	LibraryDiskImage  = "disk-image"
 )
 
 // Object and pool status values.
@@ -58,6 +59,7 @@ const (
 	WarnRootFilesystem   = "root_filesystem"
 	WarnSharedFilesystem = "shared_filesystem"
 	WarnThinOvercommit   = "thin_overcommit"
+	WarnLVMMetadata      = "lvm_metadata"
 )
 
 const (
@@ -110,7 +112,7 @@ func DirectoryCapabilities(xattr, shared bool) Capabilities {
 	return Capabilities{
 		VolumeCreate:    true,
 		SparseFiles:     true,
-		Snapshots:       false,
+		Snapshots:       true,
 		IncrementalSend: false,
 		XattrIdentity:   xattr,
 		SharedWarning:   shared,
@@ -122,13 +124,15 @@ func DirectoryCapabilities(xattr, shared bool) Capabilities {
 
 // BackingIdentity is enough to detect a missing disk whose mountpoint remains.
 type BackingIdentity struct {
-	FSUUID     string `json:"fs_uuid"`
-	FSType     string `json:"fstype"`
-	MountPoint string `json:"mount_point"`
-	Device     string `json:"device"`
-	Dev        uint64 `json:"dev"`
-	RootBacked bool   `json:"root_backed"`
-	Shared     bool   `json:"shared"`
+	FSUUID          string   `json:"fs_uuid"`
+	FSType          string   `json:"fstype"`
+	MountPoint      string   `json:"mount_point"`
+	Device          string   `json:"device"`
+	Dev             uint64   `json:"dev"`
+	RootBacked      bool     `json:"root_backed"`
+	Shared          bool     `json:"shared"`
+	MetadataPercent *float64 `json:"metadata_percent,omitempty"`
+	ThinPool        string   `json:"thin_pool,omitempty"`
 }
 
 // PoolMarker is written under a Directory pool root. It is not desired identity.
@@ -151,18 +155,19 @@ type PoolHint struct {
 
 // ObservedPool is agent-side pool state.
 type ObservedPool struct {
-	PoolID       string          `json:"pool_id"`
-	BackendType  string          `json:"backend_type"`
-	RootPath     string          `json:"root_path"`
-	Status       string          `json:"status"`
-	Reason       string          `json:"reason,omitempty"`
-	Warnings     []string        `json:"warnings,omitempty"`
-	WarningText  []string        `json:"warning_text,omitempty"`
-	Capacity     Capacity        `json:"capacity"`
-	Capabilities Capabilities    `json:"capabilities"`
-	Backing      BackingIdentity `json:"backing"`
-	Writable     bool            `json:"writable"`
-	ObservedAt   time.Time       `json:"observed_at"`
+	PoolID          string          `json:"pool_id"`
+	BackendType     string          `json:"backend_type"`
+	RootPath        string          `json:"root_path"`
+	Status          string          `json:"status"`
+	Reason          string          `json:"reason,omitempty"`
+	Warnings        []string        `json:"warnings,omitempty"`
+	WarningText     []string        `json:"warning_text,omitempty"`
+	Capacity        Capacity        `json:"capacity"`
+	Capabilities    Capabilities    `json:"capabilities"`
+	Backing         BackingIdentity `json:"backing"`
+	Writable        bool            `json:"writable"`
+	ObservedAt      time.Time       `json:"observed_at"`
+	MetadataPercent *float64        `json:"metadata_percent,omitempty"`
 }
 
 // ObservedVolume is a file or directory found under a pool.
@@ -237,10 +242,10 @@ type CreateVolumeResult struct {
 
 // BeginUploadRequest starts a library write into an agent-owned temp file.
 type BeginUploadRequest struct {
-	ItemID      string `json:"item_id"`
-	PoolID      string `json:"pool_id"`
-	RootPath    string `json:"root_path"`
-	Kind        string `json:"kind"`
+	ItemID          string   `json:"item_id"`
+	PoolID          string   `json:"pool_id"`
+	RootPath        string   `json:"root_path"`
+	Kind            string   `json:"kind"`
 	DisplayName     string   `json:"display_name"`
 	MaxBytes        int64    `json:"max_bytes"`
 	RejectChecksums []string `json:"reject_checksums,omitempty"`

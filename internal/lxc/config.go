@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"unicode"
 )
 
@@ -72,7 +73,92 @@ func RenderConfig(spec Spec) string {
 		fmt.Fprintf(&b, "lxc.idmap = %s\n", uid)
 		fmt.Fprintf(&b, "lxc.idmap = %s\n", gid)
 	}
+	seenAllow := map[string]bool{}
+	for _, dev := range spec.GPUDevices {
+		dev = strings.TrimSpace(dev)
+		if dev == "" || strings.Contains(dev, "..") || !strings.HasPrefix(dev, "/dev/") {
+			continue
+		}
+		rel := strings.TrimPrefix(dev, "/")
+		fmt.Fprintf(&b, "lxc.mount.entry = %s %s none bind,optional,create=file\n", dev, rel)
+		if line := cgroupAllowLine(dev); line != "" && !seenAllow[line] {
+			seenAllow[line] = true
+			b.WriteString(line)
+		}
+	}
 	return b.String()
+}
+
+func cgroupAllowLine(dev string) string {
+	if line := cgroupAllowFromStat(dev); line != "" {
+		return line
+	}
+	return cgroupAllowFromName(dev)
+}
+
+func cgroupAllowFromStat(dev string) string {
+	st, err := os.Lstat(dev)
+	if err != nil {
+		return ""
+	}
+	if st.Mode()&os.ModeCharDevice == 0 {
+		return ""
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	rdev := uint64(sys.Rdev)
+	maj := unixMajor(rdev)
+	min := unixMinor(rdev)
+	if maj == 0 && min == 0 {
+		return ""
+	}
+	return fmt.Sprintf("lxc.cgroup2.devices.allow = c %d:%d rwm\n", maj, min)
+}
+
+func cgroupAllowFromName(dev string) string {
+	base := filepath.Base(dev)
+	switch {
+	case strings.HasPrefix(base, "renderD"):
+		n := strings.TrimPrefix(base, "renderD")
+		if digitsOnly(n) {
+			return "lxc.cgroup2.devices.allow = c 226:" + n + " rwm\n"
+		}
+	case strings.HasPrefix(base, "card"):
+		n := strings.TrimPrefix(base, "card")
+		if digitsOnly(n) {
+			return "lxc.cgroup2.devices.allow = c 226:" + n + " rwm\n"
+		}
+	case base == "nvidiactl":
+		return "lxc.cgroup2.devices.allow = c 195:255 rwm\n"
+	case strings.HasPrefix(base, "nvidia"):
+		n := strings.TrimPrefix(base, "nvidia")
+		if digitsOnly(n) {
+			return "lxc.cgroup2.devices.allow = c 195:" + n + " rwm\n"
+		}
+	}
+	return ""
+}
+
+func digitsOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func unixMajor(rdev uint64) uint32 {
+	return uint32((rdev >> 8) & 0xfff)
+}
+
+func unixMinor(rdev uint64) uint32 {
+	return uint32((rdev & 0xff) | ((rdev >> 12) & 0xfff00))
 }
 
 func hostnameOf(name, id string) string {

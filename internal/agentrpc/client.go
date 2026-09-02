@@ -8,22 +8,25 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"golang.org/x/net/http2"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/inventory"
-	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/transport"
+	"golang.org/x/net/http2"
 	"io"
 	"time"
 )
 
 // Client is the control-plane southbound client.
 type Client struct {
-	Socket string
+	Socket  string
+	TCPAddr string
 }
 
 // Hello is the idle Observe-first ping.
@@ -77,6 +80,28 @@ func (c Client) GetMetrics(ctx context.Context, from, to time.Time) (metrics.Que
 		return metrics.QueryResult{Status: metrics.StatusUnavailable}, err
 	}
 	return out, nil
+}
+
+// GetLogs reads typed journalctl output over RPC.
+func (c Client) GetLogs(ctx context.Context, unit string, lines int, since time.Time) (journald.Result, error) {
+	req := &agentv1.GetLogsRequest{Unit: unit, Lines: int32(lines)}
+	if !since.IsZero() {
+		req.Since = since.UTC().Format(time.RFC3339)
+	}
+	res, err := c.rpc().GetLogs(ctx, connect.NewRequest(req))
+	if err != nil {
+		return journald.Result{Status: journald.StatusUnavailable, Lines: []string{}}, err
+	}
+	linesOut := res.Msg.GetLines()
+	if linesOut == nil {
+		linesOut = []string{}
+	}
+	return journald.Result{
+		Status:  res.Msg.GetStatus(),
+		Unit:    res.Msg.GetUnit(),
+		Lines:   linesOut,
+		Message: res.Msg.GetMessage(),
+	}, nil
 }
 
 func encodeHints(hints []storage.PoolHint) []*agentv1.StoragePoolHint {
@@ -230,6 +255,27 @@ func (c Client) ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyR
 	return out, nil
 }
 
+// NetAdvanced is a typed VLAN, bond, policy, or overlay action.
+func (c Client) NetAdvanced(ctx context.Context, op ndnet.AdvancedOp) (ndnet.AdvancedResult, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_NetAdvanced{NetAdvanced: &agentv1.NetAdvanced{
+			Action: op.Action, ObjectId: op.ObjectID, NetworkId: op.NetworkID, Name: op.Name,
+			VlanId: int32(op.VID), ParentIfname: op.ParentIfName, Mode: op.Mode, AccessIfname: op.AccessIfName,
+			Members: op.Members, SrcMac: op.SrcMAC, DstMac: op.DstMAC, PolicyAction: op.PolicyAction,
+			OverlayVni: op.OverlayVNI, ConfirmIfname: op.ConfirmIfName, ArmRollback: op.ArmRollback,
+			BridgeName: op.BridgeName,
+		}},
+	}))
+	if err != nil {
+		return ndnet.AdvancedResult{}, err
+	}
+	var out ndnet.AdvancedResult
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return ndnet.AdvancedResult{}, err
+	}
+	return out, nil
+}
+
 // GetWorkloads observes known system containers.
 func (c Client) GetWorkloads(ctx context.Context, hints []lxc.Hint) (lxc.Observation, error) {
 	res, err := c.rpc().GetWorkloads(ctx, connect.NewRequest(&agentv1.GetWorkloadsRequest{Workloads: encodeWorkloadHints(hints)}))
@@ -274,6 +320,44 @@ func (c Client) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.
 	var out lxc.Result
 	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
 		return lxc.Result{}, err
+	}
+	return out, nil
+}
+
+// CreateOCI is a typed Execute method for OCI application workloads.
+func (c Client) CreateOCI(ctx context.Context, spec oci.Spec) (oci.Result, error) {
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return oci.Result{}, err
+	}
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_OciRuntime{OciRuntime: &agentv1.OCIRuntime{
+			Action: "create", WorkloadId: spec.WorkloadID, SpecJson: raw,
+		}},
+	}))
+	if err != nil {
+		return oci.Result{}, err
+	}
+	var out oci.Result
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return oci.Result{}, err
+	}
+	return out, nil
+}
+
+// LifecycleOCI is a typed Execute method for OCI lifecycle.
+func (c Client) LifecycleOCI(ctx context.Context, req oci.LifecycleRequest) (oci.Result, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_OciRuntime{OciRuntime: &agentv1.OCIRuntime{
+			Action: req.Action, WorkloadId: req.WorkloadID,
+		}},
+	}))
+	if err != nil {
+		return oci.Result{}, err
+	}
+	var out oci.Result
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return oci.Result{}, err
 	}
 	return out, nil
 }
@@ -335,6 +419,17 @@ func decodeInventory(raw []byte) (inventory.Inventory, error) {
 }
 
 func (c Client) rpc() agentv1connect.AgentServiceClient {
+	if c.TCPAddr != "" {
+		addr := c.TCPAddr
+		httpClient := &http.Client{Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, "tcp", addr)
+			},
+		}}
+		return agentv1connect.NewAgentServiceClient(httpClient, "http://remote")
+	}
 	path := c.Socket
 	if path == "" {
 		path = transport.AgentSocket
@@ -347,4 +442,16 @@ func (c Client) rpc() agentv1connect.AgentServiceClient {
 		},
 	}}
 	return agentv1connect.NewAgentServiceClient(httpClient, "http://local")
+}
+
+// OpenSession binds a remote worker session on the agent.
+func (c Client) OpenSession(ctx context.Context, nodeID, clusterID, listenAddr, pubKey, peerID string, handshake int64) (*agentv1.OpenSessionResponse, error) {
+	res, err := c.rpc().OpenSession(ctx, connect.NewRequest(&agentv1.OpenSessionRequest{
+		NodeId: nodeID, ClusterId: clusterID, ListenAddr: listenAddr,
+		WgPublicKey: pubKey, HandshakeUnix: handshake, PeerId: peerID,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	return res.Msg, nil
 }

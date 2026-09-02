@@ -105,6 +105,50 @@ func TestScrapeMemoryAndNet(t *testing.T) {
 	assertPoint(t, res, MetricNetTxBytes, 6000)
 }
 
+func TestDiskstatsAndStorage(t *testing.T) {
+	root := t.TempDir()
+	writeProc(t, root, "proc/stat", "cpu  1 0 1 8 0 0 0 0\n")
+	writeProc(t, root, "proc/meminfo", "MemTotal: 1024 kB\nMemAvailable: 512 kB\n")
+	writeProc(t, root, "proc/net/dev", netDevFixture(1, 2)+"  nvab12: 9 1 0 0 0 0 0 0 8 1 0 0 0 0 0 0\n")
+	writeProc(t, root, "proc/diskstats", "   8       0 sda 10 0 20 40 5 0 10 20 0 0 0 0 0 0 0 0\n   7       0 loop0 99 0 99 99 99 0 99 99 0 0 0 0 0 0 0 0\n")
+	s := openTestStore(t)
+	storeRoot := t.TempDir()
+	c := &Collector{FSRoot: root, Store: s, StorageRoot: storeRoot}
+	t1 := time.Now().UTC().Truncate(time.Second)
+	if err := c.Scrape(t1); err != nil {
+		t.Fatal(err)
+	}
+	writeProc(t, root, "proc/diskstats", "   8       0 sda 20 0 40 80 15 0 30 50 0 0 0 0 0 0 0 0\n")
+	t2 := t1.Add(15 * time.Second)
+	if err := c.Scrape(t2); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Query(
+		[]string{MetricIOReadBytes, MetricIOWriteBytes, MetricDiskReadLatencyMS, MetricStorageAvailBytes, netIfacePrefix + "nvab12.rx_bytes"},
+		t1.Add(-time.Minute), t2.Add(time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPoint(t, res, MetricIOReadBytes, float64((40-20)*512))
+	assertPoint(t, res, MetricIOWriteBytes, float64((30-10)*512))
+	lat := seriesByName(res, MetricDiskReadLatencyMS)
+	if lat.Status != StatusAvailable || len(lat.Points) != 1 {
+		t.Fatalf("latency %+v", lat)
+	}
+	if lat.Points[0].Value != 4 {
+		t.Fatalf("read latency %v want 4", lat.Points[0].Value)
+	}
+	stor := seriesByName(res, MetricStorageAvailBytes)
+	if stor.Status != StatusAvailable || len(stor.Points) == 0 {
+		t.Fatalf("storage avail must be observed: %+v", stor)
+	}
+	tap := seriesByName(res, netIfacePrefix+"nvab12.rx_bytes")
+	if tap.Status != StatusAvailable || len(tap.Points) == 0 || tap.Points[0].Value != 9 {
+		t.Fatalf("tap %+v", tap)
+	}
+}
+
 func TestMissingProcNoPanic(t *testing.T) {
 	s := openTestStore(t)
 	c := &Collector{FSRoot: filepath.Join(t.TempDir(), "empty"), Store: s}

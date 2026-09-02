@@ -49,6 +49,8 @@ const (
 	AgentServiceGetInventoryProcedure = "/nodal.agent.v1.AgentService/GetInventory"
 	// AgentServiceGetMetricsProcedure is the fully-qualified name of the AgentService's GetMetrics RPC.
 	AgentServiceGetMetricsProcedure = "/nodal.agent.v1.AgentService/GetMetrics"
+	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
+	AgentServiceGetLogsProcedure = "/nodal.agent.v1.AgentService/GetLogs"
 	// AgentServiceGetStorageProcedure is the fully-qualified name of the AgentService's GetStorage RPC.
 	AgentServiceGetStorageProcedure = "/nodal.agent.v1.AgentService/GetStorage"
 	// AgentServiceGetNetworksProcedure is the fully-qualified name of the AgentService's GetNetworks
@@ -78,12 +80,15 @@ type AgentServiceClient interface {
 	Execute(context.Context, *connect.Request[v1.ExecuteRequest]) (*connect.Response[v1.ExecuteResponse], error)
 	// Local first-node enroll. Join tokens are empty on a single node.
 	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
-	// OpenSession is reserved for later remote-node sessions.
+	// OpenSession is the remote-worker bind. Agents also dial the control
+	// plane HTTP session path. Cluster join remains Phase 30.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
 	// GetInventory returns the last typed host observation.
 	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)
 	// GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
 	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
+	// GetLogs returns typed journalctl output. There is no generic journal filter.
+	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.GetLogsResponse], error)
 	// GetStorage observes known Directory pools. It does not delete objects.
 	GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error)
 	// GetNetworks observes known network objects. It does not delete objects.
@@ -93,12 +98,18 @@ type AgentServiceClient interface {
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context) *connect.ClientStreamForClient[v1.UploadLibraryRequest, v1.UploadLibraryResponse]
 	// FilesOp is a typed jail operation. Path is relative to the jail root.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	FilesOp(context.Context, *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error)
 	// FilesPut writes one file in chunks beneath the jail.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	FilesPut(context.Context) *connect.ClientStreamForClient[v1.FilesPutRequest, v1.FilesOpResponse]
 	// FilesGet reads one file in chunks beneath the jail.
 	FilesGet(context.Context, *connect.Request[v1.FilesGetRequest]) (*connect.ServerStreamForClient[v1.FilesGetResponse], error)
 	// AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	AttachTerminal(context.Context) *connect.BidiStreamForClient[v1.TermFrame, v1.TermFrame]
 }
 
@@ -153,6 +164,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AgentServiceGetMetricsProcedure,
 			connect.WithSchema(agentServiceMethods.ByName("GetMetrics")),
+			connect.WithClientOptions(opts...),
+		),
+		getLogs: connect.NewClient[v1.GetLogsRequest, v1.GetLogsResponse](
+			httpClient,
+			baseURL+AgentServiceGetLogsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 			connect.WithClientOptions(opts...),
 		),
 		getStorage: connect.NewClient[v1.GetStorageRequest, v1.GetStorageResponse](
@@ -215,6 +232,7 @@ type agentServiceClient struct {
 	openSession    *connect.Client[v1.OpenSessionRequest, v1.OpenSessionResponse]
 	getInventory   *connect.Client[v1.GetInventoryRequest, v1.GetInventoryResponse]
 	getMetrics     *connect.Client[v1.GetMetricsRequest, v1.GetMetricsResponse]
+	getLogs        *connect.Client[v1.GetLogsRequest, v1.GetLogsResponse]
 	getStorage     *connect.Client[v1.GetStorageRequest, v1.GetStorageResponse]
 	getNetworks    *connect.Client[v1.GetNetworksRequest, v1.GetNetworksResponse]
 	getWorkloads   *connect.Client[v1.GetWorkloadsRequest, v1.GetWorkloadsResponse]
@@ -258,6 +276,11 @@ func (c *agentServiceClient) GetInventory(ctx context.Context, req *connect.Requ
 // GetMetrics calls nodal.agent.v1.AgentService.GetMetrics.
 func (c *agentServiceClient) GetMetrics(ctx context.Context, req *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error) {
 	return c.getMetrics.CallUnary(ctx, req)
+}
+
+// GetLogs calls nodal.agent.v1.AgentService.GetLogs.
+func (c *agentServiceClient) GetLogs(ctx context.Context, req *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.GetLogsResponse], error) {
+	return c.getLogs.CallUnary(ctx, req)
 }
 
 // GetStorage calls nodal.agent.v1.AgentService.GetStorage.
@@ -307,12 +330,15 @@ type AgentServiceHandler interface {
 	Execute(context.Context, *connect.Request[v1.ExecuteRequest]) (*connect.Response[v1.ExecuteResponse], error)
 	// Local first-node enroll. Join tokens are empty on a single node.
 	Enroll(context.Context, *connect.Request[v1.EnrollRequest]) (*connect.Response[v1.EnrollResponse], error)
-	// OpenSession is reserved for later remote-node sessions.
+	// OpenSession is the remote-worker bind. Agents also dial the control
+	// plane HTTP session path. Cluster join remains Phase 30.
 	OpenSession(context.Context, *connect.Request[v1.OpenSessionRequest]) (*connect.Response[v1.OpenSessionResponse], error)
 	// GetInventory returns the last typed host observation.
 	GetInventory(context.Context, *connect.Request[v1.GetInventoryRequest]) (*connect.Response[v1.GetInventoryResponse], error)
 	// GetMetrics returns agent-side SQLite samples. Not stored in PostgreSQL.
 	GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error)
+	// GetLogs returns typed journalctl output. There is no generic journal filter.
+	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.GetLogsResponse], error)
 	// GetStorage observes known Directory pools. It does not delete objects.
 	GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error)
 	// GetNetworks observes known network objects. It does not delete objects.
@@ -322,12 +348,18 @@ type AgentServiceHandler interface {
 	// UploadLibrary streams ISO or cloud-image bytes to the agent.
 	UploadLibrary(context.Context, *connect.ClientStream[v1.UploadLibraryRequest]) (*connect.Response[v1.UploadLibraryResponse], error)
 	// FilesOp is a typed jail operation. Path is relative to the jail root.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
 	FilesOp(context.Context, *connect.Request[v1.FilesOpRequest]) (*connect.Response[v1.FilesOpResponse], error)
 	// FilesPut writes one file in chunks beneath the jail.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	FilesPut(context.Context, *connect.ClientStream[v1.FilesPutRequest]) (*connect.Response[v1.FilesOpResponse], error)
 	// FilesGet reads one file in chunks beneath the jail.
 	FilesGet(context.Context, *connect.Request[v1.FilesGetRequest], *connect.ServerStream[v1.FilesGetResponse]) error
 	// AttachTerminal is a bidirectional nodal.term.v1 byte stream.
+	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+	// buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	AttachTerminal(context.Context, *connect.BidiStream[v1.TermFrame, v1.TermFrame]) error
 }
 
@@ -378,6 +410,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceGetMetricsProcedure,
 		svc.GetMetrics,
 		connect.WithSchema(agentServiceMethods.ByName("GetMetrics")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetLogsHandler := connect.NewUnaryHandler(
+		AgentServiceGetLogsProcedure,
+		svc.GetLogs,
+		connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentServiceGetStorageHandler := connect.NewUnaryHandler(
@@ -444,6 +482,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceGetInventoryHandler.ServeHTTP(w, r)
 		case AgentServiceGetMetricsProcedure:
 			agentServiceGetMetricsHandler.ServeHTTP(w, r)
+		case AgentServiceGetLogsProcedure:
+			agentServiceGetLogsHandler.ServeHTTP(w, r)
 		case AgentServiceGetStorageProcedure:
 			agentServiceGetStorageHandler.ServeHTTP(w, r)
 		case AgentServiceGetNetworksProcedure:
@@ -495,6 +535,10 @@ func (UnimplementedAgentServiceHandler) GetInventory(context.Context, *connect.R
 
 func (UnimplementedAgentServiceHandler) GetMetrics(context.Context, *connect.Request[v1.GetMetricsRequest]) (*connect.Response[v1.GetMetricsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetMetrics is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.GetLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nodal.agent.v1.AgentService.GetLogs is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStorage(context.Context, *connect.Request[v1.GetStorageRequest]) (*connect.Response[v1.GetStorageResponse], error) {

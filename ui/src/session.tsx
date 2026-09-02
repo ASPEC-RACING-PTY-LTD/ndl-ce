@@ -26,6 +26,7 @@ type SessionContextValue = SessionState & {
   signIn: (body: LoginRequest) => Promise<MeResponse>;
   completeSetup: (body: SetupClaimRequest) => Promise<MeResponse>;
   signOut: () => Promise<void>;
+  applyUser: (user: MeResponse) => void;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -52,7 +53,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const signIn = useCallback(async (body: LoginRequest) => {
-    const user = await login(body);
+    const result = await login(body);
+    if ("mfa_required" in result && result.mfa_required) {
+      throw new ApiError(401, "MFA required");
+    }
+    const user = result as MeResponse;
     setState({ status: "ready", setupOpen: false, user });
     return user;
   }, []);
@@ -68,6 +73,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setState({ status: "ready", setupOpen: false, user: null });
   }, []);
 
+  const applyUser = useCallback((user: MeResponse) => {
+    setState((prev) => {
+      if (prev.status === "ready") {
+        return { ...prev, user };
+      }
+      return { status: "ready", setupOpen: false, user };
+    });
+  }, []);
+
   const value = useMemo<SessionContextValue>(
     () => ({
       ...state,
@@ -75,8 +89,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signIn,
       completeSetup,
       signOut,
+      applyUser,
     }),
-    [completeSetup, refresh, signIn, signOut, state],
+    [applyUser, completeSetup, refresh, signIn, signOut, state],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
