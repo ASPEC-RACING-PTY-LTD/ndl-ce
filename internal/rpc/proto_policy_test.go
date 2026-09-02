@@ -73,6 +73,8 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"WireGuard wireguard =",
 		"ComputeMigrate compute_migrate =",
 		"Distributed distributed =",
+		"DiskConvert disk_convert =",
+		"ArchiveExtract archive_extract =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

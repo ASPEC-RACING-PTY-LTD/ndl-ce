@@ -98,6 +98,7 @@ func specFromCTCreate(m *agentv1.CTCreate) lxc.Spec {
 		CPUs: int(m.GetCpus()), MemoryBytes: m.GetMemoryBytes(), VolumeID: m.GetVolumeId(),
 		RootfsPath: m.GetRootfsPath(), NetworkID: m.GetNetworkId(), BridgeName: m.GetBridgeName(),
 		MAC: m.GetMac(), Privileged: m.GetPrivileged(), UIDMap: m.GetUidMap(), GIDMap: m.GetGidMap(),
+		SkipImage: m.GetSkipImage(), NoStart: m.GetNoStart(),
 	}
 }
 

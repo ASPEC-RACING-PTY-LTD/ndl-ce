@@ -1,5 +1,6 @@
 nodal (1.0.0) UNRELEASED; urgency=medium
 
+  * Import / Export / Migration: copy-first vendor-neutral engine, Proxmox REST discovery and downloadable file-volume import, disk/OVF/libvirt/bundle adapters, No-dal portable export, compatibility ratings, and source-safety invariants. Source destruction is not a migration operation. Live and snapshot-assisted are listed as unavailable in V1. vma paths fail closed. CE is not license-gated.
   * Phase 43 CE 1.0: license-activation surface, operator docs, and API freeze. The license stub does nothing unless a key is present. An unreachable licensing API uses grace and does not stop workloads. This tree does not embed EE blobs or mint production apt signatures here. Signed install remains the documented HTTPS repo and keyring path. CE 1.0 hardware gates are not yet passed; this entry stays UNRELEASED.
   * Isolated-nat enables IPv4 forwarding from host routing state, persists it in sysctl.d, and installs per-network nftables masquerade without flushing administrator rules.
   * ndl-control relinquishes its writer lease on SIGTERM so a package upgrade or systemd restart can start immediately. Packaging no longer stops the unit on upgrade; dh_installsystemd restarts it once.

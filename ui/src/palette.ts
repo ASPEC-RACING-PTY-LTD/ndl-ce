@@ -49,6 +49,13 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
     require: "mutate",
   },
   {
+    id: "import-export",
+    label: "Import / Export",
+    href: "/import-export",
+    keywords: ["migration", "proxmox", "ovf", "qcow2", "bundle", "export"],
+    require: "mutate",
+  },
+  {
     id: "import-vm",
     label: "Import VM",
     href: "/workloads/import",

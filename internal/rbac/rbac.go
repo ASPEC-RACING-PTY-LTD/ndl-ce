@@ -77,6 +77,10 @@ const (
 	AIManage              = "ai.manage"
 	SettingsLicenseRead   = "settings.license.read"
 	SettingsLicenseManage = "settings.license.manage"
+	MigrationRead         = "migration.read"
+	MigrationImport       = "migration.import"
+	MigrationExport       = "migration.export"
+	MigrationManage       = "migration.manage"
 	All                   = "*"
 )
 
@@ -104,9 +108,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			FilesPermissions, FilesOwnership,
 			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify, PolicyRead, PolicyApply, PolicyRun, AIAsk, AIManage,
 			SettingsLicenseRead,
+			MigrationRead, MigrationImport, MigrationExport, MigrationManage,
 		}
 	case Viewer:
-		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead}
+		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead}
 	default:
 		return nil
 	}

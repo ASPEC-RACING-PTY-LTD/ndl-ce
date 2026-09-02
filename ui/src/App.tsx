@@ -22,6 +22,7 @@ import { WorkloadsPage } from "./pages/WorkloadsPage";
 import { VmCreatePage } from "./pages/VmCreatePage";
 import { TemplatesPage } from "./pages/TemplatesPage";
 import { ImportVMPage } from "./pages/ImportVMPage";
+import { ImportExportPage } from "./pages/ImportExportPage";
 import { ConsolePage } from "./pages/ConsolePage";
 import { CertificatePage } from "./pages/CertificatePage";
 import { ClusterPage } from "./pages/ClusterPage";
@@ -94,6 +95,9 @@ function matchPage(path: string) {
   }
   if (path === "/workloads/import") {
     return <ImportVMPage />;
+  }
+  if (path === "/import-export") {
+    return <ImportExportPage />;
   }
   if (path === "/templates") {
     return <TemplatesPage />;

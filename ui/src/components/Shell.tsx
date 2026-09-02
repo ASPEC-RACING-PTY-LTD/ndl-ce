@@ -26,6 +26,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Compute",
     items: [
       { href: "/workloads", label: "Workloads", match: (p) => p === "/workloads" || p.startsWith("/workloads/") },
+      { href: "/import-export", label: "Import / Export", match: (p) => p === "/import-export" },
       { href: "/terminal", label: "Terminal", match: (p) => p === "/terminal" },
       { href: "/stacks", label: "Stacks", match: (p) => p === "/stacks" || p.startsWith("/stacks/") },
       { href: "/templates", label: "Templates", match: (p) => p === "/templates" },

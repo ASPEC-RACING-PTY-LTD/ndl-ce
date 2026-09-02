@@ -356,6 +356,14 @@ code {
   background: var(--bg-hover);
 }
 
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0.4rem 0;
+}
+
 .btn-ghost {
   background: transparent;
   color: var(--fg-secondary);
@@ -1045,12 +1053,41 @@ code {
   color: var(--accent);
 }
 
-.table-wrap {
-  overflow-x: auto;
-  background: var(--bg-surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+.mig-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
 }
+
+.mig-steps .btn,
+.mig-steps .btn-secondary {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+.mig-review {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.12rem 0.75rem;
+  margin: 0.4rem 0;
+  font-size: 0.85rem;
+}
+
+.mig-review dt {
+  color: var(--fg-secondary);
+}
+
+.mig-review dd {
+  margin: 0;
+}
+
+.mig-mode-unavail {
+  opacity: 0.65;
+}
+
 
 .table-wrap th:first-child,
 .table-wrap td:first-child {

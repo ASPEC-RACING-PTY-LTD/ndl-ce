@@ -16,6 +16,7 @@ That definition is the milestone. This tree has not reached it.
 - [uninstall.md](uninstall.md) remove does not delete workload data
 - [recovery.md](recovery.md) control plane and agent stop leave guests
 - [backup.md](backup.md)
+- [migration.md](migration.md)
 - [cluster.md](cluster.md)
 - [store.md](store.md)
 - [ai.md](ai.md)

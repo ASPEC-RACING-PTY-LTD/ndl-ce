@@ -207,6 +207,10 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execWireGuard(ctx, req.Msg.GetWireguard())
 	case req.Msg.GetComputeMigrate() != nil:
 		return h.execComputeMigrate(ctx, req.Msg.GetComputeMigrate())
+	case req.Msg.GetDiskConvert() != nil:
+		return h.execDiskConvert(ctx, req.Msg.GetDiskConvert())
+	case req.Msg.GetArchiveExtract() != nil:
+		return h.execArchiveExtract(ctx, req.Msg.GetArchiveExtract())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

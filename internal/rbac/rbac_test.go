@@ -142,6 +142,12 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, AIAsk) || !Authorize(op, AIManage) {
 		t.Fatal("operator may manage ai providers")
 	}
+	if !Authorize(view, MigrationRead) || Authorize(view, MigrationImport) || Authorize(view, MigrationExport) || Authorize(view, MigrationManage) {
+		t.Fatal("viewer migration is read-only")
+	}
+	if !Authorize(op, MigrationRead) || !Authorize(op, MigrationImport) || !Authorize(op, MigrationExport) || !Authorize(op, MigrationManage) {
+		t.Fatal("operator may import and export")
+	}
 }
 
 func TestPermissionsForAutomationIsNarrowerThanOperator(t *testing.T) {

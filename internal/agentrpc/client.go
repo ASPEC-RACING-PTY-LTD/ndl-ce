@@ -293,6 +293,7 @@ func (c Client) CreateCT(ctx context.Context, spec lxc.Spec) (lxc.Result, error)
 			Cpus: int32(spec.CPUs), MemoryBytes: spec.MemoryBytes, VolumeId: spec.VolumeID,
 			RootfsPath: spec.RootfsPath, NetworkId: spec.NetworkID, BridgeName: spec.BridgeName,
 			Mac: spec.MAC, Privileged: spec.Privileged, UidMap: spec.UIDMap, GidMap: spec.GIDMap,
+			SkipImage: spec.SkipImage, NoStart: spec.NoStart,
 		}},
 	}))
 	if err != nil {

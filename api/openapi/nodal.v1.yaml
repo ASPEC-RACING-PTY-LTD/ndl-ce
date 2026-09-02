@@ -1439,6 +1439,240 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LicenseStatus"
+  /migration/adapters:
+    get:
+      operationId: listMigrationAdapters
+      summary: Supported import and export adapters. Unsupported paths are not listed as working.
+      responses:
+        "200":
+          description: Adapters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationAdapter"
+  /migration/modes:
+    get:
+      operationId: listMigrationModes
+      summary: Migration modes with consistency ratings. Source safety is always protected.
+      responses:
+        "200":
+          description: Modes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationMode"
+  /migration/sources:
+    get:
+      operationId: listMigrationSources
+      summary: Stored source connections. Credentials are never returned.
+      responses:
+        "200":
+          description: Sources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationSource"
+    post:
+      operationId: createMigrationSource
+      summary: Store a source connection. Token is not returned after submit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationSource"
+      responses:
+        "201":
+          description: Source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationSource"
+  /migration/sources/{id}:
+    get:
+      operationId: getMigrationSource
+      summary: Source metadata without credentials
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationSource"
+    delete:
+      operationId: deleteMigrationSource
+      summary: Remove stored credentials. Does not change source infrastructure.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed locally
+  /migration/sources/{id}/discover:
+    post:
+      operationId: discoverMigrationSource
+      summary: Discover workloads. Does not start a transfer.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Discovery
+  /migration/compatibility:
+    post:
+      operationId: analyzeMigrationCompatibility
+      summary: Compatibility analysis. Does not start a transfer.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStartRequest"
+      responses:
+        "200":
+          description: Findings
+  /migration/plans:
+    post:
+      operationId: createMigrationPlan
+      summary: Build a reviewable migration plan from the actual selection.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStartRequest"
+      responses:
+        "200":
+          description: Plan and review
+  /migration/jobs:
+    get:
+      operationId: listMigrationJobs
+      summary: Import and export jobs
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+    post:
+      operationId: startMigrationJob
+      summary: Start a copy-first migration. Source destruction fields are rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStartRequest"
+      responses:
+        "202":
+          description: Job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+  /migration/jobs/{id}:
+    get:
+      operationId: getMigrationJob
+      summary: Job status including source_untouched
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationJob"
+  /migration/jobs/{id}/cancel:
+    post:
+      operationId: cancelMigrationJob
+      summary: Cancel a job. Source infrastructure is not changed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Canceling
+  /migration/jobs/{id}/retry:
+    post:
+      operationId: retryMigrationJob
+      summary: Retry or resume a failed job after validating source identity.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Job
+  /migration/jobs/{id}/cleanup:
+    post:
+      operationId: cleanupMigrationStaging
+      summary: Remove No-dal-owned staging only. Never source cleanup.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Staging removed
+  /migration/import/disk:
+    post:
+      operationId: importMigrationDisk
+      summary: Import a VM disk or container archive. Missing hardware must be supplied.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStartRequest"
+      responses:
+        "202":
+          description: Job
+  /migration/import/bundle:
+    post:
+      operationId: importMigrationBundle
+      summary: Import a No-dal portable bundle
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStartRequest"
+      responses:
+        "202":
+          description: Job
+  /migration/export:
+    post:
+      operationId: exportMigration
+      summary: Export a No-dal workload to a portable bundle or compatible package
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MigrationStartRequest"
+      responses:
+        "202":
+          description: Job
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -8269,6 +8503,140 @@ components:
         - key
       properties:
         key:
+          type: string
+    MigrationAdapter:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        role:
+          type: string
+        discovery:
+          type: boolean
+        import:
+          type: boolean
+        export:
+          type: boolean
+        export_kind:
+          type: string
+        modes:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+        credential:
+          type: string
+    MigrationMode:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        consistency:
+          type: string
+        source_safety:
+          type: string
+        summary:
+          type: string
+        requires_ack:
+          type: boolean
+        available:
+          type: boolean
+        unavailable_reason:
+          type: string
+    MigrationSource:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        adapter:
+          type: string
+        label:
+          type: string
+        endpoint:
+          type: string
+        insecure:
+          type: boolean
+        has_credentials:
+          type: boolean
+    MigrationJob:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        adapter:
+          type: string
+        direction:
+          type: string
+        state:
+          type: string
+        stage:
+          type: string
+        source_id:
+          type: string
+        operation_id:
+          type: string
+        source_untouched:
+          type: boolean
+        cancel_requested:
+          type: boolean
+        status:
+          type: object
+          additionalProperties: true
+        plan:
+          type: object
+          additionalProperties: true
+    MigrationStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        adapter:
+          type: string
+        direction:
+          type: string
+        source_id:
+          type: string
+        mode:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        cpus:
+          type: integer
+        memory_bytes:
+          type: integer
+        firmware:
+          type: string
+        start_after:
+          type: boolean
+        live_ack:
+          type: object
+          additionalProperties: true
+        mapping:
+          type: object
+          additionalProperties: true
+        selected:
+          type: array
+          items:
+            type: string
+        workload_id:
+          type: string
+        export_kind:
           type: string
 
 

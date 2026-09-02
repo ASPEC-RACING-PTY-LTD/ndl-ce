@@ -183,6 +183,8 @@ message ExecuteRequest {
     WireGuard wireguard = 37;
     ComputeMigrate compute_migrate = 38;
     Distributed distributed = 39;
+    DiskConvert disk_convert = 40;
+    ArchiveExtract archive_extract = 41;
   }
 }
 
@@ -248,6 +250,18 @@ message BackupCopy {
   string action = 1;
   string source_path = 2;
   string dest_path = 3;
+}
+
+message DiskConvert {
+  string source_path = 1;
+  string dest_path = 2;
+  string source_format = 3;
+  string dest_format = 4;
+}
+
+message ArchiveExtract {
+  string source_path = 1;
+  string dest_path = 2;
 }
 
 message BackupObject {
@@ -433,6 +447,8 @@ message CTCreate {
   bool privileged = 11;
   string uid_map = 12;
   string gid_map = 13;
+  bool skip_image = 14;
+  bool no_start = 15;
 }
 
 message CTLifecycle {

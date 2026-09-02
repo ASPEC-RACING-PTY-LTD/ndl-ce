@@ -69,8 +69,12 @@ func normalizeSpec(spec Spec) (Spec, error) {
 	if _, err := uuid.Parse(strings.TrimSpace(spec.WorkloadID)); err != nil {
 		return Spec{}, fmt.Errorf("workload_id must be a UUID")
 	}
-	if err := ValidatePin(spec.ImagePin); err != nil {
-		return Spec{}, err
+	if !spec.SkipImage {
+		if err := ValidatePin(spec.ImagePin); err != nil {
+			return Spec{}, err
+		}
+	} else if spec.ImagePin == "" {
+		spec.ImagePin = "imported"
 	}
 	if strings.TrimSpace(spec.RootfsPath) == "" {
 		return Spec{}, fmt.Errorf("rootfs_path is required")
@@ -139,9 +143,18 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	if err := os.MkdirAll(spec.RootfsPath, 0o750); err != nil {
 		return Result{}, err
 	}
-	verified, sha, err := e.fetchAndUnpack(ctx, spec.ImagePin, spec.RootfsPath)
-	if err != nil {
-		return Result{}, err
+	var verified bool
+	var sha string
+	if spec.SkipImage {
+		if err := writeRootfsMarker(spec.RootfsPath); err != nil {
+			return Result{}, err
+		}
+	} else {
+		var err error
+		verified, sha, err = e.fetchAndUnpack(ctx, spec.ImagePin, spec.RootfsPath)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	if err := e.writeConfig(spec); err != nil {
 		return Result{}, err
@@ -155,12 +168,16 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	if err := e.enableUnit(ctx, spec.WorkloadID); err != nil {
 		return Result{}, err
 	}
-	if err := e.Start(ctx, spec.WorkloadID); err != nil {
-		return Result{}, err
+	status := StatusStopped
+	if !spec.NoStart {
+		if err := e.Start(ctx, spec.WorkloadID); err != nil {
+			return Result{}, err
+		}
+		status = StatusRunning
 	}
 	return Result{
 		WorkloadID: spec.WorkloadID, VolumeID: spec.VolumeID, RootfsPath: spec.RootfsPath,
-		MAC: spec.MAC, ImageVerified: verified, ImageSHA256: sha, Status: StatusRunning,
+		MAC: spec.MAC, ImageVerified: verified, ImageSHA256: sha, Status: status,
 	}, nil
 }
 

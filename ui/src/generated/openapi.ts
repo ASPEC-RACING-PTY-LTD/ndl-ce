@@ -1857,6 +1857,74 @@ export interface LicenseActivateRequest {
   key: string;
 }
 
+export interface MigrationAdapter {
+  id?: string;
+  label?: string;
+  role?: string;
+  discovery?: boolean;
+  import?: boolean;
+  export?: boolean;
+  export_kind?: string;
+  modes?: string[];
+  notes?: string;
+  credential?: string;
+}
+
+export interface MigrationMode {
+  id?: string;
+  label?: string;
+  consistency?: string;
+  source_safety?: string;
+  summary?: string;
+  requires_ack?: boolean;
+  available?: boolean;
+  unavailable_reason?: string;
+}
+
+export interface MigrationSource {
+  id?: string;
+  adapter?: string;
+  label?: string;
+  endpoint?: string;
+  insecure?: boolean;
+  has_credentials?: boolean;
+}
+
+export interface MigrationJob {
+  id?: string;
+  adapter?: string;
+  direction?: string;
+  state?: string;
+  stage?: string;
+  source_id?: string;
+  operation_id?: string;
+  source_untouched?: boolean;
+  cancel_requested?: boolean;
+  status?: Record<string, unknown>;
+  plan?: Record<string, unknown>;
+}
+
+export interface MigrationStartRequest {
+  adapter?: string;
+  direction?: string;
+  source_id?: string;
+  mode?: string;
+  path?: string;
+  name?: string;
+  kind?: string;
+  pool_id?: string;
+  network_id?: string;
+  cpus?: number;
+  memory_bytes?: number;
+  firmware?: string;
+  start_after?: boolean;
+  live_ack?: Record<string, unknown>;
+  mapping?: Record<string, unknown>;
+  selected?: string[];
+  workload_id?: string;
+  export_kind?: string;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -2006,6 +2074,36 @@ export type ApproveAIPlanPath = "/api/v1/ai/plans/{id}/approve";
 export type GetLicensePath = "/api/v1/settings/license";
 
 export type ClearLicensePath = "/api/v1/settings/license/clear";
+
+export type ListMigrationAdaptersPath = "/api/v1/migration/adapters";
+
+export type ListMigrationModesPath = "/api/v1/migration/modes";
+
+export type ListMigrationSourcesPath = "/api/v1/migration/sources";
+
+export type GetMigrationSourcePath = "/api/v1/migration/sources/{id}";
+
+export type DiscoverMigrationSourcePath = "/api/v1/migration/sources/{id}/discover";
+
+export type AnalyzeMigrationCompatibilityPath = "/api/v1/migration/compatibility";
+
+export type CreateMigrationPlanPath = "/api/v1/migration/plans";
+
+export type ListMigrationJobsPath = "/api/v1/migration/jobs";
+
+export type GetMigrationJobPath = "/api/v1/migration/jobs/{id}";
+
+export type CancelMigrationJobPath = "/api/v1/migration/jobs/{id}/cancel";
+
+export type RetryMigrationJobPath = "/api/v1/migration/jobs/{id}/retry";
+
+export type CleanupMigrationStagingPath = "/api/v1/migration/jobs/{id}/cleanup";
+
+export type ImportMigrationDiskPath = "/api/v1/migration/import/disk";
+
+export type ImportMigrationBundlePath = "/api/v1/migration/import/bundle";
+
+export type ExportMigrationPath = "/api/v1/migration/export";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

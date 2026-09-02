@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/migration"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -59,6 +60,35 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		res.Dest = dest
 	}
 	return res, nil
+}
+
+func (f *fakeBackup) ConvertImport(_ context.Context, req qemu.ConvertRequest) error {
+	if f.err != nil {
+		return f.err
+	}
+	body, err := os.ReadFile(req.SourcePath)
+	if err != nil {
+		body = []byte("converted")
+	}
+	if err := os.MkdirAll(filepath.Dir(req.DestPath), 0o750); err != nil {
+		return err
+	}
+	return os.WriteFile(req.DestPath, body, 0o640)
+}
+
+func (f *fakeBackup) ExtractArchive(_ context.Context, src, dest string) error {
+	if f.err != nil {
+		return f.err
+	}
+	if err := os.MkdirAll(dest, 0o750); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	return migration.ExtractTar(in, dest, 1<<30)
 }
 
 func TestBackupRunRestoreNewAndReplaceConfirm(t *testing.T) {

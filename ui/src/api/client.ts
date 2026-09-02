@@ -1552,6 +1552,70 @@ export async function exportWorkload(id: string, displayName?: string) {
   );
 }
 
+export async function listMigrationAdapters() {
+  return readJson<{ items: unknown[] }>(await request("/migration/adapters"));
+}
+
+export async function listMigrationModes() {
+  return readJson<{ items: unknown[]; source_safety?: string; source_policy?: string }>(await request("/migration/modes"));
+}
+
+export async function listMigrationSources() {
+  return readJson<{ items: unknown[] }>(await request("/migration/sources"));
+}
+
+export async function createMigrationSource(body: Record<string, unknown>) {
+  return readJson<Record<string, unknown>>(await request("/migration/sources", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function discoverMigrationSource(id: string) {
+  return readJson<Record<string, unknown>>(await request(`/migration/sources/${id}/discover`, { method: "POST", body: "{}" }));
+}
+
+export async function analyzeMigration(body: Record<string, unknown>) {
+  return readJson<Record<string, unknown>>(await request("/migration/compatibility", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function createMigrationPlan(body: Record<string, unknown>) {
+  return readJson<Record<string, unknown>>(await request("/migration/plans", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function startMigrationJob(body: Record<string, unknown>) {
+  return readJson<Record<string, unknown>>(await request("/migration/jobs", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function getMigrationJob(id: string) {
+  return readJson<Record<string, unknown>>(await request(`/migration/jobs/${id}`));
+}
+
+export async function listMigrationJobs() {
+  return readJson<{ items: unknown[] }>(await request("/migration/jobs"));
+}
+
+export async function cancelMigrationJob(id: string) {
+  return readJson<Record<string, unknown>>(await request(`/migration/jobs/${id}/cancel`, { method: "POST", body: "{}" }));
+}
+
+export async function exportMigration(body: Record<string, unknown>) {
+  return readJson<Record<string, unknown>>(await request("/migration/export", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function importMigrationDisk(body: Record<string, unknown>) {
+  return readJson<Record<string, unknown>>(await request("/migration/import/disk", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function importMigrationBundle(body: Record<string, unknown>) {
+  return readJson<Record<string, unknown>>(await request("/migration/import/bundle", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function retryMigrationJob(id: string) {
+  return readJson<Record<string, unknown>>(await request(`/migration/jobs/${id}/retry`, { method: "POST", body: "{}" }));
+}
+
+export async function cleanupMigrationJob(id: string) {
+  return readJson<Record<string, unknown>>(await request(`/migration/jobs/${id}/cleanup`, { method: "POST", body: "{}" }));
+}
+
 export type USBDeviceRow = {
   address: string;
   vendor?: string;

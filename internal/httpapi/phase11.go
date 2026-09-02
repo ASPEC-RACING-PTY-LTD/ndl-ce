@@ -31,12 +31,22 @@ const (
 // BackupRPC is the privileged agent surface for checksummed backup copies.
 type BackupRPC interface {
 	CopyBackup(ctx context.Context, action, src, dest string) (storage.CopyResult, error)
+	ConvertImport(ctx context.Context, req qemu.ConvertRequest) error
+	ExtractArchive(ctx context.Context, src, dest string) error
 }
 
 type backupUnavailable struct{}
 
 func (backupUnavailable) CopyBackup(context.Context, string, string, string) (storage.CopyResult, error) {
 	return storage.CopyResult{}, errUnavailable("backup agent is unavailable")
+}
+
+func (backupUnavailable) ConvertImport(context.Context, qemu.ConvertRequest) error {
+	return errUnavailable("disk convert agent is unavailable")
+}
+
+func (backupUnavailable) ExtractArchive(context.Context, string, string) error {
+	return errUnavailable("archive extract agent is unavailable")
 }
 
 func AdaptBackup(client any) BackupRPC {

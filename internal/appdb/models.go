@@ -364,6 +364,16 @@ type Store interface {
 	GetLicenseState(ctx context.Context, clusterID string) (*LicenseState, string, error)
 	PutLicenseState(ctx context.Context, st LicenseState, key string) error
 	ClearLicense(ctx context.Context, clusterID string) error
+
+	CreateMigrationSource(ctx context.Context, src MigrationSource, token, username string, extra []byte) error
+	ListMigrationSources(ctx context.Context, clusterID string) ([]MigrationSource, error)
+	GetMigrationSource(ctx context.Context, clusterID, id string) (*MigrationSource, string, string, []byte, error)
+	DeleteMigrationSource(ctx context.Context, clusterID, id string) error
+
+	CreateMigrationJob(ctx context.Context, j MigrationJob) error
+	ListMigrationJobs(ctx context.Context, clusterID string, limit int) ([]MigrationJob, error)
+	GetMigrationJob(ctx context.Context, clusterID, id string) (*MigrationJob, error)
+	UpdateMigrationJob(ctx context.Context, j MigrationJob) error
 }
 
 // Cluster is the appliance cluster of one.

@@ -62,6 +62,22 @@ func run(args []string) error {
   license show
   license activate --key KEY --confirm activate-license
   license clear --confirm clear-license
+  migration adapters
+  migration modes
+  migration sources
+  migration source add --adapter ADAPTER [--endpoint URL] [--token TOKEN]
+  migration discover --id ID
+  migration plan --source-id ID --selected ID --mode MODE
+  migration compatibility --source-id ID --selected ID --mode MODE
+  migration start --source-id ID --selected ID --mode MODE
+  migration jobs
+  migration job get --id ID
+  migration cancel --id ID
+  migration retry --id ID
+  migration cleanup --id ID
+  migration import disk --path PATH --name NAME --pool-id ID --network-id ID --mode disk
+  migration import bundle --path PATH
+  migration export --id ID [--kind nodal-bundle|ovf|proxmox|vm-image|container-archive]
   app list
   app import FILE
   app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]
@@ -207,6 +223,8 @@ func run(args []string) error {
 		return cmdAI(args[1:])
 	case "license":
 		return cmdLicense(args[1:])
+	case "migration":
+		return cmdMigration(args[1:])
 	case "app":
 		return cmdApp(args[1:])
 	case "task":
@@ -965,6 +983,117 @@ func cmdLicense(args []string) error {
 		return postJSON("/api/v1/settings/license/clear", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl license show|activate|clear")
+	}
+}
+
+func cmdMigration(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl migration adapters|modes|sources|discover|plan|compatibility|start|jobs|cancel|retry|cleanup|import|export")
+	}
+	switch args[0] {
+	case "adapters":
+		return cmdGet("/api/v1/migration/adapters")
+	case "modes":
+		return cmdGet("/api/v1/migration/modes")
+	case "sources":
+		return cmdGet("/api/v1/migration/sources")
+	case "source":
+		if len(args) < 2 || args[1] != "add" {
+			return fmt.Errorf("usage: nodalctl migration source add --adapter ADAPTER [--endpoint URL] [--token TOKEN]")
+		}
+		f := parseFlags(args[2:])
+		return postJSON("/api/v1/migration/sources", map[string]any{
+			"adapter": f["adapter"], "endpoint": f["endpoint"], "token": f["token"], "insecure": f["insecure"] == "true",
+		}, true)
+	case "discover":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl migration discover --id ID")
+		}
+		return postJSON("/api/v1/migration/sources/"+f["id"]+"/discover", map[string]any{}, true)
+	case "plan", "compatibility", "start":
+		f := parseFlags(args[1:])
+		if f["source-id"] == "" || f["selected"] == "" || f["mode"] == "" {
+			return fmt.Errorf("usage: nodalctl migration %s --source-id ID --selected ID --mode MODE [--pool-id ID] [--network-id ID]", args[0])
+		}
+		body := map[string]any{
+			"source_id":   f["source-id"],
+			"selected":    []string{f["selected"]},
+			"modes":       map[string]string{f["selected"]: f["mode"]},
+			"mode":        f["mode"],
+			"pool_id":     f["pool-id"],
+			"network_id":  f["network-id"],
+			"start_after": f["start-after"] == "true",
+			"live_ack":    map[string]bool{f["selected"]: f["live-ack"] == "true"},
+		}
+		path := "/api/v1/migration/plans"
+		if args[0] == "compatibility" {
+			path = "/api/v1/migration/compatibility"
+		}
+		if args[0] == "start" {
+			path = "/api/v1/migration/jobs"
+		}
+		return postJSON(path, body, true)
+	case "jobs":
+		if len(args) > 1 {
+			return cmdGet("/api/v1/migration/jobs/" + args[1])
+		}
+		return cmdGet("/api/v1/migration/jobs")
+	case "job":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl migration job get --id ID")
+		}
+		return cmdGet("/api/v1/migration/jobs/" + f["id"])
+	case "cancel":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl migration cancel --id ID")
+		}
+		return postJSON("/api/v1/migration/jobs/"+f["id"]+"/cancel", map[string]any{}, true)
+	case "retry":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl migration retry --id ID")
+		}
+		return postJSON("/api/v1/migration/jobs/"+f["id"]+"/retry", map[string]any{}, true)
+	case "cleanup":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl migration cleanup --id ID")
+		}
+		return postJSON("/api/v1/migration/jobs/"+f["id"]+"/cleanup", map[string]any{}, true)
+	case "import":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nodalctl migration import disk|bundle")
+		}
+		f := parseFlags(args[2:])
+		body := map[string]any{
+			"path": f["path"], "name": f["name"], "pool_id": f["pool-id"], "network_id": f["network-id"],
+			"mode": f["mode"], "kind": f["kind"], "firmware": f["firmware"],
+		}
+		if args[1] == "bundle" {
+			if f["mode"] == "" {
+				body["mode"] = "disk"
+			}
+			return postJSON("/api/v1/migration/import/bundle", body, true)
+		}
+		if f["mode"] == "" {
+			return fmt.Errorf("migration mode must be selected (--mode disk)")
+		}
+		return postJSON("/api/v1/migration/import/disk", body, true)
+	case "export":
+		f := parseFlags(args[1:])
+		if f["id"] == "" {
+			return fmt.Errorf("usage: nodalctl migration export --id ID [--kind nodal-bundle|ovf|proxmox|vm-image|container-archive]")
+		}
+		kind := f["kind"]
+		if kind == "" {
+			kind = "nodal-bundle"
+		}
+		return postJSON("/api/v1/migration/export", map[string]any{"workload_id": f["id"], "export_kind": kind, "mode": "disk"}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl migration adapters|modes|sources|discover|plan|compatibility|start|jobs|cancel|retry|cleanup|import|export")
 	}
 }
 

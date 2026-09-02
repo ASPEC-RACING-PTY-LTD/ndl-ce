@@ -108,6 +108,25 @@ func (c Client) CopyBackup(ctx context.Context, action, src, dest string) (stora
 	return out, nil
 }
 
+func (c Client) ConvertImport(ctx context.Context, req qemu.ConvertRequest) error {
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DiskConvert{DiskConvert: &agentv1.DiskConvert{
+			SourcePath: req.SourcePath, DestPath: req.DestPath,
+			SourceFormat: req.SourceFormat, DestFormat: req.DestFormat,
+		}},
+	}))
+	return err
+}
+
+func (c Client) ExtractArchive(ctx context.Context, src, dest string) error {
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_ArchiveExtract{ArchiveExtract: &agentv1.ArchiveExtract{
+			SourcePath: src, DestPath: dest,
+		}},
+	}))
+	return err
+}
+
 func (c Client) ApplyUSB(ctx context.Context, id string, usbs []vmspec.LaunchUSB) error {
 	if len(usbs) == 0 {
 		_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
