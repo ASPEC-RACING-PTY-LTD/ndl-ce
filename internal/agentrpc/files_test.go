@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -302,5 +303,22 @@ func TestResolveJailCTWithoutEngineUsesRequested(t *testing.T) {
 	got, err := h.resolveJail(iojail.TargetCT, uuid.NewString(), "/tmp/jail")
 	if err != nil || got != "/tmp/jail" {
 		t.Fatalf("tests without an engine still use requested jail: %q %v", got, err)
+	}
+}
+
+func TestSHAMatchesRequiresExactDigest(t *testing.T) {
+	sum := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	raw, _ := json.Marshal(map[string]any{"ok": true, "path": "ok.txt", "size": 5, "sha256": sum})
+	if !shaMatches(raw, sum) {
+		t.Fatal("exact digest")
+	}
+	if !shaMatches(raw, strings.ToUpper(sum)) {
+		t.Fatal("case")
+	}
+	if shaMatches(raw, "ok") || shaMatches(raw, "true") || shaMatches(raw, sum[:8]) {
+		t.Fatal("substring of the JSON result must not pass")
+	}
+	if shaMatches([]byte(`{"ok":true,"path":"ok.txt"}`), sum) {
+		t.Fatal("missing digest must fail closed")
 	}
 }

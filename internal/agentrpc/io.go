@@ -2,6 +2,7 @@ package agentrpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -135,10 +136,18 @@ func (h *Handler) FilesPut(ctx context.Context, stream *connect.ClientStream[age
 }
 
 func shaMatches(raw []byte, expected string) bool {
-	if expected == "" {
+	want := strings.TrimSpace(expected)
+	if want == "" {
 		return true
 	}
-	return strings.Contains(strings.ToLower(string(raw)), strings.ToLower(expected))
+	var out struct {
+		SHA256 string `json:"sha256"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return false
+	}
+	got := strings.TrimSpace(out.SHA256)
+	return got != "" && strings.EqualFold(got, want)
 }
 
 func (h *Handler) FilesGet(ctx context.Context, req *connect.Request[agentv1.FilesGetRequest], stream *connect.ServerStream[agentv1.FilesGetResponse]) error {
