@@ -42,6 +42,22 @@ func (s *Server) requireWriter(w http.ResponseWriter, r *http.Request, clusterID
 	return true
 }
 
+func writerExempt(r *http.Request) bool {
+	path := r.URL.Path
+	return strings.HasSuffix(path, "/cluster/ha/fence") || strings.HasSuffix(path, "/cluster/ha/promote")
+}
+
+func (s *Server) enforceWriter(w http.ResponseWriter, r *http.Request, clusterID string) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	if writerExempt(r) {
+		return true
+	}
+	return s.requireWriter(w, r, clusterID)
+}
+
 func (s *Server) getCluster(w http.ResponseWriter, r *http.Request) {
 	p, err := s.require(w, r, rbac.ClusterRead)
 	if err != nil {

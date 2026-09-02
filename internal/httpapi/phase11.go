@@ -876,6 +876,10 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "replace requires the original workload to still exist")
 		return
 	}
+	if src != nil && src.Kind != vmspec.KindVM {
+		writeErr(w, http.StatusUnprocessableEntity, "restore of system containers is not implemented")
+		return
+	}
 	dest, err := s.resolveRestoreDest(r.Context(), p.User.ClusterID, strings.TrimSpace(req.TargetNodeID))
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())

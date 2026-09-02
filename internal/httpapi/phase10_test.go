@@ -79,6 +79,16 @@ func TestVMSnapshotCreateRollbackAndCTHidden(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots/flatten", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "flatten")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	rawFlat, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(rawFlat)), "stop") {
+		t.Fatalf("running overlay flatten %d %s", res.StatusCode, rawFlat)
+	}
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/snapshots/"+snap["id"].(string)+"/rollback", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Nodal-Confirm", "rollback")

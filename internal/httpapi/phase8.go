@@ -96,6 +96,9 @@ func (s *Server) requireAny(w http.ResponseWriter, r *http.Request, perms ...str
 	}
 	for _, perm := range perms {
 		if rbac.Authorize(p.Grants, perm) {
+			if !s.enforceWriter(w, r, p.User.ClusterID) {
+				return nil, errors.New("not cluster writer")
+			}
 			return p, nil
 		}
 	}

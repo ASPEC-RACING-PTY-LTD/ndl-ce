@@ -370,6 +370,49 @@ func TestPhase30FencedWriterCannotIssueJoinTokens(t *testing.T) {
 	}
 }
 
+func TestFencedWriterCannotCreateWorkloads(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	exp := time.Now().UTC().Add(time.Minute)
+	if err := mem.AcquireLease(t.Context(), clusterRow.ID, "writer-a", exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.FenceLease(t.Context(), clusterRow.ID, time.Now().UTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	s.LeaseHolder = "writer-a"
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(`{"name":"web","kind":"vm"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict || !strings.Contains(strings.ToLower(string(body)), "fenced") {
+		t.Fatalf("fenced create %d %s", res.StatusCode, body)
+	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("read on fenced writer %d", res.StatusCode)
+	}
+	s.LeaseHolder = "writer-b"
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(`{"name":"web","kind":"vm"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("standby create before promote %d %s", res.StatusCode, body)
+	}
+}
+
 func mintJoin(t *testing.T, ts *httptest.Server, cookie, hostname string) (string, string) {
 	t.Helper()
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))

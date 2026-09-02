@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/migration"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -509,5 +510,58 @@ func TestRestoreNewVMExtraDataDiskIsUnprocessable(t *testing.T) {
 	_, err := s.restoreNewVM(context.Background(), cluster.ID, src, appdb.BackupArtifact{ID: uuid.NewString()}, false, &dest)
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "disk") {
 		t.Fatalf("extra data disk restore must fail closed: %v", err)
+	}
+}
+
+func TestRestoreRefusesSystemContainer(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	wlID := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: wlID, ClusterID: cluster.ID, NodeID: nodeID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tgtID := uuid.NewString()
+	if err := mem.CreateBackupTarget(context.Background(), appdb.BackupTarget{
+		ID: tgtID, ClusterID: cluster.ID, Name: "local", Kind: appdb.BackupLocal, Locator: t.TempDir(), Status: appdb.BackupAvailable,
+	}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.NewString()
+	if err := mem.CreateBackupRun(context.Background(), appdb.BackupRun{
+		ID: runID, ClusterID: cluster.ID, TargetID: tgtID, WorkloadID: wlID, Status: appdb.BackupSucceeded,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	artID := uuid.NewString()
+	if err := mem.CreateBackupArtifact(context.Background(), appdb.BackupArtifact{
+		ID: artID, ClusterID: cluster.ID, RunID: runID, WorkloadID: wlID, Format: "qcow2", Locator: "volumes/vm-disk/boot.qcow2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "system container") {
+		t.Fatalf("ct restore new %d %s", res.StatusCode, raw)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"replace"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "restore")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "system container") {
+		t.Fatalf("ct restore replace %d %s", res.StatusCode, raw)
 	}
 }

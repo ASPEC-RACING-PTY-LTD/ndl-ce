@@ -21,6 +21,7 @@ const (
 	zfsFlattenReason   = "ZFS snapshots do not use qcow2 overlay chains. Flatten is not applicable."
 	zfsRollbackRun     = "stop the workload before ZFS rollback"
 	overlayRollbackRun = "stop the workload before overlay rollback"
+	overlayFlattenRun  = "stop the workload before overlay flatten"
 	rollbackConfirm    = "rollback"
 	flattenConfirm     = "flatten"
 )
@@ -338,6 +339,10 @@ func (s *Server) flattenSnapshots(w http.ResponseWriter, r *http.Request) {
 	}
 	if row.Kind != vmspec.KindVM {
 		writeErr(w, http.StatusUnprocessableEntity, ctSnapshotReason)
+		return
+	}
+	if row.UnitActive || row.Status == qemu.StatusRunning || row.Status == qemu.StatusStarting {
+		writeErr(w, http.StatusUnprocessableEntity, overlayFlattenRun)
 		return
 	}
 	flatID := uuid.NewString()

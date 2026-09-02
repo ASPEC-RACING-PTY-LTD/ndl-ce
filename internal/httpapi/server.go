@@ -718,6 +718,9 @@ func (s *Server) require(w http.ResponseWriter, r *http.Request, perm string) (*
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return nil, errors.New("forbidden")
 	}
+	if !s.enforceWriter(w, r, p.User.ClusterID) {
+		return nil, errors.New("not cluster writer")
+	}
 	return p, nil
 }
 
