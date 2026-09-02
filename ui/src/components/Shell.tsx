@@ -276,16 +276,18 @@ export function Shell({ children }: { children: ReactNode }) {
             ))
           )}
         </nav>
-        <button
-          className="btn btn-ghost btn-sm btn-icon sidebar-collapse"
-          type="button"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={toggleSidebar}
-        >
-          <Icon name={collapsed ? "expand" : "collapse"} />
-        </button>
+        <div className="sidebar-footer">
+          <button
+            className="btn btn-ghost btn-sm btn-icon sidebar-collapse"
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={toggleSidebar}
+          >
+            <Icon name={collapsed ? "expand" : "collapse"} />
+          </button>
+        </div>
       </aside>
       <div className="shell-body">
         <header className="shell-header">

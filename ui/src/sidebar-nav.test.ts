@@ -48,4 +48,37 @@ describe("sidebar-nav scrollbar", () => {
     expect(label).toContain("text-overflow: ellipsis");
     expect(label).toContain("overflow: hidden");
   });
+
+  it("keeps contextual rows content-sized instead of stretching to fill the sidebar", () => {
+    const nav = rule(".sidebar-nav {");
+    expect(nav).toContain("flex-direction: column");
+    expect(nav).toContain("justify-content: flex-start");
+    expect(nav).toContain("align-content: start");
+    expect(nav).not.toContain("space-between");
+    expect(nav).not.toContain("display: grid");
+
+    const tree = rule(".ctx-tree {");
+    expect(tree).toContain("align-content: start");
+    expect(tree).toContain("flex: none");
+
+    const actions = rule(".ctx-actions {");
+    expect(actions).toContain("align-content: start");
+    expect(actions).toContain("flex: none");
+
+    const item = rule(".ctx-item {");
+    expect(item).toContain("min-height: 2.25rem");
+    expect(item).toContain("flex: none");
+
+    const search = rule(".ctx-search {");
+    expect(search).toContain("min-height: 2.5rem");
+    expect(search).toContain("height: 2.5rem");
+    expect(search).toContain("flex: none");
+
+    const collapse = rule(".sidebar-collapse {");
+    expect(collapse).not.toContain("margin-top: auto");
+
+    const footer = rule(".sidebar-footer {");
+    expect(footer).toContain("border-top: 1px solid var(--line)");
+    expect(footer).toContain("flex: none");
+  });
 });

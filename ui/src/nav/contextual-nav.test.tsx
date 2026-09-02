@@ -293,6 +293,8 @@ describe("contextual navigation", () => {
     window.history.replaceState({}, "", "/workloads");
     render(<App />);
     expect(await screen.findByText(/showing 200 of 211/i)).toBeVisible();
+    expect(screen.getByLabelText(/collapse sidebar/i).closest(".sidebar-footer")).toBeTruthy();
+    expect(document.querySelectorAll(".ctx-item").length).toBeGreaterThan(50);
     fireEvent.change(await screen.findByLabelText(/^search targets$/i), { target: { value: "bulk-205" } });
     expect(screen.getByRole("treeitem", { name: /bulk-205/i })).toBeVisible();
     expect(screen.queryByText(/showing 200 of/i)).not.toBeInTheDocument();
