@@ -206,15 +206,8 @@ func (c *PVEClient) downloadHTTP() *http.Client {
 }
 
 func (c *PVEClient) DownloadVolume(node, storage, volid, dest string) error {
-	if c.Base == "" {
-		return fmt.Errorf("proxmox endpoint is required")
-	}
-	u, err := url.Parse(c.Base)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return fmt.Errorf("proxmox endpoint is invalid")
-	}
-	if u.Scheme != "https" && !c.Insecure {
-		return fmt.Errorf("proxmox requires https unless insecure is explicitly set")
+	if _, err := c.parseBase(); err != nil {
+		return err
 	}
 	if storage == "" || volid == "" || node == "" {
 		return fmt.Errorf("proxmox volume is invalid")

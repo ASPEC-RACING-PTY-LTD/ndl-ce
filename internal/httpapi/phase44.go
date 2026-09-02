@@ -110,9 +110,16 @@ func (s *Server) createMigrationSource(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	endpoint := strings.TrimSpace(req.Endpoint)
+	if endpoint != "" {
+		if _, err := migration.ParseHTTPEndpoint(endpoint); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	src := appdb.MigrationSource{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Adapter: req.Adapter,
-		Label: req.Label, Endpoint: strings.TrimSpace(req.Endpoint), Insecure: req.Insecure,
+		Label: req.Label, Endpoint: endpoint, Insecure: req.Insecure,
 	}
 	if src.Label == "" {
 		src.Label = req.Adapter

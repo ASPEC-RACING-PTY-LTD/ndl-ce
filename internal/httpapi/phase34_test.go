@@ -273,3 +273,23 @@ func TestPhase34ReplicaDSNNeverReturned(t *testing.T) {
 	}
 	_ = res.Body.Close()
 }
+
+func TestPhase34ReplicaEndpointRefusesCredentials(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"endpoint":"postgresql://ndl:secret-pass@postgres-replica/nodal"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/ha/replica", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "secret-pass") {
+		t.Fatalf("secret echoed %s", raw)
+	}
+}

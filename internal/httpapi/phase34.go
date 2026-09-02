@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -106,7 +107,11 @@ func (s *Server) configureHAReplica(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "endpoint or dsn is required")
 		return
 	}
-	if strings.Contains(strings.ToLower(endpoint), "password") {
+	if strings.Contains(endpoint, "@") || strings.Contains(strings.ToLower(endpoint), "password") {
+		writeErr(w, http.StatusBadRequest, "endpoint must not include credentials")
+		return
+	}
+	if u, err := url.Parse(endpoint); err == nil && u.User != nil {
 		writeErr(w, http.StatusBadRequest, "endpoint must not include credentials")
 		return
 	}

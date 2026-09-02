@@ -85,6 +85,32 @@ func TestMigrationViewerDeniedAndSecretsRedacted(t *testing.T) {
 	}
 }
 
+func TestMigrationSourceEndpointRefusesCredentials(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	admin := claimAdmin(t, ts, token)
+	for _, body := range []string{
+		`{"adapter":"proxmox","endpoint":"https://user:SECRET-TOKEN-VALUE@pve.example:8006","token":"SECRET-TOKEN-VALUE"}`,
+		`{"adapter":"proxmox","endpoint":"file:///etc/passwd","token":"SECRET-TOKEN-VALUE"}`,
+	} {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: admin})
+		res, _ := ts.Client().Do(req)
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status %d %s for %s", res.StatusCode, raw, body)
+		}
+		if strings.Contains(string(raw), "SECRET-TOKEN-VALUE") {
+			t.Fatalf("secret echoed %s", raw)
+		}
+	}
+}
+
 func TestMigrationOfflineRunningAndLiveAck(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

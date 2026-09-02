@@ -16,16 +16,23 @@ type PVEClient struct {
 	Insecure bool
 }
 
-func (c *PVEClient) get(path string, dest any) error {
-	if c.Base == "" {
-		return fmt.Errorf("proxmox endpoint is required")
-	}
-	u, err := url.Parse(c.Base)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return fmt.Errorf("proxmox endpoint is invalid")
+func (c *PVEClient) parseBase() (*url.URL, error) {
+	u, err := ParseHTTPEndpoint(c.Base)
+	if err != nil {
+		if c.Base == "" {
+			return nil, fmt.Errorf("proxmox endpoint is required")
+		}
+		return nil, fmt.Errorf("proxmox endpoint is invalid")
 	}
 	if u.Scheme != "https" && !c.Insecure {
-		return fmt.Errorf("proxmox requires https unless insecure is explicitly set")
+		return nil, fmt.Errorf("proxmox requires https unless insecure is explicitly set")
+	}
+	return u, nil
+}
+
+func (c *PVEClient) get(path string, dest any) error {
+	if _, err := c.parseBase(); err != nil {
+		return err
 	}
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(c.Base, "/")+path, nil)
 	if err != nil {

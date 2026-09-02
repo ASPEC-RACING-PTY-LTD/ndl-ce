@@ -37,6 +37,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Migration archive extract refuses GNU sparse members instead of skipping them without error.
   * AI provider endpoints must be http(s) without userinfo so API keys stay in secrets. Completions do not follow HTTP redirects.
   * Object-store backup endpoints and OCI registry URLs must not include credentials. Access keys stay in dedicated fields and are not returned in list JSON.
+  * Migration source endpoints must be http(s) without userinfo. Tokens stay in dedicated fields. An HA replica endpoint that looks like a DSN is refused so the secret stays in the DSN field.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
