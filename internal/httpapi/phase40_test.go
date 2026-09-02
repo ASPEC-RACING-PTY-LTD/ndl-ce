@@ -13,6 +13,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/automation"
+	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
@@ -252,5 +253,95 @@ func TestPhase40ViewerCannotApply(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("viewer list %d", res.StatusCode)
+	}
+}
+
+func TestPhase40AttemptedMigrateFailureIsNotSucceeded(t *testing.T) {
+	s, mem, token := testServer(t)
+	fake := migrate.NewFake()
+	fake.FailLive = true
+	s.Migrate = fake
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	worker := seedNode(t, mem, cluster.ID, debianInv(), false)
+	destUsable, destAlloc := int64(100<<30), int64(10<<30)
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeea", ClusterID: cluster.ID, NodeID: worker.ID,
+		Name: "dest", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		UsableBytes: &destUsable, AllocatedBytes: &destAlloc, RootPath: "/var/lib/ndl/storage/dest",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/policies", strings.NewReader(`{"name":"pressure","kind":"storage_pressure","action":"enqueue_migrate_low_priority","threshold_percent":85}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	policyID, _ := created["id"].(string)
+
+	usable, alloc := int64(100<<30), int64(90<<30)
+	pool := appdb.StoragePool{
+		ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac", ClusterID: cluster.ID, NodeID: node.ID,
+		Name: "full", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		UsableBytes: &usable, AllocatedBytes: &alloc, RootPath: "/var/lib/ndl/storage/local",
+	}
+	if err := mem.CreateStoragePool(context.Background(), pool); err != nil {
+		t.Fatal(err)
+	}
+	vol := appdb.Volume{
+		ID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbd", ClusterID: cluster.ID, NodeID: node.ID, PoolID: pool.ID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Status: storage.StatusAvailable,
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+	}
+	_ = mem.CreateVolume(context.Background(), vol)
+	wl := appdb.Workload{
+		ID: "cccccccc-cccc-4ccc-8ccc-ccccccccccce", ClusterID: cluster.ID, NodeID: node.ID,
+		OwnerNodeID: node.ID, DesiredNodeID: node.ID, Name: "batch", Kind: "vm", Status: "running",
+	}
+	_ = mem.CreateWorkload(context.Background(), wl)
+	fake.SetSourceRunning(wl.ID, true)
+	_ = mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: "dddddddd-dddd-4ddd-8ddd-dddddddddddf", ClusterID: cluster.ID, WorkloadID: wl.ID, VolumeID: vol.ID,
+	})
+	_ = mem.UpsertWorkloadPlacement(context.Background(), appdb.WorkloadPlacement{
+		WorkloadID: wl.ID, ClusterID: cluster.ID, Priority: 10,
+	})
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/policies/"+policyID+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("apply %d %s", res.StatusCode, raw)
+	}
+	var run map[string]any
+	if err := json.Unmarshal(raw, &run); err != nil {
+		t.Fatal(err)
+	}
+	if run["status"] != appdb.PolicyFailed {
+		t.Fatalf("attempted migrate failure must not succeed %s", raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/tasks", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"state":"failed"`) {
+		t.Fatalf("failed migrate must be visible %s", raw)
 	}
 }

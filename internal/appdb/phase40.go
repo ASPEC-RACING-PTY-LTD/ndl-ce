@@ -12,6 +12,7 @@ const (
 	PolicySucceeded = "succeeded"
 	PolicySkipped   = "skipped"
 	PolicyDenied    = "denied"
+	PolicyFailed    = "failed"
 )
 
 // Policy is a deterministic automation rule. It is not an LLM loop.

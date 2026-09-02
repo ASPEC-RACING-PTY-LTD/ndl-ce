@@ -149,6 +149,7 @@ func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, 
 	}
 	var ops []string
 	pressured := false
+	failed := false
 	for _, pool := range pools {
 		pct, ok := automation.UsedPercent(pool.UsableBytes, pool.AllocatedBytes)
 		if !ok || pct < pol.ThresholdPercent {
@@ -172,13 +173,17 @@ func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, 
 		}
 		if s.Migrate != nil && picked != nil {
 			dest, err := s.migrateDest(ctx, clusterID, *picked, "")
-			if err == nil && dest != nil && s.destEligibleLocal(ctx, dest) {
+			if err == nil && dest != nil && s.destAgentReady(ctx, dest) {
 				_, code, msg := s.runMigrate(ctx, *picked, dest, migrateModeFor(*picked))
 				if code == http.StatusOK {
 					op.State = "succeeded"
 					op.Message = fmt.Sprintf("storage pressure %d percent on %s; migrated low-priority %s", pct, pool.Name, c.Name)
-				} else if msg != "" {
-					op.Message = msg
+				} else {
+					op.State = "failed"
+					failed = true
+					if msg != "" {
+						op.Message = msg
+					}
 				}
 			}
 		}
@@ -186,8 +191,13 @@ func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, 
 		ops = append(ops, op.ID)
 	}
 	if len(ops) > 0 {
-		run.Status = appdb.PolicySucceeded
-		run.Reason = "queued migrate operations for low-priority workloads"
+		if failed {
+			run.Status = appdb.PolicyFailed
+			run.Reason = "migrate operations failed for low-priority workloads"
+		} else {
+			run.Status = appdb.PolicySucceeded
+			run.Reason = "queued migrate operations for low-priority workloads"
+		}
 		run.OperationIDs = ops
 	} else if pressured {
 		run.Reason = "pool exceeded threshold but no low-priority VM was selected"

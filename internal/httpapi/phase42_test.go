@@ -239,6 +239,14 @@ func TestPhase42PolicyPlanUsesAutomationValidation(t *testing.T) {
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"succeeded"`) {
 		t.Fatalf("approve policy %d %s", res.StatusCode, raw)
 	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/tasks", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"kind":"ai.create_policy"`) || !strings.Contains(string(raw), `"state":"succeeded"`) {
+		t.Fatalf("ai plan task must finish %d %s", res.StatusCode, raw)
+	}
 	pols, _ := mem.ListPolicies(context.Background(), cluster.ID)
 	if len(pols) != 1 || pols[0].Kind != "storage_pressure" || pols[0].Action != "enqueue_migrate_low_priority" {
 		t.Fatalf("policy %+v", pols)

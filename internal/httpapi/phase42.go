@@ -189,32 +189,36 @@ func (s *Server) executePlanStep(r *http.Request, clusterID string, st appdb.AIP
 	op.State = "queued"
 	op.Message = st.Title
 	_ = s.Store.UpsertOperation(r.Context(), op)
+	fail := func(err error) (string, error) {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		return op.ID, err
+	}
 	switch st.Action {
 	case ai.ActionCreateWorkload:
 		id, err := s.executeCreateWorkload(r, body)
 		if err != nil {
-			return op.ID, err
+			return fail(err)
 		}
 		if createdWL != nil {
 			*createdWL = id
 		}
 	case ai.ActionCreatePolicy:
 		if err := s.executeCreatePolicy(r, body); err != nil {
-			return op.ID, err
+			return fail(err)
 		}
 	case ai.ActionRestart:
 		wlID := planWorkloadID(body, createdWL)
 		if wlID == "" {
-			return op.ID, errPlan("restart workload id is missing")
+			return fail(errPlan("restart workload id is missing"))
 		}
 		code, raw := s.invokeExistingAPI(r, s.lifecycleWorkload("restart"), http.MethodPost, "/api/v1/workloads/"+wlID+"/restart", []byte(`{}`), wlID)
 		if err := existingAPIError(code, raw); err != nil {
-			return op.ID, err
+			return fail(err)
 		}
 	case ai.ActionInstallStore:
 		appID := storeAppIDFromStep(st, body)
 		if appID == "" {
-			return op.ID, errUnprocessable("store install must use POST /api/v1/store/apps/{id}/install")
+			return fail(errUnprocessable("store install must use POST /api/v1/store/apps/{id}/install"))
 		}
 		payload := st.BodyJSON
 		if strings.TrimSpace(payload) == "" {
@@ -222,7 +226,7 @@ func (s *Server) executePlanStep(r *http.Request, clusterID string, st appdb.AIP
 		}
 		code, raw := s.invokeExistingAPI(r, s.installStoreApp, http.MethodPost, "/api/v1/store/apps/"+appID+"/install", []byte(payload), appID)
 		if err := existingAPIError(code, raw); err != nil {
-			return op.ID, err
+			return fail(err)
 		}
 		if createdWL != nil {
 			if id := existingAPIID(raw, "workload_id"); id != "" {
@@ -230,8 +234,9 @@ func (s *Server) executePlanStep(r *http.Request, clusterID string, st appdb.AIP
 			}
 		}
 	default:
-		return op.ID, errPlan("plan action is unsupported")
+		return fail(errPlan("plan action is unsupported"))
 	}
+	s.finishOp(r.Context(), op, "succeeded", st.Title, 100)
 	return op.ID, nil
 }
 
