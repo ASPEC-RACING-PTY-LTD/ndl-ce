@@ -170,6 +170,14 @@ func TestArchiveTraversalAndSymlinkEscape(t *testing.T) {
 	if err := ExtractTar(bytes.NewReader(buf.Bytes()), dir, 1<<20); err == nil {
 		t.Fatal("device")
 	}
+	sparse, err := os.ReadFile(filepath.Join("testdata", "gnu-nil-sparse-data.tar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ExtractTar(bytes.NewReader(sparse), dir, 1<<20)
+	if err == nil || !strings.Contains(err.Error(), "sparse") {
+		t.Fatalf("gnu sparse members must be refused, got %v", err)
+	}
 }
 
 func TestExtractTarIgnoresPrivilegedXattrs(t *testing.T) {

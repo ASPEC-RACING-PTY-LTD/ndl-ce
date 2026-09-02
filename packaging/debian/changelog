@@ -34,6 +34,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Node GPU test waits for the IOMMU group member list. The GPUs heading renders before /gpus returns.
   * Join client TLS keeps system certificate roots and adds the cluster CA so northbound HTTPS still verifies after node.crt is written.
   * OpenAPI documents existing VM create balloon, secure_boot, and spec, OCI secret_refs and volumes, and PATCH iso_library_id and nocloud. Raw qemu_args stay undocumented and refused.
+  * Migration archive extract refuses GNU sparse members instead of skipping them without error.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

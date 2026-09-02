@@ -114,8 +114,10 @@ func ExtractTar(r io.Reader, dest string, maxTotal int64) error {
 			if err := os.Link(linkTarget, target); err != nil {
 				return err
 			}
-		case tar.TypeXGlobalHeader, tar.TypeXHeader, tar.TypeGNUSparse:
+		case tar.TypeXGlobalHeader, tar.TypeXHeader:
 			continue
+		case tar.TypeGNUSparse:
+			return fmt.Errorf("sparse archive members are refused")
 		default:
 			return fmt.Errorf("archive member type %c is refused", hdr.Typeflag)
 		}
