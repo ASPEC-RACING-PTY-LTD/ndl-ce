@@ -459,6 +459,66 @@ func validateWebhookURL(raw string) error {
 	return nil
 }
 
+// lookupWebhookIPs resolves webhook hostnames at delivery. Tests replace it.
+var lookupWebhookIPs = net.LookupIP
+
+// checkWebhookDestination re-validates the URL and refuses hostnames that
+// resolve to loopback, link-local, unique-local, or RFC1918 addresses.
+func checkWebhookDestination(raw string) error {
+	if err := validateWebhookURL(raw); err != nil {
+		return err
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return errInvalidWebhook
+	}
+	host := strings.TrimSpace(u.Hostname())
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	ips, err := lookupWebhookIPs(host)
+	if err != nil || len(ips) == 0 {
+		return errInvalidWebhook
+	}
+	for _, ip := range ips {
+		if deniedWebhookHost(ip.String()) {
+			return errInvalidWebhook
+		}
+	}
+	return nil
+}
+
+func webhookHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				if ip := net.ParseIP(host); ip != nil {
+					if deniedWebhookHost(host) {
+						return nil, errInvalidWebhook
+					}
+					return dialer.DialContext(ctx, network, addr)
+				}
+				ips, err := lookupWebhookIPs(host)
+				if err != nil || len(ips) == 0 {
+					return nil, errInvalidWebhook
+				}
+				for _, ip := range ips {
+					if deniedWebhookHost(ip.String()) {
+						return nil, errInvalidWebhook
+					}
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+			},
+		},
+	}
+}
+
 // allowWebhookLoopbackForTest is an explicit test fixture. Production stays deny-by-default
 // for loopback, link-local, metadata, unique-local, and RFC1918 literal IPs.
 var allowWebhookLoopbackForTest bool
@@ -557,7 +617,7 @@ func (s *Server) notify(ctx context.Context, clusterID string, payload []byte) {
 	}
 	cli := s.HTTPClient
 	if cli == nil {
-		cli = &http.Client{Timeout: 10 * time.Second}
+		cli = webhookHTTPClient()
 	}
 	for _, ch := range chs {
 		switch ch.Kind {
@@ -566,7 +626,7 @@ func (s *Server) notify(ctx context.Context, clusterID string, payload []byte) {
 			if err != nil || url == "" {
 				continue
 			}
-			if err := validateWebhookURL(url); err != nil {
+			if err := checkWebhookDestination(url); err != nil {
 				continue
 			}
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))

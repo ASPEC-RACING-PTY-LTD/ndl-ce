@@ -25,6 +25,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Workload clone requires compute.create. PATCH of CPUs, memory, firmware, or cloud-init requires compute.modify. desired_power stays on compute.lifecycle.
   * Workloads contextual-nav test waits for the route change so a detached main-nav click cannot flake CI.
   * Agent Files for a system container uses last-applied rootfs and fails closed when that record is missing instead of trusting client jail_root. Create and clone refuse an unclean rootfs_path before mkdir.
+  * Alert webhook delivery resolves hostnames and refuses loopback, link-local, unique-local, and RFC1918 addresses. Mixed records fail closed.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

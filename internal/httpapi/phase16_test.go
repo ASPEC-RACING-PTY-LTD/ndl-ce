@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -279,5 +280,58 @@ func TestAlertWebhookSecretAndViewerDeny(t *testing.T) {
 		if item["kind"] == "audit" {
 			t.Fatal("viewer must not receive audit on timeline")
 		}
+	}
+}
+
+func TestCheckWebhookDestinationResolvesHostnames(t *testing.T) {
+	lookupWebhookIPs = func(host string) ([]net.IP, error) {
+		if host != "evil.example" {
+			t.Fatalf("host %s", host)
+		}
+		return []net.IP{net.ParseIP("169.254.169.254")}, nil
+	}
+	t.Cleanup(func() { lookupWebhookIPs = net.LookupIP })
+	if err := checkWebhookDestination("https://evil.example/hook"); err == nil {
+		t.Fatal("hostname that resolves to link-local must be denied")
+	}
+	lookupWebhookIPs = func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("10.1.2.3"), net.ParseIP("1.2.3.4")}, nil
+	}
+	if err := checkWebhookDestination("https://mixed.example/hook"); err == nil {
+		t.Fatal("mixed private record must fail closed")
+	}
+	lookupWebhookIPs = func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("1.2.3.4")}, nil
+	}
+	if err := checkWebhookDestination("https://ok.example/hook"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkWebhookDestination("https://8.8.8.8/hook"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNotifySkipsWebhookResolvedToPrivateIP(t *testing.T) {
+	lookupWebhookIPs = func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("169.254.169.254")}, nil
+	}
+	t.Cleanup(func() { lookupWebhookIPs = net.LookupIP })
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	var hits int
+	hook := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits++
+	}))
+	defer hook.Close()
+	s.HTTPClient = hook.Client()
+	if err := mem.CreateNotificationChannel(context.Background(), appdb.NotificationChannel{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Name: "evil", Kind: appdb.NotifyWebhook,
+		Status: appdb.NotifyConfigured, CreatedAt: time.Now().UTC(),
+	}, "https://evil.example/hook", ""); err != nil {
+		t.Fatal(err)
+	}
+	s.notify(context.Background(), cluster.ID, []byte(`{"metric":"cpu.busy_ratio"}`))
+	if hits != 0 {
+		t.Fatalf("private resolution must not POST: %d", hits)
 	}
 }
