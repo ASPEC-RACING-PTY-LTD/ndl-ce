@@ -3,8 +3,9 @@
 Open-source infrastructure platform. Control plane, node agent, API,
 CLI, and web UI.
 
-CE 1.0. Debian 13 amd64 is the only Tier 1 host. No Cloud or EE key is
-required. See `docs/ce-1.0.md`.
+CE 1.0 is the target milestone and is not reached until Debian 13
+Homelab and cluster hardware gates pass. Debian 13 amd64 is the only
+Tier 1 host. No Cloud or EE key is required. See `docs/ce-1.0.md`.
 
 On a clean Debian 13 amd64 host the bootstrap installs the `nodal`
 metapackage, starts services, and the operator claims `/setup`.

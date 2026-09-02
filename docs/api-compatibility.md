@@ -15,3 +15,4 @@ Compatibility for this freeze:
   add one.
 
 This freeze does not claim wire compatibility with a future EE API.
+It is not proof that the CE 1.0 hardware gates have passed.

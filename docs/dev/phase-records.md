@@ -325,10 +325,10 @@ Implementation evidence for accepted CE phases. This is not product UI.
 ## Phase 43
 
 - Package: 1.0.0
-- Result: ACCEPTED WITH NON-BLOCKING FOLLOW-UP
+- Result: PARTIAL / NOT REACHED for the CE 1.0 milestone. License surface accepted.
 - Tests: `go test ./...`, `go vet ./...`, UI lint/typecheck/vitest, em dash, codegen, buf lint
 - Coverage: PROVEN IN CLOUD (absent license does not contact the licensing API, unreachable key uses grace, workloads_stopped stays false, full key never returned, viewer cannot activate, Settings License and Docs pages). FIXTURE: injected LicenseProbe. NOT PHYSICALLY VALIDATED: Debian 13 physical checklist, production apt signatures, live licensing API
-- Honesty: virt and physical checklists are documents. CE does not require a key. No EE blobs. Ubuntu is not Tier 1. Signed install remains the documented HTTPS repo and keyring path.
+- Honesty: CE 1.0 is not reached until Debian 13 Homelab and cluster hardware gates pass. Virt and physical checklists are documents, not executed proof. CE does not require a key. No EE blobs. Ubuntu is not Tier 1. Signed install remains the documented HTTPS repo and keyring path. ISO is not booted in this tree. Packages are unsigned here. Migrate stays unwired until dest agent. Operate must use existing APIs. SkipHostCmds must fail closed.
 
 
 

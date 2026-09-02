@@ -9,8 +9,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -142,6 +144,10 @@ func (c CA) IssueNode(nodeID string, now time.Time) (certPEM, keyPEM []byte, err
 	if len(cn) > 64 {
 		cn = cn[:64]
 	}
+	uri, err := url.Parse("spiffe://no-dal/node/" + nodeID)
+	if err != nil {
+		return nil, nil, err
+	}
 	tpl := &x509.Certificate{
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: cn, Organization: []string{"No-dal"}},
@@ -150,6 +156,7 @@ func (c CA) IssueNode(nodeID string, now time.Time) (certPEM, keyPEM []byte, err
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		URIs:                  []*url.URL{uri},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tpl, caCert, &nodeKey.PublicKey, caKey)
 	if err != nil {
@@ -161,5 +168,125 @@ func (c CA) IssueNode(nodeID string, now time.Time) (certPEM, keyPEM []byte, err
 	}
 	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	if err := c.recordIssued(nodeID, serial); err != nil {
+		return nil, nil, err
+	}
 	return certPEM, keyPEM, nil
+}
+
+func (c CA) issuedPath(nodeID string) string {
+	return filepath.Join(c.root(), "issued", nodeID)
+}
+
+func (c CA) pairingUsedPath(peerID string) string {
+	return filepath.Join(c.root(), "pairing-used", peerID)
+}
+
+func (c CA) revokedPath(serialHex string) string {
+	return filepath.Join(c.root(), "revoked", serialHex)
+}
+
+func (c CA) recordIssued(nodeID string, serial *big.Int) error {
+	if strings.TrimSpace(nodeID) == "" || serial == nil {
+		return fmt.Errorf("node id and serial are required")
+	}
+	if err := os.MkdirAll(filepath.Dir(c.issuedPath(nodeID)), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(c.issuedPath(nodeID), []byte(serial.Text(16)+"\n"), 0o640)
+}
+
+// RevokeNode records the issued serial so later mTLS handshakes fail closed.
+func (c CA) RevokeNode(nodeID string) error {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return nil
+	}
+	b, err := os.ReadFile(c.issuedPath(nodeID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	serialHex := strings.TrimSpace(string(b))
+	if serialHex == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(c.revokedPath(serialHex)), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(c.revokedPath(serialHex), []byte(nodeID+"\n"), 0o640)
+}
+
+// PairingUsed reports whether this WireGuard pairing token was already consumed.
+func (c CA) PairingUsed(peerID string) bool {
+	peerID = strings.TrimSpace(peerID)
+	if peerID == "" {
+		return false
+	}
+	_, err := os.Stat(c.pairingUsedPath(peerID))
+	return err == nil
+}
+
+// MarkPairingUsed consumes a pairing token. Pairing tokens are not join tokens.
+func (c CA) MarkPairingUsed(peerID string) error {
+	peerID = strings.TrimSpace(peerID)
+	if peerID == "" {
+		return fmt.Errorf("peer id is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(c.pairingUsedPath(peerID)), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(c.pairingUsedPath(peerID), []byte("1\n"), 0o640)
+}
+
+// ClientPool returns the cluster CA pool used for optional mTLS. Missing CA is not an error.
+func (c CA) ClientPool() (*x509.CertPool, error) {
+	pemBytes, err := os.ReadFile(c.certPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("cluster CA certificate is unreadable")
+	}
+	return pool, nil
+}
+
+func (c CA) serialRevoked(serial *big.Int) bool {
+	if serial == nil {
+		return false
+	}
+	_, err := os.Stat(c.revokedPath(serial.Text(16)))
+	return err == nil
+}
+
+// VerifyClientCerts accepts an empty chain (optional client cert) and rejects revoked or foreign certs.
+func (c CA) VerifyClientCerts(rawCerts [][]byte) error {
+	if len(rawCerts) == 0 {
+		return nil
+	}
+	leaf, err := x509.ParseCertificate(rawCerts[0])
+	if err != nil {
+		return err
+	}
+	if c.serialRevoked(leaf.SerialNumber) {
+		return fmt.Errorf("node certificate is revoked")
+	}
+	pool, err := c.ClientPool()
+	if err != nil {
+		return err
+	}
+	if pool == nil {
+		return fmt.Errorf("cluster CA is unavailable")
+	}
+	_, err = leaf.Verify(x509.VerifyOptions{
+		Roots:     pool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	})
+	return err
 }

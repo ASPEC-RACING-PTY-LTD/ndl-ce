@@ -122,6 +122,7 @@ func Run(cfg Config) error {
 		IO:          agent,
 		QEMU:        httpapi.AdaptQEMU(agent),
 		VM:          httpapi.AdaptVM(agent),
+		Migrate:     httpapi.AdaptMigrate(agent),
 		OCI:         httpapi.AdaptOCI(agent),
 		Backup:      httpapi.AdaptBackup(agent),
 		Object:      httpapi.AdaptObject(agent),

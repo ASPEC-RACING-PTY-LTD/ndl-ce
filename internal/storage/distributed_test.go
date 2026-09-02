@@ -44,8 +44,14 @@ func TestFakeRBDHandleAndClusterDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Status != StatusAvailable || res.BackendType != BackendDistributed || res.Kind != KindBlock {
+	if res.Status == StatusAvailable {
+		t.Fatalf("SkipHostCmds must not claim live map available: %+v", res)
+	}
+	if res.Status != StatusUnavailable || res.BackendType != BackendDistributed || res.Kind != KindBlock {
 		t.Fatalf("%+v", res)
+	}
+	if !strings.Contains(res.Reason, "rbd map was not run") && !strings.Contains(res.Reason, "Fake RBD") {
+		t.Fatalf("reason must say map was not run: %q", res.Reason)
 	}
 	if err := ValidateRBDPath(res.BackendRef); err != nil {
 		t.Fatal(err)

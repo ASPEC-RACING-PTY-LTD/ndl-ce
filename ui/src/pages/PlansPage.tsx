@@ -1,11 +1,28 @@
 import { useEffect, useState } from "react";
 import { ApiError, approveAIPlan, createAIPlan, listAIPlans } from "../api/client";
-import type { AIPlan } from "../generated/openapi";
+import type { AIPlan, AIPlanStep } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { useSession } from "../session";
 
 function canOperate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+}
+
+function stepIsQueued(step: AIPlanStep): boolean {
+  const status = (step.status ?? "").toLowerCase();
+  if (status === "queued" || status === "pending") {
+    return true;
+  }
+  if (
+    step.operation_id &&
+    status !== "succeeded" &&
+    status !== "failed" &&
+    status !== "denied" &&
+    status !== "stopped"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function PlansPage() {
@@ -47,7 +64,11 @@ export function PlansPage() {
   }
 
   async function onApprove(id: string) {
-    if (!window.confirm("Approve this plan? Destructive confirm still applies. This is not a shell.")) {
+    if (
+      !window.confirm(
+        "Approve this plan? It executes existing APIs only after approve. This is not a live LLM. Destructive confirm still applies. This is not a shell.",
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -67,8 +88,9 @@ export function PlansPage() {
       <header className="page-header">
         <h1>Plans</h1>
         <p className="lede">
-          Reviewable existing APIs. AI cannot Host.Exec. Approve executes with the same RBAC. Automate binds to Phase 40
-          policies. Partial failure stops and audit remains.
+          Plans execute existing APIs only after you approve. This is not a live LLM. AI cannot Host.Exec. Approve uses
+          the same RBAC. If the backend still queues a step, the API method and path stay visible. A missing dest agent
+          or create validation can stop the plan. Partial failure stops and audit remains.
         </p>
       </header>
       {error ? (
@@ -105,7 +127,12 @@ export function PlansPage() {
                 <p>Actor {plan.actor_type}. {plan.reason}</p>
                 {(plan.steps ?? []).map((step) => (
                   <p key={step.id}>
-                    {step.method} {step.path} ({step.permission}) {step.status}
+                    {step.method} {step.path}
+                    {step.permission ? ` (${step.permission})` : ""} {step.status}
+                    {stepIsQueued(step)
+                      ? " A missing dest agent or create validation can stop the plan."
+                      : ""}
+                    {step.reason ? ` ${step.reason}` : ""}
                   </p>
                 ))}
                 {operate && plan.status === "preview" ? (

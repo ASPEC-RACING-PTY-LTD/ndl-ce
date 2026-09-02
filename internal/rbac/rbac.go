@@ -72,6 +72,7 @@ const (
 	StoreVerify           = "store.verify"
 	PolicyRead            = "policy.read"
 	PolicyApply           = "policy.apply"
+	PolicyRun             = "policy.run"
 	AIAsk                 = "ai.ask"
 	AIManage              = "ai.manage"
 	SettingsLicenseRead   = "settings.license.read"
@@ -100,7 +101,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			ComputeModify, ComputeStart, ComputeStop, ComputeDelete, ComputeConsole, ComputeSnapshot, StorageSnapshot, ComputeGPUAssign, ComputeMigrate,
 			BackupRead, BackupCreate, BackupRestore, NodeUpdate, ClusterJoin, NodeRevoke,
 			TerminalOpen, FilesRead, FilesDownload, FilesUpload, FilesCreate, FilesModify, FilesDelete,
-			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify, PolicyRead, PolicyApply, AIAsk, AIManage,
+			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify, PolicyRead, PolicyApply, PolicyRun, AIAsk, AIManage,
 			SettingsLicenseRead,
 		}
 	case Viewer:
@@ -108,6 +109,15 @@ func (Catalog) PermissionsForRole(role string) []string {
 	default:
 		return nil
 	}
+}
+
+// PermissionsForAutomation is the grant list for the automation service
+// identity. Operator is too broad for that actor (tokens, feature manage,
+// compute delete, backups). Bind this list rather than Operator. PolicyRun
+// names the narrow evaluate grant; the list reuses PolicyApply and
+// ComputeMigrate only.
+func PermissionsForAutomation() []string {
+	return []string{PolicyApply, ComputeMigrate, ComputeRead, NodeRead, StorageRead}
 }
 
 // Authorize reports whether grants include permission.

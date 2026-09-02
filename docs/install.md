@@ -16,6 +16,9 @@ not require a license key. See [ce-1.0.md](ce-1.0.md).
 - Path A: existing Debian 13 amd64, add the signed repo, `apt-get install -y nodal`.
 - Path B: one-line bootstrap below.
 - Path C: Debian installer ISO in `packaging/iso`, same metapackage after reboot.
+  First-boot setup is HTTP on port 8080 until you generate or import a
+  certificate. After that the management URL is HTTPS. The ISO is not
+  booted in this tree. TLS is not the default listen.
 
 ## One-line bootstrap
 

@@ -20,7 +20,8 @@ is a backup-engine option, not a promise that the destination is empty.
 
 Restore as new creates a new workload UUID. Restore replace overwrites
 the existing workload and requires confirm. Cross-node restore uses the
-dest node chosen at restore time. Failed restore does not delete the
-source backup.
+dest node chosen at restore time. Restore onto a worker whose dest
+agent is not connected stays unavailable and does not copy disks onto
+the control node. Failed restore does not delete the source backup.
 
 See also [recovery.md](recovery.md).

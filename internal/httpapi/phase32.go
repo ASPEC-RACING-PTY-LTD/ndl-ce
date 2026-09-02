@@ -3,18 +3,118 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
+	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
+	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/migrate"
+	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/placement"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
+
+const destAgentMissing = "dest agent is not connected; source remains running"
+const destLocatorMissing = "dest volume locator missing"
+const ociMigrateRecreate = "OCI migrate recreates; dest agent required"
+
+// migrateUnavailable is AdaptMigrate(nil) and non-runtime clients. Methods
+// fail; they never start a guest on the control unix agent.
+type migrateUnavailable struct{}
+
+func (migrateUnavailable) PrepareDest(context.Context, migrate.Request) error {
+	return fmt.Errorf(destAgentMissing)
+}
+func (migrateUnavailable) CopyVolume(context.Context, migrate.VolumeCopy) error {
+	return fmt.Errorf(destAgentMissing)
+}
+func (migrateUnavailable) StopSource(context.Context, string) error {
+	return fmt.Errorf(destAgentMissing)
+}
+func (migrateUnavailable) StartDest(context.Context, string) error {
+	return fmt.Errorf(destAgentMissing)
+}
+func (migrateUnavailable) LiveMigrate(context.Context, string) error {
+	return fmt.Errorf(destAgentMissing)
+}
+func (migrateUnavailable) AbortDest(context.Context, string) error { return nil }
+func (migrateUnavailable) SourceRunning(context.Context, string) bool {
+	return true
+}
+func (migrateUnavailable) LocalAgentOnly() bool { return true }
+
+// agentMigrate wraps the local unix agent. Dest on a worker is refused by
+// destAgentReady before Run so StartDest cannot land on the control node.
+type agentMigrate struct {
+	agentrpc.Client
+	mu       sync.Mutex
+	destArgv map[string][]string
+}
+
+func (a *agentMigrate) LocalAgentOnly() bool { return true }
+
+func (a *agentMigrate) PrepareDest(ctx context.Context, req migrate.Request) error {
+	msg := &agentv1.ComputeMigrate{
+		Action: "prepare_incoming", WorkloadId: req.WorkloadID,
+		Cpus: int32(req.CPUs), MemoryBytes: req.MemoryBytes,
+		Machine: req.Machine, Accel: req.Accel,
+	}
+	if len(req.Disks) > 0 {
+		msg.VolumeId = req.Disks[0].VolumeID
+		msg.DiskPath = req.Disks[0].DestPath
+		if msg.DiskPath == "" {
+			msg.DiskPath = req.Disks[0].SourcePath
+		}
+	}
+	raw, err := a.ComputeMigrate(ctx, msg)
+	if err != nil {
+		return err
+	}
+	var res qemu.Result
+	if json.Unmarshal(raw, &res) == nil && len(res.Argv) > 0 {
+		a.mu.Lock()
+		if a.destArgv == nil {
+			a.destArgv = map[string][]string{}
+		}
+		a.destArgv[req.WorkloadID] = res.Argv
+		a.mu.Unlock()
+	}
+	return nil
+}
+
+func (a *agentMigrate) LiveArgv(_ context.Context, id string) (source, dest []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.destArgv == nil {
+		return nil, nil
+	}
+	return nil, a.destArgv[id]
+}
+
+// AdaptMigrate returns a migrate.Runtime for the local agent. A nil or
+// empty client is unavailable, not a silent local start.
+func AdaptMigrate(client any) migrate.Runtime {
+	if client == nil {
+		return migrateUnavailable{}
+	}
+	if c, ok := client.(agentrpc.Client); ok {
+		if strings.TrimSpace(c.Socket) == "" && strings.TrimSpace(c.TCPAddr) == "" {
+			return migrateUnavailable{}
+		}
+		return &agentMigrate{Client: c, destArgv: map[string][]string{}}
+	}
+	if v, ok := client.(migrate.Runtime); ok {
+		return v
+	}
+	return migrateUnavailable{}
+}
 
 type migrateRequest struct {
 	DestNodeID string `json:"dest_node_id"`
@@ -119,19 +219,45 @@ func (s *Server) migrateDest(ctx context.Context, clusterID string, wl appdb.Wor
 	return placed, nil
 }
 
+func (s *Server) destEligibleLocal(ctx context.Context, dest *appdb.Node) bool {
+	if dest == nil {
+		return false
+	}
+	return s.applyLocal(ctx, dest.ClusterID, dest.ID)
+}
+
+func (s *Server) destAgentReady(ctx context.Context, dest *appdb.Node) bool {
+	if dest == nil || s.Migrate == nil {
+		return false
+	}
+	if _, ok := s.Migrate.(migrateUnavailable); ok {
+		return false
+	}
+	if lo, ok := s.Migrate.(interface{ LocalAgentOnly() bool }); ok && lo.LocalAgentOnly() {
+		return s.destEligibleLocal(ctx, dest)
+	}
+	return true
+}
+
 func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.Node, mode string) (map[string]any, int, string) {
 	sourceID := wl.NodeID
 	if sourceID == "" {
 		sourceID = wl.OwnerNodeID
 	}
-	if s.Migrate == nil {
-		return nil, http.StatusFailedDependency, "dest agent is not connected; source remains running"
+	if s.Migrate == nil || !s.destAgentReady(ctx, dest) {
+		return nil, http.StatusFailedDependency, destAgentMissing
+	}
+	if wl.Kind == oci.KindOCI || wl.Kind == migrate.KindOCI {
+		return nil, http.StatusUnprocessableEntity, ociMigrateRecreate
 	}
 	if mode == migrate.ModeLive && wl.Kind != qemu.KindVM {
 		return nil, http.StatusUnprocessableEntity, "live migrate is VM-only; CT and OCI use offline"
 	}
 	cpuHost := workloadCPUHost(wl)
-	shared, disks := s.migrateDisks(ctx, wl)
+	shared, disks, derr := s.migrateDisks(ctx, wl, dest)
+	if derr != nil {
+		return nil, http.StatusUnprocessableEntity, derr.Error()
+	}
 	op := s.startOp(ctx, wl.ClusterID, dest.ID, "workload.migrate", mode, 10)
 	job := appdb.MigrateJob{
 		ID: uuid.NewString(), ClusterID: wl.ClusterID, WorkloadID: wl.ID, OperationID: op.ID,
@@ -143,6 +269,7 @@ func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.
 		WorkloadID: wl.ID, Kind: wl.Kind, Mode: mode,
 		SourceNodeID: sourceID, DestNodeID: dest.ID, Epoch: wl.OwnershipEpoch,
 		SharedStorage: shared, CPUHost: cpuHost, Disks: disks,
+		CPUs: wl.CPUs, MemoryBytes: wl.MemoryBytes, SourceArgv: argvFromJSON(wl.AppliedJSON),
 	})
 	job.State = res.State
 	job.SourceRunning = res.SourceRunning
@@ -228,35 +355,87 @@ func argvFromJSON(raw json.RawMessage) []string {
 	return wrap.Argv
 }
 
-func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload) (bool, []migrate.VolumeCopy) {
+func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload, dest *appdb.Node) (bool, []migrate.VolumeCopy, error) {
 	disks, _ := s.Store.ListWorkloadDisks(ctx, wl.ClusterID, wl.ID)
-	shared := true
 	out := []migrate.VolumeCopy{}
 	if len(disks) == 0 {
-		return true, out
+		return true, out, nil
 	}
+	pools, _ := s.Store.ListStoragePools(ctx, wl.ClusterID)
+	sharedAll := true
 	for _, d := range disks {
 		vol, _ := s.Store.GetVolume(ctx, wl.ClusterID, d.VolumeID)
 		if vol == nil {
 			continue
 		}
 		pool, _ := s.Store.GetStoragePool(ctx, wl.ClusterID, vol.PoolID)
-		if pool == nil || !sharedBackend(pool.BackendType) {
-			shared = false
+		backend := ""
+		root := ""
+		if pool != nil {
+			backend = pool.BackendType
+			root = pool.RootPath
+		}
+		var ds *appdb.Datastore
+		if pool != nil {
+			ds, _ = s.Store.GetDatastore(ctx, pool.ID)
 		}
 		src := vol.BackendRef
-		if src != "" && !strings.HasPrefix(src, "/") && pool != nil && pool.RootPath != "" {
-			src = path.Join(pool.RootPath, src)
+		if src != "" && !strings.HasPrefix(src, "/") && root != "" {
+			src = path.Join(root, src)
 		}
-		out = append(out, migrate.VolumeCopy{VolumeID: vol.ID, SourcePath: src, DestPath: src})
+		if sharedVolume(backend, src, ds) {
+			out = append(out, migrate.VolumeCopy{VolumeID: vol.ID, SourcePath: src, DestPath: src})
+			continue
+		}
+		sharedAll = false
+		destPath, err := destVolumeLocator(dest, vol, src, pools)
+		if err != nil {
+			return false, nil, err
+		}
+		out = append(out, migrate.VolumeCopy{VolumeID: vol.ID, SourcePath: src, DestPath: destPath})
 	}
-	return shared, out
+	return sharedAll, out, nil
 }
 
-func sharedBackend(kind string) bool {
-	switch kind {
-	case storage.BackendNFS, storage.BackendSMB, storage.BackendISCSI, storage.BackendZFS, storage.BackendDistributed:
-		return true
+func destVolumeLocator(dest *appdb.Node, vol *appdb.Volume, src string, pools []appdb.StoragePool) (string, error) {
+	if dest == nil || vol == nil {
+		return "", fmt.Errorf(destLocatorMissing)
+	}
+	destRoot := ""
+	for _, p := range pools {
+		if p.NodeID != dest.ID || strings.TrimSpace(p.RootPath) == "" {
+			continue
+		}
+		if sharedVolume(p.BackendType, p.RootPath, nil) {
+			continue
+		}
+		destRoot = p.RootPath
+		if vol.Class != "" && strings.Contains(p.RootPath, vol.Class) {
+			break
+		}
+	}
+	if destRoot == "" {
+		return "", fmt.Errorf(destLocatorMissing)
+	}
+	name := dest.ID + "-" + vol.ID
+	class := vol.Class
+	if class == "" {
+		class = storage.ClassVMDisk
+	}
+	destPath := path.Join(destRoot, "volumes", class, name)
+	if destPath == src || destPath == "" {
+		return "", fmt.Errorf(destLocatorMissing)
+	}
+	return destPath, nil
+}
+
+func sharedVolume(backend, locator string, ds *appdb.Datastore) bool {
+	switch backend {
+	case storage.BackendNFS, storage.BackendSMB, storage.BackendISCSI:
+		return ds != nil && strings.TrimSpace(ds.Locator) != ""
+	case storage.BackendDistributed:
+		loc := strings.TrimSpace(locator)
+		return loc != "" && (strings.HasPrefix(loc, "/dev/rbd") || strings.HasPrefix(loc, "/dev/nbd") || strings.HasPrefix(loc, "rbd:"))
 	default:
 		return false
 	}

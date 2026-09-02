@@ -149,7 +149,7 @@ func (e *Engine) Start(ctx context.Context, id string) error {
 		return err
 	}
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; qemu unit was not started")
 	}
 	if e.AlreadyRunning(ctx, id) {
 		return nil
@@ -200,7 +200,7 @@ func (e *Engine) Stop(ctx context.Context, id string) error {
 		return err
 	}
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; qemu unit was not stopped")
 	}
 	if q, err := e.dialQMP(id, 2*time.Second); err == nil {
 		_ = q.powerdown()

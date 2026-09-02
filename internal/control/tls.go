@@ -2,12 +2,15 @@ package control
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
 )
 
@@ -29,12 +32,9 @@ func redirectHandler(httpsHost string, acme http.Handler) http.Handler {
 
 func serveTLS(addr string, cert tls.Certificate, handler http.Handler) error {
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
-		TLSConfig: &tls.Config{
-			MinVersion:   tls.VersionTLS12,
-			Certificates: []tls.Certificate{cert},
-		},
+		Addr:      addr,
+		Handler:   handler,
+		TLSConfig: tlsServerConfig(cert, clusterCADir()),
 	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -42,6 +42,31 @@ func serveTLS(addr string, cert tls.Certificate, handler http.Handler) error {
 	}
 	log.Printf("ndl-control listening on https %s", addr)
 	return srv.ServeTLS(ln, "", "")
+}
+
+func clusterCADir() string {
+	if v := strings.TrimSpace(os.Getenv("NODAL_CLUSTER_CA_DIR")); v != "" {
+		return v
+	}
+	return "/var/lib/ndl/secrets/cluster-ca"
+}
+
+func tlsServerConfig(cert tls.Certificate, caDir string) *tls.Config {
+	cfg := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+	}
+	ca := cluster.CA{Dir: caDir}
+	pool, err := ca.ClientPool()
+	if err != nil || pool == nil {
+		return cfg
+	}
+	cfg.ClientCAs = pool
+	cfg.ClientAuth = tls.VerifyClientCertIfGiven
+	cfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		return ca.VerifyClientCerts(rawCerts)
+	}
+	return cfg
 }
 
 func loadEnabledMaterial(dir string) (ndltls.Material, error) {

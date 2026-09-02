@@ -120,15 +120,11 @@ func (e DistributedEngine) attach(ctx context.Context, op DistributedOp) (Distri
 		WarningText: []string{ClusterDownMsg},
 	}
 	if e.SkipHostCmds {
-		if e.clusterUp() {
-			res.Status = StatusAvailable
-			res.Reason = "Fake distributed cluster. Host rbd was not run."
-			res.Warnings = nil
-			res.WarningText = nil
-			return res, nil
-		}
 		res.Status = StatusUnavailable
-		res.Reason = ClusterDownMsg
+		res.Reason = "Fake distributed cluster. Host rbd was not run."
+		if !e.clusterUp() {
+			res.Reason = ClusterDownMsg
+		}
 		if e.Installed != nil && !*e.Installed {
 			res.Reason = DistributedMissing
 		}
@@ -225,6 +221,14 @@ func (e DistributedEngine) createVolume(ctx context.Context, op DistributedOp) (
 		Argv:         append(append([]string{}, createArgv...), mapArgv...),
 		Capabilities: DistributedCapabilities(), Incremental: false,
 	}
+	if e.SkipHostCmds {
+		res.Status = StatusUnavailable
+		res.Reason = "Fake RBD handle. Host rbd map was not run."
+		if !e.clusterUp() {
+			res.Reason = ClusterDownMsg
+		}
+		return res, nil
+	}
 	if !e.clusterUp() {
 		res.Status = StatusUnavailable
 		res.Reason = ClusterDownMsg
@@ -238,11 +242,6 @@ func (e DistributedEngine) createVolume(ctx context.Context, op DistributedOp) (
 	if err := e.exec(ctx, mapArgv); err != nil {
 		res.Status = StatusUnavailable
 		res.Reason = firstNonEmpty(err.Error(), ClusterDownMsg)
-		return res, nil
-	}
-	if e.SkipHostCmds && e.clusterUp() {
-		res.Status = StatusAvailable
-		res.Reason = "Fake RBD handle. Host rbd map was not run."
 		return res, nil
 	}
 	res.Status = StatusAvailable
@@ -262,15 +261,15 @@ func (e DistributedEngine) osdCreate(ctx context.Context, op DistributedOp) (Dis
 		PoolID: op.PoolID, BackendType: BackendDistributed, Argv: argv,
 		Capabilities: DistributedCapabilities(), Incremental: false,
 	}
-	if err := e.exec(ctx, argv); err != nil {
-		res.Status = StatusFailed
-		res.Reason = err.Error()
-		return res, nil
-	}
 	if e.SkipHostCmds {
 		res.Status = StatusUnavailable
 		res.OSDStarted = false
 		res.Reason = OSDNotStarted + " Host ceph-volume was not run on this node."
+		return res, nil
+	}
+	if err := e.exec(ctx, argv); err != nil {
+		res.Status = StatusFailed
+		res.Reason = err.Error()
 		return res, nil
 	}
 	res.Status = StatusAvailable
@@ -295,7 +294,7 @@ func (e DistributedEngine) osdObserve() (DistributedResult, error) {
 
 func (e DistributedEngine) exec(ctx context.Context, argv []string) error {
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; rbd was not run")
 	}
 	if e.Run == nil {
 		return fmt.Errorf("distributed runtime command runner is missing")

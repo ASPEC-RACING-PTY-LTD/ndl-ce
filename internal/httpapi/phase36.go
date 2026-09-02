@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -10,10 +11,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/appmanifest"
+	"github.com/no-dal/ndl-ce/internal/gpu"
 	"github.com/no-dal/ndl-ce/internal/oci"
+	"github.com/no-dal/ndl-ce/internal/placement"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	storecatalog "github.com/no-dal/ndl-ce/store"
 )
+
+const destAgentNotConnected = "dest-agent-not-connected"
+
+type storeStackDesired struct {
+	PoolID    string            `json:"pool_id,omitempty"`
+	NetworkID string            `json:"network_id,omitempty"`
+	VolumeMap map[string]string `json:"volume_map,omitempty"`
+	NodeID    string            `json:"node_id,omitempty"`
+	GPUID     string            `json:"gpu_id,omitempty"`
+}
 
 const communityUnsignedWarn = "Unsigned Community package. Signatures and Verified class arrive in Phase 37. This still does not run helper scripts."
 
@@ -152,9 +165,15 @@ func (s *Server) installStoreApp(w http.ResponseWriter, r *http.Request) {
 	if mem < 1 {
 		mem = m.Resources.MemoryBytes
 	}
+	nodeID := strings.TrimSpace(req.NodeID)
+	gpuID := strings.TrimSpace(req.GPUID)
+	if err := s.requireLocalStoreDest(r.Context(), p.User.ClusterID, nodeID); err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
 	job := appdb.StoreInstallation{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, PackageID: pkg.ID,
-		Status: appdb.StoreInstallRunning, NodeID: strings.TrimSpace(req.NodeID), CreatedAt: s.now(),
+		Status: appdb.StoreInstallRunning, NodeID: nodeID, CreatedAt: s.now(),
 	}
 	if pkg.UnsignedWarning {
 		job.Warning = communityUnsignedWarn
@@ -163,7 +182,7 @@ func (s *Server) installStoreApp(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	stackID, workloadID, instErr := s.installManifest(r.Context(), p, *m, name, req.PoolID, req.NetworkID, cpus, mem)
+	stackID, workloadID, instErr := s.installManifest(r.Context(), p, *m, name, req.PoolID, req.NetworkID, nodeID, gpuID, cpus, mem)
 	now := s.now()
 	job.FinishedAt = &now
 	if instErr != nil {
@@ -201,8 +220,36 @@ func (s *Server) listStoreInstalls(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
-func (s *Server) installManifest(ctx context.Context, p *principal, m appmanifest.Manifest, name, poolID, networkID string, cpus int, memory int64) (stackID, workloadID string, err error) {
-	desired := stackDesired{PoolID: poolID, NetworkID: networkID}
+func (s *Server) requireLocalStoreDest(ctx context.Context, clusterID, nodeID string) error {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return nil
+	}
+	node, err := s.Store.GetNodeByID(ctx, clusterID, nodeID)
+	if err != nil || node == nil {
+		return errNotFound("node not found")
+	}
+	if !s.applyLocal(ctx, clusterID, node.ID) {
+		return errFailedDependency(destAgentNotConnected)
+	}
+	return nil
+}
+
+func (s *Server) installManifest(ctx context.Context, p *principal, m appmanifest.Manifest, name, poolID, networkID, nodeID, gpuID string, cpus int, memory int64) (stackID, workloadID string, err error) {
+	nodeID = strings.TrimSpace(nodeID)
+	gpuID = strings.TrimSpace(gpuID)
+	if err := s.requireLocalStoreDest(ctx, p.User.ClusterID, nodeID); err != nil {
+		return "", "", err
+	}
+	volMap := map[string]string{}
+	var volNames []string
+	for _, vol := range m.Storage {
+		if strings.TrimSpace(vol.Name) == "" {
+			continue
+		}
+		volNames = append(volNames, vol.Name)
+	}
+	desired := storeStackDesired{PoolID: poolID, NetworkID: networkID, VolumeMap: volMap, NodeID: nodeID, GPUID: gpuID}
 	desiredJSON, _ := json.Marshal(desired)
 	stack := appdb.Stack{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name,
@@ -211,6 +258,16 @@ func (s *Server) installManifest(ctx context.Context, p *principal, m appmanifes
 	if err := s.Store.CreateStack(ctx, stack); err != nil {
 		return "", "", errConflict(err.Error())
 	}
+	if len(volNames) > 0 && strings.TrimSpace(poolID) != "" {
+		volErr := s.resolveStackVolumes(ctx, p.User.ClusterID, poolID, volNames, volMap)
+		desired.VolumeMap = volMap
+		desiredJSON, _ = json.Marshal(desired)
+		_ = s.Store.UpdateStack(ctx, appdb.Stack{ID: stack.ID, ClusterID: p.User.ClusterID, DesiredJSON: desiredJSON})
+		if volErr != nil {
+			s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
+			return "", "", volErr
+		}
+	}
 	md := memberDesired{
 		ServiceName: m.Name, Name: name, ImagePin: m.Deployment.Image,
 		NetworkID: networkID, CPUs: cpus, MemoryBytes: memory,
@@ -218,44 +275,126 @@ func (s *Server) installManifest(ctx context.Context, p *principal, m appmanifes
 	for _, port := range m.Ports {
 		md.Ports = append(md.Ports, oci.Port{ContainerPort: port.Container, HostPort: port.Host, Protocol: "tcp"})
 	}
+	for _, volName := range volNames {
+		if vid := volMap[volName]; vid != "" {
+			md.Volumes = append(md.Volumes, oci.VolumeMount{VolumeID: vid, ContainerPath: "/" + volName})
+		}
+	}
 	if err := validateMemberDesired(md); err != nil {
-		_ = s.Store.DeleteStack(ctx, p.User.ClusterID, stack.ID)
+		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
 		return "", "", err
 	}
-	body, _ := json.Marshal(md)
+	body, _ := json.Marshal(struct {
+		memberDesired
+		NodeID string `json:"node_id,omitempty"`
+		GPUID  string `json:"gpu_id,omitempty"`
+	}{memberDesired: md, NodeID: nodeID, GPUID: gpuID})
 	mem := appdb.StackMember{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, StackID: stack.ID,
 		ServiceName: m.Name, Status: appdb.MemberStatusPending, DesiredJSON: body, CreatedAt: s.now(),
 	}
 	if err := s.Store.CreateStackMember(ctx, mem); err != nil {
-		_ = s.Store.DeleteStack(ctx, p.User.ClusterID, stack.ID)
+		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
 		return "", "", errConflict(err.Error())
 	}
-	if err := s.applyStackMembers(ctx, p, stack.ID); err != nil {
+	req := createWorkloadRequest{
+		Name: md.Name, Kind: oci.KindOCI, ImagePin: md.ImagePin, Env: md.Env, Ports: md.Ports,
+		Volumes: md.Volumes, Health: md.Health, Privileged: md.Privileged, NetworkID: md.NetworkID,
+		RegistryID: md.RegistryID, CPUs: md.CPUs, MemoryBytes: md.MemoryBytes, CommandSlice: md.Command,
+		PoolID: poolID, NodeID: nodeID,
+	}
+	if nodeID != "" {
+		req.Placement = placement.ModeNode
+	}
+	if gpuID != "" {
+		req.RequireGPU = true
+	}
+	key := fmt.Sprintf("store-%s-member-%s", stack.ID, mem.ServiceName)
+	wl, _, applyErr := s.provisionOCI(ctx, p, req, key, nil)
+	if applyErr != nil {
 		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
-		return "", "", err
+		return "", "", applyErr
 	}
+	if !s.applyLocal(ctx, p.User.ClusterID, wl.NodeID) {
+		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
+		return "", "", errFailedDependency(destAgentNotConnected)
+	}
+	status := memberStatusFromWorkload(wl)
+	_ = s.Store.UpdateStackMember(ctx, appdb.StackMember{
+		ID: mem.ID, ClusterID: p.User.ClusterID, WorkloadID: wl.ID, Status: status,
+	})
 	members, _ := s.Store.ListStackMembers(ctx, p.User.ClusterID, stack.ID)
-	wlID := ""
-	for _, item := range members {
-		if item.WorkloadID != "" {
-			wlID = item.WorkloadID
-			break
-		}
-	}
-	if wlID == "" {
+	_ = s.Store.UpdateStack(ctx, appdb.Stack{ID: stack.ID, ClusterID: p.User.ClusterID, Status: deriveStackStatus(members)})
+	if wl.ID == "" {
 		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
 		return "", "", errUnprocessable("install did not create a workload")
 	}
-	return stack.ID, wlID, nil
+	if gpuID != "" {
+		if err := s.assignStoreGPU(ctx, p.User.ClusterID, wl.ID, gpuID); err != nil {
+			s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
+			return "", "", err
+		}
+	}
+	return stack.ID, wl.ID, nil
+}
+
+func (s *Server) assignStoreGPU(ctx context.Context, clusterID, workloadID, gpuID string) error {
+	id, err := gpu.ParseGPUID(gpuID)
+	if err != nil {
+		return errUnprocessable(err.Error())
+	}
+	a := appdb.GPUAssignment{
+		ID: uuid.NewString(), ClusterID: clusterID, GPUID: id, WorkloadID: workloadID,
+		Mode: gpu.ModeRender, Exclusive: gpu.ExclusiveForMode(gpu.ModeRender, true), Status: gpu.StatusAssigned,
+	}
+	if err := s.Store.CreateGPUAssignment(ctx, a); err != nil {
+		return errConflict(err.Error())
+	}
+	if s.GPU == nil {
+		return nil
+	}
+	res, err := s.GPU.GPUAssign(ctx, gpu.AssignRequest{
+		Action: "assign", GPUID: id, WorkloadID: workloadID, Mode: gpu.ModeRender, Exclusive: a.Exclusive,
+	})
+	if err != nil {
+		_ = s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID)
+		return err
+	}
+	if res.Status == gpu.StatusFailed {
+		_ = s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID)
+		return errUnprocessable(res.Reason)
+	}
+	return nil
 }
 
 func (s *Server) rollbackStoreStack(ctx context.Context, clusterID, stackID string) {
+	volIDs := map[string]struct{}{}
+	if stack, _ := s.Store.GetStack(ctx, clusterID, stackID); stack != nil {
+		var desired storeStackDesired
+		if err := json.Unmarshal(stack.DesiredJSON, &desired); err == nil {
+			for _, id := range desired.VolumeMap {
+				if strings.TrimSpace(id) != "" {
+					volIDs[id] = struct{}{}
+				}
+			}
+		}
+	}
 	members, _ := s.Store.ListStackMembers(ctx, clusterID, stackID)
 	for _, mem := range members {
-		if mem.WorkloadID != "" {
-			_ = s.Store.DeleteWorkload(ctx, clusterID, mem.WorkloadID)
+		if mem.WorkloadID == "" {
+			continue
 		}
+		if disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, mem.WorkloadID); len(disks) > 0 {
+			for _, d := range disks {
+				if strings.TrimSpace(d.VolumeID) != "" {
+					volIDs[d.VolumeID] = struct{}{}
+				}
+			}
+		}
+		_ = s.Store.DeleteWorkload(ctx, clusterID, mem.WorkloadID)
+	}
+	for id := range volIDs {
+		_ = s.Store.DeleteVolume(ctx, clusterID, id)
 	}
 	_ = s.Store.DeleteStack(ctx, clusterID, stackID)
 }
@@ -281,6 +420,9 @@ func (s *Server) storePackageJSON(ctx context.Context, p appdb.StorePackage) map
 		out["signed"] = true
 		out["payload_sha256"] = sig.PayloadSHA256
 		out["key_id"] = sig.KeyID
+		if key, _ := s.Store.GetSigningKey(ctx, p.ClusterID, sig.KeyID); key != nil && key.Name == officialKeyName {
+			out["signer"] = "cluster-local signing key"
+		}
 	} else {
 		out["signed"] = false
 	}

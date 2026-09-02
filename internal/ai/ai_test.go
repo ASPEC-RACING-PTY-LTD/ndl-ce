@@ -55,4 +55,7 @@ func TestNormalizeRejectsUnknown(t *testing.T) {
 	if mode, err := NormalizeMode("operate"); err != nil || mode != ModeOperate {
 		t.Fatalf("operate %v %v", mode, err)
 	}
+	if !ForbidsMutatePlans(ModeAsk) || ForbidsMutatePlans(ModeOperate) {
+		t.Fatal("ask forbids mutate plans; operate does not")
+	}
 }

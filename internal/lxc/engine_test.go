@@ -207,8 +207,24 @@ func TestGPUDevicesMountRenderNode(t *testing.T) {
 	if !strings.Contains(cfg, "lxc.mount.entry = /dev/dri/renderD128") {
 		t.Fatal(cfg)
 	}
-	if !strings.Contains(cfg, "lxc.cgroup2.devices.allow = c 226:* rwm") {
+	if strings.Contains(cfg, "c 226:*") || strings.Contains(cfg, "c 195:*") {
+		t.Fatalf("must not wildcard DRM/NVIDIA majors: %s", cfg)
+	}
+	if !strings.Contains(cfg, "lxc.cgroup2.devices.allow = c 226:128 rwm") {
 		t.Fatal(cfg)
+	}
+}
+
+func TestGPUDevicesFailClosedWithoutKnownNode(t *testing.T) {
+	cfg := RenderConfig(Spec{
+		WorkloadID: uuid.NewString(), Name: "ct", RootfsPath: "/vol/root",
+		Privileged: true, GPUDevices: []string{"/dev/dri/by-path/pci-0000:02:00.0-render"},
+	})
+	if strings.Contains(cfg, "226:*") || strings.Contains(cfg, "195:*") {
+		t.Fatalf("unknown node must not wildcard: %s", cfg)
+	}
+	if strings.Contains(cfg, "lxc.cgroup2.devices.allow") {
+		t.Fatalf("unknown node must fail closed: %s", cfg)
 	}
 }
 

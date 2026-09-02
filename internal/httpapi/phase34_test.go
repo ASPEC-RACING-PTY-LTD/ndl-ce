@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
+	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
@@ -166,6 +167,53 @@ applied:
 	maint, _ := mem.GetNodeMaintenance(context.Background(), cluster.ID, worker.ID)
 	if maint == nil {
 		t.Fatal("worker must be drained")
+	}
+}
+
+func TestPhase34RollingDrainMigratesLocalDestWithoutStopping(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	s.Migrate = migrate.NewFake()
+	cluster, _ := mem.GetCluster(context.Background())
+	control := seedNode(t, mem, cluster.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "box-b", Role: "worker"}
+	if err := mem.UpsertNode(context.Background(), worker); err != nil {
+		t.Fatal(err)
+	}
+	vm := &fakeVM{obs: qemu.Observed{Status: qemu.StatusRunning, UnitActive: true}}
+	s.VM = vm
+	wlID := uuid.NewString()
+	s.Migrate.(*migrate.Fake).SetSourceRunning(wlID, true)
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: wlID, ClusterID: cluster.ID, NodeID: worker.ID, OwnerNodeID: worker.ID, DesiredNodeID: worker.ID,
+		Name: "move-local", Kind: "vm", Status: qemu.StatusRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/update", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "cluster-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("rolling %d %s", res.StatusCode, raw)
+	}
+	got, _ := mem.GetWorkload(context.Background(), cluster.ID, wlID)
+	if got == nil || got.NodeID != control.ID {
+		t.Fatalf("rolling drain must migrate to local dest %+v", got)
+	}
+	if got.Status != qemu.StatusRunning {
+		t.Fatalf("rolling must not stop guests %+v", got)
+	}
+	for _, a := range vm.actions {
+		if a == "stop" || a == "force-stop" {
+			t.Fatalf("rolling must not stop guests: %v", vm.actions)
+		}
 	}
 }
 

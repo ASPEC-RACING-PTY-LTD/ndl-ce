@@ -25,8 +25,8 @@ func TestAlreadyRunningFalseWhenSkipHostCmds(t *testing.T) {
 	if e.AlreadyRunning(context.Background(), id) {
 		t.Fatal("prepared fixture must not report AlreadyRunning when SkipHostCmds")
 	}
-	if err := e.Start(context.Background(), id); err != nil {
-		t.Fatal(err)
+	if err := e.Start(context.Background(), id); err == nil {
+		t.Fatal("Start with SkipHostCmds must error")
 	}
 	if e.AlreadyRunning(context.Background(), id) {
 		t.Fatal("Start with SkipHostCmds must not report the unit as running")

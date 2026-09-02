@@ -2,9 +2,13 @@ package oci
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +24,7 @@ type Containerd struct {
 	Exec         Runner
 	Now          func() time.Time
 	Available    *bool // when set, overrides binary presence probe
+	SecretDir    string
 }
 
 func (c *Containerd) ns() string {
@@ -53,7 +58,7 @@ func (c *Containerd) run(ctx context.Context, name string, args ...string) ([]by
 		return c.Exec(ctx, name, args...)
 	}
 	if c.SkipHostCmds {
-		return nil, nil
+		return nil, fmt.Errorf("containerd runtime is unavailable")
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
@@ -77,36 +82,110 @@ func (c *Containerd) runtimePresent() bool {
 	return err == nil
 }
 
+func (c *Containerd) secretDir() string {
+	if c.SecretDir != "" {
+		return c.SecretDir
+	}
+	return filepath.Join(defaultDataDir, "secrets", "oci")
+}
+
 // PullImageArgv builds typed ctr image pull argv. Extra user args are never accepted.
-func PullImageArgv(ns, image string, user, pass string) ([]string, error) {
+// Registry passwords are not placed on argv. Pass hostsDir when a 0600 hosts.toml was written.
+func PullImageArgv(ns, image string, hostsDir string) ([]string, error) {
 	if err := ValidateImageRef(image); err != nil {
 		return nil, err
 	}
 	if ns == "" {
 		ns = "nodal"
 	}
+	if hostsDir != "" {
+		if strings.ContainsAny(hostsDir, "\n\r\x00") || strings.Contains(hostsDir, "..") {
+			return nil, fmt.Errorf("hosts dir is invalid")
+		}
+	}
 	argv := []string{BinCTR, "--namespace", ns, "image", "pull"}
-	if user != "" {
-		argv = append(argv, "--user", user+":"+pass)
+	if hostsDir != "" {
+		argv = append(argv, "--hosts-dir", hostsDir)
 	}
 	argv = append(argv, image)
 	return argv, nil
 }
 
+func registryHost(image string) string {
+	image = strings.TrimSpace(image)
+	if i := strings.Index(image, "@"); i >= 0 {
+		image = image[:i]
+	}
+	slash := strings.IndexByte(image, '/')
+	if slash < 0 {
+		return "docker.io"
+	}
+	first := image[:slash]
+	if !strings.ContainsAny(first, ".:") && first != "localhost" {
+		return "docker.io"
+	}
+	return first
+}
+
+// writeRegistryHosts writes a containerd hosts.toml (0600) under dir. Password never goes on argv.
+func writeRegistryHosts(dir, image, user, pass string) (string, error) {
+	if strings.TrimSpace(user) == "" && strings.TrimSpace(pass) == "" {
+		return "", nil
+	}
+	if strings.ContainsAny(user, "\n\r\x00") || strings.ContainsAny(pass, "\n\r\x00") {
+		return "", fmt.Errorf("registry credentials contain banned characters")
+	}
+	host := registryHost(image)
+	if host == "" || strings.Contains(host, "..") || strings.ContainsAny(host, "/\\\n\r\x00") {
+		return "", fmt.Errorf("registry host is invalid")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	hostDir := filepath.Join(dir, host)
+	if err := os.MkdirAll(hostDir, 0o700); err != nil {
+		return "", err
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
+	body := "server = \"https://" + host + "\"\n\n" +
+		"[host.\"https://" + host + "\"]\n" +
+		"  capabilities = [\"pull\", \"resolve\"]\n\n" +
+		"[host.\"https://" + host + "\".header]\n" +
+		"  authorization = [\"Basic " + auth + "\"]\n"
+	p := filepath.Join(hostDir, "hosts.toml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(p, 0o600); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
 func (c *Containerd) Pull(ctx context.Context, req PullRequest) (string, error) {
-	if !c.runtimePresent() {
-		if c.SkipHostCmds {
-			return "sha256:skip-host", nil
-		}
+	if c.SkipHostCmds || !c.runtimePresent() {
 		return "", fmt.Errorf("containerd runtime is unavailable")
 	}
 	user, pass := "", ""
 	if req.Creds != nil {
 		user, pass = req.Creds.Username, req.Creds.Password
 	}
-	argv, err := PullImageArgv(c.ns(), req.Image, user, pass)
+	hostsDir := ""
+	if user != "" || pass != "" {
+		written, err := writeRegistryHosts(c.secretDir(), req.Image, user, pass)
+		if err != nil {
+			return "", err
+		}
+		hostsDir = written
+	}
+	argv, err := PullImageArgv(c.ns(), req.Image, hostsDir)
 	if err != nil {
 		return "", err
+	}
+	for _, a := range argv {
+		if pass != "" && strings.Contains(a, pass) {
+			return "", fmt.Errorf("registry password must not appear on pull argv")
+		}
 	}
 	out, err := c.run(ctx, argv[0], argv[1:]...)
 	if err != nil {
@@ -114,7 +193,7 @@ func (c *Containerd) Pull(ctx context.Context, req PullRequest) (string, error) 
 	}
 	digest := strings.TrimSpace(string(out))
 	if digest == "" {
-		digest = "sha256:pulled"
+		return "", fmt.Errorf("containerd pull did not report a digest")
 	}
 	return digest, nil
 }
@@ -130,6 +209,29 @@ func TaskStartArgv(ns string, spec Spec) ([]string, error) {
 	argv := []string{BinCTR, "--namespace", ns, "run", "--rm"}
 	if spec.Privileged {
 		argv = append(argv, "--privileged")
+	}
+	if spec.Resources.CPUs > 0 {
+		argv = append(argv, "--cpus", strconv.Itoa(spec.Resources.CPUs))
+	}
+	if spec.Resources.MemoryBytes > 0 {
+		argv = append(argv, "--memory-limit", strconv.FormatInt(spec.Resources.MemoryBytes, 10))
+	}
+	for _, p := range spec.Ports {
+		proto := strings.ToLower(strings.TrimSpace(p.Protocol))
+		if proto == "" {
+			proto = "tcp"
+		}
+		host := p.HostPort
+		if host == 0 {
+			host = p.ContainerPort
+		}
+		argv = append(argv, "--label", fmt.Sprintf("ndl.port=%d:%d/%s", host, p.ContainerPort, proto))
+	}
+	if spec.BridgeName != "" {
+		if strings.ContainsAny(spec.BridgeName, " \n\r\x00,=") {
+			return nil, fmt.Errorf("bridge name contains banned characters")
+		}
+		argv = append(argv, "--label", "ndl.bridge="+spec.BridgeName)
 	}
 	for _, m := range spec.Volumes {
 		host := ""
@@ -152,6 +254,9 @@ func TaskStartArgv(ns string, spec Spec) ([]string, error) {
 		argv = append(argv, "--mount", "type=bind,src="+host+",dst="+m.ContainerPath+",options="+opts)
 	}
 	for _, e := range spec.Env {
+		if e.Name == "NVIDIA_VISIBLE_DEVICES" && strings.EqualFold(strings.TrimSpace(e.Value), "all") {
+			return nil, fmt.Errorf("NVIDIA_VISIBLE_DEVICES=all is refused")
+		}
 		argv = append(argv, "--env", e.Name+"="+e.Value)
 	}
 	for _, d := range spec.GPUDevices {
@@ -165,10 +270,7 @@ func TaskStartArgv(ns string, spec Spec) ([]string, error) {
 }
 
 func (c *Containerd) Run(ctx context.Context, spec Spec) error {
-	if !c.runtimePresent() {
-		if c.SkipHostCmds {
-			return nil
-		}
+	if c.SkipHostCmds || !c.runtimePresent() {
 		return fmt.Errorf("containerd runtime is unavailable")
 	}
 	argv, err := TaskStartArgv(c.ns(), spec)
@@ -180,10 +282,7 @@ func (c *Containerd) Run(ctx context.Context, spec Spec) error {
 }
 
 func (c *Containerd) Stop(ctx context.Context, workloadID string) error {
-	if !c.runtimePresent() {
-		if c.SkipHostCmds {
-			return nil
-		}
+	if c.SkipHostCmds || !c.runtimePresent() {
 		return fmt.Errorf("containerd runtime is unavailable")
 	}
 	_, err := c.run(ctx, BinCTR, "--namespace", c.ns(), "tasks", "kill", workloadID)
@@ -229,10 +328,7 @@ func (c *Containerd) Observe(ctx context.Context, workloadID string) (Observed, 
 
 func (c *Containerd) Delete(ctx context.Context, workloadID string) error {
 	_ = c.Stop(ctx, workloadID)
-	if !c.runtimePresent() {
-		if c.SkipHostCmds {
-			return nil
-		}
+	if c.SkipHostCmds || !c.runtimePresent() {
 		return fmt.Errorf("containerd runtime is unavailable")
 	}
 	_, err := c.run(ctx, BinCTR, "--namespace", c.ns(), "containers", "delete", workloadID)

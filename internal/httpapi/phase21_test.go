@@ -213,7 +213,7 @@ func TestPhase21GPUAssignOCIRender(t *testing.T) {
 	node, _ := mem.GetNode(context.Background(), clusterID)
 	inv := inventory.Inventory{
 		SchemaVersion: inventory.SchemaVersion, ObservedAt: time.Now().UTC(),
-		GPUs: []inventory.GPU{{ID: "0000:02:00.0", PCI: "0000:02:00.0", Vendor: "NVIDIA", IOMMUGroup: "12"}},
+		GPUs: []inventory.GPU{{ID: "0000:02:00.0", PCI: "0000:02:00.0", Vendor: "NVIDIA", IOMMUGroup: "12", Hint: "/dev/dri/by-path/pci-0000:02:00.0-render"}},
 		IOMMU: inventory.IOMMU{Status: inventory.StatusAvailable, Groups: []inventory.IOMMUGroup{
 			{ID: "12", Devices: []string{"0000:02:00.0"}},
 		}},
@@ -249,6 +249,39 @@ func TestPhase21GPUAssignOCIRender(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusCreated {
 		t.Fatal("VFIO must remain VM-only")
+	}
+}
+
+func TestPhase21OCIWiresPortsResourcesAndBridge(t *testing.T) {
+	_, mem, ts, cookie, clusterID, fo := phase21Ready(t)
+	nets, err := mem.ListNetworks(context.Background(), clusterID)
+	if err != nil || len(nets) == 0 {
+		t.Fatalf("network fixture: %v %d", err, len(nets))
+	}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","cpus":2,"memory_bytes":268435456,"network_id":"` + nets[0].ID + `","ports":[{"container_port":80,"host_port":8080,"protocol":"tcp"}]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	if fo.lastSpec.Resources.CPUs != 2 || fo.lastSpec.Resources.MemoryBytes != 268435456 {
+		t.Fatalf("resources not wired: %+v", fo.lastSpec.Resources)
+	}
+	if len(fo.lastSpec.Ports) != 1 || fo.lastSpec.Ports[0].ContainerPort != 80 || fo.lastSpec.Ports[0].HostPort != 8080 {
+		t.Fatalf("ports not wired: %+v", fo.lastSpec.Ports)
+	}
+	if fo.lastSpec.NetworkID != nets[0].ID || fo.lastSpec.BridgeName != nets[0].BridgeName {
+		t.Fatalf("bridge not wired: net=%s bridge=%s", fo.lastSpec.NetworkID, fo.lastSpec.BridgeName)
+	}
+	if fo.lastSpec.Privileged {
+		t.Fatal("privileged must stay default false")
 	}
 }
 

@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: No-dal Community Edition API
   version: 1.0.0
-  description: Phase 43 CE 1.0 license surface and API freeze, plus prior northbound API.
+  description: Phase 43 license surface; CE 1.0 hardware gates not claimed in this tree.
 servers:
   - url: /api/v1
 paths:
@@ -4295,6 +4295,7 @@ components:
     NetworkOverlay:
       type: object
       additionalProperties: false
+      description: Local VXLAN overlay prep. Status available means prep files were written. Multi-node mesh is not claimed.
       properties:
         id:
           type: string
@@ -4306,6 +4307,7 @@ components:
           type: string
         status:
           type: string
+          description: available is local prep, not a live multi-node overlay.
         reason:
           type: string
     VLANCreateRequest:
@@ -4475,6 +4477,7 @@ components:
     HAStatus:
       type: object
       additionalProperties: false
+      description: Single-writer HA foundations. multi_master is always false.
       required:
         - mode
         - writer
@@ -4503,6 +4506,7 @@ components:
           type: string
         multi_master:
           type: boolean
+          description: Always false. Multi-master is not claimed.
         reason:
           type: string
         fenced_holder:
@@ -7974,6 +7978,7 @@ components:
     LicenseStatus:
       type: object
       additionalProperties: false
+      description: License-activation surface. Edition stays ce. Workloads are not stopped. EE blobs are not shipped.
       required:
         - edition
         - status
@@ -7985,6 +7990,7 @@ components:
       properties:
         edition:
           type: string
+          description: Always ce. This tree does not unlock EE.
           enum:
             - ce
         status:
@@ -8002,8 +8008,10 @@ components:
           type: string
         workloads_stopped:
           type: boolean
+          description: Always false. CE does not stop workloads for license state.
         ee_blobs:
           type: boolean
+          description: Always false. This tree does not ship EE artifacts.
         contacts_api:
           type: boolean
         last_checked:

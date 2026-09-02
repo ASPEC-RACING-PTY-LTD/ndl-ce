@@ -106,10 +106,7 @@ func (e *Engine) LiveMigrate(ctx context.Context, id, uri string) error {
 		return fmt.Errorf("live migrate failed; source remains running")
 	}
 	if e.SkipHostCmds {
-		if e.LiveUnits != nil {
-			e.LiveUnits[id] = false
-		}
-		return nil
+		return fmt.Errorf("host commands skipped; live migrate was not issued; source remains running")
 	}
 	q, err := e.dialQMP(id, 3*time.Second)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -448,7 +449,35 @@ func validateWebhookURL(raw string) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return errInvalidWebhook
 	}
+	host := strings.TrimSpace(u.Hostname())
+	if host == "" {
+		return errInvalidWebhook
+	}
+	if deniedWebhookHost(host) {
+		return errInvalidWebhook
+	}
 	return nil
+}
+
+// allowWebhookLoopbackForTest is an explicit test fixture. Production stays deny-by-default
+// for loopback, link-local, metadata, unique-local, and RFC1918 literal IPs.
+var allowWebhookLoopbackForTest bool
+
+func deniedWebhookHost(host string) bool {
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return !allowWebhookLoopbackForTest
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return !allowWebhookLoopbackForTest
+	}
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsPrivate() {
+		return true
+	}
+	return false
 }
 
 var errInvalidWebhook = errors.New("invalid webhook")
@@ -535,6 +564,9 @@ func (s *Server) notify(ctx context.Context, clusterID string, payload []byte) {
 		case appdb.NotifyWebhook:
 			url, _, err := s.Store.NotificationSecrets(ctx, clusterID, ch.ID)
 			if err != nil || url == "" {
+				continue
+			}
+			if err := validateWebhookURL(url); err != nil {
 				continue
 			}
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))

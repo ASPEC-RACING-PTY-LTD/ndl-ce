@@ -287,7 +287,7 @@ func (s *Server) runStoreVerify(ctx context.Context, clusterID string, pkg appdb
 	if err != nil {
 		return nil, err
 	}
-	checks := storetrust.Analyze(*m)
+	checks := storetrust.Analyze(*m, []byte(pkg.ManifestYAML))
 	sigCheck := storetrust.Check{Kind: storetrust.CheckSignature, Status: storetrust.StatusFail, Detail: "Unsigned Community package. Signatures are required for Verified and Official."}
 	var key *appdb.SigningKey
 	if sig, _ := s.Store.LatestPackageSignature(ctx, clusterID, pkg.ID); sig != nil {
@@ -305,7 +305,11 @@ func (s *Server) runStoreVerify(ctx context.Context, clusterID string, pkg appdb
 			} else if sig.PayloadSHA256 != storetrust.PayloadSHA256([]byte(pkg.ManifestYAML)) {
 				sigCheck = storetrust.Check{Kind: storetrust.CheckSignature, Status: storetrust.StatusFail, Detail: "signature does not match manifest; tamper fails closed"}
 			} else {
-				sigCheck = storetrust.Check{Kind: storetrust.CheckSignature, Status: storetrust.StatusPass, Detail: "Ed25519 signature matches the stored manifest bytes."}
+				detail := "Ed25519 signature matches the stored manifest bytes."
+				if key.Name == officialKeyName {
+					detail = "Ed25519 signature matches the stored manifest bytes. Signer is the cluster-local signing key, not an Official publisher CA."
+				}
+				sigCheck = storetrust.Check{Kind: storetrust.CheckSignature, Status: storetrust.StatusPass, Detail: detail}
 			}
 		}
 	}
@@ -324,7 +328,7 @@ func (s *Server) runStoreVerify(ctx context.Context, clusterID string, pkg appdb
 		}
 	} else if key != nil && key.Class == appmanifest.ClassOfficial && pkg.Class == appmanifest.ClassOfficial {
 		trust = appmanifest.ClassOfficial
-		reason = "Official signature valid. Static scans passed. CVE scanner is not installed."
+		reason = "Signed by the cluster-local signing key. Static scans passed. CVE scanner is not installed."
 	} else if key != nil {
 		trust = appmanifest.ClassVerified
 		reason = "Verified signature valid. Static scans passed. CVE scanner is not installed."
@@ -406,6 +410,10 @@ func storeReasonString(v any) string {
 func (s *Server) signingKeyJSON(k appdb.SigningKey) map[string]any {
 	out := map[string]any{
 		"id": k.ID, "name": k.Name, "class": k.Class, "status": k.Status, "public_key": k.PublicKey,
+	}
+	if k.Name == officialKeyName {
+		out["origin"] = "cluster-local"
+		out["note"] = "cluster-local signing key"
 	}
 	if k.RevokedAt != nil {
 		out["revoked_at"] = k.RevokedAt.UTC().Format(time.RFC3339)

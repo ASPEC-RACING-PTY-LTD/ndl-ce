@@ -68,6 +68,11 @@ func CanQuery(grants []string) bool {
 	return haveEvents && haveMetrics
 }
 
+// ForbidsMutatePlans is true for Ask profiles. Operate may create mutate plans.
+func ForbidsMutatePlans(mode string) bool {
+	return strings.EqualFold(strings.TrimSpace(mode), ModeAsk)
+}
+
 func KnownKind(kind string) bool {
 	_, err := NormalizeKind(kind)
 	return err == nil

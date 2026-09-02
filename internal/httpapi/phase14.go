@@ -192,7 +192,16 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 	for _, m := range members {
 		pci = append(pci, m.Address)
 	}
-	nodes := deviceNodesForMode(mode, gpuID)
+	rec, ok := gpuRecord(gpuID, parsed)
+	if !ok {
+		writeErr(w, http.StatusUnprocessableEntity, "gpu is not present on this node")
+		return
+	}
+	nodes, err := deviceNodesForMode(mode, rec)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	a := appdb.GPUAssignment{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, GPUID: gpuID, WorkloadID: wl.ID,
 		Mode: mode, Exclusive: exclusive, IOMMUGroup: groupID, PCIDevices: pci, DeviceNodes: nodes,
@@ -293,15 +302,46 @@ func gpuAssignmentJSON(a appdb.GPUAssignment) map[string]any {
 	}
 }
 
-func deviceNodesForMode(mode, gpuID string) []string {
-	switch mode {
-	case gpu.ModeRender, gpu.ModeEncode:
-		return []string{"/dev/dri/renderD128"}
-	case gpu.ModeCompute:
-		return []string{"/dev/nvidia0", "/dev/nvidiactl", "/dev/nvidia-uvm"}
-	default:
-		return nil
+func gpuRecord(gpuID string, inv inventory.Inventory) (inventory.GPU, bool) {
+	for _, g := range inv.GPUs {
+		if strings.EqualFold(g.ID, gpuID) || strings.EqualFold(g.PCI, gpuID) {
+			return g, true
+		}
 	}
+	return inventory.GPU{}, false
+}
+
+func locatorsFromGPU(g inventory.GPU) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.FieldsFunc(g.Hint, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t'
+	}) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !gpu.AllowDeviceNode(part) {
+			continue
+		}
+		if seen[part] {
+			continue
+		}
+		seen[part] = true
+		out = append(out, part)
+	}
+	return out
+}
+
+func deviceNodesForMode(mode string, rec inventory.GPU) ([]string, error) {
+	if mode == gpu.ModeVFIO {
+		return nil, nil
+	}
+	nodes := locatorsFromGPU(rec)
+	if len(nodes) == 0 {
+		return nil, errUnprocessable("GPU device nodes are unavailable in inventory")
+	}
+	return nodes, nil
 }
 
 func (s *Server) gpuDeviceNodes(ctx context.Context, clusterID, workloadID string) []string {

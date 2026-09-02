@@ -20,7 +20,7 @@ const (
 	haReplicaReason      = "replica DSN is stored; streaming replication is operator-managed Postgres and is not proven in this process"
 	haFencingReason      = "STONITH is not implemented. Fence records that the operator isolated the old writer, then a standby may take the lease."
 	workerUpdateReason   = "worker update agent is not connected; Phase 12 apply stays on this control node"
-	rollingDrainReason   = "maintenance recorded; guests keep running; migrate dest agent is not required for this drain"
+	rollingDrainReason   = "maintenance recorded; guests keep running; remote dest agent is not connected"
 )
 
 func (s *Server) haStateJSON(h appdb.HAState, lease *appdb.ClusterLease, writer bool) map[string]any {
@@ -368,6 +368,20 @@ func (s *Server) execRollingDrain(r *http.Request, clusterID, planID string, n a
 			op := s.startOp(r.Context(), clusterID, n.ID, "workload.migrate", "queued", 0)
 			op.State = "queued"
 			op.Message = "queued; rolling update does not stop guests"
+			if s.Migrate != nil {
+				dest, err := s.migrateDest(r.Context(), clusterID, wl, "")
+				if err == nil && dest != nil && s.destEligibleLocal(r.Context(), dest) {
+					_, code, msg := s.runMigrate(r.Context(), wl, dest, migrateModeFor(wl))
+					if code == http.StatusOK {
+						op.State = "succeeded"
+						op.Message = "rolling drain migrated to local dest; guests were not stopped by rolling"
+					} else if msg != "" {
+						op.Message = msg
+					}
+				} else {
+					op.Message = destAgentMissing
+				}
+			}
 			_ = s.Store.UpsertOperation(r.Context(), op)
 		}
 	}

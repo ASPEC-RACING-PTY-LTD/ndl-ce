@@ -263,6 +263,52 @@ func TestUpdatesPreflightStoreHook(t *testing.T) {
 	}
 }
 
+func TestUpdatesPreflightStoreNotImplemented(t *testing.T) {
+	s, _, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/preflight", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("%d %s", res.StatusCode, b)
+	}
+	var body struct {
+		Checks []struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Detail string `json:"detail"`
+		} `json:"checks"`
+	}
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range body.Checks {
+		if c.Name != "store_compatibility" {
+			continue
+		}
+		found = true
+		if c.Status == "ok" {
+			t.Fatalf("store check must not be ok: %s", b)
+		}
+		if c.Status != "skipped" && c.Status != "unavailable" {
+			t.Fatalf("store check status %q: %s", c.Status, b)
+		}
+		if !strings.Contains(c.Detail, "not implemented") {
+			t.Fatalf("store detail %q", c.Detail)
+		}
+	}
+	if !found {
+		t.Fatalf("store_compatibility missing: %s", b)
+	}
+}
+
 func TestUpdatesApplySupportedDoesNotStopGuests(t *testing.T) {
 	s, _, token := testServer(t)
 	s.Update = &fakeUpdate{supported: true}

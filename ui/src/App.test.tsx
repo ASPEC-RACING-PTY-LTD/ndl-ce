@@ -547,14 +547,17 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^cluster$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
     expect(screen.getByText(/one control plane writer/i)).toBeVisible();
+    expect(screen.getByText(/join tokens are not pairing tokens/i)).toBeVisible();
     expect(await screen.findByText(/locator box-b/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /create join token/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^revoke$/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^ha$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^ha$/i })).toBeVisible();
     expect(screen.getByText(/not multi-master/i)).toBeVisible();
+    expect(await screen.findByText(/multi-master no/i)).toBeVisible();
+    expect(screen.getAllByText(/stonith is not implemented/i).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /fence old writer/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /promote this writer/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^rolling update$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^rolling update$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /run rolling update/i })).toBeVisible();
   });
 
@@ -612,9 +615,10 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^features$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^features$/i })).toBeVisible();
+    expect(await screen.findByText(/enabling kubernetes does not start kubelet/i)).toBeVisible();
     expect(await screen.findByText(/base install light/i)).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^gpu services$/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^gpu services$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^install$/i }).length).toBeGreaterThan(0);
     expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
   });
@@ -709,6 +713,8 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^apply policy$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^create policy$/i })).toBeVisible();
     expect(screen.getByText(/not an llm loop/i)).toBeVisible();
+    expect(screen.getAllByText(/queued migrate is not live until/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/dest agent/i).length).toBeGreaterThan(0);
   });
 
   it("renders the ask page as read-only without a vendor", async () => {
@@ -749,6 +755,23 @@ describe("App", () => {
                 },
               ],
             },
+            {
+              id: "plan-2",
+              prompt: "move a vm after approve",
+              status: "queued",
+              actor_type: "ai",
+              reason: "queued pending dest agent",
+              steps: [
+                {
+                  id: "step-2",
+                  method: "POST",
+                  path: "/api/v1/workloads/wl-1/migrate",
+                  permission: "compute.migrate",
+                  status: "queued",
+                  reason: "dest agent is not connected",
+                },
+              ],
+            },
           ],
         },
       },
@@ -756,9 +779,13 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^plans$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^plans$/i })).toBeVisible();
-    expect(await screen.findByText(/\/api\/v1\/workloads/i)).toBeVisible();
+    expect(await screen.findByText(/execute existing apis only after/i)).toBeVisible();
+    expect(screen.getByText(/not a live llm/i)).toBeVisible();
+    expect(await screen.findByText(/POST \/api\/v1\/workloads \(/i)).toBeVisible();
+    expect(await screen.findByText(/\/api\/v1\/workloads\/wl-1\/migrate/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^approve$/i })).toBeVisible();
     expect(screen.getByText(/cannot host.exec/i)).toBeVisible();
+    expect(screen.getAllByText(/missing dest agent or create validation/i).length).toBeGreaterThan(0);
   });
 
   it("renders the license page as Community Edition without a key", async () => {
@@ -772,6 +799,8 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /^license$/i })).toBeVisible();
     expect(screen.getByText(/does not require a key/i)).toBeVisible();
     expect(screen.getByText(/does not download ee blobs/i)).toBeVisible();
+    expect(screen.getByText(/hardware gates are not proven on this host/i)).toBeVisible();
+    expect(await screen.findByText(/ee blobs no/i)).toBeVisible();
     expect(await screen.findByText(/workloads stopped no/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^activate license$/i })).toBeVisible();
   });
@@ -787,6 +816,8 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /^docs$/i })).toBeVisible();
     expect(screen.getByText(/operator runbooks shipped/i)).toBeVisible();
     expect(screen.getByText(/no cloud or ee key required/i)).toBeVisible();
+    expect(screen.getAllByText(/hardware gates are not proven on this host/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/does not ship ee blobs/i)).toBeVisible();
     expect(screen.getByText(/not proof this host ran them/i)).toBeVisible();
   });
 

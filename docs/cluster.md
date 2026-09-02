@@ -17,7 +17,9 @@ owns them until migrate or restore selects a dest.
 ## Placement and migrate
 
 Placement (Phase 31) chooses a node. Live migrate (Phase 32) is
-`workload.migrate`. Failed live migrate leaves the source running.
+`workload.migrate`. The dest agent is unwired until Execute is
+connected. A nil migrate engine returns dest-agent-not-connected and
+leaves the source running. That is not a completed two-box migrate.
 `-incoming` is `defer` only. Restore disks are copied to the dest, not
 onto the control node for a worker dest.
 

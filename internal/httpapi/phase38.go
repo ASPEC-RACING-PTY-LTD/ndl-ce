@@ -40,6 +40,8 @@ func (s *Server) startKubernetes(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, uerr.Error())
 		return
 	}
+	// Enable is not start. A supported updater result is not a kube process.
+	// This host leaves kubelet unstarted unless Observe already sees one.
 	obs := k8s.Observe(s.K8sProcs)
 	if res.Supported && res.Status != "failed" && obs.KubeProcess {
 		row.RuntimeStatus = appdb.FeatureRunning

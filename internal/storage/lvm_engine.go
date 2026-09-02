@@ -116,18 +116,23 @@ func (e LVMEngine) createPool(ctx context.Context, op LVMOp) (LVMResult, error) 
 		return LVMResult{}, err
 	}
 	res.Argv = append(res.Argv, pv...)
+	res.Argv = append(res.Argv, vg...)
+	res.Argv = append(res.Argv, pool...)
+	if e.SkipHostCmds {
+		res.Status = StatusUnavailable
+		res.Reason = "host commands skipped; LVM was not run"
+		return res, nil
+	}
 	if err := e.exec(ctx, pv); err != nil {
 		res.Status = StatusFailed
 		res.Reason = err.Error()
 		return res, nil
 	}
-	res.Argv = append(res.Argv, vg...)
 	if err := e.exec(ctx, vg); err != nil {
 		res.Status = StatusFailed
 		res.Reason = err.Error()
 		return res, nil
 	}
-	res.Argv = append(res.Argv, pool...)
 	if err := e.exec(ctx, pool); err != nil {
 		res.Status = StatusFailed
 		res.Reason = err.Error()
@@ -169,6 +174,11 @@ func (e LVMEngine) createVolume(ctx context.Context, op LVMOp) (LVMResult, error
 		res.BackendRef = mount
 	default:
 		return LVMResult{}, fmt.Errorf("storage class is unsupported on LVM-thin")
+	}
+	if e.SkipHostCmds {
+		res.Status = StatusUnavailable
+		res.Reason = "host commands skipped; LVM was not run"
+		return res, nil
 	}
 	if err := e.exec(ctx, argv); err != nil {
 		res.Status = StatusFailed
@@ -402,7 +412,7 @@ func (e LVMEngine) exec(ctx context.Context, argv []string) error {
 		if err := refuseExportArgv(argv); err != nil {
 			return err
 		}
-		return nil
+		return fmt.Errorf("host commands skipped; LVM was not run")
 	}
 	if !e.installed() {
 		return fmt.Errorf(LVMMissing)
@@ -430,7 +440,7 @@ func (e LVMEngine) output(ctx context.Context, argv []string) (string, error) {
 		}
 	}
 	if e.SkipHostCmds {
-		return "", nil
+		return "", fmt.Errorf("host commands skipped; LVM was not run")
 	}
 	if e.Run == nil {
 		return "", fmt.Errorf(LVMMissing)

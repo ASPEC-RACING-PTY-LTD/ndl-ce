@@ -159,8 +159,8 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	if strings.TrimSpace(req.PeerID) == "" || strings.TrimSpace(req.PairingToken) == "" {
-		writeErr(w, http.StatusUnauthorized, "pairing token is required")
+	if strings.TrimSpace(req.PeerID) == "" {
+		writeErr(w, http.StatusUnauthorized, "peer id is required")
 		return
 	}
 	cluster, err := s.Store.GetCluster(r.Context())
@@ -173,17 +173,25 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "unknown peer")
 		return
 	}
-	if !secutil.EqualHash(peer.PairingTokenHash, secutil.HashSHA256(req.PairingToken)) {
+	remote, err := s.Store.GetRemoteNodeByPeer(r.Context(), cluster.ID, peer.ID)
+	if err != nil || remote == nil {
+		writeErr(w, http.StatusNotFound, "remote node not found")
+		return
+	}
+	token := strings.TrimSpace(req.PairingToken)
+	pairingOK := token != "" && secutil.EqualHash(peer.PairingTokenHash, secutil.HashSHA256(token))
+	if pairingOK && s.ClusterCA.PairingUsed(peer.ID) {
+		writeErr(w, http.StatusUnauthorized, "pairing token already used")
+		return
+	}
+	tlsOK := s.clusterClientCertOK(r, strings.TrimSpace(req.NodeID))
+	established := remote.LastSeenAt != nil && !remote.LastSeenAt.IsZero()
+	if !pairingOK && !tlsOK && !established {
 		writeErr(w, http.StatusUnauthorized, "pairing token is invalid")
 		return
 	}
 	if req.WGPublicKey != "" && peer.PublicKey != "" && req.WGPublicKey != peer.PublicKey {
 		writeErr(w, http.StatusUnauthorized, "public key does not match peer")
-		return
-	}
-	remote, err := s.Store.GetRemoteNodeByPeer(r.Context(), cluster.ID, peer.ID)
-	if err != nil || remote == nil {
-		writeErr(w, http.StatusNotFound, "remote node not found")
 		return
 	}
 	now := s.now()
@@ -215,10 +223,46 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		PrivateKeyPath: peer.PrivateKeyPath, LastHandshakeUnix: req.HandshakeUnix,
 		Status: firstNonEmpty(remote.Status, ndnet.StatusUnavailable), Reason: remote.Reason,
 	})
+	if pairingOK {
+		_ = s.ClusterCA.MarkPairingUsed(peer.ID)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_id": sessID, "accepted": true, "node_id": remote.ID,
 		"status": remote.Status, "reason": remote.Reason,
 	})
+}
+
+func (s *Server) clusterClientCertOK(r *http.Request, wantNodeID string) bool {
+	if r == nil || r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		return false
+	}
+	leaf := r.TLS.PeerCertificates[0]
+	raw := make([][]byte, 0, len(r.TLS.PeerCertificates))
+	for _, cert := range r.TLS.PeerCertificates {
+		if cert != nil {
+			raw = append(raw, cert.Raw)
+		}
+	}
+	if err := s.ClusterCA.VerifyClientCerts(raw); err != nil {
+		return false
+	}
+	want := strings.TrimSpace(wantNodeID)
+	if want == "" {
+		return true
+	}
+	cn := leaf.Subject.CommonName
+	if cn == want {
+		return true
+	}
+	if len(want) > 64 && cn == want[:64] {
+		return true
+	}
+	for _, uri := range leaf.URIs {
+		if uri != nil && strings.HasSuffix(uri.String(), "/"+want) {
+			return true
+		}
+	}
+	return false
 }
 
 func wgPeerJSON(p appdb.WGPeer) map[string]any {

@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/no-dal/ndl-ce/internal/cluster"
 )
 
 func TestClusterAndNodeStable(t *testing.T) {
@@ -44,5 +47,29 @@ func TestSaveJoinMaterialWritesNodeKey0600(t *testing.T) {
 	nodeID, clusterID, err := f.LoadNode()
 	if err != nil || nodeID != "n1" || clusterID != "c1" {
 		t.Fatal(nodeID, clusterID, err)
+	}
+}
+
+func TestLoadClientTLSUsesJoinMaterial(t *testing.T) {
+	f := Files{Dir: t.TempDir()}
+	cfg, err := f.LoadClientTLS()
+	if err != nil || cfg != nil {
+		t.Fatalf("missing material %v %v", cfg, err)
+	}
+	ca := cluster.CA{Dir: t.TempDir()}
+	certPEM, keyPEM, err := ca.IssueNode("n1", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPEM, err := ca.CertPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.SaveJoinMaterial("c1", "n1", caPEM, certPEM, keyPEM); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = f.LoadClientTLS()
+	if err != nil || cfg == nil || len(cfg.Certificates) != 1 || cfg.RootCAs == nil {
+		t.Fatalf("join mTLS material %+v %v", cfg, err)
 	}
 }

@@ -72,8 +72,9 @@ export function LicensePage() {
       <header className="page-header">
         <h1>License</h1>
         <p className="lede">
-          Community Edition does not require a key. Entering a key contacts a licensing API only then. If that API is
-          unreachable, grace applies and workloads are not stopped. This page does not download EE blobs.
+          Community Edition does not require a key. CE 1.0 hardware gates are not proven on this host. This page does
+          not download EE blobs. Entering a key contacts a licensing API only then. If that API is unreachable, grace
+          applies and workloads are not stopped.
         </p>
       </header>
       {error ? (
@@ -87,6 +88,7 @@ export function LicensePage() {
           <p>Status {status.status}.</p>
           <p>{status.reason}</p>
           <p>Has key {status.has_key ? "yes" : "no"}{status.key_suffix ? ` suffix ${status.key_suffix}` : ""}.</p>
+          <p>EE blobs {status.ee_blobs ? "yes" : "no"}.</p>
           <p>Workloads stopped {status.workloads_stopped ? "yes" : "no"}.</p>
           <p>
             See <Link href="/docs">Docs</Link> for CE 1.0.

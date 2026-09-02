@@ -32,9 +32,13 @@ func (h *Handler) execVMHotplug(ctx context.Context, m *agentv1.VMHotplug) (*con
 			if err := h.qemu().ApplyUSBHost(id, usbs); err != nil {
 				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 			}
-			_ = h.qemu().HotplugUSB(id, true, usb)
+			if err := h.qemu().HotplugUSB(id, true, usb); err != nil {
+				return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: err.Error()}), nil
+			}
 		case "device_del", "del":
-			_ = h.qemu().HotplugUSB(id, false, usb)
+			if err := h.qemu().HotplugUSB(id, false, usb); err != nil {
+				return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: err.Error()}), nil
+			}
 			kept := make([]vmspec.LaunchUSB, 0, len(launch.USBs))
 			for _, u := range launch.USBs {
 				if u.Address != usb.Address {

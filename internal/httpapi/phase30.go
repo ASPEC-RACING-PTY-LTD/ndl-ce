@@ -243,6 +243,7 @@ func (s *Server) revokeClusterNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	_ = s.ClusterCA.RevokeNode(id)
 	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.node.revoke", "ok", id)
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "revoked": true})
 }

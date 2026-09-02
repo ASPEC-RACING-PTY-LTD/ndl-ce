@@ -136,4 +136,30 @@ func TestZFSObservePulledDiskStaysUnavailable(t *testing.T) {
 	}
 }
 
+func TestZFSSkipHostCmdsExecAndSendDoNotSucceed(t *testing.T) {
+	e := ZFSEngine{SkipHostCmds: true}
+	res, err := e.Apply(t.Context(), ZFSOp{
+		Action: "create-pool", PoolID: "p1", Name: "tank", Disks: []string{"/dev/disk/by-id/wwn-0x5000"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status == StatusAvailable {
+		t.Fatalf("SkipHostCmds must not claim available: %+v", res)
+	}
+	send, err := e.Apply(t.Context(), ZFSOp{
+		Action: "send", Name: "tank", VolumeID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		Snapshot: "s1", DestPath: "/var/lib/ndl/backups/a.zfs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if send.Status == StatusAvailable {
+		t.Fatalf("send SkipHostCmds must not succeed: %+v", send)
+	}
+	if err := e.sendTo(t.Context(), []string{ZFSBin, "send", "tank/ds@s1"}, "/var/lib/ndl/backups/a.zfs"); err == nil {
+		t.Fatal("sendTo must error under SkipHostCmds")
+	}
+}
+
 func boolPtr(v bool) *bool { return &v }

@@ -1,9 +1,13 @@
 package control
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/no-dal/ndl-ce/internal/cluster"
 )
 
 func TestRedirectPreservesACMEChallenge(t *testing.T) {
@@ -50,5 +54,24 @@ func TestRedirectRejectsUnsafeHost(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unsafe host %d", rec.Code)
+	}
+}
+
+func TestTLSServerConfigRequestsClientCertWhenClusterCAExists(t *testing.T) {
+	dir := t.TempDir()
+	ca := cluster.CA{Dir: dir}
+	if _, _, err := ca.IssueNode("node-a", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := tlsServerConfig(tls.Certificate{}, dir)
+	if cfg.ClientAuth != tls.VerifyClientCertIfGiven {
+		t.Fatalf("ClientAuth %v", cfg.ClientAuth)
+	}
+	if cfg.ClientCAs == nil || cfg.VerifyPeerCertificate == nil {
+		t.Fatal("cluster CA pool must be loaded for optional mTLS")
+	}
+	cfgMissing := tlsServerConfig(tls.Certificate{}, t.TempDir())
+	if cfgMissing.ClientAuth != tls.NoClientCert {
+		t.Fatalf("missing CA must not require client certs %v", cfgMissing.ClientAuth)
 	}
 }

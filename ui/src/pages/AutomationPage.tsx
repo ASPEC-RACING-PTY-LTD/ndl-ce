@@ -70,7 +70,11 @@ export function AutomationPage() {
     try {
       let confirm: string | undefined;
       if (item.require_approval) {
-        if (!window.confirm("Apply this policy? It will enqueue migrate of the lowest-priority VM on pressured pools.")) {
+        if (
+          !window.confirm(
+            "Apply this policy? It will enqueue migrate of the lowest-priority VM on pressured pools. Queued migrate is not live until the dest agent is connected.",
+          )
+        ) {
           return;
         }
         confirm = "apply-policy";
@@ -90,8 +94,8 @@ export function AutomationPage() {
         <h1>Automation</h1>
         <p className="lede">
           Deterministic policies. This is not an LLM loop. Policies cannot Host.Exec. The agent has no policy engine.
-          Storage pressure above the threshold queues a real migrate task you can see on{" "}
-          <Link href="/tasks">Tasks</Link>.
+          Storage pressure above the threshold queues a migrate of the lowest-priority VM. Queued migrate is not live
+          until the dest agent is connected. See <Link href="/tasks">Tasks</Link>.
         </p>
       </header>
       {error ? (
@@ -140,7 +144,7 @@ export function AutomationPage() {
             <Field
               id="policy-threshold"
               label="Threshold percent"
-              hint="If a pool is at or above this allocated percent, enqueue migrate of the lowest-priority VM."
+              hint="If a pool is at or above this allocated percent, enqueue migrate of the lowest-priority VM. Queued migrate is not live until the dest agent is connected."
               value={threshold}
               onChange={(e) => setThreshold(e.target.value)}
             />
@@ -170,7 +174,8 @@ export function AutomationPage() {
                 {run.operation_ids && run.operation_ids.length > 0 ? (
                   <p>
                     Queued {run.operation_ids.length} operation
-                    {run.operation_ids.length === 1 ? "" : "s"}. See <Link href="/tasks">Tasks</Link>.
+                    {run.operation_ids.length === 1 ? "" : "s"}. Queued migrate is not live until the dest agent is
+                    connected. See <Link href="/tasks">Tasks</Link>.
                   </p>
                 ) : null}
               </li>

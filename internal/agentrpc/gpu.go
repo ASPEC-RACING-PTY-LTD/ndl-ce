@@ -101,9 +101,11 @@ func (h *Handler) execGPUAssign(ctx context.Context, m *agentv1.GPUAssign) (*con
 		}
 	}
 	if h.SkipHostCmds {
+		res.Status = "unavailable"
 		if res.Reason == "" {
-			res.Reason = "host device apply skipped in this environment"
+			res.Reason = "host commands skipped; GPU was not assigned"
 		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
 	}
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: req.Action, ResultJson: mustJSON(res)}), nil
 }

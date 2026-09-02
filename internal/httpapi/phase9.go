@@ -41,7 +41,12 @@ func (s *Server) certsJSON(ctx context.Context, clusterID string) map[string]any
 	out["fingerprint"] = row.Fingerprint
 	out["acme_directory"] = row.ACMEDirectory
 	out["acme_email"] = row.ACMEEmail
-	out["acme_status"] = firstNonEmpty(row.ACMEStatus, ndltls.ACMENotConfigured)
+	acme := firstNonEmpty(row.ACMEStatus, ndltls.ACMENotConfigured)
+	if acme == ndltls.ACMEIssued {
+		// ProbeDirectory does not issue a certificate. Never report issued.
+		acme = ndltls.ACMEPending
+	}
+	out["acme_status"] = acme
 	if row.NotBefore != nil {
 		out["not_before"] = row.NotBefore.UTC().Format(time.RFC3339)
 	}

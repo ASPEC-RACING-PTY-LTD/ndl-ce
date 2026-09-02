@@ -1439,6 +1439,18 @@ func nodalTransport() http.RoundTripper {
 		return http.DefaultTransport
 	}
 	clone := tr.Clone()
+	dir := os.Getenv("NODAL_DATA_DIR")
+	if dir == "" {
+		dir = "/var/lib/ndl"
+	}
+	ident := identity.Files{Dir: dir}
+	if cfg, err := ident.LoadClientTLS(); err == nil && cfg != nil {
+		if os.Getenv("NODAL_TLS_INSECURE") == "1" || strings.HasPrefix(baseURL(), "https://127.0.0.1") {
+			cfg.InsecureSkipVerify = true
+		}
+		clone.TLSClientConfig = cfg
+		return clone
+	}
 	if os.Getenv("NODAL_TLS_INSECURE") == "1" || strings.HasPrefix(baseURL(), "https://127.0.0.1") {
 		clone.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}

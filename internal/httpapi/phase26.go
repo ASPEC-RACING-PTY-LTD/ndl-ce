@@ -134,6 +134,10 @@ func (s *Server) createDatastore(w http.ResponseWriter, r *http.Request, kind st
 	}
 	poolID := uuid.NewString()
 	user, pass := strings.TrimSpace(req.Username), req.Password
+	if kind == storage.BackendISCSI && (user != "" || strings.TrimSpace(pass) != "") {
+		writeErr(w, http.StatusUnprocessableEntity, "CHAP authentication is unsupported")
+		return
+	}
 	if kind == storage.BackendSMB {
 		if storedUser, storedPass, _ := s.Store.DatastoreSecret(r.Context(), poolID); storedUser != "" {
 			user, pass = storedUser, storedPass
@@ -193,13 +197,22 @@ func (s *Server) createISCSIVolume(ctx context.Context, clusterID string, pool a
 		return appdb.Volume{}, errUnprocessable("iSCSI pool already has a LUN volume")
 	}
 	ds, _ := s.Store.GetDatastore(ctx, pool.ID)
-	ref := pool.RootPath
+	op := storage.DatastoreOp{Action: "mount", PoolID: pool.ID, Kind: storage.BackendISCSI}
 	if ds != nil {
-		if p, err := storage.ISCSIDevicePath(ds.Portal, ds.IQN); err == nil {
-			ref = p
-		}
+		op.Locator, op.Portal, op.IQN = ds.Locator, ds.Portal, ds.IQN
 	}
-	if _, err := storage.HostVolumePath(storage.BackendISCSI, pool.RootPath, ref); err != nil {
+	res, err := s.datastore().Datastore(ctx, op)
+	if err != nil {
+		return appdb.Volume{}, err
+	}
+	if res.Status != storage.StatusAvailable {
+		return appdb.Volume{}, errUnprocessable(firstNonEmpty(res.Reason, storage.ISCSIMissing))
+	}
+	ref := firstNonEmpty(res.BackendRef, res.RootPath)
+	if strings.TrimSpace(ref) == "" {
+		return appdb.Volume{}, errUnprocessable("iSCSI device is not present")
+	}
+	if _, err := storage.HostVolumePath(storage.BackendISCSI, firstNonEmpty(pool.RootPath, ref), ref); err != nil {
 		return appdb.Volume{}, err
 	}
 	volID := uuid.NewString()

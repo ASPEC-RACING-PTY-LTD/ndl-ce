@@ -156,11 +156,7 @@ func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Wor
 		return nil, err
 	}
 	if _, err := s.VM.LifecycleVM(ctx, newID, "start", spec.Autostart); err != nil {
-		updated, _ := s.Store.GetWorkload(ctx, clusterID, newID)
-		if updated != nil {
-			return updated, nil
-		}
-		return &row, nil
+		return nil, err
 	}
 	_ = s.Store.UpdateWorkloadObserved(ctx, appdb.Workload{ID: newID, Status: qemu.StatusRunning})
 	cloned, _ := s.Store.GetWorkload(ctx, clusterID, newID)
@@ -408,29 +404,35 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = row.Name + "-template"
 	}
-	snapID := ""
-	if s.VM != nil {
-		vol, pool, tip, locErr := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row)
-		if locErr == nil && vol != nil && pool != nil {
-			overlay := path.Join(path.Dir(tip), vol.ID+"-tmpl.qcow2")
-			res, serr := s.VM.SnapshotVM(r.Context(), qemu.OverlayRequest{
-				WorkloadID: row.ID, Action: "create", OverlayPath: overlay, BackingPath: tip,
-			})
-			if serr == nil {
-				snap := appdb.Snapshot{
-					ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
-					Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: overlay, Status: "available",
-				}
-				if err := s.Store.CreateSnapshot(r.Context(), snap); err == nil {
-					snapID = snap.ID
-				}
-			}
-		}
+	if s.VM == nil {
+		writeErr(w, http.StatusUnprocessableEntity, "template snapshot is unavailable")
+		return
+	}
+	vol, pool, tip, locErr := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row)
+	if locErr != nil || vol == nil || pool == nil {
+		writeErr(w, http.StatusUnprocessableEntity, "template snapshot is unavailable")
+		return
+	}
+	overlay := path.Join(path.Dir(tip), vol.ID+"-tmpl.qcow2")
+	res, serr := s.VM.SnapshotVM(r.Context(), qemu.OverlayRequest{
+		WorkloadID: row.ID, Action: "create", OverlayPath: overlay, BackingPath: tip,
+	})
+	if serr != nil {
+		writeErr(w, statusFor(serr), serr.Error())
+		return
+	}
+	snap := appdb.Snapshot{
+		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
+		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: overlay, Status: "available",
+	}
+	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	spec, _ := vmspec.Parse(row.SpecJSON)
 	tmpl := appdb.VMTemplate{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name,
-		SourceWorkloadID: row.ID, SnapshotID: snapID, SpecJSON: vmspec.MustJSON(vmspec.Redact(spec)),
+		SourceWorkloadID: row.ID, SnapshotID: snap.ID, SpecJSON: vmspec.MustJSON(vmspec.Redact(spec)),
 	}
 	if err := s.Store.CreateVMTemplate(r.Context(), tmpl); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -459,6 +461,10 @@ func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "template source workload is gone")
 		return
 	}
+	if strings.TrimSpace(tmpl.SnapshotID) == "" {
+		writeErr(w, http.StatusUnprocessableEntity, "template has no snapshot; deploy would clone the live source")
+		return
+	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		name = tmpl.Name
@@ -468,7 +474,10 @@ func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), *cloned))
+	out := s.workloadJSON(r.Context(), *cloned)
+	out["deploy_source"] = "live_workload"
+	out["note"] = "deploy clones the live source workload"
+	writeJSON(w, http.StatusCreated, out)
 }
 
 func templateJSON(t appdb.VMTemplate) map[string]any {
@@ -682,6 +691,10 @@ func (s *Server) attachPCI(w http.ResponseWriter, r *http.Request) {
 	if s.VM != nil {
 		hosts := pciGroupHosts(id, parsed)
 		if err := s.VM.ApplyVFIO(r.Context(), row.ID, hosts); err != nil {
+			_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
+				ID: row.ID, SpecJSON: row.SpecJSON, Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes,
+			})
 			writeErr(w, http.StatusConflict, err.Error())
 			return
 		}

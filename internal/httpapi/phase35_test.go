@@ -191,6 +191,77 @@ func TestPhase35ViewerCannotEnableAndCoreStays(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestPhase35DisableK8sDistributedAIRequiresConfirm(t *testing.T) {
+	s, mem, token := testServer(t)
+	fu := &fakeUpdate{supported: true}
+	s.Update = fu
+	cluster, _ := mem.GetCluster(context.Background())
+	inv := debianInv()
+	inv.Memory = inventory.Memory{TotalBytes: 16 << 30}
+	seedNode(t, mem, cluster.ID, inv, false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	ids := []string{features.IDK8s, features.IDDistStorage, features.IDAI}
+	for _, id := range ids {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/features/"+id+"/enable", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("enable %s %d %s", id, res.StatusCode, raw)
+		}
+
+		req, _ = http.NewRequest("POST", ts.URL+"/api/v1/features/"+id+"/disable", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ = ts.Client().Do(req)
+		raw, _ = io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("disable %s without confirm %d %s", id, res.StatusCode, raw)
+		}
+		row, _ := mem.GetFeature(context.Background(), cluster.ID, id)
+		if row == nil || !row.Enabled {
+			t.Fatalf("%s disabled without confirm", id)
+		}
+
+		req, _ = http.NewRequest("POST", ts.URL+"/api/v1/features/"+id+"/disable", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Nodal-Confirm", "disable-feature")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ = ts.Client().Do(req)
+		raw, _ = io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("disable %s confirm %d %s", id, res.StatusCode, raw)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		if body["enabled"] != false || body["workload_count"] != float64(0) {
+			t.Fatalf("%s %s", id, raw)
+		}
+		if body["kubelet_started"] != false {
+			t.Fatalf("disable must not claim kubelet %s", raw)
+		}
+
+		req, _ = http.NewRequest("POST", ts.URL+"/api/v1/features/"+id+"/disable", strings.NewReader(`{}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ = ts.Client().Do(req)
+		raw, _ = io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("already disabled %s %d %s", id, res.StatusCode, raw)
+		}
+	}
+}
+
 func TestPhase35GPUEnableDoesNotClaimRuntime(t *testing.T) {
 	s, mem, token := testServer(t)
 	fu := &fakeUpdate{supported: false}

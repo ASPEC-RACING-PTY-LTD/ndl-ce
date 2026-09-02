@@ -58,14 +58,14 @@ func TestLiveMigrateFailureLeavesSourceRunning(t *testing.T) {
 	}
 }
 
-func TestLiveMigrateSkipHostCmdsStopsSourceOnSuccess(t *testing.T) {
+func TestLiveMigrateSkipHostCmdsErrorsAndLeavesSourceRunning(t *testing.T) {
 	id := argvSecWorkloadID
 	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true, LiveUnits: map[string]bool{id: true}}
-	if err := e.LiveMigrate(t.Context(), id, e.IncomingURI(id)); err != nil {
-		t.Fatal(err)
+	if err := e.LiveMigrate(t.Context(), id, e.IncomingURI(id)); err == nil {
+		t.Fatal("LiveMigrate must error under SkipHostCmds")
 	}
-	if e.LiveUnits[id] {
-		t.Fatal("successful fake live migrate stops the source unit")
+	if !e.LiveUnits[id] {
+		t.Fatal("SkipHostCmds live migrate must not mark the source stopped")
 	}
 }
 

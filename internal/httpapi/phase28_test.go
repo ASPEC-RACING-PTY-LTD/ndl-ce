@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -82,7 +85,16 @@ func TestPhase28WGPeerAndNotReadyHonesty(t *testing.T) {
 		t.Fatalf("session without handshake must stay NotReady %d %s", res.StatusCode, body)
 	}
 
-	sessBody = `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444","handshake_unix":1700000000}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("pairing token must be single-use %d %s", res.StatusCode, body)
+	}
+
+	sessBody = `{"peer_id":"` + peerID + `","listen_addr":"10.64.8.2:9444","handshake_unix":1700000000}`
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
 	req.Header.Set("Content-Type", "application/json")
 	res, _ = ts.Client().Do(req)
@@ -180,4 +192,46 @@ func TestPhase28OpenSessionRejectsBadToken(t *testing.T) {
 		t.Fatalf("status %d", res.StatusCode)
 	}
 	_ = res.Body.Close()
+}
+
+func TestPhase28OpenSessionAcceptsClusterClientCert(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"w"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	peerID, _ := created["id"].(string)
+	certPEM, _, err := s.ClusterCA.IssueNode("n1", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"peer_id":"` + peerID + `","node_id":"n1","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
+	hreq := httptest.NewRequest("POST", "/api/v1/cluster/sessions", strings.NewReader(body))
+	hreq.Header.Set("Content-Type", "application/json")
+	hreq.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, hreq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mTLS session %d %s", rec.Code, rec.Body.String())
+	}
 }

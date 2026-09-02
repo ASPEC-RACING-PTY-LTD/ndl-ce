@@ -159,7 +159,7 @@ func (e *Engine) overlayFlatten(ctx context.Context, req OverlayRequest) (Overla
 
 func (e *Engine) createOverlayFile(ctx context.Context, dest, backing string) error {
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("qemu-img overlay is unavailable")
 	}
 	argv, err := storage.QEMUCreateBackingArgv(BinQEMUImg, dest, backing)
 	if err != nil {

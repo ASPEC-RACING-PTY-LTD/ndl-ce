@@ -15,8 +15,10 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/inventory"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
+	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
 func phase18Ready(t *testing.T) (*Server, *appdb.Memory, *httptest.Server, string, string, string, string) {
@@ -344,4 +346,127 @@ func TestPhase18RejectsRawQEMUArgsOnImport(t *testing.T) {
 		t.Fatal("import must not succeed with a fake library and raw args")
 	}
 	_ = res.Body.Close()
+}
+
+type startFailVM struct {
+	*fakeVM
+	startErr error
+}
+
+func (f startFailVM) LifecycleVM(ctx context.Context, id, action string, auto bool) (qemu.Observed, error) {
+	if action == "start" && f.startErr != nil {
+		return qemu.Observed{WorkloadID: id, Status: qemu.StatusStopped}, f.startErr
+	}
+	return f.fakeVM.LifecycleVM(ctx, id, action, auto)
+}
+
+type snapFailVM struct {
+	*fakeVM
+	err error
+}
+
+func (f snapFailVM) SnapshotVM(context.Context, qemu.OverlayRequest) (qemu.OverlayResult, error) {
+	return qemu.OverlayResult{}, f.err
+}
+
+type vfioFailVM struct {
+	*fakeVM
+	err error
+}
+
+func (f vfioFailVM) ApplyVFIO(context.Context, string, []string) error {
+	return f.err
+}
+
+func TestPhase18CloneStartFailureIsNotBooted(t *testing.T) {
+	s, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "web")
+	s.VM = startFailVM{fakeVM: &fakeVM{}, startErr: errors.New("start failed")}
+	srcID := created["id"].(string)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+srcID+"/clone", strings.NewReader(`{"name":"web-clone"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode == http.StatusCreated {
+		t.Fatalf("start failure must not return 201: %s", b)
+	}
+	if strings.Contains(string(b), `"status":"running"`) {
+		t.Fatalf("must not claim booted: %s", b)
+	}
+}
+
+func TestPhase18CloneExtraDiskIs422(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "web")
+	srcID := created["id"].(string)
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, srcID)
+	spec, err := vmspec.Parse(wl.SpecJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := uuid.NewString()
+	node, _ := mem.GetNode(context.Background(), clusterID)
+	_ = mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extra, ClusterID: clusterID, NodeID: node.ID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/extra.qcow2",
+	})
+	spec.Disks = append(spec.Disks, vmspec.Disk{Role: vmspec.DiskRoleData, VolumeID: extra})
+	_ = mem.UpdateWorkloadSpec(context.Background(), appdb.Workload{
+		ID: wl.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: wl.Firmware, CPUs: wl.CPUs, MemoryBytes: wl.MemoryBytes,
+	})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+srcID+"/clone", strings.NewReader(`{"name":"web-extra"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("extra disk clone %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(strings.ToLower(string(b)), "disk") {
+		t.Fatalf("reason %s", b)
+	}
+}
+
+func TestPhase18TemplateRequiresSnapshot(t *testing.T) {
+	s, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-src")
+	s.VM = snapFailVM{fakeVM: &fakeVM{}, err: errors.New("snapshot failed")}
+	id := created["id"].(string)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode == http.StatusCreated {
+		t.Fatalf("empty snapshot must not create a template: %s", b)
+	}
+}
+
+func TestPhase18FailedVFIORollsBackAssignment(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-vm")
+	s.VM = vfioFailVM{fakeVM: &fakeVM{}, err: errors.New("vfio bind failed")}
+	id := created["id"].(string)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode < 400 {
+		t.Fatalf("failed vfio %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+	assigns, _ := mem.ListGPUAssignments(context.Background(), clusterID)
+	for _, a := range assigns {
+		if a.WorkloadID == id {
+			t.Fatalf("failed ApplyVFIO left assignment %+v", a)
+		}
+	}
 }

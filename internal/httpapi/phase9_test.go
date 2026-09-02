@@ -148,6 +148,37 @@ func TestACMEFailedDirectoryIsHonest(t *testing.T) {
 	}
 }
 
+func TestACMEProbeDoesNotClaimIssued(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.CertDir = ndltls.Dir{Root: t.TempDir()}
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertCertificate(context.Background(), appdb.Certificate{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Mode: ndltls.ModeACME,
+		ACMEStatus: ndltls.ACMEIssued, ACMEDirectory: "https://acme.example/dir",
+	})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/certs", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("certs %d %s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), `"acme_status":"issued"`) {
+		t.Fatalf("must not claim issued: %s", b)
+	}
+	var status map[string]any
+	if err := json.Unmarshal(b, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status["acme_status"] != "pending" && status["acme_status"] != "failed" && status["acme_status"] != "not_configured" {
+		t.Fatalf("acme_status %+v", status)
+	}
+}
+
 func TestHTTPSListenerSetsSecureCookie(t *testing.T) {
 	s, _, token := testServer(t)
 	ts := httptest.NewTLSServer(s.Handler())

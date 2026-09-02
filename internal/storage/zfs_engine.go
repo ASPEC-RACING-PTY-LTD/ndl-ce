@@ -296,7 +296,7 @@ func (e ZFSEngine) ObserveHints(ctx context.Context, hints []PoolHint) []Observe
 
 func (e ZFSEngine) sendTo(ctx context.Context, argv []string, dest string) error {
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; zfs send was not run")
 	}
 	out, err := e.output(ctx, argv)
 	if err != nil {
@@ -307,7 +307,7 @@ func (e ZFSEngine) sendTo(ctx context.Context, argv []string, dest string) error
 
 func (e ZFSEngine) exec(ctx context.Context, argv []string) error {
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; zfs was not run")
 	}
 	if !e.installed() {
 		return fmt.Errorf(ZFSMissing)
@@ -329,7 +329,7 @@ func (e ZFSEngine) output(ctx context.Context, argv []string) (string, error) {
 		}
 	}
 	if e.SkipHostCmds {
-		return "", nil
+		return "", fmt.Errorf("host commands skipped; zfs was not run")
 	}
 	if e.Run == nil {
 		return "", fmt.Errorf(ZFSMissing)

@@ -115,12 +115,9 @@ func (s *Server) createLVM(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, res.Reason)
 		return
 	}
-	guid := res.VGUUID
-	if guid == "" {
-		guid = "pending-" + strings.ReplaceAll(poolID, "-", "")
-		if len(guid) > 64 {
-			guid = guid[:64]
-		}
+	guid := strings.TrimSpace(res.VGUUID)
+	if strings.HasPrefix(guid, "pending-") {
+		guid = ""
 	}
 	caps, _ := json.Marshal(storage.LVMCapabilities())
 	backing, _ := json.Marshal(storage.BackingIdentity{
@@ -142,7 +139,9 @@ func (s *Server) createLVM(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not record storage pool")
 		return
 	}
-	_ = s.Store.UpsertLVMVG(r.Context(), appdb.LVMVG{PoolID: poolID, VGUUID: guid, VGName: req.Name, ThinPool: storage.LVMThinPoolName})
+	if guid != "" {
+		_ = s.Store.UpsertLVMVG(r.Context(), appdb.LVMVG{PoolID: poolID, VGUUID: guid, VGName: req.Name, ThinPool: storage.LVMThinPoolName})
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.lvm.create", "ok", poolID)
 	writeJSON(w, http.StatusCreated, poolJSON(row))
 }

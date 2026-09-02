@@ -87,12 +87,12 @@ func (s *Server) disableFeature(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "core features stay installed with the nodal metapackage")
 		return
 	}
+	row := s.featureRow(r, p.User.ClusterID, mod)
 	count := s.featureWorkloadCount(r, p.User.ClusterID, mod.ID)
-	if count > 0 && strings.TrimSpace(r.Header.Get(confirmHeader)) != disableFeatureConfirm {
+	if featureDisableRequiresConfirm(mod, row.Enabled, count) && strings.TrimSpace(r.Header.Get(confirmHeader)) != disableFeatureConfirm {
 		writeErr(w, http.StatusUnprocessableEntity, "disable does not delete workloads; send X-Nodal-Confirm: disable-feature to turn the module off and leave workloads running")
 		return
 	}
-	row := s.featureRow(r, p.User.ClusterID, mod)
 	row.Enabled = false
 	row.RuntimeStatus = appdb.FeatureNotStarted
 	row.Reason = "disabled; workloads were not deleted"
@@ -221,4 +221,19 @@ func featurePackageStatus(res hostos.UpdateResult) string {
 func looksLikeRuntimeStart(reason string) bool {
 	l := strings.ToLower(reason)
 	return strings.Contains(l, "kubelet") || strings.Contains(l, "kubeadm") || strings.Contains(l, "k3s started")
+}
+
+func featureDisableRequiresConfirm(mod features.Module, enabled bool, workloadCount int) bool {
+	if workloadCount > 0 {
+		return true
+	}
+	if !enabled {
+		return false
+	}
+	switch mod.ID {
+	case features.IDK8s, features.IDDistStorage, features.IDAI:
+		return true
+	default:
+		return false
+	}
 }

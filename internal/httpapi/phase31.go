@@ -215,13 +215,17 @@ func (s *Server) maintainNode(w http.ResponseWriter, r *http.Request) {
 			item := map[string]any{"id": wl.ID, "name": wl.Name, "kind": wl.Kind, "migrate_operation_id": op.ID}
 			if s.Migrate != nil {
 				dest, err := s.migrateDest(r.Context(), p.User.ClusterID, wl, "")
-				if err == nil && dest != nil {
+				if err == nil && dest != nil && s.destEligibleLocal(r.Context(), dest) {
 					out, code, msg := s.runMigrate(r.Context(), wl, dest, migrateModeFor(wl))
 					item["migrate"] = out
 					item["migrate_status"] = code
 					if msg != "" {
 						item["migrate_error"] = msg
 					}
+				} else if dest != nil && !s.destEligibleLocal(r.Context(), dest) {
+					item["migrate_error"] = destAgentMissing
+					op.Message = destAgentMissing
+					_ = s.Store.UpsertOperation(r.Context(), op)
 				}
 			}
 			toMove = append(toMove, item)

@@ -13,7 +13,7 @@ import (
 func TestIssueNodeDoesNotEmbedCAKey(t *testing.T) {
 	dir := t.TempDir()
 	ca := CA{Dir: dir}
-	now := time.Unix(1_700_000_000, 0).UTC()
+	now := time.Now().UTC()
 	certPEM, keyPEM, err := ca.IssueNode("11111111-2222-3333-4444-555555555555", now)
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +52,31 @@ func TestIssueNodeDoesNotEmbedCAKey(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("ca.key mode %o", info.Mode().Perm())
+	}
+	if len(cert.URIs) != 1 || cert.URIs[0].String() != "spiffe://no-dal/node/11111111-2222-3333-4444-555555555555" {
+		t.Fatalf("SPIFFE-shaped URI SAN %v", cert.URIs)
+	}
+	if err := ca.VerifyClientCerts([][]byte{cert.Raw}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ca.RevokeNode("11111111-2222-3333-4444-555555555555"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ca.VerifyClientCerts([][]byte{cert.Raw}); err == nil {
+		t.Fatal("revoked serial must fail closed")
+	}
+}
+
+func TestPairingTokenIsSingleUseMarker(t *testing.T) {
+	ca := CA{Dir: t.TempDir()}
+	if ca.PairingUsed("peer-1") {
+		t.Fatal("unused")
+	}
+	if err := ca.MarkPairingUsed("peer-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !ca.PairingUsed("peer-1") {
+		t.Fatal("consumed pairing token must stay used")
 	}
 }
 

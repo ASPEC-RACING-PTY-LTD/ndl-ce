@@ -159,7 +159,19 @@ func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {
 	res, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "preflight", Channel: hostos.ChannelStable, DryRun: true})
 	checks := make([]map[string]any, 0, len(res.Checks))
 	for _, c := range res.Checks {
-		checks = append(checks, map[string]any{"name": c.Name, "status": c.Status, "detail": c.Detail})
+		name, status, detail := c.Name, c.Status, c.Detail
+		if name == "store_compatibility" {
+			if status == "ok" || status == "" {
+				status = "skipped"
+			}
+			if detail == "" {
+				detail = hostos.StoreCompatDetail
+			}
+			if (status == "skipped" || status == "unavailable") && !strings.Contains(strings.ToLower(detail), "not implemented") {
+				detail = "Store compatibility check is not implemented. " + detail
+			}
+		}
+		checks = append(checks, map[string]any{"name": name, "status": status, "detail": detail})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":        res.PreflightOK && res.Supported,

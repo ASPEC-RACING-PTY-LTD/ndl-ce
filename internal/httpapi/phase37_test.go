@@ -48,6 +48,10 @@ func TestPhase37OfficialVerifyAndScanReport(t *testing.T) {
 	if ver["status"] != appdb.StoreVerifyPass || ver["trust_class"] != appmanifest.ClassOfficial {
 		t.Fatalf("%s", raw)
 	}
+	reason, _ := ver["reason"].(string)
+	if !strings.Contains(reason, "cluster-local signing key") || strings.Contains(reason, "Official CA") || strings.Contains(reason, "publisher CA") {
+		t.Fatalf("official verify must name cluster-local signing key %s", raw)
+	}
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/store/apps/"+id+"/scans", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ = ts.Client().Do(req)

@@ -198,10 +198,26 @@ func TestLVMCreatePoolSkipHostCmdsDoesNotExport(t *testing.T) {
 	if strings.Contains(joined, "vgexport") {
 		t.Fatal(joined)
 	}
-	if res.Status != StatusAvailable {
+	if res.Status == StatusAvailable {
+		t.Fatalf("SkipHostCmds must not claim available: %+v", res)
+	}
+	if res.Status != StatusUnavailable {
 		t.Fatalf("%+v", res)
+	}
+	if res.VGUUID != "" {
+		t.Fatalf("must not invent vg_uuid: %+v", res)
 	}
 	if res.Incremental {
 		t.Fatal("send")
+	}
+	vol, err := e.Apply(t.Context(), LVMOp{
+		Action: "create-volume", PoolID: "p1", Name: "ndlvg",
+		VolumeID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Class: ClassVMDisk, SizeBytes: 1 << 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vol.Status == StatusAvailable || vol.VGUUID != "" {
+		t.Fatalf("create-volume SkipHostCmds must stay unavailable: %+v", vol)
 	}
 }

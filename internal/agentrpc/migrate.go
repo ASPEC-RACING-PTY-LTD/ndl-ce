@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
+	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
@@ -76,4 +77,62 @@ func (c Client) ComputeMigrate(ctx context.Context, m *agentv1.ComputeMigrate) (
 		return nil, err
 	}
 	return res.Msg.GetResultJson(), nil
+}
+
+// PrepareDest prepares incoming on the local unix agent. Dest on a worker
+// must not be started here; the control plane refuses that path first.
+func (c Client) PrepareDest(ctx context.Context, req migrate.Request) error {
+	m := &agentv1.ComputeMigrate{
+		Action: "prepare_incoming", WorkloadId: req.WorkloadID,
+		Cpus: int32(req.CPUs), MemoryBytes: req.MemoryBytes,
+		Machine: req.Machine, Accel: req.Accel,
+	}
+	if len(req.Disks) > 0 {
+		m.VolumeId = req.Disks[0].VolumeID
+		m.DiskPath = req.Disks[0].DestPath
+		if m.DiskPath == "" {
+			m.DiskPath = req.Disks[0].SourcePath
+		}
+	}
+	_, err := c.ComputeMigrate(ctx, m)
+	return err
+}
+
+func (c Client) CopyVolume(ctx context.Context, vol migrate.VolumeCopy) error {
+	_, err := c.ComputeMigrate(ctx, &agentv1.ComputeMigrate{
+		Action: "copy_volume", VolumeId: vol.VolumeID,
+		SourcePath: vol.SourcePath, DestPath: vol.DestPath,
+	})
+	return err
+}
+
+func (c Client) StopSource(ctx context.Context, id string) error {
+	_, err := c.ComputeMigrate(ctx, &agentv1.ComputeMigrate{Action: "stop_source", WorkloadId: id})
+	return err
+}
+
+func (c Client) StartDest(ctx context.Context, id string) error {
+	_, err := c.ComputeMigrate(ctx, &agentv1.ComputeMigrate{Action: "start_offline", WorkloadId: id})
+	return err
+}
+
+func (c Client) LiveMigrate(ctx context.Context, id string) error {
+	uri := (&qemu.Engine{}).IncomingURI(id)
+	_, err := c.ComputeMigrate(ctx, &agentv1.ComputeMigrate{
+		Action: "live_migrate", WorkloadId: id, Uri: uri,
+	})
+	return err
+}
+
+func (c Client) AbortDest(ctx context.Context, id string) error {
+	_, err := c.ComputeMigrate(ctx, &agentv1.ComputeMigrate{Action: "abort_incoming", WorkloadId: id})
+	return err
+}
+
+func (c Client) SourceRunning(ctx context.Context, id string) bool {
+	obs, err := c.StatusQemuProto(ctx, id)
+	if err != nil {
+		return true
+	}
+	return obs.UnitActive || obs.Status == qemu.StatusRunning
 }

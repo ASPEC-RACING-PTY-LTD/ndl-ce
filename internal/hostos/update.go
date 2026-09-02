@@ -311,7 +311,7 @@ func runCheckpoint(ctx context.Context, req UpdateRequest, res UpdateResult, exe
 	res.Locator = locator
 	res.PostgresDump = false
 	if exec == nil {
-		res.Status = "succeeded"
+		res.Status = "planned"
 		res.Reason = "Checkpoint argv was planned. Host commands were not run."
 		return res, nil
 	}
@@ -353,7 +353,7 @@ func runApply(ctx context.Context, req UpdateRequest, res UpdateResult, exec Exe
 	res.DryRun = req.DryRun
 	res.Packages = []PackageStatus{{Name: "nodal", Status: "not_reported"}}
 	if exec == nil {
-		res.Status = "succeeded"
+		res.Status = "planned"
 		res.Reason = "Package apply argv was planned. Host commands were not run."
 		return res, nil
 	}
@@ -378,7 +378,7 @@ func runRollback(ctx context.Context, req UpdateRequest, res UpdateResult, exec 
 	res.PreviousVersion = req.Version
 	res.Packages = []PackageStatus{{Name: "ndl-control", Version: req.Version, Status: "not_reported"}}
 	if exec == nil {
-		res.Status = "succeeded"
+		res.Status = "planned"
 		res.Reason = "Package rollback argv was planned. Host commands were not run."
 		return res, nil
 	}
@@ -395,7 +395,7 @@ func runRollback(ctx context.Context, req UpdateRequest, res UpdateResult, exec 
 func runK8sRuntime(ctx context.Context, res UpdateResult, exec ExecFunc, start bool) (UpdateResult, error) {
 	argv := debian.K8sRuntimeArgv(start)
 	if exec == nil {
-		res.Status = "succeeded"
+		res.Status = "planned"
 		res.Reason = "Kubernetes runtime argv was planned. Host commands were not run. kubelet is not started."
 		return res, nil
 	}
@@ -419,7 +419,7 @@ func runK8sRuntime(ctx context.Context, res UpdateResult, exec ExecFunc, start b
 func runOSDRuntime(ctx context.Context, res UpdateResult, exec ExecFunc, start bool) (UpdateResult, error) {
 	argv := debian.OSDRuntimeArgv(start)
 	if exec == nil {
-		res.Status = "succeeded"
+		res.Status = "planned"
 		res.Reason = "OSD runtime argv was planned. Host commands were not run. ceph-osd is not started."
 		return res, nil
 	}
@@ -458,7 +458,7 @@ func runFeaturePackage(ctx context.Context, req UpdateRequest, res UpdateResult,
 	res.DryRun = req.DryRun
 	res.Packages = []PackageStatus{{Name: pkg, Status: "not_reported"}}
 	if exec == nil {
-		res.Status = "succeeded"
+		res.Status = "planned"
 		res.Reason = "Feature package argv was planned. Host commands were not run."
 		return res, nil
 	}

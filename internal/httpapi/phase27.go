@@ -168,17 +168,38 @@ func (s *Server) applyPolicy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "policy not found")
 		return
 	}
-	res, err := s.advanced()(r.Context(), ndnet.AdvancedOp{
-		Action: ndnet.ActionPolicyApply, ObjectID: pol.ID, PolicyAction: pol.Action, SrcMAC: pol.SrcMAC, DstMAC: pol.DstMAC,
-	})
+	items, err := s.Store.ListNetworkPolicies(r.Context(), p.User.ClusterID)
 	if err != nil {
-		writeErr(w, statusFor(err), err.Error())
+		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = s.Store.UpdateNetworkPolicyStatus(r.Context(), p.User.ClusterID, pol.ID, res.Status, res.Reason)
-	pol.Status, pol.Reason = res.Status, res.Reason
-	s.audit(r, p.User.ClusterID, p.User.ID, "network.policy.apply", "ok", pol.ID)
-	writeJSON(w, http.StatusOK, policyJSON(*pol))
+	// Apply the full stored set. A single-rule replace would drop every other policy.
+	var applied appdb.NetworkPolicy
+	found := false
+	for _, item := range items {
+		res, err := s.advanced()(r.Context(), ndnet.AdvancedOp{
+			Action: ndnet.ActionPolicyApply, ObjectID: item.ID, PolicyAction: item.Action, SrcMAC: item.SrcMAC, DstMAC: item.DstMAC,
+		})
+		if err != nil {
+			if item.ID == pol.ID {
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
+			continue
+		}
+		_ = s.Store.UpdateNetworkPolicyStatus(r.Context(), p.User.ClusterID, item.ID, res.Status, res.Reason)
+		if item.ID == pol.ID {
+			item.Status, item.Reason = res.Status, res.Reason
+			applied = item
+			found = true
+		}
+	}
+	if !found {
+		writeErr(w, http.StatusNotFound, "policy not found")
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "network.policy.apply", "ok", applied.ID)
+	writeJSON(w, http.StatusOK, policyJSON(applied))
 }
 
 func (s *Server) createOverlay(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +225,7 @@ func (s *Server) createOverlay(w http.ResponseWriter, r *http.Request) {
 	}
 	row := appdb.NetworkOverlay{
 		ID: id, ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name), VNI: int(req.VNI),
-		Locator: res.Locator, Status: res.Status, Reason: firstNonEmpty(res.Reason, ndnet.OverlayPrepMsg),
+		Locator: res.Locator, Status: overlayPrepStatus(res.Status), Reason: overlayPrepReason(res.Status, res.Reason),
 	}
 	if err := s.Store.CreateNetworkOverlay(r.Context(), row); err != nil {
 		writeErr(w, http.StatusConflict, "could not record overlay")
@@ -243,6 +264,22 @@ func policyJSON(p appdb.NetworkPolicy) map[string]any {
 		"src_workload_id": p.SrcWorkloadID, "dst_workload_id": p.DstWorkloadID,
 		"src_mac": p.SrcMAC, "dst_mac": p.DstMAC, "status": p.Status, "reason": p.Reason,
 	}
+}
+
+const overlayPrepHonest = "local prep, mesh not joined"
+
+func overlayPrepStatus(status string) string {
+	if status == ndnet.StatusAvailable || status == "" {
+		return "pending"
+	}
+	return status
+}
+
+func overlayPrepReason(status, reason string) string {
+	if status == ndnet.StatusAvailable || strings.TrimSpace(reason) == "" {
+		return overlayPrepHonest
+	}
+	return reason
 }
 
 func overlayJSON(o appdb.NetworkOverlay) map[string]any {

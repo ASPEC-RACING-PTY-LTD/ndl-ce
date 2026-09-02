@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
 const (
@@ -27,6 +29,12 @@ type Request struct {
 	SharedStorage bool
 	CPUHost       bool
 	Disks         []VolumeCopy
+	CPUs          int
+	MemoryBytes   int64
+	Machine       string
+	Accel         string
+	SourceArgv    []string
+	DestArgv      []string
 }
 
 // VolumeCopy is a typed volume locator pair. Paths are locators, not identity.
@@ -83,6 +91,11 @@ func Run(ctx context.Context, rt Runtime, req Request) (Result, error) {
 		return Result{State: StateFail, SourceRunning: srcRunning, Reason: err.Error()}, err
 	}
 	if mode == ModeLive {
+		if err := checkLiveABI(ctx, rt, req); err != nil {
+			_ = rt.AbortDest(ctx, req.WorkloadID)
+			still := rt.SourceRunning(ctx, req.WorkloadID)
+			return Result{State: StateFail, SourceRunning: still, DestRunning: false, Reason: "ABI differs; source remains running"}, err
+		}
 		if err := rt.LiveMigrate(ctx, req.WorkloadID); err != nil {
 			_ = rt.AbortDest(ctx, req.WorkloadID)
 			still := rt.SourceRunning(ctx, req.WorkloadID)
@@ -109,4 +122,26 @@ func Run(ctx context.Context, rt Runtime, req Request) (Result, error) {
 		return Result{State: StateFail, SourceRunning: false, DestRunning: false, Reason: err.Error()}, err
 	}
 	return Result{State: StateOK, Epoch: req.Epoch + 1, SourceRunning: false, DestRunning: true, Reason: "offline migrate completed"}, nil
+}
+
+// ABIRuntime optionally records source and dest argv after PrepareDest.
+type ABIRuntime interface {
+	LiveArgv(ctx context.Context, id string) (source, dest []string)
+}
+
+func checkLiveABI(ctx context.Context, rt Runtime, req Request) error {
+	srcArgv, destArgv := req.SourceArgv, req.DestArgv
+	if ar, ok := rt.(ABIRuntime); ok {
+		sArgv, dArgv := ar.LiveArgv(ctx, req.WorkloadID)
+		if len(sArgv) > 0 {
+			srcArgv = sArgv
+		}
+		if len(dArgv) > 0 {
+			destArgv = dArgv
+		}
+	}
+	if !qemu.SameABI(srcArgv, destArgv) {
+		return fmt.Errorf("ABI differs; source remains running")
+	}
+	return nil
 }

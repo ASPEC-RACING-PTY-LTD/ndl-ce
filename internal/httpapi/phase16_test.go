@@ -143,7 +143,37 @@ func TestTimelineIncludesEventsAndAudit(t *testing.T) {
 	}
 }
 
+func TestAlertWebhookRejectsSSRFTargets(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	admin := claimAdmin(t, ts, token)
+	denied := []string{
+		`{"name":"meta","kind":"webhook","url":"http://169.254.169.254/latest/meta-data"}`,
+		`{"name":"loop","kind":"webhook","url":"http://127.0.0.1:9/hook"}`,
+		`{"name":"local","kind":"webhook","url":"http://localhost/hook"}`,
+		`{"name":"ten","kind":"webhook","url":"http://10.1.2.3/hook"}`,
+		`{"name":"priv","kind":"webhook","url":"http://192.168.1.1/hook"}`,
+		`{"name":"mid","kind":"webhook","url":"http://172.16.0.8/hook"}`,
+		`{"name":"ll","kind":"webhook","url":"http://169.254.1.1/hook"}`,
+		`{"name":"v6ll","kind":"webhook","url":"http://[fe80::1]/hook"}`,
+		`{"name":"v6ula","kind":"webhook","url":"http://[fd00::1]/hook"}`,
+		`{"name":"v6loop","kind":"webhook","url":"http://[::1]/hook"}`,
+	}
+	for _, body := range denied {
+		res := doCookie(t, ts, admin, "POST", "/api/v1/alerts/channels", body)
+		if res.StatusCode != http.StatusUnprocessableEntity {
+			b, _ := io.ReadAll(res.Body)
+			_ = res.Body.Close()
+			t.Fatalf("ssrf %s -> %d %s", body, res.StatusCode, b)
+		}
+		_ = res.Body.Close()
+	}
+}
+
 func TestAlertWebhookSecretAndViewerDeny(t *testing.T) {
+	allowWebhookLoopbackForTest = true
+	t.Cleanup(func() { allowWebhookLoopbackForTest = false })
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
 	seedNode(t, mem, cluster.ID, debianInv(), false)

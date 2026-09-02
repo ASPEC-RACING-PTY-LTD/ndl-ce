@@ -39,7 +39,9 @@ func (f *fakeLVM) LVMPool(_ context.Context, op storage.LVMOp) (storage.LVMResul
 	}
 	switch op.Action {
 	case "create-pool":
-		res.VGUUID = "AbCdEfGh0123"
+		if st != storage.StatusUnavailable {
+			res.VGUUID = "AbCdEfGh0123"
+		}
 		res.RootPath = storage.LVMMountRoot + "/" + op.Name
 	case "create-volume":
 		if op.Class == storage.ClassVMDisk {
@@ -300,5 +302,37 @@ func TestLVMRuntimeReportsNoIncrementalSend(t *testing.T) {
 	}
 	if strings.Contains(string(b), `"vgexport":"refused"`) == false {
 		t.Fatalf("export policy %s", b)
+	}
+}
+
+func TestLVMCreateDoesNotInventPendingUUID(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.LVM = &fakeLVM{status: storage.StatusUnavailable, reason: storage.LVMMissing}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/lvm/create", strings.NewReader(`{"name":"ndlvg","disks":["/dev/disk/by-id/wwn-0x5000"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), "pending-") {
+		t.Fatalf("must not invent pending vg_uuid: %s", b)
+	}
+	if strings.Contains(string(b), `"status":"available"`) {
+		t.Fatalf("unavailable agent must not be marked available: %s", b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	if pool["status"] != storage.StatusUnavailable {
+		t.Fatalf("status %s", b)
 	}
 }

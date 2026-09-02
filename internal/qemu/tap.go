@@ -152,7 +152,7 @@ func (e *Engine) ConvertOffline(ctx context.Context, req ConvertRequest) error {
 		return err
 	}
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; qemu-img convert was not run")
 	}
 	argv := []string{BinQEMUImg, "convert", "-f", req.SourceFormat, "-O", req.DestFormat, req.SourcePath, req.DestPath}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)

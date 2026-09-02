@@ -8,6 +8,8 @@ assign GPUs, join a second node, migrate and restore, use the Store
 without root scripts, and optionally use BYO-AI through structured
 actions. No Cloud or EE key is required.
 
+That definition is the milestone. This tree has not reached it.
+
 ## Docs
 
 - [install.md](install.md) one-line, manual repo, ISO
@@ -30,8 +32,27 @@ running. CE does not ship EE blobs or private repo credentials.
 
 ## Honesty
 
-This CE 1.0 tree does not claim Ubuntu as Tier 1, multi-master HA,
-live Trivy on this host, a production Store CA, live kubelet, live
-Ceph/`rbd map` on this Cloud agent host, or that production apt
-packages were signed in this environment. Signed install continues to
-use the documented HTTPS repo and keyring path.
+The CE 1.0 definition is not reached until Debian 13 Homelab and
+cluster hardware gates pass. Cloud unit tests, API fixtures, and
+checklist documents are not that gate.
+
+This tree is honest about the following gaps:
+
+- Migrate is unwired until a dest agent is connected (`Migrate` stays
+  nil and returns dest-agent-not-connected). Two-box live migrate is
+  not proven here.
+- Operate must use existing APIs. Approve must not Host.Exec. Restart
+  and Store install now invoke those handlers. Policy create still
+  writes the store and is not the finished engine.
+- SkipHostCmds must fail closed. Cloud engines that skip host commands
+  must stay unavailable or unverified and must not invent success.
+- The installer ISO is not booted in this tree. mkosi config is not a
+  spare-PC install.
+- Packages are unsigned here. Signed install remains the documented
+  HTTPS repo and keyring path.
+- Ubuntu is not Tier 1.
+
+This tree also does not claim multi-master HA, live Trivy on this host,
+a production Store CA, live kubelet, or live Ceph/`rbd map` on this
+Cloud agent host. Virt and physical checklists are documents, not
+executed proof.

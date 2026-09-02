@@ -105,6 +105,9 @@ func TestPhase40StoragePressureCreatesVisibleOperation(t *testing.T) {
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"kind":"workload.migrate"`) {
 		t.Fatalf("tasks %d %s", res.StatusCode, raw)
 	}
+	if !strings.Contains(string(raw), "dest agent is not connected") {
+		t.Fatalf("queued migrate must stay honest %s", raw)
+	}
 
 	actor, _ := mem.GetUserByName(context.Background(), cluster.ID, "svc-"+automation.ActorName)
 	if actor == nil || actor.Kind != appdb.UserKindService {

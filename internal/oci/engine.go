@@ -45,7 +45,7 @@ func (e *Engine) runtime() Runtime {
 	if e.Runtime != nil {
 		return e.Runtime
 	}
-	return &Containerd{SkipHostCmds: e.SkipHostCmds, Exec: e.Run, Now: e.Now}
+	return &Containerd{SkipHostCmds: e.SkipHostCmds, Exec: e.Run, Now: e.Now, SecretDir: filepath.Join(e.dataDir(), "secrets", "oci")}
 }
 
 func normalizeSpec(spec Spec) (Spec, error) {

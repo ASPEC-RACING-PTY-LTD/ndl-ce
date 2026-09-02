@@ -130,10 +130,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, StoreRead) || !Authorize(op, StoreInstall) || !Authorize(op, StoreVerify) {
 		t.Fatal("operator may install and verify store apps")
 	}
-	if !Authorize(view, PolicyRead) || Authorize(view, PolicyApply) {
+	if !Authorize(view, PolicyRead) || Authorize(view, PolicyApply) || Authorize(view, PolicyRun) {
 		t.Fatal("viewer policy is read-only")
 	}
-	if !Authorize(op, PolicyRead) || !Authorize(op, PolicyApply) {
+	if !Authorize(op, PolicyRead) || !Authorize(op, PolicyApply) || !Authorize(op, PolicyRun) {
 		t.Fatal("operator may apply policies")
 	}
 	if !Authorize(view, AIAsk) || Authorize(view, AIManage) {
@@ -141,5 +141,35 @@ func TestAuthorizeMatrix(t *testing.T) {
 	}
 	if !Authorize(op, AIAsk) || !Authorize(op, AIManage) {
 		t.Fatal("operator may manage ai providers")
+	}
+}
+
+func TestPermissionsForAutomationIsNarrowerThanOperator(t *testing.T) {
+	got := PermissionsForAutomation()
+	want := []string{PolicyApply, ComputeMigrate, ComputeRead, NodeRead, StorageRead}
+	if len(got) != len(want) {
+		t.Fatalf("grants %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("grants %v", got)
+		}
+	}
+	c := New()
+	op := c.PermissionsForRole(Operator)
+	view := c.PermissionsForRole(Viewer)
+	for _, p := range got {
+		if !Authorize(op, p) {
+			t.Fatalf("operator still has %s", p)
+		}
+	}
+	if Authorize(view, PolicyApply) || Authorize(view, ComputeMigrate) {
+		t.Fatal("viewer must not run automation writes")
+	}
+	if Authorize(got, All) || Authorize(got, FeatureManage) || Authorize(got, ComputeDelete) || Authorize(got, SettingsLicenseManage) || Authorize(got, IdentityService) || Authorize(got, IdentityTokenCreate) {
+		t.Fatal("Operator is too broad; automation must not inherit it")
+	}
+	if !Authorize(got, ComputeMigrate) || !Authorize(got, PolicyApply) {
+		t.Fatal("automation reuses compute.migrate and policy.apply")
 	}
 }

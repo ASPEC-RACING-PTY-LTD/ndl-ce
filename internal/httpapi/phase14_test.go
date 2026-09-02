@@ -33,7 +33,10 @@ func gpuInv() inventory.Inventory {
 		SchemaVersion: inventory.SchemaVersion,
 		ObservedAt:    time.Now().UTC(),
 		Host:          inventory.Host{Status: inventory.StatusAvailable, ID: "debian", VersionID: "13", Architecture: "amd64"},
-		GPUs:          []inventory.GPU{{ID: "0000:02:00.0", PCI: "0000:02:00.0", Vendor: "NVIDIA", IOMMUGroup: "12", Driver: "nvidia"}},
+		GPUs: []inventory.GPU{{
+			ID: "0000:02:00.0", PCI: "0000:02:00.0", Vendor: "NVIDIA", IOMMUGroup: "12", Driver: "nvidia",
+			Hint: "/dev/dri/by-path/pci-0000:02:00.0-render",
+		}},
 		PCI: []inventory.PCIDevice{
 			{Address: "0000:02:00.0", Class: "0x030000", Driver: "nvidia", IOMMUGroup: "12"},
 			{Address: "0000:02:00.1", Class: "0x040300", Driver: "snd_hda_intel", IOMMUGroup: "12"},
@@ -103,6 +106,12 @@ func TestGPUExclusiveClaimsAndCTRender(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("assign %d %s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), "renderD128") || strings.Contains(string(b), "/dev/nvidia0") {
+		t.Fatalf("must not invent default device nodes: %s", b)
+	}
+	if !strings.Contains(string(b), "/dev/dri/by-path/pci-0000:02:00.0-render") {
+		t.Fatalf("must use inventory locator: %s", b)
 	}
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -203,6 +212,35 @@ func TestGPUViewerDeniedAndVFIONeedsSnapshot(t *testing.T) {
 		t.Fatalf("vfio running %d %s", res.StatusCode, b)
 	}
 	_ = res.Body.Close()
+}
+
+func TestGPUAssignWithoutLocatorIsUnavailable(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.GPU = &fakeGPU{}
+	cluster, _ := mem.GetCluster(context.Background())
+	inv := gpuInv()
+	inv.GPUs[0].Hint = ""
+	seedNode(t, mem, cluster.ID, inv, false)
+	ct := appdb.Workload{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped"}
+	if err := mem.CreateWorkload(context.Background(), ct); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"gpu_id":"0000:02:00.0","workload_id":"` + ct.ID + `","mode":"render"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("missing locator %d %s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), "renderD128") || strings.Contains(string(b), "nvidia0") {
+		t.Fatalf("must not invent nodes: %s", b)
+	}
 }
 
 func TestGPURuntimeUnsupportedOnEmptyInventory(t *testing.T) {

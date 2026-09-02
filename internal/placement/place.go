@@ -22,6 +22,8 @@ type Request struct {
 	GroupID             string
 	CPUs                int
 	MemoryBytes         int64
+	NetworkID           string
+	Priority            int
 	RequireGPU          bool
 	RequireStorageClass string
 	AffinityNodeID      string
@@ -37,6 +39,14 @@ type Candidate struct {
 	Maintaining bool
 	MemoryFree  int64
 	CPUFree     int
+	// HealthOK is observed node health. The zero value means unknown.
+	// Unknown stays eligible so HTTP can wire this later. When any
+	// candidate is marked healthy, candidates with HealthOK false are skipped.
+	HealthOK bool
+	// Networks lists network IDs present on this node. Used when Request.NetworkID is set.
+	Networks []string
+	// Priority is an optional node-level tie-break. Lower numbers win. Zero means unset.
+	Priority int
 }
 
 // Result is the chosen node. Identity is the node UUID.
@@ -51,9 +61,13 @@ func Place(req Request, cands []Candidate) (Result, error) {
 	if mode == "" {
 		mode = ModeAutomatic
 	}
+	healthActive := healthObserved(cands)
 	var eligible []Candidate
 	for _, c := range cands {
 		if c.Node.RevokedAt != nil {
+			continue
+		}
+		if healthActive && !c.HealthOK {
 			continue
 		}
 		if c.Maintaining {
@@ -68,10 +82,13 @@ func Place(req Request, cands []Candidate) (Result, error) {
 		if req.AntiAffinityNodeID != "" && c.Node.ID == req.AntiAffinityNodeID {
 			continue
 		}
-		if req.CPUs > 0 && c.CPUFree > 0 && c.CPUFree < req.CPUs {
+		if !networkOK(req, c) {
 			continue
 		}
-		if req.MemoryBytes > 0 && c.MemoryFree > 0 && c.MemoryFree < req.MemoryBytes {
+		if !fitsCPU(req, c) {
+			continue
+		}
+		if !fitsMemory(req, c) {
 			continue
 		}
 		eligible = append(eligible, c)
@@ -124,11 +141,32 @@ func pick(req Request, cands []Candidate) (Result, error) {
 	}
 	best := cands[0]
 	for _, c := range cands[1:] {
-		if score(c) > score(best) {
+		if better(req, c, best) {
 			best = c
 		}
 	}
 	return Result{NodeID: best.Node.ID, Reason: "automatic"}, nil
+}
+
+func better(req Request, c, best Candidate) bool {
+	sc, sb := score(c), score(best)
+	if sc != sb {
+		return sc > sb
+	}
+	pc, pb := priorityOf(req, c), priorityOf(req, best)
+	if pc == pb {
+		return false
+	}
+	return pc < pb
+}
+
+// priorityOf returns the tie-break priority. Candidate.Priority wins when set.
+// Otherwise Request.Priority is used. Lower numbers win. Zero means unset.
+func priorityOf(req Request, c Candidate) int {
+	if c.Priority != 0 {
+		return c.Priority
+	}
+	return req.Priority
 }
 
 func score(c Candidate) int {
@@ -169,6 +207,52 @@ func classOK(req Request, c Candidate) bool {
 			return true
 		}
 		if p.NodeID == c.Node.ID && strings.EqualFold(p.Name, class) {
+			return true
+		}
+	}
+	return false
+}
+
+func networkOK(req Request, c Candidate) bool {
+	want := strings.TrimSpace(req.NetworkID)
+	if want == "" {
+		return true
+	}
+	for _, id := range c.Networks {
+		if id == want {
+			return true
+		}
+	}
+	return false
+}
+
+// fitsCPU reports whether the candidate can satisfy Request.CPUs.
+// CPUFree <= 0 means unknown (HTTP may not populate it yet) and stays eligible.
+func fitsCPU(req Request, c Candidate) bool {
+	if req.CPUs <= 0 {
+		return true
+	}
+	if c.CPUFree <= 0 {
+		return true
+	}
+	return c.CPUFree >= req.CPUs
+}
+
+// fitsMemory reports whether the candidate can satisfy Request.MemoryBytes.
+// MemoryFree <= 0 means unknown and stays eligible.
+func fitsMemory(req Request, c Candidate) bool {
+	if req.MemoryBytes <= 0 {
+		return true
+	}
+	if c.MemoryFree <= 0 {
+		return true
+	}
+	return c.MemoryFree >= req.MemoryBytes
+}
+
+func healthObserved(cands []Candidate) bool {
+	for _, c := range cands {
+		if c.HealthOK {
 			return true
 		}
 	}

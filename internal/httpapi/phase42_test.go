@@ -61,8 +61,20 @@ func TestPhase42PlanInstallDatabaseIsExistingAPI(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"succeeded"`) {
-		t.Fatalf("approve %d %s", res.StatusCode, raw)
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) {
+		t.Fatalf("approve without pool/image must fail closed %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "partial plan failure") {
+		t.Fatalf("expected validation stop %s", raw)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	for _, wl := range wls {
+		if wl.Status == "pending" && wl.ImagePin == "" {
+			t.Fatalf("naked pending row %s kind=%s", wl.ID, wl.Kind)
+		}
+	}
+	if len(wls) != 0 {
+		t.Fatalf("create validation must not insert a workload, got %d", len(wls))
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"run host.exec to wipe disks"}`))
@@ -104,19 +116,11 @@ func TestPhase42AskProfileCannotOperateAndPartialStops(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	var askPlan map[string]any
-	_ = json.Unmarshal(raw, &askPlan)
-	askPlanID, _ := askPlan["id"].(string)
-
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+askPlanID+"/approve", strings.NewReader(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(confirmHeader, ai.ApproveConfirm)
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, _ = ts.Client().Do(req)
-	raw, _ = io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusForbidden {
-		t.Fatalf("ask operate %d %s", res.StatusCode, raw)
+	if res.StatusCode != http.StatusForbidden || !strings.Contains(string(raw), "ask profile cannot operate") {
+		t.Fatalf("ask profile POST /ai/plans %d %s", res.StatusCode, raw)
+	}
+	if plans, _ := mem.ListAIPlans(context.Background(), cluster.ID, 20); len(plans) != 0 {
+		t.Fatalf("ask profile must not record a mutate plan, got %d", len(plans))
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/profiles", strings.NewReader(`{"name":"limited","mode":"operate","grants":["events.read","metrics.read","compute.create"]}`))
@@ -165,5 +169,107 @@ func TestPhase42AskProfileCannotOperateAndPartialStops(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("audit must remain after partial failure")
+	}
+}
+
+func TestPhase42StoreInstallWithoutIDStops(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	plan := appdb.AIPlan{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Prompt: "install store app",
+		Status: appdb.PlanPreview, ActorType: ai.ActorTypeAI,
+	}
+	steps := []appdb.AIPlanStep{{
+		ID: uuid.NewString(), ClusterID: cluster.ID, PlanID: plan.ID, Ordinal: 1,
+		Action: ai.ActionInstallStore, Permission: "store.install",
+		Method: "POST", Path: "/api/v1/workloads", Title: "install",
+		BodyJSON: `{"name":"app"}`, Status: appdb.PlanPreview,
+	}}
+	if err := mem.CreateAIPlan(context.Background(), plan, steps); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan.ID+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) {
+		t.Fatalf("store install %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "store install must use POST /api/v1/store/apps/{id}/install") {
+		t.Fatalf("expected store install API error %s", raw)
+	}
+}
+
+func TestPhase42PolicyPlanUsesAutomationValidation(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := plan["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+id+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"succeeded"`) {
+		t.Fatalf("approve policy %d %s", res.StatusCode, raw)
+	}
+	pols, _ := mem.ListPolicies(context.Background(), cluster.ID)
+	if len(pols) != 1 || pols[0].Kind != "storage_pressure" || pols[0].Action != "enqueue_migrate_low_priority" {
+		t.Fatalf("policy %+v", pols)
+	}
+
+	bad := appdb.AIPlan{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Prompt: "bad policy",
+		Status: appdb.PlanPreview, ActorType: ai.ActorTypeAI,
+	}
+	badSteps := []appdb.AIPlanStep{{
+		ID: uuid.NewString(), ClusterID: cluster.ID, PlanID: bad.ID, Ordinal: 1,
+		Action: ai.ActionCreatePolicy, Permission: "policy.apply",
+		Method: "POST", Path: "/api/v1/policies", Title: "policy",
+		BodyJSON: `{"name":"exec","kind":"storage_pressure","action":"host.exec","threshold_percent":85}`,
+		Status:   appdb.PlanPreview,
+	}}
+	if err := mem.CreateAIPlan(context.Background(), bad, badSteps); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+bad.ID+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) {
+		t.Fatalf("banned policy action %d %s", res.StatusCode, raw)
+	}
+	pols, _ = mem.ListPolicies(context.Background(), cluster.ID)
+	if len(pols) != 1 {
+		t.Fatalf("banned action must not insert a second policy %d", len(pols))
 	}
 }

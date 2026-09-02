@@ -17,19 +17,13 @@ func TestOverlayCreateOfflineRetargetsBootDisk(t *testing.T) {
 	res, err := e.OverlayDisk(context.Background(), OverlayRequest{
 		Action: OverlayCreate, WorkloadID: id, OverlayPath: overlay, BackingPath: backing, ChainDepth: 0, ChainMax: ChainMax,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("SkipHostCmds must not create a qcow2 overlay")
 	}
-	if res.Mechanism != "qcow2-overlay" || res.LiveQMP {
-		t.Fatalf("%+v", res)
+	if res.Mechanism == "qcow2-overlay" {
+		t.Fatalf("must not return overlay success: %+v", res)
 	}
-	applied, err := e.ReadApplied(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if applied.Spec.DiskPath != overlay {
-		t.Fatalf("last-applied disk %s", applied.Spec.DiskPath)
-	}
+	_ = overlay
 }
 
 func TestOverlayCreateRefusesLiveQEMUImg(t *testing.T) {

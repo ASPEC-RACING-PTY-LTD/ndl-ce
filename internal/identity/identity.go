@@ -2,6 +2,8 @@ package identity
 
 import (
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -103,6 +105,39 @@ func (f Files) SaveJoinMaterial(clusterID, nodeID string, caPEM, certPEM, keyPEM
 		return err
 	}
 	return os.WriteFile(filepath.Join(f.Dir, "node.key"), keyPEM, 0600)
+}
+
+// LoadClientTLS returns optional mTLS material written by SaveJoinMaterial.
+func (f Files) LoadClientTLS() (*tls.Config, error) {
+	certPEM, err := os.ReadFile(filepath.Join(f.Dir, "node.crt"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	keyPEM, err := os.ReadFile(filepath.Join(f.Dir, "node.key"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+	}
+	if caPEM, err := os.ReadFile(filepath.Join(f.Dir, "cluster-ca.crt")); err == nil {
+		pool := x509.NewCertPool()
+		if pool.AppendCertsFromPEM(caPEM) {
+			cfg.RootCAs = pool
+		}
+	}
+	return cfg, nil
 }
 
 // EnsureHostKey creates host.key if missing.

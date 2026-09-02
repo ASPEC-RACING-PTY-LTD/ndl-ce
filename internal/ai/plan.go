@@ -70,7 +70,10 @@ func CompilePlan(prompt, nodeID, nodeName, storeAppID string) ([]PlanStep, error
 			action = ActionInstallStore
 			perm = "store.install"
 			path = "/api/v1/store/apps/" + storeAppID + "/install"
-			body = map[string]any{"name": name, "node_id": nodeID}
+			body = map[string]any{"name": name, "store_app_id": storeAppID}
+			if nodeID != "" {
+				body["node_id"] = nodeID
+			}
 		}
 		steps = append(steps, PlanStep{
 			Action: action, Permission: perm, Method: "POST", Path: path,
@@ -91,4 +94,15 @@ func CompilePlan(prompt, nodeID, nodeName, storeAppID string) ([]PlanStep, error
 		steps[i].Ordinal = i + 1
 	}
 	return steps, nil
+}
+
+// PlanMutates is true when any step would call a create, restart, install, or policy API.
+func PlanMutates(steps []PlanStep) bool {
+	for _, st := range steps {
+		switch st.Action {
+		case ActionCreateWorkload, ActionRestart, ActionInstallStore, ActionCreatePolicy:
+			return true
+		}
+	}
+	return false
 }

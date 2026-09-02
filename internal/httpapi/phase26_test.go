@@ -252,6 +252,9 @@ func TestPhase26NFSISOLibraryAndVMDisk(t *testing.T) {
 	if res.StatusCode != http.StatusCreated || !strings.Contains(string(b), "debian.iso") {
 		t.Fatalf("iso library %d %s", res.StatusCode, b)
 	}
+	if strings.Contains(string(b), "nas.example") || strings.Contains(strings.ToLower(string(b)), "landed") {
+		t.Fatalf("must not claim a file landed on the share: %s", b)
+	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", strings.NewReader(`{"pool_id":"`+poolID+`","class":"vm-disk","size_bytes":1048576}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -270,5 +273,66 @@ func TestPhase26NFSISOLibraryAndVMDisk(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "volumes/vm-disk/") {
 		t.Fatalf("expected NFS file disk locator, got %s", b)
+	}
+	if strings.Contains(string(b), "nas.example") || strings.Contains(strings.ToLower(string(b)), "landed") {
+		t.Fatalf("must not claim a file landed on the share: %s", b)
+	}
+}
+
+func TestISCSIChapIsUnsupported(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/iscsi", strings.NewReader(`{"name":"lun","iqn":"iqn.2020-01.com.example:target1","portal":"10.0.0.8:3260","username":"chap","password":"s3cret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("chap %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(strings.ToLower(string(b)), "chap") {
+		t.Fatalf("chap reason %s", b)
+	}
+}
+
+func TestISCSIVolumeNotAvailableWithoutDevice(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{status: storage.StatusUnavailable, reason: storage.ISCSIMissing}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/iscsi", strings.NewReader(`{"name":"lun","iqn":"iqn.2020-01.com.example:target1","portal":"10.0.0.8:3260"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("pool %d %s", res.StatusCode, b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID := pool["id"].(string)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", strings.NewReader(`{"pool_id":"`+poolID+`","class":"vm-disk","size_bytes":1073741824}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	b, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode == http.StatusCreated && strings.Contains(string(b), `"status":"available"`) {
+		t.Fatalf("volume must not be available without a device: %s", b)
+	}
+	if res.StatusCode == http.StatusCreated {
+		t.Fatalf("volume create without login %d %s", res.StatusCode, b)
 	}
 }

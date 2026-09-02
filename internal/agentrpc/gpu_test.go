@@ -51,8 +51,14 @@ func TestGPUAssignRenderRewritesLXC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(res.Msg.GetResultJson()), `"status":"assigned"`) {
-		t.Fatal(string(res.Msg.GetResultJson()))
+	if strings.Contains(string(res.Msg.GetResultJson()), `"status":"assigned"`) {
+		t.Fatalf("SkipHostCmds must not claim assigned: %s", res.Msg.GetResultJson())
+	}
+	if res.Msg.GetOk() {
+		t.Fatal("SkipHostCmds GPU assign must not be Ok")
+	}
+	if !strings.Contains(string(res.Msg.GetResultJson()), `"status":"unavailable"`) && !strings.Contains(string(res.Msg.GetResultJson()), `"status":"failed"`) {
+		t.Fatalf("expected unavailable or failed: %s", res.Msg.GetResultJson())
 	}
 	applied, err := eng.LastApplied(id)
 	if err != nil {

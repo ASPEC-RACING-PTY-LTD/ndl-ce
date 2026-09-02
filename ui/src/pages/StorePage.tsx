@@ -5,11 +5,14 @@ import {
   getStoreAppScans,
   getStorePolicy,
   installStoreApp,
+  listGpus,
+  listNodes,
   listStoreApps,
   setStorePolicy,
   verifyStoreApp,
 } from "../api/client";
-import type { StoreApp, StoreInstallation, StoreScanCheck, StorePolicy } from "../generated/openapi";
+import type { NodeSummary } from "../api/phase2";
+import type { GPU, StoreApp, StoreInstallation, StoreScanCheck, StorePolicy } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { useSession } from "../session";
 
@@ -42,10 +45,19 @@ export function StorePage() {
   const [memory, setMemory] = useState("268435456");
   const [poolId, setPoolId] = useState("");
   const [networkId, setNetworkId] = useState("");
+  const [nodeId, setNodeId] = useState("");
+  const [gpuId, setGpuId] = useState("");
+  const [nodes, setNodes] = useState<NodeSummary[]>([]);
+  const [gpus, setGpus] = useState<GPU[]>([]);
 
   async function reload() {
-    const [next, pol] = await Promise.all([listStoreApps(), getStorePolicy().catch(() => null)]);
+    const [next, pol, nodeList] = await Promise.all([
+      listStoreApps(),
+      getStorePolicy().catch(() => null),
+      listNodes().catch(() => [] as NodeSummary[]),
+    ]);
     setApps(next.items);
+    setNodes(nodeList);
     if (pol) {
       setPolicy(pol);
     }
@@ -71,6 +83,8 @@ export function StorePage() {
       setSelected(app);
       const report = await getStoreAppScans(id);
       setScans(report.items ?? []);
+      const listed = await listGpus().catch(() => null);
+      setGpus(listed?.items ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unavailable");
     }
@@ -117,6 +131,8 @@ export function StorePage() {
         name: selected.name,
         pool_id: poolId || undefined,
         network_id: networkId || undefined,
+        node_id: nodeId || undefined,
+        gpu_id: gpuId || undefined,
         cpus: Number(cpus) || undefined,
         memory_bytes: Number(memory) || undefined,
       });
@@ -135,7 +151,8 @@ export function StorePage() {
         <h1>Store</h1>
         <p className="lede">
           Declarative app install. Signatures fail closed on tamper. Unsigned Community warns. Verified-only refuses
-          unsigned packages. CVE scanner unavailable is shown on the scan report.
+          unsigned packages. Official class on this cluster uses a cluster-local signing key, not an Official publisher
+          CA. CVE scanner unavailable is shown on the scan report.
         </p>
       </header>
       {error ? (
@@ -195,10 +212,47 @@ export function StorePage() {
             Image {selected.image}. GPU optional {selected.gpu_optional ? "yes" : "no"}. Trust{" "}
             {selected.trust_class || selected.class}.
           </p>
+          {selected.class === "official" || selected.trust_class === "official" ? (
+            <p>Signed with a cluster-local signing key. This is not an Official publisher CA.</p>
+          ) : null}
           <Field id="store-cpu" label="CPU" value={cpus} onChange={(e) => setCpus(e.target.value)} />
           <Field id="store-mem" label="Memory bytes" value={memory} onChange={(e) => setMemory(e.target.value)} />
           <Field id="store-pool" label="Storage pool" value={poolId} onChange={(e) => setPoolId(e.target.value)} />
           <Field id="store-net" label="Network" value={networkId} onChange={(e) => setNetworkId(e.target.value)} />
+          <Field
+            id="store-node"
+            label="Node"
+            value={nodeId}
+            onChange={(e) => setNodeId(e.target.value)}
+            list="store-node-options"
+            hint={
+              nodes.length > 0
+                ? "node_id is sent on install. A remote node fails dest-agent-not-connected."
+                : "Optional node_id on the install POST body."
+            }
+          />
+          <datalist id="store-node-options">
+            {nodes.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.name || n.id}
+              </option>
+            ))}
+          </datalist>
+          <Field
+            id="store-gpu"
+            label="GPU"
+            value={gpuId}
+            onChange={(e) => setGpuId(e.target.value)}
+            list="store-gpu-options"
+            hint="Optional PCI id. Assigned after install with the existing GPU assign API."
+          />
+          <datalist id="store-gpu-options">
+            {gpus.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.vendor || g.pci || g.id}
+              </option>
+            ))}
+          </datalist>
           {mutate ? (
             <button className="btn" type="button" disabled={busy} onClick={() => void onVerify()}>
               Verify
@@ -212,6 +266,9 @@ export function StorePage() {
       {scans.length > 0 ? (
         <article className="panel">
           <h2>Scan report</h2>
+          {selected && (selected.class === "official" || selected.trust_class === "official") ? (
+            <p>Official class signatures on this cluster use a cluster-local signing key, not an Official CA.</p>
+          ) : null}
           <ul className="plain-list">
             {scans.map((row) => (
               <li key={row.kind}>

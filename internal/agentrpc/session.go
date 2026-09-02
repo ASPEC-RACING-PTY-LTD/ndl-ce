@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 )
 
@@ -84,11 +85,28 @@ func (h *Handler) ApplyDesiredSession(ctx context.Context, dataDir string) error
 		listen = strings.Split(res.AddressCIDR, "/")[0] + ":9444"
 	}
 	nodeID, clusterID, _ := h.Ident.LoadNode()
-	return DialOpenSession(ctx, desired.ControlURL, map[string]any{
+	body := map[string]any{
 		"peer_id": desired.PeerID, "node_id": nodeID, "cluster_id": clusterID,
 		"listen_addr": listen, "wg_public_key": res.PublicKey,
-		"handshake_unix": res.LastHandshakeUnix, "pairing_token": desired.PairingToken,
-	})
+		"handshake_unix": res.LastHandshakeUnix,
+	}
+	if strings.TrimSpace(desired.PairingToken) != "" {
+		body["pairing_token"] = desired.PairingToken
+	}
+	if err := DialOpenSession(ctx, desired.ControlURL, body); err != nil {
+		return err
+	}
+	if strings.TrimSpace(desired.PairingToken) != "" {
+		desired.PairingToken = ""
+		raw, err := json.Marshal(desired)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, raw, 0600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DialOpenSession POSTs the agent dial-out session to the control plane.
@@ -109,7 +127,7 @@ func DialOpenSession(ctx context.Context, controlURL string, body map[string]any
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := http.DefaultClient.Do(req)
+	res, err := openSessionClient().Do(req)
 	if err != nil {
 		return err
 	}
@@ -118,4 +136,22 @@ func DialOpenSession(ctx context.Context, controlURL string, body map[string]any
 		return fmt.Errorf("OpenSession dial-out status %d", res.StatusCode)
 	}
 	return nil
+}
+
+func openSessionClient() *http.Client {
+	dir := strings.TrimSpace(os.Getenv("NODAL_DATA_DIR"))
+	if dir == "" {
+		dir = "/var/lib/ndl"
+	}
+	cfg, err := identity.Files{Dir: dir}.LoadClientTLS()
+	if err != nil || cfg == nil {
+		return http.DefaultClient
+	}
+	tr, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultClient
+	}
+	clone := tr.Clone()
+	clone.TLSClientConfig = cfg
+	return &http.Client{Transport: clone}
 }

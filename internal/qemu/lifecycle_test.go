@@ -25,6 +25,12 @@ func TestValidateWorkloadIDRejectsNonUUID(t *testing.T) {
 	if err := e.Start(context.Background(), "not-a-uuid"); err == nil {
 		t.Fatal("Start must reject a non-UUID")
 	}
+	if err := e.Start(context.Background(), ok); err == nil {
+		t.Fatal("Start must error under SkipHostCmds")
+	}
+	if err := e.Stop(context.Background(), ok); err == nil {
+		t.Fatal("Stop must error under SkipHostCmds")
+	}
 	if err := e.ForceStop(context.Background(), "x"); err == nil {
 		t.Fatal("ForceStop must reject a non-UUID")
 	}

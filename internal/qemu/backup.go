@@ -34,7 +34,7 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			return storage.CopyResult{}, err
 		}
 		if e.SkipHostCmds {
-			return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup mkdir was not run")
 		}
 		if err := os.MkdirAll(dest, 0o750); err != nil {
 			return storage.CopyResult{}, fmt.Errorf("backup mkdir: %w", err)
@@ -45,7 +45,7 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			return storage.CopyResult{}, storage.ErrForbiddenPath
 		}
 		if e.SkipHostCmds {
-			return storage.CopyResult{Dest: dest, Size: 1, Format: "directory"}, nil
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup stat was not run")
 		}
 		info, err := os.Stat(dest)
 		if err != nil || !info.IsDir() {
@@ -57,7 +57,7 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			return storage.CopyResult{}, err
 		}
 		if e.SkipHostCmds {
-			return storage.CopyResult{Dest: dest, Format: "qcow2"}, nil
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup delete was not run")
 		}
 		if err := storage.RemoveFile(dest); err != nil {
 			return storage.CopyResult{}, fmt.Errorf("backup delete: %w", err)
@@ -78,7 +78,7 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			srcFmt = "raw"
 		}
 		if e.SkipHostCmds {
-			return storage.CopyResult{Dest: dest, SHA256: "fixture", Size: 1, Format: "qcow2"}, nil
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup copy was not run")
 		}
 		if act == BackupReplace {
 			_ = os.Remove(dest)

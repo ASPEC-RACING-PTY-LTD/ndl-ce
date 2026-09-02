@@ -143,8 +143,8 @@ export function ClusterPage() {
       <h1>Cluster</h1>
       <p className="lede">
         One control plane writer. A second node is a worker. Hostname is a locator; identity is the node UUID.
-        Existing guests on the control node stay where they are. Pairing tokens are not join tokens. HA is leader plus
-        replica foundations, not multi-master.
+        Existing guests on the control node stay where they are. Join tokens are not pairing tokens. HA is leader plus
+        replica foundations, not multi-master. STONITH is not implemented.
       </p>
       {error ? (
         <p className="banner banner-error" role="alert">
@@ -183,7 +183,7 @@ export function ClusterPage() {
         {ha ? (
           <p>
             Mode {ha.mode}. Writer {ha.writer ? "yes" : "no"}. Replica {replicaLabel}. Fencing {ha.fencing_mode}.
-            {ha.lease_holder ? ` Lease ${ha.lease_holder}.` : ""}
+            Multi-master {ha.multi_master ? "yes" : "no"}.{ha.lease_holder ? ` Lease ${ha.lease_holder}.` : ""}
           </p>
         ) : (
           <p>Collecting</p>

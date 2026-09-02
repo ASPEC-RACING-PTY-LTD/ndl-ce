@@ -10,7 +10,9 @@ refused.
 Phase 37 signatures fail closed on tamper. Unsigned Community warns.
 Verified-only refuses unsigned packages. A revoked signing key stops
 new installs and does not delete running workloads. CVE scanner
-unavailable is shown on the scan report.
+unavailable is shown on the scan report. Official keys are generated
+per cluster (self-issued). This tree does not ship a production No-dal
+signing CA.
 
 ```text
 nodalctl app list

@@ -133,6 +133,29 @@ func TestOfflineSharedStorageSkipsCopy(t *testing.T) {
 	}
 }
 
+func TestLiveABIMismatchLeavesSourceRunning(t *testing.T) {
+	rt := NewFake()
+	rt.SetSourceRunning("wl", true)
+	res, err := Run(t.Context(), rt, Request{
+		WorkloadID: "wl", Kind: KindVM, Mode: ModeLive,
+		SourceNodeID: "a", DestNodeID: "b",
+		SourceArgv: []string{"/usr/bin/qemu-system-x86_64", "-smp", "1"},
+		DestArgv:   []string{"/usr/bin/qemu-system-x86_64", "-smp", "2"},
+	})
+	if err == nil {
+		t.Fatal("ABI mismatch must fail")
+	}
+	if res.State != StateFail || !res.SourceRunning || res.DestRunning {
+		t.Fatalf("source must keep running: %+v", res)
+	}
+	if !rt.SourceRunning(t.Context(), "wl") {
+		t.Fatal("source unit must still be running")
+	}
+	if rt.DestRunning("wl") || rt.DestIncoming("wl") {
+		t.Fatal("dest must be aborted")
+	}
+}
+
 func TestPrepareFailureLeavesSourceRunning(t *testing.T) {
 	rt := NewFake()
 	rt.SetSourceRunning("wl", true)

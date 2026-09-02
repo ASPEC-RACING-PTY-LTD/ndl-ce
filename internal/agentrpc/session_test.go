@@ -36,6 +36,7 @@ func TestApplyDesiredSessionDialsControl(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
+		got = map[string]any{}
 		_ = json.NewDecoder(r.Body).Decode(&got)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"accepted":true}`))
@@ -74,5 +75,11 @@ func TestApplyDesiredSessionDialsControl(t *testing.T) {
 	}
 	if got["handshake_unix"] != float64(0) {
 		t.Fatalf("SkipHostCmds must report handshake 0: %v", got)
+	}
+	if err := h.ApplyDesiredSession(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	if got["pairing_token"] != nil && got["pairing_token"] != "" {
+		t.Fatalf("pairing token must be stripped after first success: %v", got)
 	}
 }

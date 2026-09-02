@@ -69,11 +69,31 @@ func TestRunUpdateSkipExecIsHonest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Supported || res.Status != "succeeded" {
-		t.Fatalf("%+v", res)
+	if !res.Supported || res.Status == "succeeded" {
+		t.Fatalf("nil exec must not claim succeeded: %+v", res)
+	}
+	if res.Status != "planned" && res.Status != "unavailable" {
+		t.Fatalf("nil exec status=%q want planned or unavailable", res.Status)
+	}
+	if !strings.Contains(strings.ToLower(res.Reason), "not run") {
+		t.Fatalf("reason must say commands were not run: %q", res.Reason)
 	}
 	if strings.Contains(strings.ToLower(res.Reason), "stop") {
 		t.Fatalf("apply must not talk about stopping guests: %q", res.Reason)
+	}
+	rb, err := RunUpdate(context.Background(), p, UpdateRequest{Action: "rollback", Version: "0.1.10"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rb.Status == "succeeded" {
+		t.Fatalf("rollback nil exec must not claim succeeded: %+v", rb)
+	}
+	cp, err := RunUpdate(context.Background(), p, UpdateRequest{Action: "checkpoint", CheckpointID: "cp1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.Status == "succeeded" {
+		t.Fatalf("checkpoint nil exec must not claim succeeded: %+v", cp)
 	}
 }
 
@@ -94,5 +114,26 @@ func TestRunUpdatePreflightIncludesStoreHook(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("store hook missing")
+	}
+}
+
+func TestRunUpdateNilExecDoesNotStartK8sOrOSD(t *testing.T) {
+	p, err := DetectFrom(strings.NewReader("ID=debian\nVERSION_ID=13\nPRETTY_NAME=\"Debian GNU/Linux 13\"\n"), "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	k8s, err := RunUpdate(context.Background(), p, UpdateRequest{Action: UpdateK8sRuntimeStart}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k8s.Status == "succeeded" {
+		t.Fatalf("nil exec must not start kubelet: %+v", k8s)
+	}
+	osd, err := RunUpdate(context.Background(), p, UpdateRequest{Action: UpdateOSDStart}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if osd.Status == "succeeded" {
+		t.Fatalf("nil exec must not start ceph-osd: %+v", osd)
 	}
 }

@@ -162,7 +162,26 @@ func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, 
 		c := cands[0]
 		op := s.startOp(ctx, clusterID, pool.NodeID, "workload.migrate", "queued", 0)
 		op.State = "queued"
-		op.Message = fmt.Sprintf("storage pressure %d percent on %s; queued migrate of low-priority %s", pct, pool.Name, c.Name)
+		op.Message = fmt.Sprintf("storage pressure %d percent on %s; dest agent is not connected", pct, pool.Name)
+		var picked *appdb.Workload
+		for i := range workloads {
+			if workloads[i].ID == c.WorkloadID {
+				picked = &workloads[i]
+				break
+			}
+		}
+		if s.Migrate != nil && picked != nil {
+			dest, err := s.migrateDest(ctx, clusterID, *picked, "")
+			if err == nil && dest != nil && s.destEligibleLocal(ctx, dest) {
+				_, code, msg := s.runMigrate(ctx, *picked, dest, migrateModeFor(*picked))
+				if code == http.StatusOK {
+					op.State = "succeeded"
+					op.Message = fmt.Sprintf("storage pressure %d percent on %s; migrated low-priority %s", pct, pool.Name, c.Name)
+				} else if msg != "" {
+					op.Message = msg
+				}
+			}
+		}
 		_ = s.Store.UpsertOperation(ctx, op)
 		ops = append(ops, op.ID)
 	}

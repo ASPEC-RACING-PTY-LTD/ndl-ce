@@ -245,6 +245,48 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 - MEDIUM. Live kubelet is not started on this Ubuntu Cloud host. Why not blocking: start is a typed HostUpdate that returns unavailable and kubelet_started stays false; Debian 13 systemd is the product path.
 - LOW. No-dal does not wrap arbitrary Kubernetes pods as first-class workloads yet. Why not blocking: VMs and CTs remain the default compute and do not require Kubernetes.
 
+## CE 1.0 closeout (HIGH)
+
+These stay HIGH until Debian 13 Homelab and cluster hardware gates pass.
+They are not claimed as CE 1.0 complete.
+
+- HIGH. Fail-closed host engines. SkipHostCmds is still the Cloud-safe
+  default for QEMU, LXC, ZFS, LVM, NFS/SMB/iSCSI, WireGuard, backup
+  convert, object copy, kubelet, and apt. SkipHostCmds must fail closed
+  (unavailable or unverified) and must not invent success. Live QEMU
+  migrate now errors under SkipHostCmds; other engines still need the
+  same rule on the appliance.
+  Why not blocking for license surface: Cloud fixtures stay honest when
+  they report unavailable; appliance execution is the CE 1.0 gate.
+- HIGH. Migrate dest agent is nil. `Server.Migrate` stays unset until
+  dest Execute is wired. Live and offline migrate return
+  dest-agent-not-connected and leave the source running. Two-box
+  migrate is not reached.
+  Why not blocking for license surface: the API refuses instead of
+  starting a second copy on the control unix agent.
+- HIGH. Operate still has a DB-only path. Restart and Store install
+  invoke existing HTTP handlers. Policy create still writes
+  `CreatePolicy` in the store and does not POST `/api/v1/policies`.
+  Operate must use those APIs. This is not the finished engine.
+  Why not blocking for license surface: Ask cannot mutate; Host.Exec
+  shaped prompts stay 422; this is recorded debt, not a CE 1.0 pass.
+- HIGH. Webhook SSRF residual. Literal loopback, link-local, and
+  RFC1918 IPs are denied. Hostnames that are not IPs are still
+  accepted, so DNS rebinding and metadata names remain a risk.
+  Why not blocking for license surface: webhook URLs stay secrets in
+  list JSON; network isolation on the appliance is the remaining gate.
+- HIGH. Pairing reuse residual. Pairing tokens can be marked used on
+  disk. A session that already has `LastSeenAt` can reconnect without
+  the token. Pairing tokens are not join tokens; join tokens are
+  single-use.
+  Why not blocking for license surface: pairing is pre-join; join
+  consume is a different object.
+- HIGH. Official Store keys are self-issued. `ensureOfficialTrust`
+  generates a per-cluster Ed25519 Official key. There is no production
+  No-dal signing CA in this tree. Official is not a public trust root.
+  Why not blocking for license surface: tamper still fails closed on
+  the stored bytes; production CA is a later signing operation.
+
 
 
 

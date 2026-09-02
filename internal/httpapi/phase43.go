@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -41,23 +42,13 @@ func (s *Server) activateLicense(w http.ResponseWriter, r *http.Request) {
 		ClusterID: p.User.ClusterID, Status: appdb.LicenseGrace, LastChecked: &now,
 		Reason: "Key stored. Licensing API was not reachable. Community Edition continues. Workloads are not stopped.",
 	}
+	var perr error
 	if s.LicenseProbe != nil {
-		if err := s.LicenseProbe.Check(r.Context(), key); err != nil {
-			st.Status = appdb.LicenseUnreachable
-			st.Reason = "Licensing API unreachable. Grace applies. Workloads are not stopped."
-		} else {
-			st.Status = appdb.LicenseActive
-			st.Reason = "Key accepted. This installation remains Community Edition until signed EE artifacts exist. Workloads are not stopped."
-		}
+		perr = s.LicenseProbe.Check(r.Context(), key)
 	} else {
-		if err := (license.HTTPProbe{Client: s.HTTPClient}).Check(r.Context(), key); err != nil {
-			st.Status = appdb.LicenseUnreachable
-			st.Reason = "Licensing API unreachable. Grace applies. Workloads are not stopped."
-		} else {
-			st.Status = appdb.LicenseActive
-			st.Reason = "Key accepted. This installation remains Community Edition until signed EE artifacts exist. Workloads are not stopped."
-		}
+		perr = (license.HTTPProbe{Client: s.HTTPClient}).Check(r.Context(), key)
 	}
+	applyLicenseProbe(&st, perr)
 	if err := s.Store.PutLicenseState(r.Context(), st, key); err != nil {
 		writeErr(w, http.StatusConflict, "could not record license")
 		return
@@ -102,4 +93,19 @@ func (s *Server) licenseJSON(ctx context.Context, clusterID string) map[string]a
 		out["last_checked"] = st.LastChecked.UTC().Format(time.RFC3339)
 	}
 	return out
+}
+
+func applyLicenseProbe(st *appdb.LicenseState, err error) {
+	if err == nil {
+		st.Status = appdb.LicenseActive
+		st.Reason = "Key accepted. This installation remains Community Edition until signed EE artifacts exist. Workloads are not stopped."
+		return
+	}
+	if errors.Is(err, license.ErrNotEntitled) {
+		st.Status = appdb.LicenseGrace
+		st.Reason = "Licensing API did not grant entitlement. Grace applies. Workloads are not stopped."
+		return
+	}
+	st.Status = appdb.LicenseUnreachable
+	st.Reason = "Licensing API unreachable. Grace applies. Workloads are not stopped."
 }

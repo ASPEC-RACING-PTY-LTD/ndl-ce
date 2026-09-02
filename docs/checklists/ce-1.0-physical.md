@@ -1,7 +1,8 @@
 # CE 1.0 physical checklist
 
 Run on a real Debian 13 amd64 host. This document is the checklist.
-It is not evidence that this Cloud agent ran it.
+It is not executed proof and is not evidence that this Cloud agent
+ran it. Ticking items here does not mark CE 1.0 reached.
 
 1. One-line or manual repo install of `nodal`, open `/setup`
 2. Create a Directory pool, a network, a VM, a system container, an OCI app

@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -141,8 +143,8 @@ func TestPhase30HostnameCollisionStillUniqueUUID(t *testing.T) {
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 
-	id1 := mintJoin(t, ts, cookie, "box-b")
-	id2 := mintJoin(t, ts, cookie, "box-b")
+	id1, _ := mintJoin(t, ts, cookie, "box-b")
+	id2, _ := mintJoin(t, ts, cookie, "box-b")
 	if id1 == id2 {
 		t.Fatal("hostname is not identity")
 	}
@@ -165,7 +167,7 @@ func TestPhase30RevokeWorkerAndRefuseControl(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
-	workerID := mintJoin(t, ts, cookie, "box-b")
+	workerID, certPEM := mintJoin(t, ts, cookie, "box-b")
 
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+control.ID+"/revoke", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -188,6 +190,17 @@ func TestPhase30RevokeWorkerAndRefuseControl(t *testing.T) {
 	got, _ := mem.GetNodeByID(t.Context(), clusterRow.ID, workerID)
 	if got == nil || got.RevokedAt == nil {
 		t.Fatal("worker must be revoked")
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err == nil {
+		t.Fatal("revoked node serial must fail closed")
 	}
 }
 
@@ -214,7 +227,7 @@ func TestPhase30SecondWriterLeaseRefusesWrites(t *testing.T) {
 	}
 }
 
-func mintJoin(t *testing.T, ts *httptest.Server, cookie, hostname string) string {
+func mintJoin(t *testing.T, ts *httptest.Server, cookie, hostname string) (string, string) {
 	t.Helper()
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -249,5 +262,9 @@ func mintJoin(t *testing.T, ts *httptest.Server, cookie, hostname string) string
 	if id == "" {
 		t.Fatal("missing node id")
 	}
-	return id
+	certPEM, _ := joined["node_cert"].(string)
+	if certPEM == "" {
+		t.Fatal("missing node cert")
+	}
+	return id, certPEM
 }
