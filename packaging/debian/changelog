@@ -45,6 +45,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Files upload expected sha256 must match the digest field. A substring of the JSON result is not a checksum.
   * OpenAPI documents Files dest_path jail, write-only SMTP password, and HA replica host:port.
   * Backup target probe will not stat a host path outside the allowed artifact prefixes. SMB UNC locators are unchanged.
+  * Files upload sha256 checksums the uploaded bytes. expected_sha256 is compare-and-swap of the existing file. They are not the same field.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

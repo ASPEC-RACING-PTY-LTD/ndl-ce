@@ -1001,6 +1001,14 @@ export interface FileMutationRequest {
   expected_sha256?: string;
 }
 
+export interface FileUploadRequest {
+  path?: string;
+  file?: string;
+  sha256?: string;
+  expected_sha256?: string;
+  expected_mtime?: string;
+}
+
 export interface FileMutationResponse {
   ok?: boolean;
   path?: string;

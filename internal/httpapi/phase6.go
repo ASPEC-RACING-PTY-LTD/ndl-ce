@@ -424,7 +424,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		w.Header().Set("Content-Disposition", `attachment; filename="`+attachmentName(rel)+`"`)
 		_, _ = io.Copy(w, rc)
 	case "upload":
-		upPath, body, closer, sha, expectedMtime, err := readFileUpload(r)
+		upPath, body, closer, contentSHA, casSHA, expectedMtime, err := readFileUpload(r)
 		if closer != nil {
 			defer closer()
 		}
@@ -439,13 +439,13 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
 		}
-		if err := s.enforceExpected(r.Context(), kind, id, jail, rel, expectedMtime, sha); err != nil {
+		if err := s.enforceExpected(r.Context(), kind, id, jail, rel, expectedMtime, casSHA); err != nil {
 			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
 		}
 		raw, err := s.IO.FilesPut(r.Context(), agentrpc.FilesPutCall{
 			TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
-		}, body, sha)
+		}, body, contentSHA)
 		if err != nil {
 			s.audit(r, p.User.ClusterID, p.User.ID, "files.upload", "denied", auditFilesPath(kind, rel))
 			writeErr(w, filesHTTPStatus(err), err.Error())
@@ -718,6 +718,8 @@ func filesHTTPStatus(err error) int {
 	switch {
 	case strings.Contains(msg, "file changed"):
 		return http.StatusConflict
+	case strings.Contains(msg, "sha256 mismatch"):
+		return http.StatusBadRequest
 	case strings.Contains(msg, "escapes"), strings.Contains(msg, "denied by host"):
 		return http.StatusForbidden
 	case strings.Contains(msg, "no such file"), strings.Contains(msg, "not found"):
@@ -751,34 +753,29 @@ func filePath(r *http.Request) string {
 	return p
 }
 
-func readFileUpload(r *http.Request) (rel string, body io.Reader, closer func(), sha, expectedMtime string, err error) {
+func readFileUpload(r *http.Request) (rel string, body io.Reader, closer func(), contentSHA, casSHA, expectedMtime string, err error) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			return "", nil, nil, "", "", err
+			return "", nil, nil, "", "", "", err
 		}
 		rel = strings.TrimSpace(r.FormValue("path"))
-		sha = strings.TrimSpace(r.FormValue("sha256"))
+		contentSHA = strings.TrimSpace(r.FormValue("sha256"))
+		casSHA = strings.TrimSpace(r.FormValue("expected_sha256"))
 		expectedMtime = strings.TrimSpace(r.FormValue("expected_mtime"))
-		if expectedMtime == "" {
-			expectedMtime = strings.TrimSpace(r.FormValue("expected_mtime"))
-		}
-		if v := strings.TrimSpace(r.FormValue("expected_sha256")); v != "" {
-			sha = v
-		}
 		f, hdr, err := r.FormFile("file")
 		if err != nil {
-			return "", nil, nil, "", "", err
+			return "", nil, nil, "", "", "", err
 		}
 		if rel == "" && hdr != nil {
 			rel = hdr.Filename
 		}
-		return rel, f, func() { _ = f.Close() }, sha, expectedMtime, nil
+		return rel, f, func() { _ = f.Close() }, contentSHA, casSHA, expectedMtime, nil
 	}
 	if strings.Contains(ct, "application/json") {
-		return "", nil, nil, "", "", errors.New("upload must be multipart or a raw body")
+		return "", nil, nil, "", "", "", errors.New("upload must be multipart or a raw body")
 	}
-	return strings.TrimSpace(r.URL.Query().Get("path")), r.Body, func() { _ = r.Body.Close() }, "", strings.TrimSpace(r.Header.Get("X-Nodal-Expected-Mtime")), nil
+	return strings.TrimSpace(r.URL.Query().Get("path")), r.Body, func() { _ = r.Body.Close() }, "", "", strings.TrimSpace(r.Header.Get("X-Nodal-Expected-Mtime")), nil
 }
 
 func wsTicket(r *http.Request) string {

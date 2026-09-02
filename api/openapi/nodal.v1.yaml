@@ -2446,6 +2446,11 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/FileUploadRequest"
       responses:
         "201":
           description: Written
@@ -2675,6 +2680,11 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/FileUploadRequest"
       responses:
         "201":
           description: Written
@@ -6467,6 +6477,23 @@ components:
         expected_sha256:
           type: string
           description: Existing file digest for compare-and-swap before mutate.
+    FileUploadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        file:
+          type: string
+          description: Multipart file part. The bytes written to the jail.
+        sha256:
+          type: string
+          description: Digest of the uploaded bytes. Compared before write. Not compare-and-swap of the existing file.
+        expected_sha256:
+          type: string
+          description: Existing file digest for compare-and-swap before mutate.
+        expected_mtime:
+          type: string
     FileMutationResponse:
       type: object
       additionalProperties: true

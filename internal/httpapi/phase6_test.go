@@ -3,6 +3,8 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -152,7 +154,7 @@ func (f *fakeIO) FilesOp(_ context.Context, call agentrpc.FilesCall) (json.RawMe
 	}
 }
 
-func (f *fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Reader, _ string) (json.RawMessage, error) {
+func (f *fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Reader, expectedSHA string) (json.RawMessage, error) {
 	f.record(call.TargetKind, call.JailRoot, call.Path, "upload")
 	dest, err := f.join(call.Path)
 	if err != nil {
@@ -165,10 +167,15 @@ func (f *fakeIO) FilesPut(_ context.Context, call agentrpc.FilesPutCall, r io.Re
 	if err != nil {
 		return nil, err
 	}
+	sum := sha256.Sum256(b)
+	hexSum := hex.EncodeToString(sum[:])
+	if expectedSHA != "" && !strings.EqualFold(expectedSHA, hexSum) {
+		return nil, fmt.Errorf("sha256 mismatch")
+	}
 	if err := os.WriteFile(dest, b, 0o644); err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"ok": true, "path": call.Path, "size": len(b)})
+	return json.Marshal(map[string]any{"ok": true, "path": call.Path, "size": len(b), "sha256": hexSum})
 }
 
 func (f *fakeIO) FilesGet(_ context.Context, call agentrpc.FilesGetCall) (io.ReadCloser, error) {
@@ -625,12 +632,20 @@ func TestWorkloadFilesBinaryContent(t *testing.T) {
 	}
 }
 
-func postMultipart(t *testing.T, ts *httptest.Server, cookie, urlPath, rel, name, body string) *http.Response {
+func postMultipart(t *testing.T, ts *httptest.Server, cookie, urlPath, rel, name, body string, fields ...string) *http.Response {
 	t.Helper()
+	if len(fields)%2 != 0 {
+		t.Fatal("fields must be key/value pairs")
+	}
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	if err := w.WriteField("path", rel); err != nil {
 		t.Fatal(err)
+	}
+	for i := 0; i < len(fields); i += 2 {
+		if err := w.WriteField(fields[i], fields[i+1]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	fw, err := w.CreateFormFile("file", name)
 	if err != nil {
@@ -738,4 +753,61 @@ func TestWorkloadFilesUploadLargeTraversalAndChmod(t *testing.T) {
 		t.Fatalf("admin chmod %d %s", res.StatusCode, b)
 	}
 	_ = res.Body.Close()
+}
+
+func TestWorkloadFilesUploadSeparatesContentAndCASDigests(t *testing.T) {
+	s, _, ts, admin, _, wlID := seedPhase6(t)
+	root := s.IO.(*fakeIO).root
+	urlPath := "/api/v1/workloads/" + wlID + "/files/upload"
+	sum := func(body string) string {
+		h := sha256.Sum256([]byte(body))
+		return hex.EncodeToString(h[:])
+	}
+
+	newBody := "brand-new-bytes"
+	res := postMultipart(t, ts, admin, urlPath, "cas.txt", "cas.txt", newBody, "sha256", sum(newBody))
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("content sha %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	res = postMultipart(t, ts, admin, urlPath, "wrong.txt", "wrong.txt", "payload", "sha256", sum("not-payload"))
+	if res.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("wrong content sha %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	if _, err := os.Stat(filepath.Join(root, "wrong.txt")); err == nil {
+		t.Fatal("mismatch must not write")
+	}
+
+	oldBody := "old-on-disk"
+	if err := os.WriteFile(filepath.Join(root, "swap.txt"), []byte(oldBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next := "new-on-disk"
+	res = postMultipart(t, ts, admin, urlPath, "swap.txt", "swap.txt", next,
+		"sha256", sum(next), "expected_sha256", sum(oldBody))
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("cas+content %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	got, err := os.ReadFile(filepath.Join(root, "swap.txt"))
+	if err != nil || string(got) != next {
+		t.Fatalf("swapped %s %v", got, err)
+	}
+
+	res = postMultipart(t, ts, admin, urlPath, "swap.txt", "swap.txt", "third",
+		"sha256", sum("third"), "expected_sha256", sum(oldBody))
+	if res.StatusCode != http.StatusConflict {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("stale cas %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	got, err = os.ReadFile(filepath.Join(root, "swap.txt"))
+	if err != nil || string(got) != next {
+		t.Fatalf("stale cas must not write %s %v", got, err)
+	}
 }
