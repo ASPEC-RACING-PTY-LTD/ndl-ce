@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: No-dal Community Edition API
-  version: 0.1.37
-  description: Phase 38 optional Kubernetes runtime, plus prior northbound API.
+  version: 0.1.39
+  description: Phase 40 automation engine, plus prior northbound API.
 servers:
   - url: /api/v1
 paths:
@@ -1178,6 +1178,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StorePolicy"
+  /policies:
+    get:
+      operationId: listAutomationPolicies
+      summary: List deterministic automation policies. Not an LLM loop.
+      responses:
+        "200":
+          description: Policies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyList"
+    post:
+      operationId: createAutomationPolicy
+      summary: Create a storage-pressure policy. Host.Exec shaped YAML is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationPolicyCreateRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicy"
+  /policies/{id}/apply:
+    post:
+      operationId: applyAutomationPolicy
+      summary: Evaluate a policy as the automation service identity. Optional confirm when require_approval is set.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Confirm
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - apply-policy
+      responses:
+        "200":
+          description: Evaluated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyRun"
+        "202":
+          description: Approval required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyRun"
+  /policy-runs:
+    get:
+      operationId: listAutomationPolicyRuns
+      summary: List recent policy evaluations
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationPolicyRunList"
   /cluster/join-tokens:
     post:
       operationId: createJoinToken
@@ -7422,4 +7490,89 @@ components:
           type: string
         windows:
           type: string
+    AutomationPolicy:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - storage_pressure
+        action:
+          type: string
+          enum:
+            - enqueue_migrate_low_priority
+        threshold_percent:
+          type: integer
+        require_approval:
+          type: boolean
+        enabled:
+          type: boolean
+    AutomationPolicyList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationPolicy"
+    AutomationPolicyCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        action:
+          type: string
+        threshold_percent:
+          type: integer
+        require_approval:
+          type: boolean
+        yaml:
+          type: string
+    AutomationPolicyRun:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        policy_id:
+          type: string
+        actor_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - succeeded
+            - skipped
+            - denied
+        reason:
+          type: string
+        operation_ids:
+          type: array
+          items:
+            type: string
+        service_identity:
+          type: string
+    AutomationPolicyRunList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationPolicyRun"
 

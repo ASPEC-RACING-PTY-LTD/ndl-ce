@@ -100,6 +100,8 @@ type Memory struct {
 	nodeMaint          map[string]NodeMaintenance
 	placements         map[string]WorkloadPlacement
 	migrateJobs        map[string]MigrateJob
+	policies           map[string]Policy
+	policyRuns         map[string]PolicyRun
 }
 
 // NewMemory returns an empty store.

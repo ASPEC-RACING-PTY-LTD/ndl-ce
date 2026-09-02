@@ -1678,6 +1678,43 @@ export interface GuestInstallHints {
   windows?: string;
 }
 
+export interface AutomationPolicy {
+  id?: string;
+  name?: string;
+  kind?: "storage_pressure";
+  action?: "enqueue_migrate_low_priority";
+  threshold_percent?: number;
+  require_approval?: boolean;
+  enabled?: boolean;
+}
+
+export interface AutomationPolicyList {
+  items: AutomationPolicy[];
+}
+
+export interface AutomationPolicyCreateRequest {
+  name: string;
+  kind?: string;
+  action?: string;
+  threshold_percent?: number;
+  require_approval?: boolean;
+  yaml?: string;
+}
+
+export interface AutomationPolicyRun {
+  id?: string;
+  policy_id?: string;
+  actor_id?: string;
+  status?: "pending" | "succeeded" | "skipped" | "denied";
+  reason?: string;
+  operation_ids?: string[];
+  service_identity?: string;
+}
+
+export interface AutomationPolicyRunList {
+  items: AutomationPolicyRun[];
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -1805,6 +1842,12 @@ export type ListStoreKeysPath = "/api/v1/store/keys";
 export type RevokeStoreKeyPath = "/api/v1/store/keys/{id}/revoke";
 
 export type GetStorePolicyPath = "/api/v1/store/policy";
+
+export type ListAutomationPoliciesPath = "/api/v1/policies";
+
+export type ApplyAutomationPolicyPath = "/api/v1/policies/{id}/apply";
+
+export type ListAutomationPolicyRunsPath = "/api/v1/policy-runs";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
 

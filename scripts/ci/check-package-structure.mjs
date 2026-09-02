@@ -108,6 +108,14 @@ if (!existsSync("migrations/0035_phase39.sql")) {
     errors.push("phase 39 migration must add distributed pools, OSD rows, and secret keys");
   }
 }
+if (!existsSync("migrations/0036_phase40.sql")) {
+  errors.push("missing migrations/0036_phase40.sql policies and policy_runs");
+} else {
+  const polSql = readFileSync("migrations/0036_phase40.sql", "utf8");
+  if (!polSql.includes("policies") || !polSql.includes("policy_runs")) {
+    errors.push("phase 40 migration must add policies and policy_runs");
+  }
+}
 if (!existsSync("store/official/sample-web.yaml")) {
   errors.push("missing store/official/sample-web.yaml official sample manifest");
 } else {
@@ -223,6 +231,12 @@ if (!changelog.includes("nodal (0.1.36)") || !changelog.includes("Phase 37 Store
 }
 if (!changelog.includes("nodal (0.1.37)") || !changelog.includes("Phase 38 optional Kubernetes")) {
   errors.push("changelog must include nodal (0.1.37) Phase 38 optional Kubernetes");
+}
+if (!changelog.includes("nodal (0.1.38)") || !changelog.includes("Phase 39 optional distributed storage")) {
+  errors.push("changelog must include nodal (0.1.38) Phase 39 optional distributed storage");
+}
+if (!changelog.includes("nodal (0.1.39)") || !changelog.includes("Phase 40 automation engine")) {
+  errors.push("changelog must include nodal (0.1.39) Phase 40 automation engine");
 }
 
 const control = existsSync("packaging/debian/control")

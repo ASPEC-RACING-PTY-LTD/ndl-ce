@@ -348,6 +348,42 @@ export async function setStorePolicy(
   );
 }
 
+export async function listAutomationPolicies(): Promise<import("../generated/openapi").AutomationPolicyList> {
+  return readJson(await request("/policies"));
+}
+
+export async function listAutomationPolicyRuns(): Promise<import("../generated/openapi").AutomationPolicyRunList> {
+  return readJson(await request("/policy-runs"));
+}
+
+export async function createAutomationPolicy(
+  body: import("../generated/openapi").AutomationPolicyCreateRequest,
+): Promise<import("../generated/openapi").AutomationPolicy> {
+  return readJson(
+    await request("/policies", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function applyAutomationPolicy(
+  id: string,
+  confirm?: string,
+): Promise<import("../generated/openapi").AutomationPolicyRun> {
+  const headers: Record<string, string> = {};
+  if (confirm) {
+    headers["X-Nodal-Confirm"] = confirm;
+  }
+  return readJson(
+    await request(`/policies/${id}/apply`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

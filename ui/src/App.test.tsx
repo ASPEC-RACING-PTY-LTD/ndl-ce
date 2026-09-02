@@ -82,6 +82,8 @@ const defaultRoutes = {
   "/api/v1/cluster/update": { status: 200, body: { preview: [], note: "Rolling drains one node" } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
   "/api/v1/storage/images": { status: 200, body: { items: [] } },
+  "/api/v1/policies": { status: 200, body: { items: [] } },
+  "/api/v1/policy-runs": { status: 200, body: { items: [] } },
 };
 
 afterEach(() => {
@@ -661,6 +663,38 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^install$/i })).toBeVisible();
     expect(screen.getByText(/official badge/i)).toBeVisible();
     expect(screen.getByText(/install policy community-allowed/i)).toBeVisible();
+  });
+
+  it("renders the automation page with a storage-pressure policy", async () => {
+    window.history.replaceState({}, "", "/automation");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/policies": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "pol-1",
+              name: "storage pressure",
+              kind: "storage_pressure",
+              action: "enqueue_migrate_low_priority",
+              threshold_percent: 85,
+              require_approval: false,
+              enabled: true,
+            },
+          ],
+        },
+      },
+      "/api/v1/policy-runs": { status: 200, body: { items: [] } },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^automation$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^automation$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^storage pressure$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^apply policy$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^create policy$/i })).toBeVisible();
+    expect(screen.getByText(/not an llm loop/i)).toBeVisible();
   });
 
   it("shows Create snapshot on the VM snapshots tab, not Backup", async () => {

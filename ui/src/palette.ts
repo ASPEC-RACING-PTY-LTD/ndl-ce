@@ -62,6 +62,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "features", label: "Features", href: "/settings/features", keywords: ["modules", "kubernetes", "gpu", "oci"] },
   { id: "kubernetes", label: "Kubernetes", href: "/settings/kubernetes", keywords: ["kubelet", "k8s"] },
   { id: "store", label: "Store", href: "/store", keywords: ["apps", "manifest", "jellyfin"] },
+  { id: "automation", label: "Automation", href: "/automation", keywords: ["policy", "storage", "pressure", "migrate"] },
   { id: "events", label: "Events", href: "/events", keywords: ["timeline"] },
   { id: "alerts", label: "Alerts", href: "/alerts", keywords: ["notify"] },
   { id: "backups", label: "Backups", href: "/backups", keywords: ["restore"] },

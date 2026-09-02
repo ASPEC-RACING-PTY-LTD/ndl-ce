@@ -124,4 +124,10 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, StoreRead) || !Authorize(op, StoreInstall) || !Authorize(op, StoreVerify) {
 		t.Fatal("operator may install and verify store apps")
 	}
+	if !Authorize(view, PolicyRead) || Authorize(view, PolicyApply) {
+		t.Fatal("viewer policy is read-only")
+	}
+	if !Authorize(op, PolicyRead) || !Authorize(op, PolicyApply) {
+		t.Fatal("operator may apply policies")
+	}
 }

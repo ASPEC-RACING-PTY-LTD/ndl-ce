@@ -310,6 +310,12 @@ type Store interface {
 	UpdateMigrateJob(ctx context.Context, j MigrateJob) error
 	ListMigrateJobs(ctx context.Context, clusterID string, limit int) ([]MigrateJob, error)
 
+	CreatePolicy(ctx context.Context, p Policy) error
+	ListPolicies(ctx context.Context, clusterID string) ([]Policy, error)
+	GetPolicy(ctx context.Context, clusterID, id string) (*Policy, error)
+	CreatePolicyRun(ctx context.Context, r PolicyRun) error
+	ListPolicyRuns(ctx context.Context, clusterID string, limit int) ([]PolicyRun, error)
+
 	ListFeatures(ctx context.Context, clusterID string) ([]Feature, error)
 	GetFeature(ctx context.Context, clusterID, id string) (*Feature, error)
 	UpsertFeature(ctx context.Context, f Feature) error

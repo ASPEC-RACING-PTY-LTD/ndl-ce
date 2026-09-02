@@ -49,6 +49,9 @@ func run(args []string) error {
   kubernetes show
   kubernetes start --confirm start-kubelet
   kubernetes stop
+  policy list
+  policy create --name NAME [--threshold N]
+  policy apply --id ID [--confirm apply-policy]
   app list
   app import FILE
   app install --id ID [--name NAME] [--pool-id ID] [--network-id ID]
@@ -188,6 +191,8 @@ func run(args []string) error {
 		return cmdFeature(args[1:])
 	case "kubernetes":
 		return cmdKubernetes(args[1:])
+	case "policy":
+		return cmdPolicy(args[1:])
 	case "app":
 		return cmdApp(args[1:])
 	case "task":
@@ -806,6 +811,45 @@ func cmdKubernetes(args []string) error {
 		return postJSON("/api/v1/kubernetes/stop", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl kubernetes show|start|stop")
+	}
+}
+
+func cmdPolicy(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl policy list|create|apply")
+	}
+	switch args[0] {
+	case "list":
+		return cmdGet("/api/v1/policies")
+	case "create":
+		f := parseFlags(args[1:])
+		if f["name"] == "" {
+			return fmt.Errorf("usage: nodalctl policy create --name NAME [--threshold N]")
+		}
+		var threshold int
+		if f["threshold"] != "" {
+			fmt.Sscan(f["threshold"], &threshold)
+		}
+		body := map[string]any{
+			"name": f["name"], "kind": "storage_pressure", "action": "enqueue_migrate_low_priority",
+			"threshold_percent": threshold, "require_approval": f["require-approval"] == "true",
+		}
+		return postJSON("/api/v1/policies", body, true)
+	case "apply":
+		f := parseFlags(args[1:])
+		id := f["id"]
+		if id == "" && len(args) > 1 && !strings.HasPrefix(args[1], "--") {
+			id = args[1]
+		}
+		if id == "" {
+			return fmt.Errorf("usage: nodalctl policy apply --id ID [--confirm apply-policy]")
+		}
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/policies/"+id+"/apply", map[string]any{}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl policy list|create|apply")
 	}
 }
 
