@@ -187,7 +187,13 @@ func (s *Server) applyPolicy(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		_ = s.Store.UpdateNetworkPolicyStatus(r.Context(), p.User.ClusterID, item.ID, res.Status, res.Reason)
+		if err := s.Store.UpdateNetworkPolicyStatus(r.Context(), p.User.ClusterID, item.ID, res.Status, res.Reason); err != nil {
+			if item.ID == pol.ID {
+				writeErr(w, http.StatusInternalServerError, "could not record network policy")
+				return
+			}
+			continue
+		}
 		if item.ID == pol.ID {
 			item.Status, item.Reason = res.Status, res.Reason
 			applied = item

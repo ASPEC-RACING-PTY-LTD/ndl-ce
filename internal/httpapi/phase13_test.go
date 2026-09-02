@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -194,7 +195,7 @@ func TestTokenPermissionsCannotExceedCreator(t *testing.T) {
 }
 
 func TestServicePrincipalCannotPasswordLogin(t *testing.T) {
-	s, _, token := testServer(t)
+	s, mem, token := testServer(t)
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
@@ -206,6 +207,11 @@ func TestServicePrincipalCannotPasswordLogin(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("%d %s", res.StatusCode, b)
+	}
+	cluster, _ := mem.GetCluster(context.Background())
+	sps, err := mem.ListServicePrincipals(context.Background(), cluster.ID)
+	if err != nil || len(sps) != 1 || sps[0].Name != "backup" {
+		t.Fatalf("principal row %+v %v", sps, err)
 	}
 	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"svc-backup","password":"x"}`))
 	if login.StatusCode != http.StatusUnauthorized {
@@ -550,4 +556,33 @@ func TestAPITokenCannotPassIdentityCompletionAAL(t *testing.T) {
 		t.Fatalf("token destroy %d %s", res.StatusCode, b)
 	}
 	_ = res.Body.Close()
+}
+
+type failCreateServicePrincipalStore struct {
+	appdb.Store
+}
+
+func (f failCreateServicePrincipalStore) CreateServicePrincipal(context.Context, appdb.ServicePrincipal) error {
+	return errors.New("persist failed")
+}
+
+func TestServicePrincipalCreateFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failCreateServicePrincipalStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/service-principals", strings.NewReader(`{"name":"backup"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("principal persist %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record service principal") {
+		t.Fatalf("principal persist body %s", b)
+	}
 }

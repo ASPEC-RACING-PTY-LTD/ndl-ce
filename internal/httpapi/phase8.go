@@ -771,11 +771,14 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 			}
 		}
 	}
-	_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
+	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
 		ID: row.ID, CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, DesiredPower: desired,
 		SpecJSON: vmspec.MustJSON(next), AppliedJSON: row.AppliedJSON, Autostart: next.Autostart,
 		PendingRestart: pending, Firmware: next.Firmware,
-	})
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record VM spec")
+		return
+	}
 	if req.Autostart != nil && s.VM != nil {
 		_, _ = s.VM.LifecycleVM(r.Context(), row.ID, "autostart", next.Autostart)
 	}

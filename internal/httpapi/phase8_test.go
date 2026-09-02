@@ -564,6 +564,50 @@ func TestPasswordSeedSurvivesReprepare(t *testing.T) {
 	}
 }
 
+func TestVMPatchFailsClosedWhenSpecPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","network_id":"` + netID + `","pool_id":"` + poolID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpdateWorkloadSpecStore{Store: mem}
+
+	patch, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+created["id"].(string), strings.NewReader(`{"cpus":4}`))
+	patch.Header.Set("Content-Type", "application/json")
+	patch.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	out, _ := ts.Client().Do(patch)
+	b, _ := io.ReadAll(out.Body)
+	_ = out.Body.Close()
+	if out.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("patch persist %d %s", out.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record VM spec") {
+		t.Fatalf("patch persist body %s", b)
+	}
+}
+
 func mustSpecJSON(m map[string]any) json.RawMessage {
 	raw, _ := json.Marshal(m["spec"])
 	return raw

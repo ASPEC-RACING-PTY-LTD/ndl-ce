@@ -362,7 +362,10 @@ func (s *Server) createServicePrincipal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	sp := appdb.ServicePrincipal{ID: uuid.NewString(), ClusterID: p.User.ClusterID, UserID: u.ID, Name: strings.TrimSpace(req.Name)}
-	_ = s.Store.CreateServicePrincipal(r.Context(), sp)
+	if err := s.Store.CreateServicePrincipal(r.Context(), sp); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record service principal")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "service-principal.create", "ok", sp.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id": sp.ID, "name": sp.Name, "user_id": u.ID, "token": plain, "kind": appdb.UserKindService,
