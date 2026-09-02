@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 
 const errors = [];
@@ -24,7 +25,10 @@ const required = [
   "packaging/debian/ndl-agent.postrm",
   "packaging/e2e/check-maintainer-scripts.sh",
   "packaging/e2e/check-control-upgrade.sh",
+  "packaging/e2e/check-ui-build.sh",
   "packaging/lib/ndl/postinst-control.sh",
+  "packaging/lib/ndl/build-ui.sh",
+  "packaging/e2e/lib/ensure-node.sh",
   "packaging/bootstrap/get-nodal.sh",
   "systemd/ndl-control.service",
   "systemd/ndl-agent.service",
@@ -617,6 +621,59 @@ if (rebuildRepo && !rebuildRepo.includes('rm -rf "$OUT/debs"')) {
 if (rebuildRepo && !rebuildRepo.includes("check-maintainer-scripts.sh")) {
   errors.push("rebuild-packages.sh must inspect generated maintainer scripts from built debs");
 }
+if (rebuildRepo.includes("ui/dist is missing")) {
+  errors.push("rebuild-packages.sh must not require a prebuilt ui/dist");
+}
+if (rebuildRepo && !rebuildRepo.includes('rm -rf "$BUILD/ui/dist"')) {
+  errors.push("rebuild-packages.sh must discard copied ui/dist so the package build cannot reuse stale assets");
+}
+if (rebuildRepo && !rebuildRepo.includes("ensure_node")) {
+  errors.push("rebuild-packages.sh must provide Node so debian/rules can build Vite assets");
+}
+if (buildRepo.includes("ui/dist is missing")) {
+  errors.push("build-repo.sh must not require a prebuilt ui/dist");
+}
+if (buildRepo && !buildRepo.includes('rm -rf "$BUILD/ui/dist"')) {
+  errors.push("build-repo.sh must discard copied ui/dist so the package build cannot reuse stale assets");
+}
+if (buildRepo && !buildRepo.includes("ensure_node")) {
+  errors.push("build-repo.sh must provide Node so debian/rules can build Vite assets");
+}
+
+const debianRules = existsSync("packaging/debian/rules")
+  ? readFileSync("packaging/debian/rules", "utf8")
+  : "";
+if (!debianRules.includes("build-ui.sh")) {
+  errors.push("debian/rules must build fresh Vite assets via build-ui.sh");
+}
+if (!debianRules.includes("rm -rf $(MODROOT)/ui/dist")) {
+  errors.push("debian/rules must delete ui/dist on clean so a rebuild cannot pack leftovers");
+}
+if (/if \[ -d \$\(MODROOT\)\/ui\/dist \]/.test(debianRules)) {
+  errors.push("debian/rules must not skip ndl-ui when ui/dist is missing");
+}
+if (!debianRules.includes("test -f $(MODROOT)/ui/dist/index.html")) {
+  errors.push("debian/rules must fail if Vite did not write dist/index.html");
+}
+if (!debianRules.includes("test -d $(MODROOT)/ui/dist/assets")) {
+  errors.push("debian/rules must fail if Vite did not write dist/assets");
+}
+if (!debianRules.includes("test -f debian/ndl-ui/usr/share/ndl/ui/index.html")) {
+  errors.push("debian/rules must fail if ndl-ui did not receive Vite assets");
+}
+
+const buildUi = existsSync("packaging/lib/ndl/build-ui.sh")
+  ? readFileSync("packaging/lib/ndl/build-ui.sh", "utf8")
+  : "";
+if (!buildUi.includes("pnpm build") || !buildUi.includes('rm -rf "$UI/dist"')) {
+  errors.push("build-ui.sh must delete dist and run pnpm build");
+}
+if (!buildUi.includes("/assets/") || !buildUi.includes("dist/assets")) {
+  errors.push("build-ui.sh must reject a placeholder dist that is not a Vite build");
+}
+if (!buildUi.includes("Vite dist has no CSS assets") || !buildUi.includes("Vite dist has no JS assets")) {
+  errors.push("build-ui.sh must reject a dist that is missing hashed JS or CSS");
+}
 
 const debhelperToken = "#DEBHELPER#";
 const maintainerScript = /\.(postinst|postrm|preinst|prerm)$/;
@@ -690,6 +747,18 @@ if (!generatedCheck.includes("sh -n") || !generatedCheck.includes("restarts it o
 if (/\bsed\s+-i\b/.test(generatedCheck) || /sed\s+[^\n]*#DEBHELPER#/.test(generatedCheck)) {
   errors.push("check-maintainer-scripts.sh must not rewrite packaging source with sed");
 }
+if (generatedCheck.includes("<title>ndl-ui</title>")) {
+  errors.push("check-maintainer-scripts.sh must not plant a placeholder ui/dist; debian/rules must run Vite");
+}
+if (!generatedCheck.includes("ensure_node")) {
+  errors.push("check-maintainer-scripts.sh must call ensure_node so the UI package can be built");
+}
+if (!generatedCheck.includes('rm -rf "$BUILD/ui/dist"')) {
+  errors.push("check-maintainer-scripts.sh must discard copied ui/dist so the package build cannot reuse stale assets");
+}
+if (!generatedCheck.includes("usr/share/ndl/ui/assets")) {
+  errors.push("check-maintainer-scripts.sh must inspect ndl-ui Vite assets in the built deb");
+}
 
 const postinstControlPkg = existsSync("packaging/debian/ndl-control.postinst")
   ? readFileSync("packaging/debian/ndl-control.postinst", "utf8")
@@ -721,6 +790,11 @@ const postinstControl = existsSync("packaging/lib/ndl/postinst-control.sh")
   : "";
 if (!/chmod 0751 \/var\/lib\/ndl/.test(postinstControl)) {
   errors.push("postinst-control.sh must leave /var/lib/ndl traversable (0751) for unprivileged containers");
+}
+
+const uiBuild = spawnSync("sh", ["packaging/e2e/check-ui-build.sh"], { encoding: "utf8" });
+if (uiBuild.status !== 0) {
+  errors.push(`check-ui-build.sh failed: ${(uiBuild.stderr || uiBuild.stdout || "").trim()}`);
 }
 
 if (errors.length) {

@@ -38,7 +38,11 @@ jobs:
       - name: CI policy
         run: node scripts/ci/check-ci-policy.mjs
       - name: ShellCheck
-        run: shellcheck packaging/bootstrap/get-nodal.sh
+        run: |
+          shellcheck packaging/bootstrap/get-nodal.sh \
+            packaging/lib/ndl/build-ui.sh \
+            packaging/e2e/lib/ensure-node.sh \
+            packaging/e2e/check-ui-build.sh
       - name: Go format
         run: test -z "$(gofmt -l .)"
       - name: GitHub Actions YAML

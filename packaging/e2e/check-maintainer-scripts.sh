@@ -29,6 +29,9 @@ need_cmd() {
 need_cmd dpkg-deb
 need_cmd dpkg-buildpackage
 
+# shellcheck source=lib/ensure-node.sh
+. "$SRC/packaging/e2e/lib/ensure-node.sh"
+
 audit_source_templates() {
   debian="$SRC/packaging/debian"
   [ -d "$debian" ] || fail "missing $debian"
@@ -66,6 +69,7 @@ audit_source_templates() {
 
 build_debs() {
   need_cmd go
+  ensure_node
   BUILD=${BUILD_DIR:-/tmp/nodal-maintainer-build}
   OUT_DEBS=${1:-/tmp/nodal-maintainer-debs}
   rm -rf "$BUILD"
@@ -75,11 +79,8 @@ build_debs() {
       cp -a "$SRC/$item" "$BUILD/"
     fi
   done
+  rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
   cp -a "$SRC/packaging/debian" "$BUILD/debian"
-  mkdir -p "$BUILD/ui/dist"
-  if [ ! -e "$BUILD/ui/dist/index.html" ]; then
-    printf '%s\n' '<!doctype html><title>ndl-ui</title>' > "$BUILD/ui/dist/index.html"
-  fi
   find "$BUILD/debian" -type f -exec chmod a-x {} +
   chmod +x "$BUILD/debian/rules" \
     "$BUILD/debian/ndl-control.postinst" \
@@ -108,6 +109,13 @@ build_debs() {
     break
   done
   [ -n "$agent" ] || fail "ndl-agent .deb was not built"
+  ui=
+  for f in "$OUT_DEBS"/ndl-ui_*.deb; do
+    [ -f "$f" ] || continue
+    ui=$f
+    break
+  done
+  [ -n "$ui" ] || fail "ndl-ui .deb was not built"
 }
 
 extract_scripts() {
@@ -191,6 +199,35 @@ inspect_agent_postrm() {
   if grep -E 'remove\|upgrade\|deconfigure' "$path" >/dev/null; then
     fail "generated ndl-agent.postrm must not stop ndl-agent on upgrade"
   fi
+}
+
+inspect_ui_deb() {
+  deb=$1
+  [ -f "$deb" ] || fail "ndl-ui .deb not found"
+  listing=$(dpkg-deb -c "$deb")
+  echo "$listing" | grep -q 'usr/share/ndl/ui/index.html' || fail "ndl-ui missing usr/share/ndl/ui/index.html"
+  echo "$listing" | grep -q 'usr/share/ndl/ui/assets/' || fail "ndl-ui missing usr/share/ndl/ui/assets"
+  tmp=$(mktemp -d)
+  dpkg-deb -x "$deb" "$tmp"
+  [ -f "$tmp/usr/share/ndl/ui/index.html" ] || fail "ndl-ui index.html missing after extract"
+  grep -q '/assets/' "$tmp/usr/share/ndl/ui/index.html" || fail "ndl-ui index.html is not a Vite build"
+  js=
+  for f in "$tmp"/usr/share/ndl/ui/assets/*.js; do
+    if [ -f "$f" ]; then
+      js=$f
+      break
+    fi
+  done
+  [ -n "$js" ] || fail "ndl-ui shipped no hashed JS"
+  css=
+  for f in "$tmp"/usr/share/ndl/ui/assets/*.css; do
+    if [ -f "$f" ]; then
+      css=$f
+      break
+    fi
+  done
+  [ -n "$css" ] || fail "ndl-ui shipped no hashed CSS"
+  rm -rf "$tmp"
 }
 
 run_as_root() {
@@ -297,6 +334,13 @@ for f in "$DEB_DIR"/ndl-agent_*.deb; do
 done
 [ -n "$CTRL" ] || fail "ndl-control .deb not found in $DEB_DIR"
 [ -n "$AGENT" ] || fail "ndl-agent .deb not found in $DEB_DIR"
+UI_DEB=
+for f in "$DEB_DIR"/ndl-ui_*.deb; do
+  [ -f "$f" ] || continue
+  UI_DEB=$f
+  break
+done
+[ -n "$UI_DEB" ] || fail "ndl-ui .deb not found in $DEB_DIR"
 
 EXTRACT=${EXTRACT_DIR:-/tmp/nodal-maintainer-extract}
 extract_scripts "$CTRL" "$EXTRACT/ndl-control"
@@ -306,6 +350,7 @@ inspect_control_postinst "$EXTRACT/ndl-control/postinst"
 inspect_control_postrm "$EXTRACT/ndl-control/postrm"
 inspect_agent_postinst "$EXTRACT/ndl-agent/postinst"
 inspect_agent_postrm "$EXTRACT/ndl-agent/postrm"
+inspect_ui_deb "$UI_DEB"
 
 prove_stray_prose_rejected
 # Only execute generated ndl-control.postinst. The agent postinst creates

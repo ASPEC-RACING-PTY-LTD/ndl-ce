@@ -24,10 +24,9 @@ if ! command -v go >/dev/null 2>&1 || ! go version | grep -Eq 'go1\.(2[4-9]|[3-9
 fi
 go version
 
-if [ ! -d "$SRC/ui/dist" ]; then
-  echo "ui/dist is missing; ndl-ui would be empty" >&2
-  exit 1
-fi
+# shellcheck source=lib/ensure-node.sh
+. "$SRC/packaging/e2e/lib/ensure-node.sh"
+ensure_node
 
 BUILD=/tmp/nodal-0.1.0
 rm -rf "$BUILD"
@@ -38,6 +37,7 @@ for item in cmd gen internal migrations proto systemd packaging ui api go.mod go
     cp -a "$SRC/$item" "$BUILD/"
   fi
 done
+rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 cp -a "$SRC/packaging/debian" "$BUILD/debian"
 find "$BUILD/debian" -type f -exec chmod a-x {} +
 chmod +x "$BUILD/debian/rules" \

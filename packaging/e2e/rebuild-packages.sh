@@ -11,12 +11,10 @@ export CGO_ENABLED=0
 export GOCACHE=${GOCACHE:-/gocache/cache}
 export GOMODCACHE=${GOMODCACHE:-/gocache/mod}
 
-if [ ! -d "$SRC/ui/dist" ]; then
-  echo "ui/dist is missing" >&2
-  exit 1
-fi
 # shellcheck source=lib/sign-repo.sh
 . "$SRC/packaging/e2e/lib/sign-repo.sh"
+# shellcheck source=lib/ensure-node.sh
+. "$SRC/packaging/e2e/lib/ensure-node.sh"
 
 if ! command -v go >/dev/null 2>&1 || ! go version | grep -Eq 'go1\.(2[4-9]|[3-9][0-9])'; then
   if [ -x /usr/local/go/bin/go ]; then
@@ -28,6 +26,7 @@ if ! command -v go >/dev/null 2>&1 || ! go version | grep -Eq 'go1\.(2[4-9]|[3-9
   export PATH=/usr/local/go/bin:$PATH
 fi
 go version
+ensure_node
 
 BUILD=/tmp/nodal-rebuild
 rm -rf "$BUILD"
@@ -37,6 +36,7 @@ for item in cmd gen internal migrations proto systemd packaging ui api store go.
     cp -a "$SRC/$item" "$BUILD/"
   fi
 done
+rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 cp -a "$SRC/packaging/debian" "$BUILD/debian"
 find "$BUILD/debian" -type f -exec chmod a-x {} +
 chmod +x "$BUILD/debian/rules" \

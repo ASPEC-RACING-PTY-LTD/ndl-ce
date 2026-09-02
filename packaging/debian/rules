@@ -28,6 +28,7 @@ HELPER := $(MODROOT)/packaging/lib/ndl/postinst-control.sh
 
 override_dh_auto_clean:
 	rm -rf debian/tmp build
+	rm -rf $(MODROOT)/ui/dist
 	rm -f debian/ndl-control.service debian/ndl-agent.service debian/ndl-agent.socket
 
 override_dh_auto_build:
@@ -39,6 +40,7 @@ override_dh_auto_build:
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-qemu-launch ./cmd/ndl-qemu-launch
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-oci-launch ./cmd/ndl-oci-launch
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-guest ./cmd/ndl-guest
+	sh $(MODROOT)/packaging/lib/ndl/build-ui.sh $(MODROOT)/ui
 
 override_dh_auto_test:
 	true
@@ -54,10 +56,10 @@ override_dh_auto_install:
 	install -m 0755 build/ndl-guest debian/tmp/usr/sbin/ndl-guest
 	install -m 0755 build/ndl-network-rollback debian/tmp/usr/lib/ndl/ndl-network-rollback
 	install -m 0755 build/nodalctl debian/tmp/usr/bin/nodalctl
-	if [ -d $(MODROOT)/ui/dist ]; then \
-		mkdir -p debian/tmp/usr/share/ndl/ui; \
-		cp -a $(MODROOT)/ui/dist/. debian/tmp/usr/share/ndl/ui/; \
-	fi
+	test -f $(MODROOT)/ui/dist/index.html
+	test -d $(MODROOT)/ui/dist/assets
+	mkdir -p debian/tmp/usr/share/ndl/ui
+	cp -a $(MODROOT)/ui/dist/. debian/tmp/usr/share/ndl/ui/
 	install -m 0755 $(HELPER) debian/tmp/usr/lib/ndl/postinst-control.sh
 	install -m 0644 $(MODROOT)/systemd/ndl-control.service debian/tmp/lib/systemd/system/ndl-control.service
 	install -m 0644 $(MODROOT)/systemd/ndl-agent.service debian/tmp/lib/systemd/system/ndl-agent.service
@@ -80,10 +82,8 @@ override_dh_auto_install:
 
 override_dh_install:
 	dh_install
-	if [ -d debian/tmp/usr/share/ndl/ui ]; then \
-		mkdir -p debian/ndl-ui/usr/share/ndl/ui; \
-		cp -a debian/tmp/usr/share/ndl/ui/. debian/ndl-ui/usr/share/ndl/ui/; \
-	fi
+	test -f debian/ndl-ui/usr/share/ndl/ui/index.html
+	test -d debian/ndl-ui/usr/share/ndl/ui/assets
 
 override_dh_dwz:
 	true
