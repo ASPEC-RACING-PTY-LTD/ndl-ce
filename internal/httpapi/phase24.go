@@ -133,7 +133,10 @@ func (s *Server) verifyBackupArtifact(w http.ResponseWriter, r *http.Request) {
 			art.VerifyError = "restore test touched the source workload"
 		}
 	}
-	_ = s.Store.UpdateBackupArtifactVerify(r.Context(), *art)
+	if err := s.Store.UpdateBackupArtifactVerify(r.Context(), *art); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record backup verify")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "backup.verify."+mode, art.VerifyStatus, art.ID)
 	writeJSON(w, http.StatusAccepted, backupArtifactJSON(*art))
 }

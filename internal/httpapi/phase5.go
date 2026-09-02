@@ -815,6 +815,9 @@ func errForbidden(msg string) error  { return statusError{status: http.StatusFor
 func errFailedDependency(msg string) error {
 	return statusError{status: http.StatusFailedDependency, msg: msg}
 }
+func errInternal(msg string) error {
+	return statusError{status: http.StatusInternalServerError, msg: msg}
+}
 
 func statusFor(err error) int {
 	var se statusError

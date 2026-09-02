@@ -540,7 +540,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		run.Status = appdb.BackupFailed
 		run.Error = msg
 		run.FinishedAt = &now
-		_ = s.Store.UpdateBackupRun(ctx, run)
+		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
+			return run, errInternal("could not record backup run")
+		}
 		return run, nil
 	}
 	snap, frozen, err := s.snapshotForBackup(ctx, clusterID, *wl, run.ID)
@@ -651,7 +653,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	now := s.now()
 	run.Status = appdb.BackupSucceeded
 	run.FinishedAt = &now
-	_ = s.Store.UpdateBackupRun(ctx, run)
+	if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
+		return run, errInternal("could not record backup run")
+	}
 	if policyID != "" {
 		_ = s.Store.UpdateBackupPolicyLastRun(ctx, clusterID, policyID, now)
 		if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
@@ -928,7 +932,10 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run.Status = appdb.BackupSucceeded
-	_ = s.Store.UpdateBackupRun(r.Context(), run)
+	if err := s.Store.UpdateBackupRun(r.Context(), run); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record backup run")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "backup.restore."+req.Mode, "ok", restoredID)
 	if s.applyLocal(r.Context(), p.User.ClusterID, dest.ID) && (art.ObjectKey != "" || strings.HasPrefix(art.Locator, "s3://")) {
 		s.audit(r, p.User.ClusterID, p.User.ID, "secret.use", "ok", dest.ID)

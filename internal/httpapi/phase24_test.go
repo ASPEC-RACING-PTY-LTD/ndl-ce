@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -144,6 +145,10 @@ func TestPhase24ChecksumMismatchUnverified(t *testing.T) {
 	if art["verify_status"] != appdb.BackupUnverified || art["verify_error"] != "checksum mismatch" {
 		t.Fatalf("checksum mismatch must be unverified: %s", raw)
 	}
+	got, err := mem.GetBackupArtifact(context.Background(), cluster.ID, artID)
+	if err != nil || got == nil || got.VerifyStatus != appdb.BackupUnverified || got.VerifyError != "checksum mismatch" {
+		t.Fatalf("verify row %+v %v", got, err)
+	}
 }
 
 func TestPhase24ThrowawayDoesNotTouchSource(t *testing.T) {
@@ -201,6 +206,10 @@ func TestPhase24ThrowawayDoesNotTouchSource(t *testing.T) {
 	if len(srcNics) > 0 && nics[0].ID == srcNics[0].ID {
 		t.Fatal("throwaway must not reuse the source NIC row")
 	}
+	stored, err := mem.GetBackupArtifact(context.Background(), cluster.ID, artID)
+	if err != nil || stored == nil || stored.VerifyStatus != appdb.BackupVerified || stored.ThrowawayWorkloadID != tid {
+		t.Fatalf("throwaway verify row %+v %v", stored, err)
+	}
 }
 
 func TestPhase24RestoreFileAndViewerDenied(t *testing.T) {
@@ -255,5 +264,49 @@ func TestPhase24RestoreFileAndViewerDenied(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer %d", res.StatusCode)
+	}
+}
+
+type failUpdateBackupArtifactVerifyStore struct {
+	appdb.Store
+}
+
+func (f failUpdateBackupArtifactVerifyStore) UpdateBackupArtifactVerify(context.Context, appdb.BackupArtifact) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase24VerifyFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	s.Verify = &fakeVerify{imgOK: true}
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	cookie := claimAdmin(t, ts, token)
+	_, artID, _ := seedBackupArtifact(t, ts, cookie, poolID, netID)
+	s.Store = failUpdateBackupArtifactVerifyStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/verify", strings.NewReader(`{"mode":"open"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("verify persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record backup verify") {
+		t.Fatalf("verify persist body %s", raw)
 	}
 }

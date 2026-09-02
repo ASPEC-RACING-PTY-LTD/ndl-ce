@@ -60,6 +60,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Cluster OpenSession fails closed if the session row cannot be recorded. A 200 does not invent session_id.
   * Rolling update and policy apply fail closed if step or run persist fails. A 2xx body is not a substitute for the stored row.
   * Store install 201 fails closed if the installation row cannot be updated to succeeded. USB/PCI attach fails closed if workload spec persist fails.
+  * Backup run, restore, and verify fail closed if the run or artifact verify row cannot be updated. A 202 body is not a substitute for the stored status.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

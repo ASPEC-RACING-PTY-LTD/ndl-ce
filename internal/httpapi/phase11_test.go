@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -170,6 +171,10 @@ func TestBackupRunRestoreNewAndReplaceConfirm(t *testing.T) {
 	if run["snapshot_id"] == nil || run["snapshot_id"] == "" {
 		t.Fatal("backup must snapshot then copy")
 	}
+	storedRun, err := mem.GetBackupRun(context.Background(), cluster.ID, run["id"].(string))
+	if err != nil || storedRun == nil || storedRun.Status != appdb.BackupSucceeded {
+		t.Fatalf("run row %+v %v", storedRun, err)
+	}
 	var copied bool
 	var mkdir bool
 	for _, c := range bk.copies {
@@ -224,6 +229,10 @@ func TestBackupRunRestoreNewAndReplaceConfirm(t *testing.T) {
 	got, _ := mem.GetWorkload(context.Background(), cluster.ID, newID)
 	if got == nil {
 		t.Fatal("restored workload missing")
+	}
+	storedRestore, err := mem.GetBackupRun(context.Background(), cluster.ID, restored["id"].(string))
+	if err != nil || storedRestore == nil || storedRestore.Status != appdb.BackupSucceeded || storedRestore.RestoredWorkloadID != newID {
+		t.Fatalf("restore run row %+v %v", storedRestore, err)
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"replace"}`))
@@ -563,5 +572,146 @@ func TestRestoreRefusesSystemContainer(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "system container") {
 		t.Fatalf("ct restore replace %d %s", res.StatusCode, raw)
+	}
+}
+
+type failUpdateBackupRunStore struct {
+	appdb.Store
+}
+
+func (f failUpdateBackupRunStore) UpdateBackupRun(context.Context, appdb.BackupRun) error {
+	return errors.New("persist failed")
+}
+
+func TestBackupRunFailsClosedWhenRunPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","cpus":1,"memory_bytes":268435456}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("vm create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local-disk","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("target %d %s", res.StatusCode, raw)
+	}
+	var tgt map[string]any
+	if err := json.Unmarshal(raw, &tgt); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpdateBackupRunStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+vm["id"].(string)+`","target_id":"`+tgt["id"].(string)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("run persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record backup run") {
+		t.Fatalf("run persist body %s", raw)
+	}
+}
+
+func TestBackupRestoreFailsClosedWhenRunPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","cpus":1,"memory_bytes":268435456}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("vm create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local-disk","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("target %d %s", res.StatusCode, raw)
+	}
+	var tgt map[string]any
+	if err := json.Unmarshal(raw, &tgt); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+vm["id"].(string)+`","target_id":"`+tgt["id"].(string)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("run %d %s", res.StatusCode, raw)
+	}
+	arts, err := mem.ListBackupArtifacts(context.Background(), cluster.ID)
+	if err != nil || len(arts) == 0 {
+		t.Fatalf("artifacts %+v %v", arts, err)
+	}
+	s.Store = failUpdateBackupRunStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+arts[0].ID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("restore persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record backup run") {
+		t.Fatalf("restore persist body %s", raw)
 	}
 }
