@@ -44,6 +44,11 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 		if dest == "" || strings.Contains(dest, "..") {
 			return storage.CopyResult{}, storage.ErrForbiddenPath
 		}
+		if strings.HasPrefix(dest, "/") && !strings.HasPrefix(dest, "//") {
+			if err := storage.AllowedArtifactPath(dest); err != nil {
+				return storage.CopyResult{}, err
+			}
+		}
 		if e.SkipHostCmds {
 			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup stat was not run")
 		}

@@ -34,3 +34,18 @@ func TestConvertOfflineSkipHostCmdsErrors(t *testing.T) {
 		t.Fatal("ConvertOffline must error under SkipHostCmds")
 	}
 }
+
+func TestBackupStatJailsHostPaths(t *testing.T) {
+	e := &Engine{DataDir: t.TempDir()}
+	if _, err := e.CopyOffline(context.Background(), BackupStat, "", "/etc/passwd"); err == nil {
+		t.Fatal("/etc/passwd must not be probed")
+	}
+	dir := t.TempDir()
+	st, err := e.CopyOffline(context.Background(), BackupStat, "", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Size != 1 {
+		t.Fatalf("allowed temp dir %+v", st)
+	}
+}
