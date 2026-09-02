@@ -111,6 +111,50 @@ func TestMigrationSourceEndpointRefusesCredentials(t *testing.T) {
 	}
 }
 
+func TestMigrationImportPathMustStayJailed(t *testing.T) {
+	_, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	post := func(body string) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/import/disk", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		return res.StatusCode, string(raw)
+	}
+	base := `,"mode":"disk","name":"imported-guest","kind":"vm","cpus":2,"memory_bytes":536870912,"firmware":"bios","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	code, raw := post(`{"path":"/etc/passwd"` + base)
+	if code != http.StatusBadRequest || !strings.Contains(raw, "image path") {
+		t.Fatalf("passwd path %d %s", code, raw)
+	}
+	code, raw = post(`{"xml_path":"/etc/ndl/host.key"` + base)
+	if code != http.StatusBadRequest || !strings.Contains(raw, "image path") {
+		t.Fatalf("host.key xml_path %d %s", code, raw)
+	}
+	tmp := filepath.Join("/tmp", "ndl-mig-src-"+uuid.NewString()+".qcow2")
+	if err := os.WriteFile(tmp, []byte("qcow-data"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(tmp) })
+	code, raw = post(`{"path":"` + tmp + `"` + base)
+	if code != http.StatusAccepted {
+		t.Fatalf("jailed tmp import %d %s", code, raw)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"adapter":"disk","mode":"disk","path":"/tmp/x.qcow2","delete_source":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "source destruction") {
+		t.Fatalf("delete_source %d %s", res.StatusCode, body)
+	}
+}
+
 func TestMigrationOfflineRunningAndLiveAck(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

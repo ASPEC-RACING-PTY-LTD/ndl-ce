@@ -1519,7 +1519,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MigrationSource"
+                $ref: "#/components/schemas/MigrationSourceList"
     post:
       operationId: createMigrationSource
       summary: Store a source connection. Token is not returned after submit.
@@ -1528,7 +1528,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MigrationSource"
+              $ref: "#/components/schemas/CreateMigrationSourceRequest"
       responses:
         "201":
           description: Source
@@ -8707,10 +8707,41 @@ components:
           type: string
         endpoint:
           type: string
+          description: http(s) URL without userinfo. Tokens use the token field.
         insecure:
           type: boolean
         has_credentials:
           type: boolean
+    CreateMigrationSourceRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - adapter
+      properties:
+        adapter:
+          type: string
+        label:
+          type: string
+        endpoint:
+          type: string
+          description: http(s) URL without userinfo. Credentials stay in token or username.
+        token:
+          type: string
+          description: Write-only. Never returned after save.
+        username:
+          type: string
+        insecure:
+          type: boolean
+    MigrationSourceList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MigrationSource"
     MigrationJob:
       type: object
       additionalProperties: false
@@ -8753,6 +8784,21 @@ components:
           type: string
         path:
           type: string
+          description: Disk, archive, OVF, or bundle path under No-dal storage, migration staging, or /tmp.
+        xml_path:
+          type: string
+          description: Libvirt domain XML under No-dal storage, migration staging, or /tmp.
+        format:
+          type: string
+        modes:
+          type: object
+          additionalProperties: true
+        overrides:
+          type: object
+          additionalProperties: true
+        identity_conflict_ack:
+          type: object
+          additionalProperties: true
         name:
           type: string
         kind:

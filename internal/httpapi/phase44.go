@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -215,7 +216,7 @@ func (s *Server) migrationCompatibility(w http.ResponseWriter, r *http.Request) 
 	}
 	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req)
 	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		writeErr(w, statusForMigrationPlan(err), err.Error())
 		return
 	}
 	items := make([]map[string]any, 0, len(plan.Items))
@@ -246,7 +247,7 @@ func (s *Server) createMigrationPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req)
 	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		writeErr(w, statusForMigrationPlan(err), err.Error())
 		return
 	}
 	reviews := make([]map[string]any, 0, len(plan.Items))
@@ -322,7 +323,7 @@ func (s *Server) startMigrationJob(w http.ResponseWriter, r *http.Request) {
 	}
 	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req)
 	if err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		writeErr(w, statusForMigrationPlan(err), err.Error())
 		return
 	}
 	nodeID := ""
@@ -445,7 +446,30 @@ func modeConsistency(mode string) string {
 	return migration.ConsistencyDepends
 }
 
+func validateMigrationJobPaths(req migrationJobBody) error {
+	for _, p := range []string{req.Path, req.XMLPath} {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		if err := migration.ValidateHostPath(p); err != nil {
+			return errBadRequest(err.Error())
+		}
+	}
+	return nil
+}
+
+func statusForMigrationPlan(err error) int {
+	var se statusError
+	if errors.As(err, &se) {
+		return se.status
+	}
+	return http.StatusUnprocessableEntity
+}
+
 func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req migrationJobBody) (migration.Plan, error) {
+	if err := validateMigrationJobPaths(req); err != nil {
+		return migration.Plan{}, err
+	}
 	adapter := req.Adapter
 	if adapter == "" && req.SourceID != "" {
 		src, _, _, _, err := s.Store.GetMigrationSource(ctx, clusterID, req.SourceID)

@@ -1923,6 +1923,19 @@ export interface MigrationSource {
   has_credentials?: boolean;
 }
 
+export interface CreateMigrationSourceRequest {
+  adapter: string;
+  label?: string;
+  endpoint?: string;
+  token?: string;
+  username?: string;
+  insecure?: boolean;
+}
+
+export interface MigrationSourceList {
+  items: MigrationSource[];
+}
+
 export interface MigrationJob {
   id?: string;
   adapter?: string;
@@ -1943,6 +1956,11 @@ export interface MigrationStartRequest {
   source_id?: string;
   mode?: string;
   path?: string;
+  xml_path?: string;
+  format?: string;
+  modes?: Record<string, unknown>;
+  overrides?: Record<string, unknown>;
+  identity_conflict_ack?: Record<string, unknown>;
   name?: string;
   kind?: string;
   pool_id?: string;
