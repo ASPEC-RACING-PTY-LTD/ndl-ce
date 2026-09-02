@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -75,6 +77,16 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 		if err := e.AssertDiskOffline(ctx, dest); err != nil {
 			return storage.CopyResult{}, err
 		}
+		if act == BackupCopy {
+			if err := storage.AllowedArtifactPath(dest); err != nil {
+				return storage.CopyResult{}, err
+			}
+			if strings.ContainsAny(dest, ",=") {
+				return storage.CopyResult{}, fmt.Errorf("backup dest contains a banned character")
+			}
+		} else if err := ValidateDiskPath(dest); err != nil {
+			return storage.CopyResult{}, err
+		}
 		srcFmt := "qcow2"
 		if strings.HasPrefix(src, "/dev/") {
 			if err := storage.ValidateLVMDevice(src); err != nil {
@@ -88,10 +100,16 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 		if act == BackupReplace {
 			_ = os.Remove(dest)
 		}
-		if err := e.ConvertOffline(ctx, ConvertRequest{
-			SourcePath: src, DestPath: dest, SourceFormat: srcFmt, DestFormat: "qcow2",
-		}); err != nil {
-			return storage.CopyResult{}, fmt.Errorf("backup convert: %w", err)
+		var convErr error
+		if act == BackupCopy {
+			convErr = e.convertToBackupArtifact(ctx, src, dest, srcFmt)
+		} else {
+			convErr = e.ConvertOffline(ctx, ConvertRequest{
+				SourcePath: src, DestPath: dest, SourceFormat: srcFmt, DestFormat: "qcow2",
+			})
+		}
+		if convErr != nil {
+			return storage.CopyResult{}, fmt.Errorf("backup convert: %w", convErr)
 		}
 		sum, size, err := checksumFile(dest)
 		if err != nil {
@@ -102,6 +120,36 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 	default:
 		return storage.CopyResult{}, fmt.Errorf("unsupported backup action")
 	}
+}
+
+// convertToBackupArtifact writes a flattened qcow2 under an allowed backup
+// locator. Dest is an artifact path, not a VM disk under the storage root.
+func (e *Engine) convertToBackupArtifact(ctx context.Context, src, dest, srcFmt string) error {
+	if err := storage.AllowedArtifactPath(dest); err != nil {
+		return err
+	}
+	if err := ValidateDiskPath(src); err != nil && !strings.HasPrefix(src, "/var/lib/ndl/storage/") && !strings.HasPrefix(src, "/dev/") {
+		return fmt.Errorf("source image locator is invalid")
+	}
+	if strings.Contains(src, "..") || strings.ContainsAny(src, ",=\n") {
+		return fmt.Errorf("source image locator is invalid")
+	}
+	if srcFmt == "" {
+		srcFmt = "qcow2"
+	}
+	if srcFmt != "qcow2" && srcFmt != "raw" {
+		return fmt.Errorf("source format must be qcow2 or raw")
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return err
+	}
+	argv := []string{BinQEMUImg, "convert", "-f", srcFmt, "-O", "qcow2", src, dest}
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("qemu-img convert: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func checksumFile(path string) (string, int64, error) {

@@ -2,6 +2,7 @@ package qemu
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -47,5 +48,39 @@ func TestBackupStatJailsHostPaths(t *testing.T) {
 	}
 	if st.Size != 1 {
 		t.Fatalf("allowed temp dir %+v", st)
+	}
+}
+
+func TestCopyOfflineBackupCopyAllowsArtifactDest(t *testing.T) {
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	src := "/var/lib/ndl/storage/local/a.qcow2"
+	_, err := e.CopyOffline(context.Background(), BackupCopy, src, "/var/lib/ndl/backups/a.qcow2")
+	if err == nil || strings.Contains(err.Error(), "storage root") {
+		t.Fatalf("artifact dest must not require storage root: %v", err)
+	}
+	if _, err := e.CopyOffline(context.Background(), BackupCopy, src, "/etc/passwd"); err == nil {
+		t.Fatal("backup copy must not write /etc")
+	}
+	_, err = e.CopyOffline(context.Background(), BackupReplace, src, "/var/lib/ndl/backups/a.qcow2")
+	if err == nil {
+		t.Fatal("replace dest must stay a disk locator")
+	}
+	if !strings.Contains(err.Error(), "storage root") && !strings.Contains(err.Error(), "disk_path") && !strings.Contains(err.Error(), "VolumeHandle") {
+		t.Fatalf("replace dest: %v", err)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupReplace, src, "/var/lib/ndl/storage/local/a.qcow2")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("replace disk dest: %v", err)
+	}
+}
+
+func TestConvertOfflineStillJailsArtifactDest(t *testing.T) {
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	err := e.ConvertOffline(context.Background(), ConvertRequest{
+		SourcePath: "/var/lib/ndl/storage/local/a.qcow2", DestPath: "/var/lib/ndl/backups/a.qcow2",
+		SourceFormat: "qcow2", DestFormat: "qcow2",
+	})
+	if err == nil || !(strings.Contains(err.Error(), "storage root") || strings.Contains(err.Error(), "disk_path") || strings.Contains(err.Error(), "VolumeHandle")) {
+		t.Fatalf("VM convert dest must stay under storage: %v", err)
 	}
 }
