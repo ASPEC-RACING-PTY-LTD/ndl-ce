@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -217,6 +218,50 @@ func TestMigrationDiskImportAndCancelLeavesSource(t *testing.T) {
 	}
 	if _, err := os.Stat(tmp); err != nil {
 		t.Fatal("cancel must not remove the source disk")
+	}
+}
+
+type failUpdateMigrationStore struct {
+	appdb.Store
+}
+
+func (f failUpdateMigrationStore) UpdateMigrationJob(ctx context.Context, job appdb.MigrationJob) error {
+	return errors.New("persist failed")
+}
+
+func TestCancelMigrationJobFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	now := time.Now().UTC()
+	job := appdb.MigrationJob{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Direction: "import", State: "running",
+		Adapter: "qcow2", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := mem.CreateMigrationJob(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpdateMigrationStore{Store: mem}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs/"+job.ID+"/cancel", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("cancel persist %d %s", res.StatusCode, raw)
+	}
+	got, err := mem.GetMigrationJob(context.Background(), cluster.ID, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != "running" {
+		t.Fatalf("job state mutated without persist: %+v", got)
 	}
 }
 

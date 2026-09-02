@@ -84,8 +84,11 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = hashes
 	}
+	if err := s.Store.ConsumeMFAChallenge(r.Context(), ch.ID); err != nil {
+		writeErr(w, http.StatusUnauthorized, "mfa challenge is invalid")
+		return
+	}
 	s.lock().Success(lockKey)
-	_ = s.Store.ConsumeMFAChallenge(r.Context(), ch.ID)
 	if err := s.issueSession(w, r, *user, 2); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

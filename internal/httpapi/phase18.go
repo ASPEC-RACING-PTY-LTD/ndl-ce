@@ -413,7 +413,12 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "template snapshot is unavailable")
 		return
 	}
-	overlay := path.Join(path.Dir(tip), vol.ID+"-tmpl.qcow2")
+	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"-tmpl.qcow2")
+	overlay, jerr := storage.JoinUnder(pool.RootPath, overlayRel)
+	if jerr != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "template snapshot is unavailable")
+		return
+	}
 	res, serr := s.VM.SnapshotVM(r.Context(), qemu.OverlayRequest{
 		WorkloadID: row.ID, Action: "create", OverlayPath: overlay, BackingPath: tip,
 	})
@@ -421,9 +426,13 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(serr), serr.Error())
 		return
 	}
+	if err := s.Store.UpdateVolumeLocator(r.Context(), p.User.ClusterID, vol.ID, overlayRel); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	snap := appdb.Snapshot{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
-		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: overlay, Status: "available",
+		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: overlayRel, Status: "available",
 	}
 	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

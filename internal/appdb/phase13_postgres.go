@@ -191,31 +191,19 @@ func (p *Postgres) EnableMFAMethod(ctx context.Context, userID string) error {
 }
 
 func (p *Postgres) ConsumeRecoveryHash(ctx context.Context, userID, hash string) error {
-	row := p.DB.QueryRowContext(ctx, `
-SELECT m.id::text, COALESCE(array_to_string(s.recovery_hashes, ','), '')
-FROM mfa_methods m JOIN secrets.mfa_secrets s ON s.method_id=m.id WHERE m.user_id=$1`, userID)
-	var id, csv string
-	if err := row.Scan(&id, &csv); err != nil {
+	res, err := p.DB.ExecContext(ctx, `
+UPDATE secrets.mfa_secrets s
+SET recovery_hashes = array_remove(s.recovery_hashes, $2), updated_at=now()
+FROM mfa_methods m
+WHERE s.method_id=m.id AND m.user_id=$1 AND $2 = ANY(s.recovery_hashes)`, userID, hash)
+	if err != nil {
 		return err
 	}
-	remain := make([]string, 0)
-	found := false
-	for _, h := range strings.Split(csv, ",") {
-		if h == "" {
-			continue
-		}
-		if h == hash && !found {
-			found = true
-			continue
-		}
-		remain = append(remain, h)
-	}
-	if !found {
+	n, _ := res.RowsAffected()
+	if n == 0 {
 		return errors.New("recovery code is invalid")
 	}
-	_, err := p.DB.ExecContext(ctx, `UPDATE secrets.mfa_secrets SET recovery_hashes=COALESCE(string_to_array(NULLIF($2, ''), ','), '{}'), updated_at=now() WHERE method_id=$1`,
-		id, strings.Join(remain, ","))
-	return err
+	return nil
 }
 
 func (p *Postgres) CreateMFAChallenge(ctx context.Context, c MFAChallenge) error {
@@ -245,8 +233,15 @@ func (p *Postgres) GetMFAChallengeByHash(ctx context.Context, hash string) (*MFA
 }
 
 func (p *Postgres) ConsumeMFAChallenge(ctx context.Context, id string) error {
-	_, err := p.DB.ExecContext(ctx, `UPDATE mfa_challenges SET consumed_at=now() WHERE id=$1`, id)
-	return err
+	res, err := p.DB.ExecContext(ctx, `UPDATE mfa_challenges SET consumed_at=now() WHERE id=$1 AND consumed_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("mfa challenge is invalid")
+	}
+	return nil
 }
 
 func (p *Postgres) CreateServicePrincipal(ctx context.Context, sp ServicePrincipal) error {

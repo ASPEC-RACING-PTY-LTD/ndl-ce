@@ -604,6 +604,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if method != nil && method.Enabled {
+		s.lock().Success(key)
 		s.writeMFAChallenge(w, r, *user)
 		return
 	}

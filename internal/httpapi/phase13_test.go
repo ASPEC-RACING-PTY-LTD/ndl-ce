@@ -104,6 +104,70 @@ func TestMFAEnrollChallengeAndViewerAuditDenied(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestMFAChallengeCannotBeReplayed(t *testing.T) {
+	s, _, token := testServer(t)
+	now := time.Date(2026, 9, 1, 15, 0, 5, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("enroll %d %s", res.StatusCode, b)
+	}
+	var enrolled struct {
+		Secret string `json:"secret"`
+	}
+	if err := json.Unmarshal(b, &enrolled); err != nil {
+		t.Fatal(string(b))
+	}
+	code := mfa.Code(enrolled.Secret, now)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/confirm", strings.NewReader(`{"code":"`+code+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusOK {
+		b, _ = io.ReadAll(res.Body)
+		t.Fatalf("confirm %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"admin","password":"correct-horse"}`))
+	lb, _ := io.ReadAll(login.Body)
+	_ = login.Body.Close()
+	var challenge struct {
+		ID    string `json:"mfa_challenge_id"`
+		Token string `json:"mfa_token"`
+	}
+	if err := json.Unmarshal(lb, &challenge); err != nil || challenge.ID == "" {
+		t.Fatalf("%s", lb)
+	}
+	body := `{"mfa_challenge_id":"` + challenge.ID + `","mfa_token":"` + challenge.Token + `","code":"` + code + `"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/auth/mfa/verify", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusOK {
+		mb, _ := io.ReadAll(res.Body)
+		t.Fatalf("first verify %d %s", res.StatusCode, mb)
+	}
+	_ = res.Body.Close()
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/auth/mfa/verify", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	mb, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("replay %d %s", res.StatusCode, mb)
+	}
+}
+
 func TestTokenPermissionsCannotExceedCreator(t *testing.T) {
 	s, mem, token := testServer(t)
 	ts := httptest.NewServer(s.Handler())

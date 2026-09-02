@@ -29,3 +29,16 @@ func TestRecoverAdminRequiresRoot(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestRecoverAdminSQLFailsClosedWhenUserMissing(t *testing.T) {
+	sql := recoverAdminSQL("missing-admin", "hash", "audit-1")
+	if !strings.Contains(sql, "RAISE EXCEPTION") || !strings.Contains(sql, "user not found") {
+		t.Fatal(sql)
+	}
+	if !strings.Contains(sql, pgQuote("missing-admin")) {
+		t.Fatal(sql)
+	}
+	if !strings.Contains(sql, "RAISE EXCEPTION") {
+		t.Fatal("must fail closed when the user row is missing")
+	}
+}

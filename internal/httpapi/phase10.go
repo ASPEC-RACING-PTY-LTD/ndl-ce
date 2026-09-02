@@ -17,11 +17,12 @@ import (
 )
 
 const (
-	ctSnapshotReason = "Directory system container snapshots are not available. They are not ZFS. Use a ZFS dataset for system container snapshots."
-	zfsFlattenReason = "ZFS snapshots do not use qcow2 overlay chains. Flatten is not applicable."
-	zfsRollbackRun   = "stop the workload before ZFS rollback"
-	rollbackConfirm  = "rollback"
-	flattenConfirm   = "flatten"
+	ctSnapshotReason   = "Directory system container snapshots are not available. They are not ZFS. Use a ZFS dataset for system container snapshots."
+	zfsFlattenReason   = "ZFS snapshots do not use qcow2 overlay chains. Flatten is not applicable."
+	zfsRollbackRun     = "stop the workload before ZFS rollback"
+	overlayRollbackRun = "stop the workload before overlay rollback"
+	rollbackConfirm    = "rollback"
+	flattenConfirm     = "flatten"
 )
 
 func snapshotJSON(s appdb.Snapshot) map[string]any {
@@ -270,6 +271,10 @@ func (s *Server) rollbackSnapshot(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "snapshot.rollback", "ok", snap.ID)
 		writeJSON(w, http.StatusOK, snapshotJSON(*snap))
+		return
+	}
+	if row.UnitActive || row.Status == qemu.StatusRunning || row.Status == qemu.StatusStarting {
+		writeErr(w, http.StatusUnprocessableEntity, overlayRollbackRun)
 		return
 	}
 	newID := uuid.NewString()

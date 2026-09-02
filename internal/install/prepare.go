@@ -79,15 +79,7 @@ func RecoverAdmin(username, password string) error {
 	if err != nil {
 		return err
 	}
-	sql := fmt.Sprintf(
-		`UPDATE users SET password_hash = %s WHERE username = %s;
-UPDATE sessions SET revoked_at = now() WHERE user_id IN (SELECT id FROM users WHERE username = %s);
-UPDATE api_tokens SET revoked_at = now() WHERE user_id IN (SELECT id FROM users WHERE username = %s) AND revoked_at IS NULL;
-DELETE FROM mfa_methods WHERE user_id IN (SELECT id FROM users WHERE username = %s);
-INSERT INTO audit_events (id, action, result, detail)
-VALUES (%s, 'identity.recover', 'ok', '{"via":"recover-admin"}');`,
-		pgQuote(hash), pgQuote(username), pgQuote(username), pgQuote(username), pgQuote(username), pgQuote(uuid.NewString()),
-	)
+	sql := recoverAdminSQL(username, hash, uuid.NewString())
 	cmd := exec.Command("su", "-s", "/bin/sh", "postgres", "-c", "psql -X -v ON_ERROR_STOP=1 -d nodal -f -")
 	cmd.Stdin = strings.NewReader(sql)
 	out, err := cmd.CombinedOutput()
@@ -96,6 +88,26 @@ VALUES (%s, 'identity.recover', 'ok', '{"via":"recover-admin"}');`,
 	}
 	fmt.Println("administrator password reset; MFA methods were removed")
 	return nil
+}
+
+func recoverAdminSQL(username, passwordHash, auditID string) string {
+	u := pgQuote(username)
+	return fmt.Sprintf(
+		`DO $recover$
+BEGIN
+  UPDATE users SET password_hash = %s WHERE username = %s;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'user not found';
+  END IF;
+END
+$recover$;
+UPDATE sessions SET revoked_at = now() WHERE user_id IN (SELECT id FROM users WHERE username = %s);
+UPDATE api_tokens SET revoked_at = now() WHERE user_id IN (SELECT id FROM users WHERE username = %s) AND revoked_at IS NULL;
+DELETE FROM mfa_methods WHERE user_id IN (SELECT id FROM users WHERE username = %s);
+INSERT INTO audit_events (id, action, result, detail)
+VALUES (%s, 'identity.recover', 'ok', '{"via":"recover-admin"}');`,
+		pgQuote(passwordHash), u, u, u, u, pgQuote(auditID),
+	)
 }
 
 func pgQuote(s string) string {

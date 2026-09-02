@@ -251,12 +251,17 @@ func (m *Memory) ConsumeMFAChallenge(_ context.Context, id string) error {
 	defer m.mu.Unlock()
 	now := time.Now().UTC()
 	for k, c := range m.mfaChallenges {
-		if c.ID == id {
-			c.ConsumedAt = &now
-			m.mfaChallenges[k] = c
+		if c.ID != id {
+			continue
 		}
+		if c.ConsumedAt != nil {
+			return fmt.Errorf("mfa challenge is invalid")
+		}
+		c.ConsumedAt = &now
+		m.mfaChallenges[k] = c
+		return nil
 	}
-	return nil
+	return fmt.Errorf("mfa challenge is invalid")
 }
 
 func (m *Memory) CreateServicePrincipal(_ context.Context, sp ServicePrincipal) error {

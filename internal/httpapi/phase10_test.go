@@ -74,6 +74,27 @@ func TestVMSnapshotCreateRollbackAndCTHidden(t *testing.T) {
 		t.Fatalf("%+v", listed)
 	}
 
+	if err := mem.UpdateWorkloadObserved(context.Background(), appdb.Workload{
+		ID: vmID, Status: qemu.StatusRunning, UnitActive: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/snapshots/"+snap["id"].(string)+"/rollback", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "rollback")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "stop") {
+		t.Fatalf("running overlay rollback %d %s", res.StatusCode, raw)
+	}
+	if err := mem.UpdateWorkloadObserved(context.Background(), appdb.Workload{
+		ID: vmID, Status: qemu.StatusStopped, UnitActive: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/snapshots/"+snap["id"].(string)+"/rollback", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})

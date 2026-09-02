@@ -366,7 +366,10 @@ func (s *Server) cancelMigrationJob(w http.ResponseWriter, r *http.Request) {
 	}
 	j.CancelRequested = true
 	j.State = "canceling"
-	_ = s.Store.UpdateMigrationJob(r.Context(), *j)
+	if err := s.Store.UpdateMigrationJob(r.Context(), *j); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "migration.cancel", "ok", j.ID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": j.ID, "state": "canceling", "source_untouched": true,
@@ -391,7 +394,10 @@ func (s *Server) retryMigrationJob(w http.ResponseWriter, r *http.Request) {
 	j.CancelRequested = false
 	j.State = "running"
 	j.Stage = "preflight"
-	_ = s.Store.UpdateMigrationJob(r.Context(), *j)
+	if err := s.Store.UpdateMigrationJob(r.Context(), *j); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "migration.retry", "ok", j.ID)
 	go s.runMigrationJob(context.Background(), p.User.ClusterID, j.ID)
 	writeJSON(w, http.StatusAccepted, migrationJobJSON(*j))

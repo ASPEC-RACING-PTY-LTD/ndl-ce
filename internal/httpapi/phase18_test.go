@@ -273,7 +273,7 @@ func TestPhase18USBInventoryAttachAndPCI(t *testing.T) {
 }
 
 func TestPhase18TemplatesExportAndSecureBoot(t *testing.T) {
-	s, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-src")
 	id := created["id"].(string)
 
@@ -288,6 +288,14 @@ func TestPhase18TemplatesExportAndSecureBoot(t *testing.T) {
 	var tmpl map[string]any
 	_ = json.NewDecoder(tmplRes.Body).Decode(&tmpl)
 	_ = tmplRes.Body.Close()
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, id)
+	if len(disks) == 0 {
+		t.Fatal("source disks missing")
+	}
+	vol, _ := mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if vol == nil || !strings.Contains(vol.BackendRef, "-tmpl.qcow2") {
+		t.Fatalf("template create must retarget the boot volume tip: %+v", vol)
+	}
 
 	list, _ := http.NewRequest("GET", ts.URL+"/api/v1/templates", nil)
 	list.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
