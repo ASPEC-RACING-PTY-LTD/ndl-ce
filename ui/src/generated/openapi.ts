@@ -191,6 +191,7 @@ export interface CreateStoragePoolRequest {
   name?: string;
   path?: string;
   create?: boolean;
+  backend_type?: string;
 }
 
 export interface StorageVolumeListResponse {
@@ -222,6 +223,13 @@ export interface StorageImage {
   display_name?: string;
   checksum_sha256?: string;
   size_bytes?: number;
+}
+
+export interface StorageImageUploadRequest {
+  pool_id?: string;
+  kind?: string;
+  filename?: string;
+  file?: string;
 }
 
 export interface NetworkListResponse {

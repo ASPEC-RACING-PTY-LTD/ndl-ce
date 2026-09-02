@@ -500,6 +500,24 @@ paths:
     post:
       operationId: uploadStorageImage
       summary: Upload ISO or cloud-image media
+      parameters:
+        - name: pool_id
+          in: query
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: filename
+          in: query
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/StorageImageUploadRequest"
       responses:
         "201":
           description: Uploaded
@@ -4634,6 +4652,9 @@ components:
           type: string
         create:
           type: boolean
+        backend_type:
+          type: string
+          description: Directory is created here. zfs, lvm, nfs, smb, iscsi, and distributed use their dedicated create routes.
     StorageVolumeListResponse:
       type: object
       additionalProperties: false
@@ -4705,6 +4726,19 @@ components:
           type: string
         size_bytes:
           type: integer
+    StorageImageUploadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        pool_id:
+          type: string
+        kind:
+          type: string
+        filename:
+          type: string
+        file:
+          type: string
+          description: Multipart file part. Raw uploads use the query fields and an octet-stream body.
     NetworkListResponse:
       type: object
       additionalProperties: false
