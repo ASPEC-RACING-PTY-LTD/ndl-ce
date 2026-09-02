@@ -609,6 +609,9 @@ const rebuildRepo = existsSync("packaging/e2e/rebuild-packages.sh")
 if (rebuildRepo.includes("quick-gen-key")) {
   errors.push("rebuild-packages.sh must not generate a new signing key; use packaging/e2e/lib/sign-repo.sh");
 }
+if (rebuildRepo && !rebuildRepo.includes('rm -rf "$OUT/debs"')) {
+  errors.push("rebuild-packages.sh must clean $OUT/debs before copying new packages");
+}
 const postinstControl = existsSync("packaging/lib/ndl/postinst-control.sh")
   ? readFileSync("packaging/lib/ndl/postinst-control.sh", "utf8")
   : "";

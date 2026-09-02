@@ -45,16 +45,21 @@ chmod +x "$BUILD/debian/rules" \
   "$BUILD/debian/ndl-agent.postinst" \
   "$BUILD/debian/ndl-agent.postrm"
 
+rm -f /tmp/nodal_*.deb /tmp/ndl-*.deb /tmp/nodalctl_*.deb /tmp/nodal-*.deb
 cd "$BUILD"
 dpkg-buildpackage -us -uc -b --no-sign
+if [ -z "$OUT" ] || [ "$OUT" = "/" ]; then
+  echo "OUT is not a usable output directory" >&2
+  exit 1
+fi
+rm -rf "$OUT/debs"
 mkdir -p "$OUT/debs"
-rm -f "$OUT/debs/"*.deb
 cp -a /tmp/nodal_*.deb /tmp/ndl-*.deb /tmp/nodalctl_*.deb "$OUT/debs/"
 
-mkdir -p "$OUT/debian/pool/main/n/nodal" \
-  "$OUT/debian/dists/trixie/main/binary-amd64" \
+mkdir -p "$OUT/debian/dists/trixie/main/binary-amd64" \
   "$OUT/debian/dists/trixie/main/binary-all"
-rm -f "$OUT/debian/pool/main/n/nodal/"*.deb
+rm -rf "$OUT/debian/pool/main/n/nodal"
+mkdir -p "$OUT/debian/pool/main/n/nodal"
 cp -a "$OUT/debs/"*.deb "$OUT/debian/pool/main/n/nodal/"
 
 cd "$OUT/debian"
