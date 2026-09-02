@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -70,6 +71,10 @@ func TestPhase34StandbyTakesLeaseAfterFence(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("fence %d %s", res.StatusCode, raw)
 	}
+	ha, err := mem.GetHAState(context.Background(), cluster.ID)
+	if err != nil || ha == nil || ha.FencedHolder != "writer-a" {
+		t.Fatalf("fence identity %+v %v", ha, err)
+	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/ha/promote", strings.NewReader(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -84,6 +89,10 @@ func TestPhase34StandbyTakesLeaseAfterFence(t *testing.T) {
 	lease, _ := mem.GetClusterLease(context.Background(), cluster.ID)
 	if lease == nil || lease.HolderID != "writer-b" {
 		t.Fatalf("standby lease %+v", lease)
+	}
+	ha, err = mem.GetHAState(context.Background(), cluster.ID)
+	if err != nil || ha == nil || ha.PromotedHolder != "writer-b" {
+		t.Fatalf("promote identity %+v %v", ha, err)
 	}
 	got, _ := mem.GetWorkload(context.Background(), cluster.ID, wlID)
 	if got == nil || got.Status != qemu.StatusRunning {
@@ -291,5 +300,61 @@ func TestPhase34ReplicaEndpointRefusesCredentials(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "secret-pass") {
 		t.Fatalf("secret echoed %s", raw)
+	}
+}
+
+type failUpsertHAStateStore struct {
+	appdb.Store
+}
+
+func (f failUpsertHAStateStore) UpsertHAState(context.Context, appdb.HAState) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase34FenceFailsClosedWhenHAStatePersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.LeaseHolder = "writer-a"
+	cluster, _ := mem.GetCluster(context.Background())
+	if err := mem.AcquireLease(context.Background(), cluster.ID, "writer-a", time.Now().UTC().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpsertHAStateStore{Store: mem}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/ha/fence", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "fence")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("fence persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record HA fence") {
+		t.Fatalf("fence persist body %s", raw)
+	}
+}
+
+func TestPhase34PromoteFailsClosedWhenHAStatePersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.LeaseHolder = "writer-b"
+	s.Store = failUpsertHAStateStore{Store: mem}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/ha/promote", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "promote")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("promote persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record HA promote") {
+		t.Fatalf("promote persist body %s", raw)
 	}
 }

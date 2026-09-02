@@ -170,7 +170,10 @@ func (s *Server) fenceClusterHA(w http.ResponseWriter, r *http.Request) {
 	h.FencedAt = &at
 	h.Reason = haFencingReason
 	h.UpdatedAt = s.now()
-	_ = s.Store.UpsertHAState(r.Context(), *h)
+	if err := s.Store.UpsertHAState(r.Context(), *h); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record HA fence")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.ha.fence", "ok", h.FencedHolder)
 	lease, _ = s.Store.GetClusterLease(r.Context(), p.User.ClusterID)
 	writeJSON(w, http.StatusOK, s.haStateJSON(*h, lease, false))
@@ -208,7 +211,10 @@ func (s *Server) promoteClusterHA(w http.ResponseWriter, r *http.Request) {
 	h.Mode = appdb.HAModeSingleWriter
 	h.Reason = "this process holds the writer lease"
 	h.UpdatedAt = now
-	_ = s.Store.UpsertHAState(r.Context(), *h)
+	if err := s.Store.UpsertHAState(r.Context(), *h); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record HA promote")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.ha.promote", "ok", s.LeaseHolder)
 	lease, _ = s.Store.GetClusterLease(r.Context(), p.User.ClusterID)
 	writeJSON(w, http.StatusOK, s.haStateJSON(*h, lease, true))
