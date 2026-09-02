@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -239,6 +240,10 @@ func TestPhase42PolicyPlanUsesAutomationValidation(t *testing.T) {
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"succeeded"`) {
 		t.Fatalf("approve policy %d %s", res.StatusCode, raw)
 	}
+	storedPlan, err := mem.GetAIPlan(context.Background(), cluster.ID, id)
+	if err != nil || storedPlan == nil || storedPlan.Status != appdb.PlanSucceeded {
+		t.Fatalf("plan row %+v %v", storedPlan, err)
+	}
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/tasks", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ = ts.Client().Do(req)
@@ -327,5 +332,49 @@ func TestExistingAPIErrorNoStatusIsFailure(t *testing.T) {
 	}
 	if existingAPIID([]byte(`{"name":"x"}`), "id") != "" {
 		t.Fatal("missing id")
+	}
+}
+
+type failUpdateAIPlanStore struct {
+	appdb.Store
+}
+
+func (f failUpdateAIPlanStore) UpdateAIPlan(context.Context, appdb.AIPlan) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase42ApproveFailsClosedWhenPlanPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpdateAIPlanStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string)+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("plan persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record AI plan") {
+		t.Fatalf("plan persist body %s", raw)
 	}
 }

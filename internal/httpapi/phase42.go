@@ -138,17 +138,26 @@ func (s *Server) approveAIPlan(w http.ResponseWriter, r *http.Request) {
 		if !rbac.Authorize(p.Grants, st.Permission) || (len(profileGrants) > 0 && !rbac.Authorize(profileGrants, st.Permission)) {
 			st.Status = appdb.PlanDenied
 			st.Reason = "plan cannot call missing permissions"
-			_ = s.Store.UpdateAIPlanStep(r.Context(), st)
+			if err := s.Store.UpdateAIPlanStep(r.Context(), st); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not record AI plan")
+				return
+			}
 			plan.Status = appdb.PlanStopped
 			plan.Reason = st.Reason
-			_ = s.Store.UpdateAIPlan(r.Context(), *plan)
+			if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not record AI plan")
+				return
+			}
 			s.audit(r, p.User.ClusterID, p.User.ID, "ai.plan.approve", "stopped", plan.ID)
 			writeJSON(w, http.StatusOK, s.planJSON(r, *plan))
 			return
 		}
 	}
 	plan.Status = appdb.PlanExecuting
-	_ = s.Store.UpdateAIPlan(r.Context(), *plan)
+	if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record AI plan")
+		return
+	}
 	var createdWL string
 	for i := range steps {
 		st := steps[i]
@@ -157,22 +166,34 @@ func (s *Server) approveAIPlan(w http.ResponseWriter, r *http.Request) {
 			st.Status = appdb.PlanFailed
 			st.Reason = execErr.Error()
 			st.OperationID = opID
-			_ = s.Store.UpdateAIPlanStep(r.Context(), st)
+			if err := s.Store.UpdateAIPlanStep(r.Context(), st); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not record AI plan")
+				return
+			}
 			plan.Status = appdb.PlanStopped
 			plan.Reason = "partial plan failure stopped"
-			_ = s.Store.UpdateAIPlan(r.Context(), *plan)
+			if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not record AI plan")
+				return
+			}
 			s.audit(r, p.User.ClusterID, p.User.ID, "ai.plan.approve", "stopped", plan.ID)
 			writeJSON(w, http.StatusOK, s.planJSON(r, *plan))
 			return
 		}
 		st.Status = appdb.PlanSucceeded
 		st.OperationID = opID
-		_ = s.Store.UpdateAIPlanStep(r.Context(), st)
+		if err := s.Store.UpdateAIPlanStep(r.Context(), st); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record AI plan")
+			return
+		}
 		steps[i] = st
 	}
 	plan.Status = appdb.PlanSucceeded
 	plan.Reason = "approved and executed existing APIs"
-	_ = s.Store.UpdateAIPlan(r.Context(), *plan)
+	if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record AI plan")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "ai.plan.approve", "ok", plan.ID)
 	writeJSON(w, http.StatusOK, s.planJSON(r, *plan))
 }
