@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -158,6 +159,14 @@ func TestVMCreateLifecycleDeletePreservesVolume(t *testing.T) {
 	id := created["id"].(string)
 	if created["kind"] != "vm" {
 		t.Fatalf("kind %v", created["kind"])
+	}
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %d", len(disks))
+	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, id)
+	if len(nics) != 1 || nics[0].NetworkID != netID {
+		t.Fatalf("nics %+v", nics)
 	}
 	if vm.launch.NICs[0].MAC == "" || vm.launch.PCI["vga"] == "" {
 		t.Fatal("mac and pci must be compiled")
@@ -605,6 +614,84 @@ func TestVMPatchFailsClosedWhenSpecPersistFails(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "could not record VM spec") {
 		t.Fatalf("patch persist body %s", b)
+	}
+}
+
+type failCreateWorkloadDiskStore struct {
+	appdb.Store
+}
+
+func (f failCreateWorkloadDiskStore) CreateWorkloadDisk(context.Context, appdb.WorkloadDisk) error {
+	return errors.New("persist failed")
+}
+
+type failCreateWorkloadNICStore struct {
+	appdb.Store
+}
+
+func (f failCreateWorkloadNICStore) CreateWorkloadNIC(context.Context, appdb.WorkloadNIC) error {
+	return errors.New("persist failed")
+}
+
+func TestVMCreateFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
+}
+
+func TestVMCreateFailsClosedWhenNICPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failCreateWorkloadNICStore{Store: mem}
+
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nic persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM NIC") {
+		t.Fatalf("nic persist body %s", raw)
 	}
 }
 

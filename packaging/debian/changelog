@@ -66,6 +66,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Workload migrate fails closed if the migrate job row cannot be created or updated. A 200 body is not a substitute for GET /migrate.
   * Service principal create, network policy apply, and VM PATCH fail closed if the catalog row cannot be recorded. A 2xx body is not a substitute for list or GET.
   * Network apply fails closed if observed status persist fails. A 200 body is not a substitute for the stored network row.
+  * VM and system-container create fail closed if boot disk or NIC persist fails. Object backup target 201 fails closed if probed status cannot be recorded.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

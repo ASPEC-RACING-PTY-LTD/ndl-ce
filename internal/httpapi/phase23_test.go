@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -388,6 +389,36 @@ func TestPhase23ZFSIncrementalTransfersLess(t *testing.T) {
 	}
 	if second["incremental"] != true {
 		t.Fatalf("second run must be incremental: %v", second)
+	}
+}
+
+type failUpdateBackupTargetStatusStore struct {
+	appdb.Store
+}
+
+func (f failUpdateBackupTargetStatusStore) UpdateBackupTargetStatus(context.Context, string, string, string) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase23ObjectTargetFailsClosedWhenStatusPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failUpdateBackupTargetStatusStore{Store: mem}
+
+	body := `{"name":"r2","kind":"r2","endpoint":"https://account.r2.cloudflarestorage.com","bucket":"ndl","username":"akid","password":"secret"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("target persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record backup target") {
+		t.Fatalf("target persist body %s", raw)
 	}
 }
 

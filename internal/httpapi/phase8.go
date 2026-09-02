@@ -205,30 +205,39 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		return
 	}
 	s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
-	_ = s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
+	if err := s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 		VolumeID: vol.ID, Role: vmspec.DiskRoleBoot, Slot: 0, BusAddr: launch.Disks[0].PCIAddr,
 		Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
-	})
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record VM disk")
+		return
+	}
 	for _, d := range spec.Disks {
 		if d.Role != vmspec.DiskRoleData || d.VolumeID == "" || d.VolumeID == vol.ID {
 			continue
 		}
-		_ = s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
+		if err := s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 			VolumeID: d.VolumeID, Role: vmspec.DiskRoleData, Slot: d.Slot, BusAddr: d.PCIAddr,
 			ReadOnly: d.ReadOnly, Format: firstNonEmpty(d.Format, storage.FormatQCOW2),
-		})
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record VM disk")
+			return
+		}
 	}
 	for i, n := range spec.NICs {
 		pci := ""
 		if i < len(launch.NICs) {
 			pci = launch.NICs[i].PCIAddr
 		}
-		_ = s.Store.CreateWorkloadNIC(r.Context(), appdb.WorkloadNIC{
+		if err := s.Store.CreateWorkloadNIC(r.Context(), appdb.WorkloadNIC{
 			ID: firstNonEmpty(n.ID, uuid.NewString()), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 			NetworkID: netw.ID, MAC: n.MAC, PCIAddr: pci, Model: vmspec.NICModelVirtio,
-		})
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record VM NIC")
+			return
+		}
 	}
 	if spec.NoCloud.Enable {
 		_ = s.Store.UpsertVMCidata(r.Context(), appdb.VMCidata{

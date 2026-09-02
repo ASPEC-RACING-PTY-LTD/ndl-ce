@@ -250,14 +250,20 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
 	if volRow != nil {
-		_ = s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
+		if err := s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: volRow.ID, Role: "root",
-		})
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record container disk")
+			return
+		}
 	}
-	_ = s.Store.CreateWorkloadNIC(r.Context(), appdb.WorkloadNIC{
+	if err := s.Store.CreateWorkloadNIC(r.Context(), appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 		NetworkID: netw.ID, MAC: firstNonEmpty(res.MAC, mac),
-	})
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record container NIC")
+		return
+	}
 	_ = pool
 	s.finishOp(r.Context(), op, "succeeded", mustCreateMsg(ids), 100)
 	s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)

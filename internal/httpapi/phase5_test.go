@@ -151,6 +151,10 @@ func TestWorkloadCreateAndIdempotency(t *testing.T) {
 	if len(disks) != 1 {
 		t.Fatalf("disks %d", len(disks))
 	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, first["id"].(string))
+	if len(nics) != 1 || nics[0].NetworkID != netID {
+		t.Fatalf("nics %+v", nics)
+	}
 	vols, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
 	if len(vols) != 1 {
 		t.Fatalf("second volume created: %d", len(vols))
@@ -553,5 +557,67 @@ func TestOCIPatchDoesNotCreateCT(t *testing.T) {
 	}
 	if fw.creates != 0 {
 		t.Fatal("OCI patch must not call CreateCT")
+	}
+}
+
+func TestWorkloadCreateFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+
+	body := `{"name":"alpine-a","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record container disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
+}
+
+func TestWorkloadCreateFailsClosedWhenNICPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failCreateWorkloadNICStore{Store: mem}
+
+	body := `{"name":"alpine-a","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nic persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record container NIC") {
+		t.Fatalf("nic persist body %s", raw)
 	}
 }

@@ -276,7 +276,10 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		}
 		status := s.probeObjectTarget(r.Context(), row)
 		if status != row.Status {
-			_ = s.Store.UpdateBackupTargetStatus(r.Context(), p.User.ClusterID, row.ID, status)
+			if err := s.Store.UpdateBackupTargetStatus(r.Context(), p.User.ClusterID, row.ID, status); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not record backup target")
+				return
+			}
 			row.Status = status
 		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "backup.target.create", "ok", row.ID)
