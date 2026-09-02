@@ -4,6 +4,10 @@ set -e
 # apt remove stops services. It does not delete /var/lib/ndl,
 # PostgreSQL data, or workload disks. apt purge may remove /etc/ndl
 # config written by postinst. Data wipe is a separate explicit command.
+# Do not stop ndl-control on upgrade. dh_installsystemd keeps the old
+# process running until #DEBHELPER# in postinst restarts it once.
+# Stopping here plus starting in postinst plus DEBHELPER causes extra
+# stop/start cycles during package install.
 
 stop_unit() {
   if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
@@ -12,7 +16,7 @@ stop_unit() {
 }
 
 case "$1" in
-  remove|upgrade|deconfigure)
+  remove|deconfigure)
     stop_unit
     ;;
   purge)

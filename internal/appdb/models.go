@@ -47,6 +47,7 @@ type Store interface {
 	GetJoinTokenByHash(ctx context.Context, tokenHash string) (*JoinToken, error)
 
 	AcquireLease(ctx context.Context, clusterID, holderID string, expiresAt time.Time) error
+	ReleaseLease(ctx context.Context, clusterID, holderID string) error
 	GetClusterLease(ctx context.Context, clusterID string) (*ClusterLease, error)
 	FenceLease(ctx context.Context, clusterID string, at time.Time) error
 

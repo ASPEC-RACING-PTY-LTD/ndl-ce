@@ -612,6 +612,31 @@ if (rebuildRepo.includes("quick-gen-key")) {
 if (rebuildRepo && !rebuildRepo.includes('rm -rf "$OUT/debs"')) {
   errors.push("rebuild-packages.sh must clean $OUT/debs before copying new packages");
 }
+const postinstControlPkg = existsSync("packaging/debian/ndl-control.postinst")
+  ? readFileSync("packaging/debian/ndl-control.postinst", "utf8")
+  : "";
+if (/systemctl\s+start[^\n]*ndl-control/.test(postinstControlPkg)) {
+  errors.push("ndl-control.postinst must not start ndl-control; dh_installsystemd #DEBHELPER# restarts it once");
+}
+if (/cluster_leases/.test(postinstControlPkg)) {
+  errors.push("ndl-control.postinst must not delete writer lease rows");
+}
+const postrmControlPkg = existsSync("packaging/debian/ndl-control.postrm")
+  ? readFileSync("packaging/debian/ndl-control.postrm", "utf8")
+  : "";
+if (/remove\|upgrade\|deconfigure/.test(postrmControlPkg)) {
+  errors.push("ndl-control.postrm must not stop ndl-control on upgrade");
+}
+if (/cluster_leases/.test(postrmControlPkg)) {
+  errors.push("ndl-control.postrm must not delete writer lease rows");
+}
+const postrmAgentPkg = existsSync("packaging/debian/ndl-agent.postrm")
+  ? readFileSync("packaging/debian/ndl-agent.postrm", "utf8")
+  : "";
+if (/remove\|upgrade\|deconfigure/.test(postrmAgentPkg)) {
+  errors.push("ndl-agent.postrm must not stop ndl-agent on upgrade");
+}
+
 const postinstControl = existsSync("packaging/lib/ndl/postinst-control.sh")
   ? readFileSync("packaging/lib/ndl/postinst-control.sh", "utf8")
   : "";

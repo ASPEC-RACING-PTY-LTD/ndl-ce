@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -63,6 +65,15 @@ func LoadConfig() Config {
 	return c
 }
 
+func shutdownSignals() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
+func newLeaseHolderID() string {
+	host, _ := os.Hostname()
+	return fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.NewString())
+}
+
 // Run starts the control plane.
 func Run(cfg Config) error {
 	if err := RefuseRoot(); err != nil {
@@ -97,16 +108,26 @@ func Run(cfg Config) error {
 	}
 	holder := cfg.HolderID
 	if holder == "" {
-		host, _ := os.Hostname()
-		holder = fmt.Sprintf("%s-%d-%s", host, os.Getpid(), uuid.NewString())
+		holder = newLeaseHolderID()
 	}
 	ca := cluster.CA{Dir: cfg.CADir}
-	if cl, _ := st.GetCluster(ctx); cl != nil {
-		if err := st.AcquireLease(ctx, cl.ID, holder, time.Now().UTC().Add(30*time.Second)); err != nil {
-			return fmt.Errorf("another control plane holds the writer lease: %w", err)
-		}
+	runCtx, stop := shutdownSignals()
+	defer stop()
+	lease := newWriterLease(st, holder, ca)
+	if err := lease.acquire(ctx); err != nil {
+		return fmt.Errorf("another control plane holds the writer lease: %w", err)
+	}
+	if lease.getClusterID() != "" {
 		_ = ca.Ensure(time.Now().UTC())
 	}
+	lease.startRenewal()
+	defer func() {
+		relinquishCtx, relinquishCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer relinquishCancel()
+		if err := lease.relinquish(relinquishCtx); err != nil {
+			log.Printf("writer lease release: %v", err)
+		}
+	}()
 	hub := &httpapi.EventHub{}
 	agent := agentrpc.Client{Socket: cfg.AgentSock}
 	challenges := &ndltls.ChallengeMem{}
@@ -149,43 +170,37 @@ func Run(cfg Config) error {
 	if enabled {
 		srv.TLSRequired = true
 	}
-	go renewWriterLease(st, holder, ca)
-	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups, Alerts: srv.TickAlerts}.run(context.Background())
+	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups, Alerts: srv.TickAlerts}.run(runCtx)
 	handler := srv.Handler()
-	if srv.TLSRequired {
-		mat, err := loadEnabledMaterial(cfg.CertDir)
-		if err != nil {
-			return fmt.Errorf("tls is enabled; refusing to start without last-good material: %w", err)
-		}
-		srv.TLSServing = true
-		redir := redirectHandler("", challenges)
-		go func() {
-			log.Printf("ndl-control HTTP redirect on %s", cfg.Listen)
-			_ = http.ListenAndServe(cfg.Listen, redir)
-		}()
-		if cfg.HTTPListen != "" && cfg.HTTPListen != cfg.Listen {
-			go func() {
-				log.Printf("ndl-control HTTP redirect on %s", cfg.HTTPListen)
-				_ = http.ListenAndServe(cfg.HTTPListen, redir)
-			}()
-		}
-		return serveTLS(cfg.TLSListen, mat.Certificate, handler)
+	instances, err := controlHTTPInstances(cfg, srv, handler, challenges)
+	if err != nil {
+		return err
 	}
-	log.Printf("ndl-control listening on %s", cfg.Listen)
-	return http.ListenAndServe(cfg.Listen, handler)
+	return serveHTTPServers(runCtx, instances)
 }
 
-func renewWriterLease(st appdb.Store, holder string, ca cluster.CA) {
-	tick := time.NewTicker(10 * time.Second)
-	defer tick.Stop()
-	for range tick.C {
-		c, err := st.GetCluster(context.Background())
-		if err != nil || c == nil {
-			continue
-		}
-		_ = st.AcquireLease(context.Background(), c.ID, holder, time.Now().UTC().Add(30*time.Second))
-		_ = ca.Ensure(time.Now().UTC())
+func controlHTTPInstances(cfg Config, srv *httpapi.Server, handler http.Handler, challenges *ndltls.ChallengeMem) ([]*httpInstance, error) {
+	if !srv.TLSRequired {
+		return []*httpInstance{newHTTPInstance("http", cfg.Listen, handler)}, nil
 	}
+	mat, err := loadEnabledMaterial(cfg.CertDir)
+	if err != nil {
+		return nil, fmt.Errorf("tls is enabled; refusing to start without last-good material: %w", err)
+	}
+	srv.TLSServing = true
+	tlsInst, err := newTLSInstance("https", cfg.TLSListen, mat.Certificate, handler)
+	if err != nil {
+		return nil, fmt.Errorf("tls listen %s: %w", cfg.TLSListen, err)
+	}
+	redir := redirectHandler("", challenges)
+	instances := []*httpInstance{
+		newHTTPInstance("http-redirect", cfg.Listen, redir),
+		tlsInst,
+	}
+	if cfg.HTTPListen != "" && cfg.HTTPListen != cfg.Listen {
+		instances = append(instances, newHTTPInstance("http-redirect", cfg.HTTPListen, redir))
+	}
+	return instances, nil
 }
 
 func certificateEnabled(ctx context.Context, st appdb.Store) (bool, error) {

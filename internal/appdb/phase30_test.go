@@ -53,6 +53,59 @@ func TestMemorySecondLeaseFails(t *testing.T) {
 	}
 }
 
+func TestMemoryReleaseLeaseIsOwnershipSafe(t *testing.T) {
+	m := NewMemory()
+	clusterID := uuid.NewString()
+	exp := time.Now().UTC().Add(time.Minute)
+	if err := m.AcquireLease(t.Context(), clusterID, "writer-a", exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ReleaseLease(t.Context(), clusterID, "writer-b"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.GetClusterLease(t.Context(), clusterID)
+	if err != nil || got == nil || got.HolderID != "writer-a" {
+		t.Fatalf("foreign release must not drop the live writer: %+v %v", got, err)
+	}
+	if err := m.AcquireLease(t.Context(), clusterID, "writer-b", exp); err != ErrLeaseHeld {
+		t.Fatalf("second writer after foreign release: %v", err)
+	}
+	if err := m.ReleaseLease(t.Context(), clusterID, "writer-a"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = m.GetClusterLease(t.Context(), clusterID)
+	if err != nil || got != nil {
+		t.Fatalf("owner release must clear the lease: %+v %v", got, err)
+	}
+	if err := m.AcquireLease(t.Context(), clusterID, "writer-b", exp); err != nil {
+		t.Fatalf("immediate acquire after owner release: %v", err)
+	}
+}
+
+func TestMemoryCrashedWriterLeaseSurvivesUntilExpiry(t *testing.T) {
+	m := NewMemory()
+	clusterID := uuid.NewString()
+	exp := time.Now().UTC().Add(40 * time.Millisecond)
+	if err := m.AcquireLease(t.Context(), clusterID, "writer-crash", exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AcquireLease(t.Context(), clusterID, "writer-b", time.Now().UTC().Add(time.Minute)); err != ErrLeaseHeld {
+		t.Fatalf("live crashed writer must still reject takeover: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if err := m.AcquireLease(t.Context(), clusterID, "writer-b", time.Now().UTC().Add(time.Minute)); err == nil {
+			got, _ := m.GetClusterLease(t.Context(), clusterID)
+			if got == nil || got.HolderID != "writer-b" {
+				t.Fatalf("takeover after expiry: %+v", got)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("expired crashed-writer lease must become acquirable")
+}
+
 func TestMemoryGetNodeStaysControlWithWorkers(t *testing.T) {
 	m := NewMemory()
 	clusterID := uuid.NewString()

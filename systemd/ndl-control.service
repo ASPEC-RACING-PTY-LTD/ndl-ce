@@ -11,6 +11,7 @@ Group=ndl-control
 EnvironmentFile=-/etc/ndl/control.env
 ExecStart=/usr/sbin/ndl-control
 Restart=on-failure
+KillSignal=SIGTERM
 # Do not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE

@@ -154,3 +154,16 @@ func (m *Memory) GetClusterLease(_ context.Context, clusterID string) (*ClusterL
 	cp := *m.clusterLease
 	return &cp, nil
 }
+
+func (m *Memory) ReleaseLease(_ context.Context, clusterID, holderID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.clusterLease == nil || m.clusterLease.ClusterID != clusterID {
+		return nil
+	}
+	if m.clusterLease.HolderID != holderID {
+		return nil
+	}
+	m.clusterLease = nil
+	return nil
+}

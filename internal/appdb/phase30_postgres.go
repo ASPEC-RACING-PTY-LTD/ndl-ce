@@ -152,6 +152,12 @@ WHERE cluster_leases.holder_id = EXCLUDED.holder_id
 	return nil
 }
 
+func (p *Postgres) ReleaseLease(ctx context.Context, clusterID, holderID string) error {
+	_, err := p.DB.ExecContext(ctx, `
+DELETE FROM cluster_leases WHERE cluster_id=$1 AND holder_id=$2`, clusterID, holderID)
+	return err
+}
+
 func (p *Postgres) GetClusterLease(ctx context.Context, clusterID string) (*ClusterLease, error) {
 	row := p.DB.QueryRowContext(ctx, `SELECT cluster_id::text, holder_id, expires_at, COALESCE(fenced, false) FROM cluster_leases WHERE cluster_id=$1`, clusterID)
 	var l ClusterLease

@@ -3,8 +3,6 @@ package control
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -28,20 +26,6 @@ func redirectHandler(httpsHost string, acme http.Handler) http.Handler {
 		target := "https://" + host + r.URL.RequestURI()
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	})
-}
-
-func serveTLS(addr string, cert tls.Certificate, handler http.Handler) error {
-	srv := &http.Server{
-		Addr:      addr,
-		Handler:   handler,
-		TLSConfig: tlsServerConfig(cert, clusterCADir()),
-	}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("tls listen %s: %w", addr, err)
-	}
-	log.Printf("ndl-control listening on https %s", addr)
-	return srv.ServeTLS(ln, "", "")
 }
 
 func clusterCADir() string {

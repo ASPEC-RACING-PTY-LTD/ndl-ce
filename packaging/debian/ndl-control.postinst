@@ -24,7 +24,11 @@ start_units() {
   if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload >/dev/null 2>&1 || true
     systemctl enable ndl-agent.socket ndl-agent.service ndl-control.service >/dev/null 2>&1 || true
-    systemctl start ndl-agent.socket ndl-agent.service ndl-control.service >/dev/null 2>&1 || true
+    # Start the agent so the host socket is up. Do not start ndl-control
+    # here: dh_installsystemd #DEBHELPER# restarts it once after configure.
+    # A second start in this script during upgrades bounces the writer
+    # twice before the new process can take over.
+    systemctl start ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
   fi
 }
 
