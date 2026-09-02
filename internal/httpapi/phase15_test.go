@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -98,6 +99,14 @@ func TestZFSForceImportRefusedAndCapabilities(t *testing.T) {
 	if !strings.Contains(string(b), `"backend_type":"zfs"`) || !strings.Contains(string(b), `"incremental_send":true`) {
 		t.Fatalf("caps %s", b)
 	}
+	var imported map[string]any
+	if err := json.Unmarshal(b, &imported); err != nil {
+		t.Fatal(err)
+	}
+	z, err := mem.GetZFSPool(context.Background(), imported["id"].(string))
+	if err != nil || z == nil || z.ZPoolGUID != "1234567890" || z.ZPoolName != "tank" {
+		t.Fatalf("zpool identity %+v %v", z, err)
+	}
 	for _, op := range fz.calls {
 		if op.Force {
 			t.Fatal("force reached engine")
@@ -138,6 +147,10 @@ func TestZFSCreateRefusesRootDiskAndMakesZvolDataset(t *testing.T) {
 		t.Fatal(err)
 	}
 	poolID := pool["id"].(string)
+	z, err := mem.GetZFSPool(context.Background(), poolID)
+	if err != nil || z == nil || z.ZPoolGUID != "123456789012345" || z.ZPoolName != "tank" {
+		t.Fatalf("zpool identity %+v %v", z, err)
+	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", strings.NewReader(`{"pool_id":"`+poolID+`","class":"vm-disk","size_bytes":1073741824}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -370,5 +383,59 @@ func TestZFSCTSnapshotSupported(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("ct snap %d %s", res.StatusCode, b)
+	}
+}
+
+type failUpsertZFSPoolStore struct {
+	appdb.Store
+}
+
+func (f failUpsertZFSPoolStore) UpsertZFSPool(context.Context, appdb.ZFSPool) error {
+	return errors.New("persist failed")
+}
+
+func TestZFSImportFailsClosedWhenIdentityPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.ZFS = &fakeZFS{}
+	s.Store = failUpsertZFSPoolStore{Store: mem}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/zfs/import", strings.NewReader(`{"guid":"1234567890","name":"tank"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("import persist %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record zpool identity") {
+		t.Fatalf("import persist body %s", b)
+	}
+}
+
+func TestZFSCreateFailsClosedWhenIdentityPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.ZFS = &fakeZFS{}
+	s.Store = failUpsertZFSPoolStore{Store: mem}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/zfs/create", strings.NewReader(`{"name":"tank","disks":["/dev/disk/by-id/wwn-0x5000"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("create persist %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record zpool identity") {
+		t.Fatalf("create persist body %s", b)
 	}
 }

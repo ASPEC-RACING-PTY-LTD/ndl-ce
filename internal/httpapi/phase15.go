@@ -134,7 +134,10 @@ func (s *Server) importZFS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not record storage pool")
 		return
 	}
-	_ = s.Store.UpsertZFSPool(r.Context(), appdb.ZFSPool{PoolID: poolID, ZPoolGUID: guid, ZPoolName: name})
+	if err := s.Store.UpsertZFSPool(r.Context(), appdb.ZFSPool{PoolID: poolID, ZPoolGUID: guid, ZPoolName: name}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record zpool identity")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.zfs.import", "ok", poolID)
 	writeJSON(w, http.StatusCreated, poolJSON(row))
 }
@@ -213,7 +216,10 @@ func (s *Server) createZFS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if guid != "pending" {
-		_ = s.Store.UpsertZFSPool(r.Context(), appdb.ZFSPool{PoolID: poolID, ZPoolGUID: guid, ZPoolName: req.Name})
+		if err := s.Store.UpsertZFSPool(r.Context(), appdb.ZFSPool{PoolID: poolID, ZPoolGUID: guid, ZPoolName: req.Name}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record zpool identity")
+			return
+		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage.zfs.create", "ok", poolID)
 	writeJSON(w, http.StatusCreated, poolJSON(row))
