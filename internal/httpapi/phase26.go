@@ -180,9 +180,15 @@ func (s *Server) createDatastore(w http.ResponseWriter, r *http.Request, kind st
 		writeErr(w, http.StatusConflict, "could not record storage pool")
 		return
 	}
-	_ = s.Store.UpsertDatastore(r.Context(), appdb.Datastore{PoolID: poolID, Kind: kind, Locator: locator, Portal: portal, IQN: iqn})
+	if err := s.Store.UpsertDatastore(r.Context(), appdb.Datastore{PoolID: poolID, Kind: kind, Locator: locator, Portal: portal, IQN: iqn}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record datastore")
+		return
+	}
 	if kind == storage.BackendSMB {
-		_ = s.Store.UpsertDatastoreSecret(r.Context(), poolID, user, pass)
+		if err := s.Store.UpsertDatastoreSecret(r.Context(), poolID, user, pass); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record datastore credentials")
+			return
+		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "storage."+kind+".create", "ok", poolID)
 	writeJSON(w, http.StatusCreated, poolJSON(row))

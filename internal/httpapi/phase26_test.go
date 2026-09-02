@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +72,15 @@ func TestNFSCreateAndISOVolumeOnShare(t *testing.T) {
 	if !strings.Contains(string(b), `"backend_type":"nfs"`) {
 		t.Fatalf("backend %s", b)
 	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID, _ := pool["id"].(string)
+	ds, err := mem.GetDatastore(context.Background(), poolID)
+	if err != nil || ds == nil || ds.Locator != "nas.example:/export/iso" {
+		t.Fatalf("datastore locator %+v %v", ds, err)
+	}
 }
 
 func TestSMBPasswordNotReturnedAndNotOnArgv(t *testing.T) {
@@ -93,6 +103,19 @@ func TestSMBPasswordNotReturnedAndNotOnArgv(t *testing.T) {
 	}
 	if len(fd.calls) == 0 || fd.calls[0].Password != "s3cret" {
 		t.Fatal("password must reach agent, not JSON")
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID, _ := pool["id"].(string)
+	ds, err := mem.GetDatastore(context.Background(), poolID)
+	if err != nil || ds == nil || ds.Locator != "//files.example/iso" {
+		t.Fatalf("datastore locator %+v %v", ds, err)
+	}
+	user, pass, err := mem.DatastoreSecret(context.Background(), poolID)
+	if err != nil || user != "u" || pass != "s3cret" {
+		t.Fatalf("stored secret %q %q %v", user, pass, err)
 	}
 }
 
@@ -334,5 +357,70 @@ func TestISCSIVolumeNotAvailableWithoutDevice(t *testing.T) {
 	}
 	if res.StatusCode == http.StatusCreated {
 		t.Fatalf("volume create without login %d %s", res.StatusCode, b)
+	}
+}
+
+type failUpsertDatastoreStore struct {
+	appdb.Store
+}
+
+func (f failUpsertDatastoreStore) UpsertDatastore(context.Context, appdb.Datastore) error {
+	return errors.New("persist failed")
+}
+
+type failUpsertDatastoreSecretStore struct {
+	appdb.Store
+}
+
+func (f failUpsertDatastoreSecretStore) UpsertDatastoreSecret(context.Context, string, string, string) error {
+	return errors.New("persist failed")
+}
+
+func TestNFSCreateFailsClosedWhenDatastorePersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	s.Store = failUpsertDatastoreStore{Store: mem}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/nfs", strings.NewReader(`{"name":"iso","locator":"nas.example:/export/iso"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nfs persist %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record datastore") {
+		t.Fatalf("nfs persist body %s", b)
+	}
+}
+
+func TestSMBCreateFailsClosedWhenSecretPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	s.Store = failUpsertDatastoreSecretStore{Store: mem}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/smb", strings.NewReader(`{"name":"share","locator":"//files.example/iso","username":"u","password":"s3cret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("smb persist %d %s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), "s3cret") {
+		t.Fatalf("secret echoed %s", b)
+	}
+	if !strings.Contains(string(b), "could not record datastore credentials") {
+		t.Fatalf("smb persist body %s", b)
 	}
 }
