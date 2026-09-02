@@ -264,12 +264,10 @@ They are not claimed as CE 1.0 complete.
   migrate is not reached.
   Why not blocking for license surface: the API refuses instead of
   starting a second copy on the control unix agent.
-- HIGH. Operate still has a DB-only path. Restart and Store install
-  invoke existing HTTP handlers. Policy create still writes
-  `CreatePolicy` in the store and does not POST `/api/v1/policies`.
-  Operate must use those APIs. This is not the finished engine.
-  Why not blocking for license surface: Ask cannot mutate; Host.Exec
-  shaped prompts stay 422; this is recorded debt, not a CE 1.0 pass.
+- LOW. Operate is CompilePlan keyword matching plus existing HTTP APIs,
+  not a general planner. Restart, Store install, and policy create
+  invoke those handlers. Why not blocking: Ask cannot mutate; Host.Exec
+  shaped prompts stay 422.
 - HIGH. Webhook SSRF residual. Literal loopback, link-local, and
   RFC1918 IPs are denied. Hostnames that are not IPs are still
   accepted, so DNS rebinding and metadata names remain a risk.

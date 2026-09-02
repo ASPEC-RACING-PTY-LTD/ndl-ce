@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/ai"
 	"github.com/no-dal/ndl-ce/internal/appdb"
-	"github.com/no-dal/ndl-ce/internal/automation"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
@@ -203,7 +202,12 @@ func (s *Server) executePlanStep(r *http.Request, clusterID string, st appdb.AIP
 			*createdWL = id
 		}
 	case ai.ActionCreatePolicy:
-		if err := s.executeCreatePolicy(r, body); err != nil {
+		payload := st.BodyJSON
+		if strings.TrimSpace(payload) == "" {
+			payload = "{}"
+		}
+		code, raw := s.invokeExistingAPI(r, s.createAutomationPolicy, http.MethodPost, "/api/v1/policies", []byte(payload), "")
+		if err := existingAPIError(code, raw); err != nil {
 			return fail(err)
 		}
 	case ai.ActionRestart:
@@ -254,43 +258,6 @@ func (s *Server) executeCreateWorkload(r *http.Request, body map[string]any) (st
 		return "", err
 	}
 	return existingAPIID(out, "id"), nil
-}
-
-func (s *Server) executeCreatePolicy(r *http.Request, body map[string]any) error {
-	name, _ := body["name"].(string)
-	kind, _ := body["kind"].(string)
-	action, _ := body["action"].(string)
-	yamlSpec, _ := body["yaml"].(string)
-	requireApproval, _ := body["require_approval"].(bool)
-	threshold := jsonInt(body["threshold_percent"])
-	var spec *automation.Spec
-	var err error
-	if strings.TrimSpace(yamlSpec) != "" {
-		spec, err = automation.ParseYAML([]byte(yamlSpec))
-	} else {
-		spec, err = automation.ParseJSONMap(kind, action, threshold, requireApproval)
-	}
-	if err != nil {
-		return err
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return errPlan("name is required")
-	}
-	p, err := s.principal(r)
-	if err != nil {
-		return err
-	}
-	row := appdb.Policy{
-		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name,
-		Kind: spec.Kind, Action: spec.Action, ThresholdPercent: spec.ThresholdPercent,
-		RequireApproval: spec.RequireApproval, Enabled: true, SpecYAML: strings.TrimSpace(yamlSpec),
-	}
-	if err := s.Store.CreatePolicy(r.Context(), row); err != nil {
-		return errConflict("could not record policy")
-	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "policy.create", "ok", row.ID)
-	return nil
 }
 
 type planError string
@@ -426,20 +393,6 @@ func planBodyForbidden(body map[string]any) error {
 		}
 	}
 	return nil
-}
-
-func jsonInt(v any) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case json.Number:
-		i, _ := n.Int64()
-		return int(i)
-	default:
-		return 0
-	}
 }
 
 func (s *Server) matchPlanNode(r *http.Request, clusterID, prompt string) (string, string) {

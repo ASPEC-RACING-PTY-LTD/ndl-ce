@@ -18,9 +18,8 @@ nodalctl ai ask --prompt "Why did this workload restart?"
 Plans are reviewable lists of existing APIs. Approve requires
 `X-Nodal-Confirm: approve-plan`. Ask profiles cannot operate. Missing
 permissions stop the plan. Partial failure leaves audit. Operate must
-call those existing APIs. Restart and Store install invoke the HTTP
-handlers. Policy create still writes the store. This is not Host.Exec
-and it is not the finished engine.
+call those existing APIs. Restart, Store install, and policy create
+invoke the HTTP handlers. This is not Host.Exec.
 
 ## Automate
 

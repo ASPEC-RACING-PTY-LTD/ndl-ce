@@ -251,6 +251,39 @@ func TestPhase42PolicyPlanUsesAutomationValidation(t *testing.T) {
 	if len(pols) != 1 || pols[0].Kind != "storage_pressure" || pols[0].Action != "enqueue_migrate_low_priority" {
 		t.Fatalf("policy %+v", pols)
 	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/policies", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(listed), `"name":"storage pressure"`) {
+		t.Fatalf("policy list %d %s", res.StatusCode, listed)
+	}
+
+	nameless := appdb.AIPlan{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Prompt: "nameless policy",
+		Status: appdb.PlanPreview, ActorType: ai.ActorTypeAI,
+	}
+	namelessSteps := []appdb.AIPlanStep{{
+		ID: uuid.NewString(), ClusterID: cluster.ID, PlanID: nameless.ID, Ordinal: 1,
+		Action: ai.ActionCreatePolicy, Permission: "policy.apply",
+		Method: "POST", Path: "/api/v1/policies", Title: "policy",
+		BodyJSON: `{"kind":"storage_pressure","action":"enqueue_migrate_low_priority","threshold_percent":85}`,
+		Status:   appdb.PlanPreview,
+	}}
+	if err := mem.CreateAIPlan(context.Background(), nameless, namelessSteps); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+nameless.ID+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) || !strings.Contains(string(raw), "name is required") {
+		t.Fatalf("nameless policy must use the HTTP handler %d %s", res.StatusCode, raw)
+	}
 
 	bad := appdb.AIPlan{
 		ID: uuid.NewString(), ClusterID: cluster.ID, Prompt: "bad policy",
