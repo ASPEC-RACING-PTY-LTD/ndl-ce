@@ -18,6 +18,22 @@ export function relName(name: string): string {
   return n.replace(/^\/+/, "");
 }
 
+export function destRel(p: string): string {
+  const n = p.trim().replace(/\\/g, "/");
+  if (!n) {
+    throw new Error("Path is required");
+  }
+  if (n === "." || n === "/") {
+    return n;
+  }
+  const parts = n.split("/").filter((x) => x !== "");
+  if (parts.length === 0 || parts.some((x) => x === "." || x === "..")) {
+    throw new Error("Path must stay inside the jail");
+  }
+  const joined = parts.join("/");
+  return n.startsWith("/") ? `/${joined}` : joined;
+}
+
 export function parentPath(p: string): string {
   const clean = p.replace(/\/+$/, "");
   const i = clean.lastIndexOf("/");

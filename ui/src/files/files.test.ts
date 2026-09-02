@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breadcrumbs, joinPath, parentPath, relName, uploadDirFromCwd } from "./paths";
+import { breadcrumbs, destRel, joinPath, parentPath, relName, uploadDirFromCwd } from "./paths";
 import { languageFromName } from "./language";
 import { shellEscape, shellEscapeAll } from "./shell";
 
@@ -17,6 +17,15 @@ describe("file paths", () => {
     expect(() => relName("foo/../etc")).toThrow(/inside/i);
     expect(relName("readme.txt")).toBe("readme.txt");
     expect(relName("foo/bar")).toBe("foo/bar");
+  });
+
+  it("refuses dest directories with parent segments", () => {
+    expect(destRel("/var/tmp")).toBe("/var/tmp");
+    expect(destRel("subdir")).toBe("subdir");
+    expect(destRel("/")).toBe("/");
+    expect(() => destRel("")).toThrow(/required/i);
+    expect(() => destRel("..")).toThrow(/jail/i);
+    expect(() => destRel("foo/../etc")).toThrow(/jail/i);
   });
 
   it("builds breadcrumbs", () => {

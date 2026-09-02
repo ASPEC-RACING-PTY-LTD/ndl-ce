@@ -554,6 +554,12 @@ func TestWorkloadFilesCRUDCopyContentAndConflict(t *testing.T) {
 		t.Fatalf("move %d %s", res.StatusCode, b)
 	}
 	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/copy", `{"path":"etc/renamed.txt","dest_path":"../outside.txt"}`)
+	if res.StatusCode == http.StatusCreated || res.StatusCode == http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("copy dest escape %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
 	res = doCookie(t, ts, admin, "GET", "/api/v1/workloads/"+wlID+"/files/content?path=hello.txt", "")
 	if res.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(res.Body)

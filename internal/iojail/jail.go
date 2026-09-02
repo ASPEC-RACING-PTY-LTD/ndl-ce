@@ -27,6 +27,12 @@ type Request struct {
 	Target string
 }
 
+// CleanRel rejects parent-directory and control-character segments. The empty
+// path, /, and . mean the jail root.
+func CleanRel(rel string) (string, error) {
+	return cleanRel(rel)
+}
+
 func cleanRel(rel string) (string, error) {
 	rel = strings.TrimSpace(rel)
 	if rel == "" || rel == "/" {

@@ -404,6 +404,10 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		return
 	}
 	rel := filePath(r)
+	if _, err := iojail.CleanRel(rel); err != nil {
+		writeErr(w, filesHTTPStatus(err), err.Error())
+		return
+	}
 	switch action {
 	case "download":
 		rc, err := s.IO.FilesGet(r.Context(), agentrpc.FilesGetCall{
@@ -431,6 +435,10 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		if upPath != "" {
 			rel = upPath
 		}
+		if _, err := iojail.CleanRel(rel); err != nil {
+			writeErr(w, filesHTTPStatus(err), err.Error())
+			return
+		}
 		if err := s.enforceExpected(r.Context(), kind, id, jail, rel, expectedMtime, sha); err != nil {
 			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
@@ -457,11 +465,25 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		if mut.Path == "" {
 			mut.Path = rel
 		}
+		if _, err := iojail.CleanRel(mut.Path); err != nil {
+			writeErr(w, filesHTTPStatus(err), err.Error())
+			return
+		}
 		if err := s.enforceExpected(r.Context(), kind, id, jail, mut.Path, mut.ExpectedMtime, mut.ExpectedSHA256); err != nil {
 			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
 		}
 		dest := mut.DestPath
+		if action == "rename" || action == "copy" {
+			if strings.TrimSpace(dest) == "" {
+				writeErr(w, http.StatusBadRequest, "dest_path is required")
+				return
+			}
+			if _, err := iojail.CleanRel(dest); err != nil {
+				writeErr(w, filesHTTPStatus(err), err.Error())
+				return
+			}
+		}
 		if action == "chown" {
 			uid, gid := -1, -1
 			if mut.UID != nil {

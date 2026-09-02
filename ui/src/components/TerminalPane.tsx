@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { mkdirFile, uploadFile } from "../api/client";
 import { Link } from "./Link";
-import { joinPath, uploadDirFromCwd } from "../files/paths";
+import { joinPath, relName, uploadDirFromCwd } from "../files/paths";
 import { shellEscapeAll } from "../files/shell";
 import {
   clampTermSize,
@@ -186,7 +186,7 @@ export function TerminalPane({
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
         setUploadNote(`Uploading ${i + 1}/${files.length}: ${file.name}`);
-        const dest = joinPath(destDir, file.name);
+        const dest = joinPath(destDir, relName(file.name));
         await uploadFile(tab.target.kind, tab.target.id, dest, file, { signal: abort.signal });
         uploaded.push(dest.startsWith("/") ? dest : `/${dest}`);
       }

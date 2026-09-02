@@ -21,7 +21,7 @@ import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
-import { breadcrumbs, displayPath, joinPath, parentPath, relName } from "../files/paths";
+import { breadcrumbs, displayPath, destRel, joinPath, parentPath, relName } from "../files/paths";
 import { formatBytes } from "../format";
 import { workloadGuestIOReason } from "../guestIO";
 import { fileTypeLabel } from "../labels";
@@ -204,7 +204,7 @@ export function FilesPage() {
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
         setUploadNote(`Uploading ${i + 1}/${files.length}: ${file.name}`);
-        await uploadFile(kind, id, joinPath(path, file.name), file);
+        await uploadFile(kind, id, joinPath(path, relName(file.name)), file);
       }
       setUploadNote(null);
       await reload(path);
@@ -238,11 +238,11 @@ export function FilesPage() {
         await moveFile(kind, id, joinPath(path, dialog.entry.name), joinPath(path, relName(dialogValue)));
       } else if (dialog.kind === "move") {
         for (const entry of dialog.entries) {
-          await moveFile(kind, id, joinPath(path, entry.name), joinPath(dialogValue.trim() || path, entry.name));
+          await moveFile(kind, id, joinPath(path, entry.name), joinPath(destRel(dialogValue.trim() || path), entry.name));
         }
       } else if (dialog.kind === "copy") {
         for (const entry of dialog.entries) {
-          await copyFile(kind, id, joinPath(path, entry.name), joinPath(dialogValue.trim() || path, entry.name));
+          await copyFile(kind, id, joinPath(path, entry.name), joinPath(destRel(dialogValue.trim() || path), entry.name));
         }
       } else if (dialog.kind === "chmod") {
         const mode = Number.parseInt(dialogValue.trim(), 8);
