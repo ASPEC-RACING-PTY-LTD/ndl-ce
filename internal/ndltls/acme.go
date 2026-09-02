@@ -50,6 +50,9 @@ func ProbeDirectory(ctx context.Context, directory string) error {
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return fmt.Errorf("acme directory must be an https URL")
 	}
+	if u.User != nil {
+		return fmt.Errorf("acme directory must not include credentials")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err

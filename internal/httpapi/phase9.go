@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -147,6 +148,10 @@ func (s *Server) acmeCert(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if u, err := url.Parse(strings.TrimSpace(req.Directory)); err == nil && u.User != nil {
+		writeErr(w, http.StatusBadRequest, "acme directory must not include credentials")
 		return
 	}
 	status := ndltls.ACMEPending

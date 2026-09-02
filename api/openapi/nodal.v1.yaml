@@ -3357,6 +3357,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CertificateStatus"
+        "400":
+          description: Directory is not https or includes credentials
         "401":
           description: Unauthenticated
         "403":
@@ -6001,6 +6003,7 @@ components:
           type: string
         url:
           type: string
+          description: Registry URL without userinfo. Username and password stay in dedicated fields.
         username:
           type: string
         password:
@@ -6688,6 +6691,7 @@ components:
       properties:
         directory:
           type: string
+          description: https ACME directory URL without userinfo. Credentials are not stored or listed.
         email:
           type: string
         domain:
@@ -6854,15 +6858,9 @@ components:
             - aws
             - b2
             - minio
-        locator:
-          type: string
-        username:
-          type: string
-        password:
-          type: string
-          description: Write-only. Never returned after save. For object targets this is the secret access key.
         endpoint:
           type: string
+          description: Object-store endpoint without userinfo. Access keys stay in username and password.
         region:
           type: string
         bucket:

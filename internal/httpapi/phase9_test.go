@@ -148,6 +148,35 @@ func TestACMEFailedDirectoryIsHonest(t *testing.T) {
 	}
 }
 
+func TestACMEDirectoryRefusesCredentials(t *testing.T) {
+	s, _, token := testServer(t)
+	s.CertDir = ndltls.Dir{Root: t.TempDir()}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/certs/acme", strings.NewReader(`{"directory":"https://user:SECRET-TOKEN-VALUE@acme.example/dir","email":"ops@example.com","domain":"nodal.test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "enable-tls")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("userinfo %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "SECRET-TOKEN-VALUE") {
+		t.Fatalf("secret echoed %s", raw)
+	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/certs", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if strings.Contains(string(listed), "SECRET-TOKEN-VALUE") {
+		t.Fatalf("directory leaked %s", listed)
+	}
+}
+
 func TestACMEProbeDoesNotClaimIssued(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.CertDir = ndltls.Dir{Root: t.TempDir()}

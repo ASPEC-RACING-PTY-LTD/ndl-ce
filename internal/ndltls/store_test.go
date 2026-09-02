@@ -3,6 +3,7 @@ package ndltls
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -65,5 +66,15 @@ func TestImportMismatchKeepsLastGood(t *testing.T) {
 func TestProbeDirectoryRejectsHTTP(t *testing.T) {
 	if err := ProbeDirectory(context.Background(), "http://acme.example/directory"); err == nil {
 		t.Fatal("http directory")
+	}
+}
+
+func TestProbeDirectoryRefusesCredentials(t *testing.T) {
+	err := ProbeDirectory(context.Background(), "https://user:SECRET-TOKEN-VALUE@acme.example/directory")
+	if err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("userinfo: %v", err)
+	}
+	if strings.Contains(err.Error(), "SECRET-TOKEN-VALUE") {
+		t.Fatalf("secret echoed: %v", err)
 	}
 }
