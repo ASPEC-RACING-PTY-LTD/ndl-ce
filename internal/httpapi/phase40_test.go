@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -232,6 +233,10 @@ func TestPhase40RequireApprovalNeedsConfirm(t *testing.T) {
 	if res.StatusCode != http.StatusAccepted || !strings.Contains(string(raw), `"status":"pending"`) {
 		t.Fatalf("pending %d %s", res.StatusCode, raw)
 	}
+	runs, err := mem.ListPolicyRuns(context.Background(), cluster.ID, 50)
+	if err != nil || len(runs) == 0 || runs[0].Status != appdb.PolicyPending {
+		t.Fatalf("pending run %+v %v", runs, err)
+	}
 
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/tasks", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
@@ -404,5 +409,50 @@ func TestPhase40AttemptedMigrateFailureIsNotSucceeded(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"state":"failed"`) {
 		t.Fatalf("failed migrate must be visible %s", raw)
+	}
+}
+
+type failCreatePolicyRunStore struct {
+	appdb.Store
+}
+
+func (f failCreatePolicyRunStore) CreatePolicyRun(context.Context, appdb.PolicyRun) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase40ApplyFailsClosedWhenRunPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/policies", strings.NewReader(`{"name":"pressure","kind":"storage_pressure","threshold_percent":85}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failCreatePolicyRunStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/policies/"+created["id"].(string)+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("run persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record policy run") {
+		t.Fatalf("run persist body %s", raw)
 	}
 }

@@ -94,7 +94,10 @@ func (s *Server) applyAutomationPolicy(w http.ResponseWriter, r *http.Request) {
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, PolicyID: pol.ID, ActorID: actorID,
 			Status: appdb.PolicySkipped, Reason: "policy is disabled",
 		}
-		_ = s.Store.CreatePolicyRun(r.Context(), run)
+		if err := s.Store.CreatePolicyRun(r.Context(), run); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record policy run")
+			return
+		}
 		s.audit(r, p.User.ClusterID, actorID, "policy.apply", run.Status, pol.ID)
 		writeJSON(w, http.StatusOK, automationPolicyRunJSON(run))
 		return
@@ -104,13 +107,19 @@ func (s *Server) applyAutomationPolicy(w http.ResponseWriter, r *http.Request) {
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, PolicyID: pol.ID, ActorID: actorID,
 			Status: appdb.PolicyPending, Reason: "approval required. Send X-Nodal-Confirm: apply-policy to evaluate.",
 		}
-		_ = s.Store.CreatePolicyRun(r.Context(), run)
+		if err := s.Store.CreatePolicyRun(r.Context(), run); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record policy run")
+			return
+		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "policy.apply", "pending", pol.ID)
 		writeJSON(w, http.StatusAccepted, automationPolicyRunJSON(run))
 		return
 	}
 	run := s.evaluatePolicy(r.Context(), p.User.ClusterID, actorID, *pol)
-	_ = s.Store.CreatePolicyRun(r.Context(), run)
+	if err := s.Store.CreatePolicyRun(r.Context(), run); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record policy run")
+		return
+	}
 	s.audit(r, p.User.ClusterID, actorID, "policy.apply", run.Status, pol.ID)
 	writeJSON(w, http.StatusOK, automationPolicyRunJSON(run))
 }

@@ -177,6 +177,14 @@ applied:
 	if maint == nil {
 		t.Fatal("worker must be drained")
 	}
+	gotPlan, err := mem.LatestRollingPlan(context.Background(), cluster.ID)
+	if err != nil || gotPlan == nil {
+		t.Fatalf("rolling plan %+v %v", gotPlan, err)
+	}
+	steps, err := mem.ListRollingSteps(context.Background(), cluster.ID, gotPlan.ID)
+	if err != nil || len(steps) == 0 {
+		t.Fatalf("rolling steps %+v %v", steps, err)
+	}
 }
 
 func TestPhase34RollingDrainMigratesLocalDestWithoutStopping(t *testing.T) {
@@ -356,5 +364,37 @@ func TestPhase34PromoteFailsClosedWhenHAStatePersistFails(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "could not record HA promote") {
 		t.Fatalf("promote persist body %s", raw)
+	}
+}
+
+type failCreateRollingStepStore struct {
+	appdb.Store
+}
+
+func (f failCreateRollingStepStore) CreateRollingStep(context.Context, appdb.RollingStep) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase34RollingUpdateFailsClosedWhenStepPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	s.Store = failCreateRollingStepStore{Store: mem}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/update", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "cluster-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("rolling persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record rolling step") {
+		t.Fatalf("rolling persist body %s", raw)
 	}
 }

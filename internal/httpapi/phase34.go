@@ -337,10 +337,18 @@ func (s *Server) runClusterUpdate(w http.ResponseWriter, r *http.Request) {
 		if n.RevokedAt != nil {
 			continue
 		}
-		drain := s.execRollingDrain(r, p.User.ClusterID, plan.ID, n, ord)
+		drain, err := s.execRollingDrain(r, p.User.ClusterID, plan.ID, n, ord)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record rolling step")
+			return
+		}
 		steps = append(steps, drain)
 		ord++
-		upd := s.execRollingUpdate(r, p, plan.ID, n, ord)
+		upd, err := s.execRollingUpdate(r, p, plan.ID, n, ord)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record rolling step")
+			return
+		}
 		steps = append(steps, upd)
 		ord++
 	}
@@ -359,12 +367,15 @@ func (s *Server) runClusterUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	fin := s.now()
 	plan.FinishedAt = &fin
-	_ = s.Store.UpdateRollingPlan(r.Context(), plan)
+	if err := s.Store.UpdateRollingPlan(r.Context(), plan); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record rolling plan")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.update", plan.Status, plan.ID)
 	writeJSON(w, http.StatusOK, rollingPlanJSON(plan, steps))
 }
 
-func (s *Server) execRollingDrain(r *http.Request, clusterID, planID string, n appdb.Node, ord int) appdb.RollingStep {
+func (s *Server) execRollingDrain(r *http.Request, clusterID, planID string, n appdb.Node, ord int) (appdb.RollingStep, error) {
 	st := appdb.RollingStep{
 		ID: uuid.NewString(), PlanID: planID, ClusterID: clusterID, NodeID: n.ID,
 		Ordinal: ord, Action: appdb.RollingActionDrain, Status: appdb.RollingSucceeded,
@@ -396,11 +407,13 @@ func (s *Server) execRollingDrain(r *http.Request, clusterID, planID string, n a
 			_ = s.Store.UpsertOperation(r.Context(), op)
 		}
 	}
-	_ = s.Store.CreateRollingStep(r.Context(), st)
-	return st
+	if err := s.Store.CreateRollingStep(r.Context(), st); err != nil {
+		return st, err
+	}
+	return st, nil
 }
 
-func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string, n appdb.Node, ord int) appdb.RollingStep {
+func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string, n appdb.Node, ord int) (appdb.RollingStep, error) {
 	st := appdb.RollingStep{
 		ID: uuid.NewString(), PlanID: planID, ClusterID: p.User.ClusterID, NodeID: n.ID,
 		Ordinal: ord, Action: appdb.RollingActionUpdate, CreatedAt: s.now(),
@@ -408,8 +421,10 @@ func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string,
 	if !s.applyLocal(r.Context(), p.User.ClusterID, n.ID) {
 		st.Status = appdb.RollingUnavailable
 		st.Reason = workerUpdateReason
-		_ = s.Store.CreateRollingStep(r.Context(), st)
-		return st
+		if err := s.Store.CreateRollingStep(r.Context(), st); err != nil {
+			return st, err
+		}
+		return st, nil
 	}
 	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
 	_, op := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
@@ -419,6 +434,8 @@ func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string,
 	if st.Status == "" {
 		st.Status = appdb.RollingSucceeded
 	}
-	_ = s.Store.CreateRollingStep(r.Context(), st)
-	return st
+	if err := s.Store.CreateRollingStep(r.Context(), st); err != nil {
+		return st, err
+	}
+	return st, nil
 }
