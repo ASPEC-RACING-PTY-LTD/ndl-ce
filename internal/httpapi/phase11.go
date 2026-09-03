@@ -1060,24 +1060,32 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
 		return "", err
 	}
-	_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+	if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, VolumeID: newVolID,
 		Role: vmspec.DiskRoleBoot, Slot: 0, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
-	})
+	}); err != nil {
+		return "", errInternal("could not record VM disk")
+	}
 	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID)
 	if isolated {
-		if isoID, err := s.isolatedNetworkID(ctx, clusterID); err == nil {
-			_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
-				ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID,
-				NetworkID: isoID, Model: "virtio",
-			})
+		isoID, err := s.isolatedNetworkID(ctx, clusterID)
+		if err != nil {
+			return "", err
+		}
+		if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID,
+			NetworkID: isoID, Model: "virtio",
+		}); err != nil {
+			return "", errInternal("could not record VM NIC")
 		}
 	} else {
 		for _, n := range nics {
-			_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+			if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 				ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID,
 				NetworkID: n.NetworkID, Model: n.Model,
-			})
+			}); err != nil {
+				return "", errInternal("could not record VM NIC")
+			}
 		}
 	}
 	if !local {
@@ -1218,13 +1226,17 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
 		return "", err
 	}
-	_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+	if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, VolumeID: newVolID,
 		Role: vmspec.DiskRoleBoot, Format: storage.FormatQCOW2,
-	})
-	_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+	}); err != nil {
+		return "", errInternal("could not record VM disk")
+	}
+	if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, NetworkID: nets[0].ID, Model: vmspec.NICModelVirtio,
-	})
+	}); err != nil {
+		return "", errInternal("could not record VM NIC")
+	}
 	if !local {
 		return newID, nil
 	}

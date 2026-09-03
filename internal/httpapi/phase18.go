@@ -136,20 +136,24 @@ func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Wor
 		s.rollbackAdoptedVM(ctx, clusterID, "", newVolID, dest)
 		return nil, err
 	}
-	_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+	if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, VolumeID: newVolID,
 		Role: vmspec.DiskRoleBoot, Slot: 0, Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
-	})
+	}); err != nil {
+		return nil, errInternal("could not record VM disk")
+	}
 	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID)
 	for i, n := range nics {
 		mac := ""
 		if i < len(spec.NICs) {
 			mac = spec.NICs[i].MAC
 		}
-		_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+		if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID,
 			NetworkID: n.NetworkID, Model: n.Model, MAC: mac,
-		})
+		}); err != nil {
+			return nil, errInternal("could not record VM NIC")
+		}
 	}
 	if _, err := s.reprepareVM(ctx, clusterID, row); err != nil {
 		s.rollbackAdoptedVM(ctx, clusterID, newID, newVolID, dest)
@@ -297,14 +301,18 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 		s.rollbackAdoptedVM(ctx, clusterID, "", newVolID, dest)
 		return nil, err
 	}
-	_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+	if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, VolumeID: newVolID,
 		Role: vmspec.DiskRoleBoot, Slot: 0, Format: storage.FormatQCOW2,
-	})
-	_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+	}); err != nil {
+		return nil, errInternal("could not record VM disk")
+	}
+	if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, NetworkID: networkID, Model: vmspec.NICModelVirtio,
 		MAC: spec.NICs[0].MAC,
-	})
+	}); err != nil {
+		return nil, errInternal("could not record VM NIC")
+	}
 	if _, err := s.reprepareVM(ctx, clusterID, row); err != nil {
 		s.rollbackAdoptedVM(ctx, clusterID, newID, newVolID, dest)
 		return nil, err

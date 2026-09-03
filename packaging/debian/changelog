@@ -68,6 +68,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Network apply fails closed if observed status persist fails. A 200 body is not a substitute for the stored network row.
   * VM and system-container create fail closed if boot disk or NIC persist fails. Object backup target 201 fails closed if probed status cannot be recorded.
   * OCI create and system-container clone fail closed if disk or NIC persist fails.
+  * VM clone, library import, restore-as-new, and migration disk import fail closed if disk or NIC persist fails.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

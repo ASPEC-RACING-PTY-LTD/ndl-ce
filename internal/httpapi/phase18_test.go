@@ -125,6 +125,14 @@ func TestPhase18CloneNewUUIDsAndMAC(t *testing.T) {
 	if cloned["status"] != qemu.StatusRunning {
 		t.Fatalf("clone status %v", cloned["status"])
 	}
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, cloned["id"].(string))
+	if len(disks) != 1 || disks[0].VolumeID != dstSpec.Disks[0].VolumeID {
+		t.Fatalf("clone disks %+v spec %+v", disks, dstSpec.Disks)
+	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), clusterID, cloned["id"].(string))
+	if len(nics) != 1 || nics[0].NetworkID != netID {
+		t.Fatalf("clone nics %+v", nics)
+	}
 }
 
 func TestPhase18ImportRollbackAndRBAC(t *testing.T) {
@@ -546,5 +554,87 @@ func TestPhase18PCIAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
 	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
 	if wl != nil && strings.Contains(string(wl.SpecJSON), "0000:03:00.0") {
 		t.Fatalf("failed spec persist must not rewrite PCI into spec %+v", wl)
+	}
+}
+
+func TestPhase18CloneFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "web")
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+created["id"].(string)+"/clone", strings.NewReader(`{"name":"web-clone"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
+}
+
+func TestPhase18CloneFailsClosedWhenNICPersistFails(t *testing.T) {
+	s, mem, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "web")
+	s.Store = failCreateWorkloadNICStore{Store: mem}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+created["id"].(string)+"/clone", strings.NewReader(`{"name":"web-clone"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nic persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM NIC") {
+		t.Fatalf("nic persist body %s", raw)
+	}
+}
+
+func TestPhase18ImportFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	libID := uuid.NewString()
+	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: poolID, Kind: storage.LibraryDiskImage,
+		DisplayName: "disk.qcow2", BackendRef: "library/disk-image/" + libID + ".qcow2", Status: storage.StatusAvailable,
+	})
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+	body := `{"name":"imported","library_id":"` + libID + `","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
+}
+
+func TestPhase18ImportFailsClosedWhenNICPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	libID := uuid.NewString()
+	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: poolID, Kind: storage.LibraryDiskImage,
+		DisplayName: "disk.qcow2", BackendRef: "library/disk-image/" + libID + ".qcow2", Status: storage.StatusAvailable,
+	})
+	s.Store = failCreateWorkloadNICStore{Store: mem}
+	body := `{"name":"imported","library_id":"` + libID + `","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nic persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM NIC") {
+		t.Fatalf("nic persist body %s", raw)
 	}
 }

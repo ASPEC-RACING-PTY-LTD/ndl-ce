@@ -715,3 +715,118 @@ func TestBackupRestoreFailsClosedWhenRunPersistFails(t *testing.T) {
 		t.Fatalf("restore persist body %s", raw)
 	}
 }
+
+func seedVMRestoreArtifact(t *testing.T, mem *appdb.Memory, clusterID, wlID, locator string) string {
+	t.Helper()
+	tgtID := uuid.NewString()
+	if err := mem.CreateBackupTarget(context.Background(), appdb.BackupTarget{
+		ID: tgtID, ClusterID: clusterID, Name: "local", Kind: appdb.BackupLocal, Locator: t.TempDir(), Status: appdb.BackupAvailable,
+	}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.NewString()
+	if err := mem.CreateBackupRun(context.Background(), appdb.BackupRun{
+		ID: runID, ClusterID: clusterID, TargetID: tgtID, WorkloadID: wlID, Status: appdb.BackupSucceeded,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	artID := uuid.NewString()
+	if err := mem.CreateBackupArtifact(context.Background(), appdb.BackupArtifact{
+		ID: artID, ClusterID: clusterID, RunID: runID, WorkloadID: wlID, Format: "qcow2", Locator: locator,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return artID
+}
+
+func TestRestoreNewFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("vm create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	artID := seedVMRestoreArtifact(t, mem, cluster.ID, vm["id"].(string), "volumes/vm-disk/boot.qcow2")
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
+}
+
+func TestRestoreNewFailsClosedWhenNICPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("vm create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	artID := seedVMRestoreArtifact(t, mem, cluster.ID, vm["id"].(string), "volumes/vm-disk/boot.qcow2")
+	s.Store = failCreateWorkloadNICStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nic persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM NIC") {
+		t.Fatalf("nic persist body %s", raw)
+	}
+}

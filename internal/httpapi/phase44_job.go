@@ -301,13 +301,17 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 		return "", err
 	}
 	if volRow != nil {
-		_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+		if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, VolumeID: volRow.ID, Role: "root",
-		})
+		}); err != nil {
+			return "", errInternal("could not record container disk")
+		}
 	}
-	_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+	if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, NetworkID: netw.ID, MAC: mac,
-	})
+	}); err != nil {
+		return "", errInternal("could not record container NIC")
+	}
 	return row.ID, nil
 }
 
@@ -513,15 +517,19 @@ func (s *Server) adoptImportedDisks(ctx context.Context, clusterID, name string,
 		if i == 0 {
 			role = vmspec.DiskRoleBoot
 		}
-		_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+		if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, VolumeID: id,
 			Role: role, Slot: i, Format: storage.FormatQCOW2,
-		})
+		}); err != nil {
+			return nil, errInternal("could not record VM disk")
+		}
 	}
-	_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+	if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, NetworkID: networkID, Model: vmspec.NICModelVirtio,
 		MAC: spec.NICs[0].MAC,
-	})
+	}); err != nil {
+		return nil, errInternal("could not record VM NIC")
+	}
 	if _, err := s.reprepareVM(ctx, clusterID, row); err != nil {
 		s.rollbackAdoptedVM(ctx, clusterID, newID, volIDs[0], dests[0])
 		return nil, err
