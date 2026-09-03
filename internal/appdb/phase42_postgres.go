@@ -66,9 +66,16 @@ FROM ai_plans WHERE cluster_id=$1 ORDER BY created_at DESC LIMIT $2`, clusterID,
 }
 
 func (p *Postgres) UpdateAIPlan(ctx context.Context, plan AIPlan) error {
-	_, err := p.DB.ExecContext(ctx, `UPDATE ai_plans SET status=$3, reason=$4 WHERE cluster_id=$1 AND id=$2`,
+	res, err := p.DB.ExecContext(ctx, `UPDATE ai_plans SET status=$3, reason=$4 WHERE cluster_id=$1 AND id=$2`,
 		plan.ClusterID, plan.ID, plan.Status, plan.Reason)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (p *Postgres) ListAIPlanSteps(ctx context.Context, clusterID, planID string) ([]AIPlanStep, error) {
@@ -91,8 +98,15 @@ FROM ai_plan_steps WHERE cluster_id=$1 AND plan_id=$2 ORDER BY ordinal`, cluster
 }
 
 func (p *Postgres) UpdateAIPlanStep(ctx context.Context, st AIPlanStep) error {
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE ai_plan_steps SET status=$3, reason=$4, operation_id=$5 WHERE cluster_id=$1 AND id=$2`,
 		st.ClusterID, st.ID, st.Status, st.Reason, st.OperationID)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }

@@ -379,6 +379,63 @@ func TestPhase42ApproveFailsClosedWhenPlanPersistFails(t *testing.T) {
 	}
 }
 
+type silentUpdateAIPlanStore struct {
+	appdb.Store
+}
+
+func (silentUpdateAIPlanStore) UpdateAIPlan(context.Context, appdb.AIPlan) error {
+	return nil
+}
+
+func TestPhase42ApproveFailsClosedWhenPlanPersistDoesNotWrite(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = silentUpdateAIPlanStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string)+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("silent plan persist %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string), nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	gotRaw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("get plan %d %s", res.StatusCode, gotRaw)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(gotRaw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["status"] != appdb.PlanPreview {
+		t.Fatalf("GET must keep preview after silent persist %+v", got)
+	}
+}
+
 func TestPhase42ApproveFailsClosedWhenTaskPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

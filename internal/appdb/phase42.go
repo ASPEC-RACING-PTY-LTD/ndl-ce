@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 )
@@ -93,7 +94,13 @@ func (m *Memory) ListAIPlans(_ context.Context, clusterID string, limit int) ([]
 func (m *Memory) UpdateAIPlan(_ context.Context, p AIPlan) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.aiPlans[p.ID] = p
+	cur, ok := m.aiPlans[p.ID]
+	if !ok || cur.ClusterID != p.ClusterID {
+		return fmt.Errorf("ai plan not found")
+	}
+	cur.Status = p.Status
+	cur.Reason = p.Reason
+	m.aiPlans[p.ID] = cur
 	return nil
 }
 
@@ -113,6 +120,13 @@ func (m *Memory) ListAIPlanSteps(_ context.Context, clusterID, planID string) ([
 func (m *Memory) UpdateAIPlanStep(_ context.Context, st AIPlanStep) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.aiPlanSteps[st.ID] = st
+	cur, ok := m.aiPlanSteps[st.ID]
+	if !ok || cur.ClusterID != st.ClusterID {
+		return fmt.Errorf("ai plan step not found")
+	}
+	cur.Status = st.Status
+	cur.Reason = st.Reason
+	cur.OperationID = st.OperationID
+	m.aiPlanSteps[st.ID] = cur
 	return nil
 }

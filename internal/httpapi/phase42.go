@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -144,7 +146,7 @@ func (s *Server) approveAIPlan(w http.ResponseWriter, r *http.Request) {
 			}
 			plan.Status = appdb.PlanStopped
 			plan.Reason = st.Reason
-			if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+			if err := s.persistAIPlan(r.Context(), plan); err != nil {
 				writeErr(w, http.StatusInternalServerError, "could not record AI plan")
 				return
 			}
@@ -154,7 +156,7 @@ func (s *Server) approveAIPlan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	plan.Status = appdb.PlanExecuting
-	if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+	if err := s.persistAIPlan(r.Context(), plan); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not record AI plan")
 		return
 	}
@@ -172,7 +174,7 @@ func (s *Server) approveAIPlan(w http.ResponseWriter, r *http.Request) {
 			}
 			plan.Status = appdb.PlanStopped
 			plan.Reason = "partial plan failure stopped"
-			if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+			if err := s.persistAIPlan(r.Context(), plan); err != nil {
 				writeErr(w, http.StatusInternalServerError, "could not record AI plan")
 				return
 			}
@@ -190,7 +192,7 @@ func (s *Server) approveAIPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	plan.Status = appdb.PlanSucceeded
 	plan.Reason = "approved and executed existing APIs"
-	if err := s.Store.UpdateAIPlan(r.Context(), *plan); err != nil {
+	if err := s.persistAIPlan(r.Context(), plan); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not record AI plan")
 		return
 	}
@@ -434,6 +436,24 @@ func (s *Server) matchPlanNode(r *http.Request, clusterID, prompt string) (strin
 		}
 	}
 	return "", ""
+}
+
+func (s *Server) persistAIPlan(ctx context.Context, plan *appdb.AIPlan) error {
+	if plan == nil {
+		return fmt.Errorf("ai plan not found")
+	}
+	if err := s.Store.UpdateAIPlan(ctx, *plan); err != nil {
+		return err
+	}
+	latest, err := s.Store.GetAIPlan(ctx, plan.ClusterID, plan.ID)
+	if err != nil {
+		return err
+	}
+	if latest == nil || latest.Status != plan.Status {
+		return fmt.Errorf("could not record AI plan")
+	}
+	*plan = *latest
+	return nil
 }
 
 func (s *Server) planJSON(r *http.Request, plan appdb.AIPlan) map[string]any {
