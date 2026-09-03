@@ -1499,6 +1499,113 @@ func TestVMCreateRecordsExtraNICNetwork(t *testing.T) {
 	}
 }
 
+func TestVMCreateFailsClosedForUnavailableExtraNIC(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraNet := uuid.NewString()
+	if err := mem.CreateNetwork(context.Background(), appdb.Network{
+		ID: extraNet, ClusterID: cluster.ID, NodeID: nodeID, Name: "iso2",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusUnavailable, BridgeName: "ndlcafe0001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"dual","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"nics":[{"network_id":"` + netID + `"},{"network_id":"` + extraNet + `"}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable extra NIC %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "an available network is required") {
+		t.Fatalf("unavailable extra NIC body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose extra NIC apply cannot attach: %+v", items)
+	}
+}
+
+func TestVMStartFailsClosedForUnavailableExtraNIC(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraNet := uuid.NewString()
+	if err := mem.CreateNetwork(context.Background(), appdb.Network{
+		ID: extraNet, ClusterID: cluster.ID, NodeID: nodeID, Name: "iso2",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusAvailable, BridgeName: "ndlcafe0001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"dual","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"nics":[{"network_id":"` + netID + `"},{"network_id":"` + extraNet + `"}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id := created["id"].(string)
+	if err := mem.UpdateNetworkObserved(context.Background(), appdb.Network{ID: extraNet, Status: ndnet.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	started, err := ts.Client().Do(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startRaw, _ := io.ReadAll(started.Body)
+	_ = started.Body.Close()
+	if started.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable extra NIC start %d %s", started.StatusCode, startRaw)
+	}
+	if !strings.Contains(string(startRaw), "an available network is required") {
+		t.Fatalf("unavailable extra NIC start body %s", startRaw)
+	}
+	got, _ := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if got == nil || got.DesiredPower == "running" {
+		t.Fatalf("GET must not claim desired_power running when extra NIC start cannot attach: %+v", got)
+	}
+}
+
 func workloadNICsHaveNetworks(nics []appdb.WorkloadNIC, netID, extraNet string) bool {
 	if len(nics) != 2 {
 		return false
