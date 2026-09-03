@@ -651,3 +651,94 @@ func TestServicePrincipalCreateFailsClosedWhenPersistFails(t *testing.T) {
 		t.Fatalf("principal persist body %s", b)
 	}
 }
+
+func TestPhase13GroupMemberAddFailsClosedForMissingUserAndIsIdempotent(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op-member"}
+	_ = mem.CreateUser(context.Background(), op)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/groups", strings.NewReader(`{"name":"ops"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("group %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	gid, _ := created["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/members", strings.NewReader(`{"user_id":"`+uuid.NewString()+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing user %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), `"ok":true`) {
+		t.Fatalf("200 must not invent membership of a missing user: %s", raw)
+	}
+
+	body := `{"user_id":"` + op.ID + `"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/members", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("add member %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/members", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("re-add member %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/groups", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list groups %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []struct {
+			ID        string   `json:"id"`
+			MemberIDs []string `json:"member_ids"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, g := range listed.Items {
+		if g.ID != gid {
+			continue
+		}
+		for _, id := range g.MemberIDs {
+			if id == op.ID {
+				count++
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("GET member_ids must list the user once, got %d in %s", count, raw)
+	}
+}

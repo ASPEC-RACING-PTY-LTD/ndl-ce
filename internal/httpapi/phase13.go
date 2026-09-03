@@ -278,7 +278,12 @@ func (s *Server) addGroupMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "group not found")
 		return
 	}
-	if err := s.Store.AddGroupMember(r.Context(), p.User.ClusterID, g.ID, req.UserID); err != nil {
+	u, err := s.Store.GetUser(r.Context(), req.UserID)
+	if err != nil || u == nil || u.ClusterID != p.User.ClusterID {
+		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err := s.Store.AddGroupMember(r.Context(), p.User.ClusterID, g.ID, u.ID); err != nil {
 		writeErr(w, http.StatusNotFound, "group not found")
 		return
 	}

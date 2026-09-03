@@ -105,6 +105,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Network apply, backup verify, live migrate job, import/export job, and
     rolling plan persist fail closed on Postgres UPDATE of zero rows. A 2xx
     does not invent status GET would miss.
+  * Group member add fails closed for a missing user and is idempotent. A
+    200 does not invent membership GET /groups would miss, and a second add
+    does not 404.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

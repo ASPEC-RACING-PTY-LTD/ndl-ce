@@ -132,8 +132,17 @@ func (m *Memory) AddGroupMember(_ context.Context, clusterID, groupID, userID st
 	if !ok || g.ClusterID != clusterID {
 		return fmt.Errorf("group not found")
 	}
+	u, ok := m.users[userID]
+	if !ok || u.ClusterID != clusterID {
+		return fmt.Errorf("user not found")
+	}
 	if m.groupMembers == nil {
 		m.groupMembers = map[string][]string{}
+	}
+	for _, existing := range m.groupMembers[groupID] {
+		if existing == userID {
+			return nil
+		}
 	}
 	m.groupMembers[groupID] = append(m.groupMembers[groupID], userID)
 	return nil

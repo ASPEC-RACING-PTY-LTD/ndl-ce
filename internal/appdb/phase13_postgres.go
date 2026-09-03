@@ -81,17 +81,17 @@ func (p *Postgres) GetGroup(ctx context.Context, clusterID, id string) (*Group, 
 }
 
 func (p *Postgres) AddGroupMember(ctx context.Context, clusterID, groupID, userID string) error {
-	res, err := p.DB.ExecContext(ctx, `
-INSERT INTO group_members (group_id, user_id)
-SELECT $1, $2 FROM groups WHERE id=$1 AND cluster_id=$3`, groupID, userID, clusterID)
+	g, err := p.GetGroup(ctx, clusterID, groupID)
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if g == nil {
 		return fmt.Errorf("group not found")
 	}
-	return nil
+	_, err = p.DB.ExecContext(ctx, `
+INSERT INTO group_members (group_id, user_id) VALUES ($1,$2)
+ON CONFLICT DO NOTHING`, groupID, userID)
+	return err
 }
 
 func (p *Postgres) ListGroupMembers(ctx context.Context, clusterID, groupID string) ([]string, error) {
