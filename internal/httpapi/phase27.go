@@ -157,6 +157,11 @@ func (s *Server) createPolicy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	action, err := ndnet.ParsePolicyAction(req.Action)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	srcMAC, err := s.workloadMAC(r.Context(), p.User.ClusterID, req.SrcWorkloadID)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
@@ -167,10 +172,24 @@ func (s *Server) createPolicy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	srcCanon, err := ndnet.ParseMAC(srcMAC)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	dstCanon, err := ndnet.ParseMAC(dstMAC)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if srcCanon == dstCanon {
+		writeErr(w, http.StatusBadRequest, "policy source and destination must differ")
+		return
+	}
 	id := uuid.NewString()
 	row := appdb.NetworkPolicy{
 		ID: id, ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name),
-		Action: firstNonEmpty(req.Action, "deny"), SrcWorkloadID: req.SrcWorkloadID, DstWorkloadID: req.DstWorkloadID,
+		Action: action, SrcWorkloadID: req.SrcWorkloadID, DstWorkloadID: req.DstWorkloadID,
 		SrcMAC: srcMAC, DstMAC: dstMAC, Status: ndnet.StatusUnavailable,
 	}
 	if err := s.Store.CreateNetworkPolicy(r.Context(), row); err != nil {

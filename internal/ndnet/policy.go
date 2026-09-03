@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func parseMAC(v string) (string, error) {
+func ParseMAC(v string) (string, error) {
 	mac, err := net.ParseMAC(strings.TrimSpace(v))
 	if err != nil {
 		return "", fmt.Errorf("mac is invalid")
@@ -20,6 +20,18 @@ func policyRules(op AdvancedOp) []PolicyRule {
 		return op.Policies
 	}
 	return []PolicyRule{{ID: op.ObjectID, Action: op.PolicyAction, SrcMAC: op.SrcMAC, DstMAC: op.DstMAC}}
+}
+
+// ParsePolicyAction accepts deny, drop, allow, accept, or empty (defaults to deny).
+func ParsePolicyAction(action string) (string, error) {
+	act := strings.ToLower(strings.TrimSpace(action))
+	if act == "" {
+		act = "deny"
+	}
+	if _, err := policyVerdict(act); err != nil {
+		return "", err
+	}
+	return act, nil
 }
 
 func policyVerdict(action string) (string, error) {
@@ -50,11 +62,11 @@ func RenderBridgePolicies(items []PolicyRule, mgmtIf string) (string, error) {
 	b.WriteString("  chain forward {\n")
 	b.WriteString("    type filter hook forward priority 0; policy accept;\n")
 	for _, item := range items {
-		src, err := parseMAC(item.SrcMAC)
+		src, err := ParseMAC(item.SrcMAC)
 		if err != nil {
 			return "", err
 		}
-		dst, err := parseMAC(item.DstMAC)
+		dst, err := ParseMAC(item.DstMAC)
 		if err != nil {
 			return "", err
 		}

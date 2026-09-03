@@ -488,3 +488,52 @@ func TestPhase27PolicyCreateFailsClosedForMissingAndEmptyWorkload(t *testing.T) 
 		t.Fatalf("GET must not invent a policy for a missing or empty workload: %s", listRaw)
 	}
 }
+
+func TestPhase27PolicyCreateFailsClosedForInvalidActionAndSameWorkload(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	netID := uuid.NewString()
+	_ = mem.CreateNetwork(t.Context(), appdb.Network{
+		ID: netID, ClusterID: cluster.ID, NodeID: node.ID, Name: "iso", Kind: ndnet.KindIsolated,
+		Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123",
+	})
+	a := uuid.NewString()
+	b := uuid.NewString()
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: a, ClusterID: cluster.ID, Name: "a", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: b, ClusterID: cluster.ID, Name: "b", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: a, NetworkID: netID, MAC: "02:00:00:00:00:01"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: b, NetworkID: netID, MAC: "02:00:00:00:00:02"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	bad, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/policies", strings.NewReader(`{"name":"bad-action","action":"foo","src_workload_id":"`+a+`","dst_workload_id":"`+b+`"}`))
+	bad.Header.Set("Content-Type", "application/json")
+	bad.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	badRes, _ := ts.Client().Do(bad)
+	badRaw, _ := io.ReadAll(badRes.Body)
+	_ = badRes.Body.Close()
+	if badRes.StatusCode != http.StatusBadRequest || !strings.Contains(string(badRaw), "policy action must be deny or allow") {
+		t.Fatalf("action %d %s", badRes.StatusCode, badRaw)
+	}
+
+	same, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/policies", strings.NewReader(`{"name":"loop","action":"deny","src_workload_id":"`+a+`","dst_workload_id":"`+a+`"}`))
+	same.Header.Set("Content-Type", "application/json")
+	same.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	sameRes, _ := ts.Client().Do(same)
+	sameRaw, _ := io.ReadAll(sameRes.Body)
+	_ = sameRes.Body.Close()
+	if sameRes.StatusCode != http.StatusBadRequest || !strings.Contains(string(sameRaw), "policy source and destination must differ") {
+		t.Fatalf("same workload %d %s", sameRes.StatusCode, sameRaw)
+	}
+
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/networks", nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	listRaw, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if strings.Contains(string(listRaw), `"name":"bad-action"`) || strings.Contains(string(listRaw), `"name":"loop"`) {
+		t.Fatalf("GET /networks must not list an unapplyable policy: %s", listRaw)
+	}
+}

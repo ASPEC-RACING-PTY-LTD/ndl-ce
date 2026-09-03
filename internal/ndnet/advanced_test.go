@@ -171,6 +171,19 @@ func TestPolicyDeniesPairAndRefusesManagementINPUT(t *testing.T) {
 	}
 }
 
+func TestPolicyApplyRefusesInvalidActionAndSameMAC(t *testing.T) {
+	src := "02:00:00:00:00:01"
+	dst := "02:00:00:00:00:02"
+	_, err := RenderBridgePolicy(uuid.NewString(), "foo", src, dst, "eth0")
+	if err == nil || !strings.Contains(err.Error(), "policy action must be deny or allow") {
+		t.Fatalf("action: %v", err)
+	}
+	_, err = RenderBridgePolicy(uuid.NewString(), "deny", src, src, "eth0")
+	if err == nil || !strings.Contains(err.Error(), "policy source and destination must differ") {
+		t.Fatalf("same mac: %v", err)
+	}
+}
+
 func TestPolicyApplyRendersFullSetInOneTable(t *testing.T) {
 	src := "02:00:00:00:00:01"
 	mid := "02:00:00:00:00:02"
