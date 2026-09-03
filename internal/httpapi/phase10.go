@@ -429,14 +429,19 @@ func purposeTag(name string) string {
 	return out
 }
 
+func overlayChainReset(backendRef string) bool {
+	base := path.Base(backendRef)
+	return strings.Contains(base, "--flat-") || strings.Contains(base, "--rb-")
+}
+
 func overlayChainDepth(backendRef string, items []appdb.Snapshot) int {
-	if strings.Contains(path.Base(backendRef), "--flat-") {
+	if overlayChainReset(backendRef) {
 		return 0
 	}
 	n := 0
 	for i := len(items) - 1; i >= 0; i-- {
 		n++
-		if strings.Contains(path.Base(items[i].BackendRef), "--flat-") {
+		if overlayChainReset(items[i].BackendRef) {
 			break
 		}
 	}

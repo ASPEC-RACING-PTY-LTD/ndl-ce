@@ -335,3 +335,162 @@ func TestOverlayFlattenThenSnapshotDoesNotInheritStaleParent(t *testing.T) {
 		t.Fatalf("expected a new snapshot %s", raw)
 	}
 }
+
+func TestOverlayRollbackThenSnapshotDoesNotInheritStaleParent(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","cpus":1,"memory_bytes":268435456}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("vm create %d %s", res.StatusCode, b)
+	}
+	var vm map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&vm)
+	_ = res.Body.Close()
+	vmID := vm["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"first"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("first snap %d %s", res.StatusCode, raw)
+	}
+	var first map[string]any
+	if err := json.Unmarshal(raw, &first); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"second"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("second snap %d %s", res.StatusCode, raw)
+	}
+	var second map[string]any
+	if err := json.Unmarshal(raw, &second); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/snapshots/"+first["id"].(string)+"/rollback", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "rollback")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("rollback %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"after-rollback"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("post-rollback snap %d %s", res.StatusCode, raw)
+	}
+	var third map[string]any
+	if err := json.Unmarshal(raw, &third); err != nil {
+		t.Fatal(err)
+	}
+	if third["parent_id"] != "" && third["parent_id"] != nil {
+		t.Fatalf("rollback chain must not inherit leftover parent %s", raw)
+	}
+	if third["chain_depth"] != float64(1) {
+		t.Fatalf("post-rollback chain_depth %s", raw)
+	}
+	if third["id"] == first["id"] || third["id"] == second["id"] {
+		t.Fatalf("expected a new snapshot %s", raw)
+	}
+}
+
+func TestOverlayRollbackThenSnapshotDoesNotHitStaleChainCap(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	body := `{"name":"cap","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var vm map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&vm)
+	_ = res.Body.Close()
+	vmID := vm["id"].(string)
+
+	var firstID string
+	for i := 0; i < qemu.ChainMax; i++ {
+		req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"s"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ = ts.Client().Do(req)
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("snap %d: %d %s", i, res.StatusCode, raw)
+		}
+		if i == 0 {
+			var first map[string]any
+			if err := json.Unmarshal(raw, &first); err != nil {
+				t.Fatal(err)
+			}
+			firstID = first["id"].(string)
+		}
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/snapshots/"+firstID+"/rollback", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "rollback")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("rollback %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"after-rollback"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("post-rollback snap must not inherit leftover chain cap %d %s", res.StatusCode, raw)
+	}
+}
