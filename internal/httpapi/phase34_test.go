@@ -311,6 +311,32 @@ func TestPhase34ReplicaEndpointRefusesCredentials(t *testing.T) {
 	}
 }
 
+func TestPhase34ReplicaEndpointRefusesDSN(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"endpoint":"postgresql://postgres-replica/nodal"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/ha/replica", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(raw), "replica endpoint must be host:port without credentials") {
+		t.Fatalf("dsn endpoint %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/cluster/ha", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if strings.Contains(string(listed), "postgresql://") || strings.Contains(string(listed), "postgres-replica/nodal") {
+		t.Fatalf("GET /cluster/ha must not list a DSN replica_endpoint: %s", listed)
+	}
+}
+
 type failUpsertHAStateStore struct {
 	appdb.Store
 }

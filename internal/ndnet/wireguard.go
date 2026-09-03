@@ -340,6 +340,11 @@ func ValidListenAddr(addr string) error {
 	return validHostPort(addr, "listen address")
 }
 
+// ValidReplicaEndpoint reports a replica host:port. It is not a DSN.
+func ValidReplicaEndpoint(endpoint string) error {
+	return validHostPort(endpoint, "replica endpoint")
+}
+
 // ParseWGListenPort accepts 1-65535, or 0 which defaults to DefaultWGPort.
 func ParseWGListenPort(port int) (int, error) {
 	if port == 0 {

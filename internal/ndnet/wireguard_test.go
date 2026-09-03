@@ -141,6 +141,18 @@ func TestValidListenAddrRefusesCredentials(t *testing.T) {
 	}
 }
 
+func TestValidReplicaEndpointRefusesDSN(t *testing.T) {
+	if err := ValidReplicaEndpoint("postgres-replica:5432"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidReplicaEndpoint("postgresql://postgres-replica/nodal"); err == nil {
+		t.Fatal("dsn")
+	}
+	if err := ValidReplicaEndpoint("postgresql://ndl:secret-pass@postgres-replica/nodal"); err == nil {
+		t.Fatal("userinfo dsn")
+	}
+}
+
 func TestWGLoopbackHandshakeReady(t *testing.T) {
 	a := testEngine(t, testHost())
 	b := testEngine(t, testHost())
