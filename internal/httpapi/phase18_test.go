@@ -253,7 +253,7 @@ func TestPhase18USBInventoryAttachAndPCI(t *testing.T) {
 	}
 	_ = ok.Body.Close()
 	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
-	if wl == nil || !strings.Contains(string(wl.SpecJSON), "1-2") {
+	if wl == nil || !specHasUSBAddress(wl.SpecJSON, "1-2") {
 		t.Fatalf("usb must land in spec %+v", wl)
 	}
 	list2, _ := http.NewRequest("GET", ts.URL+"/api/v1/nodes/"+node.ID+"/usb", nil)
@@ -556,6 +556,19 @@ func (f usbFailVM) ApplyUSB(context.Context, string, []vmspec.LaunchUSB) error {
 	return f.err
 }
 
+func specHasUSBAddress(specJSON json.RawMessage, addr string) bool {
+	spec, err := vmspec.Parse(specJSON)
+	if err != nil {
+		return false
+	}
+	for _, u := range spec.USBs {
+		if u.Address == addr {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPhase18FailedUSBRollsBackAttachmentAndSpec(t *testing.T) {
 	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "usb-vm")
@@ -574,7 +587,7 @@ func TestPhase18FailedUSBRollsBackAttachmentAndSpec(t *testing.T) {
 		t.Fatalf("failed ApplyUSB left attachment %+v", atts)
 	}
 	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
-	if wl != nil && strings.Contains(string(wl.SpecJSON), "1-2") {
+	if wl != nil && specHasUSBAddress(wl.SpecJSON, "1-2") {
 		t.Fatalf("failed ApplyUSB left USB in spec %+v", wl)
 	}
 }
@@ -601,7 +614,7 @@ func TestPhase18USBAttachFailsClosedWhenAgentUnavailable(t *testing.T) {
 		t.Fatalf("unavailable usb leaked attachment %+v", atts)
 	}
 	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
-	if wl != nil && strings.Contains(string(wl.SpecJSON), "1-2") {
+	if wl != nil && specHasUSBAddress(wl.SpecJSON, "1-2") {
 		t.Fatalf("unavailable usb leaked spec %+v", wl)
 	}
 }
@@ -662,7 +675,7 @@ func TestPhase18USBAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
 		t.Fatalf("usb spec persist body %s", raw)
 	}
 	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
-	if wl != nil && strings.Contains(string(wl.SpecJSON), "1-2") {
+	if wl != nil && specHasUSBAddress(wl.SpecJSON, "1-2") {
 		t.Fatalf("failed spec persist must not rewrite USB into spec %+v", wl)
 	}
 	atts, _ := mem.ListUSBAttachments(context.Background(), clusterID, id)
