@@ -556,3 +556,46 @@ func TestPhase44DeleteMissingMigrationSourceFailsClosed(t *testing.T) {
 		t.Fatalf("200 must not invent delete of a missing source: %s", raw)
 	}
 }
+
+func TestMigrationJobsGETReturnsNewestFirst(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	older := appdb.MigrationJob{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Adapter: "disk", Direction: "import",
+		State: "succeeded", CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	newer := appdb.MigrationJob{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Adapter: "disk", Direction: "export",
+		State: "failed", CreatedAt: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if err := mem.CreateMigrationJob(context.Background(), older); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateMigrationJob(context.Background(), newer); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	admin := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/migration/jobs", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: admin})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list jobs %d %s", res.StatusCode, raw)
+	}
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 2 || body.Items[0]["id"] != newer.ID || body.Items[1]["id"] != older.ID {
+		t.Fatalf("GET must list newest migration job first: %s", raw)
+	}
+}

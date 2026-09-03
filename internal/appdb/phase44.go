@@ -133,6 +133,12 @@ func (m *Memory) ListMigrationJobs(_ context.Context, clusterID string, limit in
 			out = append(out, j)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
 	if len(out) > limit {
 		out = out[:limit]
 	}

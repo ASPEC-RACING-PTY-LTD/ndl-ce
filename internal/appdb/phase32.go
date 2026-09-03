@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -97,13 +98,22 @@ func (m *Memory) UpdateMigrateJob(_ context.Context, j MigrateJob) error {
 func (m *Memory) ListMigrateJobs(_ context.Context, clusterID string, limit int) ([]MigrateJob, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if limit <= 0 {
+		limit = 50
+	}
 	var out []MigrateJob
 	for _, j := range m.migrateJobs {
 		if j.ClusterID == clusterID {
 			out = append(out, j)
 		}
 	}
-	if limit > 0 && len(out) > limit {
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	if len(out) > limit {
 		out = out[:limit]
 	}
 	return out, nil
