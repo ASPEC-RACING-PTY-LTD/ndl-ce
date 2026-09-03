@@ -188,6 +188,10 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "storage pool is unavailable")
 		return
 	}
+	if !storage.ValidClass(req.Class) {
+		writeErr(w, http.StatusBadRequest, "storage class is unsupported")
+		return
+	}
 	if pool.BackendType == storage.BackendZFS {
 		row, err := s.createZFSVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
 		if err != nil {

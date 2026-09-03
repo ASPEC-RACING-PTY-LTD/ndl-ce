@@ -439,3 +439,46 @@ func TestZFSCreateFailsClosedWhenIdentityPersistFails(t *testing.T) {
 		t.Fatalf("create persist body %s", b)
 	}
 }
+
+func TestZFSVolumeCreateFailsClosedForUnsupportedClass(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.ZFS = &fakeZFS{}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/zfs/create", strings.NewReader(`{"name":"tank","disks":["/dev/disk/by-id/wwn-0x5000"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create pool %d %s", res.StatusCode, b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID := pool["id"].(string)
+	for _, class := range []string{"garbage", "../etc", ""} {
+		body := `{"pool_id":"` + poolID + `","class":"` + class + `","size_bytes":1073741824}`
+		volReq, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", strings.NewReader(body))
+		volReq.Header.Set("Content-Type", "application/json")
+		volReq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		volRes, _ := ts.Client().Do(volReq)
+		raw, _ := io.ReadAll(volRes.Body)
+		_ = volRes.Body.Close()
+		if volRes.StatusCode != http.StatusBadRequest {
+			t.Fatalf("class %q %d %s", class, volRes.StatusCode, raw)
+		}
+		if !strings.Contains(string(raw), "storage class is unsupported") {
+			t.Fatalf("class %q body %s", class, raw)
+		}
+	}
+	items, _ := mem.ListVolumes(context.Background(), cluster.ID, poolID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a volume whose class apply cannot create: %+v", items)
+	}
+}

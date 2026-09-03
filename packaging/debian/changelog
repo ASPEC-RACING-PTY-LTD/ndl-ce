@@ -171,6 +171,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM create refuses an extra NIC network_id GET /networks would miss
     before persist. NIC rows and launch bridges follow each spec NIC
     network, so GET spec.nics cannot claim a network the TAP is not on.
+  * ZFS and LVM volume create refuse an unsupported class before persist.
+    fakeZFS and fakeLVM no longer 201 a catalog row GET /volumes would
+    list that apply cannot create. Directory still stores the agent handle
+    class.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
