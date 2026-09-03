@@ -139,6 +139,11 @@ func (s *Server) deleteStack(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
+	got, err := s.Store.GetStack(r.Context(), p.User.ClusterID, id)
+	if err != nil || got != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record stack delete")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "stack.delete", "ok", id)
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "deleted": true})
 }

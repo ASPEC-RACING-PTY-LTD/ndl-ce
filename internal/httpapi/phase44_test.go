@@ -558,6 +558,61 @@ func TestPhase44DeleteMissingMigrationSourceFailsClosed(t *testing.T) {
 	}
 }
 
+type missDeleteMigrationSourceStore struct {
+	appdb.Store
+}
+
+func (missDeleteMigrationSourceStore) DeleteMigrationSource(context.Context, string, string) error {
+	return nil
+}
+
+func TestPhase44DeleteMigrationSourceFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"https://pve.example:8006","token":"SECRET-TOKEN-VALUE"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create source %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	s.Store = missDeleteMigrationSourceStore{Store: mem}
+
+	req, _ = http.NewRequest("DELETE", ts.URL+"/api/v1/migration/sources/"+id, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("delete persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record migration source") {
+		t.Fatalf("delete persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/migration/sources", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list sources %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), id) {
+		t.Fatalf("GET /migration/sources must still list the source after persist miss: %s", raw)
+	}
+}
+
 func TestMigrationJobsGETReturnsNewestFirst(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

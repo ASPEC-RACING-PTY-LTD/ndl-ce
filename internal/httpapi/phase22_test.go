@@ -623,3 +623,55 @@ func TestPhase22ImportFailsClosedForDeviceBackedPools(t *testing.T) {
 		}
 	}
 }
+
+type missDeleteStackStore struct {
+	appdb.Store
+}
+
+func (missDeleteStackStore) DeleteStack(context.Context, string, string) error {
+	return nil
+}
+
+func TestPhase22StackDeleteFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, ts, cookie, _, _, _ := phase22Ready(t)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/stacks", strings.NewReader(`{"name":"keep-me"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create stack %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	s.Store = missDeleteStackStore{Store: mem}
+
+	req, _ = http.NewRequest("DELETE", ts.URL+"/api/v1/stacks/"+id, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("delete persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record stack delete") {
+		t.Fatalf("delete persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/stacks", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list stacks %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), id) {
+		t.Fatalf("GET /stacks must still list the stack after persist miss: %s", raw)
+	}
+}

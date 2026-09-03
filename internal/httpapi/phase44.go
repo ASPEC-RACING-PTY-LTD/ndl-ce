@@ -155,6 +155,11 @@ func (s *Server) deleteMigrationSource(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "migration source not found")
 		return
 	}
+	src, _, _, _, err := s.Store.GetMigrationSource(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil || src != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record migration source")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "migration.source.delete", "ok", r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "note": "Stored credentials were removed. Source infrastructure was not changed."})
 }
