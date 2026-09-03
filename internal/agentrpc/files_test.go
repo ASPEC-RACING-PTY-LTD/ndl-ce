@@ -147,6 +147,37 @@ func TestFilesOpHostDeny(t *testing.T) {
 	}
 }
 
+func TestFilesOpHostDenyParentDeleteAndRename(t *testing.T) {
+	root := t.TempDir()
+	secretDir := filepath.Join(root, "var", "lib", "ndl", "secrets")
+	if err := os.MkdirAll(secretDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(secretDir, "x")
+	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "tmp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prev := iojail.HostDenyPrefixes
+	iojail.HostDenyPrefixes = []string{secretDir}
+	t.Cleanup(func() { iojail.HostDenyPrefixes = prev })
+
+	if _, err := runFilesOp(root, "delete", "var/lib/ndl", "", 0); err == nil {
+		t.Fatal("parent delete of a denied prefix must fail")
+	}
+	if _, err := os.Stat(secret); err != nil {
+		t.Fatalf("denied child must survive parent delete: %v", err)
+	}
+	if _, err := runFilesOp(root, "rename", "var/lib/ndl", "tmp/exfil", 0); err == nil {
+		t.Fatal("parent rename of a denied prefix must fail")
+	}
+	if _, err := os.Stat(secret); err != nil {
+		t.Fatalf("denied child must not move: %v", err)
+	}
+}
+
 func TestWritePartThenRenameSHA(t *testing.T) {
 	root := t.TempDir()
 	raw, err := writePartThenRename(root, "a.txt", 0o644, bytes.NewReader([]byte("payload")), 0, "")

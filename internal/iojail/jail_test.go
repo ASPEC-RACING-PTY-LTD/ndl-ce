@@ -142,6 +142,69 @@ func TestRenameBeneathDoesNotWipeDestinationDirectory(t *testing.T) {
 	}
 }
 
+func TestRemoveBeneathRefusesParentOfDeniedPrefix(t *testing.T) {
+	root := t.TempDir()
+	secretDir := filepath.Join(root, "var", "lib", "ndl", "secrets")
+	if err := os.MkdirAll(secretDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(secretDir, "x")
+	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	safe := filepath.Join(root, "var", "lib", "ndl", "ok.txt")
+	if err := os.WriteFile(safe, []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := HostDenyPrefixes
+	HostDenyPrefixes = []string{secretDir}
+	t.Cleanup(func() { HostDenyPrefixes = prev })
+
+	if err := RemoveBeneath(root, "var/lib/ndl"); err == nil {
+		t.Fatal("parent delete of a denied prefix must fail")
+	}
+	if _, err := os.Stat(secret); err != nil {
+		t.Fatalf("denied child must survive parent delete: %v", err)
+	}
+	if err := RemoveBeneath(root, "var/lib/ndl/secrets/x"); err == nil {
+		t.Fatal("direct denied delete must fail")
+	}
+	if _, err := os.Stat(secret); err != nil {
+		t.Fatalf("denied file must survive direct delete: %v", err)
+	}
+	if err := RemoveBeneath(root, "var/lib/ndl/ok.txt"); err != nil {
+		t.Fatalf("sibling of a denied prefix must still delete: %v", err)
+	}
+}
+
+func TestRenameBeneathRefusesParentOfDeniedPrefix(t *testing.T) {
+	root := t.TempDir()
+	secretDir := filepath.Join(root, "var", "lib", "ndl", "secrets")
+	if err := os.MkdirAll(secretDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(secretDir, "x")
+	if err := os.WriteFile(secret, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "tmp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prev := HostDenyPrefixes
+	HostDenyPrefixes = []string{secretDir}
+	t.Cleanup(func() { HostDenyPrefixes = prev })
+
+	if err := RenameBeneath(root, "var/lib/ndl", "tmp/exfil"); err == nil {
+		t.Fatal("parent rename of a denied prefix must fail")
+	}
+	if _, err := os.Stat(secret); err != nil {
+		t.Fatalf("denied child must not move: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "tmp", "exfil")); !os.IsNotExist(err) {
+		t.Fatal("exfil dest must not be created")
+	}
+}
+
 func TestOpenBeneathDeniesInJailSymlinkToHostPrefix(t *testing.T) {
 	root := t.TempDir()
 	secretDir := filepath.Join(root, "denied")

@@ -35,7 +35,7 @@ func RemoveBeneath(root, rel string) error {
 		return fmt.Errorf("cannot delete the jail root")
 	}
 	if planned, jerr := joinUnder(root, rel); jerr == nil {
-		if err := deniedHost(root, planned); err != nil {
+		if err := coversDeniedHost(root, planned); err != nil {
 			return err
 		}
 	}
@@ -77,12 +77,12 @@ func RenameBeneath(root, src, dest string) error {
 		return fmt.Errorf("cannot rename the jail root")
 	}
 	if planned, jerr := joinUnder(root, src); jerr == nil {
-		if err := deniedHost(root, planned); err != nil {
+		if err := coversDeniedHost(root, planned); err != nil {
 			return err
 		}
 	}
 	if planned, jerr := joinUnder(root, dest); jerr == nil {
-		if err := deniedHost(root, planned); err != nil {
+		if err := coversDeniedHost(root, planned); err != nil {
 			return err
 		}
 	}

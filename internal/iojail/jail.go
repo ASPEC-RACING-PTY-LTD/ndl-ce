@@ -71,6 +71,23 @@ func deniedHost(root, abs string) error {
 	return nil
 }
 
+// coversDeniedHost refuses a path that is denied or that contains a denied
+// host prefix. Parent delete or rename of /var/lib/ndl would otherwise wipe
+// secrets, certs, and the control-plane key.
+func coversDeniedHost(root, abs string) error {
+	if err := deniedHost(root, abs); err != nil {
+		return err
+	}
+	abs = filepath.ToSlash(filepath.Clean(abs))
+	for _, p := range HostDenyPrefixes {
+		prefix := filepath.ToSlash(filepath.Clean(p))
+		if prefix == abs || strings.HasPrefix(prefix+"/", abs+"/") {
+			return fmt.Errorf("path is denied by host policy")
+		}
+	}
+	return nil
+}
+
 func joinUnder(root, rel string) (string, error) {
 	rel, err := cleanRel(rel)
 	if err != nil {
