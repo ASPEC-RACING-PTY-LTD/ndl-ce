@@ -241,6 +241,19 @@ func (s *Server) maintainNode(w http.ResponseWriter, r *http.Request) {
 					if msg != "" {
 						item["migrate_error"] = msg
 					}
+					if code == http.StatusOK {
+						op.State = "succeeded"
+						op.Message = "migrated to local dest"
+					} else {
+						op.State = "failed"
+						if msg != "" {
+							op.Message = msg
+						}
+					}
+					if err := s.Store.UpsertOperation(r.Context(), op); err != nil {
+						writeErr(w, http.StatusInternalServerError, "could not record migrate operation")
+						return
+					}
 				} else if dest != nil && !s.destEligibleLocal(r.Context(), dest) {
 					item["migrate_error"] = destAgentMissing
 					op.Message = destAgentMissing
