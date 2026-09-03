@@ -1796,3 +1796,68 @@ func workloadDisksHaveVolumes(disks []appdb.WorkloadDisk, extraVol string) bool 
 	}
 	return gotBoot && gotExtra
 }
+
+func TestVMStartFailsClosedForUnavailableExtraDataVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraVol := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extraVol, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/extra.qcow2", SizeBytes: 1 << 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"dual-disk","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"disks":[{"role":"boot"},{"role":"data","volume_id":"` + extraVol + `","slot":1}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id := created["id"].(string)
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: extraVol, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	started, err := ts.Client().Do(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startRaw, _ := io.ReadAll(started.Body)
+	_ = started.Body.Close()
+	if started.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable extra data volume start %d %s", started.StatusCode, startRaw)
+	}
+	if !strings.Contains(string(startRaw), "storage is unavailable") {
+		t.Fatalf("unavailable extra data volume start body %s", startRaw)
+	}
+	got, _ := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if got == nil || got.DesiredPower == "running" {
+		t.Fatalf("GET must not claim desired_power running when extra data disk start cannot attach: %+v", got)
+	}
+}
