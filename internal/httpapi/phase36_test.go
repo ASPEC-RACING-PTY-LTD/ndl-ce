@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/oci"
 )
@@ -297,5 +298,44 @@ func TestPhase36InstallFailsClosedWhenRowPersistFails(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "could not record store installation") {
 		t.Fatalf("install persist body %s", raw)
+	}
+}
+
+func TestAssignStoreGPUFailsClosedWhenAgentUnavailable(t *testing.T) {
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:02:00.0")
+	if err == nil || !strings.Contains(err.Error(), "gpu agent is unavailable") {
+		t.Fatalf("unavailable store gpu %v", err)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("assignment leaked %+v %v", got, listErr)
+	}
+}
+
+func TestAssignStoreGPUFailsClosedWhenAgentFails(t *testing.T) {
+	s, mem, _ := testServer(t)
+	s.GPU = &fakeGPU{err: errors.New("bind failed")}
+	cluster, _ := mem.GetCluster(context.Background())
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:02:00.0")
+	if err == nil || !strings.Contains(err.Error(), "bind failed") {
+		t.Fatalf("failed store gpu %v", err)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("assignment leaked %+v %v", got, listErr)
 	}
 }

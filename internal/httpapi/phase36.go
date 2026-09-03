@@ -353,19 +353,12 @@ func (s *Server) assignStoreGPU(ctx context.Context, clusterID, workloadID, gpuI
 	if err := s.Store.CreateGPUAssignment(ctx, a); err != nil {
 		return errConflict(err.Error())
 	}
-	if s.GPU == nil {
-		return nil
-	}
-	res, err := s.GPU.GPUAssign(ctx, gpu.AssignRequest{
+	res, err := s.gpus().GPUAssign(ctx, gpu.AssignRequest{
 		Action: "assign", GPUID: id, WorkloadID: workloadID, Mode: gpu.ModeRender, Exclusive: a.Exclusive,
 	})
-	if err != nil {
+	if gpuApplyFailed(res, err) || (res.Status != "" && res.Status != gpu.StatusAssigned) {
 		_ = s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID)
-		return err
-	}
-	if res.Status == gpu.StatusFailed {
-		_ = s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID)
-		return errUnprocessable(res.Reason)
+		return errUnavailable(gpuApplyError(res, err))
 	}
 	return nil
 }
