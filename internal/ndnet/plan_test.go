@@ -51,3 +51,29 @@ func TestLANBridgePlanHasNoDHCP(t *testing.T) {
 		t.Fatalf("LAN-bridge must not emit DHCP: %+v", plan)
 	}
 }
+
+func TestValidateSpecLocatorsRefusesInvalidUplinkAndCIDR(t *testing.T) {
+	id := uuid.NewString()
+	if err := ValidateSpecLocators(Spec{NetworkID: id, Kind: KindLANBridge}); err == nil || !strings.Contains(err.Error(), "LAN-bridge requires a valid uplink_ifname") {
+		t.Fatalf("missing uplink %v", err)
+	}
+	if err := ValidateSpecLocators(Spec{NetworkID: id, Kind: KindLANBridge, UplinkIfName: ".."}); err == nil || !strings.Contains(err.Error(), "LAN-bridge requires a valid uplink_ifname") {
+		t.Fatalf("invalid uplink %v", err)
+	}
+	bridge, err := BridgeName(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSpecLocators(Spec{NetworkID: id, Kind: KindLANBridge, UplinkIfName: bridge}); err == nil || !strings.Contains(err.Error(), "uplink cannot be the No-dal bridge") {
+		t.Fatalf("bridge uplink %v", err)
+	}
+	if err := ValidateSpecLocators(Spec{NetworkID: id, Kind: KindIsolated, IPv4CIDR: "not-a-cidr"}); err == nil || !strings.Contains(err.Error(), "invalid ipv4_cidr") {
+		t.Fatalf("invalid cidr %v", err)
+	}
+	if err := ValidateSpecLocators(Spec{NetworkID: id, Kind: KindIsolated}); err != nil {
+		t.Fatalf("default isolated cidr %v", err)
+	}
+	if err := ValidateSpecLocators(Spec{NetworkID: id, Kind: KindLANBridge, UplinkIfName: "eth0"}); err != nil {
+		t.Fatalf("valid lan-bridge %v", err)
+	}
+}

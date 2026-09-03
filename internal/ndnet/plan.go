@@ -6,6 +6,39 @@ import (
 	"strings"
 )
 
+// ValidateSpecLocators refuses request locators BuildPlan would reject
+// without host routing or inventory. fakeNet DryRun does not run BuildPlan.
+func ValidateSpecLocators(spec Spec) error {
+	if strings.TrimSpace(spec.Kind) != "" && !ValidKind(spec.Kind) {
+		return fmt.Errorf("unsupported network kind")
+	}
+	if Isolated(spec.Kind) {
+		cidr := strings.TrimSpace(spec.IPv4CIDR)
+		if cidr == "" {
+			cidr = DefaultIPv4
+		}
+		if _, _, err := parseIPv4Net(cidr); err != nil {
+			return err
+		}
+	}
+	if spec.Kind == KindLANBridge {
+		uplink := strings.TrimSpace(spec.UplinkIfName)
+		if !ValidIfName(uplink) {
+			return fmt.Errorf("LAN-bridge requires a valid uplink_ifname")
+		}
+		if id := strings.TrimSpace(spec.NetworkID); id != "" {
+			bridge, err := BridgeName(id)
+			if err != nil {
+				return err
+			}
+			if sameIface(uplink, bridge) {
+				return fmt.Errorf("uplink cannot be the No-dal bridge")
+			}
+		}
+	}
+	return nil
+}
+
 // BuildPlan validates spec against host and generates persistence artifacts.
 func BuildPlan(spec Spec, host HostView) (Plan, error) {
 	if !ValidKind(spec.Kind) {

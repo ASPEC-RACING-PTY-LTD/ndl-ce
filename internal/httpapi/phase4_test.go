@@ -375,3 +375,51 @@ func TestPhase4ReservationCreateFailsClosedOutsideSubnet(t *testing.T) {
 		t.Fatalf("valid %d %s", res.StatusCode, body)
 	}
 }
+
+func TestPhase4NetworkCreateFailsClosedForInvalidUplinkAndCIDR(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = mem.UpsertNode(t.Context(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	s.Network = fakeNet{
+		preview: ndnet.Preview{Kind: ndnet.KindLANBridge, Danger: ndnet.DangerSafe},
+		apply:   ndnet.ApplyResult{Kind: ndnet.KindLANBridge, Status: ndnet.StatusAvailable, BridgeName: "ndlcafe0001"},
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	missing, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks", strings.NewReader(`{"name":"lan","kind":"lan-bridge"}`))
+	missing.Header.Set("Content-Type", "application/json")
+	missing.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(missing)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "LAN-bridge requires a valid uplink_ifname") {
+		t.Fatalf("missing uplink %d %s", res.StatusCode, body)
+	}
+
+	bad, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks", strings.NewReader(`{"name":"lan","kind":"lan-bridge","uplink_ifname":".."}`))
+	bad.Header.Set("Content-Type", "application/json")
+	bad.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(bad)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "LAN-bridge requires a valid uplink_ifname") {
+		t.Fatalf("invalid uplink %d %s", res.StatusCode, body)
+	}
+
+	cidr, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks", strings.NewReader(`{"name":"iso","kind":"isolated","ipv4_cidr":"not-a-cidr"}`))
+	cidr.Header.Set("Content-Type", "application/json")
+	cidr.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(cidr)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "invalid ipv4_cidr") {
+		t.Fatalf("invalid cidr %d %s", res.StatusCode, body)
+	}
+
+	items, err := mem.ListNetworks(t.Context(), cluster.ID)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("GET /networks must not list a row apply cannot install: %+v %v", items, err)
+	}
+}

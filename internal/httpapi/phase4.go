@@ -107,6 +107,10 @@ func (s *Server) createNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uuid.NewString()
 	spec := s.specFromRequest(r.Context(), p.User.ClusterID, id, req)
+	if err := ndnet.ValidateSpecLocators(spec); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	preview, err := s.Network.DryRunNetwork(r.Context(), spec)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -185,6 +189,10 @@ func (s *Server) applyNetwork(w http.ResponseWriter, r *http.Request) {
 		NetworkID: n.ID, Name: n.Name, Kind: n.Kind, IPv4CIDR: n.IPv4CIDR,
 		DHCP: n.DHCP, DNS: n.DNS, UplinkIfName: firstNonEmpty(req.UplinkIfName, n.UplinkIfName),
 		ConfirmIfName: req.ConfirmIfName, Reservations: toReservations(reservations),
+	}
+	if err := ndnet.ValidateSpecLocators(spec); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	preview, err := s.Network.DryRunNetwork(r.Context(), spec)
 	if err != nil {
