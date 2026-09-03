@@ -208,7 +208,9 @@ func (s *Server) executePlanStep(r *http.Request, clusterID string, st appdb.AIP
 	op := s.startOp(r.Context(), clusterID, nodeID, "ai."+st.Action, "queued", 0)
 	op.State = "queued"
 	op.Message = st.Title
-	_ = s.Store.UpsertOperation(r.Context(), op)
+	if err := s.Store.UpsertOperation(r.Context(), op); err != nil {
+		return "", errInternal("could not record AI plan task")
+	}
 	fail := func(err error) (string, error) {
 		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
 		return op.ID, err

@@ -378,3 +378,53 @@ func TestPhase42ApproveFailsClosedWhenPlanPersistFails(t *testing.T) {
 		t.Fatalf("plan persist body %s", raw)
 	}
 }
+
+func TestPhase42ApproveFailsClosedWhenTaskPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpsertOperationStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string)+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("task persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), `"status":"stopped"`) || !strings.Contains(string(raw), "could not record AI plan task") {
+		t.Fatalf("task persist body %s", raw)
+	}
+	s.Store = mem
+	stored, err := mem.GetAIPlan(context.Background(), cluster.ID, plan["id"].(string))
+	if err != nil || stored == nil || stored.Status != appdb.PlanStopped {
+		t.Fatalf("plan row %+v %v", stored, err)
+	}
+	pols, _ := mem.ListPolicies(context.Background(), cluster.ID)
+	if len(pols) != 0 {
+		t.Fatalf("task persist must not execute the step %+v", pols)
+	}
+	ops, err := mem.ListOperations(context.Background(), cluster.ID, 50)
+	if err != nil || len(ops) != 0 {
+		t.Fatalf("invented AI plan task %+v %v", ops, err)
+	}
+}
