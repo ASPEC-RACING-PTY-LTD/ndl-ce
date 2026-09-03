@@ -111,6 +111,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Node group create fails closed for a missing node_id. Memory no longer
     invents membership GET /node-groups would list for a node GET would
     miss.
+  * VM PATCH iso_library_id fails closed when the library item is missing
+    or is not installation media. A 200 does not invent an ISO GET
+    /images would miss. Empty iso_library_id still detaches.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

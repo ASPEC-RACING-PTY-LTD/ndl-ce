@@ -710,3 +710,126 @@ func mustSpecJSON(m map[string]any) json.RawMessage {
 	raw, _ := json.Marshal(m["spec"])
 	return raw
 }
+
+func TestVMPatchISOLibraryFailsClosedForMissingAndWrongKind(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","network_id":"` + netID + `","pool_id":"` + poolID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		raw, _ := io.ReadAll(res.Body)
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&created)
+	_ = res.Body.Close()
+	id := created["id"].(string)
+
+	missing := uuid.NewString()
+	patch, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"iso_library_id":"`+missing+`"}`))
+	patch.Header.Set("Content-Type", "application/json")
+	patch.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	denied, _ := ts.Client().Do(patch)
+	raw, _ := io.ReadAll(denied.Body)
+	_ = denied.Body.Close()
+	if denied.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing iso %d %s", denied.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "installation media is not found") {
+		t.Fatalf("missing iso body %s", raw)
+	}
+
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	var afterMiss map[string]any
+	_ = json.NewDecoder(got.Body).Decode(&afterMiss)
+	_ = got.Body.Close()
+	if specFromCreated(afterMiss).ISOLibraryID != "" {
+		t.Fatalf("GET must not invent iso_library_id after missing patch: %+v", afterMiss["spec"])
+	}
+
+	cloudID := uuid.NewString()
+	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: cloudID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Kind: storage.LibraryCloudImage, DisplayName: "cloud.qcow2",
+		BackendRef: "library/cloud-image/" + cloudID + ".qcow2", Status: storage.StatusAvailable,
+	})
+	wrong, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"iso_library_id":"`+cloudID+`"}`))
+	wrong.Header.Set("Content-Type", "application/json")
+	wrong.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wrongRes, _ := ts.Client().Do(wrong)
+	wrongRaw, _ := io.ReadAll(wrongRes.Body)
+	_ = wrongRes.Body.Close()
+	if wrongRes.StatusCode != http.StatusConflict {
+		t.Fatalf("cloud image as iso %d %s", wrongRes.StatusCode, wrongRaw)
+	}
+	if !strings.Contains(string(wrongRaw), "library item is not installation media") {
+		t.Fatalf("cloud image as iso body %s", wrongRaw)
+	}
+
+	isoID := uuid.NewString()
+	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: isoID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Kind: storage.LibraryISO, DisplayName: "debian.iso",
+		BackendRef: "library/iso/" + isoID + ".iso", Status: storage.StatusAvailable,
+	})
+	ok, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"iso_library_id":"`+isoID+`"}`))
+	ok.Header.Set("Content-Type", "application/json")
+	ok.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	okRes, _ := ts.Client().Do(ok)
+	okRaw, _ := io.ReadAll(okRes.Body)
+	_ = okRes.Body.Close()
+	if okRes.StatusCode != http.StatusOK {
+		t.Fatalf("valid iso %d %s", okRes.StatusCode, okRaw)
+	}
+	var patched map[string]any
+	if err := json.Unmarshal(okRaw, &patched); err != nil {
+		t.Fatal(err)
+	}
+	if specFromCreated(patched).ISOLibraryID != isoID {
+		t.Fatalf("patch spec %+v", patched["spec"])
+	}
+	get, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ = ts.Client().Do(get)
+	var afterOK map[string]any
+	_ = json.NewDecoder(got.Body).Decode(&afterOK)
+	_ = got.Body.Close()
+	if specFromCreated(afterOK).ISOLibraryID != isoID {
+		t.Fatalf("GET spec %+v", afterOK["spec"])
+	}
+
+	clear, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"iso_library_id":""}`))
+	clear.Header.Set("Content-Type", "application/json")
+	clear.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	clearRes, _ := ts.Client().Do(clear)
+	clearRaw, _ := io.ReadAll(clearRes.Body)
+	_ = clearRes.Body.Close()
+	if clearRes.StatusCode != http.StatusOK {
+		t.Fatalf("clear iso %d %s", clearRes.StatusCode, clearRaw)
+	}
+	get, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ = ts.Client().Do(get)
+	var afterClear map[string]any
+	_ = json.NewDecoder(got.Body).Decode(&afterClear)
+	_ = got.Body.Close()
+	if specFromCreated(afterClear).ISOLibraryID != "" {
+		t.Fatalf("GET must drop iso_library_id after clear: %+v", afterClear["spec"])
+	}
+}

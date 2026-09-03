@@ -736,7 +736,21 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 		next.Autostart = *req.Autostart
 	}
 	if req.ISOLibraryID != nil {
-		next.ISOLibraryID = *req.ISOLibraryID
+		id := strings.TrimSpace(*req.ISOLibraryID)
+		if id == "" {
+			next.ISOLibraryID = ""
+		} else {
+			lib, lerr := s.Store.GetLibraryItem(r.Context(), p.User.ClusterID, id)
+			if lerr != nil || lib == nil {
+				writeErr(w, http.StatusNotFound, "installation media is not found")
+				return
+			}
+			if lib.Kind != storage.LibraryISO {
+				writeErr(w, http.StatusConflict, "library item is not installation media")
+				return
+			}
+			next.ISOLibraryID = lib.ID
+		}
 	}
 	if req.NoCloud != nil {
 		next.NoCloud = *req.NoCloud
