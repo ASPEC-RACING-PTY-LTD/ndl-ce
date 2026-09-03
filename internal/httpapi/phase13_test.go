@@ -831,3 +831,64 @@ func TestPhase13GroupMemberAddFailsClosedForMissingUserAndIsIdempotent(t *testin
 		t.Fatalf("GET member_ids must list the user once, got %d in %s", count, raw)
 	}
 }
+
+type missAddGroupMemberStore struct {
+	appdb.Store
+}
+
+func (missAddGroupMemberStore) AddGroupMember(context.Context, string, string, string) error {
+	return nil
+}
+
+func TestPhase13AddGroupMemberFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op-miss-member"}
+	if err := mem.CreateUser(context.Background(), op); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/groups", strings.NewReader(`{"name":"member-miss"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("group %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	gid, _ := created["id"].(string)
+	s.Store = missAddGroupMemberStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/members", strings.NewReader(`{"user_id":"`+op.ID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("member persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record group member") {
+		t.Fatalf("member persist miss body %s", raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/groups", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list groups %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), op.ID) {
+		t.Fatalf("GET member_ids must not claim the user after persist miss: %s", raw)
+	}
+}

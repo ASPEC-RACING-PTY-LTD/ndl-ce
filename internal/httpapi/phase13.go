@@ -284,7 +284,23 @@ func (s *Server) addGroupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.AddGroupMember(r.Context(), p.User.ClusterID, g.ID, u.ID); err != nil {
-		writeErr(w, http.StatusNotFound, "group not found")
+		writeErr(w, http.StatusInternalServerError, "could not record group member")
+		return
+	}
+	members, err := s.Store.ListGroupMembers(r.Context(), p.User.ClusterID, g.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record group member")
+		return
+	}
+	found := false
+	for _, id := range members {
+		if id == u.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeErr(w, http.StatusInternalServerError, "could not record group member")
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "group.member.add", "ok", req.UserID)

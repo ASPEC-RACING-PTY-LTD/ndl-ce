@@ -91,7 +91,19 @@ func (p *Postgres) AddGroupMember(ctx context.Context, clusterID, groupID, userI
 	_, err = p.DB.ExecContext(ctx, `
 INSERT INTO group_members (group_id, user_id) VALUES ($1,$2)
 ON CONFLICT DO NOTHING`, groupID, userID)
-	return err
+	if err != nil {
+		return err
+	}
+	members, err := p.ListGroupMembers(ctx, clusterID, groupID)
+	if err != nil {
+		return err
+	}
+	for _, id := range members {
+		if id == userID {
+			return nil
+		}
+	}
+	return fmt.Errorf("group member not found")
 }
 
 func (p *Postgres) ListGroupMembers(ctx context.Context, clusterID, groupID string) ([]string, error) {
