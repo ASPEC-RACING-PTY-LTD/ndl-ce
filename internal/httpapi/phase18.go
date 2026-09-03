@@ -429,6 +429,16 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "template snapshot is unavailable")
 		return
 	}
+	spec, specErr := vmspec.Parse(row.SpecJSON)
+	if specErr != nil {
+		spec = vmspec.Spec{Name: row.Name, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, Firmware: row.Firmware}
+	}
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleData && d.VolumeID != "" && d.VolumeID != vol.ID {
+			writeErr(w, http.StatusUnprocessableEntity, "template of additional data disks is not implemented")
+			return
+		}
+	}
 	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"-tmpl.qcow2")
 	overlay, jerr := storage.JoinUnder(pool.RootPath, overlayRel)
 	if jerr != nil {
@@ -454,7 +464,6 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	spec, _ := vmspec.Parse(row.SpecJSON)
 	tmpl := appdb.VMTemplate{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name,
 		SourceWorkloadID: row.ID, SnapshotID: snap.ID, SpecJSON: vmspec.MustJSON(vmspec.Redact(spec)),

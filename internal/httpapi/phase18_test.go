@@ -464,6 +464,48 @@ func TestPhase18CloneExtraDiskIs422(t *testing.T) {
 	}
 }
 
+func TestPhase18TemplateExtraDiskIs422(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-extra")
+	srcID := created["id"].(string)
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, srcID)
+	spec, err := vmspec.Parse(wl.SpecJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := uuid.NewString()
+	node, _ := mem.GetNode(context.Background(), clusterID)
+	_ = mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extra, ClusterID: clusterID, NodeID: node.ID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/extra.qcow2",
+	})
+	spec.Disks = append(spec.Disks, vmspec.Disk{Role: vmspec.DiskRoleData, VolumeID: extra})
+	_ = mem.UpdateWorkloadSpec(context.Background(), appdb.Workload{
+		ID: wl.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: wl.Firmware, CPUs: wl.CPUs, MemoryBytes: wl.MemoryBytes,
+	})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+srcID+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("extra disk template %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(strings.ToLower(string(b)), "disk") {
+		t.Fatalf("reason %s", b)
+	}
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, srcID)
+	if len(disks) == 0 {
+		t.Fatal("source disks missing")
+	}
+	boot, _ := mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if boot != nil && strings.Contains(boot.BackendRef, "-tmpl.qcow2") {
+		t.Fatalf("template create must not retarget the boot volume: %+v", boot)
+	}
+}
+
 func TestPhase18TemplateRequiresSnapshot(t *testing.T) {
 	s, _, ts, cookie, _, poolID, netID := phase18Ready(t)
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-src")
