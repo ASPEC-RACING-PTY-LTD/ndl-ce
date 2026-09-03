@@ -369,6 +369,52 @@ func TestLabQemuProtoJoinsExistingZVolUnderHostPath(t *testing.T) {
 	}
 }
 
+func TestLabQemuProtoFailsClosedForContainerRoot(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := seedQemuLab(t, mem, cluster.ID, nodeID)
+	fq := &fakeQEMU{}
+	s.QEMU = fq
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"volume_id":"` + volID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("container-root qemu-proto %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "volume is not a vm-disk") {
+		t.Fatalf("container-root qemu-proto body %s", raw)
+	}
+	if fq.spec.WorkloadID != "" {
+		t.Fatal("StartQemuProto must not run for a container-root disk")
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a qemu-proto VM whose disk start cannot attach a container-root: %+v", items)
+	}
+}
+
 func TestLabQemuProtoFailsClosedForNewDistributedVolume(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

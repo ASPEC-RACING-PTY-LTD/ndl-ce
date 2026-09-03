@@ -397,6 +397,9 @@ func (s *Server) prepareQemuDisk(ctx context.Context, clusterID, nodeID string, 
 			if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
 				return nil, nil, "", errConflict("storage is unavailable")
 			}
+			if vol.Class != storage.ClassVMDisk {
+				return nil, nil, "", errConflict("volume is not a vm-disk")
+			}
 			pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
 			if err != nil || pool == nil {
 				return nil, nil, "", errConflict("storage pool is not found")

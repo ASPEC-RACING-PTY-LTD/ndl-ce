@@ -272,7 +272,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     the pool root JoinUnder would invent. Disk format follows
     QEMUFormat, so a zvol, thin LV, or RBD starts as raw the same
     way product VM start already does. GET disk_format is not a
-    catalog zvol or rbd string compile refuses.
+    catalog zvol or rbd string compile refuses. An existing
+    container-root is refused the same way VM boot is not a
+    filesystem volume. GET /lab/qemu-proto no longer claims a
+    directory mount start would attach as a disk.
   * Files and Terminal join a system-container root with HostVolumePath.
     A ZFS dataset under the ZFS mount root is that path, not a nested
     JoinUnder of the absolute locator.
