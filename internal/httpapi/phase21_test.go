@@ -400,6 +400,43 @@ func TestPhase21OCICreateFailsClosedForUnavailableVolume(t *testing.T) {
 	}
 }
 
+func TestPhase21OCICreateFailsClosedForVMDisk(t *testing.T) {
+	_, mem, ts, cookie, clusterID, fo := phase21Ready(t)
+	pools, err := mem.ListStoragePools(context.Background(), clusterID)
+	if err != nil || len(pools) == 0 {
+		t.Fatalf("pool fixture: %v %d", err, len(pools))
+	}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: clusterID, NodeID: pools[0].NodeID, PoolID: pools[0].ID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/" + volID + ".qcow2", SizeBytes: 1 << 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","volume_ids":["` + volID + `"]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("vm-disk volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "volume is not a container-root") {
+		t.Fatalf("vm-disk volume body %s", raw)
+	}
+	if fo.lastSpec.WorkloadID != "" {
+		t.Fatal("CreateOCI must not run for a vm-disk bind")
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list an OCI workload whose volume apply cannot bind: %+v", items)
+	}
+}
+
 func TestPhase21OCICreateFailsClosedForUnavailableVolumePool(t *testing.T) {
 	_, mem, ts, cookie, clusterID, _ := phase21Ready(t)
 	pools, err := mem.ListStoragePools(context.Background(), clusterID)

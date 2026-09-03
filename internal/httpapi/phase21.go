@@ -196,6 +196,9 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 		if err != nil || vol == nil {
 			return appdb.Workload{}, false, errNotFound("volume not found")
 		}
+		if vol.Class != storage.ClassContainerRoot {
+			return appdb.Workload{}, false, errConflict("volume is not a container-root")
+		}
 		if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
 			return appdb.Workload{}, false, errConflict("storage is unavailable")
 		}
