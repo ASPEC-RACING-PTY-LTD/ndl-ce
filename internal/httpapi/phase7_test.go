@@ -227,6 +227,46 @@ func TestLabQemuProtoStoresVMKind(t *testing.T) {
 	}
 }
 
+func TestLabQemuProtoFailsClosedForTinyDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := seedQemuLab(t, mem, cluster.ID, nodeID)
+	s.QEMU = &fakeQEMU{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"pool_id":"` + poolID + `","size_bytes":1}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("tiny qemu-proto disk %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), storage.ErrInvalidSize.Error()) {
+		t.Fatalf("tiny qemu-proto disk body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a qemu-proto VM whose disk apply cannot create: %+v", items)
+	}
+	vols, _ := mem.ListVolumes(context.Background(), cluster.ID, poolID)
+	if len(vols) != 0 {
+		t.Fatalf("GET must not list a volume apply cannot create: %+v", vols)
+	}
+}
+
 func TestLabQemuProtoHasNoHostExec(t *testing.T) {
 	b, err := os.ReadFile("phase7.go")
 	if err != nil {

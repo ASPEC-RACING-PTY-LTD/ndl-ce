@@ -183,6 +183,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM create refuses a boot disk smaller than the volume engine floor
     before persist. fakeStorage no longer 201 a workload whose GET volume
     size_bytes qemu-img cannot allocate.
+  * Directory template volume create and lab qemu-proto refuse a block
+    size below 1 MiB before persist. GET /volumes no longer lists a
+    qcow2 apply cannot allocate.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

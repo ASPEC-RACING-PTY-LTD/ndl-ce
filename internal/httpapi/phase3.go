@@ -575,7 +575,13 @@ func invalidVolumeSize(backend, class string, size int64) bool {
 	if size <= 0 || size > storage.MaxVolumeBytes {
 		return true
 	}
-	if (class == storage.ClassVMDisk || backend == storage.BackendLVM) && size < storage.MinBlockBytes {
+	if class == storage.ClassVMDisk && size < storage.MinBlockBytes {
+		return true
+	}
+	if backend == storage.BackendLVM && size < storage.MinBlockBytes {
+		return true
+	}
+	if backend == storage.BackendDirectory && class == storage.ClassTemplate && size < storage.MinBlockBytes {
 		return true
 	}
 	return false
