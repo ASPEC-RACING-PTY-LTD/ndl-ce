@@ -218,7 +218,10 @@ func (s *Server) maintainNode(w http.ResponseWriter, r *http.Request) {
 			op := s.startOp(r.Context(), p.User.ClusterID, id, "workload.migrate", "queued", 0)
 			op.State = "queued"
 			op.Message = "queued until dest is chosen"
-			_ = s.Store.UpsertOperation(r.Context(), op)
+			if err := s.Store.UpsertOperation(r.Context(), op); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not record migrate operation")
+				return
+			}
 			item := map[string]any{"id": wl.ID, "name": wl.Name, "kind": wl.Kind, "migrate_operation_id": op.ID}
 			if s.Migrate != nil {
 				dest, err := s.migrateDest(r.Context(), p.User.ClusterID, wl, "")
@@ -232,7 +235,10 @@ func (s *Server) maintainNode(w http.ResponseWriter, r *http.Request) {
 				} else if dest != nil && !s.destEligibleLocal(r.Context(), dest) {
 					item["migrate_error"] = destAgentMissing
 					op.Message = destAgentMissing
-					_ = s.Store.UpsertOperation(r.Context(), op)
+					if err := s.Store.UpsertOperation(r.Context(), op); err != nil {
+						writeErr(w, http.StatusInternalServerError, "could not record migrate operation")
+						return
+					}
 				}
 			}
 			toMove = append(toMove, item)

@@ -103,6 +103,33 @@ func TestPhase31MaintainQueuesMigrateAndSkipsNode(t *testing.T) {
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), "drain-me") || !strings.Contains(string(raw), "migrate_operation_id") {
 		t.Fatalf("maintain %d %s", res.StatusCode, raw)
 	}
+	var drained struct {
+		Workloads []map[string]any `json:"workloads"`
+	}
+	if err := json.Unmarshal(raw, &drained); err != nil {
+		t.Fatal(err)
+	}
+	if len(drained.Workloads) != 1 {
+		t.Fatalf("maintain workloads %s", raw)
+	}
+	opID, _ := drained.Workloads[0]["migrate_operation_id"].(string)
+	if opID == "" {
+		t.Fatalf("maintain missing migrate_operation_id %s", raw)
+	}
+	ops, err := mem.ListOperations(t.Context(), clusterRow.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, op := range ops {
+		if op.ID == opID && op.Kind == "workload.migrate" && op.State == "queued" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("queued migrate op missing %+v", ops)
+	}
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/placement/preview", strings.NewReader(`{"placement":"automatic"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
@@ -111,6 +138,45 @@ func TestPhase31MaintainQueuesMigrateAndSkipsNode(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("preview while control draining %d %s", res.StatusCode, raw)
+	}
+}
+
+type failUpsertOperationStore struct {
+	appdb.Store
+}
+
+func (f failUpsertOperationStore) UpsertOperation(context.Context, appdb.Operation) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase31MaintainFailsClosedWhenMigrateOpPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID, Name: "drain-me", Kind: "vm", Status: "running",
+	})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failUpsertOperationStore{Store: mem}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+control.ID+"/maintain", strings.NewReader(`{"reason":"disk"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("maintain persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record migrate operation") {
+		t.Fatalf("maintain persist body %s", raw)
+	}
+	s.Store = mem
+	ops, err := mem.ListOperations(t.Context(), clusterRow.ID, 50)
+	if err != nil || len(ops) != 0 {
+		t.Fatalf("invented migrate ops %+v %v", ops, err)
 	}
 }
 
