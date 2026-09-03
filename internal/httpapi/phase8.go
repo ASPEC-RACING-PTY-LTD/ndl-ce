@@ -518,6 +518,9 @@ func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID strin
 		}
 		return existing, diskPath, nil
 	}
+	if invalidVolumeSize(pool.BackendType, storage.ClassVMDisk, size) {
+		return nil, "", errBadRequest(storage.ErrInvalidSize.Error())
+	}
 	if pool.BackendType == storage.BackendZFS {
 		row, err := s.createZFSVolume(ctx, clusterID, *pool, storage.ClassVMDisk, size)
 		if err != nil {

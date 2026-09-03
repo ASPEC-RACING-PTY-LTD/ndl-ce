@@ -180,6 +180,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     and distributed no longer 201 a catalog row GET /volumes would list
     that qemu-img, zvol, thin LV, or RBD cannot create. ZFS datasets are
     not given a block minimum.
+  * VM create refuses a boot disk smaller than the volume engine floor
+    before persist. fakeStorage no longer 201 a workload whose GET volume
+    size_bytes qemu-img cannot allocate.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

@@ -965,3 +965,43 @@ func TestVMCreateRecordsExtraNICNetwork(t *testing.T) {
 		t.Fatalf("GET spec nics %+v", listed["spec"])
 	}
 }
+
+func TestVMCreateFailsClosedForTinyBootDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"tiny","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"disks":[{"role":"boot","size_bytes":1}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("tiny boot disk %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), storage.ErrInvalidSize.Error()) {
+		t.Fatalf("tiny boot disk body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose boot disk apply cannot create: %+v", items)
+	}
+	vols, _ := mem.ListVolumes(context.Background(), cluster.ID, poolID)
+	if len(vols) != 0 {
+		t.Fatalf("GET must not list a volume apply cannot create: %+v", vols)
+	}
+}
