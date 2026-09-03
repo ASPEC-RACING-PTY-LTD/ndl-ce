@@ -14,6 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/gpu"
 	"github.com/no-dal/ndl-ce/internal/inventory"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -363,6 +364,112 @@ func TestPhase21OCICreateFailsClosedWhenDiskPersistFails(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "could not record OCI disk") {
 		t.Fatalf("disk persist body %s", raw)
+	}
+}
+
+func TestPhase21OCICreateFailsClosedForUnavailableVolume(t *testing.T) {
+	_, mem, ts, cookie, clusterID, _ := phase21Ready(t)
+	pools, err := mem.ListStoragePools(context.Background(), clusterID)
+	if err != nil || len(pools) == 0 {
+		t.Fatalf("pool fixture: %v %d", err, len(pools))
+	}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: clusterID, NodeID: pools[0].NodeID, PoolID: pools[0].ID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusUnavailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","volume_ids":["` + volID + `"]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable volume body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list an OCI workload whose volume apply cannot mount: %+v", items)
+	}
+}
+
+func TestPhase21OCICreateFailsClosedForUnavailableVolumePool(t *testing.T) {
+	_, mem, ts, cookie, clusterID, _ := phase21Ready(t)
+	pools, err := mem.ListStoragePools(context.Background(), clusterID)
+	if err != nil || len(pools) == 0 {
+		t.Fatalf("pool fixture: %v %d", err, len(pools))
+	}
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: clusterID, NodeID: pools[0].NodeID, Name: "oci-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/oci-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: clusterID, NodeID: pools[0].NodeID, PoolID: offlinePool,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","volume_ids":["` + volID + `"]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable volume pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable volume pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list an OCI workload whose volume pool apply cannot mount: %+v", items)
+	}
+}
+
+func TestPhase21OCICreateFailsClosedForUnavailableNetwork(t *testing.T) {
+	_, mem, ts, cookie, clusterID, _ := phase21Ready(t)
+	nets, err := mem.ListNetworks(context.Background(), clusterID)
+	if err != nil || len(nets) == 0 {
+		t.Fatalf("network fixture: %v %d", err, len(nets))
+	}
+	offlineNet := uuid.NewString()
+	if err := mem.CreateNetwork(context.Background(), appdb.Network{
+		ID: offlineNet, ClusterID: clusterID, NodeID: nets[0].NodeID, Name: "iso-offline",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusUnavailable, BridgeName: "ndlcafe00ff",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","network_id":"` + offlineNet + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable network %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "an available network is required") {
+		t.Fatalf("unavailable network body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list an OCI workload whose network apply cannot attach: %+v", items)
 	}
 }
 

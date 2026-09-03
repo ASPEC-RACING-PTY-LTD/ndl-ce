@@ -206,6 +206,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM create refuses an extra data disk whose storage pool is
     unavailable before persist. GET /workloads no longer lists a VM
     whose extra volume start cannot attach.
+  * OCI create refuses an unavailable volume, storage pool, or
+    network before persist. GET /workloads no longer lists a
+    container whose mount or NIC apply cannot attach.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -195,9 +196,15 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 		if err != nil || vol == nil {
 			return appdb.Workload{}, false, errNotFound("volume not found")
 		}
+		if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
+			return appdb.Workload{}, false, errConflict("storage is unavailable")
+		}
 		pool, err := s.Store.GetStoragePool(ctx, p.User.ClusterID, vol.PoolID)
 		if err != nil || pool == nil {
 			return appdb.Workload{}, false, errUnprocessable("volume pool unavailable")
+		}
+		if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+			return appdb.Workload{}, false, errConflict("storage is unavailable")
 		}
 		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
 		if err != nil {
@@ -219,6 +226,9 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 		n, err := s.Store.GetNetwork(ctx, p.User.ClusterID, req.NetworkID)
 		if err != nil || n == nil {
 			return appdb.Workload{}, false, errNotFound("network not found")
+		}
+		if n.Status != ndnet.StatusAvailable && n.Status != ndnet.StatusWarning {
+			return appdb.Workload{}, false, errConflict("an available network is required")
 		}
 		netw = n
 	}
