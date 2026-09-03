@@ -335,11 +335,24 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		return nil, nil, "", nil, errConflict("an available network is required")
 	}
 	if existing, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existing != nil {
-		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, existing.BackendRef)
+		if existing.Class != storage.ClassContainerRoot {
+			return nil, nil, "", nil, errConflict("volume is not a container-root")
+		}
+		if existing.Status != storage.StatusAvailable && existing.Status != storage.StatusWarning {
+			return nil, nil, "", nil, errConflict("storage is unavailable")
+		}
+		vpool, err := s.Store.GetStoragePool(ctx, clusterID, existing.PoolID)
+		if err != nil || vpool == nil {
+			return nil, nil, "", nil, errConflict("storage pool is not found")
+		}
+		if vpool.Status != storage.StatusAvailable && vpool.Status != storage.StatusWarning {
+			return nil, nil, "", nil, errConflict("storage is unavailable")
+		}
+		loc, err := storage.HostVolumePath(vpool.BackendType, vpool.RootPath, existing.BackendRef)
 		if err != nil {
 			return nil, nil, "", nil, errConflict("volume locator is invalid")
 		}
-		return pool, netw, loc, existing, nil
+		return vpool, netw, loc, existing, nil
 	}
 	if pool.BackendType == storage.BackendZFS {
 		row, err := s.createZFSVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, lxc.DefaultRootSize)

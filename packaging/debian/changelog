@@ -215,6 +215,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM create and PATCH refuse ISO or cloud-image library items whose
     storage pool is unavailable before persist. GET spec no longer
     claims media start or convert cannot read.
+  * System-container create with an existing volume_id refuses a
+    non-container-root class and an unavailable volume or pool, and
+    joins rootfs under that volume's pool. GET /workloads no longer
+    lists a container whose root apply cannot mount.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

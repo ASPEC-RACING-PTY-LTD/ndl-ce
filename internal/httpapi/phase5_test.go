@@ -821,3 +821,189 @@ func TestWorkloadCloneFailsClosedWhenVolumePersistFails(t *testing.T) {
 		t.Fatalf("volume persist body %s", raw)
 	}
 }
+
+func postSystemContainerWithVolume(t *testing.T, ts *httptest.Server, cookie, poolID, netID, volID, name string) (int, []byte) {
+	t.Helper()
+	body := `{"name":"` + name + `","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","volume_id":"` + volID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	return res.StatusCode, raw
+}
+
+func TestCTCreateFailsClosedForUnavailableRootVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusUnavailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	code, raw := postSystemContainerWithVolume(t, ts, cookie, poolID, netID, volID, "alpine-offline")
+	if code != http.StatusConflict {
+		t.Fatalf("unavailable root volume %d %s", code, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable root volume body %s", raw)
+	}
+	if fw.creates != 0 {
+		t.Fatal("CreateCT must not run for an unavailable root volume")
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a container whose root volume apply cannot mount: %+v", items)
+	}
+}
+
+func TestCTCreateFailsClosedForUnavailableRootPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: cluster.ID, NodeID: nodeID, Name: "ct-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/ct-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: offlinePool,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	code, raw := postSystemContainerWithVolume(t, ts, cookie, poolID, netID, volID, "alpine-pool-offline")
+	if code != http.StatusConflict {
+		t.Fatalf("unavailable root pool %d %s", code, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable root pool body %s", raw)
+	}
+	if fw.creates != 0 {
+		t.Fatal("CreateCT must not run for an unavailable root pool")
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a container whose root pool apply cannot mount: %+v", items)
+	}
+}
+
+func TestCTCreateFailsClosedForNonContainerRootVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/" + volID + ".qcow2", SizeBytes: 1 << 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	code, raw := postSystemContainerWithVolume(t, ts, cookie, poolID, netID, volID, "alpine-vmdisk")
+	if code != http.StatusConflict {
+		t.Fatalf("non container-root volume %d %s", code, raw)
+	}
+	if !strings.Contains(string(raw), "volume is not a container-root") {
+		t.Fatalf("non container-root volume body %s", raw)
+	}
+	if fw.creates != 0 {
+		t.Fatal("CreateCT must not run for a vm-disk root")
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a container whose root volume apply cannot mount: %+v", items)
+	}
+}
+
+func TestCTCreateJoinsExistingRootUnderVolumePool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraPool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: extraPool, ClusterID: cluster.ID, NodeID: nodeID, Name: "ct-extra",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: "/var/lib/ndl/storage/ct-extra",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: extraPool,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	code, raw := postSystemContainerWithVolume(t, ts, cookie, poolID, netID, volID, "alpine-extra-pool")
+	if code != http.StatusCreated {
+		t.Fatalf("existing root volume %d %s", code, raw)
+	}
+	if fw.creates != 1 {
+		t.Fatalf("CreateCT calls %d", fw.creates)
+	}
+	if !strings.Contains(fw.lastSpec.RootfsPath, "/var/lib/ndl/storage/ct-extra/") {
+		t.Fatalf("CreateCT must join under the volume pool, not the request pool: %s", fw.lastSpec.RootfsPath)
+	}
+	if strings.Contains(fw.lastSpec.RootfsPath, "/var/lib/ndl/storage/local/") {
+		t.Fatalf("CreateCT must not join the request pool root: %s", fw.lastSpec.RootfsPath)
+	}
+	if fw.lastSpec.VolumeID != volID {
+		t.Fatalf("CreateCT volume_id %s", fw.lastSpec.VolumeID)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 || disks[0].VolumeID != volID {
+		t.Fatalf("GET disks must list the existing root volume: %+v", disks)
+	}
+}
