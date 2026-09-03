@@ -131,7 +131,11 @@ func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	res, _, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "check", Channel: hostos.ChannelStable, DryRun: true})
+	res, _, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "check", Channel: hostos.ChannelStable, DryRun: true})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	items := make([]map[string]any, 0, len(res.Items))
 	for _, it := range res.Items {
 		items = append(items, map[string]any{
@@ -156,7 +160,11 @@ func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	res, _, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "preflight", Channel: hostos.ChannelStable, DryRun: true})
+	res, _, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "preflight", Channel: hostos.ChannelStable, DryRun: true})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	checks := make([]map[string]any, 0, len(res.Checks))
 	for _, c := range res.Checks {
 		name, status, detail := c.Name, c.Status, c.Detail
@@ -188,7 +196,11 @@ func (s *Server) checkpointUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := uuid.NewString()
-	res, _, _ := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "checkpoint", Channel: hostos.ChannelStable, CheckpointID: id})
+	res, _, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "checkpoint", Channel: hostos.ChannelStable, CheckpointID: id})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	status := res.Status
 	if !res.Supported {
 		status = appdb.UpdateUnsupported
@@ -271,7 +283,9 @@ func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateReq
 		op.Packages = []string{"ndl-control"}
 		op.Version = req.Version
 	}
-	_ = s.Store.CreateUpdateOperation(r.Context(), op)
+	if err := s.Store.CreateUpdateOperation(r.Context(), op); err != nil {
+		return hostos.UpdateResult{}, op, errInternal("could not record update operation")
+	}
 	res, err := s.updater().HostUpdate(r.Context(), req)
 	finished := s.now()
 	op.FinishedAt = &finished

@@ -342,6 +342,22 @@ func TestUpdatesApplySupportedDoesNotStopGuests(t *testing.T) {
 	if op["status"] != "succeeded" || op["action"] != "apply" {
 		t.Fatalf("%s", b)
 	}
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	raw, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if got.StatusCode != http.StatusOK {
+		t.Fatalf("get updates %d %s", got.StatusCode, raw)
+	}
+	var listed map[string]any
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	last, _ := listed["last_operation"].(map[string]any)
+	if last == nil || last["id"] != op["id"] || last["status"] != "succeeded" {
+		t.Fatalf("apply 200 must match GET last_operation %s", raw)
+	}
 }
 
 type failUpdateUpdateOperationStore struct {
@@ -372,5 +388,50 @@ func TestUpdatesApplyFailsClosedWhenPersistFails(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "could not record update operation") {
 		t.Fatalf("apply persist body %s", b)
+	}
+}
+
+type failCreateUpdateOperationStore struct {
+	appdb.Store
+}
+
+func (f failCreateUpdateOperationStore) CreateUpdateOperation(context.Context, appdb.UpdateOperation) error {
+	return errors.New("persist failed")
+}
+
+func TestUpdatesApplyFailsClosedWhenCreatePersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	fu := &fakeUpdate{supported: true}
+	s.Update = fu
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failCreateUpdateOperationStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/apply", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "apply-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("apply create persist %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record update operation") {
+		t.Fatalf("apply create persist body %s", b)
+	}
+	for _, call := range fu.calls {
+		if call.Action == "apply" {
+			t.Fatalf("host apply must not run when the operation row cannot be recorded: %+v", fu.calls)
+		}
+	}
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	raw, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if strings.Contains(string(raw), `"action":"apply"`) {
+		t.Fatalf("GET last_operation must not invent apply %s", raw)
 	}
 }
