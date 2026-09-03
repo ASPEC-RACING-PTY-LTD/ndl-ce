@@ -254,6 +254,9 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 	if lib.Status != storage.StatusAvailable {
 		return nil, errConflict("library item is unavailable")
 	}
+	if lib.Kind != storage.LibraryDiskImage && lib.Kind != storage.LibraryCloudImage {
+		return nil, errConflict("library item is not a disk image")
+	}
 	libPool, err := s.Store.GetStoragePool(ctx, clusterID, lib.PoolID)
 	if err != nil || libPool == nil {
 		return nil, errConflict("library storage is unavailable")

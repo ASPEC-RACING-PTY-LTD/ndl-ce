@@ -1246,6 +1246,49 @@ func TestPhase18ImportFailsClosedForUnavailableLibrary(t *testing.T) {
 	}
 }
 
+func TestPhase18ImportFailsClosedForISOLibrary(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	fb := &fakeBackup{}
+	s.Backup = fb
+	libID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: poolID, Kind: storage.LibraryISO,
+		DisplayName: "debian.iso", BackendRef: "library/iso/" + libID + ".iso", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	body := `{"name":"imported","library_id":"` + libID + `","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("iso import %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "library item is not a disk image") {
+		t.Fatalf("iso import body %s", raw)
+	}
+	for _, c := range fb.copies {
+		if c[0] == qemu.BackupCopy {
+			t.Fatalf("CopyBackup must not qemu-img an ISO as qcow2: %+v", fb.copies)
+		}
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose boot disk is an ISO library item: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume copy cannot use: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
 func TestPhase18ImportFailsClosedForUnavailableLibraryPool(t *testing.T) {
 	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
 	offlinePool := uuid.NewString()
