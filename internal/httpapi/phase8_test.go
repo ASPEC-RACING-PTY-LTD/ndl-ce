@@ -878,6 +878,94 @@ func TestVMCreateFailsClosedForMissingExtraNICNetwork(t *testing.T) {
 	}
 }
 
+func TestVMCreateFailsClosedForMissingExtraDataVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	missing := uuid.NewString()
+	body := `{"name":"ghost-disk","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"disks":[{"role":"boot"},{"role":"data","volume_id":"` + missing + `"}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing extra data volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "data volume is not found") {
+		t.Fatalf("missing extra data volume body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose spec.disks volume_id GET /volumes would miss: %+v", items)
+	}
+	vols, _ := mem.ListVolumes(context.Background(), cluster.ID, poolID)
+	for _, v := range vols {
+		if v.ID == missing {
+			t.Fatalf("missing volume_id must not appear in GET /volumes: %+v", v)
+		}
+	}
+}
+
+func TestVMCreateFailsClosedForNonVMDiskExtraDataVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extra := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extra, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/container-root/extra",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"bad-disk","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"disks":[{"role":"boot"},{"role":"data","volume_id":"` + extra + `"}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("non vm-disk extra data volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "data volume is not a vm-disk") {
+		t.Fatalf("non vm-disk extra data volume body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose extra data volume apply cannot attach: %+v", items)
+	}
+}
+
 func TestVMCreateRecordsExtraNICNetwork(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

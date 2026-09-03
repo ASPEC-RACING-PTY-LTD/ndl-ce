@@ -422,3 +422,10 @@ func (m *Memory) Audits() []AuditEvent {
 	defer m.mu.Unlock()
 	return append([]AuditEvent{}, m.audit...)
 }
+
+func lessCreatedAtID(a, b time.Time, idA, idB string) bool {
+	if !a.Equal(b) {
+		return a.Before(b)
+	}
+	return idA < idB
+}

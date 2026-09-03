@@ -121,7 +121,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7)`, r.ID, r.ClusterID, r.NetworkID, r.MAC, r.IPv4, r
 func (p *Postgres) ListReservations(ctx context.Context, clusterID, networkID string) ([]DHCPReservation, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, network_id::text, mac, ipv4, hostname, created_at
-FROM dhcp_reservations WHERE cluster_id=$1 AND ($2='' OR network_id::text=$2) ORDER BY created_at`, clusterID, networkID)
+FROM dhcp_reservations WHERE cluster_id=$1 AND ($2='' OR network_id::text=$2) ORDER BY created_at, id`, clusterID, networkID)
 	if err != nil {
 		return nil, err
 	}

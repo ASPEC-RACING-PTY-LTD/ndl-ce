@@ -22,7 +22,7 @@ VALUES ($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 func (p *Postgres) ListNetworkVLANs(ctx context.Context, clusterID string) ([]NetworkVLAN, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, COALESCE(network_id::text,''), name, vid, parent_ifname, access_ifname, mode, locator, status, reason, created_at
-FROM network_vlans WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM network_vlans WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, b.ID, b.ClusterID, b.Name, b.Mode, members
 func (p *Postgres) ListNetworkBonds(ctx context.Context, clusterID string) ([]NetworkBond, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, name, mode, members, locator, status, reason, created_at
-FROM network_bonds WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM network_bonds WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ VALUES ($1,$2,$3,$4,NULLIF($5,'')::uuid,NULLIF($6,'')::uuid,$7,$8,$9,$10,$11)`,
 func (p *Postgres) ListNetworkPolicies(ctx context.Context, clusterID string) ([]NetworkPolicy, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, name, action, COALESCE(src_workload_id::text,''), COALESCE(dst_workload_id::text,''), src_mac, dst_mac, status, reason, created_at
-FROM network_policies WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM network_policies WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, o.ID, o.ClusterID, o.Name, o.VNI, o.Locator, 
 func (p *Postgres) ListNetworkOverlays(ctx context.Context, clusterID string) ([]NetworkOverlay, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, name, vni, locator, status, reason, created_at
-FROM network_overlays WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM network_overlays WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"sort"
 	"time"
 )
 
@@ -83,6 +84,9 @@ func (m *Memory) ListNetworkVLANs(_ context.Context, clusterID string) ([]Networ
 			out = append(out, v)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
@@ -108,6 +112,9 @@ func (m *Memory) ListNetworkBonds(_ context.Context, clusterID string) ([]Networ
 			out = append(out, b)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
@@ -133,6 +140,9 @@ func (m *Memory) ListNetworkPolicies(_ context.Context, clusterID string) ([]Net
 			out = append(out, p)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
@@ -181,5 +191,8 @@ func (m *Memory) ListNetworkOverlays(_ context.Context, clusterID string) ([]Net
 			out = append(out, o)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }

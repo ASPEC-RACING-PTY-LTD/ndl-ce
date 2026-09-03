@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -116,5 +117,8 @@ func (m *Memory) ListReservations(_ context.Context, clusterID, networkID string
 			out = append(out, r)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }

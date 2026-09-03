@@ -192,6 +192,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Workload disk list is ordered by slot, created_at, then id,
     matching Postgres. GET /workloads disks no longer shuffles extra
     data disks under Memory map iteration.
+  * GET /networks vlan, bond, policy, and overlay lists, and GET
+    reservations, are ordered by created_at then id, matching
+    Postgres. Nested catalog arrays no longer shuffle under Memory
+    map iteration.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
