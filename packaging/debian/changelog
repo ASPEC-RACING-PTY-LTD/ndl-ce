@@ -76,6 +76,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Files chmod applies mode 0. Omitted mode is still required; mkdir still defaults 0755.
   * Restore-replace refuses extra data disks like restore-as-new. Boot replace does not mix with unrestored data volumes.
   * PCI attach applies the union of VFIO hosts already assigned to the VM. A second passthrough does not drop the first from frozen argv. GPU VFIO assign merges and unassign subtracts instead of wiping every host.
+  * GPU VFIO assign records pci_hosts on the VM spec so start reprepare cannot drop the bound devices. Unassign removes those hosts from spec.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

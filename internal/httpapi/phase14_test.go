@@ -201,6 +201,10 @@ func TestGPUViewerDeniedAndVFIONeedsSnapshot(t *testing.T) {
 	if len(devs) != 2 {
 		t.Fatalf("group completeness %s", b)
 	}
+	gotWL, _ := mem.GetWorkload(context.Background(), cluster.ID, vm.ID)
+	if gotWL == nil || !strings.Contains(string(gotWL.SpecJSON), "0000:02:00.0") || !strings.Contains(string(gotWL.SpecJSON), "0000:02:00.1") {
+		t.Fatalf("VFIO assign must persist pci_hosts %+v", gotWL)
+	}
 
 	running := vm
 	running.Status = lxc.StatusRunning
@@ -212,6 +216,10 @@ func TestGPUViewerDeniedAndVFIONeedsSnapshot(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("unassign %d", res.StatusCode)
+	}
+	gotWL, _ = mem.GetWorkload(context.Background(), cluster.ID, vm.ID)
+	if gotWL != nil && (strings.Contains(string(gotWL.SpecJSON), "0000:02:00.0") || strings.Contains(string(gotWL.SpecJSON), "0000:02:00.1")) {
+		t.Fatalf("VFIO unassign must drop pci_hosts %+v", gotWL)
 	}
 	_ = mem.CreateSnapshot(context.Background(), appdb.Snapshot{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: vm.ID, Name: "pre-vfio-2", Status: appdb.SnapshotAvailable})
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(`{"gpu_id":"0000:02:00.0","workload_id":"`+vm.ID+`","mode":"vfio"}`))

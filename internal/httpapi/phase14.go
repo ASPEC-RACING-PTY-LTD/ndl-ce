@@ -211,12 +211,26 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
+	origSpec := wl.SpecJSON
+	if mode == gpu.ModeVFIO {
+		hosts := vfioHostsForWorkload(r.Context(), s, p.User.ClusterID, wl.ID, parsed)
+		if err := persistVFIOHosts(r.Context(), s, *wl, hosts); err != nil {
+			_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
+			writeErr(w, http.StatusInternalServerError, "could not record VFIO spec")
+			return
+		}
+	}
 	res, err := s.gpus().GPUAssign(r.Context(), gpu.AssignRequest{
 		Action: "assign", GPUID: gpuID, WorkloadID: wl.ID, Mode: mode, Exclusive: exclusive,
 		PCIDevices: pci, DeviceNodes: nodes,
 	})
 	if gpuApplyFailed(res, err) || (res.Status != "" && res.Status != gpu.StatusAssigned) {
 		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
+		if mode == gpu.ModeVFIO {
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
+				ID: wl.ID, SpecJSON: origSpec, Firmware: wl.Firmware, CPUs: wl.CPUs, MemoryBytes: wl.MemoryBytes,
+			})
+		}
 		writeErr(w, http.StatusBadGateway, gpuApplyError(res, err))
 		return
 	}
@@ -241,11 +255,31 @@ func (s *Server) unassignGPU(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "assignment not found")
 		return
 	}
+	var origSpec []byte
+	var vfioRow *appdb.Workload
+	if a.Mode == gpu.ModeVFIO {
+		if wl, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, a.WorkloadID); wl != nil {
+			vfioRow = wl
+			origSpec = append([]byte(nil), wl.SpecJSON...)
+			_, invRow, _ := s.cachedNode(r, p.User.ClusterID)
+			parsed, _ := decodeInv(invRow)
+			hosts := vfioHostsForWorkload(r.Context(), s, p.User.ClusterID, wl.ID, parsed, a.ID)
+			if err := persistVFIOHosts(r.Context(), s, *wl, hosts); err != nil {
+				writeErr(w, http.StatusInternalServerError, "could not record VFIO spec")
+				return
+			}
+		}
+	}
 	res, applyErr := s.gpus().GPUAssign(r.Context(), gpu.AssignRequest{
 		Action: "unassign", GPUID: a.GPUID, WorkloadID: a.WorkloadID, Mode: a.Mode,
 		PCIDevices: a.PCIDevices, DeviceNodes: a.DeviceNodes,
 	})
 	if gpuApplyFailed(res, applyErr) {
+		if vfioRow != nil {
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
+				ID: vfioRow.ID, SpecJSON: origSpec, Firmware: vfioRow.Firmware, CPUs: vfioRow.CPUs, MemoryBytes: vfioRow.MemoryBytes,
+			})
+		}
 		writeErr(w, http.StatusBadGateway, gpuApplyError(res, applyErr))
 		return
 	}

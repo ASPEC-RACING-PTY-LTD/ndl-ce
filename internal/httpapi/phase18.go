@@ -714,23 +714,12 @@ func (s *Server) attachPCI(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
-	spec, _ := vmspec.Parse(row.SpecJSON)
-	foundHost := false
-	for _, h := range spec.PCIHosts {
-		if strings.EqualFold(h, id) {
-			foundHost = true
-			break
-		}
-	}
-	if !foundHost {
-		spec.PCIHosts = append(spec.PCIHosts, id)
-	}
-	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes}); err != nil {
+	hosts := vfioHostsForWorkload(r.Context(), s, p.User.ClusterID, row.ID, parsed)
+	if err := persistVFIOHosts(r.Context(), s, *row, hosts); err != nil {
 		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
 		writeErr(w, http.StatusInternalServerError, "could not record PCI spec")
 		return
 	}
-	hosts := vfioHostsForWorkload(r.Context(), s, p.User.ClusterID, row.ID, parsed)
 	if err := s.VM.ApplyVFIO(r.Context(), row.ID, hosts); err != nil {
 		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
 		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
@@ -786,8 +775,26 @@ func pciGroupHosts(id string, inv inventory.Inventory) []string {
 	return hosts
 }
 
-func vfioHostsForWorkload(ctx context.Context, s *Server, clusterID, workloadID string, inv inventory.Inventory) []string {
+func persistVFIOHosts(ctx context.Context, s *Server, row appdb.Workload, hosts []string) error {
+	spec, err := vmspec.Parse(row.SpecJSON)
+	if err != nil {
+		return err
+	}
+	spec.PCIHosts = hosts
+	return s.Store.UpdateWorkloadSpec(ctx, appdb.Workload{
+		ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware,
+		CPUs: row.CPUs, MemoryBytes: row.MemoryBytes,
+	})
+}
+
+func vfioHostsForWorkload(ctx context.Context, s *Server, clusterID, workloadID string, inv inventory.Inventory, skipAssignIDs ...string) []string {
 	assigns, _ := s.Store.ListGPUAssignments(ctx, clusterID)
+	skip := map[string]struct{}{}
+	for _, id := range skipAssignIDs {
+		if strings.TrimSpace(id) != "" {
+			skip[id] = struct{}{}
+		}
+	}
 	seen := map[string]struct{}{}
 	hosts := make([]string, 0)
 	add := func(id string) {
@@ -803,6 +810,9 @@ func vfioHostsForWorkload(ctx context.Context, s *Server, clusterID, workloadID 
 	}
 	for _, a := range assigns {
 		if a.WorkloadID != workloadID || a.Mode != gpu.ModeVFIO {
+			continue
+		}
+		if _, ok := skip[a.ID]; ok {
 			continue
 		}
 		for _, h := range pciGroupHosts(a.GPUID, inv) {

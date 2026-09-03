@@ -846,4 +846,23 @@ func TestPhase18PCIAttachKeepsAssignedGPUVFIO(t *testing.T) {
 	if _, ok := hosts["0000:03:00.0"]; !ok {
 		t.Fatalf("pci attach missing PCI VFIO host: %+v", hosts)
 	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl == nil || !strings.Contains(string(wl.SpecJSON), "0000:02:00.0") || !strings.Contains(string(wl.SpecJSON), "0000:03:00.0") {
+		t.Fatalf("spec must keep GPU and PCI hosts %+v", wl)
+	}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader(`{}`))
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(start)
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("start %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	hosts = vfioHostSet(s.VM.(*fakeVM))
+	if _, ok := hosts["0000:02:00.0"]; !ok {
+		t.Fatalf("start reprepare dropped GPU VFIO host: %+v", hosts)
+	}
+	if _, ok := hosts["0000:03:00.0"]; !ok {
+		t.Fatalf("start reprepare dropped PCI VFIO host: %+v", hosts)
+	}
 }
