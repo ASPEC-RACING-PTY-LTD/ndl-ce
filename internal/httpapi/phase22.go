@@ -507,7 +507,7 @@ func (s *Server) resolveStackVolumes(ctx context.Context, clusterID, poolID stri
 		if err != nil || pool == nil {
 			return errNotFound("pool not found")
 		}
-		if pool.Status == storage.StatusUnavailable {
+		if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 			return errConflict("storage pool is unavailable")
 		}
 		if s.Storage == nil {

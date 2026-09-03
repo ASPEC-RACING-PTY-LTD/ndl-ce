@@ -236,6 +236,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Migration disk import refuses an unavailable dest pool or
     network before persist. GET /workloads no longer lists an
     import copy or start cannot apply, and no dest volume is stored.
+  * Volume create, library upload, stack named-volume import, and
+    distributed RBD create refuse a failed storage pool, matching
+    available-or-warning. GET no longer lists a volume, image, or
+    stack whose apply cannot allocate.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

@@ -348,3 +348,79 @@ func TestStorageViewerCannotMutate(t *testing.T) {
 	}
 	_ = res.Body.Close()
 }
+
+func TestDirectoryVolumeCreateFailsClosedForFailedPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/x.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	failedPool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: failedPool, ClusterID: cluster.ID, Name: "failed-vol",
+		BackendType: storage.BackendDirectory, Status: storage.StatusFailed,
+		RootPath: "/var/lib/ndl/storage/failed-vol",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	volsBefore, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	body, _ := json.Marshal(map[string]any{"pool_id": failedPool, "class": "vm-disk", "size_bytes": 1 << 30})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("failed pool volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("failed pool volume body %s", raw)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("GET must not list a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestStorageUploadFailsClosedForFailedPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	failedPool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: failedPool, ClusterID: cluster.ID, NodeID: nodeID, Name: "failed-img",
+		BackendType: storage.BackendDirectory, Status: storage.StatusFailed, RootPath: "/mnt/failed-img",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{img: storage.UploadResult{
+		ItemID: uuid.NewString(), PoolID: failedPool, Kind: storage.LibraryISO, DisplayName: "test.iso",
+		BackendRef: "library/iso/x.iso", SizeBytes: 32, SHA256: "abc123",
+	}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	libsBefore, _ := mem.ListLibraryItems(context.Background(), cluster.ID, "")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/images?pool_id="+failedPool+"&kind=iso&filename=test.iso", strings.NewReader("not-used"))
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("failed pool upload %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("failed pool upload body %s", raw)
+	}
+	libsAfter, _ := mem.ListLibraryItems(context.Background(), cluster.ID, "")
+	if len(libsAfter) != len(libsBefore) {
+		t.Fatalf("GET must not list a library item upload cannot write: %d -> %d", len(libsBefore), len(libsAfter))
+	}
+}

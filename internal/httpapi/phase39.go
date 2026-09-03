@@ -201,7 +201,7 @@ func (s *Server) createDistributedVolume(ctx context.Context, clusterID string, 
 	if class != storage.ClassVMDisk {
 		return appdb.Volume{}, errUnprocessable("distributed pools store VM disk RBDs")
 	}
-	if pool.Status == storage.StatusUnavailable {
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return appdb.Volume{}, errUnprocessable(firstNonEmpty(pool.Reason, storage.ClusterDownMsg))
 	}
 	dp, _ := s.Store.GetDistributedPool(ctx, pool.ID)

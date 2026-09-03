@@ -540,3 +540,37 @@ services:
 		t.Fatalf("operator privileged patch %d %s", res.StatusCode, b)
 	}
 }
+
+func TestPhase22ImportFailsClosedForFailedPool(t *testing.T) {
+	_, mem, ts, cookie, clusterID, _, _ := phase22Ready(t)
+	failedPool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: failedPool, ClusterID: clusterID, Name: "stack-failed",
+		BackendType: storage.BackendDirectory, Status: storage.StatusFailed,
+		RootPath: "/var/lib/ndl/storage/stack-failed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	body, _ := json.Marshal(map[string]any{"name": "needs-vol", "compose": composeFixture, "pool_id": failedPool})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/stacks/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("failed pool stack import %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("failed pool stack import body %s", raw)
+	}
+	stacks, _ := mem.ListStacks(context.Background(), clusterID)
+	if len(stacks) != 0 {
+		t.Fatalf("GET must not list a stack whose named volumes apply cannot allocate: %+v", stacks)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}

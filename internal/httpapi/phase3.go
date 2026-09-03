@@ -184,7 +184,7 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "pool not found")
 		return
 	}
-	if pool.Status == storage.StatusUnavailable {
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		writeErr(w, http.StatusConflict, "storage pool is unavailable")
 		return
 	}
@@ -326,7 +326,7 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "pool not found")
 		return
 	}
-	if pool.Status == storage.StatusUnavailable {
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		writeErr(w, http.StatusConflict, "storage pool is unavailable")
 		return
 	}
