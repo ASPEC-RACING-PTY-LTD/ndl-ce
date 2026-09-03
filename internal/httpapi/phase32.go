@@ -19,6 +19,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
+	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
 const destAgentMissing = "dest agent is not connected; source remains running"
@@ -360,9 +361,44 @@ func argvFromJSON(raw json.RawMessage) []string {
 	return wrap.Argv
 }
 
+func refuseMigrateExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appdb.WorkloadDisk) error {
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != bootVolID {
+			return errUnprocessable("migrate of additional data disks is not implemented")
+		}
+	}
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != bootVolID {
+			return errUnprocessable("migrate of additional data disks is not implemented")
+		}
+	}
+	return nil
+}
+
+func migrateBootVolumeID(spec vmspec.Spec, disks []appdb.WorkloadDisk) string {
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleBoot && strings.TrimSpace(d.VolumeID) != "" {
+			return d.VolumeID
+		}
+	}
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleBoot && strings.TrimSpace(d.VolumeID) != "" {
+			return d.VolumeID
+		}
+	}
+	if len(disks) > 0 {
+		return disks[0].VolumeID
+	}
+	return ""
+}
+
 func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload, dest *appdb.Node) (bool, []migrate.VolumeCopy, error) {
 	disks, _ := s.Store.ListWorkloadDisks(ctx, wl.ClusterID, wl.ID)
 	out := []migrate.VolumeCopy{}
+	spec, _ := vmspec.Parse(wl.SpecJSON)
+	if err := refuseMigrateExtraDataDisks(spec, migrateBootVolumeID(spec, disks), disks); err != nil {
+		return false, nil, err
+	}
 	if len(disks) == 0 {
 		return true, out, nil
 	}

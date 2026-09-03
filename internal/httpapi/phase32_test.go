@@ -16,6 +16,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/storage"
+	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
 func TestPhase32LiveMigrateMovesOwnership(t *testing.T) {
@@ -132,6 +133,106 @@ func TestPhase32MigrateFailsClosedForUnavailableVolume(t *testing.T) {
 	jobs, _ := mem.ListMigrateJobs(t.Context(), clusterRow.ID, 50)
 	if len(jobs) != 0 {
 		t.Fatalf("migrate must not persist a job copy cannot read: %+v", jobs)
+	}
+}
+
+func TestPhase32MigrateFailsClosedForExtraDataDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	fake := migrate.NewFake()
+	s.Migrate = fake
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: clusterRow.ID, Name: "box-b", Role: "worker", Hostname: "box-b"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	pool := appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, Name: "mig-extra",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}
+	if err := mem.CreateStoragePool(t.Context(), pool); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateStoragePool(t.Context(), appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: worker.ID, Name: "dest-dir",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	boot := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, PoolID: pool.ID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/boot.qcow2",
+	}
+	extra := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, PoolID: pool.ID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/extra.qcow2",
+	}
+	for _, vol := range []appdb.Volume{boot, extra} {
+		if err := mem.CreateVolume(t.Context(), vol); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wlID := uuid.NewString()
+	fake.SetSourceRunning(wlID, true)
+	spec := vmspec.Spec{
+		Name: "extra-move", CPUs: 1, MemoryBytes: 128 << 20,
+		Disks: []vmspec.Disk{
+			{Role: vmspec.DiskRoleBoot, VolumeID: boot.ID, Format: storage.FormatQCOW2},
+			{Role: vmspec.DiskRoleData, VolumeID: extra.ID, Format: storage.FormatQCOW2},
+		},
+	}
+	if err := mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: wlID, ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID,
+		Name: spec.Name, Kind: vmspec.KindVM, Status: "running",
+		CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, SpecJSON: vmspec.MustJSON(spec),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: wlID, VolumeID: boot.ID,
+		Role: vmspec.DiskRoleBoot, Slot: 0, Format: storage.FormatQCOW2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: wlID, VolumeID: extra.ID,
+		Role: vmspec.DiskRoleData, Slot: 1, Format: storage.FormatQCOW2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"dest_node_id":"` + worker.ID + `","mode":"live"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+wlID+"/migrate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("extra data disk migrate %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "additional data disks") {
+		t.Fatalf("extra data disk migrate body %s", raw)
+	}
+	if len(fake.Copies) != 0 {
+		t.Fatalf("CopyVolume must not copy boot and drop extra disks: %+v", fake.Copies)
+	}
+	got, _ := mem.GetWorkload(t.Context(), clusterRow.ID, wlID)
+	if got == nil || got.NodeID != control.ID || got.OwnershipEpoch != 0 {
+		t.Fatalf("GET must not claim dest ownership extra disks dest cannot attach: %+v", got)
+	}
+	jobs, _ := mem.ListMigrateJobs(t.Context(), clusterRow.ID, 50)
+	if len(jobs) != 0 {
+		t.Fatalf("migrate must not persist a job dest incoming cannot attach extra disks: %+v", jobs)
 	}
 }
 
