@@ -198,6 +198,19 @@ func TestFilesOpChmodAndChownStayInJail(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", info.Mode().Perm())
 	}
+	if _, err := runFilesOp(root, "chmod", "a.txt", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	info, err = os.Stat(filepath.Join(root, "a.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0 {
+		t.Fatalf("mode 0 %o", info.Mode().Perm())
+	}
+	if err := os.Chmod(filepath.Join(root, "a.txt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := runFilesOp(root, "chmod", "../a.txt", "", 0o777); err == nil {
 		t.Fatal("chmod escape must fail")
 	}

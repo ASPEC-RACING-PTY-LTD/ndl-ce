@@ -119,9 +119,6 @@ func runFilesOp(root, action, rel, dest string, mode uint32) ([]byte, error) {
 		}
 		return json.Marshal(map[string]any{"ok": true, "path": dest})
 	case "chmod":
-		if mode == 0 {
-			return nil, fmt.Errorf("mode is required")
-		}
 		if err := iojail.ChmodBeneath(root, rel, fs.FileMode(mode)); err != nil {
 			return nil, err
 		}

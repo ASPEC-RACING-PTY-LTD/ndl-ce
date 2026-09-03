@@ -50,7 +50,7 @@ type createTermRequest struct {
 type fileMutation struct {
 	Path           string `json:"path"`
 	DestPath       string `json:"dest_path"`
-	Mode           uint32 `json:"mode"`
+	Mode           *uint32 `json:"mode"`
 	UID            *int   `json:"uid"`
 	GID            *int   `json:"gid"`
 	ExpectedMtime  string `json:"expected_mtime"`
@@ -496,9 +496,17 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 				dest = fmt.Sprintf("%d:%d", uid, gid)
 			}
 		}
+		if action == "chmod" && mut.Mode == nil {
+			writeErr(w, http.StatusBadRequest, "mode is required")
+			return
+		}
+		mode := uint32(0)
+		if mut.Mode != nil {
+			mode = *mut.Mode
+		}
 		raw, err := s.IO.FilesOp(r.Context(), agentrpc.FilesCall{
 			TargetKind: kind, TargetID: id, JailRoot: jail,
-			Action: action, Path: mut.Path, DestPath: dest, Mode: mut.Mode,
+			Action: action, Path: mut.Path, DestPath: dest, Mode: mode,
 		})
 		if err != nil {
 			if action == "delete" {

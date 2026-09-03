@@ -198,9 +198,6 @@ func (h *Host) filesOp(params json.RawMessage) (json.RawMessage, error) {
 		}
 		return okResult(map[string]any{"ok": true, "path": p.Dest}), nil
 	case "chmod":
-		if p.Mode == 0 {
-			return nil, fmt.Errorf("mode is required")
-		}
 		if err := iojail.ChmodBeneath(root, p.Path, fs.FileMode(p.Mode)); err != nil {
 			return nil, err
 		}

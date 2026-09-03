@@ -753,6 +753,25 @@ func TestWorkloadFilesUploadLargeTraversalAndChmod(t *testing.T) {
 		t.Fatalf("admin chmod %d %s", res.StatusCode, b)
 	}
 	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/chmod", `{"path":"created.txt"}`)
+	if res.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("chmod missing mode %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/files/chmod", `{"path":"created.txt","mode":0}`)
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("chmod 0 %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	info, err := os.Stat(filepath.Join(s.IO.(*fakeIO).root, "created.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0 {
+		t.Fatalf("chmod 0 left mode %o", info.Mode().Perm())
+	}
 }
 
 func TestWorkloadFilesUploadSeparatesContentAndCASDigests(t *testing.T) {
