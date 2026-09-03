@@ -522,6 +522,99 @@ func TestPhase18TemplateRequiresSnapshot(t *testing.T) {
 	}
 }
 
+func TestPhase18TemplateSnapshotRecordsFrozenBacking(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	rec := &recordOverlayVM{fakeVM: &fakeVM{}}
+	s.VM = rec
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-frozen")
+	id := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, id)
+	if len(disks) == 0 {
+		t.Fatal("source disks missing")
+	}
+	vol, _ := mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if vol == nil {
+		t.Fatal("boot volume missing")
+	}
+	frozen := vol.BackendRef
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("template %d %s", res.StatusCode, b)
+	}
+	vol, _ = mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if vol == nil || !strings.Contains(vol.BackendRef, "-tmpl.qcow2") {
+		t.Fatalf("template create must retarget the boot volume tip: %+v", vol)
+	}
+	if vol.BackendRef == frozen {
+		t.Fatal("live tip must move off the frozen backing")
+	}
+
+	list, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id+"/snapshots", nil)
+	list.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	listed, _ := ts.Client().Do(list)
+	raw, _ := io.ReadAll(listed.Body)
+	_ = listed.Body.Close()
+	if listed.StatusCode != http.StatusOK {
+		t.Fatalf("snapshots %d %s", listed.StatusCode, raw)
+	}
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Items) != 1 {
+		t.Fatalf("expected template snapshot catalog row %s", raw)
+	}
+	if body.Items[0]["purpose_tag"] != "template" {
+		t.Fatalf("purpose_tag %s", raw)
+	}
+	ref, _ := body.Items[0]["backend_ref"].(string)
+	if ref != frozen {
+		t.Fatalf("template snapshot must freeze the pre-overlay backing, got %s want %s", ref, frozen)
+	}
+	if strings.Contains(ref, "-tmpl.qcow2") {
+		t.Fatalf("template snapshot backend_ref must not be the live tip %s", raw)
+	}
+
+	snapID, _ := body.Items[0]["id"].(string)
+	rb, _ := http.NewRequest("POST", ts.URL+"/api/v1/snapshots/"+snapID+"/rollback", strings.NewReader(`{}`))
+	rb.Header.Set("Content-Type", "application/json")
+	rb.Header.Set("X-Nodal-Confirm", "rollback")
+	rb.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rbRes, _ := ts.Client().Do(rb)
+	rbRaw, _ := io.ReadAll(rbRes.Body)
+	_ = rbRes.Body.Close()
+	if rbRes.StatusCode != http.StatusOK {
+		t.Fatalf("rollback %d %s", rbRes.StatusCode, rbRaw)
+	}
+	if rec.last.Action != qemu.OverlayRollback {
+		t.Fatalf("rollback action %+v", rec.last)
+	}
+	if !strings.Contains(rec.last.BackingPath, frozen) {
+		t.Fatalf("rollback backing must be frozen parent %s, got %s", frozen, rec.last.BackingPath)
+	}
+	if strings.Contains(rec.last.BackingPath, "-tmpl.qcow2") {
+		t.Fatalf("rollback must not overlay the live template tip %s", rec.last.BackingPath)
+	}
+}
+
+type recordOverlayVM struct {
+	*fakeVM
+	last qemu.OverlayRequest
+}
+
+func (f *recordOverlayVM) SnapshotVM(_ context.Context, req qemu.OverlayRequest) (qemu.OverlayResult, error) {
+	f.last = req
+	return f.fakeVM.SnapshotVM(context.Background(), req)
+}
+
 func TestPhase18FailedVFIORollsBackAssignment(t *testing.T) {
 	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-vm")

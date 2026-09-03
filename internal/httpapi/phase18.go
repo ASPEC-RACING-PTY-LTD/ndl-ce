@@ -452,13 +452,14 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(serr), serr.Error())
 		return
 	}
+	frozenRef := vol.BackendRef
 	if err := s.Store.UpdateVolumeLocator(r.Context(), p.User.ClusterID, vol.ID, overlayRel); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	snap := appdb.Snapshot{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
-		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: overlayRel, Status: "available",
+		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: frozenRef, Status: "available",
 	}
 	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
