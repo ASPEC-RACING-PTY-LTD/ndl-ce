@@ -207,6 +207,142 @@ func TestPhase32MigrateFailsClosedForZFSCopy(t *testing.T) {
 	}
 }
 
+func TestPhase32MigrateFailsClosedForUnavailableDestPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Migrate = migrate.NewFake()
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: clusterRow.ID, Name: "box-b", Role: "worker", Hostname: "box-b"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	srcPoolID := uuid.NewString()
+	if err := mem.CreateStoragePool(t.Context(), appdb.StoragePool{
+		ID: srcPoolID, ClusterID: clusterRow.ID, NodeID: control.ID, Name: "src-dir",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateStoragePool(t.Context(), appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: worker.ID, Name: "dest-dir",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: storage.DefaultPoolPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	vol := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, PoolID: srcPoolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Status: storage.StatusAvailable,
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+	}
+	if err := mem.CreateVolume(t.Context(), vol); err != nil {
+		t.Fatal(err)
+	}
+	wlID := uuid.NewString()
+	s.Migrate.(*migrate.Fake).SetSourceRunning(wlID, true)
+	if err := mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: wlID, ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID,
+		Name: "dest-down", Kind: "vm", Status: "running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: wlID, VolumeID: vol.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"dest_node_id":"` + worker.ID + `","mode":"offline"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+wlID+"/migrate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unavailable dest pool migrate %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), destLocatorMissing) {
+		t.Fatalf("unavailable dest pool migrate body %s", raw)
+	}
+	got, _ := mem.GetWorkload(t.Context(), clusterRow.ID, wlID)
+	if got == nil || got.NodeID != control.ID || got.OwnershipEpoch != 0 {
+		t.Fatalf("GET must not claim dest ownership copy cannot write: %+v", got)
+	}
+	jobs, _ := mem.ListMigrateJobs(t.Context(), clusterRow.ID, 50)
+	if len(jobs) != 0 {
+		t.Fatalf("migrate must not persist a job dest storage cannot write: %+v", jobs)
+	}
+}
+
+func TestPhase32MigrateFailsClosedForMissingSourcePool(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Migrate = migrate.NewFake()
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: clusterRow.ID, Name: "box-b", Role: "worker", Hostname: "box-b"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateStoragePool(t.Context(), appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: worker.ID, Name: "dest-dir",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	vol := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, PoolID: uuid.NewString(),
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Status: storage.StatusAvailable,
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+	}
+	if err := mem.CreateVolume(t.Context(), vol); err != nil {
+		t.Fatal(err)
+	}
+	wlID := uuid.NewString()
+	s.Migrate.(*migrate.Fake).SetSourceRunning(wlID, true)
+	if err := mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: wlID, ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID,
+		Name: "orphan-pool", Kind: "vm", Status: "running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: wlID, VolumeID: vol.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"dest_node_id":"` + worker.ID + `","mode":"offline"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+wlID+"/migrate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("missing source pool migrate %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("missing source pool migrate body %s", raw)
+	}
+	got, _ := mem.GetWorkload(t.Context(), clusterRow.ID, wlID)
+	if got == nil || got.NodeID != control.ID || got.OwnershipEpoch != 0 {
+		t.Fatalf("GET must not claim dest ownership copy cannot read: %+v", got)
+	}
+	jobs, _ := mem.ListMigrateJobs(t.Context(), clusterRow.ID, 50)
+	if len(jobs) != 0 {
+		t.Fatalf("migrate must not persist a job copy cannot read: %+v", jobs)
+	}
+}
+
 func TestPhase32FailedLiveLeavesSourceRunning(t *testing.T) {
 	s, mem, token := testServer(t)
 	fake := migrate.NewFake()

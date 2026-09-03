@@ -306,7 +306,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     raw device as qcow2. Template overlay is refused; ZFS and LVM
     snapshots stay native. GET no longer lists a clone whose start would
     attach a qcow2 as raw. Offline migrate refuses that zvol copy before
-    ownership moves.
+    ownership moves. Offline migrate also refuses a missing source pool
+    and an unavailable dest directory pool before the job is recorded.
+    GET no longer claims dest ownership copy cannot write.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

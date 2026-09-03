@@ -377,7 +377,7 @@ func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload, dest *appd
 			return false, nil, fmt.Errorf("storage is unavailable")
 		}
 		pool, _ := s.Store.GetStoragePool(ctx, wl.ClusterID, vol.PoolID)
-		if pool != nil && pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+		if pool == nil || (pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning) {
 			return false, nil, fmt.Errorf("storage pool is unavailable")
 		}
 		backend := ""
@@ -422,6 +422,9 @@ func destVolumeLocator(dest *appdb.Node, vol *appdb.Volume, src string, pools []
 	destRoot := ""
 	for _, p := range pools {
 		if p.NodeID != dest.ID || strings.TrimSpace(p.RootPath) == "" {
+			continue
+		}
+		if p.Status != storage.StatusAvailable && p.Status != storage.StatusWarning {
 			continue
 		}
 		if sharedVolume(p.BackendType, p.RootPath, nil) {
