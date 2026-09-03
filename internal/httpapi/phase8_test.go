@@ -811,6 +811,42 @@ func TestVMPatchISOLibraryFailsClosedForMissingAndWrongKind(t *testing.T) {
 		t.Fatalf("GET must not invent iso_library_id after unavailable patch: %+v", afterOffline["spec"])
 	}
 
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: cluster.ID, NodeID: nodeID, Name: "iso-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/iso-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	offlinePoolISO := uuid.NewString()
+	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: offlinePoolISO, ClusterID: cluster.ID, NodeID: nodeID, PoolID: offlinePool,
+		Kind: storage.LibraryISO, DisplayName: "pool-offline.iso",
+		BackendRef: "library/iso/" + offlinePoolISO + ".iso", Status: storage.StatusAvailable,
+	})
+	poolDenied, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"iso_library_id":"`+offlinePoolISO+`"}`))
+	poolDenied.Header.Set("Content-Type", "application/json")
+	poolDenied.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	poolRes, _ := ts.Client().Do(poolDenied)
+	poolRaw, _ := io.ReadAll(poolRes.Body)
+	_ = poolRes.Body.Close()
+	if poolRes.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable iso pool %d %s", poolRes.StatusCode, poolRaw)
+	}
+	if !strings.Contains(string(poolRaw), "installation media storage is unavailable") {
+		t.Fatalf("unavailable iso pool body %s", poolRaw)
+	}
+	get, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ = ts.Client().Do(get)
+	var afterPool map[string]any
+	_ = json.NewDecoder(got.Body).Decode(&afterPool)
+	_ = got.Body.Close()
+	if specFromCreated(afterPool).ISOLibraryID != "" {
+		t.Fatalf("GET must not invent iso_library_id after unavailable pool patch: %+v", afterPool["spec"])
+	}
+
 	isoID := uuid.NewString()
 	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
 		ID: isoID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
@@ -904,6 +940,110 @@ func TestVMCreateFailsClosedForUnavailableISO(t *testing.T) {
 	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
 	if len(items) != 0 {
 		t.Fatalf("GET must not list a VM whose iso_library_id GET /images would show unavailable: %+v", items)
+	}
+}
+
+func TestVMCreateFailsClosedForUnavailableISOPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: cluster.ID, NodeID: nodeID, Name: "iso-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/iso-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	isoID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: isoID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: offlinePool,
+		Kind: storage.LibraryISO, DisplayName: "debian.iso",
+		BackendRef: "library/iso/" + isoID + ".iso", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"iso-pool-offline","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","iso_library_id":"` + isoID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable iso pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "installation media storage is unavailable") {
+		t.Fatalf("unavailable iso pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose ISO pool start cannot attach: %+v", items)
+	}
+}
+
+func TestVMCreateFailsClosedForUnavailableCloudImagePool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: cluster.ID, NodeID: nodeID, Name: "cloud-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/cloud-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	imgID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: imgID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: offlinePool,
+		Kind: storage.LibraryCloudImage, DisplayName: "cloud.qcow2",
+		BackendRef: "library/cloud-image/" + imgID + ".qcow2", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"cloud-pool-offline","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","cloud_image_id":"` + imgID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable cloud image pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "cloud image storage is unavailable") {
+		t.Fatalf("unavailable cloud image pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose cloud image pool convert cannot read: %+v", items)
 	}
 }
 

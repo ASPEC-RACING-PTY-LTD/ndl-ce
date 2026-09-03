@@ -446,6 +446,9 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		if perr != nil || srcPool == nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("cloud image storage is unavailable")
 		}
+		if srcPool.Status != storage.StatusAvailable && srcPool.Status != storage.StatusWarning {
+			return vmspec.Resolved{}, nil, nil, convert, errConflict("cloud image storage is unavailable")
+		}
 		src, jerr := storage.JoinUnder(srcPool.RootPath, lib.BackendRef)
 		if jerr != nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("cloud image locator is invalid")
@@ -465,6 +468,9 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		}
 		isoPool, perr := s.Store.GetStoragePool(ctx, clusterID, lib.PoolID)
 		if perr != nil || isoPool == nil {
+			return vmspec.Resolved{}, nil, nil, convert, errConflict("installation media storage is unavailable")
+		}
+		if isoPool.Status != storage.StatusAvailable && isoPool.Status != storage.StatusWarning {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("installation media storage is unavailable")
 		}
 		isoPath, jerr := storage.JoinUnder(isoPool.RootPath, lib.BackendRef)
@@ -779,6 +785,11 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 				writeErr(w, http.StatusConflict, "installation media is unavailable")
 				return
 			}
+			isoPool, perr := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, lib.PoolID)
+			if perr != nil || isoPool == nil || (isoPool.Status != storage.StatusAvailable && isoPool.Status != storage.StatusWarning) {
+				writeErr(w, http.StatusConflict, "installation media storage is unavailable")
+				return
+			}
 			next.ISOLibraryID = lib.ID
 		}
 	}
@@ -1000,6 +1011,9 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 		}
 		isoPool, perr := s.Store.GetStoragePool(ctx, clusterID, lib.PoolID)
 		if perr != nil || isoPool == nil {
+			return vmspec.Resolved{}, errConflict("installation media storage is unavailable")
+		}
+		if isoPool.Status != storage.StatusAvailable && isoPool.Status != storage.StatusWarning {
 			return vmspec.Resolved{}, errConflict("installation media storage is unavailable")
 		}
 		isoPath, jerr := storage.JoinUnder(isoPool.RootPath, lib.BackendRef)
