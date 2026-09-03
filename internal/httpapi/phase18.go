@@ -217,8 +217,14 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 	if err != nil || lib == nil {
 		return nil, errNotFound("library item is not found")
 	}
+	if lib.Status != storage.StatusAvailable {
+		return nil, errConflict("library item is unavailable")
+	}
 	libPool, err := s.Store.GetStoragePool(ctx, clusterID, lib.PoolID)
 	if err != nil || libPool == nil {
+		return nil, errConflict("library storage is unavailable")
+	}
+	if libPool.Status != storage.StatusAvailable && libPool.Status != storage.StatusWarning {
 		return nil, errConflict("library storage is unavailable")
 	}
 	src, err := storage.JoinUnder(libPool.RootPath, lib.BackendRef)
@@ -236,6 +242,11 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 			return nil, errUnprocessable("no storage pool is available")
 		}
 		pool = &pools[0]
+	} else if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+		return nil, errConflict("storage pool is unavailable")
+	}
+	if _, _, err := s.resolveWorkloadNetwork(ctx, clusterID, networkID); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(name) == "" {
 		name = "imported"

@@ -1118,6 +1118,162 @@ func TestPhase18ImportFailsClosedWhenNICPersistFails(t *testing.T) {
 	}
 }
 
+func TestPhase18ImportFailsClosedForUnavailableLibrary(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	libID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: poolID, Kind: storage.LibraryDiskImage,
+		DisplayName: "disk.qcow2", BackendRef: "library/disk-image/" + libID + ".qcow2", Status: storage.StatusUnavailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	body := `{"name":"imported","library_id":"` + libID + `","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable library %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "library item is unavailable") {
+		t.Fatalf("unavailable library body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose import library GET /images would show unavailable: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume copy cannot read: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestPhase18ImportFailsClosedForUnavailableLibraryPool(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: clusterID, Name: "import-lib-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/import-lib-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	libID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: offlinePool, Kind: storage.LibraryDiskImage,
+		DisplayName: "disk.qcow2", BackendRef: "library/disk-image/" + libID + ".qcow2", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	body := `{"name":"imported","library_id":"` + libID + `","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable library pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "library storage is unavailable") {
+		t.Fatalf("unavailable library pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose import library pool copy cannot read: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume copy cannot read: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestPhase18ImportFailsClosedForUnavailableDestPool(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	libID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: poolID, Kind: storage.LibraryDiskImage,
+		DisplayName: "disk.qcow2", BackendRef: "library/disk-image/" + libID + ".qcow2", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: clusterID, Name: "import-dest-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/import-dest-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	body := `{"name":"imported","library_id":"` + libID + `","pool_id":"` + offlinePool + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable dest pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("unavailable dest pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose import dest pool apply cannot allocate: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestPhase18ImportFailsClosedForUnavailableNetwork(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	libID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: poolID, Kind: storage.LibraryDiskImage,
+		DisplayName: "disk.qcow2", BackendRef: "library/disk-image/" + libID + ".qcow2", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	offlineNet := uuid.NewString()
+	if err := mem.CreateNetwork(context.Background(), appdb.Network{
+		ID: offlineNet, ClusterID: clusterID, Name: "iso-import-offline",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusUnavailable, BridgeName: "ndlcafe00aa",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	body := `{"name":"imported","library_id":"` + libID + `","pool_id":"` + poolID + `","network_id":"` + offlineNet + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable network %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "an available network is required") {
+		t.Fatalf("unavailable network body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose import network apply cannot attach: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume whose NIC apply cannot attach: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+	_ = netID
+}
+
 func addPhase18PCI(t *testing.T, mem *appdb.Memory, clusterID, addr, group string) {
 	t.Helper()
 	node, err := mem.GetNode(context.Background(), clusterID)
