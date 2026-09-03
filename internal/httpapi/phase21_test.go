@@ -23,6 +23,7 @@ import (
 
 type fakeOCI struct {
 	lastSpec oci.Spec
+	lastLife oci.LifecycleRequest
 	runtime  *oci.FakeRuntime
 	err      error
 }
@@ -53,6 +54,7 @@ func (f *fakeOCI) CreateOCI(_ context.Context, spec oci.Spec) (oci.Result, error
 }
 
 func (f *fakeOCI) LifecycleOCI(_ context.Context, req oci.LifecycleRequest) (oci.Result, error) {
+	f.lastLife = req
 	if f.err != nil {
 		return oci.Result{}, f.err
 	}
@@ -507,6 +509,121 @@ func TestPhase21OCICreateFailsClosedForUnavailableNetwork(t *testing.T) {
 	items, _ := mem.ListWorkloads(context.Background(), clusterID)
 	if len(items) != 0 {
 		t.Fatalf("GET must not list an OCI workload whose network apply cannot attach: %+v", items)
+	}
+}
+
+func TestPhase21OCIStartFailsClosedForUnavailableVolume(t *testing.T) {
+	_, mem, ts, cookie, clusterID, fo := phase21Ready(t)
+	pools, err := mem.ListStoragePools(context.Background(), clusterID)
+	if err != nil || len(pools) == 0 {
+		t.Fatalf("pool fixture: %v %d", err, len(pools))
+	}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: clusterID, NodeID: pools[0].NodeID, PoolID: pools[0].ID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","volume_ids":["` + volID + `"],"desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: volID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	fo.lastLife = oci.LifecycleRequest{}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(start)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable volume start %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable volume start body %s", raw)
+	}
+	if fo.lastLife.Action == "start" {
+		t.Fatal("start must not call the agent when volume apply cannot mount")
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl == nil || wl.DesiredPower == "running" {
+		t.Fatalf("GET must not claim desired_power running when start cannot use storage: %+v", wl)
+	}
+}
+
+func TestPhase21OCIStartFailsClosedForUnavailableExtraVolume(t *testing.T) {
+	_, mem, ts, cookie, clusterID, fo := phase21Ready(t)
+	pools, err := mem.ListStoragePools(context.Background(), clusterID)
+	if err != nil || len(pools) == 0 {
+		t.Fatalf("pool fixture: %v %d", err, len(pools))
+	}
+	volA := uuid.NewString()
+	volB := uuid.NewString()
+	for _, id := range []string{volA, volB} {
+		if err := mem.CreateVolume(context.Background(), appdb.Volume{
+			ID: id, ClusterID: clusterID, NodeID: pools[0].NodeID, PoolID: pools[0].ID,
+			Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+			Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/" + id,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","volume_ids":["` + volA + `","` + volB + `"],"desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, id)
+	if len(disks) != 2 {
+		t.Fatalf("disks %+v", disks)
+	}
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: disks[1].VolumeID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	fo.lastLife = oci.LifecycleRequest{}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(start)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable extra volume start %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable extra volume start body %s", raw)
+	}
+	if fo.lastLife.Action == "start" {
+		t.Fatal("start must not call the agent when an extra volume apply cannot mount")
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl == nil || wl.DesiredPower == "running" {
+		t.Fatalf("GET must not claim desired_power running when start cannot use extra storage: %+v", wl)
 	}
 }
 

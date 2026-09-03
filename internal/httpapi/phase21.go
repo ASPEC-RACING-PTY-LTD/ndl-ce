@@ -325,6 +325,13 @@ func (s *Server) ociLifecycle(w http.ResponseWriter, r *http.Request, p *princip
 	if !s.guardLocalApply(w, r, p.User.ClusterID, firstNonEmpty(row.DesiredNodeID, row.NodeID), action) {
 		return
 	}
+	if action == "start" {
+		if err := s.ensureCTStartAvailable(r.Context(), p.User.ClusterID, row.ID); err != nil {
+			_ = s.Store.UpdateWorkloadObserved(r.Context(), appdb.Workload{ID: row.ID, Status: oci.StatusUnavailable, Reason: err.Error()})
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+	}
 	rpc := s.ociRPC()
 	op := s.startOp(r.Context(), p.User.ClusterID, row.NodeID, "workload."+action, action, 40)
 	res, err := rpc.LifecycleOCI(r.Context(), oci.LifecycleRequest{WorkloadID: row.ID, Action: action})

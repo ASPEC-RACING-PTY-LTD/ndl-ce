@@ -566,11 +566,13 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var ctRoot, ctVolID, ctBridge, ctMAC, ctNetID string
-	if row.Kind == lxc.KindSystemContainer {
+	if row.Kind == lxc.KindSystemContainer || row.Kind == oci.KindOCI {
 		if err := s.ensureCTStartAvailable(r.Context(), p.User.ClusterID, row.ID); err != nil {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
+	}
+	if row.Kind == lxc.KindSystemContainer {
 		ctRoot, ctVolID, ctBridge, ctMAC, ctNetID, err = s.ctApplyLocators(r.Context(), p.User.ClusterID, row.ID)
 		if err != nil {
 			writeErr(w, statusFor(err), err.Error())
@@ -637,6 +639,11 @@ func (s *Server) applyOCIDesiredPower(ctx context.Context, row appdb.Workload) e
 		action = "start"
 	default:
 		return nil
+	}
+	if action == "start" {
+		if err := s.ensureCTStartAvailable(ctx, row.ClusterID, row.ID); err != nil {
+			return err
+		}
 	}
 	_, err := s.ociRPC().LifecycleOCI(ctx, oci.LifecycleRequest{WorkloadID: row.ID, Action: action})
 	return err
@@ -718,8 +725,11 @@ func (s *Server) ensureCTStartAvailable(ctx context.Context, clusterID, workload
 	if err != nil {
 		return err
 	}
-	if len(disks) > 0 {
-		vol, err := s.Store.GetVolume(ctx, clusterID, disks[0].VolumeID)
+	for _, d := range disks {
+		if d.VolumeID == "" {
+			continue
+		}
+		vol, err := s.Store.GetVolume(ctx, clusterID, d.VolumeID)
 		if err != nil || vol == nil {
 			return errConflict("storage is unavailable")
 		}

@@ -213,7 +213,11 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     whose extra volume start cannot attach.
   * OCI create refuses an unavailable volume, storage pool, or
     network before persist. GET /workloads no longer lists a
-    container whose mount or NIC apply cannot attach.
+    container whose mount or NIC apply cannot attach. OCI start
+    and PATCH refuse an unavailable volume, pool, or network
+    before the agent start, matching system-container start.
+    GET no longer claims desired_power running when start cannot
+    mount or attach.
   * VM create and PATCH refuse installation media that is not
     available, matching cloud-image create. GET spec.iso_library_id
     no longer claims an ISO GET /images would show unavailable.
