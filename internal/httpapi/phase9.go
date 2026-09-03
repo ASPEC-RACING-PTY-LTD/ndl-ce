@@ -170,14 +170,20 @@ func (s *Server) acmeCert(w http.ResponseWriter, r *http.Request) {
 		row.NotAfter = existing.NotAfter
 		row.LastGoodFingerprint = existing.LastGoodFingerprint
 	}
-	if err := ndltls.ProbeDirectory(r.Context(), req.Directory); err != nil {
+	if probeErr := ndltls.ProbeDirectory(r.Context(), req.Directory); probeErr != nil {
 		row.ACMEStatus = ndltls.ACMEFailed
-		_ = s.Store.UpsertCertificate(r.Context(), row)
-		s.audit(r, p.User.ClusterID, p.User.ID, "tls.acme", "failed", err.Error())
+		if err := s.Store.UpsertCertificate(r.Context(), row); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record certificate")
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "tls.acme", "failed", probeErr.Error())
 		writeJSON(w, http.StatusOK, s.certsJSON(r.Context(), p.User.ClusterID))
 		return
 	}
-	_ = s.Store.UpsertCertificate(r.Context(), row)
+	if err := s.Store.UpsertCertificate(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record certificate")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "tls.acme", "pending", req.Directory)
 	writeJSON(w, http.StatusOK, s.certsJSON(r.Context(), p.User.ClusterID))
 }

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,56 @@ func TestACMEFailedDirectoryIsHonest(t *testing.T) {
 	_ = res.Body.Close()
 	if status["acme_status"] != "failed" {
 		t.Fatalf("expected failed, got %+v", status)
+	}
+}
+
+type failUpsertCertificateStore struct {
+	appdb.Store
+}
+
+func (f failUpsertCertificateStore) UpsertCertificate(context.Context, appdb.Certificate) error {
+	return errors.New("persist failed")
+}
+
+func TestACMEFailsClosedWhenCertificatePersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.CertDir = ndltls.Dir{Root: t.TempDir()}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failUpsertCertificateStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/certs/acme", strings.NewReader(`{"directory":"http://127.0.0.1/dir","email":"ops@example.com","domain":"nodal.test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "enable-tls")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("acme persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record certificate") {
+		t.Fatalf("acme persist body %s", raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/certs", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("certs %d %s", res.StatusCode, listed)
+	}
+	if strings.Contains(string(listed), "ops@example.com") || strings.Contains(string(listed), "http://127.0.0.1/dir") {
+		t.Fatalf("GET must not list ACME fields that persist missed: %s", listed)
+	}
+	var status map[string]any
+	if err := json.Unmarshal(listed, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status["acme_status"] != ndltls.ACMENotConfigured {
+		t.Fatalf("GET acme_status %+v", status)
 	}
 }
 
