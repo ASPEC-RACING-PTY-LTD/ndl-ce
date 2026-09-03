@@ -145,6 +145,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     subnet or equal to the gateway or network address before persist.
     GET /networks/{id}/reservations no longer lists a mapping apply
     cannot install.
+  * Terminal session create refuses a cwd that escapes the jail, matching
+    Files. GET /io/sessions no longer lists a session whose connect path
+    would silently start at the jail root.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

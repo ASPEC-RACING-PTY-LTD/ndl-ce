@@ -105,6 +105,10 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, p *princ
 	if cwd == "" {
 		cwd = "/"
 	}
+	if _, err := iojail.CleanRel(cwd); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ticket, err := secutil.RandomHex(24)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

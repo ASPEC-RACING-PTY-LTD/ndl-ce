@@ -309,6 +309,32 @@ func TestHostTerminalAdminOnly(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestTerminalCreateFailsClosedForJailEscapeCWD(t *testing.T) {
+	_, mem, ts, admin, nodeID, wlID := seedPhase6(t)
+	op := loginRole(t, ts, mem, "oper", rbac.Operator)
+
+	host := doCookie(t, ts, admin, "POST", "/api/v1/nodes/"+nodeID+"/terminal/sessions", `{"cwd":".."}`)
+	hostRaw, _ := io.ReadAll(host.Body)
+	_ = host.Body.Close()
+	if host.StatusCode != http.StatusBadRequest || !strings.Contains(string(hostRaw), "path escapes the jail") {
+		t.Fatalf("host cwd %d %s", host.StatusCode, hostRaw)
+	}
+
+	ct := doCookie(t, ts, op, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{"cwd":"/foo/../../etc"}`)
+	ctRaw, _ := io.ReadAll(ct.Body)
+	_ = ct.Body.Close()
+	if ct.StatusCode != http.StatusBadRequest || !strings.Contains(string(ctRaw), "path escapes the jail") {
+		t.Fatalf("ct cwd %d %s", ct.StatusCode, ctRaw)
+	}
+
+	listed := doCookie(t, ts, admin, "GET", "/api/v1/io/sessions", "")
+	listRaw, _ := io.ReadAll(listed.Body)
+	_ = listed.Body.Close()
+	if strings.Contains(string(listRaw), `"cwd":".."`) || strings.Contains(string(listRaw), `/foo/../../etc`) {
+		t.Fatalf("GET /io/sessions must not list an escaped cwd: %s", listRaw)
+	}
+}
+
 func TestCTTerminalOperatorAndViewer(t *testing.T) {
 	_, mem, ts, admin, _, wlID := seedPhase6(t)
 	op := loginRole(t, ts, mem, "oper", rbac.Operator)
