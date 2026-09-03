@@ -277,17 +277,17 @@ func (s *Server) createZFSSnapshot(w http.ResponseWriter, r *http.Request, p *pr
 	if len(existing) > 0 {
 		parentID = existing[len(existing)-1].ID
 	}
-	snap := appdb.Snapshot{
+	stored, err := s.persistSnapshot(r.Context(), appdb.Snapshot{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
 		Name: name, PurposeTag: tag, Mechanism: appdb.MechanismZFS, BackendRef: res.BackendRef,
 		ParentID: parentID, ChainDepth: 0, Status: appdb.SnapshotAvailable,
-	}
-	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
+	})
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "snapshot.create", "ok", snap.ID)
-	writeJSON(w, http.StatusCreated, snapshotJSON(snap))
+	s.audit(r, p.User.ClusterID, p.User.ID, "snapshot.create", "ok", stored.ID)
+	writeJSON(w, http.StatusCreated, snapshotJSON(*stored))
 }
 
 func (s *Server) zfsPoolName(ctx context.Context, pool appdb.StoragePool) string {

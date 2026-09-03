@@ -36,6 +36,20 @@ func snapshotJSON(s appdb.Snapshot) map[string]any {
 	}
 }
 
+func (s *Server) persistSnapshot(ctx context.Context, snap appdb.Snapshot) (*appdb.Snapshot, error) {
+	if err := s.Store.CreateSnapshot(ctx, snap); err != nil {
+		return nil, err
+	}
+	got, err := s.Store.GetSnapshot(ctx, snap.ClusterID, snap.ID)
+	if err != nil {
+		return nil, err
+	}
+	if got == nil {
+		return nil, errInternal("could not record snapshot")
+	}
+	return got, nil
+}
+
 func (s *Server) snapshotCapability(kind string, depth int, backend string) map[string]any {
 	if backend == storage.BackendZFS {
 		return map[string]any{
@@ -187,18 +201,18 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	snap := appdb.Snapshot{
+	stored, err := s.persistSnapshot(r.Context(), appdb.Snapshot{
 		ID: snapID, ClusterID: p.User.ClusterID, WorkloadID: id, VolumeID: vol.ID,
 		Name: strings.TrimSpace(req.Name), PurposeTag: purposeTag(req.Name),
 		Mechanism: appdb.MechanismOverlay, BackendRef: vol.BackendRef, ParentID: parentID,
 		ChainDepth: depth + 1, Status: appdb.SnapshotAvailable,
-	}
-	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
+	})
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "snapshot.create", "ok", snap.ID)
-	writeJSON(w, http.StatusCreated, snapshotJSON(snap))
+	s.audit(r, p.User.ClusterID, p.User.ID, "snapshot.create", "ok", stored.ID)
+	writeJSON(w, http.StatusCreated, snapshotJSON(*stored))
 }
 
 func (s *Server) rollbackSnapshot(w http.ResponseWriter, r *http.Request) {

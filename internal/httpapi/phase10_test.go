@@ -675,3 +675,69 @@ func TestVMSnapshotCreateFailsClosedForUnavailableBootVolume(t *testing.T) {
 		t.Fatalf("snapshot must not persist an overlay apply cannot create: %d -> %d", len(snapsBefore), len(snapsAfter))
 	}
 }
+
+type missCreateSnapshotStore struct {
+	appdb.Store
+}
+
+func (missCreateSnapshotStore) CreateSnapshot(context.Context, appdb.Snapshot) error {
+	return nil
+}
+
+func TestSnapshotCreateFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web-miss","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	vmID := vm["id"].(string)
+	s.Store = missCreateSnapshotStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"lost-catalog"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("snapshot persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record snapshot") {
+		t.Fatalf("snapshot persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET snapshots %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "lost-catalog") {
+		t.Fatalf("GET /snapshots must not list the snapshot after persist miss: %s", raw)
+	}
+}

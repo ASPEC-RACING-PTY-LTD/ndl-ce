@@ -386,6 +386,60 @@ func TestZFSCTSnapshotSupported(t *testing.T) {
 	}
 }
 
+func TestZFSSnapshotCreateFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.ZFS = &fakeZFS{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	caps, _ := json.Marshal(storage.ZFSCapabilities())
+	pool := appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: cluster.ID, NodeID: node.ID, Name: "tank",
+		BackendType: storage.BackendZFS, Status: storage.StatusAvailable, RootPath: storage.ZFSMountRoot + "/1",
+		Capabilities: caps,
+	}
+	_ = mem.CreateStoragePool(context.Background(), pool)
+	_ = mem.UpsertZFSPool(context.Background(), appdb.ZFSPool{PoolID: pool.ID, ZPoolGUID: "1", ZPoolName: "tank"})
+	volID := uuid.NewString()
+	vol := appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: node.ID, PoolID: pool.ID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDataset,
+		Status: storage.StatusAvailable, BackendType: storage.BackendZFS,
+		BackendRef: storage.ZFSMountRoot + "/" + pool.ID + "/volumes/container-root/" + volID,
+	}
+	_ = mem.CreateVolume(context.Background(), vol)
+	wl := appdb.Workload{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped"}
+	_ = mem.CreateWorkload(context.Background(), wl)
+	_ = mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: wl.ID, VolumeID: vol.ID, Role: "root"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = missCreateSnapshotStore{Store: mem}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+wl.ID+"/snapshots", strings.NewReader(`{"name":"ct1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("zfs snap persist miss %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record snapshot") {
+		t.Fatalf("zfs snap persist miss body %s", b)
+	}
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+wl.ID+"/snapshots", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	b, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET snapshots %d %s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), "ct1") {
+		t.Fatalf("GET /snapshots must not list the ZFS snapshot after persist miss: %s", b)
+	}
+}
+
 type failUpsertZFSPoolStore struct {
 	appdb.Store
 }

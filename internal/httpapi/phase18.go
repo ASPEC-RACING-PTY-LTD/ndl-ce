@@ -564,25 +564,30 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	snap := appdb.Snapshot{
+	storedSnap, err := s.persistSnapshot(r.Context(), appdb.Snapshot{
 		ID: snapID, ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
 		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: frozenRef,
 		ParentID: parentID, ChainDepth: depth + 1, Status: "available",
-	}
-	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
+	})
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	tmpl := appdb.VMTemplate{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name,
-		SourceWorkloadID: row.ID, SnapshotID: snap.ID, SpecJSON: vmspec.MustJSON(vmspec.Redact(spec)),
+		SourceWorkloadID: row.ID, SnapshotID: storedSnap.ID, SpecJSON: vmspec.MustJSON(vmspec.Redact(spec)),
 	}
 	if err := s.Store.CreateVMTemplate(r.Context(), tmpl); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "vm.template", "ok", tmpl.ID)
-	writeJSON(w, http.StatusCreated, templateJSON(tmpl))
+	storedTmpl, err := s.Store.GetVMTemplate(r.Context(), p.User.ClusterID, tmpl.ID)
+	if err != nil || storedTmpl == nil {
+		writeErr(w, http.StatusInternalServerError, "could not record template")
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "vm.template", "ok", storedTmpl.ID)
+	writeJSON(w, http.StatusCreated, templateJSON(*storedTmpl))
 }
 
 func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {

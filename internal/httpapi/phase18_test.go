@@ -365,6 +365,91 @@ func TestPhase18TemplatesExportAndSecureBoot(t *testing.T) {
 	_ = s
 }
 
+type missCreateVMTemplateStore struct {
+	appdb.Store
+}
+
+func (missCreateVMTemplateStore) CreateVMTemplate(context.Context, appdb.VMTemplate) error {
+	return nil
+}
+
+func TestPhase18TemplateCreateFailsClosedWhenSnapshotPersistMisses(t *testing.T) {
+	s, mem, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-snap-miss")
+	id := created["id"].(string)
+	s.Store = missCreateSnapshotStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("template snapshot persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record snapshot") {
+		t.Fatalf("template snapshot persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/templates", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET templates %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "golden") {
+		t.Fatalf("GET /templates must not list the template after snapshot persist miss: %s", raw)
+	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id+"/snapshots", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET snapshots %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), `"name":"golden"`) {
+		t.Fatalf("GET /snapshots must not list the template snapshot after persist miss: %s", raw)
+	}
+}
+
+func TestPhase18TemplateCreateFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-miss")
+	id := created["id"].(string)
+	s.Store = missCreateVMTemplateStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("template persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record template") {
+		t.Fatalf("template persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/templates", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET templates %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "golden") {
+		t.Fatalf("GET /templates must not list the template after persist miss: %s", raw)
+	}
+}
+
 func TestPhase18RejectsRawQEMUArgsOnImport(t *testing.T) {
 	_, _, ts, cookie, _, poolID, netID := phase18Ready(t)
 	body := `{"name":"x","library_id":"` + uuid.NewString() + `","pool_id":"` + poolID + `","network_id":"` + netID + `","qemu_args":["-incoming"]}`
