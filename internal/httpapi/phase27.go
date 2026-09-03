@@ -42,6 +42,11 @@ func (s *Server) createVLAN(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	mode, err := ndnet.ParseVLANMode(req.Mode)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	parent := strings.TrimSpace(req.ParentIfName)
 	bridge := ""
 	if req.NetworkID != "" {
@@ -55,10 +60,19 @@ func (s *Server) createVLAN(w http.ResponseWriter, r *http.Request) {
 			parent = n.BridgeName
 		}
 	}
+	if err := ndnet.ParseVLANParent(parent); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	access := strings.TrimSpace(req.AccessIfName)
+	if mode == ndnet.VLANAccess && access != "" && !ndnet.ValidIfName(access) {
+		writeErr(w, http.StatusBadRequest, "access interface name is not valid")
+		return
+	}
 	id := uuid.NewString()
 	res, err := s.advanced()(r.Context(), ndnet.AdvancedOp{
 		Action: ndnet.ActionVLANAdd, ObjectID: id, NetworkID: req.NetworkID, Name: req.Name, VID: req.VID,
-		ParentIfName: parent, AccessIfName: strings.TrimSpace(req.AccessIfName), Mode: req.Mode,
+		ParentIfName: parent, AccessIfName: access, Mode: mode,
 		ConfirmIfName: strings.TrimSpace(req.Confirm), BridgeName: bridge,
 	})
 	if err != nil {
@@ -67,8 +81,8 @@ func (s *Server) createVLAN(w http.ResponseWriter, r *http.Request) {
 	}
 	row := appdb.NetworkVLAN{
 		ID: id, ClusterID: p.User.ClusterID, NetworkID: req.NetworkID, Name: strings.TrimSpace(req.Name),
-		VID: req.VID, ParentIfName: parent, AccessIfName: strings.TrimSpace(req.AccessIfName),
-		Mode: firstNonEmpty(req.Mode, ndnet.VLANAccess), Locator: res.Locator, Status: res.Status, Reason: res.Reason,
+		VID: req.VID, ParentIfName: parent, AccessIfName: access,
+		Mode: firstNonEmpty(res.Mode, mode), Locator: res.Locator, Status: res.Status, Reason: res.Reason,
 	}
 	if err := s.Store.CreateNetworkVLAN(r.Context(), row); err != nil {
 		writeErr(w, http.StatusConflict, "could not record vlan")

@@ -40,6 +40,29 @@ func TestVLANAccessPortVID20(t *testing.T) {
 	}
 }
 
+func TestVLANAddRefusesInvalidModeAndParent(t *testing.T) {
+	e := testEngine(t, testHost())
+	id := uuid.NewString()
+	_, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20, ParentIfName: "eth1", Mode: "foo",
+	})
+	if err == nil || !strings.Contains(err.Error(), "vlan mode must be access or trunk") {
+		t.Fatalf("mode: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20,
+	})
+	if err == nil || !strings.Contains(err.Error(), "vlan parent interface is required") {
+		t.Fatalf("parent: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20, ParentIfName: "eth1;rm",
+	})
+	if err == nil || !strings.Contains(err.Error(), "vlan parent interface is required") {
+		t.Fatalf("ifname: %v", err)
+	}
+}
+
 func TestVLANOnManagementRequiresConfirmAndWatchdogWins(t *testing.T) {
 	e := testEngine(t, testHost())
 	e.Probe = func() error { return os.ErrInvalid }

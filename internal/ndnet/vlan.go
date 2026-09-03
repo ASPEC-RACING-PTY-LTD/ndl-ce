@@ -26,6 +26,26 @@ func ParseVID(vid int) error {
 	return nil
 }
 
+// ParseVLANMode accepts access, trunk, or empty (defaults to access).
+func ParseVLANMode(mode string) (string, error) {
+	switch strings.TrimSpace(mode) {
+	case "", VLANAccess:
+		return VLANAccess, nil
+	case VLANTrunk:
+		return VLANTrunk, nil
+	default:
+		return "", fmt.Errorf("vlan mode must be access or trunk")
+	}
+}
+
+// ParseVLANParent requires a valid parent interface locator.
+func ParseVLANParent(parent string) error {
+	if !ValidIfName(strings.TrimSpace(parent)) {
+		return fmt.Errorf("vlan parent interface is required")
+	}
+	return nil
+}
+
 // VLANAccessArgv sets an access port PVID. Parent and port are locators.
 func VLANAccessArgv(dev string, vid int) ([]string, error) {
 	if !ValidIfName(dev) {
@@ -68,15 +88,12 @@ func (e *Engine) applyVLAN(ctx context.Context, op AdvancedOp) (AdvancedResult, 
 	if parent == "" {
 		parent = strings.TrimSpace(op.BridgeName)
 	}
-	if !ValidIfName(parent) {
-		return AdvancedResult{}, fmt.Errorf("vlan parent interface is required")
+	if err := ParseVLANParent(parent); err != nil {
+		return AdvancedResult{}, err
 	}
-	mode := strings.TrimSpace(op.Mode)
-	if mode == "" {
-		mode = VLANAccess
-	}
-	if mode != VLANAccess && mode != VLANTrunk {
-		return AdvancedResult{}, fmt.Errorf("vlan mode must be access or trunk")
+	mode, err := ParseVLANMode(op.Mode)
+	if err != nil {
+		return AdvancedResult{}, err
 	}
 	host, err := e.host()
 	if err != nil {

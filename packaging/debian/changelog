@@ -131,6 +131,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     other than active-backup or 802.3ad before persist. fakeNet and an
     unavailable agent no longer 201 a catalog row GET /networks would list
     that apply cannot install.
+  * VLAN create refuses a missing or invalid parent ifname, modes other
+    than access or trunk, and an invalid access ifname before persist.
+    fakeNet and an unavailable agent no longer 201 a catalog row GET
+    /networks would list that apply cannot install.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
