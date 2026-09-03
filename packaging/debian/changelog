@@ -289,6 +289,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     convert does not write a directory qcow2 onto a zvol or thin LV.
     Template overlay is refused; ZFS and LVM snapshots stay native.
     GET no longer lists a clone whose start would attach a qcow2 as raw.
+    Offline migrate refuses that zvol copy before ownership moves.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

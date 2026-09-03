@@ -134,6 +134,78 @@ func TestPhase32MigrateFailsClosedForUnavailableVolume(t *testing.T) {
 	}
 }
 
+func TestPhase32MigrateFailsClosedForZFSCopy(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Migrate = migrate.NewFake()
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: clusterRow.ID, Name: "box-b", Role: "worker", Hostname: "box-b"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	srcPool := appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, Name: "tank",
+		BackendType: storage.BackendZFS, Status: storage.StatusAvailable,
+		RootPath: storage.ZFSMountRoot + "/1",
+	}
+	if err := mem.CreateStoragePool(t.Context(), srcPool); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateStoragePool(t.Context(), appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: worker.ID, Name: "dest-dir",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	vol := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, PoolID: srcPool.ID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Status: storage.StatusAvailable,
+		BackendType: storage.BackendZFS, BackendRef: "/dev/zvol/tank/" + uuid.NewString(),
+	}
+	if err := mem.CreateVolume(t.Context(), vol); err != nil {
+		t.Fatal(err)
+	}
+	wlID := uuid.NewString()
+	s.Migrate.(*migrate.Fake).SetSourceRunning(wlID, true)
+	if err := mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: wlID, ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID,
+		Name: "zfs-move", Kind: "vm", Status: "running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: wlID, VolumeID: vol.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"dest_node_id":"` + worker.ID + `","mode":"offline"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+wlID+"/migrate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("zfs migrate %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "ZFS pools do not store directory qcow2 copies") {
+		t.Fatalf("zfs migrate body %s", raw)
+	}
+	got, _ := mem.GetWorkload(t.Context(), clusterRow.ID, wlID)
+	if got == nil || got.NodeID != control.ID || got.OwnershipEpoch != 0 {
+		t.Fatalf("GET must not claim dest ownership qemu-img cannot copy a zvol: %+v", got)
+	}
+	jobs, _ := mem.ListMigrateJobs(t.Context(), clusterRow.ID, 50)
+	if len(jobs) != 0 {
+		t.Fatalf("migrate must not persist a job copy cannot write: %+v", jobs)
+	}
+}
+
 func TestPhase32FailedLiveLeavesSourceRunning(t *testing.T) {
 	s, mem, token := testServer(t)
 	fake := migrate.NewFake()
@@ -456,11 +528,52 @@ func TestPhase32DestDiskLocatorDiffersAndZFSIsNotShared(t *testing.T) {
 		t.Fatal(err)
 	}
 	shared, copies, err := s.migrateDisks(t.Context(), wl, &worker)
+	if err == nil || !strings.Contains(err.Error(), "ZFS pools do not store directory qcow2 copies") || copies != nil || shared {
+		t.Fatalf("local ZFS must not qemu-img copy a zvol onto a dest qcow2: shared=%v copies=%+v err=%v", shared, copies, err)
+	}
+
+	dirDest := appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: worker.ID, Name: "dest-dir",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}
+	if err := mem.CreateStoragePool(t.Context(), dirDest); err != nil {
+		t.Fatal(err)
+	}
+	dirSrc := appdb.StoragePool{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, Name: "src-dir",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: storage.DefaultPoolPath,
+	}
+	if err := mem.CreateStoragePool(t.Context(), dirSrc); err != nil {
+		t.Fatal(err)
+	}
+	dirVol := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID, PoolID: dirSrc.ID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Status: storage.StatusAvailable,
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+	}
+	if err := mem.CreateVolume(t.Context(), dirVol); err != nil {
+		t.Fatal(err)
+	}
+	dirWL := appdb.Workload{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID, Name: "dir-copy-vm", Kind: "vm",
+	}
+	if err := mem.CreateWorkload(t.Context(), dirWL); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(t.Context(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: dirWL.ID, VolumeID: dirVol.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	shared, copies, err = s.migrateDisks(t.Context(), dirWL, &worker)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if shared {
-		t.Fatal("local ZFS must not skip copy as shared")
+		t.Fatal("directory qcow2 must not skip copy as shared")
 	}
 	if len(copies) != 1 || copies[0].DestPath == "" || copies[0].DestPath == copies[0].SourcePath {
 		t.Fatalf("dest locator must differ %+v", copies)

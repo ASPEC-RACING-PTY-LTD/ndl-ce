@@ -404,6 +404,9 @@ func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload, dest *appd
 			out = append(out, migrate.VolumeCopy{VolumeID: vol.ID, SourcePath: src, DestPath: src})
 			continue
 		}
+		if err := refuseQemuImgCopyDest(backend); err != nil {
+			return false, nil, err
+		}
 		sharedAll = false
 		destPath, err := destVolumeLocator(dest, vol, src, pools)
 		if err != nil {
@@ -424,6 +427,9 @@ func destVolumeLocator(dest *appdb.Node, vol *appdb.Volume, src string, pools []
 			continue
 		}
 		if sharedVolume(p.BackendType, p.RootPath, nil) {
+			continue
+		}
+		if refuseQemuImgCopyDest(p.BackendType) != nil {
 			continue
 		}
 		destRoot = p.RootPath
