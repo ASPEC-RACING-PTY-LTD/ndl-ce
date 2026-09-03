@@ -222,6 +222,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM create with an existing boot volume_id refuses an unavailable
     boot pool before persist. GET /workloads no longer lists a VM
     whose boot disk start cannot attach.
+  * System-container clone refuses an unavailable source volume or
+    pool before persist. GET /workloads no longer lists a clone
+    whose root apply cannot copy, and no clone volume is stored.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

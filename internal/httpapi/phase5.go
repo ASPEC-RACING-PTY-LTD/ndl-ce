@@ -657,8 +657,14 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	if err != nil || vol == nil {
 		return lxc.LifecycleRequest{}, errConflict("source volume is unavailable")
 	}
+	if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
+		return lxc.LifecycleRequest{}, errConflict("source volume is unavailable")
+	}
 	pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
 	if err != nil || pool == nil {
+		return lxc.LifecycleRequest{}, errConflict("source pool is unavailable")
+	}
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return lxc.LifecycleRequest{}, errConflict("source pool is unavailable")
 	}
 	if pool.BackendType == storage.BackendZFS {

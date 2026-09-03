@@ -729,6 +729,92 @@ func TestWorkloadCloneStoresDiskAndNIC(t *testing.T) {
 	}
 }
 
+func TestWorkloadCloneFailsClosedForUnavailableSourceVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-src")
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("source disks %+v", disks)
+	}
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: disks[0].VolumeID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"alpine-copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable source volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "source volume is unavailable") {
+		t.Fatalf("unavailable source volume body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("GET must not list a clone whose source volume apply cannot copy: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("clone must not persist a volume apply cannot copy: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestWorkloadCloneFailsClosedForUnavailableSourcePool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-src")
+	if err := mem.UpdateStoragePoolObserved(context.Background(), appdb.StoragePool{ID: poolID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"alpine-copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable source pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "source pool is unavailable") {
+		t.Fatalf("unavailable source pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("GET must not list a clone whose source pool apply cannot copy: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("clone must not persist a volume apply cannot copy: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
 func TestWorkloadCloneFailsClosedWhenDiskPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
