@@ -99,6 +99,12 @@ func TestHostDeny(t *testing.T) {
 	if err := deniedHost("/", "/var/lib/ndl/host.key"); err == nil {
 		t.Fatal("host key must be denied")
 	}
+	if err := deniedHost("/", "/var/lib/postgresql/16/main"); err == nil {
+		t.Fatal("postgres data must be denied")
+	}
+	if err := deniedHost("/", "/var/lib/ndl/secrets/wireguard/peer.key"); err == nil {
+		t.Fatal("ndl secrets must be denied")
+	}
 	if err := deniedHost("/", "/tmp/safe"); err != nil {
 		t.Fatal(err)
 	}

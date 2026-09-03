@@ -127,8 +127,17 @@ func TestFilesOpHostDeny(t *testing.T) {
 	if _, err := runFilesOp("/", "stat", "var/lib/ndl/setup.token", "", 0); err == nil {
 		t.Fatal("setup.token must be denied")
 	}
+	if _, err := runFilesOp("/", "stat", "var/lib/postgresql/16/main", "", 0); err == nil {
+		t.Fatal("postgres data must be denied")
+	}
+	if _, err := runFilesOp("/", "list", "var/lib/ndl/secrets", "", 0); err == nil {
+		t.Fatal("ndl secrets must be denied")
+	}
 	if _, err := runFilesOp("/", "rename", "var/lib/ndl/host.key", "tmp/ndl-out", 0); err == nil {
 		t.Fatal("rename of host.key must be denied")
+	}
+	if _, err := runFilesOp("/", "rename", "tmp/safe", "var/lib/postgresql/16/copied", 0); err == nil {
+		t.Fatal("rename into postgres data must be denied")
 	}
 }
 
