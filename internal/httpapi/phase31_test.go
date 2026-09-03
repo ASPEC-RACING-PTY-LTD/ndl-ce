@@ -337,3 +337,33 @@ func TestPhase31NodeGroupCreateFailsClosedWhenMemberPersistFails(t *testing.T) {
 		t.Fatalf("member persist body %s", raw)
 	}
 }
+
+func TestPhase31NodeGroupCreateFailsClosedForMissingNode(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	missing := uuid.NewString()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/node-groups", strings.NewReader(`{"name":"gpu","node_ids":["`+missing+`"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing node %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "node not found") {
+		t.Fatalf("missing node body %s", raw)
+	}
+	groups, err := mem.ListNodeGroups(t.Context(), cluster.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range groups {
+		if g.Name == "gpu" {
+			t.Fatalf("must not invent a node group when node_ids are missing: %+v", g)
+		}
+	}
+}

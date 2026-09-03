@@ -171,16 +171,25 @@ func (s *Server) createNodeGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	g := appdb.NodeGroup{ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name)}
-	if err := s.Store.CreateNodeGroup(r.Context(), g); err != nil {
-		writeErr(w, http.StatusConflict, "could not record node group")
-		return
-	}
+	var memberIDs []string
 	for _, id := range req.NodeIDs {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			continue
 		}
+		n, err := s.Store.GetNodeByID(r.Context(), p.User.ClusterID, id)
+		if err != nil || n == nil {
+			writeErr(w, http.StatusNotFound, "node not found")
+			return
+		}
+		memberIDs = append(memberIDs, n.ID)
+	}
+	g := appdb.NodeGroup{ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name)}
+	if err := s.Store.CreateNodeGroup(r.Context(), g); err != nil {
+		writeErr(w, http.StatusConflict, "could not record node group")
+		return
+	}
+	for _, id := range memberIDs {
 		if err := s.Store.AddNodeGroupMember(r.Context(), p.User.ClusterID, g.ID, id); err != nil {
 			writeErr(w, http.StatusInternalServerError, "could not record node group members")
 			return

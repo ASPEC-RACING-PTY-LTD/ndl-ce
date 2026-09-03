@@ -83,6 +83,10 @@ func (m *Memory) AddNodeGroupMember(_ context.Context, clusterID, groupID, nodeI
 	if !ok || g.ClusterID != clusterID {
 		return fmt.Errorf("node group not found")
 	}
+	n, ok := m.nodes[nodeID]
+	if !ok || n.ClusterID != clusterID {
+		return fmt.Errorf("node not found")
+	}
 	if m.nodeGroupMembers == nil {
 		m.nodeGroupMembers = map[string][]string{}
 	}
