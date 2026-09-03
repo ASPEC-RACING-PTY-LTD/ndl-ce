@@ -1001,6 +1001,67 @@ func TestRestoreNewFailsClosedWhenDiskPersistFails(t *testing.T) {
 	}
 }
 
+func TestRestoreOrphanFailsClosedForUnavailableDestPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("vm create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	id := vm["id"].(string)
+	artID := seedVMRestoreArtifact(t, mem, cluster.ID, id, "volumes/vm-disk/boot.qcow2")
+	if err := mem.DeleteWorkload(context.Background(), cluster.ID, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpdateStoragePoolObserved(context.Background(), appdb.StoragePool{ID: poolID, Status: storage.StatusFailed}); err != nil {
+		t.Fatal(err)
+	}
+	wlsBefore, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	volsBefore, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable dest pool restore %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("unavailable dest pool restore body %s", raw)
+	}
+	wlsAfter, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(wlsAfter) != len(wlsBefore) {
+		t.Fatalf("GET must not list a restore whose dest pool apply cannot allocate: %+v", wlsAfter)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("restore must not persist a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
 func TestRestoreNewFailsClosedWhenNICPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

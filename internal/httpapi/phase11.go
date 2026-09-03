@@ -1185,9 +1185,15 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 		return "", errUnprocessable("no storage pool is available for restore")
 	}
 	pool := pools[0]
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+		return "", errConflict("storage pool is unavailable")
+	}
 	nets, err := s.Store.ListNetworks(ctx, clusterID)
 	if err != nil || len(nets) == 0 {
 		return "", errUnprocessable("no network is available for restore")
+	}
+	if _, _, err := s.resolveWorkloadNetwork(ctx, clusterID, nets[0].ID); err != nil {
+		return "", err
 	}
 	newID := uuid.NewString()
 	newVolID := uuid.NewString()

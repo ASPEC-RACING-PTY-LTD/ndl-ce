@@ -351,6 +351,32 @@ func TestMigrationDiskImportFailsClosedForUnavailableDestPool(t *testing.T) {
 	}
 }
 
+func TestMigrationDiskImportFailsClosedForUnavailableFallbackDestPool(t *testing.T) {
+	s, mem, _, _, clusterID, poolID, netID := phase18Ready(t)
+	tmp := filepath.Join(t.TempDir(), "guest.qcow2")
+	if err := os.WriteFile(tmp, []byte("qcow-data"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s.Backup = skipConvertBackup{fakeBackup: s.Backup.(*fakeBackup)}
+	if err := mem.UpdateStoragePoolObserved(context.Background(), appdb.StoragePool{ID: poolID, Status: storage.StatusFailed}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	wlsBefore, _ := mem.ListWorkloads(context.Background(), clusterID)
+	_, err := s.adoptImportedDisks(context.Background(), clusterID, "imported-guest", []string{tmp}, "", netID, "bios", 2, 536870912, false, "")
+	if err == nil || !strings.Contains(err.Error(), "storage pool is unavailable") {
+		t.Fatalf("unavailable fallback dest pool %v", err)
+	}
+	wlsAfter, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wlsAfter) != len(wlsBefore) {
+		t.Fatalf("GET must not list a VM whose import fallback dest pool apply cannot allocate: %+v", wlsAfter)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
 func TestMigrationDiskImportFailsClosedForUnavailableNetwork(t *testing.T) {
 	s, mem, _, _, clusterID, poolID, _ := phase18Ready(t)
 	tmp := filepath.Join(t.TempDir(), "guest.qcow2")

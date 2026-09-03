@@ -1328,6 +1328,50 @@ func TestPhase18ImportFailsClosedForUnavailableDestPool(t *testing.T) {
 	}
 }
 
+func TestPhase18ImportFailsClosedForUnavailableFallbackDestPool(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	libPool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: libPool, ClusterID: clusterID, Name: "import-lib",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: "/var/lib/ndl/storage/import-lib",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	libID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: libID, ClusterID: clusterID, PoolID: libPool, Kind: storage.LibraryDiskImage,
+		DisplayName: "disk.qcow2", BackendRef: "library/disk-image/" + libID + ".qcow2", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpdateStoragePoolObserved(context.Background(), appdb.StoragePool{ID: poolID, Status: storage.StatusFailed}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	body := `{"name":"imported","library_id":"` + libID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable fallback dest pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("unavailable fallback dest pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose import fallback dest pool apply cannot allocate: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
 func TestPhase18ImportFailsClosedForUnavailableNetwork(t *testing.T) {
 	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
 	libID := uuid.NewString()

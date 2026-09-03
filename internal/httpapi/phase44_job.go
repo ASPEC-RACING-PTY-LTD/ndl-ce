@@ -423,7 +423,8 @@ func (s *Server) adoptImportedDisks(ctx context.Context, clusterID, name string,
 			return nil, errUnprocessable("destination storage does not exist")
 		}
 		pool = &pools[0]
-	} else if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+	}
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return nil, errConflict("storage pool is unavailable")
 	}
 	if networkID == "" {

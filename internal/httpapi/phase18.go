@@ -242,7 +242,8 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 			return nil, errUnprocessable("no storage pool is available")
 		}
 		pool = &pools[0]
-	} else if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+	}
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return nil, errConflict("storage pool is unavailable")
 	}
 	if _, _, err := s.resolveWorkloadNetwork(ctx, clusterID, networkID); err != nil {
