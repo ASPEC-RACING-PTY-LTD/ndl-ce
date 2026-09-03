@@ -456,3 +456,75 @@ func TestPhase40ApplyFailsClosedWhenRunPersistFails(t *testing.T) {
 		t.Fatalf("run persist body %s", raw)
 	}
 }
+
+func TestPhase40ApplyFailsClosedWhenMigrateOpPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/policies", strings.NewReader(`{"name":"pressure","kind":"storage_pressure","action":"enqueue_migrate_low_priority","threshold_percent":85}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+
+	usable, alloc := int64(100<<30), int64(90<<30)
+	pool := appdb.StoragePool{
+		ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ClusterID: cluster.ID, NodeID: node.ID,
+		Name: "full", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		UsableBytes: &usable, AllocatedBytes: &alloc,
+	}
+	if err := mem.CreateStoragePool(context.Background(), pool); err != nil {
+		t.Fatal(err)
+	}
+	vol := appdb.Volume{
+		ID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", ClusterID: cluster.ID, NodeID: node.ID, PoolID: pool.ID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Status: storage.StatusAvailable,
+	}
+	_ = mem.CreateVolume(context.Background(), vol)
+	wl := appdb.Workload{
+		ID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", ClusterID: cluster.ID, NodeID: node.ID,
+		Name: "batch", Kind: "vm", Status: "running",
+	}
+	_ = mem.CreateWorkload(context.Background(), wl)
+	_ = mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", ClusterID: cluster.ID, WorkloadID: wl.ID, VolumeID: vol.ID,
+	})
+	_ = mem.UpsertWorkloadPlacement(context.Background(), appdb.WorkloadPlacement{
+		WorkloadID: wl.ID, ClusterID: cluster.ID, Priority: 10,
+	})
+
+	s.Store = failUpsertOperationStore{Store: mem}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/policies/"+created["id"].(string)+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("op persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record migrate operation") {
+		t.Fatalf("op persist body %s", raw)
+	}
+	s.Store = mem
+	runs, err := mem.ListPolicyRuns(context.Background(), cluster.ID, 50)
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("invented policy run %+v %v", runs, err)
+	}
+	ops, err := mem.ListOperations(context.Background(), cluster.ID, 50)
+	if err != nil || len(ops) != 0 {
+		t.Fatalf("invented migrate ops %+v %v", ops, err)
+	}
+}

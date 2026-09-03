@@ -83,6 +83,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Logout fails closed if the session row cannot be revoked. A 204 does not clear a cookie while the session remains valid.
   * Store install fails closed if the stack member cannot record the created workload. A 201 does not leave GET /stacks with a null member workload_id.
   * Node maintain fails closed if a queued migrate operation cannot be recorded. A 200 does not invent migrate_operation_id.
+  * Storage-pressure policy apply fails closed if a queued migrate operation cannot be recorded. A 200 does not invent operation_ids that GET /tasks would miss.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

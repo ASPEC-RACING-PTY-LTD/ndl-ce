@@ -115,7 +115,11 @@ func (s *Server) applyAutomationPolicy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, automationPolicyRunJSON(run))
 		return
 	}
-	run := s.evaluatePolicy(r.Context(), p.User.ClusterID, actorID, *pol)
+	run, evalErr := s.evaluatePolicy(r.Context(), p.User.ClusterID, actorID, *pol)
+	if evalErr != nil {
+		writeErr(w, statusFor(evalErr), evalErr.Error())
+		return
+	}
 	if err := s.Store.CreatePolicyRun(r.Context(), run); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not record policy run")
 		return
@@ -141,7 +145,7 @@ func (s *Server) listPolicyRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
-func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, pol appdb.Policy) appdb.PolicyRun {
+func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, pol appdb.Policy) (appdb.PolicyRun, error) {
 	run := appdb.PolicyRun{
 		ID: uuid.NewString(), ClusterID: clusterID, PolicyID: pol.ID, ActorID: actorID,
 		Status: appdb.PolicySkipped, Reason: "no pool exceeded threshold",
@@ -196,7 +200,9 @@ func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, 
 				}
 			}
 		}
-		_ = s.Store.UpsertOperation(ctx, op)
+		if err := s.Store.UpsertOperation(ctx, op); err != nil {
+			return run, errInternal("could not record migrate operation")
+		}
 		ops = append(ops, op.ID)
 	}
 	if len(ops) > 0 {
@@ -211,7 +217,7 @@ func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, 
 	} else if pressured {
 		run.Reason = "pool exceeded threshold but no low-priority VM was selected"
 	}
-	return run
+	return run, nil
 }
 
 func (s *Server) ensureAutomationActor(ctx context.Context, clusterID string) (string, error) {
