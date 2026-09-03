@@ -329,6 +329,60 @@ func TestBackupCTRefusedAndNFSUnavailable(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestPhase11BackupTargetCreateFailsClosedForUntypedLocator(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(t.Context())
+
+	garbage, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"bad","kind":"nfs","locator":"garbage"}`))
+	garbage.Header.Set("Content-Type", "application/json")
+	garbage.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(garbage)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "nfs locator must be server:/export") {
+		t.Fatalf("garbage nfs %d %s", res.StatusCode, body)
+	}
+
+	escape, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"bad","kind":"nfs","locator":"../etc"}`))
+	escape.Header.Set("Content-Type", "application/json")
+	escape.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(escape)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "locator must be an absolute path without traversal") {
+		t.Fatalf("escape nfs %d %s", res.StatusCode, body)
+	}
+
+	smbBad, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"bad","kind":"smb","locator":"not-unc"}`))
+	smbBad.Header.Set("Content-Type", "application/json")
+	smbBad.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(smbBad)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "smb locator must be //server/share") {
+		t.Fatalf("garbage smb %d %s", res.StatusCode, body)
+	}
+
+	items, err := mem.ListBackupTargets(t.Context(), cluster.ID)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("GET must not list an untyped backup locator: %+v %v", items, err)
+	}
+
+	unc, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"share","kind":"smb","locator":"//files.example/iso"}`))
+	unc.Header.Set("Content-Type", "application/json")
+	unc.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(unc)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated || !strings.Contains(string(body), "//files.example/iso") {
+		t.Fatalf("smb unc %d %s", res.StatusCode, body)
+	}
+}
+
 func TestBackupViewerCannotRestore(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

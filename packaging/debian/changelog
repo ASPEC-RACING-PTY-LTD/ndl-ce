@@ -163,6 +163,11 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     persist. fakeNet no longer 201 a catalog row GET /networks would
     list that apply cannot install. Empty isolated CIDR still defaults
     to 10.64.0.0/24.
+  * Backup NFS and SMB create refuse a relative locator that is not
+    server:/export or //server/share, and refuse parent-directory
+    segments, before persist. SMB UNC is not passed through the Unix
+    artifact jail. GET /backups/targets no longer lists garbage that
+    apply cannot use. Absolute artifact paths stay AllowedArtifactPath.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

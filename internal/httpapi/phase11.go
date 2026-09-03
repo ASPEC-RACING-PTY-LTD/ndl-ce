@@ -295,18 +295,34 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	locator := strings.TrimSpace(req.Locator)
-	if strings.HasPrefix(locator, "/") {
-		if strings.Contains(locator, "..") {
-			writeErr(w, http.StatusBadRequest, "locator must be an absolute path without traversal")
-			return
-		}
+	if strings.Contains(locator, "..") {
+		writeErr(w, http.StatusBadRequest, "locator must be an absolute path without traversal")
+		return
+	}
+	// UNC //server/share is not a Unix artifact path. Engine Stat skips
+	// AllowedArtifactPath for that prefix; HTTP must not 400 a typed SMB locator.
+	unc := strings.HasPrefix(locator, "//")
+	unixAbs := strings.HasPrefix(locator, "/") && !unc
+	if unixAbs {
 		if err := storage.AllowedArtifactPath(locator); err != nil {
 			writeErr(w, http.StatusBadRequest, "backup locator is not allowed")
 			return
 		}
 	}
+	if kind == appdb.BackupNFS && !unixAbs {
+		if _, _, err := storage.ParseNFSLocator(locator); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if kind == appdb.BackupSMB && !unixAbs {
+		if _, _, err := storage.ParseSMBLocator(locator); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	if kind == appdb.BackupLocal {
-		if !strings.HasPrefix(locator, "/") {
+		if !unixAbs {
 			writeErr(w, http.StatusBadRequest, "local locator must be an absolute path")
 			return
 		}
