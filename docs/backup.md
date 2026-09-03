@@ -24,4 +24,8 @@ dest node chosen at restore time. Restore onto a worker whose dest
 agent is not connected stays unavailable and does not copy disks onto
 the control node. Failed restore does not delete the source backup.
 
+Backup and restore of additional VM data disks are not implemented. A
+workload with extra attached disks is refused before a run or artifact
+is recorded. The boot disk is not copied on its own.
+
 See also [recovery.md](recovery.md).
