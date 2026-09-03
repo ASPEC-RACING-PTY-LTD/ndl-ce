@@ -574,7 +574,7 @@ func (s *Server) qemuProtoJSON(w appdb.Workload, applied qemuProtoApplied, obs *
 		"accel": applied.Accel, "autostart": applied.Autostart,
 		"cpus": w.CPUs, "memory_bytes": w.MemoryBytes,
 		"unit": unit, "unit_status": unitStatus, "observe_status": observeStatus,
-		"unit_active": obs != nil && obs.UnitActive, "running_as": runningAs,
+		"unit_active": w.UnitActive, "running_as": runningAs,
 		"qmp": qmp, "serial_socket": serial, "vnc_socket": vnc, "qga_socket": qga,
 		"last_applied": applied,
 	}

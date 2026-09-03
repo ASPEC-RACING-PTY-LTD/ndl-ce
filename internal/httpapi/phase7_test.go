@@ -658,7 +658,7 @@ func TestLabQemuProtoStopStatusMatchesGETWhenObservedPersistFails(t *testing.T) 
 	nodeID := uuid.NewString()
 	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
 	poolID := seedQemuLab(t, mem, cluster.ID, nodeID)
-	s.QEMU = &fakeQEMU{}
+	s.QEMU = &fakeQEMU{start: qemu.Result{UnitActive: true}}
 	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
 		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
 		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
@@ -700,6 +700,12 @@ func TestLabQemuProtoStopStatusMatchesGETWhenObservedPersistFails(t *testing.T) 
 	}
 	if out["desired_power"] != got.DesiredPower {
 		t.Fatalf("200 desired_power %v must match GET %q", out["desired_power"], got.DesiredPower)
+	}
+	if out["unit_active"] != got.UnitActive {
+		t.Fatalf("200 unit_active %v must match GET %v", out["unit_active"], got.UnitActive)
+	}
+	if !got.UnitActive {
+		t.Fatal("GET unit_active must stay the stored start row when observed persist misses")
 	}
 	if out["observe_status"] != qemu.StatusStopped {
 		t.Fatalf("observe_status must stay live %v", out["observe_status"])
