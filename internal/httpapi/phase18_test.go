@@ -507,6 +507,79 @@ func TestPhase18TemplateExtraDiskIs422(t *testing.T) {
 	}
 }
 
+func attachCatalogExtraDataDisk(t *testing.T, mem *appdb.Memory, clusterID, poolID, workloadID string) {
+	t.Helper()
+	extra := uuid.NewString()
+	node, _ := mem.GetNode(context.Background(), clusterID)
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extra, ClusterID: clusterID, NodeID: node.ID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/catalog-extra.qcow2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: workloadID, VolumeID: extra,
+		Role: vmspec.DiskRoleData, Slot: 1, Format: storage.FormatQCOW2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPhase18CloneFailsClosedForCatalogExtraDataDisk(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "catalog-clone")
+	srcID := created["id"].(string)
+	attachCatalogExtraDataDisk(t, mem, clusterID, poolID, srcID)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+srcID+"/clone", strings.NewReader(`{"name":"catalog-clone-copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(b), "clone of additional data disks is not implemented") {
+		t.Fatalf("catalog extra data disk clone %d %s", res.StatusCode, b)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 1 {
+		t.Fatalf("catalog extra disk must not persist a clone: %+v", wls)
+	}
+	bk := s.Backup.(*fakeBackup)
+	for _, c := range bk.copies {
+		if c[0] == qemu.BackupCopy {
+			t.Fatalf("CopyBackup must not write a boot-only clone: %+v", bk.copies)
+		}
+	}
+}
+
+func TestPhase18TemplateFailsClosedForCatalogExtraDataDisk(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "catalog-tmpl")
+	srcID := created["id"].(string)
+	attachCatalogExtraDataDisk(t, mem, clusterID, poolID, srcID)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+srcID+`","name":"golden-catalog"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(b), "template of additional data disks is not implemented") {
+		t.Fatalf("catalog extra data disk template %d %s", res.StatusCode, b)
+	}
+	tmpls, _ := mem.ListVMTemplates(context.Background(), clusterID)
+	if len(tmpls) != 0 {
+		t.Fatalf("catalog extra disk must not persist a template: %+v", tmpls)
+	}
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, srcID)
+	if len(disks) == 0 {
+		t.Fatal("source disks missing")
+	}
+	boot, _ := mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if boot != nil && strings.Contains(boot.BackendRef, "-tmpl.qcow2") {
+		t.Fatalf("template create must not retarget the boot volume: %+v", boot)
+	}
+}
+
 func TestPhase18TemplateRequiresSnapshot(t *testing.T) {
 	s, _, ts, cookie, _, poolID, netID := phase18Ready(t)
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-src")

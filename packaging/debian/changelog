@@ -78,7 +78,8 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Node maintain records succeeded or failed after a local dest migrate instead of leaving the listed operation queued. Extra-disk migrate 422 is visible on GET /tasks.
   * PCI attach applies the union of VFIO hosts already assigned to the VM. A second passthrough does not drop the first from frozen argv. GPU VFIO assign merges and unassign subtracts instead of wiping every host.
   * GPU VFIO assign records pci_hosts on the VM spec so start reprepare cannot drop the bound devices. Unassign removes those hosts from spec.
-  * Template create refuses extra data disks like clone. Deploy clones the live source, so a boot-only overlay must not be recorded as a usable template.
+  * Template create refuses extra data disks like clone. Clone and template refuse catalog extra data disks the same way spec extra disks already are. A 201 does not copy only the boot volume. Deploy clones the live source, so a boot-only overlay must not be recorded as a usable template.
+  * Alert tick does not notify or publish unless the firing event and last_fired_at persist. A webhook is not a substitute for GET /alerts last_fired_at.
   * USB attach on a running VM fails closed if live QMP device_add fails. A stopped VM still records usb-host in frozen argv without inventing a live hotplug. The southbound client treats Execute Ok false as an apply error.
   * VM delete releases USB and exclusive GPU/PCI claims before runtime is removed. PCI unassign restores the assignment BDF when pci_devices is empty.
   * Logout fails closed if the session row cannot be revoked. A 204 does not clear a cookie while the session remains valid.

@@ -104,6 +104,15 @@ func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Wor
 			return nil, errUnprocessable("clone of additional data disks is not implemented")
 		}
 	}
+	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, src.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != vol.ID {
+			return nil, errUnprocessable("clone of additional data disks is not implemented")
+		}
+	}
 	newID := uuid.NewString()
 	newVolID := uuid.NewString()
 	if strings.TrimSpace(name) == "" {
@@ -506,6 +515,17 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, d := range spec.Disks {
 		if d.Role == vmspec.DiskRoleData && d.VolumeID != "" && d.VolumeID != vol.ID {
+			writeErr(w, http.StatusUnprocessableEntity, "template of additional data disks is not implemented")
+			return
+		}
+	}
+	disks, diskErr := s.Store.ListWorkloadDisks(r.Context(), p.User.ClusterID, row.ID)
+	if diskErr != nil {
+		writeErr(w, http.StatusInternalServerError, diskErr.Error())
+		return
+	}
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != vol.ID {
 			writeErr(w, http.StatusUnprocessableEntity, "template of additional data disks is not implemented")
 			return
 		}
