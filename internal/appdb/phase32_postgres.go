@@ -70,6 +70,18 @@ WHERE id=$1`, j.ID, j.State, j.SourceRunning, j.DestRunning, j.Reason)
 	return nil
 }
 
+func (p *Postgres) GetLatestMigrateJob(ctx context.Context, clusterID, workloadID string) (*MigrateJob, error) {
+	row := p.DB.QueryRowContext(ctx, migrateJobSelect+` WHERE cluster_id=$1 AND workload_id=$2 ORDER BY created_at DESC, id ASC LIMIT 1`, clusterID, workloadID)
+	j, err := scanMigrateJob(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+
 func (p *Postgres) ListMigrateJobs(ctx context.Context, clusterID string, limit int) ([]MigrateJob, error) {
 	if limit <= 0 {
 		limit = 50

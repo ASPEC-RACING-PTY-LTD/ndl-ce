@@ -895,3 +895,47 @@ func TestPhase32MigrateGETReturnsNewestJob(t *testing.T) {
 		t.Fatalf("GET must claim the newest migrate job: %s", raw)
 	}
 }
+
+func TestPhase32MigrateGETFindsJobOutsideClusterWindow(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	wlID := uuid.NewString()
+	want := appdb.MigrateJob{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: wlID, State: "succeeded",
+		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if err := mem.CreateMigrateJob(t.Context(), want); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 51; i++ {
+		other := appdb.MigrateJob{
+			ID: uuid.NewString(), ClusterID: clusterRow.ID, WorkloadID: uuid.NewString(), State: "succeeded",
+			CreatedAt: time.Date(2026, 6, 1, 0, 0, i, 0, time.UTC),
+		}
+		if err := mem.CreateMigrateJob(t.Context(), other); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+wlID+"/migrate", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("migrate GET %d %s", res.StatusCode, raw)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["id"] != want.ID {
+		t.Fatalf("GET must not 404 a job outside the newest 50 cluster jobs: %s", raw)
+	}
+}

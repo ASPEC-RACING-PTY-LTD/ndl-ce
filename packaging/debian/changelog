@@ -205,7 +205,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     principals are ordered by created_at then id, matching Postgres.
     GET /migration/jobs and GET /workloads/{id}/migrate return newest
     jobs first, matching Postgres created_at DESC, so a later job is
-    not hidden behind map iteration.
+    not hidden behind map iteration. Workload migrate GET looks up
+    that workload's latest job instead of scanning a 50-row cluster
+    window that can hide it.
   * VM create refuses an extra data disk whose storage pool is
     unavailable before persist. GET /workloads no longer lists a VM
     whose extra volume start cannot attach.

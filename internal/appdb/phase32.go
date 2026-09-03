@@ -95,6 +95,22 @@ func (m *Memory) UpdateMigrateJob(_ context.Context, j MigrateJob) error {
 	return nil
 }
 
+func (m *Memory) GetLatestMigrateJob(_ context.Context, clusterID, workloadID string) (*MigrateJob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var best *MigrateJob
+	for _, j := range m.migrateJobs {
+		if j.ClusterID != clusterID || j.WorkloadID != workloadID {
+			continue
+		}
+		cp := j
+		if best == nil || cp.CreatedAt.After(best.CreatedAt) || (cp.CreatedAt.Equal(best.CreatedAt) && cp.ID < best.ID) {
+			best = &cp
+		}
+	}
+	return best, nil
+}
+
 func (m *Memory) ListMigrateJobs(_ context.Context, clusterID string, limit int) ([]MigrateJob, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

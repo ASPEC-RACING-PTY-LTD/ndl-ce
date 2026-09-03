@@ -169,18 +169,16 @@ func (s *Server) getWorkloadMigrate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	jobs, err := s.Store.ListMigrateJobs(r.Context(), p.User.ClusterID, 50)
+	j, err := s.Store.GetLatestMigrateJob(r.Context(), p.User.ClusterID, id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	for _, j := range jobs {
-		if j.WorkloadID == id {
-			writeJSON(w, http.StatusOK, migrateJobJSON(j))
-			return
-		}
+	if j == nil {
+		writeErr(w, http.StatusNotFound, "no migrate job")
+		return
 	}
-	writeErr(w, http.StatusNotFound, "no migrate job")
+	writeJSON(w, http.StatusOK, migrateJobJSON(*j))
 }
 
 func (s *Server) migrateDest(ctx context.Context, clusterID string, wl appdb.Workload, destID string) (*appdb.Node, error) {
