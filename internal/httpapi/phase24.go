@@ -79,7 +79,10 @@ func (s *Server) verifyBackupArtifact(w http.ResponseWriter, r *http.Request) {
 		art.VerifyError = "ZFS send artifacts are checksum-catalogued; qemu-img check is not used on a ZFS stream"
 		now := s.now()
 		art.LastTestedAt = &now
-		_ = s.Store.UpdateBackupArtifactVerify(r.Context(), *art)
+		if err := s.Store.UpdateBackupArtifactVerify(r.Context(), *art); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record backup verify")
+			return
+		}
 		writeJSON(w, http.StatusUnprocessableEntity, backupArtifactJSON(*art))
 		return
 	}

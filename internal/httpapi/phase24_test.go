@@ -310,3 +310,41 @@ func TestPhase24VerifyFailsClosedWhenPersistFails(t *testing.T) {
 		t.Fatalf("verify persist body %s", raw)
 	}
 }
+
+func TestPhase24ZFSVerifyFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	artID := uuid.NewString()
+	if err := mem.CreateBackupArtifact(context.Background(), appdb.BackupArtifact{
+		ID: artID, ClusterID: cluster.ID, Format: "zfs", Locator: "tank/vm@snap",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failUpdateBackupArtifactVerifyStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/verify", strings.NewReader(`{"mode":"open"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError || !strings.Contains(string(raw), "could not record backup verify") {
+		t.Fatalf("zfs verify persist %d %s", res.StatusCode, raw)
+	}
+	got, _ := mem.GetBackupArtifact(context.Background(), cluster.ID, artID)
+	if got == nil {
+		t.Fatal("artifact missing")
+	}
+	if got.LastTestedAt != nil {
+		t.Fatalf("GET must not show last_tested_at: %+v", got)
+	}
+	if got.VerifyError != "" {
+		t.Fatalf("GET must not show verify_error: %+v", got)
+	}
+}

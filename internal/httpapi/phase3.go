@@ -533,7 +533,9 @@ func looksLikeCreateIDs(message string) bool {
 func (s *Server) emitEvent(ctx context.Context, clusterID, nodeID, typ string, payload map[string]string) {
 	body, _ := json.Marshal(payload)
 	e := appdb.Event{ID: uuid.NewString(), ClusterID: clusterID, NodeID: nodeID, Type: typ, Payload: body, CreatedAt: time.Now().UTC()}
-	_ = s.Store.InsertEvent(ctx, e)
+	if err := s.Store.InsertEvent(ctx, e); err != nil {
+		return
+	}
 	if s.Hub != nil {
 		s.Hub.Publish(e)
 	}

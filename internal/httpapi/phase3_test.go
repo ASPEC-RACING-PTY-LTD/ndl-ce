@@ -424,3 +424,24 @@ func TestStorageUploadFailsClosedForFailedPool(t *testing.T) {
 		t.Fatalf("GET must not list a library item upload cannot write: %d -> %d", len(libsBefore), len(libsAfter))
 	}
 }
+
+func TestEmitEventFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	hub := &EventHub{}
+	s.Hub = hub
+	ch := hub.subscribe()
+	s.Store = failInsertEventStore{Store: mem}
+	s.emitEvent(context.Background(), cluster.ID, "", "workload.created", map[string]string{"workload_id": "missing"})
+	select {
+	case e := <-ch:
+		t.Fatalf("hub published an event GET /events would miss: %+v", e)
+	default:
+	}
+	ev, _ := mem.ListEvents(context.Background(), cluster.ID, 50)
+	for _, e := range ev {
+		if e.Type == "workload.created" {
+			t.Fatalf("event persist fail must not record: %+v", e)
+		}
+	}
+}
