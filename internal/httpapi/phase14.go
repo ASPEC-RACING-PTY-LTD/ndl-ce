@@ -215,19 +215,10 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 		Action: "assign", GPUID: gpuID, WorkloadID: wl.ID, Mode: mode, Exclusive: exclusive,
 		PCIDevices: pci, DeviceNodes: nodes,
 	})
-	if err != nil {
+	if gpuApplyFailed(res, err) || (res.Status != "" && res.Status != gpu.StatusAssigned) {
 		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeErr(w, http.StatusBadGateway, gpuApplyError(res, err))
 		return
-	}
-	if res.Status == gpu.StatusFailed {
-		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
-		writeErr(w, http.StatusBadGateway, res.Reason)
-		return
-	}
-	if res.Status != "" {
-		a.Status = res.Status
-		a.Reason = res.Reason
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "gpu.assign", "ok", a.ID)
 	writeJSON(w, http.StatusCreated, gpuAssignmentJSON(a))
@@ -250,10 +241,14 @@ func (s *Server) unassignGPU(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "assignment not found")
 		return
 	}
-	_, _ = s.gpus().GPUAssign(r.Context(), gpu.AssignRequest{
+	res, applyErr := s.gpus().GPUAssign(r.Context(), gpu.AssignRequest{
 		Action: "unassign", GPUID: a.GPUID, WorkloadID: a.WorkloadID, Mode: a.Mode,
 		PCIDevices: a.PCIDevices, DeviceNodes: a.DeviceNodes,
 	})
+	if gpuApplyFailed(res, applyErr) {
+		writeErr(w, http.StatusBadGateway, gpuApplyError(res, applyErr))
+		return
+	}
 	if err := s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -292,6 +287,26 @@ func encodeGroupMembers(members []inventory.PCIDevice) []map[string]any {
 		})
 	}
 	return out
+}
+
+func gpuApplyFailed(res gpu.AssignResult, err error) bool {
+	if err != nil {
+		return true
+	}
+	return res.Status == gpu.StatusFailed || res.Status == gpu.StatusUnsupported
+}
+
+func gpuApplyError(res gpu.AssignResult, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if strings.TrimSpace(res.Reason) != "" {
+		return res.Reason
+	}
+	if res.Status == gpu.StatusUnsupported {
+		return "gpu agent is unavailable"
+	}
+	return "gpu apply failed"
 }
 
 func gpuAssignmentJSON(a appdb.GPUAssignment) map[string]any {

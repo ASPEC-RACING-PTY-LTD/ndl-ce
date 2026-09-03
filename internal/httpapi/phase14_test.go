@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,12 +21,22 @@ import (
 )
 
 type fakeGPU struct {
-	calls []gpu.AssignRequest
+	calls  []gpu.AssignRequest
+	err    error
+	status string
+	reason string
 }
 
 func (f *fakeGPU) GPUAssign(_ context.Context, req gpu.AssignRequest) (gpu.AssignResult, error) {
 	f.calls = append(f.calls, req)
-	return gpu.AssignResult{Status: gpu.StatusAssigned, PCIDevices: req.PCIDevices, DeviceNodes: req.DeviceNodes}, nil
+	if f.err != nil {
+		return gpu.AssignResult{}, f.err
+	}
+	st := f.status
+	if st == "" {
+		st = gpu.StatusAssigned
+	}
+	return gpu.AssignResult{Status: st, Reason: f.reason, PCIDevices: req.PCIDevices, DeviceNodes: req.DeviceNodes}, nil
 }
 
 func gpuInv() inventory.Inventory {
@@ -261,5 +272,81 @@ func TestGPURuntimeUnsupportedOnEmptyInventory(t *testing.T) {
 	}
 	if strings.Contains(string(b), "NVIDIA_VISIBLE_DEVICES=all") {
 		t.Fatal("must never advertise all")
+	}
+}
+
+func TestGPUAssignFailsClosedWhenAgentUnavailable(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	ct := appdb.Workload{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped"}
+	if err := mem.CreateWorkload(context.Background(), ct); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"gpu_id":"0000:02:00.0","workload_id":"` + ct.ID + `","mode":"render"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("unavailable assign %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "gpu agent is unavailable") {
+		t.Fatalf("unavailable assign body %s", raw)
+	}
+	got, err := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("assignment leaked %+v %v", got, err)
+	}
+}
+
+func TestGPUUnassignFailsClosedWhenAgentFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	fg := &fakeGPU{}
+	s.GPU = fg
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	ct := appdb.Workload{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped"}
+	if err := mem.CreateWorkload(context.Background(), ct); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"gpu_id":"0000:02:00.0","workload_id":"` + ct.ID + `","mode":"render"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("assign %d %s", res.StatusCode, raw)
+	}
+	var assigned map[string]any
+	if err := json.Unmarshal(raw, &assigned); err != nil {
+		t.Fatal(err)
+	}
+	fg.err = errors.New("unbind failed")
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/gpus/unassign", strings.NewReader(`{"id":"`+assigned["id"].(string)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("unassign persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "unbind failed") {
+		t.Fatalf("unassign body %s", raw)
+	}
+	got, err := mem.GetGPUAssignment(context.Background(), cluster.ID, assigned["id"].(string))
+	if err != nil || got == nil {
+		t.Fatalf("unassign must keep catalog row %+v %v", got, err)
 	}
 }
