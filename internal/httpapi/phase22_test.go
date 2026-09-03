@@ -574,3 +574,52 @@ func TestPhase22ImportFailsClosedForFailedPool(t *testing.T) {
 		t.Fatalf("import must not persist a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
 	}
 }
+
+func TestPhase22ImportFailsClosedForDeviceBackedPools(t *testing.T) {
+	s, mem, ts, cookie, clusterID, dirPoolID, _ := phase22Ready(t)
+	dirPool, err := mem.GetStoragePool(context.Background(), clusterID, dirPoolID)
+	if err != nil || dirPool == nil {
+		t.Fatal("directory pool")
+	}
+	nodeID := dirPool.NodeID
+	rbdID := seedDistributedPool(t, mem, clusterID, nodeID)
+	s.Distributed = &fakeDistributed{up: true}
+	iscsiID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: iscsiID, ClusterID: clusterID, NodeID: nodeID, Name: "stack-iscsi",
+		BackendType: storage.BackendISCSI, Status: storage.StatusAvailable,
+		RootPath: storage.ISCSIByPath + "ip-10.0.0.8:3260-iscsi-iqn.2020-01.com.example:lun-lun-0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		poolID string
+		msg    string
+	}{
+		{rbdID, "distributed RBD pools do not store directory qcow2 copies"},
+		{iscsiID, "iSCSI pools do not store directory qcow2 copies"},
+	} {
+		volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+		body, _ := json.Marshal(map[string]any{"name": "needs-vol", "compose": composeFixture, "pool_id": tc.poolID})
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/stacks/import", strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("import %s %d %s", tc.poolID, res.StatusCode, raw)
+		}
+		if !strings.Contains(string(raw), tc.msg) {
+			t.Fatalf("import %s body %s", tc.poolID, raw)
+		}
+		stacks, _ := mem.ListStacks(context.Background(), clusterID)
+		if len(stacks) != 0 {
+			t.Fatalf("GET must not list a stack whose named volumes are directory files on a device-backed pool: %+v", stacks)
+		}
+		volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+		if len(volsAfter) != len(volsBefore) {
+			t.Fatalf("import must not persist a directory volume under a device-backed pool: %d -> %d", len(volsBefore), len(volsAfter))
+		}
+	}
+}

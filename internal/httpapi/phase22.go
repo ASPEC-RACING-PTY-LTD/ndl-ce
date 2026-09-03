@@ -510,6 +510,9 @@ func (s *Server) resolveStackVolumes(ctx context.Context, clusterID, poolID stri
 		if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 			return errConflict("storage pool is unavailable")
 		}
+		if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+			return err
+		}
 		if s.Storage == nil {
 			return errUnavailable("storage agent is unavailable")
 		}
