@@ -211,6 +211,12 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
+	stored, err := s.Store.GetGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
+	if err != nil || stored == nil {
+		writeErr(w, http.StatusInternalServerError, "could not record GPU assign")
+		return
+	}
+	a = *stored
 	origSpec := wl.SpecJSON
 	if mode == gpu.ModeVFIO {
 		hosts := vfioHostsForWorkload(r.Context(), s, p.User.ClusterID, wl.ID, parsed)

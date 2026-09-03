@@ -420,3 +420,52 @@ func TestGPUUnassignFailsClosedWhenPersistMisses(t *testing.T) {
 		t.Fatalf("GET must still list the assignment after persist miss: %s", raw)
 	}
 }
+
+type missCreateGPUAssignmentStore struct {
+	appdb.Store
+}
+
+func (missCreateGPUAssignmentStore) CreateGPUAssignment(context.Context, appdb.GPUAssignment) error {
+	return nil
+}
+
+func TestGPUAssignFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.GPU = &fakeGPU{}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	ct := appdb.Workload{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped"}
+	if err := mem.CreateWorkload(context.Background(), ct); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = missCreateGPUAssignmentStore{Store: mem}
+	body := `{"gpu_id":"0000:02:00.0","workload_id":"` + ct.ID + `","mode":"render"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("assign persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record GPU assign") {
+		t.Fatalf("assign persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+ct.ID+"/gpus", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET gpus %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "0000:02:00.0") {
+		t.Fatalf("GET /gpus must not list the GPU after persist miss: %s", raw)
+	}
+}

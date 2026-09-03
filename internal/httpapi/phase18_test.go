@@ -1080,6 +1080,48 @@ func TestPhase18USBAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
 	}
 }
 
+type missCreateUSBAttachmentStore struct {
+	appdb.Store
+}
+
+func (missCreateUSBAttachmentStore) CreateUSBAttachment(context.Context, appdb.USBAttachment) error {
+	return nil
+}
+
+func TestPhase18USBAttachFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "usb-miss")
+	id := created["id"].(string)
+	s.Store = missCreateUSBAttachmentStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/usb", strings.NewReader(`{"address":"1-2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("usb persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record USB attach") {
+		t.Fatalf("usb persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	node, _ := mem.GetNode(context.Background(), clusterID)
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes/"+node.ID+"/usb", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET usb %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), `"claimed_by":"`+id+`"`) {
+		t.Fatalf("GET /usb must not claim the device after persist miss: %s", raw)
+	}
+}
+
 func TestPhase18PCIAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
 	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-persist")
@@ -1107,6 +1149,39 @@ func TestPhase18PCIAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
 		if a.WorkloadID == id {
 			t.Fatalf("failed spec persist leaked PCI assignment %+v", a)
 		}
+	}
+}
+
+func TestPhase18PCIAttachFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-miss")
+	id := created["id"].(string)
+	s.Store = missCreateGPUAssignmentStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("pci persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record PCI assign") {
+		t.Fatalf("pci persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id+"/gpus", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET gpus %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), "0000:03:00.0") {
+		t.Fatalf("GET /gpus must not list the PCI assignment after persist miss: %s", raw)
 	}
 }
 

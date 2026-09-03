@@ -32,6 +32,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Node revoke fails closed if persist misses. A 200 does not claim revoked GET /nodes would still list.
   * Token revoke fails closed if persist misses. A 204 does not mean GET /me with that bearer still works.
   * Logout fails closed if session persist misses. A 204 does not mean GET /me with that cookie still works.
+  * GPU assign fails closed if catalog persist misses. A 201 does not list an assignment GET /workloads/{id}/gpus would miss.
+  * USB attach fails closed if catalog persist misses. A 201 does not claim claimed_by GET /nodes/{id}/usb would miss.
+  * PCI attach fails closed if catalog persist misses. A 201 does not list an assignment GET /workloads/{id}/gpus would miss.
   * A fenced writer cannot renew or clear the lease; mutate APIs refuse both the fenced holder and a standby until promote. Partitioned OS root marks the parent disk so ZFS/LVM/OSD create cannot wipe it. Files names reject empty and parent-directory segments before they reach the jail.
   * Overlay snapshot rollback refuses a running VM like ZFS and LVM. Template create records the new overlay as the volume tip. recover-admin fails closed when the user row is missing. MFA challenges and recovery codes are consumed before a session is issued. Migration cancel and retry fail closed when job persist fails.
   * Mutating APIs refuse a fenced writer and a standby until promote; fence and promote stay reachable. Overlay flatten refuses a running VM. Restore of a system container is refused instead of using the VM replace path.

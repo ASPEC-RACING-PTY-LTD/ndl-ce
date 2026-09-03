@@ -745,6 +745,23 @@ func (s *Server) attachUSB(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
+	atts, err := s.Store.ListUSBAttachments(r.Context(), p.User.ClusterID, row.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record USB attach")
+		return
+	}
+	recorded := false
+	for _, got := range atts {
+		if got.ID == att.ID {
+			att = got
+			recorded = true
+			break
+		}
+	}
+	if !recorded {
+		writeErr(w, http.StatusInternalServerError, "could not record USB attach")
+		return
+	}
 	spec, _ := vmspec.Parse(row.SpecJSON)
 	spec.USBs = append(spec.USBs, usb)
 	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes}); err != nil {
@@ -832,6 +849,12 @@ func (s *Server) attachPCI(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
 	}
+	stored, err := s.Store.GetGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
+	if err != nil || stored == nil {
+		writeErr(w, http.StatusInternalServerError, "could not record PCI assign")
+		return
+	}
+	a = *stored
 	hosts := vfioHostsForWorkload(r.Context(), s, p.User.ClusterID, row.ID, parsed)
 	if err := persistVFIOHosts(r.Context(), s, *row, hosts); err != nil {
 		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
