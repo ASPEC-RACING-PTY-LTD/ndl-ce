@@ -638,6 +638,58 @@ func TestPhase39VMCloneAndExportFailClosedForDistributed(t *testing.T) {
 	}
 }
 
+func TestPhase39LibraryUploadFailsClosedForDeviceBackedPools(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	s.Storage = fakeStorage{img: storage.UploadResult{
+		ItemID: uuid.NewString(), Kind: storage.LibraryISO, DisplayName: "test.iso",
+		BackendRef: "library/iso/x.iso", SizeBytes: 32, SHA256: "abc123",
+	}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	rbdID := seedDistributedPool(t, mem, cluster.ID, nodeID)
+	iscsiID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: iscsiID, ClusterID: cluster.ID, NodeID: nodeID, Name: "iscsi",
+		BackendType: storage.BackendISCSI, Status: storage.StatusAvailable,
+		RootPath: storage.ISCSIByPath + "ip-10.0.0.8:3260-iscsi-iqn.2020-01.com.example:lun-lun-0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		poolID string
+		msg    string
+	}{
+		{rbdID, "distributed RBD pools do not store directory qcow2 copies"},
+		{iscsiID, "iSCSI pools do not store directory qcow2 copies"},
+	} {
+		libsBefore, _ := mem.ListLibraryItems(context.Background(), cluster.ID, tc.poolID)
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/images?pool_id="+tc.poolID+"&kind=iso&filename=test.iso", strings.NewReader("not-used"))
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("upload %s %d %s", tc.poolID, res.StatusCode, raw)
+		}
+		if !strings.Contains(string(raw), tc.msg) {
+			t.Fatalf("upload %s body %s", tc.poolID, raw)
+		}
+		libsAfter, _ := mem.ListLibraryItems(context.Background(), cluster.ID, tc.poolID)
+		if len(libsAfter) != len(libsBefore) {
+			t.Fatalf("GET must not list a library item upload cannot write under a device-backed pool: %d -> %d", len(libsBefore), len(libsAfter))
+		}
+	}
+}
+
 func TestPhase39OSDStartFailsClosedWhenStatusPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Update = &fakeUpdate{supported: true}

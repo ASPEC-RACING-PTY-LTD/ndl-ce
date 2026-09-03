@@ -275,6 +275,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     distributed VM is argv the host can start, not a disk path refuse.
     Generic /dev remains refused. Runtime cidata and firmware locators
     still compile under the per-VM runtime prefix.
+  * Library image upload refuses a distributed RBD or iSCSI pool before
+    persist. GET /images no longer lists an ISO under /dev/rbd that
+    Compile cannot attach.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

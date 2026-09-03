@@ -330,6 +330,10 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "storage pool is unavailable")
 		return
 	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
 	itemID := uuid.NewString()
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
 	existingItems, _ := s.Store.ListLibraryItems(r.Context(), p.User.ClusterID, pool.ID)

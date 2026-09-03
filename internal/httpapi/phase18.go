@@ -53,8 +53,9 @@ func (s *Server) cloneVM(w http.ResponseWriter, r *http.Request, p *principal, s
 	writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), *cloned))
 }
 
-// refuseDirectoryCopyDest fails closed when a mutating copy would JoinUnder a
-// device-backed pool root such as /dev/rbd or an iSCSI by-path device.
+// refuseDirectoryCopyDest fails closed when a mutating copy or library write
+// would JoinUnder a device-backed pool root such as /dev/rbd or an iSCSI
+// by-path device.
 func refuseDirectoryCopyDest(backend string) error {
 	switch backend {
 	case storage.BackendDistributed:
