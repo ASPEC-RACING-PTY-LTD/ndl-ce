@@ -175,6 +175,88 @@ func TestPhase27ApplyOnePolicyKeepsOthers(t *testing.T) {
 	if applied.Status != ndnet.StatusAvailable {
 		t.Fatalf("applied policy status %+v", applied)
 	}
+	for _, item := range items {
+		if item.Status != ndnet.StatusAvailable {
+			t.Fatalf("full-set apply left sibling %+v", item)
+		}
+	}
+}
+
+type recordAdvancedNet struct {
+	fakeNet
+	last  ndnet.AdvancedOp
+	calls int
+}
+
+func (r *recordAdvancedNet) NetAdvanced(ctx context.Context, op ndnet.AdvancedOp) (ndnet.AdvancedResult, error) {
+	r.last = op
+	r.calls++
+	return r.fakeNet.NetAdvanced(ctx, op)
+}
+
+func TestPhase27ApplySendsFullPolicySetOnce(t *testing.T) {
+	s, mem, token := testServer(t)
+	rec := &recordAdvancedNet{fakeNet: fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}}
+	s.Network = rec
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	netID := uuid.NewString()
+	_ = mem.CreateNetwork(t.Context(), appdb.Network{
+		ID: netID, ClusterID: cluster.ID, NodeID: node.ID, Name: "iso", Kind: ndnet.KindIsolated,
+		Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123",
+	})
+	a := uuid.NewString()
+	b := uuid.NewString()
+	c := uuid.NewString()
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: a, ClusterID: cluster.ID, Name: "a", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: b, ClusterID: cluster.ID, Name: "b", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: c, ClusterID: cluster.ID, Name: "c", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: a, NetworkID: netID, MAC: "02:00:00:00:00:01"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: b, NetworkID: netID, MAC: "02:00:00:00:00:02"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: c, NetworkID: netID, MAC: "02:00:00:00:00:03"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/policies", strings.NewReader(`{"name":"ab","action":"deny","src_workload_id":"`+a+`","dst_workload_id":"`+b+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy a %d %s", res.StatusCode, body)
+	}
+	var first map[string]any
+	if err := json.Unmarshal(body, &first); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/networks/policies", strings.NewReader(`{"name":"ac","action":"deny","src_workload_id":"`+a+`","dst_workload_id":"`+c+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("policy b %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/networks/policies/"+first["id"].(string)+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("apply %d %s", res.StatusCode, raw)
+	}
+	if rec.calls != 1 {
+		t.Fatalf("apply must load nft once, got %d", rec.calls)
+	}
+	if len(rec.last.Policies) != 2 {
+		t.Fatalf("apply must send the full stored set, got %+v", rec.last.Policies)
+	}
 }
 
 type failUpdateNetworkPolicyStatusStore struct {

@@ -173,20 +173,31 @@ func (s *Server) applyPolicy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// Apply the full stored set. A single-rule replace would drop every other policy.
-	var applied appdb.NetworkPolicy
+	// Apply the full stored set in one table replace. A single-rule replace
+	// would drop every other policy from nft while catalog still said available.
+	var policies []ndnet.PolicyRule
 	found := false
 	for _, item := range items {
-		res, err := s.advanced()(r.Context(), ndnet.AdvancedOp{
-			Action: ndnet.ActionPolicyApply, ObjectID: item.ID, PolicyAction: item.Action, SrcMAC: item.SrcMAC, DstMAC: item.DstMAC,
-		})
-		if err != nil {
-			if item.ID == pol.ID {
-				writeErr(w, statusFor(err), err.Error())
-				return
-			}
-			continue
+		if item.ID == pol.ID {
+			found = true
 		}
+		policies = append(policies, ndnet.PolicyRule{
+			ID: item.ID, Action: item.Action, SrcMAC: item.SrcMAC, DstMAC: item.DstMAC,
+		})
+	}
+	if !found {
+		writeErr(w, http.StatusNotFound, "policy not found")
+		return
+	}
+	res, err := s.advanced()(r.Context(), ndnet.AdvancedOp{
+		Action: ndnet.ActionPolicyApply, ObjectID: pol.ID, PolicyAction: pol.Action,
+		SrcMAC: pol.SrcMAC, DstMAC: pol.DstMAC, Policies: policies,
+	})
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	for _, item := range items {
 		if err := s.Store.UpdateNetworkPolicyStatus(r.Context(), p.User.ClusterID, item.ID, res.Status, res.Reason); err != nil {
 			if item.ID == pol.ID {
 				writeErr(w, http.StatusInternalServerError, "could not record network policy")
@@ -195,17 +206,11 @@ func (s *Server) applyPolicy(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if item.ID == pol.ID {
-			item.Status, item.Reason = res.Status, res.Reason
-			applied = item
-			found = true
+			pol.Status, pol.Reason = res.Status, res.Reason
 		}
 	}
-	if !found {
-		writeErr(w, http.StatusNotFound, "policy not found")
-		return
-	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "network.policy.apply", "ok", applied.ID)
-	writeJSON(w, http.StatusOK, policyJSON(applied))
+	s.audit(r, p.User.ClusterID, p.User.ID, "network.policy.apply", "ok", pol.ID)
+	writeJSON(w, http.StatusOK, policyJSON(*pol))
 }
 
 func (s *Server) createOverlay(w http.ResponseWriter, r *http.Request) {

@@ -29,22 +29,31 @@ const (
 
 // AdvancedOp is a typed VLAN, bond, policy, or overlay action. There is no argv field.
 type AdvancedOp struct {
-	Action        string   `json:"action"`
-	ObjectID      string   `json:"object_id"`
-	NetworkID     string   `json:"network_id,omitempty"`
-	Name          string   `json:"name,omitempty"`
-	VID           int      `json:"vlan_id,omitempty"`
-	ParentIfName  string   `json:"parent_ifname,omitempty"`
-	Mode          string   `json:"mode,omitempty"`
-	AccessIfName  string   `json:"access_ifname,omitempty"`
-	Members       []string `json:"members,omitempty"`
-	SrcMAC        string   `json:"src_mac,omitempty"`
-	DstMAC        string   `json:"dst_mac,omitempty"`
-	PolicyAction  string   `json:"policy_action,omitempty"`
-	OverlayVNI    uint32   `json:"overlay_vni,omitempty"`
-	ConfirmIfName string   `json:"confirm_ifname,omitempty"`
-	ArmRollback   bool     `json:"arm_rollback,omitempty"`
-	BridgeName    string   `json:"bridge_name,omitempty"`
+	Action        string       `json:"action"`
+	ObjectID      string       `json:"object_id"`
+	NetworkID     string       `json:"network_id,omitempty"`
+	Name          string       `json:"name,omitempty"`
+	VID           int          `json:"vlan_id,omitempty"`
+	ParentIfName  string       `json:"parent_ifname,omitempty"`
+	Mode          string       `json:"mode,omitempty"`
+	AccessIfName  string       `json:"access_ifname,omitempty"`
+	Members       []string     `json:"members,omitempty"`
+	SrcMAC        string       `json:"src_mac,omitempty"`
+	DstMAC        string       `json:"dst_mac,omitempty"`
+	PolicyAction  string       `json:"policy_action,omitempty"`
+	Policies      []PolicyRule `json:"policies,omitempty"`
+	OverlayVNI    uint32       `json:"overlay_vni,omitempty"`
+	ConfirmIfName string       `json:"confirm_ifname,omitempty"`
+	ArmRollback   bool         `json:"arm_rollback,omitempty"`
+	BridgeName    string       `json:"bridge_name,omitempty"`
+}
+
+// PolicyRule is one guest-to-guest bridge filter. Apply replaces the full set.
+type PolicyRule struct {
+	ID     string `json:"id"`
+	Action string `json:"action"`
+	SrcMAC string `json:"src_mac"`
+	DstMAC string `json:"dst_mac"`
 }
 
 // AdvancedResult is the honest apply outcome.

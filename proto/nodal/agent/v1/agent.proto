@@ -331,6 +331,13 @@ message Distributed {
   string root_device = 14;
 }
 
+message NetPolicyRule {
+  string object_id = 1;
+  string policy_action = 2;
+  string src_mac = 3;
+  string dst_mac = 4;
+}
+
 message NetAdvanced {
   string action = 1;
   string object_id = 2;
@@ -348,6 +355,7 @@ message NetAdvanced {
   string confirm_ifname = 14;
   bool arm_rollback = 15;
   string bridge_name = 16;
+  repeated NetPolicyRule policies = 17;
 }
 
 message WireGuard {

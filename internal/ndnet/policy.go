@@ -15,34 +15,60 @@ func parseMAC(v string) (string, error) {
 	return mac.String(), nil
 }
 
-// RenderBridgePolicy is guest-to-guest nftables in the bridge family.
-// It never emits an inet INPUT hook and never matches the management ifindex.
-func RenderBridgePolicy(id, action, srcMAC, dstMAC, mgmtIf string) (string, error) {
-	src, err := parseMAC(srcMAC)
-	if err != nil {
-		return "", err
+func policyRules(op AdvancedOp) []PolicyRule {
+	if len(op.Policies) > 0 {
+		return op.Policies
 	}
-	dst, err := parseMAC(dstMAC)
-	if err != nil {
-		return "", err
-	}
-	if src == dst {
-		return "", fmt.Errorf("policy source and destination must differ")
-	}
+	return []PolicyRule{{ID: op.ObjectID, Action: op.PolicyAction, SrcMAC: op.SrcMAC, DstMAC: op.DstMAC}}
+}
+
+func policyVerdict(action string) (string, error) {
 	act := strings.ToLower(strings.TrimSpace(action))
 	if act != "deny" && act != "drop" && act != "allow" && act != "accept" {
 		return "", fmt.Errorf("policy action must be deny or allow")
 	}
-	verdict := "drop"
 	if act == "allow" || act == "accept" {
-		verdict = "accept"
+		return "accept", nil
+	}
+	return "drop", nil
+}
+
+// RenderBridgePolicy is guest-to-guest nftables in the bridge family.
+// It never emits an inet INPUT hook and never matches the management ifindex.
+func RenderBridgePolicy(id, action, srcMAC, dstMAC, mgmtIf string) (string, error) {
+	return RenderBridgePolicies([]PolicyRule{{ID: id, Action: action, SrcMAC: srcMAC, DstMAC: dstMAC}}, mgmtIf)
+}
+
+// RenderBridgePolicies is one bridge table with every stored policy. Apply
+// replaces that table; a single-rule file would drop every other policy.
+func RenderBridgePolicies(items []PolicyRule, mgmtIf string) (string, error) {
+	if len(items) == 0 {
+		return "", fmt.Errorf("policy set is empty")
 	}
 	var b strings.Builder
 	b.WriteString("table bridge " + PolicyTable + " {\n")
 	b.WriteString("  chain forward {\n")
 	b.WriteString("    type filter hook forward priority 0; policy accept;\n")
-	b.WriteString(fmt.Sprintf("    ether saddr %s ether daddr %s %s comment \"ndl-policy-%s\"\n", src, dst, verdict, id))
-	b.WriteString(fmt.Sprintf("    ether saddr %s ether daddr %s %s comment \"ndl-policy-%s-rev\"\n", dst, src, verdict, id))
+	for _, item := range items {
+		src, err := parseMAC(item.SrcMAC)
+		if err != nil {
+			return "", err
+		}
+		dst, err := parseMAC(item.DstMAC)
+		if err != nil {
+			return "", err
+		}
+		if src == dst {
+			return "", fmt.Errorf("policy source and destination must differ")
+		}
+		verdict, err := policyVerdict(item.Action)
+		if err != nil {
+			return "", err
+		}
+		id := strings.TrimSpace(item.ID)
+		b.WriteString(fmt.Sprintf("    ether saddr %s ether daddr %s %s comment \"ndl-policy-%s\"\n", src, dst, verdict, id))
+		b.WriteString(fmt.Sprintf("    ether saddr %s ether daddr %s %s comment \"ndl-policy-%s-rev\"\n", dst, src, verdict, id))
+	}
 	b.WriteString("  }\n")
 	b.WriteString("}\n")
 	rules := b.String()
@@ -78,7 +104,7 @@ func (e *Engine) applyPolicy(ctx context.Context, op AdvancedOp) (AdvancedResult
 		return AdvancedResult{}, err
 	}
 	mgmt := managementName(host)
-	rules, err := RenderBridgePolicy(op.ObjectID, op.PolicyAction, op.SrcMAC, op.DstMAC, mgmt)
+	rules, err := RenderBridgePolicies(policyRules(op), mgmt)
 	if err != nil {
 		return AdvancedResult{}, err
 	}

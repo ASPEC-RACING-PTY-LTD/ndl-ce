@@ -263,7 +263,7 @@ func (c Client) NetAdvanced(ctx context.Context, op ndnet.AdvancedOp) (ndnet.Adv
 			VlanId: int32(op.VID), ParentIfname: op.ParentIfName, Mode: op.Mode, AccessIfname: op.AccessIfName,
 			Members: op.Members, SrcMac: op.SrcMAC, DstMac: op.DstMAC, PolicyAction: op.PolicyAction,
 			OverlayVni: op.OverlayVNI, ConfirmIfname: op.ConfirmIfName, ArmRollback: op.ArmRollback,
-			BridgeName: op.BridgeName,
+			BridgeName: op.BridgeName, Policies: encodeNetPolicies(op.Policies),
 		}},
 	}))
 	if err != nil {

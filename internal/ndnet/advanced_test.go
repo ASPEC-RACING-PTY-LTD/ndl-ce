@@ -115,6 +115,34 @@ func TestPolicyDeniesPairAndRefusesManagementINPUT(t *testing.T) {
 	}
 }
 
+func TestPolicyApplyRendersFullSetInOneTable(t *testing.T) {
+	src := "02:00:00:00:00:01"
+	mid := "02:00:00:00:00:02"
+	dst := "02:00:00:00:00:03"
+	idA := uuid.NewString()
+	idB := uuid.NewString()
+	e := testEngine(t, testHost())
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionPolicyApply, ObjectID: idA, PolicyAction: "deny", SrcMAC: src, DstMAC: mid,
+		Policies: []PolicyRule{
+			{ID: idA, Action: "deny", SrcMAC: src, DstMAC: mid},
+			{ID: idB, Action: "deny", SrcMAC: src, DstMAC: dst},
+		},
+	})
+	if err != nil || res.Status != StatusAvailable {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if strings.Count(res.NFT, "table bridge") != 1 {
+		t.Fatalf("one table replace, got %s", res.NFT)
+	}
+	if !strings.Contains(res.NFT, src) || !strings.Contains(res.NFT, mid) || !strings.Contains(res.NFT, dst) {
+		t.Fatalf("full set missing MACs: %s", res.NFT)
+	}
+	if !strings.Contains(res.NFT, "ndl-policy-"+idA) || !strings.Contains(res.NFT, "ndl-policy-"+idB) {
+		t.Fatalf("full set missing policy comments: %s", res.NFT)
+	}
+}
+
 func TestOverlayIsPrepNotClusterFabric(t *testing.T) {
 	e := testEngine(t, testHost())
 	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{

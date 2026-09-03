@@ -85,11 +85,40 @@ func (h *Handler) execNetAdvanced(ctx context.Context, m *agentv1.NetAdvanced) (
 		VID: int(m.GetVlanId()), ParentIfName: m.GetParentIfname(), Mode: m.GetMode(), AccessIfName: m.GetAccessIfname(),
 		Members: m.GetMembers(), SrcMAC: m.GetSrcMac(), DstMAC: m.GetDstMac(), PolicyAction: m.GetPolicyAction(),
 		OverlayVNI: m.GetOverlayVni(), ConfirmIfName: m.GetConfirmIfname(), ArmRollback: m.GetArmRollback(),
-		BridgeName: m.GetBridgeName(),
+		BridgeName: m.GetBridgeName(), Policies: decodeNetPolicies(m.GetPolicies()),
 	}
 	res, err := h.nets().ApplyAdvanced(ctx, op)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: op.Action, ResultJson: mustJSON(res)}), nil
+}
+
+func encodeNetPolicies(in []ndnet.PolicyRule) []*agentv1.NetPolicyRule {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*agentv1.NetPolicyRule, 0, len(in))
+	for _, p := range in {
+		out = append(out, &agentv1.NetPolicyRule{
+			ObjectId: p.ID, PolicyAction: p.Action, SrcMac: p.SrcMAC, DstMac: p.DstMAC,
+		})
+	}
+	return out
+}
+
+func decodeNetPolicies(in []*agentv1.NetPolicyRule) []ndnet.PolicyRule {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ndnet.PolicyRule, 0, len(in))
+	for _, p := range in {
+		if p == nil {
+			continue
+		}
+		out = append(out, ndnet.PolicyRule{
+			ID: p.GetObjectId(), Action: p.GetPolicyAction(), SrcMAC: p.GetSrcMac(), DstMAC: p.GetDstMac(),
+		})
+	}
+	return out
 }
