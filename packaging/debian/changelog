@@ -269,7 +269,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     no longer 201s onto a failed first pool GET would list.
 	* Lab qemu-proto start joins an existing volume with HostVolumePath.
     A ZFS zvol is the device path start attaches, not a path under
-    the pool root JoinUnder would invent.
+    the pool root JoinUnder would invent. Disk format follows
+    QEMUFormat, so a zvol, thin LV, or RBD starts as raw the same
+    way product VM start already does. GET disk_format is not a
+    catalog zvol or rbd string compile refuses.
   * Files and Terminal join a system-container root with HostVolumePath.
     A ZFS dataset under the ZFS mount root is that path, not a nested
     JoinUnder of the absolute locator.

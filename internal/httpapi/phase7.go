@@ -222,7 +222,7 @@ func (s *Server) labQemuProtoStart(w http.ResponseWriter, r *http.Request) {
 		WorkloadID:  id,
 		VolumeID:    vol.ID,
 		DiskPath:    diskPath,
-		DiskFormat:  firstNonEmpty(vol.Format, storage.FormatQCOW2),
+		DiskFormat:  storage.QEMUFormat(vol.BackendType, vol.Format),
 		MemoryBytes: qemu.DefaultMemory,
 		CPUs:        1,
 		Machine:     qemu.DefaultMachine,

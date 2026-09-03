@@ -357,6 +357,16 @@ func TestLabQemuProtoJoinsExistingZVolUnderHostPath(t *testing.T) {
 	if strings.Contains(fq.spec.DiskPath, storage.ZFSMountRoot+"/dev/") {
 		t.Fatalf("StartQemuProto must not join the zvol under the ZFS mount root: %s", fq.spec.DiskPath)
 	}
+	if fq.spec.DiskFormat != "raw" {
+		t.Fatalf("StartQemuProto must start a zvol as raw, not catalog format %q", fq.spec.DiskFormat)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["disk_format"] != "raw" {
+		t.Fatalf("GET disk_format must be raw for a zvol start: %s", raw)
+	}
 }
 
 func TestLabQemuProtoFailsClosedForNewDistributedVolume(t *testing.T) {
