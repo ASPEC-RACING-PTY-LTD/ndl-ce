@@ -439,6 +439,20 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	existing, err := s.Store.ListSnapshots(r.Context(), p.User.ClusterID, row.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	depth := overlayChainDepth(vol.BackendRef, existing)
+	if depth >= qemu.ChainMax {
+		writeErr(w, http.StatusConflict, "qcow2 overlay chain cap is 16")
+		return
+	}
+	parentID := ""
+	if depth > 0 && len(existing) > 0 {
+		parentID = existing[len(existing)-1].ID
+	}
 	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"-tmpl.qcow2")
 	overlay, jerr := storage.JoinUnder(pool.RootPath, overlayRel)
 	if jerr != nil {
@@ -446,7 +460,8 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, serr := s.VM.SnapshotVM(r.Context(), qemu.OverlayRequest{
-		WorkloadID: row.ID, Action: "create", OverlayPath: overlay, BackingPath: tip,
+		WorkloadID: row.ID, Action: qemu.OverlayCreate, OverlayPath: overlay, BackingPath: tip,
+		ChainDepth: depth, ChainMax: qemu.ChainMax,
 	})
 	if serr != nil {
 		writeErr(w, statusFor(serr), serr.Error())
@@ -459,7 +474,8 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	snap := appdb.Snapshot{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
-		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: frozenRef, Status: "available",
+		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: frozenRef,
+		ParentID: parentID, ChainDepth: depth + 1, Status: "available",
 	}
 	if err := s.Store.CreateSnapshot(r.Context(), snap); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

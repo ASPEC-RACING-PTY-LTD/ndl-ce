@@ -605,6 +605,141 @@ func TestPhase18TemplateSnapshotRecordsFrozenBacking(t *testing.T) {
 	}
 }
 
+func TestPhase18TemplateHonorsOverlayChainCap(t *testing.T) {
+	_, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-cap")
+	id := created["id"].(string)
+	for i := 0; i < qemu.ChainMax; i++ {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/snapshots", strings.NewReader(`{"name":"s"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		if res.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(res.Body)
+			_ = res.Body.Close()
+			t.Fatalf("snap %d: %d %s", i, res.StatusCode, b)
+		}
+		_ = res.Body.Close()
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"overflow"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("template chain cap %d %s", res.StatusCode, b)
+	}
+}
+
+func TestPhase18TemplateSnapshotRecordsOverlayChain(t *testing.T) {
+	_, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-chain")
+	id := created["id"].(string)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/snapshots", strings.NewReader(`{"name":"user"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("user snap %d %s", res.StatusCode, raw)
+	}
+	var user map[string]any
+	if err := json.Unmarshal(raw, &user); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("template %d %s", res.StatusCode, raw)
+	}
+
+	tmpl := phase18TemplateSnapshot(t, ts, cookie, id)
+	if tmpl["parent_id"] != user["id"] {
+		t.Fatalf("template parent_id %v want %s", tmpl["parent_id"], user["id"])
+	}
+	if tmpl["chain_depth"] != float64(2) {
+		t.Fatalf("template chain_depth %v", tmpl["chain_depth"])
+	}
+}
+
+func TestPhase18TemplateAfterFlattenDoesNotInheritStaleParent(t *testing.T) {
+	_, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-flat")
+	id := created["id"].(string)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/snapshots", strings.NewReader(`{"name":"before-flat"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("user snap %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/snapshots/flatten", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "flatten")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("flatten %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("template %d %s", res.StatusCode, raw)
+	}
+
+	tmpl := phase18TemplateSnapshot(t, ts, cookie, id)
+	if tmpl["parent_id"] != "" && tmpl["parent_id"] != nil {
+		t.Fatalf("template overlay after flatten must not inherit leftover parent %v", tmpl)
+	}
+	if tmpl["chain_depth"] != float64(1) {
+		t.Fatalf("post-flatten template chain_depth %v", tmpl["chain_depth"])
+	}
+}
+
+func phase18TemplateSnapshot(t *testing.T, ts *httptest.Server, cookie, workloadID string) map[string]any {
+	t.Helper()
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+workloadID+"/snapshots", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("snapshots %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range listed.Items {
+		if item["purpose_tag"] == "template" {
+			return item
+		}
+	}
+	t.Fatalf("template snapshot missing %s", raw)
+	return nil
+}
+
 type recordOverlayVM struct {
 	*fakeVM
 	last qemu.OverlayRequest
