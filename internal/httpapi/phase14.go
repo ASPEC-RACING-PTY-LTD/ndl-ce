@@ -357,7 +357,11 @@ func (s *Server) releaseGPUAssignment(ctx context.Context, clusterID string, a a
 		}
 	}
 	if err := s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID); err != nil {
-		return errInternal(err.Error())
+		return errInternal("could not record GPU unassign")
+	}
+	got, gerr := s.Store.GetGPUAssignment(ctx, clusterID, a.ID)
+	if gerr != nil || got != nil {
+		return errInternal("could not record GPU unassign")
 	}
 	return nil
 }

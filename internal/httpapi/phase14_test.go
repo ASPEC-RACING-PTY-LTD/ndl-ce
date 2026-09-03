@@ -358,3 +358,65 @@ func TestGPUUnassignFailsClosedWhenAgentFails(t *testing.T) {
 		t.Fatalf("unassign must keep catalog row %+v %v", got, err)
 	}
 }
+
+type missDeleteGPUAssignmentStore struct {
+	appdb.Store
+}
+
+func (missDeleteGPUAssignmentStore) DeleteGPUAssignment(context.Context, string, string) error {
+	return nil
+}
+
+func TestGPUUnassignFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.GPU = &fakeGPU{}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	ct := appdb.Workload{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped"}
+	if err := mem.CreateWorkload(context.Background(), ct); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"gpu_id":"0000:02:00.0","workload_id":"` + ct.ID + `","mode":"render"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("assign %d %s", res.StatusCode, raw)
+	}
+	var assigned map[string]any
+	if err := json.Unmarshal(raw, &assigned); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = missDeleteGPUAssignmentStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/gpus/unassign", strings.NewReader(`{"id":"`+assigned["id"].(string)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("unassign persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record GPU unassign") {
+		t.Fatalf("unassign persist miss body %s", raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+ct.ID+"/gpus", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET gpus %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), assigned["id"].(string)) {
+		t.Fatalf("GET must still list the assignment after persist miss: %s", raw)
+	}
+}
