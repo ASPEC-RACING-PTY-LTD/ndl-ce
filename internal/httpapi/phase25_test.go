@@ -571,3 +571,122 @@ func TestPhase25VMCreateFailsClosedWhenLVMUnavailable(t *testing.T) {
 		t.Fatalf("GET must not list a VM whose thin LV apply cannot create: %+v", items)
 	}
 }
+
+func TestPhase25VMCloneExportAndTemplateFailClosedForLVM(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.LVM = &fakeLVM{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: node.ID, Name: "ndlvg",
+		BackendType: storage.BackendLVM, Status: storage.StatusAvailable,
+		RootPath: storage.LVMMountRoot + "/ndlvg",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpsertLVMVG(context.Background(), appdb.LVMVG{PoolID: poolID, VGUUID: "AbCdEfGh0123", VGName: "ndlvg"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"lvm-src","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %+v", disks)
+	}
+	bootRef := ""
+	if vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID); vol != nil {
+		bootRef = vol.BackendRef
+	}
+
+	clone, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"lvm-clone"}`))
+	clone.Header.Set("Content-Type", "application/json")
+	clone.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	cres, err := ts.Client().Do(clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	craw, _ := io.ReadAll(cres.Body)
+	_ = cres.Body.Close()
+	if cres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("clone %d %s", cres.StatusCode, craw)
+	}
+	if !strings.Contains(string(craw), "LVM-thin pools do not store directory qcow2 copies") {
+		t.Fatalf("clone body %s", craw)
+	}
+
+	exp, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/export", strings.NewReader(`{}`))
+	exp.Header.Set("Content-Type", "application/json")
+	exp.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	eres, err := ts.Client().Do(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eraw, _ := io.ReadAll(eres.Body)
+	_ = eres.Body.Close()
+	if eres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("export %d %s", eres.StatusCode, eraw)
+	}
+	if !strings.Contains(string(eraw), "LVM-thin pools do not store directory qcow2 copies") {
+		t.Fatalf("export body %s", eraw)
+	}
+
+	tmpl, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	tmpl.Header.Set("Content-Type", "application/json")
+	tmpl.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	tres, err := ts.Client().Do(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traw, _ := io.ReadAll(tres.Body)
+	_ = tres.Body.Close()
+	if tres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("template %d %s", tres.StatusCode, traw)
+	}
+	if !strings.Contains(string(traw), lvmTemplateReason) {
+		t.Fatalf("template body %s", traw)
+	}
+
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("GET must keep the source VM and not list a directory clone: %+v", items)
+	}
+	libs, _ := mem.ListLibraryItems(context.Background(), cluster.ID, poolID)
+	if len(libs) != 0 {
+		t.Fatalf("GET /images must not list an export under the LVM mount: %+v", libs)
+	}
+	snaps, _ := mem.ListSnapshots(context.Background(), cluster.ID, id)
+	if len(snaps) != 0 {
+		t.Fatalf("GET snapshots must not list a qcow2 template overlay on a thin LV: %+v", snaps)
+	}
+	vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+	if vol == nil || vol.BackendRef != bootRef || storage.ValidateLVMDevice(vol.BackendRef) != nil {
+		t.Fatalf("boot locator must stay a thin LV: %+v want %s", vol, bootRef)
+	}
+}

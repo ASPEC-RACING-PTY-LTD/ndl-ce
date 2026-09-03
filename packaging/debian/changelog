@@ -284,6 +284,11 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * OCI create refuses a vm-disk bind the same way system-container create
     refuses a non container-root. GET no longer lists an application
     container whose volume apply would bind a qcow2 or RBD device.
+  * VM clone, export, import, restore, and migration disk import refuse a
+    ZFS or LVM-thin dest the same way they refuse RBD and iSCSI. qemu-img
+    convert does not write a directory qcow2 onto a zvol or thin LV.
+    Template overlay is refused; ZFS and LVM snapshots stay native.
+    GET no longer lists a clone whose start would attach a qcow2 as raw.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

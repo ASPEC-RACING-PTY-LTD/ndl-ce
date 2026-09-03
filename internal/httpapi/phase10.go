@@ -19,6 +19,7 @@ import (
 const (
 	ctSnapshotReason   = "Directory system container snapshots are not available. They are not ZFS. Use a ZFS dataset for system container snapshots."
 	zfsFlattenReason   = "ZFS snapshots do not use qcow2 overlay chains. Flatten is not applicable."
+	zfsTemplateReason  = "ZFS snapshots do not use qcow2 overlay chains. Template overlay is not applicable."
 	zfsRollbackRun     = "stop the workload before ZFS rollback"
 	overlayRollbackRun = "stop the workload before overlay rollback"
 	overlayFlattenRun  = "stop the workload before overlay flatten"

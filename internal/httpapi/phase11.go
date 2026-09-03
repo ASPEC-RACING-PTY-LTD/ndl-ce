@@ -990,7 +990,7 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	if err != nil {
 		return "", err
 	}
-	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+	if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
 		return "", err
 	}
 	spec, specErr := vmspec.Parse(src.SpecJSON)
@@ -1203,7 +1203,7 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return "", errConflict("storage pool is unavailable")
 	}
-	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+	if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
 		return "", err
 	}
 	nets, err := s.Store.ListNetworks(ctx, clusterID)

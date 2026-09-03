@@ -66,6 +66,23 @@ func refuseDirectoryCopyDest(backend string) error {
 	return nil
 }
 
+// refuseQemuImgCopyDest fails closed when clone, export, import, or restore
+// would qemu-img convert into a directory qcow2 on a zvol, thin LV, RBD, or
+// iSCSI pool. Those backends are host block devices. QEMUFormat for ZFS and
+// LVM is raw, so a 201 qcow2 file would start as the wrong format.
+func refuseQemuImgCopyDest(backend string) error {
+	if err := refuseDirectoryCopyDest(backend); err != nil {
+		return err
+	}
+	switch backend {
+	case storage.BackendZFS:
+		return errUnprocessable("ZFS pools do not store directory qcow2 copies")
+	case storage.BackendLVM:
+		return errUnprocessable("LVM-thin pools do not store directory qcow2 copies")
+	}
+	return nil
+}
+
 func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Workload, name string) (*appdb.Workload, error) {
 	if s.VM == nil || s.Backup == nil || s.Storage == nil {
 		return nil, errUnavailable("vm agent is unavailable")
@@ -74,7 +91,7 @@ func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Wor
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+	if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
 		return nil, err
 	}
 	spec, err := vmspec.Parse(src.SpecJSON)
@@ -262,7 +279,7 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return nil, errConflict("storage pool is unavailable")
 	}
-	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+	if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
 		return nil, err
 	}
 	if _, _, err := s.resolveWorkloadNetwork(ctx, clusterID, networkID); err != nil {
@@ -390,7 +407,7 @@ func (s *Server) exportVMRow(ctx context.Context, clusterID string, src appdb.Wo
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+	if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(display) == "" {
@@ -469,6 +486,14 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	if pool.BackendType == storage.BackendDistributed {
 		writeErr(w, http.StatusUnprocessableEntity, distSnapReason)
+		return
+	}
+	if pool.BackendType == storage.BackendZFS {
+		writeErr(w, http.StatusUnprocessableEntity, zfsTemplateReason)
+		return
+	}
+	if pool.BackendType == storage.BackendLVM {
+		writeErr(w, http.StatusUnprocessableEntity, lvmTemplateReason)
 		return
 	}
 	spec, specErr := vmspec.Parse(row.SpecJSON)
