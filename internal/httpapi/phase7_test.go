@@ -309,6 +309,56 @@ func TestLabQemuProtoFailsClosedForUnavailableVolume(t *testing.T) {
 	}
 }
 
+func TestLabQemuProtoJoinsExistingZVolUnderHostPath(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: nodeID, Name: "zfs-lab",
+		BackendType: storage.BackendZFS, Status: storage.StatusAvailable,
+		RootPath: storage.ZFSMountRoot,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fq := &fakeQEMU{}
+	s.QEMU = fq
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	volID := uuid.NewString()
+	zvol := "/dev/zvol/tank/" + volID
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatZvol,
+		SizeBytes: 1 << 30, Status: storage.StatusAvailable, BackendType: storage.BackendZFS,
+		BackendRef: zvol,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"volume_id":"` + volID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("zvol qemu-proto %d %s", res.StatusCode, raw)
+	}
+	if fq.spec.DiskPath != zvol {
+		t.Fatalf("StartQemuProto must use the zvol device, not JoinUnder the pool root: %s", fq.spec.DiskPath)
+	}
+	if strings.Contains(fq.spec.DiskPath, storage.ZFSMountRoot+"/dev/") {
+		t.Fatalf("StartQemuProto must not join the zvol under the ZFS mount root: %s", fq.spec.DiskPath)
+	}
+}
+
 func TestLabQemuProtoHasNoHostExec(t *testing.T) {
 	b, err := os.ReadFile("phase7.go")
 	if err != nil {

@@ -404,7 +404,7 @@ func (s *Server) prepareQemuDisk(ctx context.Context, clusterID, nodeID string, 
 			if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 				return nil, nil, "", errConflict("an available storage pool is required")
 			}
-			diskPath, err := storage.JoinUnder(pool.RootPath, vol.BackendRef)
+			diskPath, err := storage.HostVolumePath(vol.BackendType, pool.RootPath, vol.BackendRef)
 			if err != nil {
 				return nil, nil, "", errConflict("volume locator is invalid")
 			}
@@ -434,11 +434,19 @@ func (s *Server) prepareQemuDisk(ctx context.Context, clusterID, nodeID string, 
 		return nil, nil, "", err
 	}
 	if existingVol, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existingVol != nil {
-		diskPath, jerr := storage.JoinUnder(pool.RootPath, existingVol.BackendRef)
+		vpool := pool
+		if existingVol.PoolID != pool.ID {
+			got, gerr := s.Store.GetStoragePool(ctx, clusterID, existingVol.PoolID)
+			if gerr != nil || got == nil || (got.Status != storage.StatusAvailable && got.Status != storage.StatusWarning) {
+				return nil, nil, "", errConflict("storage is unavailable")
+			}
+			vpool = got
+		}
+		diskPath, jerr := storage.HostVolumePath(existingVol.BackendType, vpool.RootPath, existingVol.BackendRef)
 		if jerr != nil {
 			return nil, nil, "", errConflict("volume locator is invalid")
 		}
-		return pool, existingVol, diskPath, nil
+		return vpool, existingVol, diskPath, nil
 	}
 	backend := res.Handle.BackendRef
 	if backend == "" {
@@ -458,7 +466,7 @@ func (s *Server) prepareQemuDisk(ctx context.Context, clusterID, nodeID string, 
 			return nil, nil, "", err
 		}
 	}
-	diskPath, err := storage.JoinUnder(pool.RootPath, row.BackendRef)
+	diskPath, err := storage.HostVolumePath(row.BackendType, pool.RootPath, row.BackendRef)
 	if err != nil {
 		return nil, nil, "", errConflict("volume locator is invalid")
 	}

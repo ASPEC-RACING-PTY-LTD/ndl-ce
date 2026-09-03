@@ -258,6 +258,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM import, migration disk import, and orphan restore refuse an
     unavailable fallback dest pool before persist. Omitting pool_id
     no longer 201s onto a failed first pool GET would list.
+  * Lab qemu-proto start joins an existing volume with HostVolumePath.
+    A ZFS zvol is the device path start attaches, not a path under
+    the pool root JoinUnder would invent.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
