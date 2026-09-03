@@ -927,6 +927,133 @@ func TestCTStartFailsClosedForUnavailableNetwork(t *testing.T) {
 	}
 }
 
+func TestCTPatchFailsClosedForUnavailableRootVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"alpine-src","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	if created["cpus"] != float64(1) {
+		t.Fatalf("create cpus %+v", created["cpus"])
+	}
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("source disks %+v", disks)
+	}
+	createsAfterCreate := fw.creates
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: disks[0].VolumeID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	patch, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2}`))
+	patch.Header.Set("Content-Type", "application/json")
+	patch.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(patch)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable root volume patch %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable root volume patch body %s", raw)
+	}
+	if fw.creates != createsAfterCreate {
+		t.Fatalf("PATCH must not call CreateCT when root storage apply cannot jail: creates %d -> %d", createsAfterCreate, fw.creates)
+	}
+	if fw.lastSpec.CPUs != 1 {
+		t.Fatalf("CreateCT must not receive patched CPUs when storage apply cannot jail: %+v", fw.lastSpec)
+	}
+	got, err := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if err != nil || got == nil || got.CPUs != 1 {
+		t.Fatalf("GET must not claim patched CPUs when apply cannot jail: %+v %v", got, err)
+	}
+}
+
+func TestCTPatchFailsClosedForEscapingRootVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"alpine-src","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("source disks %+v", disks)
+	}
+	createsAfterCreate := fw.creates
+	if err := mem.UpdateVolumeLocator(context.Background(), cluster.ID, disks[0].VolumeID, "../../etc"); err != nil {
+		t.Fatal(err)
+	}
+	patch, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2}`))
+	patch.Header.Set("Content-Type", "application/json")
+	patch.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(patch)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("escaping root volume patch %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "volume locator is invalid") {
+		t.Fatalf("escaping root volume patch body %s", raw)
+	}
+	if fw.creates != createsAfterCreate {
+		t.Fatalf("PATCH must not call CreateCT with an escaped rootfs: creates %d -> %d", createsAfterCreate, fw.creates)
+	}
+	if fw.lastSpec.CPUs != 1 {
+		t.Fatalf("CreateCT must not receive patched CPUs when the locator apply cannot join: %+v", fw.lastSpec)
+	}
+	got, err := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if err != nil || got == nil || got.CPUs != 1 {
+		t.Fatalf("GET must not claim patched CPUs when the locator apply cannot join: %+v %v", got, err)
+	}
+}
+
 func TestWorkloadCloneFailsClosedWhenDiskPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

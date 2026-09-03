@@ -559,6 +559,18 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
 		return
 	}
+	var ctRoot, ctVolID, ctBridge, ctMAC, ctNetID string
+	if row.Kind == lxc.KindSystemContainer {
+		if err := s.ensureCTStartAvailable(r.Context(), p.User.ClusterID, row.ID); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		ctRoot, ctVolID, ctBridge, ctMAC, ctNetID, err = s.ctApplyLocators(r.Context(), p.User.ClusterID, row.ID)
+		if err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+	}
 	next := *row
 	if req.CPUs > 0 {
 		next.CPUs = req.CPUs
@@ -579,34 +591,10 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if row.Kind == lxc.KindSystemContainer {
-		disks, _ := s.Store.ListWorkloadDisks(r.Context(), p.User.ClusterID, row.ID)
-		nics, _ := s.Store.ListWorkloadNICs(r.Context(), p.User.ClusterID, row.ID)
-		rootfs := ""
-		volID := ""
-		if len(disks) > 0 {
-			if vol, _ := s.Store.GetVolume(r.Context(), p.User.ClusterID, disks[0].VolumeID); vol != nil {
-				if pool, _ := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, vol.PoolID); pool != nil {
-					if loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef); err == nil {
-						rootfs = loc
-					}
-					volID = vol.ID
-				}
-			}
-		}
-		bridge := ""
-		mac := ""
-		netID := ""
-		if len(nics) > 0 {
-			mac = nics[0].MAC
-			netID = nics[0].NetworkID
-			if netw, _ := s.Store.GetNetwork(r.Context(), p.User.ClusterID, nics[0].NetworkID); netw != nil {
-				bridge = netw.BridgeName
-			}
-		}
 		if _, err := s.Workloads.CreateCT(r.Context(), lxc.Spec{
 			WorkloadID: row.ID, Name: next.Name, ImagePin: next.ImagePin, CPUs: next.CPUs,
-			MemoryBytes: next.MemoryBytes, VolumeID: volID, RootfsPath: rootfs, NetworkID: netID,
-			BridgeName: bridge, MAC: mac, Privileged: next.Privileged, UIDMap: next.UIDMap, GIDMap: next.GIDMap,
+			MemoryBytes: next.MemoryBytes, VolumeID: ctVolID, RootfsPath: ctRoot, NetworkID: ctNetID,
+			BridgeName: ctBridge, MAC: ctMAC, Privileged: next.Privileged, UIDMap: next.UIDMap, GIDMap: next.GIDMap,
 			GPUDevices: s.gpuDeviceNodes(r.Context(), p.User.ClusterID, row.ID),
 			NoStart:    next.DesiredPower == "stopped",
 		}); err != nil {
@@ -747,6 +735,43 @@ func (s *Server) ensureCTStartAvailable(ctx context.Context, clusterID, workload
 		}
 	}
 	return nil
+}
+
+func (s *Server) ctApplyLocators(ctx context.Context, clusterID, workloadID string) (rootfs, volID, bridge, mac, netID string, err error) {
+	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, workloadID)
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	if len(disks) > 0 {
+		vol, verr := s.Store.GetVolume(ctx, clusterID, disks[0].VolumeID)
+		if verr != nil || vol == nil {
+			return "", "", "", "", "", errConflict("storage is unavailable")
+		}
+		pool, perr := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
+		if perr != nil || pool == nil {
+			return "", "", "", "", "", errConflict("storage is unavailable")
+		}
+		loc, locErr := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
+		if locErr != nil {
+			return "", "", "", "", "", errConflict("volume locator is invalid")
+		}
+		rootfs = loc
+		volID = vol.ID
+	}
+	nics, err := s.Store.ListWorkloadNICs(ctx, clusterID, workloadID)
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	if len(nics) > 0 {
+		mac = nics[0].MAC
+		netID = nics[0].NetworkID
+		_, br, nerr := s.resolveWorkloadNetwork(ctx, clusterID, nics[0].NetworkID)
+		if nerr != nil {
+			return "", "", "", "", "", nerr
+		}
+		bridge = br
+	}
+	return rootfs, volID, bridge, mac, netID, nil
 }
 
 func (s *Server) recordClone(ctx context.Context, clusterID string, src appdb.Workload, req lxc.LifecycleRequest, res lxc.Result) error {

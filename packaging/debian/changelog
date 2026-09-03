@@ -249,6 +249,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * System-container start refuses an unavailable root volume, pool,
     or network before the agent start. GET no longer claims
     desired_power running when start cannot mount or attach.
+  * System-container PATCH refuses an unavailable root volume, pool,
+    or network, and an invalid volume locator, before persist. GET
+    no longer claims CPUs the host apply cannot jail.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
