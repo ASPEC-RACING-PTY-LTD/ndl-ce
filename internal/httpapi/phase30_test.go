@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -203,6 +204,67 @@ func TestPhase30RevokeWorkerAndRefuseControl(t *testing.T) {
 	}
 	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err == nil {
 		t.Fatal("revoked node serial must fail closed")
+	}
+}
+
+type missRevokeNodeStore struct {
+	appdb.Store
+}
+
+func (missRevokeNodeStore) RevokeNode(context.Context, string, string, time.Time) error {
+	return nil
+}
+
+func TestPhase30RevokeFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	workerID, certPEM := mintJoin(t, ts, cookie, "box-miss")
+	s.Store = missRevokeNodeStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+workerID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("revoke persist miss %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not record node revoke") {
+		t.Fatalf("revoke persist miss body %s", body)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes/"+workerID, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET node %d %s", res.StatusCode, raw)
+	}
+	var node map[string]any
+	if err := json.Unmarshal(raw, &node); err != nil {
+		t.Fatal(err)
+	}
+	if node["revoked"] == true {
+		t.Fatalf("GET /nodes must not claim revoked after persist miss %s", raw)
+	}
+
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err != nil {
+		t.Fatalf("CA must stay valid until persist succeeds: %v", err)
 	}
 }
 

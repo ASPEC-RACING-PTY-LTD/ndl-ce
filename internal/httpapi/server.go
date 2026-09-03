@@ -628,6 +628,16 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "could not revoke session")
 			return
 		}
+		c, err := r.Cookie(sessionCookie)
+		if err != nil || c.Value == "" {
+			writeErr(w, http.StatusInternalServerError, "could not revoke session")
+			return
+		}
+		sess, err := s.Store.GetSessionByHash(r.Context(), secutil.HashSHA256(c.Value))
+		if err != nil || sess == nil || sess.RevokedAt == nil {
+			writeErr(w, http.StatusInternalServerError, "could not revoke session")
+			return
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.cookieSecure(r), SameSite: http.SameSiteLaxMode})
 	s.audit(r, p.User.ClusterID, p.User.ID, "auth.logout", "ok", "")
@@ -707,6 +717,11 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Store.RevokeToken(r.Context(), req.ID, p.User.ID); err != nil {
 		writeErr(w, http.StatusNotFound, "token not found")
+		return
+	}
+	tok, err := s.Store.GetToken(r.Context(), req.ID)
+	if err != nil || tok == nil || tok.RevokedAt == nil || tok.UserID != p.User.ID {
+		writeErr(w, http.StatusInternalServerError, "could not revoke token")
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "token.revoke", "ok", req.ID)

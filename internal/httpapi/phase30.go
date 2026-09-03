@@ -262,6 +262,11 @@ func (s *Server) revokeClusterNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	got, err := s.Store.GetNodeByID(r.Context(), p.User.ClusterID, id)
+	if err != nil || got == nil || got.RevokedAt == nil {
+		writeErr(w, http.StatusInternalServerError, "could not record node revoke")
+		return
+	}
 	if err := s.ClusterCA.RevokeNode(id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not revoke node certificate")
 		return

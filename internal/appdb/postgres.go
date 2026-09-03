@@ -254,6 +254,26 @@ func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, 
 	return &t, nil
 }
 
+func (p *Postgres) GetToken(ctx context.Context, id string) (*APIToken, error) {
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, revoked_at, COALESCE(array_to_string(permissions, ','), '') FROM api_tokens WHERE id=$1`, id)
+	var t APIToken
+	var revoked sql.NullTime
+	var permCSV string
+	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &revoked, &permCSV); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if revoked.Valid {
+		t.RevokedAt = &revoked.Time
+	}
+	if permCSV != "" {
+		t.Permissions = strings.Split(permCSV, ",")
+	}
+	return &t, nil
+}
+
 func (p *Postgres) RevokeToken(ctx context.Context, id, userID string) error {
 	res, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, id, userID)
 	if err != nil {

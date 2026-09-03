@@ -163,6 +163,61 @@ func TestLoginWhoamiTokenRBAC(t *testing.T) {
 	_ = deadRes.Body.Close()
 }
 
+type missRevokeTokenStore struct {
+	appdb.Store
+}
+
+func (missRevokeTokenStore) RevokeToken(context.Context, string, string) error {
+	return nil
+}
+
+func TestTokenRevokeFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	tokReq, _ := http.NewRequest("POST", ts.URL+"/api/v1/tokens", strings.NewReader(`{"name":"cli-miss"}`))
+	tokReq.Header.Set("Content-Type", "application/json")
+	tokReq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	tokRes, _ := ts.Client().Do(tokReq)
+	raw, _ := io.ReadAll(tokRes.Body)
+	_ = tokRes.Body.Close()
+	if tokRes.StatusCode != http.StatusCreated {
+		t.Fatalf("token %d %s", tokRes.StatusCode, raw)
+	}
+	var created struct {
+		ID    string `json:"id"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil || created.ID == "" || created.Token == "" {
+		t.Fatal(string(raw))
+	}
+
+	s.Store = missRevokeTokenStore{Store: mem}
+	rev, _ := http.NewRequest("POST", ts.URL+"/api/v1/tokens/revoke", bytes.NewReader([]byte(`{"id":"`+created.ID+`"}`)))
+	rev.Header.Set("Content-Type", "application/json")
+	rev.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	revRes, _ := ts.Client().Do(rev)
+	raw, _ = io.ReadAll(revRes.Body)
+	_ = revRes.Body.Close()
+	if revRes.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("revoke persist miss %d %s", revRes.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not revoke token") {
+		t.Fatalf("revoke persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	who, _ := http.NewRequest("GET", ts.URL+"/api/v1/me", nil)
+	who.Header.Set("Authorization", "Bearer "+created.Token)
+	res, _ := ts.Client().Do(who)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET /me bearer must still work after persist miss %d", res.StatusCode)
+	}
+}
+
 func TestViewerCannotCreateToken(t *testing.T) {
 	s, mem, _ := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
@@ -346,6 +401,48 @@ func TestLogoutFailsClosedWhenSessionPersistFails(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("session must remain after failed logout persist %d", res.StatusCode)
+	}
+}
+
+type missRevokeSessionStore struct {
+	appdb.Store
+}
+
+func (missRevokeSessionStore) RevokeSession(context.Context, string) error {
+	return nil
+}
+
+func TestLogoutFailsClosedWhenSessionPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = missRevokeSessionStore{Store: mem}
+
+	out, _ := http.NewRequest("POST", ts.URL+"/api/v1/auth/logout", nil)
+	out.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	logout, err := ts.Client().Do(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(logout.Body)
+	_ = logout.Body.Close()
+	if logout.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("logout persist miss %d %s", logout.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not revoke session") {
+		t.Fatalf("logout persist miss body %s", raw)
+	}
+	s.Store = mem
+	me, _ := http.NewRequest("GET", ts.URL+"/api/v1/me", nil)
+	me.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("session must remain after persist miss %d", res.StatusCode)
 	}
 }
 

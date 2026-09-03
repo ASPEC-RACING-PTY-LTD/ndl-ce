@@ -373,6 +373,18 @@ func (m *Memory) GetTokenByHash(_ context.Context, hash string) (*APIToken, erro
 	return &t, nil
 }
 
+func (m *Memory) GetToken(_ context.Context, id string) (*APIToken, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range m.tokens {
+		if t.ID == id {
+			cp := t
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
 func (m *Memory) RevokeToken(_ context.Context, id, userID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
