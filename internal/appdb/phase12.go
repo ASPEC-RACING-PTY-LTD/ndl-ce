@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -94,8 +95,9 @@ func (m *Memory) GetLatestCheckUpdateOperation(_ context.Context, clusterID stri
 func (m *Memory) UpdateUpdateOperation(_ context.Context, op UpdateOperation) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.updateOps == nil {
-		m.updateOps = map[string]UpdateOperation{}
+	cur, ok := m.updateOps[op.ID]
+	if !ok || cur.ClusterID != op.ClusterID {
+		return fmt.Errorf("update operation not found")
 	}
 	m.updateOps[op.ID] = op
 	return nil

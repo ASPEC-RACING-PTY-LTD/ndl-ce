@@ -47,3 +47,13 @@ func TestMemoryGetLatestCheckUpdateOperationIgnoresNewerOtherActions(t *testing.
 		t.Fatalf("rollback must still find the recorded check version: %+v %v", got, err)
 	}
 }
+
+func TestUpdateUpdateOperationFailsWhenMissing(t *testing.T) {
+	m := NewMemory()
+	err := m.UpdateUpdateOperation(t.Context(), UpdateOperation{
+		ID: uuid.NewString(), ClusterID: uuid.NewString(), Status: UpdateSucceeded,
+	})
+	if err == nil || err.Error() != "update operation not found" {
+		t.Fatalf("missing update operation: %v", err)
+	}
+}

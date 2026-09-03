@@ -75,13 +75,20 @@ FROM update_operations WHERE cluster_id=$1 AND action='check' AND version <> '' 
 }
 
 func (p *Postgres) UpdateUpdateOperation(ctx context.Context, op UpdateOperation) error {
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE update_operations
 SET action=$3, status=$4, dry_run=$5, error=$6, version=$7,
     packages=COALESCE(string_to_array(NULLIF($8, ''), ','), '{}'), finished_at=$9
 WHERE cluster_id=$1 AND id=$2`,
 		op.ClusterID, op.ID, op.Action, op.Status, op.DryRun, op.Error, op.Version, strings.Join(op.Packages, ","), nullTime(op.FinishedAt))
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("update operation not found")
+	}
+	return nil
 }
 
 func scanUpdateOperation(s rowScanner) (UpdateOperation, error) {

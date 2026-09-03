@@ -313,6 +313,11 @@ func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateReq
 	if err := s.Store.UpdateUpdateOperation(r.Context(), op); err != nil {
 		return res, op, errInternal("could not record update operation")
 	}
+	got, gerr := s.Store.GetLatestUpdateOperation(r.Context(), p.User.ClusterID)
+	if gerr != nil || got == nil || got.ID != op.ID || got.Status != op.Status {
+		return res, op, errInternal("could not record update operation")
+	}
+	op = *got
 	s.audit(r, p.User.ClusterID, p.User.ID, "update."+req.Action, op.Status, op.ID)
 	payload, _ := json.Marshal(map[string]string{"status": op.Status})
 	_ = s.Store.InsertEvent(r.Context(), appdb.Event{

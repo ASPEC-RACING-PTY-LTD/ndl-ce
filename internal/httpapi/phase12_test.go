@@ -392,6 +392,57 @@ func TestUpdatesApplyFailsClosedWhenPersistFails(t *testing.T) {
 	}
 }
 
+type missUpdateUpdateOperationStore struct {
+	appdb.Store
+}
+
+func (missUpdateUpdateOperationStore) UpdateUpdateOperation(context.Context, appdb.UpdateOperation) error {
+	return nil
+}
+
+func TestUpdatesApplyFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = missUpdateUpdateOperationStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/apply", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "apply-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("apply persist miss %d %s", res.StatusCode, b)
+	}
+	if !strings.Contains(string(b), "could not record update operation") {
+		t.Fatalf("apply persist miss body %s", b)
+	}
+
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	raw, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if got.StatusCode != http.StatusOK {
+		t.Fatalf("get updates %d %s", got.StatusCode, raw)
+	}
+	var listed map[string]any
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	last, _ := listed["last_operation"].(map[string]any)
+	if last == nil || last["status"] == "succeeded" {
+		t.Fatalf("GET must not claim succeeded after persist miss: %s", raw)
+	}
+	if last["status"] != "running" {
+		t.Fatalf("GET must stay running after persist miss: %s", raw)
+	}
+}
+
 type failCreateUpdateOperationStore struct {
 	appdb.Store
 }
