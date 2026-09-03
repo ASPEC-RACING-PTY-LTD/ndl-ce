@@ -621,3 +621,134 @@ func TestWorkloadCreateFailsClosedWhenNICPersistFails(t *testing.T) {
 		t.Fatalf("nic persist body %s", raw)
 	}
 }
+
+func createTestSystemContainer(t *testing.T, ts *httptest.Server, cookie, poolID, netID, name string) string {
+	t.Helper()
+	body := `{"name":"` + name + `","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatal("create id")
+	}
+	return id
+}
+
+func TestWorkloadCloneStoresDiskAndNIC(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-src")
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"alpine-copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("clone %d %s", res.StatusCode, raw)
+	}
+	var cloned map[string]any
+	if err := json.Unmarshal(raw, &cloned); err != nil {
+		t.Fatal(err)
+	}
+	cloneID, _ := cloned["id"].(string)
+	if cloneID == "" || cloneID == id {
+		t.Fatalf("clone id %v", cloned["id"])
+	}
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, cloneID)
+	if len(disks) != 1 || disks[0].Role != "root" {
+		t.Fatalf("clone disks %+v", disks)
+	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, cloneID)
+	if len(nics) != 1 || nics[0].NetworkID != netID {
+		t.Fatalf("clone nics %+v", nics)
+	}
+}
+
+func TestWorkloadCloneFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-src")
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"alpine-copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record container disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
+}
+
+func TestWorkloadCloneFailsClosedWhenNICPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-src")
+	s.Store = failCreateWorkloadNICStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"alpine-copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nic persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record container NIC") {
+		t.Fatalf("nic persist body %s", raw)
+	}
+}

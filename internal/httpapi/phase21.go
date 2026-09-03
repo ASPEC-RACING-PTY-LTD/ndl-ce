@@ -282,16 +282,22 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 		return appdb.Workload{}, false, errConflict(err.Error())
 	}
 	for _, m := range vols {
-		_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+		if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 			VolumeID: m.VolumeID, Role: "data", Format: storage.FormatDirectory, CreatedAt: s.now(),
-		})
+		}); err != nil {
+			s.finishOp(ctx, op, "failed", err.Error(), 0)
+			return appdb.Workload{}, false, errInternal("could not record OCI disk")
+		}
 	}
 	if netw != nil {
-		_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+		if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 			NetworkID: netw.ID, CreatedAt: s.now(),
-		})
+		}); err != nil {
+			s.finishOp(ctx, op, "failed", err.Error(), 0)
+			return appdb.Workload{}, false, errInternal("could not record OCI NIC")
+		}
 	}
 	s.finishOp(ctx, op, "succeeded", mustCreateMsg(createIDs{WorkloadID: ids.WorkloadID}), 100)
 	audit("workload.create", "ok", row.ID)

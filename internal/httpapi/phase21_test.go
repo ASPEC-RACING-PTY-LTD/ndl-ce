@@ -303,6 +303,67 @@ func TestPhase21OCIWiresPortsResourcesAndBridge(t *testing.T) {
 	if fo.lastSpec.Privileged {
 		t.Fatal("privileged must stay default false")
 	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	nics, _ := mem.ListWorkloadNICs(context.Background(), clusterID, id)
+	if len(nics) != 1 || nics[0].NetworkID != nets[0].ID {
+		t.Fatalf("nics %+v", nics)
+	}
+}
+
+func TestPhase21OCICreateFailsClosedWhenNICPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _ := phase21Ready(t)
+	nets, err := mem.ListNetworks(context.Background(), clusterID)
+	if err != nil || len(nets) == 0 {
+		t.Fatalf("network fixture: %v %d", err, len(nets))
+	}
+	s.Store = failCreateWorkloadNICStore{Store: mem}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","network_id":"` + nets[0].ID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("nic persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record OCI NIC") {
+		t.Fatalf("nic persist body %s", raw)
+	}
+}
+
+func TestPhase21OCICreateFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _ := phase21Ready(t)
+	pools, err := mem.ListStoragePools(context.Background(), clusterID)
+	if err != nil || len(pools) == 0 {
+		t.Fatalf("pool fixture: %v %d", err, len(pools))
+	}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: clusterID, NodeID: pools[0].NodeID, PoolID: pools[0].ID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/" + volID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+	body := `{"name":"web","kind":"oci","image_pin":"busybox:1","volume_ids":["` + volID + `"]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record OCI disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
 }
 
 func TestPhase21UnitPathIndependentOfCP(t *testing.T) {

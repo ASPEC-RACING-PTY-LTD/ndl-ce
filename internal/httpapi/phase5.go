@@ -465,7 +465,7 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 		case "clone":
 			if err := s.recordClone(r.Context(), p.User.ClusterID, *row, req, res); err != nil {
 				s.finishOp(r.Context(), op, "failed", err.Error(), 0)
-				writeErr(w, http.StatusConflict, err.Error())
+				writeErr(w, statusFor(err), err.Error())
 				return
 			}
 			s.finishOp(r.Context(), op, "succeeded", "cloned", 100)
@@ -696,17 +696,21 @@ func (s *Server) recordClone(ctx context.Context, clusterID string, src appdb.Wo
 	row.Privileged = src.Privileged
 	row.IdempotencyKey = ""
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
-		return err
+		return errConflict(err.Error())
 	}
-	_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+	if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, VolumeID: req.CloneVolumeID, Role: "root",
-	})
+	}); err != nil {
+		return errInternal("could not record container disk")
+	}
 	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID)
 	if len(nics) > 0 {
-		_ = s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+		if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
 			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID,
 			NetworkID: nics[0].NetworkID, MAC: firstNonEmpty(res.MAC, req.CloneMAC),
-		})
+		}); err != nil {
+			return errInternal("could not record container NIC")
+		}
 	}
 	return nil
 }
