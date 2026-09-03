@@ -369,6 +369,119 @@ func TestLabQemuProtoJoinsExistingZVolUnderHostPath(t *testing.T) {
 	}
 }
 
+func TestLabQemuProtoJoinsExistingRBDUnderHostPath(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := seedDistributedPool(t, mem, cluster.ID, nodeID)
+	fq := &fakeQEMU{}
+	s.QEMU = fq
+	s.Distributed = &fakeDistributed{up: true}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	volID := uuid.NewString()
+	rbd, err := storage.RBDDevicePath("rbd", volID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatRBD,
+		SizeBytes: 1 << 30, Status: storage.StatusAvailable, BackendType: storage.BackendDistributed,
+		BackendRef: rbd,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"volume_id":"` + volID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("rbd qemu-proto %d %s", res.StatusCode, raw)
+	}
+	if fq.spec.DiskPath != rbd {
+		t.Fatalf("StartQemuProto must use the RBD device, not JoinUnder the pool root: %s", fq.spec.DiskPath)
+	}
+	if fq.spec.DiskFormat != "raw" {
+		t.Fatalf("StartQemuProto must start a mapped RBD as raw, not catalog format %q", fq.spec.DiskFormat)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["disk_format"] != "raw" {
+		t.Fatalf("GET disk_format must be raw for an RBD start: %s", raw)
+	}
+}
+
+func TestLabQemuProtoJoinsExistingISCSIUnderHostPath(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	dev, err := storage.ISCSIDevicePath("10.0.0.8:3260", "iqn.2020-01.com.example:target1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: nodeID, Name: "lun-lab",
+		BackendType: storage.BackendISCSI, Status: storage.StatusAvailable, RootPath: dev,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fq := &fakeQEMU{}
+	s.QEMU = fq
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	volID := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatRaw,
+		SizeBytes: 1 << 30, Status: storage.StatusAvailable, BackendType: storage.BackendISCSI,
+		BackendRef: dev,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"volume_id":"` + volID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("iscsi qemu-proto %d %s", res.StatusCode, raw)
+	}
+	if fq.spec.DiskPath != dev {
+		t.Fatalf("StartQemuProto must use the iSCSI by-path device, not JoinUnder the pool root: %s", fq.spec.DiskPath)
+	}
+	if fq.spec.DiskFormat != "raw" {
+		t.Fatalf("StartQemuProto must start an iSCSI LUN as raw, not catalog format %q", fq.spec.DiskFormat)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["disk_format"] != "raw" {
+		t.Fatalf("GET disk_format must be raw for an iSCSI start: %s", raw)
+	}
+}
+
 func TestLabQemuProtoFailsClosedForContainerRoot(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

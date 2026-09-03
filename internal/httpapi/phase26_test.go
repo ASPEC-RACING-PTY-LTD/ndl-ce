@@ -817,3 +817,126 @@ func TestPhase26VMMigrationExportFailsClosedForISCSI(t *testing.T) {
 		t.Fatalf("GET must not list a succeeded iSCSI export: %+v", jobs)
 	}
 }
+
+func TestPhase26VMTemplateBackupFailClosedForISCSI(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/iscsi", strings.NewReader(`{"name":"lun-snap","iqn":"iqn.2020-01.com.example:target1","portal":"10.0.0.8:3260"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("iscsi %d %s", res.StatusCode, b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID, _ := pool["id"].(string)
+	body := `{"name":"iscsi-snap","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	wreq, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	wreq.Header.Set("Content-Type", "application/json")
+	wreq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wres, err := ts.Client().Do(wreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(wres.Body)
+	_ = wres.Body.Close()
+	if wres.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", wres.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	bootRef := ""
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) == 1 {
+		if vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID); vol != nil {
+			bootRef = vol.BackendRef
+		}
+	}
+
+	flat, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/snapshots/flatten", strings.NewReader(`{}`))
+	flat.Header.Set("Content-Type", "application/json")
+	flat.Header.Set("X-Nodal-Confirm", "flatten")
+	flat.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	fres, err := ts.Client().Do(flat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fraw, _ := io.ReadAll(fres.Body)
+	_ = fres.Body.Close()
+	if fres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("flatten %d %s", fres.StatusCode, fraw)
+	}
+	if !strings.Contains(string(fraw), iscsiSnapReason) {
+		t.Fatalf("flatten body %s", fraw)
+	}
+
+	tmpl, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	tmpl.Header.Set("Content-Type", "application/json")
+	tmpl.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	tres, err := ts.Client().Do(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traw, _ := io.ReadAll(tres.Body)
+	_ = tres.Body.Close()
+	if tres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("template %d %s", tres.StatusCode, traw)
+	}
+	if !strings.Contains(string(traw), iscsiSnapReason) {
+		t.Fatalf("template body %s", traw)
+	}
+
+	run, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+id+`","target_id":"`+uuid.NewString()+`"}`))
+	run.Header.Set("Content-Type", "application/json")
+	run.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rres, err := ts.Client().Do(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rraw, _ := io.ReadAll(rres.Body)
+	_ = rres.Body.Close()
+	if rres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("backup %d %s", rres.StatusCode, rraw)
+	}
+	if !strings.Contains(string(rraw), iscsiSnapReason) {
+		t.Fatalf("backup body %s", rraw)
+	}
+	snaps, _ := mem.ListSnapshots(context.Background(), cluster.ID, id)
+	if len(snaps) != 0 {
+		t.Fatalf("GET snapshots must not list a qcow2 overlay on an iSCSI LUN: %+v", snaps)
+	}
+	tmpls, _ := mem.ListVMTemplates(context.Background(), cluster.ID)
+	if len(tmpls) != 0 {
+		t.Fatalf("GET /templates must not list an iSCSI overlay template: %+v", tmpls)
+	}
+	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
+	if len(runs) != 0 {
+		t.Fatalf("GET /backups/runs must not list an iSCSI overlay backup: %+v", runs)
+	}
+	if bootRef != "" {
+		vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+		if vol == nil || vol.BackendRef != bootRef || !strings.HasPrefix(vol.BackendRef, storage.ISCSIByPath) {
+			t.Fatalf("boot locator must stay an iSCSI by-path: %+v want %s", vol, bootRef)
+		}
+	}
+}

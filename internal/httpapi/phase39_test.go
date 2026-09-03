@@ -798,6 +798,134 @@ func TestPhase39VMRestoreFailsClosedForDistributed(t *testing.T) {
 	}
 }
 
+func TestPhase39VMSnapshotTemplateBackupFailClosedForDistributed(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	_, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	poolID := seedDistributedPool(t, mem, cluster.ID, nodeID)
+	s.Distributed = &fakeDistributed{up: true}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"rbd-snap","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	bootRef := ""
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) == 1 {
+		if vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID); vol != nil {
+			bootRef = vol.BackendRef
+		}
+	}
+
+	snap, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/snapshots", strings.NewReader(`{"name":"s1"}`))
+	snap.Header.Set("Content-Type", "application/json")
+	snap.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	sres, err := ts.Client().Do(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sraw, _ := io.ReadAll(sres.Body)
+	_ = sres.Body.Close()
+	if sres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("snapshot %d %s", sres.StatusCode, sraw)
+	}
+	if !strings.Contains(string(sraw), distSnapReason) {
+		t.Fatalf("snapshot body %s", sraw)
+	}
+
+	flat, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/snapshots/flatten", strings.NewReader(`{}`))
+	flat.Header.Set("Content-Type", "application/json")
+	flat.Header.Set("X-Nodal-Confirm", "flatten")
+	flat.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	fres, err := ts.Client().Do(flat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fraw, _ := io.ReadAll(fres.Body)
+	_ = fres.Body.Close()
+	if fres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("flatten %d %s", fres.StatusCode, fraw)
+	}
+	if !strings.Contains(string(fraw), distSnapReason) {
+		t.Fatalf("flatten body %s", fraw)
+	}
+
+	tmpl, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	tmpl.Header.Set("Content-Type", "application/json")
+	tmpl.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	tres, err := ts.Client().Do(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traw, _ := io.ReadAll(tres.Body)
+	_ = tres.Body.Close()
+	if tres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("template %d %s", tres.StatusCode, traw)
+	}
+	if !strings.Contains(string(traw), distSnapReason) {
+		t.Fatalf("template body %s", traw)
+	}
+
+	run, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+id+`","target_id":"`+uuid.NewString()+`"}`))
+	run.Header.Set("Content-Type", "application/json")
+	run.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rres, err := ts.Client().Do(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rraw, _ := io.ReadAll(rres.Body)
+	_ = rres.Body.Close()
+	if rres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("backup %d %s", rres.StatusCode, rraw)
+	}
+	if !strings.Contains(string(rraw), distSnapReason) {
+		t.Fatalf("backup body %s", rraw)
+	}
+	snaps, _ := mem.ListSnapshots(context.Background(), cluster.ID, id)
+	if len(snaps) != 0 {
+		t.Fatalf("GET snapshots must not list a qcow2 overlay on an RBD: %+v", snaps)
+	}
+	tmpls, _ := mem.ListVMTemplates(context.Background(), cluster.ID)
+	if len(tmpls) != 0 {
+		t.Fatalf("GET /templates must not list an RBD overlay template: %+v", tmpls)
+	}
+	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
+	if len(runs) != 0 {
+		t.Fatalf("GET /backups/runs must not list an RBD overlay backup: %+v", runs)
+	}
+	if bootRef != "" {
+		vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+		if vol == nil || vol.BackendRef != bootRef || storage.ValidateRBDPath(vol.BackendRef) != nil {
+			t.Fatalf("boot locator must stay an RBD device: %+v want %s", vol, bootRef)
+		}
+	}
+}
+
 func TestPhase39LibraryUploadFailsClosedForDeviceBackedPools(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

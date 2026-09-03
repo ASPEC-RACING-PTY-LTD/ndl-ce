@@ -272,8 +272,8 @@ nodal (1.0.0) UNRELEASED; urgency=medium
 	* Lab qemu-proto start joins an existing volume with HostVolumePath.
     A ZFS zvol is the device path start attaches, not a path under
     the pool root JoinUnder would invent. Disk format follows
-    QEMUFormat, so a zvol, thin LV, or RBD starts as raw the same
-    way product VM start already does. GET disk_format is not a
+    QEMUFormat, so a zvol, thin LV, RBD, or iSCSI LUN starts as raw the
+    same way product VM start already does. GET disk_format is not a
     catalog zvol or rbd string compile refuses. An existing
     container-root is refused the same way VM boot is not a
     filesystem volume. GET /lab/qemu-proto no longer claims a
@@ -308,12 +308,16 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     iSCSI LUN is refused before stop or copy. BackupReplace dest format
     is qcow2 and those volumes start as raw. Migration bundle export
     refuses a zvol, thin LV, RBD, or iSCSI source before the job is
-    recorded. ConvertImport would treat that raw device as qcow2. Template overlay is refused; ZFS and LVM
-    snapshots stay native. GET no longer lists a clone whose start would
-    attach a qcow2 as raw. Offline migrate refuses that zvol copy before
-    ownership moves. Offline migrate also refuses a missing source pool
-    and an unavailable dest directory pool before the job is recorded.
-    GET no longer claims dest ownership copy cannot write.
+    recorded. ConvertImport would treat that raw device as qcow2.
+    Template overlay is refused; ZFS and LVM snapshots stay native.
+    Snapshot, template, flatten, and backup of a mapped RBD or iSCSI LUN
+    are refused before persist. GET no longer lists a qcow2 overlay or
+    backup run those backends cannot create. GET no longer lists a clone
+    whose start would attach a qcow2 as raw. Offline migrate refuses
+    that zvol copy before ownership moves. Offline migrate also refuses
+    a missing source pool and an unavailable dest directory pool before
+    the job is recorded. GET no longer claims dest ownership copy cannot
+    write.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
