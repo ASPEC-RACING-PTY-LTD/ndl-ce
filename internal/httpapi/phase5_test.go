@@ -526,6 +526,44 @@ func TestCTPatchFailsClosedWhenApplyFails(t *testing.T) {
 	}
 }
 
+func TestCTPatchFailsClosedWhenAgentUnavailable(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID,
+		Name: "ct", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped,
+		ImagePin: "alpine/3.21/amd64/default", DesiredPower: "stopped", CPUs: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Workloads = nil
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("unavailable patch %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "workload agent is unavailable") {
+		t.Fatalf("unavailable patch body %s", raw)
+	}
+	got, err := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if err != nil || got == nil || got.CPUs != 1 {
+		t.Fatalf("unavailable patch must not rewrite CPUs %+v %v", got, err)
+	}
+}
+
 func TestOCIPatchDoesNotCreateCT(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

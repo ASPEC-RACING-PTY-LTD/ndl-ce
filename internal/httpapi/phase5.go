@@ -535,6 +535,10 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		s.patchVM(w, r, p, *row, req)
 		return
 	}
+	if row.Kind == lxc.KindSystemContainer && s.Workloads == nil {
+		writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
+		return
+	}
 	next := *row
 	if req.CPUs > 0 {
 		next.CPUs = req.CPUs
@@ -554,7 +558,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
-	} else if row.Kind == lxc.KindSystemContainer && s.Workloads != nil {
+	} else if row.Kind == lxc.KindSystemContainer {
 		disks, _ := s.Store.ListWorkloadDisks(r.Context(), p.User.ClusterID, row.ID)
 		nics, _ := s.Store.ListWorkloadNICs(r.Context(), p.User.ClusterID, row.ID)
 		rootfs := ""
