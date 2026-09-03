@@ -209,6 +209,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * OCI create refuses an unavailable volume, storage pool, or
     network before persist. GET /workloads no longer lists a
     container whose mount or NIC apply cannot attach.
+  * VM create and PATCH refuse installation media that is not
+    available, matching cloud-image create. GET spec.iso_library_id
+    no longer claims an ISO GET /images would show unavailable.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

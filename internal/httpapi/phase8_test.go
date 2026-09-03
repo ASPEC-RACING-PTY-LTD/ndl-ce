@@ -783,6 +783,34 @@ func TestVMPatchISOLibraryFailsClosedForMissingAndWrongKind(t *testing.T) {
 		t.Fatalf("cloud image as iso body %s", wrongRaw)
 	}
 
+	offlineISO := uuid.NewString()
+	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: offlineISO, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Kind: storage.LibraryISO, DisplayName: "offline.iso",
+		BackendRef: "library/iso/" + offlineISO + ".iso", Status: storage.StatusUnavailable,
+	})
+	offline, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"iso_library_id":"`+offlineISO+`"}`))
+	offline.Header.Set("Content-Type", "application/json")
+	offline.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	offlineRes, _ := ts.Client().Do(offline)
+	offlineRaw, _ := io.ReadAll(offlineRes.Body)
+	_ = offlineRes.Body.Close()
+	if offlineRes.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable iso %d %s", offlineRes.StatusCode, offlineRaw)
+	}
+	if !strings.Contains(string(offlineRaw), "installation media is unavailable") {
+		t.Fatalf("unavailable iso body %s", offlineRaw)
+	}
+	get, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ = ts.Client().Do(get)
+	var afterOffline map[string]any
+	_ = json.NewDecoder(got.Body).Decode(&afterOffline)
+	_ = got.Body.Close()
+	if specFromCreated(afterOffline).ISOLibraryID != "" {
+		t.Fatalf("GET must not invent iso_library_id after unavailable patch: %+v", afterOffline["spec"])
+	}
+
 	isoID := uuid.NewString()
 	_ = mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
 		ID: isoID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
@@ -832,6 +860,50 @@ func TestVMPatchISOLibraryFailsClosedForMissingAndWrongKind(t *testing.T) {
 	_ = got.Body.Close()
 	if specFromCreated(afterClear).ISOLibraryID != "" {
 		t.Fatalf("GET must drop iso_library_id after clear: %+v", afterClear["spec"])
+	}
+}
+
+func TestVMCreateFailsClosedForUnavailableISO(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	isoID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: isoID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Kind: storage.LibraryISO, DisplayName: "offline.iso",
+		BackendRef: "library/iso/" + isoID + ".iso", Status: storage.StatusUnavailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"iso-offline","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","iso_library_id":"` + isoID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable iso %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "installation media is unavailable") {
+		t.Fatalf("unavailable iso body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose iso_library_id GET /images would show unavailable: %+v", items)
 	}
 }
 

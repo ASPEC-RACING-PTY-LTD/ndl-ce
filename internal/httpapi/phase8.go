@@ -460,6 +460,9 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		if lib.Kind != storage.LibraryISO {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("library item is not installation media")
 		}
+		if lib.Status != storage.StatusAvailable {
+			return vmspec.Resolved{}, nil, nil, convert, errConflict("installation media is unavailable")
+		}
 		isoPool, perr := s.Store.GetStoragePool(ctx, clusterID, lib.PoolID)
 		if perr != nil || isoPool == nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("installation media storage is unavailable")
@@ -770,6 +773,10 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 			}
 			if lib.Kind != storage.LibraryISO {
 				writeErr(w, http.StatusConflict, "library item is not installation media")
+				return
+			}
+			if lib.Status != storage.StatusAvailable {
+				writeErr(w, http.StatusConflict, "installation media is unavailable")
 				return
 			}
 			next.ISOLibraryID = lib.ID
