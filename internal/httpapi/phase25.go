@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	lvmRollbackRun   = "stop the workload before LVM-thin rollback"
+	lvmRollbackRun    = "stop the workload before LVM-thin rollback"
 	lvmFlattenReason  = "LVM-thin snapshots do not use qcow2 overlay chains. Flatten is not applicable."
 	lvmTemplateReason = "LVM-thin snapshots do not use qcow2 overlay chains. Template overlay is not applicable."
 )
