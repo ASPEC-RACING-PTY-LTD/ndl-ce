@@ -79,6 +79,9 @@ func (e *Engine) overlayCreate(ctx context.Context, req OverlayRequest, max int)
 	if req.BackingPath == "" {
 		return OverlayResult{}, fmt.Errorf("backing path is required")
 	}
+	if req.OverlayPath == req.BackingPath {
+		return OverlayResult{}, fmt.Errorf("overlay path must not equal backing path")
+	}
 	if req.ChainDepth >= max {
 		return OverlayResult{}, fmt.Errorf("qcow2 overlay chain cap is %d", max)
 	}
@@ -119,6 +122,9 @@ func (e *Engine) overlayCreate(ctx context.Context, req OverlayRequest, max int)
 func (e *Engine) overlayRollback(ctx context.Context, req OverlayRequest) (OverlayResult, error) {
 	if req.BackingPath == "" {
 		return OverlayResult{}, fmt.Errorf("snapshot backing path is required")
+	}
+	if req.OverlayPath == req.BackingPath {
+		return OverlayResult{}, fmt.Errorf("overlay path must not equal backing path")
 	}
 	if err := e.AssertDiskOffline(ctx, req.BackingPath); err != nil {
 		return OverlayResult{}, err

@@ -453,7 +453,8 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 	if depth > 0 && len(existing) > 0 {
 		parentID = existing[len(existing)-1].ID
 	}
-	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"-tmpl.qcow2")
+	snapID := uuid.NewString()
+	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"-"+snapID+"-tmpl.qcow2")
 	overlay, jerr := storage.JoinUnder(pool.RootPath, overlayRel)
 	if jerr != nil {
 		writeErr(w, http.StatusUnprocessableEntity, "template snapshot is unavailable")
@@ -473,7 +474,7 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snap := appdb.Snapshot{
-		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
+		ID: snapID, ClusterID: p.User.ClusterID, WorkloadID: row.ID, VolumeID: vol.ID,
 		Name: name, PurposeTag: "template", Mechanism: res.Mechanism, BackendRef: frozenRef,
 		ParentID: parentID, ChainDepth: depth + 1, Status: "available",
 	}

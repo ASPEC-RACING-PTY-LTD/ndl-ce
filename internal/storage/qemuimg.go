@@ -92,6 +92,9 @@ func QEMUCreateBackingArgv(bin, dest, backing string) ([]string, error) {
 	if strings.Contains(dest, "..") || strings.Contains(backing, "..") {
 		return nil, ErrForbiddenPath
 	}
+	if dest == backing {
+		return nil, fmt.Errorf("overlay dest must not equal backing")
+	}
 	return []string{bin, "create", "-f", FormatQCOW2, "-b", backing, "-F", FormatQCOW2, dest}, nil
 }
 

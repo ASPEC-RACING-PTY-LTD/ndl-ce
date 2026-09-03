@@ -68,4 +68,7 @@ func TestQEMUCreateBackingArgvTyped(t *testing.T) {
 	if _, err := QEMUCreateBackingArgv("/usr/bin/qemu-img", "/pool/../etc/passwd", "/pool/base.qcow2"); err == nil {
 		t.Fatal("traversal")
 	}
+	if _, err := QEMUCreateBackingArgv("/usr/bin/qemu-img", "/pool/base.qcow2", "/pool/base.qcow2"); err == nil {
+		t.Fatal("dest equal backing")
+	}
 }

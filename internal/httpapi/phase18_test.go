@@ -670,6 +670,100 @@ func TestPhase18TemplateSnapshotRecordsOverlayChain(t *testing.T) {
 	}
 }
 
+func TestPhase18SecondTemplateUsesUniqueOverlay(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	rec := &recordOverlayVM{fakeVM: &fakeVM{}}
+	s.VM = rec
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-twice")
+	id := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, id)
+	if len(disks) == 0 {
+		t.Fatal("source disks missing")
+	}
+	vol, _ := mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if vol == nil {
+		t.Fatal("boot volume missing")
+	}
+	original := vol.BackendRef
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("first template %d %s", res.StatusCode, raw)
+	}
+	vol, _ = mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if vol == nil || !strings.Contains(vol.BackendRef, "-tmpl.qcow2") {
+		t.Fatalf("first template tip %+v", vol)
+	}
+	firstTip := vol.BackendRef
+	if rec.last.OverlayPath == rec.last.BackingPath {
+		t.Fatalf("first overlay must not equal backing %+v", rec.last)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/templates", strings.NewReader(`{"workload_id":"`+id+`","name":"golden-2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("second template %d %s", res.StatusCode, raw)
+	}
+	if rec.last.OverlayPath == rec.last.BackingPath {
+		t.Fatalf("second overlay must not equal backing %+v", rec.last)
+	}
+	vol, _ = mem.GetVolume(context.Background(), clusterID, disks[0].VolumeID)
+	if vol == nil || !strings.Contains(vol.BackendRef, "-tmpl.qcow2") {
+		t.Fatalf("second template tip %+v", vol)
+	}
+	if vol.BackendRef == firstTip {
+		t.Fatal("second template must not reuse the first -tmpl.qcow2 path")
+	}
+
+	list, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id+"/snapshots", nil)
+	list.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	listed, _ := ts.Client().Do(list)
+	listedRaw, _ := io.ReadAll(listed.Body)
+	_ = listed.Body.Close()
+	if listed.StatusCode != http.StatusOK {
+		t.Fatalf("snapshots %d %s", listed.StatusCode, listedRaw)
+	}
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(listedRaw, &body); err != nil {
+		t.Fatal(err)
+	}
+	var tmpls []map[string]any
+	for _, item := range body.Items {
+		if item["purpose_tag"] == "template" {
+			tmpls = append(tmpls, item)
+		}
+	}
+	if len(tmpls) != 2 {
+		t.Fatalf("expected two template catalog rows %s", listedRaw)
+	}
+	seenOrig, seenFirst := false, false
+	for _, item := range tmpls {
+		ref, _ := item["backend_ref"].(string)
+		switch ref {
+		case original:
+			seenOrig = true
+		case firstTip:
+			seenFirst = true
+		default:
+			t.Fatalf("unexpected template backend_ref %s", listedRaw)
+		}
+	}
+	if !seenOrig || !seenFirst {
+		t.Fatalf("catalog must freeze original boot then first tmpl tip %s", listedRaw)
+	}
+}
+
 func TestPhase18TemplateAfterFlattenDoesNotInheritStaleParent(t *testing.T) {
 	_, _, ts, cookie, _, poolID, netID := phase18Ready(t)
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "tmpl-flat")

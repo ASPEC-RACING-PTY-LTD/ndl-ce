@@ -76,6 +76,9 @@ func (f *fakeVM) SnapshotVM(_ context.Context, req qemu.OverlayRequest) (qemu.Ov
 	if f.err != nil {
 		return qemu.OverlayResult{}, f.err
 	}
+	if req.OverlayPath != "" && req.OverlayPath == req.BackingPath {
+		return qemu.OverlayResult{}, errors.New("overlay path must not equal backing path")
+	}
 	return qemu.OverlayResult{WorkloadID: req.WorkloadID, OverlayPath: req.OverlayPath, BackingPath: req.BackingPath, Mechanism: "qcow2-overlay"}, nil
 }
 

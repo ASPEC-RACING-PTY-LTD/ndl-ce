@@ -56,6 +56,18 @@ func TestOverlayChainCap(t *testing.T) {
 	}
 }
 
+func TestOverlayCreateRefusesOverlayEqualsBacking(t *testing.T) {
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true, LiveUnits: map[string]bool{}}
+	id := "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+	same := "/var/lib/ndl/storage/p/volumes/vm-disk/" + id + "-tmpl.qcow2"
+	_, err := e.OverlayDisk(context.Background(), OverlayRequest{
+		Action: OverlayCreate, WorkloadID: id, OverlayPath: same, BackingPath: same,
+	})
+	if err == nil || !strings.Contains(err.Error(), "must not equal backing") {
+		t.Fatalf("overlay equal backing: %v", err)
+	}
+}
+
 func TestOverlayRejectsTraversal(t *testing.T) {
 	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
 	id := "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
