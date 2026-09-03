@@ -558,6 +558,71 @@ func TestAPITokenCannotPassIdentityCompletionAAL(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+type failEnableMFAMethodStore struct {
+	appdb.Store
+}
+
+func (f failEnableMFAMethodStore) EnableMFAMethod(context.Context, string) error {
+	return errors.New("persist failed")
+}
+
+func TestMFAConfirmFailsClosedWhenEnablePersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	now := time.Date(2026, 9, 1, 15, 0, 5, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/mfa/enroll", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("enroll %d %s", res.StatusCode, b)
+	}
+	var enrolled struct {
+		Secret string `json:"secret"`
+	}
+	if err := json.Unmarshal(b, &enrolled); err != nil || enrolled.Secret == "" {
+		t.Fatal(string(b))
+	}
+
+	s.Store = failEnableMFAMethodStore{Store: mem}
+	code := mfa.Code(enrolled.Secret, now)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/mfa/confirm", strings.NewReader(`{"code":"`+code+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("confirm persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not enable mfa") {
+		t.Fatalf("confirm persist body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/mfa", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	got, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("get mfa %d %s", res.StatusCode, got)
+	}
+	var status map[string]any
+	if err := json.Unmarshal(got, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status["enabled"] != false {
+		t.Fatalf("GET /mfa must not show enabled after failed confirm %s", got)
+	}
+}
+
 type failCreateServicePrincipalStore struct {
 	appdb.Store
 }

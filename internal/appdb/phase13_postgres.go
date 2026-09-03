@@ -186,8 +186,15 @@ WHERE m.user_id=$1`, userID)
 }
 
 func (p *Postgres) EnableMFAMethod(ctx context.Context, userID string) error {
-	_, err := p.DB.ExecContext(ctx, `UPDATE mfa_methods SET enabled=true WHERE user_id=$1`, userID)
-	return err
+	res, err := p.DB.ExecContext(ctx, `UPDATE mfa_methods SET enabled=true WHERE user_id=$1`, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("mfa method not found")
+	}
+	return nil
 }
 
 func (p *Postgres) ConsumeRecoveryHash(ctx context.Context, userID, hash string) error {

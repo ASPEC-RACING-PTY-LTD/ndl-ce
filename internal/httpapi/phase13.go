@@ -173,7 +173,7 @@ func (s *Server) confirmMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.EnableMFAMethod(r.Context(), p.User.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusInternalServerError, "could not enable mfa")
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "mfa.enable", "ok", method.ID)
