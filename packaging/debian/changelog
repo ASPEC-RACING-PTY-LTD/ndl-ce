@@ -264,6 +264,12 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Files and Terminal join a system-container root with HostVolumePath.
     A ZFS dataset under the ZFS mount root is that path, not a nested
     JoinUnder of the absolute locator.
+  * VM create on a distributed pool allocates an RBD handle and attaches
+    that device. Compile accepts RBD, NBD, thin LV, and iSCSI locators the
+    same way qemu-img already does. A directory qcow2 is not stored under
+    /dev/rbd. Clone, export, import, restore, and qemu-proto new disks
+    refuse device-backed pool roots. System-container create on RBD or
+    iSCSI is 422 like clone.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

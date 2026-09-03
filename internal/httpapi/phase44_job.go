@@ -427,6 +427,9 @@ func (s *Server) adoptImportedDisks(ctx context.Context, clusterID, name string,
 	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return nil, errConflict("storage pool is unavailable")
 	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		return nil, err
+	}
 	if networkID == "" {
 		nets, _ := s.Store.ListNetworks(ctx, clusterID)
 		if len(nets) == 0 {

@@ -425,6 +425,9 @@ func (s *Server) prepareQemuDisk(ctx context.Context, clusterID, nodeID string, 
 	if invalidVolumeSize(pool.BackendType, storage.ClassVMDisk, size) {
 		return nil, nil, "", errBadRequest(storage.ErrInvalidSize.Error())
 	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		return nil, nil, "", err
+	}
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
 		VolumeID: volumeID, PoolID: pool.ID, RootPath: pool.RootPath,

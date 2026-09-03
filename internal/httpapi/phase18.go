@@ -53,12 +53,27 @@ func (s *Server) cloneVM(w http.ResponseWriter, r *http.Request, p *principal, s
 	writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), *cloned))
 }
 
+// refuseDirectoryCopyDest fails closed when a mutating copy would JoinUnder a
+// device-backed pool root such as /dev/rbd or an iSCSI by-path device.
+func refuseDirectoryCopyDest(backend string) error {
+	switch backend {
+	case storage.BackendDistributed:
+		return errUnprocessable("distributed RBD pools do not store directory qcow2 copies")
+	case storage.BackendISCSI:
+		return errUnprocessable("iSCSI pools do not store directory qcow2 copies")
+	}
+	return nil
+}
+
 func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Workload, name string) (*appdb.Workload, error) {
 	if s.VM == nil || s.Backup == nil || s.Storage == nil {
 		return nil, errUnavailable("vm agent is unavailable")
 	}
 	vol, pool, tip, err := s.bootVolumeLocator(ctx, clusterID, src)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
 		return nil, err
 	}
 	spec, err := vmspec.Parse(src.SpecJSON)
@@ -246,6 +261,9 @@ func (s *Server) importVMRow(ctx context.Context, clusterID, name, libraryID, po
 	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return nil, errConflict("storage pool is unavailable")
 	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		return nil, err
+	}
 	if _, _, err := s.resolveWorkloadNetwork(ctx, clusterID, networkID); err != nil {
 		return nil, err
 	}
@@ -371,6 +389,9 @@ func (s *Server) exportVMRow(ctx context.Context, clusterID string, src appdb.Wo
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(display) == "" {
 		display = src.Name + ".qcow2"
 	}
@@ -439,6 +460,14 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 	vol, pool, tip, locErr := s.bootVolumeLocator(r.Context(), p.User.ClusterID, *row)
 	if locErr != nil || vol == nil || pool == nil {
 		writeErr(w, http.StatusUnprocessableEntity, "template snapshot is unavailable")
+		return
+	}
+	if pool.BackendType == storage.BackendISCSI {
+		writeErr(w, http.StatusUnprocessableEntity, iscsiSnapReason)
+		return
+	}
+	if pool.BackendType == storage.BackendDistributed {
+		writeErr(w, http.StatusUnprocessableEntity, distSnapReason)
 		return
 	}
 	spec, specErr := vmspec.Parse(row.SpecJSON)

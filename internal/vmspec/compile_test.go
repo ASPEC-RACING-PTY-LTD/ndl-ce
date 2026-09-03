@@ -185,4 +185,23 @@ func TestCompileAcceptsZVolRawDisk(t *testing.T) {
 	if _, err := Compile(id, Spec{Name: "z", NICs: []NIC{{NetworkID: netID}}}, resolved); err == nil {
 		t.Fatal("generic /dev")
 	}
+	rbd := "/dev/rbd/rbd/" + id
+	resolved.Disks[0].Path = rbd
+	resolved.Disks[0].Format = "raw"
+	launch, err = Compile(id, Spec{Name: "z", NICs: []NIC{{NetworkID: netID}}}, resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launch.Disks[0].Path != rbd || launch.Disks[0].Format != "raw" {
+		t.Fatalf("rbd %+v", launch.Disks[0])
+	}
+	lv := "/dev/ndlvg/" + id
+	resolved.Disks[0].Path = lv
+	launch, err = Compile(id, Spec{Name: "z", NICs: []NIC{{NetworkID: netID}}}, resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launch.Disks[0].Path != lv || launch.Disks[0].Format != "raw" {
+		t.Fatalf("lvm %+v", launch.Disks[0])
+	}
 }

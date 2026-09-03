@@ -525,6 +525,12 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	}
 	_, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
 	native := locErr == nil && pool != nil && (pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM)
+	if locErr == nil && pool != nil && pool.BackendType == storage.BackendISCSI {
+		return appdb.BackupRun{}, errUnprocessable(iscsiSnapReason)
+	}
+	if locErr == nil && pool != nil && pool.BackendType == storage.BackendDistributed {
+		return appdb.BackupRun{}, errUnprocessable(distSnapReason)
+	}
 	if !native && (wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM) {
 		return appdb.BackupRun{}, errUnprocessable(ctBackupReason)
 	}
@@ -736,6 +742,12 @@ func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row ap
 			return appdb.Snapshot{}, "", err
 		}
 		return snap, res.BackendRef, nil
+	}
+	if pool.BackendType == storage.BackendISCSI {
+		return appdb.Snapshot{}, "", errUnprocessable(iscsiSnapReason)
+	}
+	if pool.BackendType == storage.BackendDistributed {
+		return appdb.Snapshot{}, "", errUnprocessable(distSnapReason)
 	}
 	depth := overlayChainDepth(vol.BackendRef, existing)
 	if depth >= qemu.ChainMax {
@@ -978,6 +990,9 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	if err != nil {
 		return "", err
 	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		return "", err
+	}
 	spec, specErr := vmspec.Parse(src.SpecJSON)
 	if specErr != nil {
 		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}
@@ -1187,6 +1202,9 @@ func (s *Server) restoreOrphanVM(ctx context.Context, clusterID string, art appd
 	pool := pools[0]
 	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return "", errConflict("storage pool is unavailable")
+	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		return "", err
 	}
 	nets, err := s.Store.ListNetworks(ctx, clusterID)
 	if err != nil || len(nets) == 0 {

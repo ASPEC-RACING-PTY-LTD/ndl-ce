@@ -572,6 +572,17 @@ func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID strin
 		}
 		return &row, diskPath, nil
 	}
+	if pool.BackendType == storage.BackendDistributed {
+		row, err := s.createDistributedVolume(ctx, clusterID, *pool, storage.ClassVMDisk, size)
+		if err != nil {
+			return nil, "", err
+		}
+		diskPath, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, row.BackendRef)
+		if err != nil {
+			return nil, "", errConflict("volume locator is invalid")
+		}
+		return &row, diskPath, nil
+	}
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
 		VolumeID: volumeID, PoolID: pool.ID, RootPath: pool.RootPath,

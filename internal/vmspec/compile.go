@@ -83,16 +83,14 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 		if err := ValidateCleanPath(d.Path, "disk path"); err != nil {
 			return Launch{}, err
 		}
-		zvol := strings.HasPrefix(d.Path, storage.ZVolDevPrefix)
-		if !strings.HasPrefix(d.Path, "/var/lib/ndl/storage/") && !strings.HasPrefix(d.Path, "/var/lib/ndl/runtime/qemu/"+workloadID+"/") {
-			if err := storage.ValidateZVolPath(d.Path); err != nil {
-				return Launch{}, fmt.Errorf("disk path must be a VolumeHandle locator")
-			}
-			zvol = true
+		underStorage := strings.HasPrefix(d.Path, "/var/lib/ndl/storage/") || strings.HasPrefix(d.Path, "/var/lib/ndl/runtime/qemu/"+workloadID+"/")
+		zvol, block := hostBlockDisk(d.Path)
+		if !underStorage && !block {
+			return Launch{}, fmt.Errorf("disk path must be a VolumeHandle locator")
 		}
 		format := d.Format
 		if format == "" {
-			if zvol {
+			if block {
 				format = "raw"
 			} else {
 				format = "qcow2"
@@ -100,6 +98,9 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 		}
 		if zvol && format != "raw" {
 			return Launch{}, fmt.Errorf("zvol disk format must be raw")
+		}
+		if block && format != "raw" {
+			return Launch{}, fmt.Errorf("block disk format must be raw")
 		}
 		if format != "qcow2" && format != "raw" {
 			return Launch{}, fmt.Errorf("disk format must be qcow2 or raw")
@@ -240,4 +241,28 @@ func allowedFirmware(p string) bool {
 	default:
 		return false
 	}
+}
+
+// hostBlockDisk reports whether p is a host block VolumeHandle (zvol, thin LV,
+// iSCSI by-path, RBD, or NBD). Directory qcow2 paths are not block devices.
+func hostBlockDisk(p string) (zvol bool, block bool) {
+	if storage.ValidateZVolPath(p) == nil {
+		return true, true
+	}
+	if storage.ValidateLVMDevice(p) == nil {
+		return false, true
+	}
+	if storage.ValidateRBDPath(p) == nil {
+		return false, true
+	}
+	if storage.ValidateNBDPath(p) == nil {
+		return false, true
+	}
+	if strings.HasPrefix(p, storage.ISCSIByPath) {
+		cleaned := path.Clean(p)
+		if cleaned == p && !strings.Contains(p, "..") {
+			return false, true
+		}
+	}
+	return false, false
 }

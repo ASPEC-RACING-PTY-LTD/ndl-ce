@@ -376,6 +376,12 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		}
 		return pool, netw, loc, &row, nil
 	}
+	if pool.BackendType == storage.BackendISCSI {
+		return nil, nil, "", nil, errUnprocessable("iSCSI system containers are not supported")
+	}
+	if pool.BackendType == storage.BackendDistributed {
+		return nil, nil, "", nil, errUnprocessable("distributed RBD system containers are not supported")
+	}
 	if s.Storage == nil {
 		return nil, nil, "", nil, errUnavailable("storage agent is unavailable")
 	}

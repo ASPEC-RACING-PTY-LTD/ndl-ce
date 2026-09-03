@@ -337,6 +337,14 @@ func (s *Server) flattenSnapshots(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, lvmFlattenReason)
 		return
 	}
+	if pool.BackendType == storage.BackendISCSI {
+		writeErr(w, http.StatusUnprocessableEntity, iscsiSnapReason)
+		return
+	}
+	if pool.BackendType == storage.BackendDistributed {
+		writeErr(w, http.StatusUnprocessableEntity, distSnapReason)
+		return
+	}
 	if row.Kind != vmspec.KindVM {
 		writeErr(w, http.StatusUnprocessableEntity, ctSnapshotReason)
 		return
