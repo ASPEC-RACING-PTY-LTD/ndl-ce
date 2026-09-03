@@ -273,7 +273,17 @@ func (s *Server) labQemuProtoStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if existing != nil {
-		s.ensureQemuDisk(r.Context(), p.User.ClusterID, existing.ID, vol.ID)
+		if err := s.ensureQemuDisk(r.Context(), p.User.ClusterID, existing.ID, vol.ID); err != nil {
+			if created {
+				if s.QEMU != nil {
+					_, _ = s.QEMU.StopQemuProto(r.Context(), existing.ID)
+				}
+				_ = s.Store.DeleteWorkload(r.Context(), p.User.ClusterID, existing.ID)
+			}
+			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
 		_ = s.Store.UpdateWorkloadObserved(r.Context(), appdb.Workload{
 			ID: existing.ID, Status: status, Reason: firstNonEmpty(res.Reason, "started"), UnitActive: res.UnitActive,
 		})
@@ -503,16 +513,22 @@ func (s *Server) pickQemuPool(ctx context.Context, clusterID, poolID string) (*a
 	return nil, errConflict("an available storage pool is required")
 }
 
-func (s *Server) ensureQemuDisk(ctx context.Context, clusterID, workloadID, volumeID string) {
-	disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, workloadID)
+func (s *Server) ensureQemuDisk(ctx context.Context, clusterID, workloadID, volumeID string) error {
+	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, workloadID)
+	if err != nil {
+		return errInternal("could not record VM disk")
+	}
 	for _, d := range disks {
 		if d.VolumeID == volumeID {
-			return
+			return nil
 		}
 	}
-	_ = s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+	if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: workloadID, VolumeID: volumeID, Role: "root",
-	})
+	}); err != nil {
+		return errInternal("could not record VM disk")
+	}
+	return nil
 }
 
 func (s *Server) qemuProtoJSON(w appdb.Workload, applied qemuProtoApplied, obs *qemu.Observed) map[string]any {

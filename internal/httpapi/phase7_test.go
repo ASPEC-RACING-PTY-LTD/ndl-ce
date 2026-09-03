@@ -186,6 +186,10 @@ func TestLabQemuProtoStoresVMKind(t *testing.T) {
 	if row.Kind != qemu.KindVM {
 		t.Fatalf("stored kind %q", row.Kind)
 	}
+	disks, err := mem.ListWorkloadDisks(context.Background(), cluster.ID, row.ID)
+	if err != nil || len(disks) != 1 || disks[0].VolumeID == "" {
+		t.Fatalf("disk join %+v %v", disks, err)
+	}
 	if !strings.HasPrefix(fq.spec.DiskPath, "/var/lib/ndl/storage/local/volumes/vm-disk/") {
 		t.Fatalf("disk path %q", fq.spec.DiskPath)
 	}
@@ -559,6 +563,45 @@ func TestLabQemuProtoFailsClosedForNewDistributedVolume(t *testing.T) {
 	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
 	if len(items) != 0 {
 		t.Fatalf("GET must not list a qemu-proto VM whose disk is a directory copy on an RBD pool: %+v", items)
+	}
+}
+
+func TestLabQemuProtoFailsClosedWhenDiskPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := seedQemuLab(t, mem, cluster.ID, nodeID)
+	fq := &fakeQEMU{}
+	s.QEMU = fq
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failCreateWorkloadDiskStore{Store: mem}
+
+	body := `{"pool_id":"` + poolID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("disk persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM disk") {
+		t.Fatalf("disk persist body %s", raw)
+	}
+	if fq.stops != 1 {
+		t.Fatalf("host leftover qemu-proto after disk persist fail: stops %d", fq.stops)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a qemu-proto VM whose disk join cannot be recorded: %+v", items)
 	}
 }
 
