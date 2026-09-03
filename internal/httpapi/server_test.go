@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -303,6 +305,107 @@ func TestAdminLoginLogoutAndSetupStatus(t *testing.T) {
 		t.Fatalf("logout=%d", logout.StatusCode)
 	}
 	_ = logout.Body.Close()
+}
+
+type failRevokeSessionStore struct {
+	appdb.Store
+}
+
+func (f failRevokeSessionStore) RevokeSession(context.Context, string) error {
+	return errors.New("persist failed")
+}
+
+func TestLogoutFailsClosedWhenSessionPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failRevokeSessionStore{Store: mem}
+
+	out, _ := http.NewRequest("POST", ts.URL+"/api/v1/auth/logout", nil)
+	out.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	logout, err := ts.Client().Do(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(logout.Body)
+	_ = logout.Body.Close()
+	if logout.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("logout persist %d %s", logout.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not revoke session") {
+		t.Fatalf("logout body %s", raw)
+	}
+	s.Store = mem
+	me, _ := http.NewRequest("GET", ts.URL+"/api/v1/me", nil)
+	me.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("session must remain after failed logout persist %d", res.StatusCode)
+	}
+}
+
+func TestLogoutWithAPITokenDoesNotRevokeSession(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	tokReq, _ := http.NewRequest("POST", ts.URL+"/api/v1/tokens", strings.NewReader(`{"name":"cli"}`))
+	tokReq.Header.Set("Content-Type", "application/json")
+	tokReq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	tokRes, err := ts.Client().Do(tokReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(tokRes.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	_ = tokRes.Body.Close()
+	if tokRes.StatusCode != http.StatusCreated {
+		t.Fatalf("token %d", tokRes.StatusCode)
+	}
+
+	s.Store = failRevokeSessionStore{Store: mem}
+	out, _ := http.NewRequest("POST", ts.URL+"/api/v1/auth/logout", nil)
+	out.Header.Set("Authorization", "Bearer "+created.Token)
+	logout, err := ts.Client().Do(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = logout.Body.Close()
+	if logout.StatusCode != http.StatusNoContent {
+		t.Fatalf("token logout %d", logout.StatusCode)
+	}
+
+	s.Store = mem
+	me, _ := http.NewRequest("GET", ts.URL+"/api/v1/me", nil)
+	me.Header.Set("Authorization", "Bearer "+created.Token)
+	res, err := ts.Client().Do(me)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("API token must remain after logout %d", res.StatusCode)
+	}
+	still, _ := http.NewRequest("GET", ts.URL+"/api/v1/me", nil)
+	still.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	live, err := ts.Client().Do(still)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = live.Body.Close()
+	if live.StatusCode != http.StatusOK {
+		t.Fatalf("session cookie must remain after token logout %d", live.StatusCode)
+	}
 }
 
 func TestHealth(t *testing.T) {

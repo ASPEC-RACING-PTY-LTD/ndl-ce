@@ -623,7 +623,12 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	_ = s.Store.RevokeSession(r.Context(), p.SessID)
+	if p.SessID != "" {
+		if err := s.Store.RevokeSession(r.Context(), p.SessID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not revoke session")
+			return
+		}
+	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.cookieSecure(r), SameSite: http.SameSiteLaxMode})
 	s.audit(r, p.User.ClusterID, p.User.ID, "auth.logout", "ok", "")
 	w.WriteHeader(http.StatusNoContent)
