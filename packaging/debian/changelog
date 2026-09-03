@@ -246,6 +246,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Lab qemu-proto start refuses an unavailable existing volume
     before persist. GET /lab/qemu-proto no longer claims a disk
     start cannot attach.
+  * System-container start refuses an unavailable root volume, pool,
+    or network before the agent start. GET no longer claims
+    desired_power running when start cannot mount or attach.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

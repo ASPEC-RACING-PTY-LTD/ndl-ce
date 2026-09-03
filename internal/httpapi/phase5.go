@@ -463,6 +463,13 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 			}
 			req = clone
 		}
+		if action == "start" {
+			if err := s.ensureCTStartAvailable(r.Context(), p.User.ClusterID, row.ID); err != nil {
+				_ = s.Store.UpdateWorkloadObserved(r.Context(), appdb.Workload{ID: row.ID, Status: lxc.StatusUnavailable, Reason: err.Error()})
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
+		}
 		op := s.startOp(r.Context(), p.User.ClusterID, row.NodeID, "workload."+action, action, 40)
 		res, err := s.Workloads.LifecycleCT(r.Context(), req)
 		if err != nil {
@@ -710,6 +717,36 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 		CloneRootfsPath: loc, CloneMAC: lxc.MACFromUUID(cloneID), CloneName: name,
 	}
 	return req, nil
+}
+
+func (s *Server) ensureCTStartAvailable(ctx context.Context, clusterID, workloadID string) error {
+	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, workloadID)
+	if err != nil {
+		return err
+	}
+	if len(disks) > 0 {
+		vol, err := s.Store.GetVolume(ctx, clusterID, disks[0].VolumeID)
+		if err != nil || vol == nil {
+			return errConflict("storage is unavailable")
+		}
+		if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
+			return errConflict("storage is unavailable")
+		}
+		pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
+		if err != nil || pool == nil || (pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning) {
+			return errConflict("storage is unavailable")
+		}
+	}
+	nics, err := s.Store.ListWorkloadNICs(ctx, clusterID, workloadID)
+	if err != nil {
+		return err
+	}
+	if len(nics) > 0 {
+		if _, _, err := s.resolveWorkloadNetwork(ctx, clusterID, nics[0].NetworkID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) recordClone(ctx context.Context, clusterID string, src appdb.Workload, req lxc.LifecycleRequest, res lxc.Result) error {
