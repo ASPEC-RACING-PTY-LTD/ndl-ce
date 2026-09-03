@@ -270,6 +270,11 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     /dev/rbd. Clone, export, import, restore, and qemu-proto new disks
     refuse device-backed pool roots. System-container create on RBD or
     iSCSI is 422 like clone.
+  * CompileLaunch accepts mapped RBD, thin LV, NBD, and iSCSI boot disks
+    the same way ValidateDiskPath already does. A frozen Launch for a
+    distributed VM is argv the host can start, not a disk path refuse.
+    Generic /dev remains refused. Runtime cidata and firmware locators
+    still compile under the per-VM runtime prefix.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

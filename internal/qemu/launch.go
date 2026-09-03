@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/no-dal/ndl-ce/internal/gpu"
-	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
@@ -193,17 +192,11 @@ func validateLaunchDisk(id string, d vmspec.LaunchDisk) error {
 	if d.Format != "qcow2" && d.Format != "raw" {
 		return fmt.Errorf("disk format must be qcow2 or raw")
 	}
-	if strings.HasPrefix(d.Path, "/var/lib/ndl/storage/") {
-		return ValidateDiskPath(d.Path)
-	}
-	if strings.HasPrefix(d.Path, storage.ZVolDevPrefix) {
-		return ValidateDiskPath(d.Path)
-	}
 	prefix := "/var/lib/ndl/runtime/qemu/" + id + "/"
-	if !strings.HasPrefix(d.Path, prefix) {
-		return fmt.Errorf("disk path must be a VolumeHandle or per-VM runtime locator")
+	if strings.HasPrefix(d.Path, prefix) {
+		return vmspec.ValidateCleanPath(d.Path, "disk path")
 	}
-	return vmspec.ValidateCleanPath(d.Path, "disk path")
+	return ValidateDiskPath(d.Path)
 }
 
 func safeBoot(order string) string {

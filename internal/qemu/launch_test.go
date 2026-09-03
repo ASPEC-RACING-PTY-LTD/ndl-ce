@@ -61,6 +61,57 @@ func TestCompileLaunchDeterministicAndPinsABI(t *testing.T) {
 	}
 }
 
+func TestCompileLaunchAcceptsHostBlockDevices(t *testing.T) {
+	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
+	id := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	netID := "33333333-3333-4333-8333-333333333333"
+	spec := vmspec.Normalize(vmspec.Spec{
+		Name: "block", CPUs: 1, MemoryBytes: 128 << 20,
+		NICs: []vmspec.NIC{{ID: netID, NetworkID: netID}},
+	})
+	for _, disk := range []string{
+		"/dev/rbd/rbd/" + id,
+		"/dev/ndlvg/" + id,
+	} {
+		resolved := vmspec.Resolved{
+			Accel: "tcg",
+			Disks: []vmspec.ResolvedDisk{{
+				VolumeID: id, Role: vmspec.DiskRoleBoot, Path: disk, Format: "raw",
+			}},
+			NICs: []vmspec.ResolvedNIC{{
+				ID: netID, NetworkID: netID, BridgeName: "ndl12345678", MAC: vmspec.MACFromID(id),
+			}},
+		}
+		launch, err := vmspec.Compile(id, spec, resolved)
+		if err != nil {
+			t.Fatal(disk, err)
+		}
+		argv, err := e.CompileLaunch(launch)
+		if err != nil {
+			t.Fatal(disk, err)
+		}
+		joined := strings.Join(argv, " ")
+		if !strings.Contains(joined, "filename="+disk) {
+			t.Fatal(joined)
+		}
+		if !strings.Contains(joined, "driver=raw") {
+			t.Fatal(joined)
+		}
+	}
+	launch := vmspec.Launch{
+		WorkloadID: id, Machine: vmspec.DefaultMachine, Accel: "tcg", CPUs: 1, MemoryMiB: 128, QGA: true,
+		BootOrder: "c", Console: vmspec.LaunchConsole{Serial: true, VNC: true},
+		PCI: map[string]string{"vga": "0x2", "serial": "0x3"},
+		Disks: []vmspec.LaunchDisk{{
+			Role: vmspec.DiskRoleBoot, Path: "/dev/sda", Format: "raw", PCIAddr: "0x5", NodeName: "disk0",
+		}},
+		NICs: []vmspec.LaunchNIC{{NetworkID: netID, BridgeName: "ndl0", TAPName: "nvabc", MAC: "02:00:00:00:00:01", PCIAddr: "0x8"}},
+	}
+	if _, err := e.CompileLaunch(launch); err == nil {
+		t.Fatal("generic /dev")
+	}
+}
+
 func TestCompileLaunchRejectsRawArgsAndTraversal(t *testing.T) {
 	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true}
 	id := "11111111-1111-4111-8111-111111111111"
