@@ -192,6 +192,10 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "storage class is unsupported")
 		return
 	}
+	if invalidVolumeSize(pool.BackendType, req.Class, req.Size) {
+		writeErr(w, http.StatusBadRequest, storage.ErrInvalidSize.Error())
+		return
+	}
 	if pool.BackendType == storage.BackendZFS {
 		row, err := s.createZFSVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
 		if err != nil {
@@ -565,6 +569,16 @@ func volumeJSON(v appdb.Volume) map[string]any {
 		"backend_ref": v.BackendRef, "xattr_state": v.XattrState, "allocated_bytes": v.AllocatedBytes,
 		"created_at": v.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func invalidVolumeSize(backend, class string, size int64) bool {
+	if size <= 0 || size > storage.MaxVolumeBytes {
+		return true
+	}
+	if (class == storage.ClassVMDisk || backend == storage.BackendLVM) && size < storage.MinBlockBytes {
+		return true
+	}
+	return false
 }
 
 func libraryJSON(item appdb.LibraryItem) map[string]any {

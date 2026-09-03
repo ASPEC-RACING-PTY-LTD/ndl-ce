@@ -105,6 +105,73 @@ func TestStorageCreatePoolAndVolume(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestDirectoryVolumeCreateFailsClosedForTinySize(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	usable := int64(50 << 30)
+	s.Storage = fakeStorage{
+		pool: storage.CreatePoolResult{
+			RootPath: "/var/lib/ndl/storage/local", Status: storage.StatusWarning,
+			Warnings: []string{storage.WarnRootFilesystem}, WarningText: []string{storage.RootHeadroomMessage},
+			Capacity: storage.Capacity{UsableBytes: &usable}, Capabilities: storage.DirectoryCapabilities(true, false),
+		},
+		vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+			BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/x.qcow2",
+			Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+		}},
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := ""
+	res, err := ts.Client().Post(ts.URL+"/api/v1/setup/claim", "application/json", strings.NewReader(
+		`{"token":"`+token+`","username":"admin","password":"correct-horse"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range res.Cookies() {
+		if c.Name == sessionCookie {
+			cookie = c.Value
+		}
+	}
+	_ = res.Body.Close()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/pools", strings.NewReader(`{"name":"local"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("create pool %d %s", res.StatusCode, b)
+	}
+	var created map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&created)
+	_ = res.Body.Close()
+	poolID, _ := created["id"].(string)
+	body, _ := json.Marshal(map[string]any{"pool_id": poolID, "class": "vm-disk", "size_bytes": 1})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/volumes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("tiny directory volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), storage.ErrInvalidSize.Error()) {
+		t.Fatalf("tiny directory volume body %s", raw)
+	}
+	items, _ := mem.ListVolumes(context.Background(), cluster.ID, poolID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a volume apply cannot create: %+v", items)
+	}
+}
+
 func TestStorageUploadAndListRefresh(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

@@ -175,6 +175,11 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     fakeZFS and fakeLVM no longer 201 a catalog row GET /volumes would
     list that apply cannot create. Directory still stores the agent handle
     class.
+  * Volume create refuses a size apply cannot allocate before persist.
+    Block and LVM volumes require 1 MiB. Directory, ZFS zvol, LVM, iSCSI,
+    and distributed no longer 201 a catalog row GET /volumes would list
+    that qemu-img, zvol, thin LV, or RBD cannot create. ZFS datasets are
+    not given a block minimum.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
