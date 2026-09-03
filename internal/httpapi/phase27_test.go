@@ -134,6 +134,47 @@ func TestPhase27OverlayCreateFailsClosedForInvalidVNI(t *testing.T) {
 	}
 }
 
+func TestPhase27BondCreateFailsClosedForInvalidModeAndMembers(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	cases := []struct {
+		body string
+		want string
+	}{
+		{`{"name":"bad-mode","mode":"foo","members":["eth1"]}`, "bond mode must be active-backup or 802.3ad"},
+		{`{"name":"no-members","mode":"active-backup","members":[]}`, "bond requires at least one member interface"},
+		{`{"name":"bad-if","mode":"active-backup","members":["eth1;rm"]}`, "bond member interface name is not valid"},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/bonds", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		body, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), tc.want) {
+			t.Fatalf("%s: %d %s", tc.want, res.StatusCode, body)
+		}
+	}
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/networks", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	for _, name := range []string{"bad-mode", "no-members", "bad-if"} {
+		if strings.Contains(string(listed), `"name":"`+name+`"`) {
+			t.Fatalf("GET /networks must not list invalid bond %s: %s", name, listed)
+		}
+	}
+}
+
 func TestPhase27ApplyOnePolicyKeepsOthers(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Network = fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}

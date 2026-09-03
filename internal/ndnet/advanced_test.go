@@ -90,6 +90,39 @@ func TestBondActiveBackupShown(t *testing.T) {
 	}
 }
 
+func TestBondAddRefusesInvalidModeAndMembers(t *testing.T) {
+	e := testEngine(t, testHost())
+	id := uuid.NewString()
+	_, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: "foo", Members: []string{"eth1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond mode must be active-backup or 802.3ad") {
+		t.Fatalf("mode: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: BondActiveBackup,
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond requires at least one member interface") {
+		t.Fatalf("empty members: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: BondActiveBackup, Members: []string{"eth1;rm"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond member interface name is not valid") {
+		t.Fatalf("ifname: %v", err)
+	}
+	bondIf, err := BondName(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: BondActiveBackup, Members: []string{bondIf},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond member cannot be the bond locator") {
+		t.Fatalf("self member: %v", err)
+	}
+}
+
 func TestPolicyDeniesPairAndRefusesManagementINPUT(t *testing.T) {
 	src := "02:00:00:00:00:01"
 	dst := "02:00:00:00:00:02"

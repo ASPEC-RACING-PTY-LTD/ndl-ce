@@ -18,7 +18,8 @@ func BondName(id string) (string, error) {
 	return "ndlb" + hex[:8], nil
 }
 
-func parseBondMode(mode string) (string, error) {
+// ParseBondMode accepts active-backup, 802.3ad, lacp, or empty (defaults to active-backup).
+func ParseBondMode(mode string) (string, error) {
 	switch strings.TrimSpace(mode) {
 	case "", BondActiveBackup:
 		return BondActiveBackup, nil
@@ -27,6 +28,26 @@ func parseBondMode(mode string) (string, error) {
 	default:
 		return "", fmt.Errorf("bond mode must be active-backup or 802.3ad")
 	}
+}
+
+// ParseBondMembers requires at least one valid interface that is not the bond locator.
+func ParseBondMembers(objectID string, members []string) error {
+	bondIf, err := BondName(objectID)
+	if err != nil {
+		return err
+	}
+	if len(members) < 1 {
+		return fmt.Errorf("bond requires at least one member interface")
+	}
+	for _, m := range members {
+		if !ValidIfName(m) {
+			return fmt.Errorf("bond member interface name is not valid")
+		}
+		if m == bondIf {
+			return fmt.Errorf("bond member cannot be the bond locator")
+		}
+	}
+	return nil
 }
 
 func bondFiles(id, bondIf, mode string, members []string) []File {
@@ -49,24 +70,16 @@ func bondFiles(id, bondIf, mode string, members []string) []File {
 }
 
 func (e *Engine) applyBond(ctx context.Context, op AdvancedOp) (AdvancedResult, error) {
-	mode, err := parseBondMode(op.Mode)
+	mode, err := ParseBondMode(op.Mode)
 	if err != nil {
+		return AdvancedResult{}, err
+	}
+	if err := ParseBondMembers(op.ObjectID, op.Members); err != nil {
 		return AdvancedResult{}, err
 	}
 	bondIf, err := BondName(op.ObjectID)
 	if err != nil {
 		return AdvancedResult{}, err
-	}
-	if len(op.Members) < 1 {
-		return AdvancedResult{}, fmt.Errorf("bond requires at least one member interface")
-	}
-	for _, m := range op.Members {
-		if !ValidIfName(m) {
-			return AdvancedResult{}, fmt.Errorf("bond member interface name is not valid")
-		}
-		if m == bondIf {
-			return AdvancedResult{}, fmt.Errorf("bond member cannot be the bond locator")
-		}
 	}
 	host, err := e.host()
 	if err != nil {

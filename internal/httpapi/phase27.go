@@ -98,9 +98,18 @@ func (s *Server) createBond(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	mode, err := ndnet.ParseBondMode(req.Mode)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	id := uuid.NewString()
+	if err := ndnet.ParseBondMembers(id, req.Members); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	res, err := s.advanced()(r.Context(), ndnet.AdvancedOp{
-		Action: ndnet.ActionBondAdd, ObjectID: id, Name: name, Mode: req.Mode, Members: req.Members,
+		Action: ndnet.ActionBondAdd, ObjectID: id, Name: name, Mode: mode, Members: req.Members,
 		ConfirmIfName: strings.TrimSpace(req.Confirm),
 	})
 	if err != nil {
@@ -108,7 +117,7 @@ func (s *Server) createBond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := appdb.NetworkBond{
-		ID: id, ClusterID: p.User.ClusterID, Name: name, Mode: firstNonEmpty(res.Mode, ndnet.BondActiveBackup),
+		ID: id, ClusterID: p.User.ClusterID, Name: name, Mode: firstNonEmpty(res.Mode, mode),
 		Members: req.Members, Locator: res.Locator, Status: res.Status, Reason: res.Reason,
 	}
 	if err := s.Store.CreateNetworkBond(r.Context(), row); err != nil {
