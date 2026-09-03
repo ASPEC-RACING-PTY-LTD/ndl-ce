@@ -81,6 +81,29 @@ func TestWGApplySkipHostCmdsUnavailable(t *testing.T) {
 	}
 }
 
+func TestWGApplyRefusesInvalidPortAndAddress(t *testing.T) {
+	e := testEngine(t, testHost())
+	id := uuid.NewString()
+	_, peerPub, err := GenerateWGKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.ApplyWireGuard(context.Background(), WGOp{
+		Action: ActionWGApply, PeerID: id, ListenPort: 70000, AddressCIDR: "10.64.8.1/24",
+		Peers: []WGPeerSpec{{PublicKey: peerPub, AllowedIPs: "10.64.8.2/32"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "wireguard listen port is invalid") {
+		t.Fatalf("port: %v", err)
+	}
+	_, err = e.ApplyWireGuard(context.Background(), WGOp{
+		Action: ActionWGApply, PeerID: id, ListenPort: 51820, AddressCIDR: "not-a-cidr",
+		Peers: []WGPeerSpec{{PublicKey: peerPub, AllowedIPs: "10.64.8.2/32"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "wireguard address must be CIDR") {
+		t.Fatalf("addr: %v", err)
+	}
+}
+
 func TestValidWGEndpointRefusesCredentials(t *testing.T) {
 	if err := ValidWGEndpoint("203.0.113.8:51820"); err != nil {
 		t.Fatal(err)

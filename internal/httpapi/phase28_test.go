@@ -161,6 +161,48 @@ func TestPhase28WGEndpointRefusesCredentials(t *testing.T) {
 	}
 }
 
+func TestPhase28WGCreateFailsClosedForInvalidPortAndAddress(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	cases := []struct {
+		body string
+		want string
+	}{
+		{`{"name":"bad-port","listen_port":70000}`, "wireguard listen port is invalid"},
+		{`{"name":"neg-port","listen_port":-1}`, "wireguard listen port is invalid"},
+		{`{"name":"bad-local","local_address":"not-a-cidr"}`, "wireguard address must be CIDR"},
+		{`{"name":"bad-worker","worker_address":"10.64.8.2"}`, "wireguard address must be CIDR"},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		body, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), tc.want) {
+			t.Fatalf("%s: %d %s", tc.want, res.StatusCode, body)
+		}
+	}
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/cluster/wg", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	for _, name := range []string{"bad-port", "neg-port", "bad-local", "bad-worker"} {
+		if strings.Contains(string(listed), `"name":"`+name+`"`) {
+			t.Fatalf("GET /cluster/wg must not list invalid peer %s: %s", name, listed)
+		}
+	}
+}
+
 func TestPhase28ListenAddrRefusesCredentials(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Network = fakeNet{}

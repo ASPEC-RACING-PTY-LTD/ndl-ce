@@ -125,7 +125,7 @@ func (e *Engine) applyWG(ctx context.Context, op WGOp) (WGResult, error) {
 	if addr == "" {
 		addr = "10.64.8.1/24"
 	}
-	if err := parseWGAddress(addr); err != nil {
+	if err := ParseWGAddress(addr); err != nil {
 		return WGResult{}, err
 	}
 	for i, p := range op.Peers {
@@ -304,7 +304,7 @@ func validateWGPeer(p WGPeerSpec) error {
 		return fmt.Errorf("peer public key is invalid")
 	}
 	if p.AllowedIPs != "" {
-		if err := parseWGAddress(p.AllowedIPs); err != nil {
+		if err := ParseWGAddress(p.AllowedIPs); err != nil {
 			return err
 		}
 	}
@@ -340,7 +340,19 @@ func ValidListenAddr(addr string) error {
 	return validHostPort(addr, "listen address")
 }
 
-func parseWGAddress(cidr string) error {
+// ParseWGListenPort accepts 1-65535, or 0 which defaults to DefaultWGPort.
+func ParseWGListenPort(port int) (int, error) {
+	if port == 0 {
+		return DefaultWGPort, nil
+	}
+	if port < 1 || port > 65535 {
+		return 0, fmt.Errorf("wireguard listen port is invalid")
+	}
+	return port, nil
+}
+
+// ParseWGAddress requires a CIDR locator such as 10.64.8.1/24.
+func ParseWGAddress(cidr string) error {
 	if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
 		return fmt.Errorf("wireguard address must be CIDR")
 	}

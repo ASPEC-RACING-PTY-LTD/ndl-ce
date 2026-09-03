@@ -74,9 +74,18 @@ func (s *Server) createWGPeer(w http.ResponseWriter, r *http.Request) {
 	}
 	localAddr := firstNonEmpty(strings.TrimSpace(req.LocalAddress), "10.64.8.1/24")
 	workerAddr := firstNonEmpty(strings.TrimSpace(req.WorkerAddress), "10.64.8.2/24")
-	port := req.ListenPort
-	if port == 0 {
-		port = ndnet.DefaultWGPort
+	if err := ndnet.ParseWGAddress(localAddr); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := ndnet.ParseWGAddress(workerAddr); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	port, err := ndnet.ParseWGListenPort(req.ListenPort)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	workerPriv, workerPub, err := ndnet.GenerateWGKey()
 	if err != nil {
