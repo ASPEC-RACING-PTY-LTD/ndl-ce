@@ -243,6 +243,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VLAN create refuses an unavailable parent network before apply.
     GET /networks no longer lists a VLAN whose parent bridge apply
     cannot attach.
+  * Lab qemu-proto start refuses an unavailable existing volume
+    before persist. GET /lab/qemu-proto no longer claims a disk
+    start cannot attach.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
