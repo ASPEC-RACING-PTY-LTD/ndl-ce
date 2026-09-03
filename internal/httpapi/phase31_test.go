@@ -182,6 +182,95 @@ func TestPhase31MaintainFailsClosedWhenMigrateOpPersistFails(t *testing.T) {
 	}
 }
 
+type missSetNodeMaintenanceStore struct {
+	appdb.Store
+}
+
+func (missSetNodeMaintenanceStore) SetNodeMaintenance(context.Context, appdb.NodeMaintenance) error {
+	return nil
+}
+
+type missClearNodeMaintenanceStore struct {
+	appdb.Store
+}
+
+func (missClearNodeMaintenanceStore) ClearNodeMaintenance(context.Context, string, string) error {
+	return nil
+}
+
+func TestPhase31MaintainFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = missSetNodeMaintenanceStore{Store: mem}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+control.ID+"/maintain", strings.NewReader(`{"reason":"disk"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("maintain persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record node maintenance") {
+		t.Fatalf("maintain persist miss body %s", raw)
+	}
+	s.Store = mem
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/placement/preview", strings.NewReader(`{"placement":"automatic"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("preview after maintain persist miss %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestPhase31ExitMaintainFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+control.ID+"/maintain", strings.NewReader(`{"reason":"disk"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("maintain %d %s", res.StatusCode, raw)
+	}
+	s.Store = missClearNodeMaintenanceStore{Store: mem}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+control.ID+"/maintain/exit", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("exit persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record node maintenance") {
+		t.Fatalf("exit persist miss body %s", raw)
+	}
+	s.Store = mem
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/placement/preview", strings.NewReader(`{"placement":"automatic"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("preview after exit persist miss %d %s", res.StatusCode, raw)
+	}
+}
+
 func TestPhase31MaintainMigratesWhenDestIsLocal(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Migrate = migrate.NewFake()

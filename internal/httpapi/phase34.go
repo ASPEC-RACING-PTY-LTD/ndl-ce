@@ -384,6 +384,10 @@ func (s *Server) execRollingDrain(r *http.Request, clusterID, planID string, n a
 	}); err != nil {
 		return st, errInternal("could not record node maintenance")
 	}
+	maint, err := s.Store.GetNodeMaintenance(r.Context(), clusterID, n.ID)
+	if err != nil || maint == nil {
+		return st, errInternal("could not record node maintenance")
+	}
 	workloads, _ := s.Store.ListWorkloads(r.Context(), clusterID)
 	for _, wl := range workloads {
 		if wl.NodeID == n.ID || wl.DesiredNodeID == n.ID {

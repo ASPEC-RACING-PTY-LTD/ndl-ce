@@ -176,8 +176,13 @@ func (s *Server) confirmMFA(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not enable mfa")
 		return
 	}
+	stored, _, _, err := s.Store.GetMFAMethod(r.Context(), p.User.ID)
+	if err != nil || stored == nil || !stored.Enabled {
+		writeErr(w, http.StatusInternalServerError, "could not enable mfa")
+		return
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "mfa.enable", "ok", method.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"kind": method.Kind, "enabled": true})
+	writeJSON(w, http.StatusOK, map[string]any{"kind": stored.Kind, "enabled": true})
 }
 
 func (s *Server) getMFA(w http.ResponseWriter, r *http.Request) {

@@ -220,6 +220,11 @@ func (s *Server) maintainNode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	maint, err := s.Store.GetNodeMaintenance(r.Context(), p.User.ClusterID, id)
+	if err != nil || maint == nil {
+		writeErr(w, http.StatusInternalServerError, "could not record node maintenance")
+		return
+	}
 	workloads, _ := s.Store.ListWorkloads(r.Context(), p.User.ClusterID)
 	toMove := []map[string]any{}
 	for _, wl := range workloads {
@@ -281,6 +286,11 @@ func (s *Server) exitMaintenance(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.Store.ClearNodeMaintenance(r.Context(), p.User.ClusterID, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	maint, err := s.Store.GetNodeMaintenance(r.Context(), p.User.ClusterID, id)
+	if err != nil || maint != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record node maintenance")
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "node.maintain.exit", "ok", id)

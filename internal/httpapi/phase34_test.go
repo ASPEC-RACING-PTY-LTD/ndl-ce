@@ -445,6 +445,51 @@ func TestPhase34RollingDrainFailsClosedWhenMaintenancePersistFails(t *testing.T)
 	}
 }
 
+func TestPhase34RollingDrainFailsClosedWhenMaintenancePersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	s.Store = missSetNodeMaintenanceStore{Store: mem}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/update", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "cluster-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("rolling drain persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record node maintenance") {
+		t.Fatalf("rolling drain persist miss body %s", raw)
+	}
+	s.Store = mem
+	maint, err := mem.GetNodeMaintenance(context.Background(), cluster.ID, node.ID)
+	if err != nil || maint != nil {
+		t.Fatalf("maintenance GET %+v %v", maint, err)
+	}
+	gotPlan, err := mem.LatestRollingPlan(context.Background(), cluster.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPlan == nil {
+		return
+	}
+	steps, err := mem.ListRollingSteps(context.Background(), cluster.ID, gotPlan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range steps {
+		if st.Action == appdb.RollingActionDrain && st.Status == appdb.RollingSucceeded && st.Reason == rollingDrainReason {
+			t.Fatalf("drain step persisted after maintenance persist miss %+v", st)
+		}
+	}
+}
+
 type failCreateRollingStepStore struct {
 	appdb.Store
 }
