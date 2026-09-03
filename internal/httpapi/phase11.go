@@ -479,6 +479,20 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, backupRunJSON(run))
 }
 
+func refuseBackupExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appdb.WorkloadDisk) error {
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != bootVolID {
+			return errUnprocessable("backup of additional data disks is not implemented")
+		}
+	}
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != bootVolID {
+			return errUnprocessable("backup of additional data disks is not implemented")
+		}
+	}
+	return nil
+}
+
 // TickNightlyBackups runs due nightly policies. It does not fake NFS or SMB success.
 func (s *Server) TickNightlyBackups(ctx context.Context) {
 	if !s.nightlyBusy.CompareAndSwap(false, true) {
@@ -523,7 +537,16 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if err != nil || wl == nil {
 		return appdb.BackupRun{}, errNotFound("workload not found")
 	}
-	_, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
+	vol, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
+	spec, _ := vmspec.Parse(wl.SpecJSON)
+	disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, wl.ID)
+	bootID := migrateBootVolumeID(spec, disks)
+	if locErr == nil && vol != nil {
+		bootID = vol.ID
+	}
+	if err := refuseBackupExtraDataDisks(spec, bootID, disks); err != nil {
+		return appdb.BackupRun{}, err
+	}
 	native := locErr == nil && pool != nil && (pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM)
 	if locErr == nil && pool != nil && pool.BackendType == storage.BackendISCSI {
 		return appdb.BackupRun{}, errUnprocessable(iscsiSnapReason)

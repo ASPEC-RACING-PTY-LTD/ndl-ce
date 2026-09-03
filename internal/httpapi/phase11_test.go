@@ -649,6 +649,301 @@ func TestNightlyPolicyTick(t *testing.T) {
 	}
 }
 
+func TestBackupRunFailsClosedForExtraDataDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraVol := uuid.NewString()
+	extraRef := "volumes/vm-disk/extra.qcow2"
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extraVol, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: extraRef, SizeBytes: 1 << 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	bk := &fakeBackup{}
+	s.Backup = bk
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"dual-disk","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"disks":[{"role":"boot"},{"role":"data","volume_id":"` + extraVol + `","slot":1}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	vmID := vm["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, vmID)
+	if len(disks) < 2 {
+		t.Fatalf("extra data disk create must record boot and data: %+v", disks)
+	}
+	bootVol := ""
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleBoot {
+			bootVol = d.VolumeID
+		}
+	}
+	if bootVol == "" {
+		t.Fatal("boot volume missing")
+	}
+	beforeWL, _ := mem.GetWorkload(context.Background(), cluster.ID, vmID)
+	beforeBoot, _ := mem.GetVolume(context.Background(), cluster.ID, bootVol)
+	beforeExtra, _ := mem.GetVolume(context.Background(), cluster.ID, extraVol)
+	if beforeWL == nil || beforeBoot == nil || beforeExtra == nil {
+		t.Fatal("source rows missing")
+	}
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local-disk","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("target %d %s", res.StatusCode, raw)
+	}
+	var tgt map[string]any
+	if err := json.Unmarshal(raw, &tgt); err != nil {
+		t.Fatal(err)
+	}
+	targetID := tgt["id"].(string)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+vmID+`","target_id":"`+targetID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("extra data disk backup %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "backup of additional data disks is not implemented") {
+		t.Fatalf("extra data disk backup body %s", raw)
+	}
+	for _, c := range bk.copies {
+		if c[0] == qemu.BackupCopy {
+			t.Fatalf("CopyBackup must not write a boot-only artifact: %+v", bk.copies)
+		}
+	}
+	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
+	if len(runs) != 0 {
+		t.Fatalf("backup must not persist a run restore cannot apply: %+v", runs)
+	}
+	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
+	if len(arts) != 0 {
+		t.Fatalf("backup must not persist a boot-only artifact: %+v", arts)
+	}
+	snaps, _ := mem.ListSnapshots(context.Background(), cluster.ID, vmID)
+	if len(snaps) != 0 {
+		t.Fatalf("backup must not snapshot the boot disk and drop extra disks: %+v", snaps)
+	}
+	gotWL, _ := mem.GetWorkload(context.Background(), cluster.ID, vmID)
+	gotBoot, _ := mem.GetVolume(context.Background(), cluster.ID, bootVol)
+	gotExtra, _ := mem.GetVolume(context.Background(), cluster.ID, extraVol)
+	if gotWL == nil || gotWL.Status != beforeWL.Status || gotWL.NodeID != beforeWL.NodeID || string(gotWL.SpecJSON) != string(beforeWL.SpecJSON) {
+		t.Fatalf("GET must keep the extra-disk VM untouched: before=%+v after=%+v", beforeWL, gotWL)
+	}
+	if gotBoot == nil || gotBoot.BackendRef != beforeBoot.BackendRef {
+		t.Fatalf("boot volume locator must stay %s, got %+v", beforeBoot.BackendRef, gotBoot)
+	}
+	if gotExtra == nil || gotExtra.BackendRef != extraRef || gotExtra.Status != storage.StatusAvailable {
+		t.Fatalf("extra volume must stay available at %s: %+v", extraRef, gotExtra)
+	}
+	gotDisks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, vmID)
+	if len(gotDisks) != len(disks) {
+		t.Fatalf("disk catalog must stay %+v, got %+v", disks, gotDisks)
+	}
+	_, err := s.restoreNewVM(context.Background(), cluster.ID, *gotWL, appdb.BackupArtifact{ID: uuid.NewString()}, false, &appdb.Node{ID: nodeID, ClusterID: cluster.ID})
+	if err == nil || !strings.Contains(err.Error(), "restore of additional data disks is not implemented") {
+		t.Fatalf("restore of extra data disks must stay refused: %v", err)
+	}
+}
+
+func TestNightlyPolicyTickFailsClosedForExtraDataDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraVol := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extraVol, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/extra.qcow2", SizeBytes: 1 << 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	bk := &fakeBackup{}
+	s.Backup = bk
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"night-extra","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"disks":[{"role":"boot"},{"role":"data","volume_id":"` + extraVol + `","slot":1}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	if err := json.Unmarshal(raw, &vm); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("target %d %s", res.StatusCode, raw)
+	}
+	var tgt map[string]any
+	if err := json.Unmarshal(raw, &tgt); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"nightly","workload_id":"`+vm["id"].(string)+`","target_id":"`+tgt["id"].(string)+`","schedule":"nightly","keep_daily":7,"keep_weekly":4,"keep_monthly":3}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy %d %s", res.StatusCode, raw)
+	}
+	s.TickNightlyBackups(context.Background())
+	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
+	if len(runs) != 0 {
+		t.Fatalf("nightly extra-disk backup must not persist a run: %+v", runs)
+	}
+	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
+	if len(arts) != 0 {
+		t.Fatalf("nightly extra-disk backup must not persist an artifact: %+v", arts)
+	}
+	for _, c := range bk.copies {
+		if c[0] == qemu.BackupCopy {
+			t.Fatalf("nightly CopyBackup must not write a boot-only artifact: %+v", bk.copies)
+		}
+	}
+}
+
+func TestBackupRunFailsClosedForCatalogExtraDataDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, _ := seedCompute(t, mem, cluster.ID, nodeID)
+	boot := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/boot.qcow2",
+	}
+	extra := appdb.Volume{
+		ID: uuid.NewString(), ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/extra.qcow2",
+	}
+	for _, vol := range []appdb.Volume{boot, extra} {
+		if err := mem.CreateVolume(context.Background(), vol); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wlID := uuid.NewString()
+	spec := vmspec.Spec{
+		Name: "catalog-extra", CPUs: 1, MemoryBytes: 128 << 20,
+		Disks: []vmspec.Disk{{Role: vmspec.DiskRoleBoot, VolumeID: boot.ID, Format: storage.FormatQCOW2}},
+	}
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: wlID, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID,
+		Name: spec.Name, Kind: vmspec.KindVM, Status: qemu.StatusStopped,
+		CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes, SpecJSON: vmspec.MustJSON(spec),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: wlID, VolumeID: boot.ID,
+		Role: vmspec.DiskRoleBoot, Slot: 0, Format: storage.FormatQCOW2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: wlID, VolumeID: extra.ID,
+		Role: vmspec.DiskRoleData, Slot: 1, Format: storage.FormatQCOW2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.VM = &fakeVM{}
+	bk := &fakeBackup{}
+	s.Backup = bk
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	dir := t.TempDir()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local-disk","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("target %d %s", res.StatusCode, raw)
+	}
+	var tgt map[string]any
+	if err := json.Unmarshal(raw, &tgt); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+wlID+`","target_id":"`+tgt["id"].(string)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(raw), "backup of additional data disks is not implemented") {
+		t.Fatalf("catalog extra data disk backup %d %s", res.StatusCode, raw)
+	}
+	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
+	if len(runs) != 0 {
+		t.Fatalf("catalog extra disk must not persist a run: %+v", runs)
+	}
+	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
+	if len(arts) != 0 {
+		t.Fatalf("catalog extra disk must not persist an artifact: %+v", arts)
+	}
+	for _, c := range bk.copies {
+		if c[0] == qemu.BackupCopy {
+			t.Fatalf("CopyBackup must not write a boot-only artifact: %+v", bk.copies)
+		}
+	}
+}
+
 func TestRestoreNewVMExtraDataDiskIsUnprocessable(t *testing.T) {
 	s, mem, _ := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

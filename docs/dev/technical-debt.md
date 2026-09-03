@@ -68,6 +68,7 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 
 ## Phase 11
 
+- MEDIUM. Backup of additional data disks is refused. Why not blocking: restore cannot apply extra attached disks; a boot-only 202 would invent a complete copy.
 - MEDIUM. Nightly backup of a running guest creates a qcow2 overlay each run, so the chain cap of 16 can fill if overlays are not flattened. Why not blocking: the backup artifact is a standalone qemu-img convert of the frozen parent; the live chain is a separate snapshot concern; flatten remains an explicit operator action.
 - LOW. qemu-img convert of a backup is not run in Cloud CI (qemu-img is absent). Why not blocking: ConvertOffline is the same typed path as Phase 8/10 flatten; SkipHostCmds plus frozen-parent source assertions cover the control plane.
 - MEDIUM. NFS and SMB destinations are catalogued and used only when the locator is already a local directory. Cloud does not mount remote filesystems. Why not blocking: faking a remote copy would violate honesty; Phase 26 owns NFS/SMB as compute datastores.
@@ -117,7 +118,7 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 ## Phase 18
 
 - MEDIUM. Template deploy clones the current source disk when a snapshot overlay is missing. Why not blocking: create records a snapshot when overlay succeeds; Cloud fixtures still clone with new UUIDs and MAC.
-- MEDIUM. Clone of additional data disks is refused. Why not blocking: boot disk clone is the Phase 18 product path; extra attached disks would otherwise share a writable volume UUID.
+- MEDIUM. Clone of additional data disks is refused. Backup, restore, bundle export, and migrate refuse the same extra disks. Why not blocking: boot disk clone is the Phase 18 product path; extra attached disks would otherwise share a writable volume UUID.
 - MEDIUM. Live QMP usb-host hotplug is not executed in this Cloud VM. Why not blocking: frozen argv usb-host plus device_add/device_del are typed; missing QMP returns a live-session error instead of inventing attach success.
 - LOW. Generic PCI attach reuses exclusive GPU assignment rows for IOMMU claims. Why not blocking: ParseGPUID and group listing still apply; GPU inventory remains on the GPU API.
 - LOW. Clone boot of a guest OS is not proven here. Why not blocking: clone materializes a new volume via qemu-img convert and starts the systemd unit through the existing VM lifecycle path.
