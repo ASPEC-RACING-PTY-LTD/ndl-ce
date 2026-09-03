@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/features"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -260,6 +261,35 @@ func TestPhase39OSDBringUpConfirmAndRootDisk(t *testing.T) {
 	osds, err := mem.ListDistributedOSDs(context.Background(), cluster.ID)
 	if err != nil || len(osds) != 1 || osds[0].Disk != "/dev/disk/by-id/wwn-0x5000" {
 		t.Fatalf("osd row %+v %v", osds, err)
+	}
+}
+
+func TestPhase39OSDCreateFailsClosedForMissingPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	s.Distributed = &fakeDistributed{up: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	enableDistributed(t, ts, cookie)
+
+	missing := uuid.NewString()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/distributed/osds", strings.NewReader(`{"disk":"/dev/disk/by-id/wwn-0x5000","pool_id":"`+missing+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, storage.StartOSDConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotFound || !strings.Contains(string(raw), "storage pool not found") {
+		t.Fatalf("missing pool %d %s", res.StatusCode, raw)
+	}
+
+	osds, err := mem.ListDistributedOSDs(context.Background(), cluster.ID)
+	if err != nil || len(osds) != 0 {
+		t.Fatalf("GET must not list an OSD for a pool GET /storage/pools would miss: %+v %v", osds, err)
 	}
 }
 

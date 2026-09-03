@@ -263,13 +263,21 @@ func (s *Server) createDistributedOSD(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	poolID := strings.TrimSpace(req.PoolID)
+	if poolID != "" {
+		pool, err := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, poolID)
+		if err != nil || pool == nil {
+			writeErr(w, http.StatusNotFound, "storage pool not found")
+			return
+		}
+	}
 	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
 	if err != nil || node == nil {
 		writeErr(w, http.StatusFailedDependency, "local node is not enrolled")
 		return
 	}
 	res, aerr := s.distributed().Distributed(r.Context(), storage.DistributedOp{
-		Action: "osd-create", PoolID: strings.TrimSpace(req.PoolID), Disk: disk, RootDevice: rootDev,
+		Action: "osd-create", PoolID: poolID, Disk: disk, RootDevice: rootDev,
 	})
 	if aerr != nil {
 		writeErr(w, http.StatusBadRequest, aerr.Error())
@@ -280,7 +288,7 @@ func (s *Server) createDistributedOSD(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := appdb.DistributedOSD{
-		ID: uuid.NewString(), ClusterID: p.User.ClusterID, NodeID: node.ID, PoolID: strings.TrimSpace(req.PoolID),
+		ID: uuid.NewString(), ClusterID: p.User.ClusterID, NodeID: node.ID, PoolID: poolID,
 		Disk: disk, Status: appdb.FeatureNotStarted, Reason: firstNonEmpty(res.Reason, storage.OSDNotStarted),
 	}
 	if res.OSDStarted {

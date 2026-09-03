@@ -151,6 +151,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * HA replica endpoint must be host:port. A DSN without userinfo is no
     longer stored as replica_endpoint that GET /cluster/ha would list.
     Credentials stay in the dsn field.
+  * Distributed OSD create fails closed when pool_id is missing. A 201
+    does not invent a pool_id GET /storage/pools would miss. Empty
+    pool_id is still optional.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
