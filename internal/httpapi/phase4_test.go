@@ -322,3 +322,56 @@ func TestNetworkApplyFailsClosedWhenObservedPersistFails(t *testing.T) {
 		t.Fatalf("apply persist body %s", raw)
 	}
 }
+
+func TestPhase4ReservationCreateFailsClosedOutsideSubnet(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	netID := uuid.NewString()
+	_ = mem.CreateNetwork(t.Context(), appdb.Network{
+		ID: netID, ClusterID: cluster.ID, NodeID: node.ID, Name: "iso", Kind: ndnet.KindIsolated,
+		Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123", IPv4CIDR: "10.64.0.0/24", Gateway: "10.64.0.1",
+	})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	outside, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/"+netID+"/reservations", strings.NewReader(`{"mac":"02:00:00:00:00:01","ipv4":"8.8.8.8"}`))
+	outside.Header.Set("Content-Type", "application/json")
+	outside.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(outside)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "reservation ipv4 is outside the isolated subnet") {
+		t.Fatalf("outside %d %s", res.StatusCode, body)
+	}
+
+	gw, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/"+netID+"/reservations", strings.NewReader(`{"mac":"02:00:00:00:00:02","ipv4":"10.64.0.1"}`))
+	gw.Header.Set("Content-Type", "application/json")
+	gw.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(gw)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "reservation ipv4 is reserved") {
+		t.Fatalf("gateway %d %s", res.StatusCode, body)
+	}
+
+	list, _ := http.NewRequest("GET", ts.URL+"/api/v1/networks/"+netID+"/reservations", nil)
+	list.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(list)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if strings.Contains(string(listed), "8.8.8.8") || strings.Contains(string(listed), "10.64.0.1") {
+		t.Fatalf("GET must not list an unapplyable reservation: %s", listed)
+	}
+
+	ok, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/"+netID+"/reservations", strings.NewReader(`{"mac":"02:00:00:00:00:0a","ipv4":"10.64.0.50"}`))
+	ok.Header.Set("Content-Type", "application/json")
+	ok.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(ok)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated || !strings.Contains(string(body), "10.64.0.50") {
+		t.Fatalf("valid %d %s", res.StatusCode, body)
+	}
+}

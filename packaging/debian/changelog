@@ -141,6 +141,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Network policy create refuses an action apply cannot install and a
     source that is the destination before persist. GET /networks no
     longer lists a policy apply cannot install.
+  * DHCP reservation create refuses an address outside the isolated
+    subnet or equal to the gateway or network address before persist.
+    GET /networks/{id}/reservations no longer lists a mapping apply
+    cannot install.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

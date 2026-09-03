@@ -71,7 +71,7 @@ func BuildPlan(spec Spec, host HostView) (Plan, error) {
 			}
 			plan.EgressIfName = egress
 		}
-		if err := validateReservations(spec.Reservations, n, gw); err != nil {
+		if err := ValidateReservations(spec.Reservations, spec.IPv4CIDR); err != nil {
 			return Plan{}, err
 		}
 		plan.Files = isolatedFiles(id, bridge, gw, n, plan.NAT)
@@ -97,6 +97,18 @@ func BuildPlan(spec Spec, host HostView) (Plan, error) {
 		plan.Warnings = append(plan.Warnings, "typed interface confirmation and the rollback watchdog are required")
 	}
 	return plan, nil
+}
+
+func ValidateReservations(items []Reservation, cidr string) error {
+	cidr = strings.TrimSpace(cidr)
+	if cidr == "" {
+		cidr = DefaultIPv4
+	}
+	_, n, err := parseIPv4Net(cidr)
+	if err != nil {
+		return err
+	}
+	return validateReservations(items, n, gatewayOf(n))
 }
 
 func validateReservations(items []Reservation, n *net.IPNet, gw net.IP) error {

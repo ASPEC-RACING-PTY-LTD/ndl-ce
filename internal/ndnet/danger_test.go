@@ -99,3 +99,21 @@ func TestBuildPlanRejectsManagementOverlap(t *testing.T) {
 		t.Fatal("expected overlap error")
 	}
 }
+
+func TestBuildPlanRejectsReservationOutsideSubnet(t *testing.T) {
+	id := uuid.NewString()
+	_, err := BuildPlan(Spec{
+		NetworkID: id, Kind: KindIsolated, IPv4CIDR: "10.64.0.0/24",
+		Reservations: []Reservation{{MAC: "02:00:00:00:00:01", IPv4: "8.8.8.8"}},
+	}, testHost())
+	if err == nil || !strings.Contains(err.Error(), "reservation ipv4 is outside the isolated subnet") {
+		t.Fatalf("outside: %v", err)
+	}
+	_, err = BuildPlan(Spec{
+		NetworkID: id, Kind: KindIsolated, IPv4CIDR: "10.64.0.0/24",
+		Reservations: []Reservation{{MAC: "02:00:00:00:00:01", IPv4: "10.64.0.1"}},
+	}, testHost())
+	if err == nil || !strings.Contains(err.Error(), "reservation ipv4 is reserved") {
+		t.Fatalf("gateway: %v", err)
+	}
+}

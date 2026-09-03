@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -266,17 +265,15 @@ func (s *Server) createReservation(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	if _, err := net.ParseMAC(strings.TrimSpace(req.MAC)); err != nil {
-		writeErr(w, http.StatusBadRequest, "reservation mac is invalid")
-		return
-	}
-	if ip := net.ParseIP(strings.TrimSpace(req.IPv4)); ip == nil || ip.To4() == nil {
-		writeErr(w, http.StatusBadRequest, "reservation ipv4 is invalid")
+	mac := strings.TrimSpace(req.MAC)
+	ip := strings.TrimSpace(req.IPv4)
+	if err := ndnet.ValidateReservations([]ndnet.Reservation{{MAC: mac, IPv4: ip}}, n.IPv4CIDR); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	row := appdb.DHCPReservation{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, NetworkID: n.ID,
-		MAC: strings.TrimSpace(req.MAC), IPv4: strings.TrimSpace(req.IPv4), Hostname: strings.TrimSpace(req.Hostname),
+		MAC: mac, IPv4: ip, Hostname: strings.TrimSpace(req.Hostname),
 	}
 	if err := s.Store.CreateReservation(r.Context(), row); err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
