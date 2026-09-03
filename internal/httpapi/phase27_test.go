@@ -176,6 +176,39 @@ func TestPhase27VLANCreateFailsClosedForInvalidModeAndParent(t *testing.T) {
 	}
 }
 
+func TestPhase27VLANCreateFailsClosedForUnavailableNetwork(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	netID := uuid.NewString()
+	if err := mem.CreateNetwork(t.Context(), appdb.Network{
+		ID: netID, ClusterID: cluster.ID, NodeID: node.ID, Name: "vlan-offline",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusUnavailable, BridgeName: "ndlcafe00cc",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/vlans", strings.NewReader(`{"name":"access20","network_id":"`+netID+`","vlan_id":20,"access_ifname":"eth1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable parent network %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "an available network is required") {
+		t.Fatalf("unavailable parent network body %s", raw)
+	}
+	vlans, _ := mem.ListNetworkVLANs(t.Context(), cluster.ID)
+	if len(vlans) != 0 {
+		t.Fatalf("GET must not list a VLAN whose parent network apply cannot attach: %+v", vlans)
+	}
+}
+
 func TestPhase27BondCreateFailsClosedForInvalidModeAndMembers(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Network = fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}

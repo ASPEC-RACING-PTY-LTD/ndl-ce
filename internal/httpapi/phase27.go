@@ -55,6 +55,10 @@ func (s *Server) createVLAN(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusNotFound, "network not found")
 			return
 		}
+		if n.Status != ndnet.StatusAvailable && n.Status != ndnet.StatusWarning {
+			writeErr(w, http.StatusConflict, "an available network is required")
+			return
+		}
 		bridge = n.BridgeName
 		if parent == "" {
 			parent = n.BridgeName

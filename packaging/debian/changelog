@@ -240,6 +240,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     distributed RBD create refuse a failed storage pool, matching
     available-or-warning. GET no longer lists a volume, image, or
     stack whose apply cannot allocate.
+  * VLAN create refuses an unavailable parent network before apply.
+    GET /networks no longer lists a VLAN whose parent bridge apply
+    cannot attach.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
