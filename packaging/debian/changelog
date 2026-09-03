@@ -66,7 +66,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Workload migrate fails closed if the migrate job row cannot be created or updated. A 200 body is not a substitute for GET /migrate.
   * Service principal create, network policy apply, and VM PATCH fail closed if the catalog row cannot be recorded. A 2xx body is not a substitute for list or GET.
   * Network apply fails closed if observed status persist fails. A 200 body is not a substitute for the stored network row.
-  * VM and system-container create fail closed if boot disk or NIC persist fails. Object backup target 201 fails closed if probed status cannot be recorded. Lab qemu-proto start fails closed if the disk join cannot be recorded. A 201 does not list a VM whose GET disks would miss the volume.
+  * VM and system-container create fail closed if boot disk or NIC persist fails. Object backup target 201 fails closed if probed status cannot be recorded. Lab qemu-proto start fails closed if the disk join cannot be recorded. A 201 does not list a VM whose GET disks would miss the volume. Stop and restart fail closed if desired_power cannot be recorded. Catalog status stays the stored row; observe_status stays live.
   * OCI create and system-container clone fail closed if disk, NIC, or clone volume persist fails.
   * VM clone, library import, restore-as-new, and migration disk import fail closed if disk or NIC persist fails.
   * GPU assign and unassign fail closed if the agent apply fails or is unavailable. A 201 does not leave an assigned row the agent did not apply.

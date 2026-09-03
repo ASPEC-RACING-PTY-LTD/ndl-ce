@@ -605,6 +605,107 @@ func TestLabQemuProtoFailsClosedWhenDiskPersistFails(t *testing.T) {
 	}
 }
 
+func TestLabQemuProtoFailsClosedWhenStopSpecPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := seedQemuLab(t, mem, cluster.ID, nodeID)
+	s.QEMU = &fakeQEMU{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"pool_id":"` + poolID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("start %d %s", res.StatusCode, raw)
+	}
+	s.Store = failUpdateWorkloadSpecStore{Store: mem}
+
+	stop, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto/stop", strings.NewReader("{}"))
+	stop.Header.Set("Content-Type", "application/json")
+	stop.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	stopRes, _ := ts.Client().Do(stop)
+	stopRaw, _ := io.ReadAll(stopRes.Body)
+	_ = stopRes.Body.Close()
+	if stopRes.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("stop spec persist %d %s", stopRes.StatusCode, stopRaw)
+	}
+	if !strings.Contains(string(stopRaw), "could not record VM spec") {
+		t.Fatalf("stop spec persist body %s", stopRaw)
+	}
+	row, err := mem.GetWorkloadByName(context.Background(), cluster.ID, qemuProtoName)
+	if err != nil || row == nil {
+		t.Fatal("GET must still list the qemu-proto VM after a stop persist miss")
+	}
+	if row.DesiredPower != "running" {
+		t.Fatalf("200 must not claim desired_power stopped when spec persist failed: %+v", row)
+	}
+}
+
+func TestLabQemuProtoStopStatusMatchesGETWhenObservedPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := seedQemuLab(t, mem, cluster.ID, nodeID)
+	s.QEMU = &fakeQEMU{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/proto.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"pool_id":"` + poolID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("start %d %s", res.StatusCode, raw)
+	}
+	s.Store = failUpdateWorkloadObservedStore{Store: mem}
+
+	stop, _ := http.NewRequest("POST", ts.URL+"/api/v1/lab/qemu-proto/stop", strings.NewReader("{}"))
+	stop.Header.Set("Content-Type", "application/json")
+	stop.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	stopRes, _ := ts.Client().Do(stop)
+	stopRaw, _ := io.ReadAll(stopRes.Body)
+	_ = stopRes.Body.Close()
+	if stopRes.StatusCode != http.StatusOK {
+		t.Fatalf("stop %d %s", stopRes.StatusCode, stopRaw)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(stopRaw, &out); err != nil {
+		t.Fatal(err)
+	}
+	got, err := mem.GetWorkloadByName(context.Background(), cluster.ID, qemuProtoName)
+	if err != nil || got == nil {
+		t.Fatalf("get workload %v", err)
+	}
+	if out["status"] != got.Status {
+		t.Fatalf("200 status %v must match GET %q", out["status"], got.Status)
+	}
+	if out["desired_power"] != got.DesiredPower {
+		t.Fatalf("200 desired_power %v must match GET %q", out["desired_power"], got.DesiredPower)
+	}
+	if out["observe_status"] != qemu.StatusStopped {
+		t.Fatalf("observe_status must stay live %v", out["observe_status"])
+	}
+}
+
 func TestLabQemuProtoHasNoHostExec(t *testing.T) {
 	b, err := os.ReadFile("phase7.go")
 	if err != nil {

@@ -266,7 +266,11 @@ func (s *Server) labQemuProtoStart(w http.ResponseWriter, r *http.Request) {
 			existing = &row
 		}
 	} else {
-		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: existing.ID, DesiredPower: "running", CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes})
+		if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: existing.ID, DesiredPower: "running", CPUs: spec.CPUs, MemoryBytes: spec.MemoryBytes}); err != nil {
+			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+			writeErr(w, http.StatusInternalServerError, "could not record VM spec")
+			return
+		}
 		_ = s.Store.UpdateWorkloadObserved(r.Context(), appdb.Workload{ID: existing.ID, Status: status, Reason: "last-applied recorded; unit not observed"})
 		if updated, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, existing.ID); updated != nil {
 			existing = updated
@@ -375,7 +379,11 @@ func (s *Server) labQemuProtoHalt(w http.ResponseWriter, r *http.Request, action
 		return
 	}
 	status := firstNonEmpty(res.Status, qemu.StatusStopped)
-	_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped"})
+	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, DesiredPower: "stopped"}); err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		writeErr(w, http.StatusInternalServerError, "could not record VM spec")
+		return
+	}
 	_ = s.Store.UpdateWorkloadObserved(r.Context(), appdb.Workload{ID: row.ID, Status: status, Reason: firstNonEmpty(res.Reason, action), UnitActive: res.UnitActive})
 	s.finishOp(r.Context(), op, "succeeded", action, 100)
 	s.audit(r, p.User.ClusterID, p.User.ID, "lab.qemu-proto."+action, "ok", row.ID)
@@ -556,12 +564,6 @@ func (s *Server) qemuProtoJSON(w appdb.Workload, applied qemuProtoApplied, obs *
 			unitStatus = "inactive"
 		case obs.Status == qemu.StatusUnavailable:
 			unitStatus = "Unavailable"
-		}
-		if obs.Status != "" {
-			w.Status = obs.Status
-		}
-		if obs.Reason != "" {
-			w.Reason = obs.Reason
 		}
 	}
 	return map[string]any{
