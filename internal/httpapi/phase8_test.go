@@ -633,6 +633,14 @@ func (f failCreateWorkloadNICStore) CreateWorkloadNIC(context.Context, appdb.Wor
 	return errors.New("persist failed")
 }
 
+type failCreateVolumeStore struct {
+	appdb.Store
+}
+
+func (f failCreateVolumeStore) CreateVolume(context.Context, appdb.Volume) error {
+	return errors.New("persist failed")
+}
+
 func TestVMCreateFailsClosedWhenDiskPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

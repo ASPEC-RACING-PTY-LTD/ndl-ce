@@ -670,12 +670,14 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	if backend == "" {
 		backend = path.Join("volumes", storage.ClassContainerRoot, cloneVol)
 	}
-	_ = s.Store.CreateVolume(ctx, appdb.Volume{
+	if err := s.Store.CreateVolume(ctx, appdb.Volume{
 		ID: cloneVol, ClusterID: clusterID, NodeID: src.NodeID, PoolID: pool.ID,
 		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
 		SizeBytes: lxc.DefaultRootSize, Status: storage.StatusAvailable,
 		BackendType: storage.BackendDirectory, BackendRef: backend,
-	})
+	}); err != nil {
+		return lxc.LifecycleRequest{}, errInternal("could not record clone volume")
+	}
 	loc, locErr := storage.HostVolumePath(pool.BackendType, pool.RootPath, backend)
 	if locErr != nil {
 		return lxc.LifecycleRequest{}, errConflict("volume locator is invalid")

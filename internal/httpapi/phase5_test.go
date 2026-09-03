@@ -752,3 +752,34 @@ func TestWorkloadCloneFailsClosedWhenNICPersistFails(t *testing.T) {
 		t.Fatalf("nic persist body %s", raw)
 	}
 }
+
+func TestWorkloadCloneFailsClosedWhenVolumePersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-src")
+	s.Store = failCreateVolumeStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"alpine-copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("volume persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record clone volume") {
+		t.Fatalf("volume persist body %s", raw)
+	}
+}
