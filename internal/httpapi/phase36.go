@@ -349,15 +349,35 @@ func (s *Server) assignStoreGPU(ctx context.Context, clusterID, workloadID, gpuI
 	if err != nil {
 		return errUnprocessable(err.Error())
 	}
+	parsed := s.clusterInventory(ctx, clusterID)
+	rec, ok := gpuRecord(id, parsed)
+	if !ok {
+		return errUnprocessable("gpu is not present on this node")
+	}
+	groupID, members, err := gpu.GroupMembers(id, parsed)
+	if err != nil {
+		return errUnprocessable(err.Error())
+	}
+	var pci []string
+	for _, m := range members {
+		pci = append(pci, m.Address)
+	}
+	nodes, err := deviceNodesForMode(gpu.ModeRender, rec)
+	if err != nil {
+		return err
+	}
+	exclusive := gpu.ExclusiveForMode(gpu.ModeRender, true)
 	a := appdb.GPUAssignment{
 		ID: uuid.NewString(), ClusterID: clusterID, GPUID: id, WorkloadID: workloadID,
-		Mode: gpu.ModeRender, Exclusive: gpu.ExclusiveForMode(gpu.ModeRender, true), Status: gpu.StatusAssigned,
+		Mode: gpu.ModeRender, Exclusive: exclusive, IOMMUGroup: groupID, PCIDevices: pci,
+		DeviceNodes: nodes, Status: gpu.StatusAssigned,
 	}
 	if err := s.Store.CreateGPUAssignment(ctx, a); err != nil {
 		return errConflict(err.Error())
 	}
 	res, err := s.gpus().GPUAssign(ctx, gpu.AssignRequest{
-		Action: "assign", GPUID: id, WorkloadID: workloadID, Mode: gpu.ModeRender, Exclusive: a.Exclusive,
+		Action: "assign", GPUID: id, WorkloadID: workloadID, Mode: gpu.ModeRender, Exclusive: exclusive,
+		PCIDevices: pci, DeviceNodes: nodes,
 	})
 	if gpuApplyFailed(res, err) || (res.Status != "" && res.Status != gpu.StatusAssigned) {
 		_ = s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID)

@@ -361,6 +361,7 @@ func TestPhase36InstallFailsClosedWhenRowPersistFails(t *testing.T) {
 func TestAssignStoreGPUFailsClosedWhenAgentUnavailable(t *testing.T) {
 	s, mem, _ := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
 	id := uuid.NewString()
 	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
 		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
@@ -381,6 +382,7 @@ func TestAssignStoreGPUFailsClosedWhenAgentFails(t *testing.T) {
 	s, mem, _ := testServer(t)
 	s.GPU = &fakeGPU{err: errors.New("bind failed")}
 	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
 	id := uuid.NewString()
 	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
 		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
@@ -394,5 +396,103 @@ func TestAssignStoreGPUFailsClosedWhenAgentFails(t *testing.T) {
 	got, listErr := mem.ListGPUAssignments(context.Background(), cluster.ID)
 	if listErr != nil || len(got) != 0 {
 		t.Fatalf("assignment leaked %+v %v", got, listErr)
+	}
+}
+
+func TestAssignStoreGPUFailsClosedForMissingGPU(t *testing.T) {
+	s, mem, _ := testServer(t)
+	s.GPU = &fakeGPU{}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:99:00.0")
+	if err == nil || !strings.Contains(err.Error(), "gpu is not present on this node") {
+		t.Fatalf("missing store gpu %v", err)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("GET must not list a GPU GET /gpus would miss: %+v %v", got, listErr)
+	}
+}
+
+func TestAssignStoreGPURecordsInventoryDeviceNodes(t *testing.T) {
+	s, mem, _ := testServer(t)
+	fg := &fakeGPU{}
+	s.GPU = fg
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:02:00.0"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fg.calls) != 1 || len(fg.calls[0].DeviceNodes) == 0 {
+		t.Fatalf("store gpu apply %+v", fg.calls)
+	}
+	got, err := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if err != nil || len(got) != 1 || got[0].GPUID != "0000:02:00.0" || len(got[0].DeviceNodes) == 0 {
+		t.Fatalf("assignment %+v %v", got, err)
+	}
+}
+
+func TestPhase36StoreInstallFailsClosedForMissingGPU(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _, _ := phase22Ready(t)
+	s.GPU = &fakeGPU{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node, err := mem.GetNode(context.Background(), cluster.ID)
+	if err != nil || node == nil {
+		t.Fatalf("node %v", err)
+	}
+	body, err := json.Marshal(gpuInv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpsertInventory(context.Background(), appdb.HardwareInventory{
+		NodeID: node.ID, ClusterID: cluster.ID, Payload: body,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+
+	install, _ := json.Marshal(map[string]any{"name": "sample-web", "gpu_id": "0000:99:00.0"})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(install)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(raw), "gpu is not present on this node") {
+		t.Fatalf("missing gpu install %d %s", res.StatusCode, raw)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), clusterID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("GET /workloads/id/gpus must not list a GPU GET /gpus would miss: %+v %v", got, listErr)
 	}
 }

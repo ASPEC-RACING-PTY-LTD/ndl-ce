@@ -154,6 +154,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Distributed OSD create fails closed when pool_id is missing. A 201
     does not invent a pool_id GET /storage/pools would miss. Empty
     pool_id is still optional.
+  * Store install GPU assign refuses a PCI address that is not in node
+    inventory before persist, matching POST /gpus/assign. fakeGPU no
+    longer 201 an assignment GET /workloads/{id}/gpus would list that
+    GET /gpus would miss.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
