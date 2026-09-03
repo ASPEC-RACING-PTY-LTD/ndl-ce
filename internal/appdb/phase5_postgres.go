@@ -218,7 +218,7 @@ func (p *Postgres) ListWorkloadNICs(ctx context.Context, clusterID, workloadID s
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, workload_id::text, network_id::text, mac, ipv4, COALESCE(pci_addr,''), COALESCE(model,''), created_at
 FROM workload_nics WHERE cluster_id=$1 AND ($2='' OR workload_id::text=$2)
-ORDER BY created_at`, clusterID, workloadID)
+ORDER BY created_at, id`, clusterID, workloadID)
 	if err != nil {
 		return nil, err
 	}

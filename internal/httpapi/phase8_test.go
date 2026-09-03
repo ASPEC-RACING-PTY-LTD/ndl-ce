@@ -919,7 +919,7 @@ func TestVMCreateRecordsExtraNICNetwork(t *testing.T) {
 	}
 	id := created["id"].(string)
 	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, id)
-	if len(nics) != 2 || nics[0].NetworkID != netID || nics[1].NetworkID != extraNet {
+	if !workloadNICsHaveNetworks(nics, netID, extraNet) {
 		t.Fatalf("nic rows %+v", nics)
 	}
 	spec := specFromCreated(created)
@@ -957,13 +957,38 @@ func TestVMCreateRecordsExtraNICNetwork(t *testing.T) {
 	if len(gotNics) != 2 {
 		t.Fatalf("GET nics %+v", listed["nics"])
 	}
-	second, _ := gotNics[1].(map[string]any)
-	if second["network_id"] != extraNet {
-		t.Fatalf("GET nics[1] %+v", second)
+	gotFirst, gotExtra := false, false
+	for _, rawNic := range gotNics {
+		n, _ := rawNic.(map[string]any)
+		switch n["network_id"] {
+		case netID:
+			gotFirst = true
+		case extraNet:
+			gotExtra = true
+		}
+	}
+	if !gotFirst || !gotExtra {
+		t.Fatalf("GET nics must list both networks: %+v", listed["nics"])
 	}
 	if specFromCreated(listed).NICs[1].NetworkID != extraNet {
 		t.Fatalf("GET spec nics %+v", listed["spec"])
 	}
+}
+
+func workloadNICsHaveNetworks(nics []appdb.WorkloadNIC, netID, extraNet string) bool {
+	if len(nics) != 2 {
+		return false
+	}
+	gotFirst, gotExtra := false, false
+	for _, n := range nics {
+		if n.NetworkID == netID {
+			gotFirst = true
+		}
+		if n.NetworkID == extraNet {
+			gotExtra = true
+		}
+	}
+	return gotFirst && gotExtra
 }
 
 func TestVMCreateFailsClosedForTinyBootDisk(t *testing.T) {

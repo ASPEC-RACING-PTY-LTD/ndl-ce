@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -221,6 +222,12 @@ func (m *Memory) ListWorkloadNICs(_ context.Context, clusterID, workloadID strin
 			out = append(out, n)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out, nil
 }
 
