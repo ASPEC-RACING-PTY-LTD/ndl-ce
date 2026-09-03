@@ -319,6 +319,9 @@ func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.
 		cur.UnitActive = res.DestRunning
 		cur.OwnershipEpoch = newEpoch
 		_ = s.Store.UpdateWorkloadObserved(ctx, *cur)
+		if latest, _ := s.Store.GetWorkload(ctx, wl.ClusterID, wl.ID); latest != nil {
+			cur = latest
+		}
 	}
 	out := migrateJobJSON(job)
 	out["epoch"] = newEpoch

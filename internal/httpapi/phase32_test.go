@@ -542,6 +542,70 @@ func TestMigrateDisksRejectsRelativeSourceEscape(t *testing.T) {
 	}
 }
 
+type failUpdateWorkloadObservedStore struct {
+	appdb.Store
+}
+
+func (f failUpdateWorkloadObservedStore) UpdateWorkloadObserved(context.Context, appdb.Workload) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase32MigrateWorkloadJSONMatchesGETWhenObservedPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Migrate = migrate.NewFake()
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: clusterRow.ID, Name: "box-b", Role: "worker", Hostname: "box-b"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	wlID := uuid.NewString()
+	s.Migrate.(*migrate.Fake).SetSourceRunning(wlID, true)
+	if err := mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: wlID, ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID,
+		Name: "move-me", Kind: "vm", Status: "running", Reason: "on-source",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	s.Store = failUpdateWorkloadObservedStore{Store: mem}
+
+	body := `{"dest_node_id":"` + worker.ID + `","mode":"live"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+wlID+"/migrate", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("migrate %d %s", res.StatusCode, raw)
+	}
+	var job map[string]any
+	if err := json.Unmarshal(raw, &job); err != nil {
+		t.Fatal(err)
+	}
+	nested, _ := job["workload"].(map[string]any)
+	if nested == nil {
+		t.Fatalf("migrate body missing workload %s", raw)
+	}
+	got, err := mem.GetWorkload(t.Context(), clusterRow.ID, wlID)
+	if err != nil || got == nil {
+		t.Fatalf("get workload %v", err)
+	}
+	if nested["reason"] != got.Reason {
+		t.Fatalf("200 workload.reason %v must match GET %q", nested["reason"], got.Reason)
+	}
+	if nested["status"] != got.Status {
+		t.Fatalf("200 workload.status %v must match GET %q", nested["status"], got.Status)
+	}
+	if got.Reason == "live migrate completed" {
+		t.Fatal("failed observed persist must not invent dest reason in the store")
+	}
+}
+
 type failUpdateMigrateJobStore struct {
 	appdb.Store
 }
