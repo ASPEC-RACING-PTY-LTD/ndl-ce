@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/lxc"
@@ -57,5 +58,58 @@ func TestGetWorkloadByNameAndIdempotency(t *testing.T) {
 	byKey, err := m.GetWorkloadByIdempotency(context.Background(), clusterID, "create-1")
 	if err != nil || byKey == nil || byKey.ID != id {
 		t.Fatalf("by key %+v %v", byKey, err)
+	}
+}
+
+func TestListWorkloadDisksOrdersBySlotCreatedAtID(t *testing.T) {
+	m := NewMemory()
+	clusterID := uuid.NewString()
+	workloadID := uuid.NewString()
+	stamp := time.Date(2026, 9, 3, 5, 0, 0, 0, time.UTC)
+	later := stamp.Add(time.Second)
+	lowID := "00000000-0000-4000-8000-000000000001"
+	highID := "ffffffff-ffff-4fff-8fff-ffffffffffff"
+	if err := m.CreateWorkloadDisk(context.Background(), WorkloadDisk{
+		ID: highID, ClusterID: clusterID, WorkloadID: workloadID, VolumeID: uuid.NewString(),
+		Role: "data", Slot: 0, CreatedAt: stamp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CreateWorkloadDisk(context.Background(), WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: workloadID, VolumeID: uuid.NewString(),
+		Role: "data", Slot: 1, CreatedAt: stamp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CreateWorkloadDisk(context.Background(), WorkloadDisk{
+		ID: lowID, ClusterID: clusterID, WorkloadID: workloadID, VolumeID: uuid.NewString(),
+		Role: "boot", Slot: 0, CreatedAt: stamp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CreateWorkloadDisk(context.Background(), WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: workloadID, VolumeID: uuid.NewString(),
+		Role: "data", Slot: 1, CreatedAt: later,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.ListWorkloadDisks(context.Background(), clusterID, workloadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("len %d", len(got))
+	}
+	if got[0].ID != lowID || got[0].Slot != 0 {
+		t.Fatalf("slot 0 must sort by id when created_at ties: %+v", got)
+	}
+	if got[1].ID != highID || got[1].Slot != 0 {
+		t.Fatalf("same slot later id: %+v", got)
+	}
+	if got[2].Slot != 1 || got[2].CreatedAt.Equal(later) {
+		t.Fatalf("slot 1 earlier created_at: %+v", got[2])
+	}
+	if got[3].Slot != 1 || !got[3].CreatedAt.Equal(later) {
+		t.Fatalf("slot 1 later created_at: %+v", got[3])
 	}
 }

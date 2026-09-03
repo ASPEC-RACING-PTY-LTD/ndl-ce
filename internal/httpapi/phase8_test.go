@@ -1030,3 +1030,138 @@ func TestVMCreateFailsClosedForTinyBootDisk(t *testing.T) {
 		t.Fatalf("GET must not list a volume apply cannot create: %+v", vols)
 	}
 }
+
+func TestVMCreateRecordsExtraDataDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraVol := uuid.NewString()
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extraVol, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/extra.qcow2", SizeBytes: 1 << 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"dual-disk","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"disks":[{"role":"boot"},{"role":"data","volume_id":"` + extraVol + `","slot":1}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if !workloadDisksHaveVolumes(disks, extraVol) {
+		t.Fatalf("disk rows %+v", disks)
+	}
+	if disks[0].Role != vmspec.DiskRoleBoot || disks[1].VolumeID != extraVol || disks[1].Slot != 1 {
+		t.Fatalf("catalog disks must be slot then created_at: %+v", disks)
+	}
+	spec := specFromCreated(created)
+	if len(spec.Disks) < 2 || spec.Disks[1].VolumeID != extraVol || spec.Disks[1].Role != vmspec.DiskRoleData {
+		t.Fatalf("201 spec disks %+v", spec.Disks)
+	}
+	if len(vm.launch.Disks) < 2 {
+		t.Fatalf("create launch disks %+v", vm.launch.Disks)
+	}
+	gotExtraLaunch := false
+	for _, d := range vm.launch.Disks {
+		if d.VolumeID == extraVol && strings.Contains(d.Path, "extra.qcow2") && d.Role == vmspec.DiskRoleData {
+			gotExtraLaunch = true
+		}
+	}
+	if !gotExtraLaunch {
+		t.Fatalf("create launch must attach extra data disk: %+v", vm.launch.Disks)
+	}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	started, err := ts.Client().Do(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startRaw, _ := io.ReadAll(started.Body)
+	_ = started.Body.Close()
+	if started.StatusCode != http.StatusOK {
+		t.Fatalf("start %d %s", started.StatusCode, startRaw)
+	}
+	gotExtraLaunch = false
+	for _, d := range vm.launch.Disks {
+		if d.VolumeID == extraVol && strings.Contains(d.Path, "extra.qcow2") {
+			gotExtraLaunch = true
+		}
+	}
+	if !gotExtraLaunch {
+		t.Fatalf("start must keep extra data disk: %+v", vm.launch.Disks)
+	}
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	var listed map[string]any
+	_ = json.NewDecoder(got.Body).Decode(&listed)
+	_ = got.Body.Close()
+	gotDisks, _ := listed["disks"].([]any)
+	if len(gotDisks) != 2 {
+		t.Fatalf("GET disks %+v", listed["disks"])
+	}
+	first, _ := gotDisks[0].(map[string]any)
+	second, _ := gotDisks[1].(map[string]any)
+	if first["role"] != vmspec.DiskRoleBoot || second["volume_id"] != extraVol {
+		t.Fatalf("GET disks must list boot then extra by slot: %+v", listed["disks"])
+	}
+	gotBoot, gotExtra := false, false
+	for _, rawDisk := range gotDisks {
+		d, _ := rawDisk.(map[string]any)
+		if d["role"] == vmspec.DiskRoleBoot {
+			gotBoot = true
+		}
+		if d["volume_id"] == extraVol {
+			gotExtra = true
+		}
+	}
+	if !gotBoot || !gotExtra {
+		t.Fatalf("GET disks must list boot and extra volume: %+v", listed["disks"])
+	}
+	if specFromCreated(listed).Disks[1].VolumeID != extraVol {
+		t.Fatalf("GET spec disks %+v", listed["spec"])
+	}
+}
+
+func workloadDisksHaveVolumes(disks []appdb.WorkloadDisk, extraVol string) bool {
+	if len(disks) != 2 {
+		return false
+	}
+	gotBoot, gotExtra := false, false
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleBoot && d.VolumeID != extraVol {
+			gotBoot = true
+		}
+		if d.VolumeID == extraVol && d.Role == vmspec.DiskRoleData {
+			gotExtra = true
+		}
+	}
+	return gotBoot && gotExtra
+}

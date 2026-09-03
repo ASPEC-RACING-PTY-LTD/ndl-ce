@@ -197,6 +197,15 @@ func (m *Memory) ListWorkloadDisks(_ context.Context, clusterID, workloadID stri
 			out = append(out, d)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Slot != out[j].Slot {
+			return out[i].Slot < out[j].Slot
+		}
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out, nil
 }
 

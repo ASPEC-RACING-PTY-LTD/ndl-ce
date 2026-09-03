@@ -188,7 +188,7 @@ func (p *Postgres) ListWorkloadDisks(ctx context.Context, clusterID, workloadID 
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, workload_id::text, volume_id::text, role, slot, COALESCE(bus_addr,''), read_only, COALESCE(format,''), created_at
 FROM workload_disks WHERE cluster_id=$1 AND ($2='' OR workload_id::text=$2)
-ORDER BY slot, created_at`, clusterID, workloadID)
+ORDER BY slot, created_at, id`, clusterID, workloadID)
 	if err != nil {
 		return nil, err
 	}
