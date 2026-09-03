@@ -682,6 +682,12 @@ func (s *Server) vmLifecycle(w http.ResponseWriter, r *http.Request, p *principa
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		gone, err := s.Store.GetWorkload(r.Context(), p.User.ClusterID, row.ID)
+		if err != nil || gone != nil {
+			s.finishOp(r.Context(), op, "failed", "could not record VM delete", 0)
+			writeErr(w, http.StatusInternalServerError, "could not record VM delete")
+			return
+		}
 		s.finishOp(r.Context(), op, "succeeded", "deleted", 100)
 		s.audit(r, p.User.ClusterID, p.User.ID, "vm.delete", "ok", row.ID)
 		s.emitEvent(r.Context(), p.User.ClusterID, row.NodeID, "vm.deleted", map[string]string{"workload_id": row.ID})

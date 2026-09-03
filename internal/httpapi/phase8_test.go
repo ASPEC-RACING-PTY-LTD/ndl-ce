@@ -224,6 +224,75 @@ func TestVMCreateLifecycleDeletePreservesVolume(t *testing.T) {
 	}
 }
 
+type missDeleteWorkloadStore struct {
+	appdb.Store
+}
+
+func (missDeleteWorkloadStore) DeleteWorkload(context.Context, string, string) error {
+	return nil
+}
+
+func TestVMDeleteFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{
+		vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+			BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+			Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+		}},
+	}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web-miss","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	s.Store = missDeleteWorkloadStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/delete", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "delete")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("delete persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record VM delete") {
+		t.Fatalf("delete persist miss body %s", raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET workload %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), id) {
+		t.Fatalf("GET /workloads must still list the VM after persist miss: %s", raw)
+	}
+}
+
 func specFromCreated(m map[string]any) vmspec.Spec {
 	raw, _ := json.Marshal(m["spec"])
 	spec, _ := vmspec.Parse(raw)
