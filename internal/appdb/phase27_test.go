@@ -108,3 +108,11 @@ func TestListNetworkCatalogOrdersByCreatedAtID(t *testing.T) {
 		t.Fatalf("GET /networks overlays must be created_at then id: %+v", overlays)
 	}
 }
+
+func TestUpdateNetworkPolicyStatusFailsWhenMissing(t *testing.T) {
+	m := NewMemory()
+	err := m.UpdateNetworkPolicyStatus(context.Background(), uuid.NewString(), uuid.NewString(), "available", "")
+	if err == nil || err.Error() != "network policy not found" {
+		t.Fatalf("missing policy update: %v", err)
+	}
+}

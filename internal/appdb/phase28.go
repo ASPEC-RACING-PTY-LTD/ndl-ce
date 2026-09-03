@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 )
@@ -175,7 +176,7 @@ func (m *Memory) UpdateRemoteNodeSession(_ context.Context, n RemoteNode) error 
 	defer m.mu.Unlock()
 	cur, ok := m.remoteNodes[n.ID]
 	if !ok || cur.ClusterID != n.ClusterID {
-		return nil
+		return fmt.Errorf("remote node not found")
 	}
 	cur.ListenAddr = n.ListenAddr
 	cur.WGPublicKey = n.WGPublicKey

@@ -419,6 +419,69 @@ func TestPhase28OpenSessionFailsClosedWhenPersistFails(t *testing.T) {
 	}
 }
 
+type missUpdateRemoteNodeSessionStore struct {
+	appdb.Store
+}
+
+func (missUpdateRemoteNodeSessionStore) UpdateRemoteNodeSession(context.Context, appdb.RemoteNode) error {
+	return nil
+}
+
+func TestPhase28OpenSessionFailsClosedWhenRemotePersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	now := time.Unix(1_700_000_000, 0).UTC()
+	s.Now = func() time.Time { return now }
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"persist-miss"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = missUpdateRemoteNodeSessionStore{Store: mem}
+
+	sessBody := `{"peer_id":"` + created["id"].(string) + `","pairing_token":"` + created["pairing_token"].(string) + `","listen_addr":"10.64.8.2:9444","handshake_unix":1700000000}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("session persist miss %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not record remote node") {
+		t.Fatalf("session persist miss body %s", body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("nodes GET %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), `"status":"Ready"`) {
+		t.Fatalf("GET must not claim Ready after persist miss: %s", body)
+	}
+	if !strings.Contains(string(body), `"status":"NotReady"`) {
+		t.Fatalf("GET must stay NotReady after persist miss: %s", body)
+	}
+}
+
 func TestPhase28OpenSessionFailsClosedWhenPairingConsumeFails(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Network = fakeNet{}

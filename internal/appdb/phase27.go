@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 )
@@ -162,7 +163,7 @@ func (m *Memory) UpdateNetworkPolicyStatus(_ context.Context, clusterID, id, sta
 	defer m.mu.Unlock()
 	p, ok := m.netPolicies[id]
 	if !ok || p.ClusterID != clusterID {
-		return nil
+		return fmt.Errorf("network policy not found")
 	}
 	p.Status, p.Reason = status, reason
 	m.netPolicies[id] = p

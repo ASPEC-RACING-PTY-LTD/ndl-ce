@@ -228,9 +228,26 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		remote.Reason = ndnet.WGSkipReason
 	}
 	if err := s.Store.UpdateRemoteNodeSession(r.Context(), *remote); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusInternalServerError, "could not record remote node")
 		return
 	}
+	got, gerr := s.Store.GetRemoteNode(r.Context(), cluster.ID, remote.ID)
+	if gerr != nil || got == nil || got.LastHandshakeUnix != remote.LastHandshakeUnix {
+		writeErr(w, http.StatusInternalServerError, "could not record remote node")
+		return
+	}
+	gotSeen, wantSeen := int64(0), int64(0)
+	if got.LastSeenAt != nil && !got.LastSeenAt.IsZero() {
+		gotSeen = got.LastSeenAt.Unix()
+	}
+	if remote.LastSeenAt != nil && !remote.LastSeenAt.IsZero() {
+		wantSeen = remote.LastSeenAt.Unix()
+	}
+	if gotSeen != wantSeen {
+		writeErr(w, http.StatusInternalServerError, "could not record remote node")
+		return
+	}
+	remote = got
 	sessID := uuid.NewString()
 	if err := s.Store.CreateRemoteSession(r.Context(), appdb.RemoteSession{
 		ID: sessID, ClusterID: cluster.ID, NodeID: remote.ID,

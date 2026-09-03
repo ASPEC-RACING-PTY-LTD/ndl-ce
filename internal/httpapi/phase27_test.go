@@ -461,6 +461,70 @@ func TestPhase27ApplyFailsClosedWhenStatusPersistFails(t *testing.T) {
 	}
 }
 
+type missUpdateNetworkPolicyStatusStore struct {
+	appdb.Store
+}
+
+func (missUpdateNetworkPolicyStatusStore) UpdateNetworkPolicyStatus(context.Context, string, string, string, string) error {
+	return nil
+}
+
+func TestPhase27ApplyFailsClosedWhenStatusPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	netID := uuid.NewString()
+	_ = mem.CreateNetwork(t.Context(), appdb.Network{
+		ID: netID, ClusterID: cluster.ID, NodeID: node.ID, Name: "iso", Kind: ndnet.KindIsolated,
+		Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123",
+	})
+	a := uuid.NewString()
+	b := uuid.NewString()
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: a, ClusterID: cluster.ID, Name: "a", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: b, ClusterID: cluster.ID, Name: "b", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: a, NetworkID: netID, MAC: "02:00:00:00:00:01"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: b, NetworkID: netID, MAC: "02:00:00:00:00:02"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/policies", strings.NewReader(`{"name":"ab","action":"deny","src_workload_id":"`+a+`","dst_workload_id":"`+b+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = missUpdateNetworkPolicyStatusStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/networks/policies/"+created["id"].(string)+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("policy persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record network policy") {
+		t.Fatalf("policy persist miss body %s", raw)
+	}
+	got, err := mem.GetNetworkPolicy(t.Context(), cluster.ID, created["id"].(string))
+	if err != nil || got == nil {
+		t.Fatalf("GET policy %+v %v", got, err)
+	}
+	if got.Status == ndnet.StatusAvailable {
+		t.Fatalf("GET must not claim available after persist miss: %+v", got)
+	}
+}
+
 func TestPhase27PolicyCreateFailsClosedForMissingAndEmptyWorkload(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(t.Context())

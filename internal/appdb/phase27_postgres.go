@@ -115,8 +115,15 @@ FROM network_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 }
 
 func (p *Postgres) UpdateNetworkPolicyStatus(ctx context.Context, clusterID, id, status, reason string) error {
-	_, err := p.DB.ExecContext(ctx, `UPDATE network_policies SET status=$3, reason=$4 WHERE cluster_id=$1 AND id=$2`, clusterID, id, status, reason)
-	return err
+	res, err := p.DB.ExecContext(ctx, `UPDATE network_policies SET status=$3, reason=$4 WHERE cluster_id=$1 AND id=$2`, clusterID, id, status, reason)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("network policy not found")
+	}
+	return nil
 }
 
 func (p *Postgres) CreateNetworkOverlay(ctx context.Context, o NetworkOverlay) error {

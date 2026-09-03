@@ -125,10 +125,17 @@ FROM remote_nodes WHERE cluster_id=$1 AND wg_peer_id=$2 LIMIT 1`, clusterID, pee
 }
 
 func (p *Postgres) UpdateRemoteNodeSession(ctx context.Context, n RemoteNode) error {
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE remote_nodes SET listen_addr=$3, wg_public_key=$4, status=$5, reason=$6, last_seen_at=$7, last_handshake_unix=$8, updated_at=now()
 WHERE cluster_id=$1 AND id=$2`, n.ClusterID, n.ID, n.ListenAddr, n.WGPublicKey, n.Status, n.Reason, n.LastSeenAt, n.LastHandshakeUnix)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return errors.New("remote node not found")
+	}
+	return nil
 }
 
 func (p *Postgres) CreateRemoteSession(ctx context.Context, s RemoteSession) error {

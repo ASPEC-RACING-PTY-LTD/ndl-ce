@@ -251,9 +251,15 @@ func (s *Server) applyPolicy(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		if item.ID == pol.ID {
-			pol.Status, pol.Reason = res.Status, res.Reason
+		if item.ID != pol.ID {
+			continue
 		}
+		got, gerr := s.Store.GetNetworkPolicy(r.Context(), p.User.ClusterID, pol.ID)
+		if gerr != nil || got == nil || got.Status != res.Status {
+			writeErr(w, http.StatusInternalServerError, "could not record network policy")
+			return
+		}
+		pol = got
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "network.policy.apply", "ok", pol.ID)
 	writeJSON(w, http.StatusOK, policyJSON(*pol))
