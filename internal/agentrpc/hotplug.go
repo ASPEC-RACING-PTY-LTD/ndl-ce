@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
@@ -55,6 +56,9 @@ func (h *Handler) execVMHotplug(ctx context.Context, m *agentv1.VMHotplug) (*con
 		hosts := append([]string{}, m.GetPciHosts()...)
 		if h := strings.TrimSpace(m.GetPciHost()); h != "" {
 			hosts = append(hosts, h)
+		}
+		if launch, err := h.qemu().ReadLaunch(id); err == nil {
+			hosts = qemu.MergeHostAddrs(qemu.HostAddrsFromLaunch(launch), hosts)
 		}
 		if err := h.qemu().ApplyVFIOHost(id, hosts); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)

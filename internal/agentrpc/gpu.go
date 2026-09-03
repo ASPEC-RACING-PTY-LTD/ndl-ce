@@ -11,6 +11,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/gpu"
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/hostos/debian"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
 func (h *Handler) execGPUAssign(ctx context.Context, m *agentv1.GPUAssign) (*connect.Response[agentv1.ExecuteResponse], error) {
@@ -141,7 +142,14 @@ func (h *Handler) applyVFIO(ctx context.Context, workloadID string, hosts []stri
 		return nil
 	}
 	qemuHosts := hosts
-	if restore {
+	if launch, err := h.QEMU.ReadLaunch(workloadID); err == nil {
+		current := qemu.HostAddrsFromLaunch(launch)
+		if restore {
+			qemuHosts = qemu.DropHostAddrs(current, hosts)
+		} else {
+			qemuHosts = qemu.MergeHostAddrs(current, hosts)
+		}
+	} else if restore {
 		qemuHosts = nil
 	}
 	if err := h.QEMU.ApplyVFIOHost(workloadID, qemuHosts); err != nil {

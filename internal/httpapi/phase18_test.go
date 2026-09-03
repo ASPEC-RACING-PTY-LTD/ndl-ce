@@ -740,3 +740,110 @@ func TestPhase18ImportFailsClosedWhenNICPersistFails(t *testing.T) {
 		t.Fatalf("nic persist body %s", raw)
 	}
 }
+
+func addPhase18PCI(t *testing.T, mem *appdb.Memory, clusterID, addr, group string) {
+	t.Helper()
+	node, err := mem.GetNode(context.Background(), clusterID)
+	if err != nil || node == nil {
+		t.Fatalf("node: %v", err)
+	}
+	row, err := mem.GetInventory(context.Background(), node.ID)
+	if err != nil || row == nil {
+		t.Fatalf("inventory: %v", err)
+	}
+	parsed, ok := decodeInv(row)
+	if !ok {
+		t.Fatal("inventory decode")
+	}
+	parsed.PCI = append(parsed.PCI, inventory.PCIDevice{
+		Address: addr, Vendor: "8086", Device: "10d3", Class: "0x020000", Driver: "e1000e", IOMMUGroup: group,
+	})
+	parsed.IOMMU.Groups = append(parsed.IOMMU.Groups, inventory.IOMMUGroup{ID: group, Devices: []string{addr}})
+	body, _ := json.Marshal(parsed)
+	if err := mem.UpsertInventory(context.Background(), appdb.HardwareInventory{
+		NodeID: node.ID, ClusterID: clusterID, Payload: body, ObservedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func vfioHostSet(vm *fakeVM) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, g := range vm.launch.GPUs {
+		out[strings.ToLower(g.Host)] = struct{}{}
+	}
+	return out
+}
+
+func TestPhase18SecondPCIAttachKeepsFirstVFIO(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	addPhase18PCI(t, mem, clusterID, "0000:04:00.0", "19")
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-two")
+	id := created["id"].(string)
+	first, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	first.Header.Set("Content-Type", "application/json")
+	first.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(first)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("first pci %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	second, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:04:00.0"}`))
+	second.Header.Set("Content-Type", "application/json")
+	second.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(second)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("second pci %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	hosts := vfioHostSet(s.VM.(*fakeVM))
+	if _, ok := hosts["0000:03:00.0"]; !ok {
+		t.Fatalf("second attach dropped first VFIO host: %+v", hosts)
+	}
+	if _, ok := hosts["0000:04:00.0"]; !ok {
+		t.Fatalf("second attach missing new VFIO host: %+v", hosts)
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl == nil || !strings.Contains(string(wl.SpecJSON), "0000:03:00.0") || !strings.Contains(string(wl.SpecJSON), "0000:04:00.0") {
+		t.Fatalf("spec must keep both PCI hosts %+v", wl)
+	}
+}
+
+func TestPhase18PCIAttachKeepsAssignedGPUVFIO(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	s.GPU = &fakeGPU{}
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-gpu")
+	id := created["id"].(string)
+	if err := mem.CreateSnapshot(context.Background(), appdb.Snapshot{
+		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: id, Name: "pre-vfio", Status: appdb.SnapshotAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/gpus/assign", strings.NewReader(`{"gpu_id":"0000:02:00.0","workload_id":"`+id+`","mode":"vfio"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("gpu vfio %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	pci, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	pci.Header.Set("Content-Type", "application/json")
+	pci.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(pci)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("pci attach %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	hosts := vfioHostSet(s.VM.(*fakeVM))
+	if _, ok := hosts["0000:02:00.0"]; !ok {
+		t.Fatalf("pci attach dropped GPU VFIO host: %+v", hosts)
+	}
+	if _, ok := hosts["0000:03:00.0"]; !ok {
+		t.Fatalf("pci attach missing PCI VFIO host: %+v", hosts)
+	}
+}

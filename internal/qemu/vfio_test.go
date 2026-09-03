@@ -72,3 +72,17 @@ func TestApplyVFIOHostRejectsAll(t *testing.T) {
 		t.Fatal("gpu=all")
 	}
 }
+
+func TestMergeAndDropHostAddrs(t *testing.T) {
+	merged := MergeHostAddrs([]string{"0000:03:00.0"}, []string{"0000:04:00.0", "0000:03:00.0"})
+	if len(merged) != 2 || merged[0] != "0000:03:00.0" || merged[1] != "0000:04:00.0" {
+		t.Fatalf("%v", merged)
+	}
+	kept := DropHostAddrs(merged, []string{"0000:03:00.0"})
+	if len(kept) != 1 || kept[0] != "0000:04:00.0" {
+		t.Fatalf("%v", kept)
+	}
+	if got := MergeHostAddrs(nil, nil); len(got) != 0 {
+		t.Fatalf("%v", got)
+	}
+}
