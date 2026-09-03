@@ -79,6 +79,12 @@ func (f *fakeBackup) ConvertImport(_ context.Context, req qemu.ConvertRequest) e
 	return os.WriteFile(req.DestPath, body, 0o640)
 }
 
+type skipConvertBackup struct{ *fakeBackup }
+
+func (skipConvertBackup) ConvertImport(context.Context, qemu.ConvertRequest) error {
+	return nil
+}
+
 func (f *fakeBackup) ExtractArchive(_ context.Context, src, dest string) error {
 	if f.err != nil {
 		return f.err

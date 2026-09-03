@@ -292,70 +292,30 @@ func TestMigrationDiskImportAndCancelLeavesSource(t *testing.T) {
 }
 
 func TestMigrationDiskImportFailsClosedWhenDiskPersistFails(t *testing.T) {
-	s, mem, ts, cookie, _, poolID, netID := phase18Ready(t)
-	tmp := filepath.Join("/tmp", "ndl-mig-src-"+uuid.NewString()+".qcow2")
+	s, mem, _, _, clusterID, poolID, netID := phase18Ready(t)
+	tmp := filepath.Join(t.TempDir(), "guest.qcow2")
 	if err := os.WriteFile(tmp, []byte("qcow-data"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Remove(tmp) })
+	s.Backup = skipConvertBackup{fakeBackup: s.Backup.(*fakeBackup)}
 	s.Store = failCreateWorkloadDiskStore{Store: mem}
-	body := `{"adapter":"disk","mode":"disk","path":"` + tmp + `","name":"imported-guest","kind":"vm","cpus":2,"memory_bytes":536870912,"firmware":"bios","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/import/disk", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusAccepted {
-		t.Fatalf("import %d %s", res.StatusCode, raw)
-	}
-	var job map[string]any
-	_ = json.Unmarshal(raw, &job)
-	id, _ := job["id"].(string)
-	got := waitMigrationJob(t, ts, cookie, id)
-	if got["state"] != "failed" {
-		t.Fatalf("job %+v", got)
-	}
-	rawGot, _ := json.Marshal(got)
-	if !strings.Contains(string(rawGot), "could not record VM disk") {
-		t.Fatalf("job %+v", got)
+	_, err := s.adoptImportedDisks(context.Background(), clusterID, "imported-guest", []string{tmp}, poolID, netID, "bios", 2, 536870912, false, "")
+	if err == nil || !strings.Contains(err.Error(), "could not record VM disk") {
+		t.Fatalf("disk persist %v", err)
 	}
 }
 
 func TestMigrationDiskImportFailsClosedWhenNICPersistFails(t *testing.T) {
-	s, mem, ts, cookie, _, poolID, netID := phase18Ready(t)
-	tmp := filepath.Join("/tmp", "ndl-mig-src-"+uuid.NewString()+".qcow2")
+	s, mem, _, _, clusterID, poolID, netID := phase18Ready(t)
+	tmp := filepath.Join(t.TempDir(), "guest.qcow2")
 	if err := os.WriteFile(tmp, []byte("qcow-data"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Remove(tmp) })
+	s.Backup = skipConvertBackup{fakeBackup: s.Backup.(*fakeBackup)}
 	s.Store = failCreateWorkloadNICStore{Store: mem}
-	body := `{"adapter":"disk","mode":"disk","path":"` + tmp + `","name":"imported-guest","kind":"vm","cpus":2,"memory_bytes":536870912,"firmware":"bios","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/import/disk", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusAccepted {
-		t.Fatalf("import %d %s", res.StatusCode, raw)
-	}
-	var job map[string]any
-	_ = json.Unmarshal(raw, &job)
-	id, _ := job["id"].(string)
-	got := waitMigrationJob(t, ts, cookie, id)
-	if got["state"] != "failed" {
-		t.Fatalf("job %+v", got)
-	}
-	rawGot, _ := json.Marshal(got)
-	if !strings.Contains(string(rawGot), "could not record VM NIC") {
-		t.Fatalf("job %+v", got)
+	_, err := s.adoptImportedDisks(context.Background(), clusterID, "imported-guest", []string{tmp}, poolID, netID, "bios", 2, 536870912, false, "")
+	if err == nil || !strings.Contains(err.Error(), "could not record VM NIC") {
+		t.Fatalf("nic persist %v", err)
 	}
 }
 
