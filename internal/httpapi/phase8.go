@@ -418,6 +418,9 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		if perr != nil || epool == nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("storage pool is not found")
 		}
+		if epool.Status != storage.StatusAvailable && epool.Status != storage.StatusWarning {
+			return vmspec.Resolved{}, nil, nil, convert, errConflict("storage is unavailable")
+		}
 		epath, jerr := storage.HostVolumePath(epool.BackendType, epool.RootPath, extra.BackendRef)
 		if jerr != nil {
 			return vmspec.Resolved{}, nil, nil, convert, errConflict("volume locator is invalid")

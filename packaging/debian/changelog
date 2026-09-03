@@ -203,6 +203,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * GET /node-groups is ordered by name then id. GET WireGuard peers,
     remote nodes, distributed OSDs, migration sources, and service
     principals are ordered by created_at then id, matching Postgres.
+  * VM create refuses an extra data disk whose storage pool is
+    unavailable before persist. GET /workloads no longer lists a VM
+    whose extra volume start cannot attach.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
