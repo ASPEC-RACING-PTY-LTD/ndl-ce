@@ -379,9 +379,11 @@ func (s *Server) execRollingDrain(r *http.Request, clusterID, planID string, n a
 		Ordinal: ord, Action: appdb.RollingActionDrain, Status: appdb.RollingSucceeded,
 		Reason: rollingDrainReason, CreatedAt: s.now(),
 	}
-	_ = s.Store.SetNodeMaintenance(r.Context(), appdb.NodeMaintenance{
+	if err := s.Store.SetNodeMaintenance(r.Context(), appdb.NodeMaintenance{
 		NodeID: n.ID, ClusterID: clusterID, Reason: "rolling update", Since: s.now(),
-	})
+	}); err != nil {
+		return st, errInternal("could not record node maintenance")
+	}
 	workloads, _ := s.Store.ListWorkloads(r.Context(), clusterID)
 	for _, wl := range workloads {
 		if wl.NodeID == n.ID || wl.DesiredNodeID == n.ID {
