@@ -3,6 +3,8 @@ package agentrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
@@ -11,6 +13,20 @@ import (
 	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
+
+func executeOK(res *connect.Response[agentv1.ExecuteResponse], err error) error {
+	if err != nil {
+		return err
+	}
+	if res == nil || res.Msg == nil || !res.Msg.GetOk() {
+		msg := "agent execute failed"
+		if res != nil && res.Msg != nil && strings.TrimSpace(res.Msg.GetMessage()) != "" {
+			msg = res.Msg.GetMessage()
+		}
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
 
 // VMPrepareRequest is a typed product VM prepare. No shell strings.
 type VMPrepareRequest struct {
@@ -129,21 +145,21 @@ func (c Client) ExtractArchive(ctx context.Context, src, dest string) error {
 
 func (c Client) ApplyUSB(ctx context.Context, id string, usbs []vmspec.LaunchUSB) error {
 	if len(usbs) == 0 {
-		_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 			Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
 				WorkloadId: id, Action: "del", DeviceKind: "usb-host",
 			}},
 		}))
-		return err
+		return executeOK(res, err)
 	}
 	for _, u := range usbs {
-		_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 			Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
 				WorkloadId: id, Action: "add", DeviceKind: "usb-host",
 				VendorId: u.Vendor, ProductId: u.Product, Address: u.Address,
 			}},
 		}))
-		if err != nil {
+		if err := executeOK(res, err); err != nil {
 			return err
 		}
 	}
@@ -155,23 +171,23 @@ func (c Client) HotplugUSB(ctx context.Context, id string, add bool, usb vmspec.
 	if !add {
 		action = "del"
 	}
-	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
 			WorkloadId: id, Action: action, DeviceKind: "usb-host",
 			VendorId: usb.Vendor, ProductId: usb.Product, Address: usb.Address,
 		}},
 	}))
-	return err
+	return executeOK(res, err)
 }
 
 func (c Client) ApplyVFIO(ctx context.Context, id string, hosts []string) error {
-	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_VmHotplug{VmHotplug: &agentv1.VMHotplug{
 			WorkloadId: id, Action: "add", DeviceKind: "vfio-pci",
 			PciHosts: hosts,
 		}},
 	}))
-	return err
+	return executeOK(res, err)
 }
 
 func (c Client) GuestStatus(ctx context.Context, id string) (guest.Status, error) {

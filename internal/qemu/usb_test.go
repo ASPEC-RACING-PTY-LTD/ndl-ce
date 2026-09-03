@@ -43,6 +43,23 @@ func TestUSBHostArgvIsTypedAndXHCIAlwaysPresent(t *testing.T) {
 	}
 }
 
+func TestMergeUSBsKeepsExistingAddresses(t *testing.T) {
+	first := vmspec.LaunchUSB{Address: "1-2", Vendor: "046d", Product: "c52b"}
+	second := vmspec.LaunchUSB{Address: "3-4", Vendor: "1d6b", Product: "0002"}
+	merged := MergeUSBs([]vmspec.LaunchUSB{first}, second)
+	if len(merged) != 2 {
+		t.Fatalf("merge: %+v", merged)
+	}
+	dup := MergeUSBs(merged, first)
+	if len(dup) != 2 {
+		t.Fatalf("duplicate address must not append: %+v", dup)
+	}
+	dropped := DropUSB(dup, "1-2")
+	if len(dropped) != 1 || dropped[0].Address != "3-4" {
+		t.Fatalf("drop: %+v", dropped)
+	}
+}
+
 func TestUSBHostRejectsInjection(t *testing.T) {
 	_, err := usbHostDevice(vmspec.LaunchUSB{Address: "1-2,id=evil", Vendor: "046d", Product: "c52b"})
 	if err == nil {

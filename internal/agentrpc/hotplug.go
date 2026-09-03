@@ -27,26 +27,25 @@ func (h *Handler) execVMHotplug(ctx context.Context, m *agentv1.VMHotplug) (*con
 			ID:      vmspec.USBDeviceID(m.GetAddress()),
 		}
 		launch, _ := h.qemu().ReadLaunch(id)
+		live := h.vmUnitLive(id)
 		switch action {
 		case "device_add", "add":
-			usbs := append(launch.USBs, usb)
+			usbs := qemu.MergeUSBs(launch.USBs, usb)
 			if err := h.qemu().ApplyUSBHost(id, usbs); err != nil {
 				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 			}
-			if err := h.qemu().HotplugUSB(id, true, usb); err != nil {
-				return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: err.Error()}), nil
-			}
-		case "device_del", "del":
-			if err := h.qemu().HotplugUSB(id, false, usb); err != nil {
-				return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: err.Error()}), nil
-			}
-			kept := make([]vmspec.LaunchUSB, 0, len(launch.USBs))
-			for _, u := range launch.USBs {
-				if u.Address != usb.Address {
-					kept = append(kept, u)
+			if live {
+				if err := h.qemu().HotplugUSB(id, true, usb); err != nil {
+					return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: err.Error()}), nil
 				}
 			}
-			if err := h.qemu().ApplyUSBHost(id, kept); err != nil {
+		case "device_del", "del":
+			if live {
+				if err := h.qemu().HotplugUSB(id, false, usb); err != nil {
+					return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: err.Error()}), nil
+				}
+			}
+			if err := h.qemu().ApplyUSBHost(id, qemu.DropUSB(launch.USBs, usb.Address)); err != nil {
 				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 			}
 		default:
@@ -68,4 +67,9 @@ func (h *Handler) execVMHotplug(ctx context.Context, m *agentv1.VMHotplug) (*con
 	}
 	_ = ctx
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: action}), nil
+}
+
+func (h *Handler) vmUnitLive(id string) bool {
+	obs := h.qemu().Observe(context.Background(), id)
+	return obs.UnitActive || obs.Status == qemu.StatusRunning || obs.Status == qemu.StatusStarting
 }
