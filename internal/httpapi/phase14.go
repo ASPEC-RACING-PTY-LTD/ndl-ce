@@ -255,36 +255,8 @@ func (s *Server) unassignGPU(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "assignment not found")
 		return
 	}
-	var origSpec []byte
-	var vfioRow *appdb.Workload
-	if a.Mode == gpu.ModeVFIO {
-		if wl, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, a.WorkloadID); wl != nil {
-			vfioRow = wl
-			origSpec = append([]byte(nil), wl.SpecJSON...)
-			_, invRow, _ := s.cachedNode(r, p.User.ClusterID)
-			parsed, _ := decodeInv(invRow)
-			hosts := vfioHostsForWorkload(r.Context(), s, p.User.ClusterID, wl.ID, parsed, a.ID)
-			if err := persistVFIOHosts(r.Context(), s, *wl, hosts); err != nil {
-				writeErr(w, http.StatusInternalServerError, "could not record VFIO spec")
-				return
-			}
-		}
-	}
-	res, applyErr := s.gpus().GPUAssign(r.Context(), gpu.AssignRequest{
-		Action: "unassign", GPUID: a.GPUID, WorkloadID: a.WorkloadID, Mode: a.Mode,
-		PCIDevices: a.PCIDevices, DeviceNodes: a.DeviceNodes,
-	})
-	if gpuApplyFailed(res, applyErr) {
-		if vfioRow != nil {
-			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
-				ID: vfioRow.ID, SpecJSON: origSpec, Firmware: vfioRow.Firmware, CPUs: vfioRow.CPUs, MemoryBytes: vfioRow.MemoryBytes,
-			})
-		}
-		writeErr(w, http.StatusBadGateway, gpuApplyError(res, applyErr))
-		return
-	}
-	if err := s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	if err := s.releaseGPUAssignment(r.Context(), p.User.ClusterID, *a); err != nil {
+		writeErr(w, statusFor(err), err.Error())
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "gpu.unassign", "ok", a.ID)
@@ -321,6 +293,98 @@ func encodeGroupMembers(members []inventory.PCIDevice) []map[string]any {
 		})
 	}
 	return out
+}
+
+func assignmentHosts(a appdb.GPUAssignment) []string {
+	if len(a.PCIDevices) > 0 {
+		return append([]string{}, a.PCIDevices...)
+	}
+	if strings.TrimSpace(a.GPUID) != "" {
+		return []string{a.GPUID}
+	}
+	return nil
+}
+
+func (s *Server) clusterInventory(ctx context.Context, clusterID string) inventory.Inventory {
+	node, err := s.Store.GetNode(ctx, clusterID)
+	if err != nil || node == nil {
+		return inventory.Inventory{}
+	}
+	invRow, _ := s.Store.GetInventory(ctx, node.ID)
+	parsed, _ := decodeInv(invRow)
+	return parsed
+}
+
+func (s *Server) releaseGPUAssignment(ctx context.Context, clusterID string, a appdb.GPUAssignment) error {
+	var origSpec []byte
+	var vfioRow *appdb.Workload
+	hosts := assignmentHosts(a)
+	if a.Mode == gpu.ModeVFIO {
+		if wl, _ := s.Store.GetWorkload(ctx, clusterID, a.WorkloadID); wl != nil {
+			vfioRow = wl
+			origSpec = append([]byte(nil), wl.SpecJSON...)
+			remain := vfioHostsForWorkload(ctx, s, clusterID, wl.ID, s.clusterInventory(ctx, clusterID), a.ID)
+			if err := persistVFIOHosts(ctx, s, *wl, remain); err != nil {
+				return errInternal("could not record VFIO spec")
+			}
+		}
+	}
+	res, applyErr := s.gpus().GPUAssign(ctx, gpu.AssignRequest{
+		Action: "unassign", GPUID: a.GPUID, WorkloadID: a.WorkloadID, Mode: a.Mode,
+		PCIDevices: hosts, DeviceNodes: a.DeviceNodes,
+	})
+	if gpuApplyFailed(res, applyErr) {
+		if res.Status == gpu.StatusUnsupported && a.Mode == gpu.ModeVFIO && s.VM != nil {
+			remain := hosts
+			if vfioRow != nil {
+				remain = vfioHostsForWorkload(ctx, s, clusterID, vfioRow.ID, s.clusterInventory(ctx, clusterID), a.ID)
+			}
+			if err := s.VM.ApplyVFIO(ctx, a.WorkloadID, remain); err != nil {
+				if vfioRow != nil {
+					_ = s.Store.UpdateWorkloadSpec(ctx, appdb.Workload{
+						ID: vfioRow.ID, SpecJSON: origSpec, Firmware: vfioRow.Firmware, CPUs: vfioRow.CPUs, MemoryBytes: vfioRow.MemoryBytes,
+					})
+				}
+				return err
+			}
+		} else {
+			if vfioRow != nil {
+				_ = s.Store.UpdateWorkloadSpec(ctx, appdb.Workload{
+					ID: vfioRow.ID, SpecJSON: origSpec, Firmware: vfioRow.Firmware, CPUs: vfioRow.CPUs, MemoryBytes: vfioRow.MemoryBytes,
+				})
+			}
+			return errUnavailable(gpuApplyError(res, applyErr))
+		}
+	}
+	if err := s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID); err != nil {
+		return errInternal(err.Error())
+	}
+	return nil
+}
+
+func (s *Server) releaseWorkloadClaims(ctx context.Context, clusterID, workloadID string) error {
+	assigns, err := s.Store.ListGPUAssignments(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	for _, a := range assigns {
+		if a.WorkloadID != workloadID {
+			continue
+		}
+		if err := s.releaseGPUAssignment(ctx, clusterID, a); err != nil {
+			return err
+		}
+	}
+	usbs, err := s.Store.ListUSBAttachments(ctx, clusterID, workloadID)
+	if err != nil {
+		return err
+	}
+	for _, u := range usbs {
+		if err := s.Store.DeleteUSBAttachment(ctx, clusterID, u.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func gpuApplyFailed(res gpu.AssignResult, err error) bool {

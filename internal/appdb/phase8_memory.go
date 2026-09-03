@@ -29,6 +29,16 @@ func (m *Memory) DeleteWorkload(_ context.Context, clusterID, id string) error {
 	if m.vmFirmware != nil {
 		delete(m.vmFirmware, id)
 	}
+	for k, a := range m.usbAttachments {
+		if a.WorkloadID == id {
+			delete(m.usbAttachments, k)
+		}
+	}
+	for k, a := range m.gpuAssignments {
+		if a.WorkloadID == id {
+			delete(m.gpuAssignments, k)
+		}
+	}
 	delete(m.workloads, id)
 	return nil
 }

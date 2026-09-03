@@ -921,3 +921,116 @@ func TestPhase18PCIAttachKeepsAssignedGPUVFIO(t *testing.T) {
 		t.Fatalf("start reprepare dropped PCI VFIO host: %+v", hosts)
 	}
 }
+
+func deletePhase18VM(t *testing.T, ts *httptest.Server, cookie, id string) {
+	t.Helper()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/delete", strings.NewReader(`{}`))
+	req.Header.Set("X-Nodal-Confirm", "delete")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestPhase18DeleteReleasesPCIClaim(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	first := createPhase18VM(t, ts, cookie, poolID, netID, "pci-a")
+	id := first["id"].(string)
+	pciAtt, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	pciAtt.Header.Set("Content-Type", "application/json")
+	pciAtt.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	pciOK, _ := ts.Client().Do(pciAtt)
+	if pciOK.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(pciOK.Body)
+		t.Fatalf("pci attach %d %s", pciOK.StatusCode, b)
+	}
+	_ = pciOK.Body.Close()
+	deletePhase18VM(t, ts, cookie, id)
+	got, _ := mem.ListGPUAssignments(context.Background(), clusterID)
+	if len(got) != 0 {
+		t.Fatalf("delete must release PCI assignment %+v", got)
+	}
+	second := createPhase18VM(t, ts, cookie, poolID, netID, "pci-b")
+	pciAtt, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+second["id"].(string)+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	pciAtt.Header.Set("Content-Type", "application/json")
+	pciAtt.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	pciOK, _ = ts.Client().Do(pciAtt)
+	raw, _ := io.ReadAll(pciOK.Body)
+	_ = pciOK.Body.Close()
+	if pciOK.StatusCode != http.StatusCreated {
+		t.Fatalf("reattach after delete %d %s", pciOK.StatusCode, raw)
+	}
+}
+
+func TestPhase18DeleteReleasesUSBClaim(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	first := createPhase18VM(t, ts, cookie, poolID, netID, "usb-a")
+	id := first["id"].(string)
+	att, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/usb", strings.NewReader(`{"address":"1-2"}`))
+	att.Header.Set("Content-Type", "application/json")
+	att.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	ok, _ := ts.Client().Do(att)
+	if ok.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(ok.Body)
+		t.Fatalf("usb attach %d %s", ok.StatusCode, b)
+	}
+	_ = ok.Body.Close()
+	deletePhase18VM(t, ts, cookie, id)
+	left, _ := mem.ListUSBAttachments(context.Background(), clusterID, "")
+	if len(left) != 0 {
+		t.Fatalf("delete must release USB %+v", left)
+	}
+	second := createPhase18VM(t, ts, cookie, poolID, netID, "usb-b")
+	att, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+second["id"].(string)+"/usb", strings.NewReader(`{"address":"1-2"}`))
+	att.Header.Set("Content-Type", "application/json")
+	att.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	ok, _ = ts.Client().Do(att)
+	raw, _ := io.ReadAll(ok.Body)
+	_ = ok.Body.Close()
+	if ok.StatusCode != http.StatusCreated {
+		t.Fatalf("reattach USB after delete %d %s", ok.StatusCode, raw)
+	}
+}
+
+func TestPhase18PCIUnassignSendsHostBDF(t *testing.T) {
+	s, _, ts, cookie, _, poolID, netID := phase18Ready(t)
+	fg := &fakeGPU{}
+	s.GPU = fg
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-unassign")
+	id := created["id"].(string)
+	pciAtt, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	pciAtt.Header.Set("Content-Type", "application/json")
+	pciAtt.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	pciOK, _ := ts.Client().Do(pciAtt)
+	raw, _ := io.ReadAll(pciOK.Body)
+	_ = pciOK.Body.Close()
+	if pciOK.StatusCode != http.StatusCreated {
+		t.Fatalf("pci attach %d %s", pciOK.StatusCode, raw)
+	}
+	var attached map[string]any
+	if err := json.Unmarshal(raw, &attached); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/gpus/unassign", strings.NewReader(`{"id":"`+attached["id"].(string)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("unassign %d %s", res.StatusCode, raw)
+	}
+	if len(fg.calls) == 0 || fg.calls[len(fg.calls)-1].Action != "unassign" {
+		t.Fatalf("unassign must call GPU agent: %+v", fg.calls)
+	}
+	hosts := fg.calls[len(fg.calls)-1].PCIDevices
+	if len(hosts) != 1 || hosts[0] != "0000:03:00.0" {
+		t.Fatalf("PCI unassign must send the BDF: %+v", hosts)
+	}
+}

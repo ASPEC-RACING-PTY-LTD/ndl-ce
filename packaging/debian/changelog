@@ -79,6 +79,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * GPU VFIO assign records pci_hosts on the VM spec so start reprepare cannot drop the bound devices. Unassign removes those hosts from spec.
   * Template create refuses extra data disks like clone. Deploy clones the live source, so a boot-only overlay must not be recorded as a usable template.
   * USB attach on a running VM fails closed if live QMP device_add fails. A stopped VM still records usb-host in frozen argv without inventing a live hotplug. The southbound client treats Execute Ok false as an apply error.
+  * VM delete releases USB and exclusive GPU/PCI claims before runtime is removed. PCI unassign restores the assignment BDF when pci_devices is empty.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

@@ -617,6 +617,11 @@ func (s *Server) vmLifecycle(w http.ResponseWriter, r *http.Request, p *principa
 		agentAction = "force-stop"
 	}
 	if action == "delete" {
+		if err := s.releaseWorkloadClaims(r.Context(), p.User.ClusterID, row.ID); err != nil {
+			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
 		_, _ = s.VM.LifecycleVM(r.Context(), row.ID, "stop", false)
 		if _, err := s.VM.LifecycleVM(r.Context(), row.ID, "delete-runtime", false); err != nil {
 			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
