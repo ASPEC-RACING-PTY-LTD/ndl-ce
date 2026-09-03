@@ -520,9 +520,15 @@ func (s *Server) ensureVMBootVolume(ctx context.Context, clusterID, nodeID strin
 		if existing.Class != storage.ClassVMDisk {
 			return nil, "", errConflict("volume is not a vm-disk")
 		}
+		if existing.Status != storage.StatusAvailable && existing.Status != storage.StatusWarning {
+			return nil, "", errConflict("storage is unavailable")
+		}
 		p, err := s.Store.GetStoragePool(ctx, clusterID, existing.PoolID)
 		if err != nil || p == nil {
 			return nil, "", errConflict("storage pool is not found")
+		}
+		if p.Status != storage.StatusAvailable && p.Status != storage.StatusWarning {
+			return nil, "", errConflict("storage is unavailable")
 		}
 		diskPath, err := storage.HostVolumePath(p.BackendType, p.RootPath, existing.BackendRef)
 		if err != nil {
