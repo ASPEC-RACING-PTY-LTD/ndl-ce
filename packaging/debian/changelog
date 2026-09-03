@@ -302,11 +302,11 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM clone, export, import, restore, and migration disk import refuse a
     ZFS or LVM-thin dest the same way they refuse RBD and iSCSI. qemu-img
     convert does not write a directory qcow2 onto a zvol or thin LV.
-    Restore-replace of a qcow2 artifact onto a zvol or thin LV is refused
-    before stop or copy. BackupReplace dest format is qcow2 and those
-    volumes start as raw. Migration bundle export refuses a zvol or thin
-    LV source before the job is recorded. ConvertImport would treat that
-    raw device as qcow2. Template overlay is refused; ZFS and LVM
+    Restore-replace of a qcow2 artifact onto a zvol, thin LV, RBD, or
+    iSCSI LUN is refused before stop or copy. BackupReplace dest format
+    is qcow2 and those volumes start as raw. Migration bundle export
+    refuses a zvol, thin LV, RBD, or iSCSI source before the job is
+    recorded. ConvertImport would treat that raw device as qcow2. Template overlay is refused; ZFS and LVM
     snapshots stay native. GET no longer lists a clone whose start would
     attach a qcow2 as raw. Offline migrate refuses that zvol copy before
     ownership moves. Offline migrate also refuses a missing source pool

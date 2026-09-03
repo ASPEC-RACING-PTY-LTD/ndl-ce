@@ -543,3 +543,277 @@ func TestPhase26VMCreateFailsClosedWhenISCSIUnavailable(t *testing.T) {
 		t.Fatalf("GET must not list a VM whose iSCSI LUN apply cannot attach: %+v", items)
 	}
 }
+
+func TestPhase26VMCloneAndExportFailClosedForISCSI(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/iscsi", strings.NewReader(`{"name":"lun-clone","iqn":"iqn.2020-01.com.example:target1","portal":"10.0.0.8:3260"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("iscsi %d %s", res.StatusCode, b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID, _ := pool["id"].(string)
+	body := `{"name":"iscsi-src","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	wreq, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	wreq.Header.Set("Content-Type", "application/json")
+	wreq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wres, err := ts.Client().Do(wreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(wres.Body)
+	_ = wres.Body.Close()
+	if wres.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", wres.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+
+	clone, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/clone", strings.NewReader(`{"name":"iscsi-clone"}`))
+	clone.Header.Set("Content-Type", "application/json")
+	clone.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	cres, err := ts.Client().Do(clone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	craw, _ := io.ReadAll(cres.Body)
+	_ = cres.Body.Close()
+	if cres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("clone %d %s", cres.StatusCode, craw)
+	}
+	if !strings.Contains(string(craw), "iSCSI pools do not store directory qcow2 copies") {
+		t.Fatalf("clone body %s", craw)
+	}
+
+	exp, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/export", strings.NewReader(`{}`))
+	exp.Header.Set("Content-Type", "application/json")
+	exp.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	eres, err := ts.Client().Do(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eraw, _ := io.ReadAll(eres.Body)
+	_ = eres.Body.Close()
+	if eres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("export %d %s", eres.StatusCode, eraw)
+	}
+	if !strings.Contains(string(eraw), "iSCSI pools do not store directory qcow2 copies") {
+		t.Fatalf("export body %s", eraw)
+	}
+
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("GET must keep the source VM and not list a directory clone: %+v", items)
+	}
+	libs, _ := mem.ListLibraryItems(context.Background(), cluster.ID, poolID)
+	if len(libs) != 0 {
+		t.Fatalf("GET /images must not list an export under an iSCSI by-path: %+v", libs)
+	}
+}
+
+func TestPhase26VMRestoreFailsClosedForISCSI(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/iscsi", strings.NewReader(`{"name":"lun-restore","iqn":"iqn.2020-01.com.example:target1","portal":"10.0.0.8:3260"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("iscsi %d %s", res.StatusCode, b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID, _ := pool["id"].(string)
+	body := `{"name":"iscsi-restore","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	wreq, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	wreq.Header.Set("Content-Type", "application/json")
+	wreq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wres, err := ts.Client().Do(wreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(wres.Body)
+	_ = wres.Body.Close()
+	if wres.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", wres.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %+v", disks)
+	}
+	bootRef := ""
+	if vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID); vol != nil {
+		bootRef = vol.BackendRef
+	}
+	artID := seedVMRestoreArtifact(t, mem, cluster.ID, id, "volumes/vm-disk/boot.qcow2")
+
+	restoreNew, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	restoreNew.Header.Set("Content-Type", "application/json")
+	restoreNew.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	nres, err := ts.Client().Do(restoreNew)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nraw, _ := io.ReadAll(nres.Body)
+	_ = nres.Body.Close()
+	if nres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("restore new %d %s", nres.StatusCode, nraw)
+	}
+	if !strings.Contains(string(nraw), "iSCSI pools do not store directory qcow2 copies") {
+		t.Fatalf("restore new body %s", nraw)
+	}
+
+	restore, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"replace"}`))
+	restore.Header.Set("Content-Type", "application/json")
+	restore.Header.Set("X-Nodal-Confirm", "restore")
+	restore.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rres, err := ts.Client().Do(restore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rraw, _ := io.ReadAll(rres.Body)
+	_ = rres.Body.Close()
+	if rres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("restore replace %d %s", rres.StatusCode, rraw)
+	}
+	if !strings.Contains(string(rraw), "iSCSI pools do not store directory qcow2 copies") {
+		t.Fatalf("restore replace body %s", rraw)
+	}
+	for _, c := range fb.copies {
+		if c[0] == "replace" {
+			t.Fatalf("replace must not qemu-img onto the iSCSI LUN: %+v", fb.copies)
+		}
+	}
+	for _, a := range vm.actions {
+		if a == "stop" {
+			t.Fatalf("replace must not stop before dest refuse: %+v", vm.actions)
+		}
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("GET must keep the source VM and not list a directory restore: %+v", items)
+	}
+	vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+	if vol == nil || vol.BackendRef != bootRef || !strings.HasPrefix(vol.BackendRef, storage.ISCSIByPath) {
+		t.Fatalf("boot locator must stay an iSCSI by-path: %+v want %s", vol, bootRef)
+	}
+}
+
+func TestPhase26VMMigrationExportFailsClosedForISCSI(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/iscsi", strings.NewReader(`{"name":"lun-export","iqn":"iqn.2020-01.com.example:target1","portal":"10.0.0.8:3260"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("iscsi %d %s", res.StatusCode, b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID, _ := pool["id"].(string)
+	body := `{"name":"iscsi-export","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	wreq, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	wreq.Header.Set("Content-Type", "application/json")
+	wreq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wres, err := ts.Client().Do(wreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(wres.Body)
+	_ = wres.Body.Close()
+	if wres.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", wres.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+
+	exp, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"direction":"export","workload_id":"`+id+`"}`))
+	exp.Header.Set("Content-Type", "application/json")
+	exp.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	eres, err := ts.Client().Do(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eraw, _ := io.ReadAll(eres.Body)
+	_ = eres.Body.Close()
+	if eres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("migration export %d %s", eres.StatusCode, eraw)
+	}
+	if !strings.Contains(string(eraw), "iSCSI pools do not store directory qcow2 copies") {
+		t.Fatalf("migration export body %s", eraw)
+	}
+	if len(fb.converts) != 0 {
+		t.Fatalf("ConvertImport must not qemu-img an iSCSI LUN as qcow2: %+v", fb.converts)
+	}
+	jobs, _ := mem.ListMigrationJobs(context.Background(), cluster.ID, 100)
+	if len(jobs) != 0 {
+		t.Fatalf("GET must not list a succeeded iSCSI export: %+v", jobs)
+	}
+}

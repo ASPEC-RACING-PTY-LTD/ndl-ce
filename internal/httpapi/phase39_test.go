@@ -638,6 +638,166 @@ func TestPhase39VMCloneAndExportFailClosedForDistributed(t *testing.T) {
 	}
 }
 
+func TestPhase39VMMigrationExportFailsClosedForDistributed(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	_, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	poolID := seedDistributedPool(t, mem, cluster.ID, nodeID)
+	s.Distributed = &fakeDistributed{up: true}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"rbd-export","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+
+	exp, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"direction":"export","workload_id":"`+id+`"}`))
+	exp.Header.Set("Content-Type", "application/json")
+	exp.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	eres, err := ts.Client().Do(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eraw, _ := io.ReadAll(eres.Body)
+	_ = eres.Body.Close()
+	if eres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("migration export %d %s", eres.StatusCode, eraw)
+	}
+	if !strings.Contains(string(eraw), "distributed RBD pools do not store directory qcow2 copies") {
+		t.Fatalf("migration export body %s", eraw)
+	}
+	if len(fb.converts) != 0 {
+		t.Fatalf("ConvertImport must not qemu-img an RBD device as qcow2: %+v", fb.converts)
+	}
+	jobs, _ := mem.ListMigrationJobs(context.Background(), cluster.ID, 100)
+	if len(jobs) != 0 {
+		t.Fatalf("GET must not list a succeeded RBD export: %+v", jobs)
+	}
+}
+
+func TestPhase39VMRestoreFailsClosedForDistributed(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	_, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	poolID := seedDistributedPool(t, mem, cluster.ID, nodeID)
+	s.Distributed = &fakeDistributed{up: true}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"rbd-restore","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %+v", disks)
+	}
+	bootRef := ""
+	if vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID); vol != nil {
+		bootRef = vol.BackendRef
+	}
+	artID := seedVMRestoreArtifact(t, mem, cluster.ID, id, "volumes/vm-disk/boot.qcow2")
+
+	restoreNew, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	restoreNew.Header.Set("Content-Type", "application/json")
+	restoreNew.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	nres, err := ts.Client().Do(restoreNew)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nraw, _ := io.ReadAll(nres.Body)
+	_ = nres.Body.Close()
+	if nres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("restore new %d %s", nres.StatusCode, nraw)
+	}
+	if !strings.Contains(string(nraw), "distributed RBD pools do not store directory qcow2 copies") {
+		t.Fatalf("restore new body %s", nraw)
+	}
+
+	restore, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"replace"}`))
+	restore.Header.Set("Content-Type", "application/json")
+	restore.Header.Set("X-Nodal-Confirm", "restore")
+	restore.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rres, err := ts.Client().Do(restore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rraw, _ := io.ReadAll(rres.Body)
+	_ = rres.Body.Close()
+	if rres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("restore replace %d %s", rres.StatusCode, rraw)
+	}
+	if !strings.Contains(string(rraw), "distributed RBD pools do not store directory qcow2 copies") {
+		t.Fatalf("restore replace body %s", rraw)
+	}
+	for _, c := range fb.copies {
+		if c[0] == "replace" {
+			t.Fatalf("replace must not qemu-img onto the RBD device: %+v", fb.copies)
+		}
+	}
+	for _, a := range vm.actions {
+		if a == "stop" {
+			t.Fatalf("replace must not stop before dest refuse: %+v", vm.actions)
+		}
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("GET must keep the source VM and not list a directory restore: %+v", items)
+	}
+	vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+	if vol == nil || vol.BackendRef != bootRef || storage.ValidateRBDPath(vol.BackendRef) != nil {
+		t.Fatalf("boot locator must stay an RBD device: %+v want %s", vol, bootRef)
+	}
+}
+
 func TestPhase39LibraryUploadFailsClosedForDeviceBackedPools(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
