@@ -89,6 +89,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Template snapshot catalog records the frozen overlay backing, not the live -tmpl.qcow2 tip. Rollback overlays that frozen parent. Deploy still clones the live source.
   * Cluster OpenSession fails closed if a pairing token cannot be marked used. A 200 does not leave the token reusable.
   * Host update apply and rollback fail closed if the update operation row cannot be created. A 200 does not invent an operation id that GET /updates would miss.
+  * Backup overlay after flatten does not inherit leftover catalog parent_id. Flattened depth is a new chain.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

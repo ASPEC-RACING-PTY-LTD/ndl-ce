@@ -732,7 +732,7 @@ func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row ap
 		return appdb.Snapshot{}, "", errConflict("overlay locator is invalid")
 	}
 	parentID := ""
-	if len(existing) > 0 {
+	if depth > 0 && len(existing) > 0 {
 		parentID = existing[len(existing)-1].ID
 	}
 	_, err = s.VM.SnapshotVM(ctx, qemu.OverlayRequest{
