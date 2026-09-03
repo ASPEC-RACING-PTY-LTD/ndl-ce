@@ -159,7 +159,7 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	resolved, vol, netw, convert, err := s.resolveVM(r.Context(), p.User.ClusterID, node.ID, ids, req, spec)
+	resolved, vol, _, convert, err := s.resolveVM(r.Context(), p.User.ClusterID, node.ID, ids, req, spec)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -233,7 +233,7 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		}
 		if err := s.Store.CreateWorkloadNIC(r.Context(), appdb.WorkloadNIC{
 			ID: firstNonEmpty(n.ID, uuid.NewString()), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
-			NetworkID: netw.ID, MAC: n.MAC, PCIAddr: pci, Model: vmspec.NICModelVirtio,
+			NetworkID: n.NetworkID, MAC: n.MAC, PCIAddr: pci, Model: vmspec.NICModelVirtio,
 		}); err != nil {
 			writeErr(w, http.StatusInternalServerError, "could not record VM NIC")
 			return
@@ -331,25 +331,47 @@ func specFromCreate(req createWorkloadRequest) (vmspec.Spec, error) {
 	return vmspec.Normalize(spec), nil
 }
 
-func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids createIDs, req createWorkloadRequest, spec vmspec.Spec) (vmspec.Resolved, *appdb.Volume, *appdb.Network, qemu.ConvertRequest, error) {
-	var convert qemu.ConvertRequest
-	netID := req.NetworkID
-	if netID == "" && len(spec.NICs) > 0 {
-		netID = spec.NICs[0].NetworkID
-	}
-	netw, err := s.Store.GetNetwork(ctx, clusterID, netID)
+func (s *Server) resolveWorkloadNetwork(ctx context.Context, clusterID, netID string) (*appdb.Network, string, error) {
+	netw, err := s.Store.GetNetwork(ctx, clusterID, strings.TrimSpace(netID))
 	if err != nil || netw == nil {
-		return vmspec.Resolved{}, nil, nil, convert, errNotFound("network is not found")
+		return nil, "", errNotFound("network is not found")
 	}
 	if netw.Status != ndnet.StatusAvailable && netw.Status != ndnet.StatusWarning {
-		return vmspec.Resolved{}, nil, nil, convert, errConflict("an available network is required")
+		return nil, "", errConflict("an available network is required")
 	}
 	bridge := netw.BridgeName
 	if bridge == "" {
 		bridge, err = ndnet.BridgeName(netw.ID)
 		if err != nil {
+			return nil, "", err
+		}
+	}
+	return netw, bridge, nil
+}
+
+func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids createIDs, req createWorkloadRequest, spec vmspec.Spec) (vmspec.Resolved, *appdb.Volume, *appdb.Network, qemu.ConvertRequest, error) {
+	var convert qemu.ConvertRequest
+	nics := spec.NICs
+	if len(nics) == 0 && strings.TrimSpace(req.NetworkID) != "" {
+		nics = []vmspec.NIC{{NetworkID: req.NetworkID}}
+	}
+	var netw *appdb.Network
+	var nicResolved []vmspec.ResolvedNIC
+	for i, n := range nics {
+		resolvedNet, bridge, err := s.resolveWorkloadNetwork(ctx, clusterID, n.NetworkID)
+		if err != nil {
 			return vmspec.Resolved{}, nil, nil, convert, err
 		}
+		if i == 0 {
+			netw = resolvedNet
+		}
+		nicResolved = append(nicResolved, vmspec.ResolvedNIC{
+			ID: n.ID, NetworkID: resolvedNet.ID, BridgeName: bridge, MAC: n.MAC, Model: n.Model, PCIAddr: n.PCIAddr,
+			TAPName: vmspec.TAPName(ids.WorkloadID, i),
+		})
+	}
+	if netw == nil {
+		return vmspec.Resolved{}, nil, nil, convert, errNotFound("network is not found")
 	}
 	pool, err := s.pickQemuPool(ctx, clusterID, req.PoolID)
 	if err != nil {
@@ -405,12 +427,7 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 			Format: storage.QEMUFormat(extra.BackendType, firstNonEmpty(extra.Format, d.Format)), ReadOnly: d.ReadOnly, PCIAddr: d.PCIAddr,
 		})
 	}
-	for i, n := range spec.NICs {
-		resolved.NICs = append(resolved.NICs, vmspec.ResolvedNIC{
-			ID: n.ID, NetworkID: n.NetworkID, BridgeName: bridge, MAC: n.MAC, Model: n.Model, PCIAddr: n.PCIAddr,
-			TAPName: vmspec.TAPName(ids.WorkloadID, i),
-		})
-	}
+	resolved.NICs = nicResolved
 	if spec.CloudImageID != "" {
 		lib, lerr := s.Store.GetLibraryItem(ctx, clusterID, spec.CloudImageID)
 		if lerr != nil || lib == nil {
@@ -887,20 +904,8 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 	if err != nil || len(disks) == 0 {
 		return vmspec.Resolved{}, errConflict("VM storage is unavailable")
 	}
-	netID := ""
-	if len(spec.NICs) > 0 {
-		netID = spec.NICs[0].NetworkID
-	}
-	netw, err := s.Store.GetNetwork(ctx, clusterID, netID)
-	if err != nil || netw == nil {
+	if len(spec.NICs) == 0 {
 		return vmspec.Resolved{}, errNotFound("network is not found")
-	}
-	bridge := netw.BridgeName
-	if bridge == "" {
-		bridge, err = ndnet.BridgeName(netw.ID)
-		if err != nil {
-			return vmspec.Resolved{}, err
-		}
 	}
 	resolved := vmspec.Resolved{Accel: qemu.DetectAccel()}
 	addVol := func(volumeID, role string, slot int, pci string, readOnly bool, format string) error {
@@ -963,8 +968,12 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 		}
 	}
 	for i, n := range spec.NICs {
+		resolvedNet, bridge, err := s.resolveWorkloadNetwork(ctx, clusterID, n.NetworkID)
+		if err != nil {
+			return vmspec.Resolved{}, err
+		}
 		resolved.NICs = append(resolved.NICs, vmspec.ResolvedNIC{
-			ID: n.ID, NetworkID: n.NetworkID, BridgeName: bridge, MAC: n.MAC, Model: n.Model, PCIAddr: n.PCIAddr,
+			ID: n.ID, NetworkID: resolvedNet.ID, BridgeName: bridge, MAC: n.MAC, Model: n.Model, PCIAddr: n.PCIAddr,
 			TAPName: vmspec.TAPName(row.ID, i),
 		})
 	}

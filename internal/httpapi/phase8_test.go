@@ -17,6 +17,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/guest"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -831,5 +832,136 @@ func TestVMPatchISOLibraryFailsClosedForMissingAndWrongKind(t *testing.T) {
 	_ = got.Body.Close()
 	if specFromCreated(afterClear).ISOLibraryID != "" {
 		t.Fatalf("GET must drop iso_library_id after clear: %+v", afterClear["spec"])
+	}
+}
+
+func TestVMCreateFailsClosedForMissingExtraNICNetwork(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	missing := uuid.NewString()
+	body := `{"name":"dual","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"nics":[{"network_id":"` + netID + `"},{"network_id":"` + missing + `"}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing extra nic network %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "network is not found") {
+		t.Fatalf("missing extra nic body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose spec.nics network_id GET /networks would miss: %+v", items)
+	}
+	nets, _ := mem.ListNetworks(context.Background(), cluster.ID)
+	for _, n := range nets {
+		if n.ID == missing {
+			t.Fatalf("missing network_id must not appear in GET /networks: %+v", n)
+		}
+	}
+}
+
+func TestVMCreateRecordsExtraNICNetwork(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	extraNet := uuid.NewString()
+	if err := mem.CreateNetwork(context.Background(), appdb.Network{
+		ID: extraNet, ClusterID: cluster.ID, NodeID: nodeID, Name: "iso2",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusAvailable, BridgeName: "ndlcafe0001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"dual","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","spec":{"nics":[{"network_id":"` + netID + `"},{"network_id":"` + extraNet + `"}]}}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id := created["id"].(string)
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, id)
+	if len(nics) != 2 || nics[0].NetworkID != netID || nics[1].NetworkID != extraNet {
+		t.Fatalf("nic rows %+v", nics)
+	}
+	spec := specFromCreated(created)
+	if len(spec.NICs) != 2 || spec.NICs[0].NetworkID != netID || spec.NICs[1].NetworkID != extraNet {
+		t.Fatalf("201 spec nics %+v", spec.NICs)
+	}
+	if len(vm.launch.NICs) != 2 || vm.launch.NICs[0].BridgeName != "ndldeadbeef" || vm.launch.NICs[1].BridgeName != "ndlcafe0001" {
+		t.Fatalf("create launch nics %+v", vm.launch.NICs)
+	}
+	if vm.launch.NICs[0].NetworkID != netID || vm.launch.NICs[1].NetworkID != extraNet {
+		t.Fatalf("create launch network_id %+v", vm.launch.NICs)
+	}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	started, err := ts.Client().Do(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startRaw, _ := io.ReadAll(started.Body)
+	_ = started.Body.Close()
+	if started.StatusCode != http.StatusOK {
+		t.Fatalf("start %d %s", started.StatusCode, startRaw)
+	}
+	if len(vm.launch.NICs) != 2 || vm.launch.NICs[1].BridgeName != "ndlcafe0001" || vm.launch.NICs[1].NetworkID != extraNet {
+		t.Fatalf("start must keep extra NIC on its network bridge: %+v", vm.launch.NICs)
+	}
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+id, nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	var listed map[string]any
+	_ = json.NewDecoder(got.Body).Decode(&listed)
+	_ = got.Body.Close()
+	gotNics, _ := listed["nics"].([]any)
+	if len(gotNics) != 2 {
+		t.Fatalf("GET nics %+v", listed["nics"])
+	}
+	second, _ := gotNics[1].(map[string]any)
+	if second["network_id"] != extraNet {
+		t.Fatalf("GET nics[1] %+v", second)
+	}
+	if specFromCreated(listed).NICs[1].NetworkID != extraNet {
+		t.Fatalf("GET spec nics %+v", listed["spec"])
 	}
 }

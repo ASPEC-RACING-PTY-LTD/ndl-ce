@@ -168,6 +168,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     segments, before persist. SMB UNC is not passed through the Unix
     artifact jail. GET /backups/targets no longer lists garbage that
     apply cannot use. Absolute artifact paths stay AllowedArtifactPath.
+  * VM create refuses an extra NIC network_id GET /networks would miss
+    before persist. NIC rows and launch bridges follow each spec NIC
+    network, so GET spec.nics cannot claim a network the TAP is not on.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
