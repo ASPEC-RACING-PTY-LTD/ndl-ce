@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -362,5 +363,94 @@ func TestWebhookClientDoesNotFollowRedirect(t *testing.T) {
 	}
 	if res.StatusCode != http.StatusFound {
 		t.Fatalf("status %d", res.StatusCode)
+	}
+}
+
+type failInsertEventStore struct {
+	appdb.Store
+}
+
+func (f failInsertEventStore) InsertEvent(context.Context, appdb.Event) error {
+	return errors.New("persist failed")
+}
+
+type failUpdateAlertRuleFiredStore struct {
+	appdb.Store
+}
+
+func (f failUpdateAlertRuleFiredStore) UpdateAlertRuleFired(context.Context, string, string, time.Time) error {
+	return errors.New("persist failed")
+}
+
+func seedFiringAlert(t *testing.T, s *Server, mem *appdb.Memory, token string) (clusterID string, gotBody *[]byte, hook *httptest.Server) {
+	t.Helper()
+	allowWebhookLoopbackForTest = true
+	t.Cleanup(func() { allowWebhookLoopbackForTest = false })
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	body := []byte{}
+	gotBody = &body
+	hook = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(204)
+	}))
+	t.Cleanup(hook.Close)
+	s.HTTPClient = hook.Client()
+	s.Observer = fakeObserver{res: metrics.QueryResult{
+		Status: metrics.StatusAvailable,
+		Series: []metrics.Series{{
+			Name: metrics.MetricCPUBusyRatio, Status: metrics.StatusAvailable,
+			Points: []metrics.Point{{Time: time.Now().UTC(), Value: 0.95}},
+		}},
+	}}
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	admin := claimAdmin(t, ts, token)
+	res := doCookie(t, ts, admin, "POST", "/api/v1/alerts/channels", `{"name":"hook","kind":"webhook","url":"`+hook.URL+`"}`)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("create channel %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/alerts", `{"name":"cpu","metric":"cpu.busy_ratio","op":"gt","threshold":0.8}`)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("create alert %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	return cluster.ID, gotBody, hook
+}
+
+func TestTickAlertsFailsClosedWhenEventPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterID, gotBody, _ := seedFiringAlert(t, s, mem, token)
+	s.Store = failInsertEventStore{Store: mem}
+	s.TickAlerts(context.Background())
+	if len(*gotBody) != 0 {
+		t.Fatalf("webhook must not fire when event persist fails: %s", *gotBody)
+	}
+	ev, _ := mem.ListEvents(context.Background(), clusterID, 50)
+	for _, e := range ev {
+		if e.Type == "alert.firing" {
+			t.Fatalf("event persist fail must not record firing: %+v", e)
+		}
+	}
+	rules, _ := mem.ListAlertRules(context.Background(), clusterID)
+	if len(rules) != 1 || rules[0].LastFiredAt != nil {
+		t.Fatalf("last_fired_at must stay unset: %+v", rules)
+	}
+}
+
+func TestTickAlertsFailsClosedWhenFiredPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterID, gotBody, _ := seedFiringAlert(t, s, mem, token)
+	s.Store = failUpdateAlertRuleFiredStore{Store: mem}
+	s.TickAlerts(context.Background())
+	if len(*gotBody) != 0 {
+		t.Fatalf("webhook must not fire when last_fired_at persist fails: %s", *gotBody)
+	}
+	rules, _ := mem.ListAlertRules(context.Background(), clusterID)
+	if len(rules) != 1 || rules[0].LastFiredAt != nil {
+		t.Fatalf("GET /alerts must not show last_fired_at: %+v", rules)
 	}
 }

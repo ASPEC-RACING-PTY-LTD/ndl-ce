@@ -593,11 +593,15 @@ func (s *Server) TickAlerts(ctx context.Context) {
 		e := appdb.Event{
 			ID: uuid.NewString(), ClusterID: cluster.ID, Type: "alert.firing", Payload: payload, CreatedAt: to,
 		}
-		_ = s.Store.InsertEvent(ctx, e)
+		if err := s.Store.InsertEvent(ctx, e); err != nil {
+			continue
+		}
+		if err := s.Store.UpdateAlertRuleFired(ctx, cluster.ID, rule.ID, to); err != nil {
+			continue
+		}
 		if s.Hub != nil {
 			s.Hub.Publish(e)
 		}
-		_ = s.Store.UpdateAlertRuleFired(ctx, cluster.ID, rule.ID, to)
 		s.notify(ctx, cluster.ID, payload)
 	}
 }
