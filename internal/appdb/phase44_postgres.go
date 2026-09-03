@@ -154,9 +154,16 @@ func (p *Postgres) UpdateMigrationJob(ctx context.Context, j MigrationJob) error
 	if j.StatusJSON == nil {
 		j.StatusJSON = json.RawMessage(`{}`)
 	}
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE migration_jobs SET state=$3, stage=$4, plan_json=$5, status_json=$6, cancel_requested=$7, updated_at=$8
 WHERE cluster_id=$1 AND id=$2`,
 		j.ClusterID, j.ID, j.State, j.Stage, j.PlanJSON, j.StatusJSON, j.CancelRequested, time.Now().UTC())
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("migration job not found")
+	}
+	return nil
 }

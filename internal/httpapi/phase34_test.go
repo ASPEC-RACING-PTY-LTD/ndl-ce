@@ -398,3 +398,39 @@ func TestPhase34RollingUpdateFailsClosedWhenStepPersistFails(t *testing.T) {
 		t.Fatalf("rolling persist body %s", raw)
 	}
 }
+
+type failUpdateRollingPlanStore struct {
+	appdb.Store
+}
+
+func (f failUpdateRollingPlanStore) UpdateRollingPlan(context.Context, appdb.RollingPlan) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase34RollingUpdateFailsClosedWhenPlanPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	s.Store = failUpdateRollingPlanStore{Store: mem}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/update", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "cluster-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("rolling plan persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record rolling plan") {
+		t.Fatalf("rolling plan persist body %s", raw)
+	}
+	got, _ := mem.LatestRollingPlan(context.Background(), cluster.ID)
+	if got != nil && got.Status == appdb.RollingSucceeded {
+		t.Fatal("failed plan persist must not invent succeeded")
+	}
+}

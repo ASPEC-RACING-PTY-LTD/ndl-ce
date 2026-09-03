@@ -66,10 +66,17 @@ FROM networks WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 
 func (p *Postgres) UpdateNetworkObserved(ctx context.Context, n Network) error {
 	warn, _ := json.Marshal(n.Warnings)
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE networks SET status=$2, reason=$3, warnings=$4, management_ifindex=$5, updated_at=now()
 WHERE id=$1`, n.ID, n.Status, n.Reason, warn, n.ManagementIfIndex)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return errors.New("network not found")
+	}
+	return nil
 }
 
 func (p *Postgres) CreateAddress(ctx context.Context, a Address) error {

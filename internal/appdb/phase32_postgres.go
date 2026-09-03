@@ -57,10 +57,17 @@ func (p *Postgres) GetMigrateJob(ctx context.Context, clusterID, id string) (*Mi
 }
 
 func (p *Postgres) UpdateMigrateJob(ctx context.Context, j MigrateJob) error {
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE migrate_jobs SET state=$2, source_running=$3, dest_running=$4, reason=$5, updated_at=now()
 WHERE id=$1`, j.ID, j.State, j.SourceRunning, j.DestRunning, j.Reason)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("migrate job not found")
+	}
+	return nil
 }
 
 func (p *Postgres) ListMigrateJobs(ctx context.Context, clusterID string, limit int) ([]MigrateJob, error) {

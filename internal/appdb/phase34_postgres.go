@@ -116,10 +116,17 @@ FROM rolling_plans WHERE cluster_id=$1 ORDER BY created_at DESC LIMIT 1`, cluste
 }
 
 func (p *Postgres) UpdateRollingPlan(ctx context.Context, plan RollingPlan) error {
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE rolling_plans SET status=$3, reason=$4, finished_at=$5 WHERE cluster_id=$1 AND id=$2`,
 		plan.ClusterID, plan.ID, plan.Status, plan.Reason, plan.FinishedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("rolling plan not found")
+	}
+	return nil
 }
 
 func (p *Postgres) CreateRollingStep(ctx context.Context, s RollingStep) error {

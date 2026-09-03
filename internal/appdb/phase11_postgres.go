@@ -259,11 +259,18 @@ func (p *Postgres) UpdateBackupArtifactVerify(ctx context.Context, a BackupArtif
 	if status == "" {
 		status = BackupUnverified
 	}
-	_, err := p.DB.ExecContext(ctx, `
+	res, err := p.DB.ExecContext(ctx, `
 UPDATE backup_artifacts SET verify_status=$3, verify_error=$4, last_tested_at=$5, throwaway_workload_id=$6
 WHERE cluster_id=$1 AND id=$2`,
 		a.ClusterID, a.ID, status, a.VerifyError, a.LastTestedAt, nullIfEmpty(a.ThrowawayWorkloadID))
-	return err
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("backup artifact not found")
+	}
+	return nil
 }
 
 func (p *Postgres) ListBackupArtifacts(ctx context.Context, clusterID string) ([]BackupArtifact, error) {
