@@ -856,3 +856,66 @@ func TestWorkloadFilesUploadSeparatesContentAndCASDigests(t *testing.T) {
 		t.Fatalf("stale cas must not write %s %v", got, err)
 	}
 }
+
+func TestWorkloadFilesJoinsZFSDatasetUnderHostPath(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: nodeID, Name: "zfs-files",
+		BackendType: storage.BackendZFS, Status: storage.StatusAvailable,
+		RootPath: storage.ZFSMountRoot,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	dataset := storage.ZFSMountRoot + "/" + poolID + "/volumes/container-root/" + volID
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDataset,
+		Status: storage.StatusAvailable, BackendType: storage.BackendZFS, BackendRef: dataset,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wlID := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: wlID, ClusterID: cluster.ID, NodeID: nodeID, Name: "zfs-ct",
+		Kind: lxc.KindSystemContainer, Status: lxc.StatusRunning, ImagePin: "alpine/3.21/amd64/default",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: wlID, VolumeID: volID, Role: "root",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fio := &fakeIO{root: t.TempDir()}
+	s.IO = fio
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	res := doCookie(t, ts, cookie, "GET", "/api/v1/workloads/"+wlID+"/files?path=.", "")
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("zfs files list %d %s", res.StatusCode, raw)
+	}
+	if fio.lastJail != dataset {
+		t.Fatalf("Files must use the ZFS dataset mount, not JoinUnder the pool root: %s", fio.lastJail)
+	}
+	if strings.Contains(fio.lastJail, storage.ZFSMountRoot+"/var/") {
+		t.Fatalf("Files must not nest the dataset under the ZFS mount root: %s", fio.lastJail)
+	}
+	term := doCookie(t, ts, cookie, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	var created map[string]any
+	_ = json.NewDecoder(term.Body).Decode(&created)
+	_ = term.Body.Close()
+	if term.StatusCode != http.StatusCreated {
+		t.Fatalf("zfs terminal %d %+v", term.StatusCode, created)
+	}
+	if created["jail_root"] != dataset {
+		t.Fatalf("201 jail_root must be the ZFS dataset mount: %+v", created["jail_root"])
+	}
+}

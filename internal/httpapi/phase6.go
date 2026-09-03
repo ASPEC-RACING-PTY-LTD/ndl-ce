@@ -579,7 +579,7 @@ func (s *Server) workloadJail(ctx context.Context, clusterID string, w appdb.Wor
 	if err != nil || pool == nil {
 		return "", errConflict("workload pool is unavailable")
 	}
-	joined, err := storage.JoinUnder(pool.RootPath, vol.BackendRef)
+	joined, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
 	if err != nil {
 		return "", errConflict("workload volume locator is invalid")
 	}
