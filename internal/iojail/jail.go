@@ -18,6 +18,7 @@ var HostDenyPrefixes = []string{
 	"/var/lib/ndl/control",
 	"/var/lib/ndl/agent",
 	"/var/lib/ndl/secrets",
+	"/var/lib/ndl/certs",
 	"/var/lib/postgresql",
 	"/etc/ndl",
 }

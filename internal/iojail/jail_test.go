@@ -105,6 +105,9 @@ func TestHostDeny(t *testing.T) {
 	if err := deniedHost("/", "/var/lib/ndl/secrets/wireguard/peer.key"); err == nil {
 		t.Fatal("ndl secrets must be denied")
 	}
+	if err := deniedHost("/", "/var/lib/ndl/certs/current.key"); err == nil {
+		t.Fatal("ndl certs must be denied")
+	}
 	if err := deniedHost("/", "/tmp/safe"); err != nil {
 		t.Fatal(err)
 	}
