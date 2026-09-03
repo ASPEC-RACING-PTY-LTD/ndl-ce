@@ -424,3 +424,122 @@ func TestSMBCreateFailsClosedWhenSecretPersistFails(t *testing.T) {
 		t.Fatalf("smb persist body %s", b)
 	}
 }
+
+func TestPhase26VMCreateUsesISCSIDevice(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/iscsi", strings.NewReader(`{"name":"lun-vm","iqn":"iqn.2020-01.com.example:target1","portal":"10.0.0.8:3260"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("iscsi %d %s", res.StatusCode, b)
+	}
+	var pool map[string]any
+	if err := json.Unmarshal(b, &pool); err != nil {
+		t.Fatal(err)
+	}
+	poolID, _ := pool["id"].(string)
+	body := `{"name":"iscsi-vm","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	wreq, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	wreq.Header.Set("Content-Type", "application/json")
+	wreq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wres, err := ts.Client().Do(wreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(wres.Body)
+	_ = wres.Body.Close()
+	if wres.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", wres.StatusCode, raw)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := out["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %+v", disks)
+	}
+	vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+	if vol == nil || vol.BackendType != storage.BackendISCSI {
+		t.Fatalf("boot volume %+v", vol)
+	}
+	if !strings.HasPrefix(vol.BackendRef, storage.ISCSIByPath) {
+		t.Fatalf("boot BackendRef must be an iSCSI by-path device: %s", vol.BackendRef)
+	}
+	if strings.Contains(vol.BackendRef, "volumes/vm-disk/") {
+		t.Fatalf("boot must not be a directory qcow2 on the iSCSI pool: %s", vol.BackendRef)
+	}
+	if len(vm.launch.Disks) != 1 || vm.launch.Disks[0].Path != vol.BackendRef || vm.launch.Disks[0].Format != "raw" {
+		t.Fatalf("launch must attach the iSCSI LUN: %+v want %s", vm.launch.Disks, vol.BackendRef)
+	}
+}
+
+func TestPhase26VMCreateFailsClosedWhenISCSIUnavailable(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Datastore = &fakeDatastore{status: storage.StatusUnavailable, reason: storage.ISCSIMissing}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	portal, iqn := "10.0.0.8:3260", "iqn.2020-01.com.example:target1"
+	dev, err := storage.ISCSIDevicePath(portal, iqn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: node.ID, Name: "lun-down",
+		BackendType: storage.BackendISCSI, Status: storage.StatusAvailable, RootPath: dev,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpsertDatastore(context.Background(), appdb.Datastore{
+		PoolID: poolID, Kind: storage.BackendISCSI, Locator: iqn, Portal: portal, IQN: iqn,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"iscsi-down","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	wreq, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	wreq.Header.Set("Content-Type", "application/json")
+	wreq.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wres, err := ts.Client().Do(wreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(wres.Body)
+	_ = wres.Body.Close()
+	if wres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unavailable iSCSI VM %d %s", wres.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), storage.ISCSIMissing) {
+		t.Fatalf("unavailable iSCSI body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose iSCSI LUN apply cannot attach: %+v", items)
+	}
+}

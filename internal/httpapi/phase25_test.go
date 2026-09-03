@@ -454,3 +454,120 @@ func TestLVMVolumeCreateFailsClosedForTinySize(t *testing.T) {
 		t.Fatalf("GET must not list a thin LV apply cannot create: %+v", items)
 	}
 }
+
+func TestPhase25VMCreateUsesThinLV(t *testing.T) {
+	s, mem, token := testServer(t)
+	fl := &fakeLVM{}
+	s.LVM = fl
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: node.ID, Name: "ndlvg",
+		BackendType: storage.BackendLVM, Status: storage.StatusAvailable,
+		RootPath: storage.LVMMountRoot + "/ndlvg",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpsertLVMVG(context.Background(), appdb.LVMVG{PoolID: poolID, VGUUID: "AbCdEfGh0123", VGName: "ndlvg"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"lvm-vm","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	created := 0
+	for _, op := range fl.calls {
+		if op.Action == "create-volume" {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Fatalf("create-volume calls %d %+v", created, fl.calls)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := out["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %+v", disks)
+	}
+	vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+	if vol == nil || vol.BackendType != storage.BackendLVM {
+		t.Fatalf("boot volume %+v", vol)
+	}
+	if err := storage.ValidateLVMDevice(vol.BackendRef); err != nil {
+		t.Fatalf("boot BackendRef must be a thin LV: %s %v", vol.BackendRef, err)
+	}
+	if strings.Contains(vol.BackendRef, "volumes/vm-disk/") {
+		t.Fatalf("boot must not be a directory qcow2 on the LVM pool: %s", vol.BackendRef)
+	}
+	if len(vm.launch.Disks) != 1 || vm.launch.Disks[0].Path != vol.BackendRef || vm.launch.Disks[0].Format != "raw" {
+		t.Fatalf("launch must attach the thin LV: %+v want %s", vm.launch.Disks, vol.BackendRef)
+	}
+}
+
+func TestPhase25VMCreateFailsClosedWhenLVMUnavailable(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.LVM = &fakeLVM{status: storage.StatusUnavailable, reason: storage.LVMMissing}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: node.ID, Name: "ndlvg-down",
+		BackendType: storage.BackendLVM, Status: storage.StatusAvailable,
+		RootPath: storage.LVMMountRoot + "/ndlvg-down",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"lvm-down","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unavailable LVM %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), storage.LVMMissing) {
+		t.Fatalf("unavailable LVM body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 0 {
+		t.Fatalf("GET must not list a VM whose thin LV apply cannot create: %+v", items)
+	}
+}
