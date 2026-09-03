@@ -1015,6 +1015,9 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 		if lib.Kind != storage.LibraryISO {
 			return vmspec.Resolved{}, errConflict("library item is not installation media")
 		}
+		if lib.Status != storage.StatusAvailable {
+			return vmspec.Resolved{}, errConflict("installation media is unavailable")
+		}
 		isoPool, perr := s.Store.GetStoragePool(ctx, clusterID, lib.PoolID)
 		if perr != nil || isoPool == nil {
 			return vmspec.Resolved{}, errConflict("installation media storage is unavailable")

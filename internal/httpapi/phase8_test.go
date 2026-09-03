@@ -1048,6 +1048,79 @@ func TestVMCreateFailsClosedForUnavailableISOPool(t *testing.T) {
 	}
 }
 
+func TestVMStartFailsClosedForUnavailableISO(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	isoID := uuid.NewString()
+	if err := mem.CreateLibraryItem(context.Background(), appdb.LibraryItem{
+		ID: isoID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Kind: storage.LibraryISO, DisplayName: "debian.iso",
+		BackendRef: "library/iso/" + isoID + ".iso", Status: storage.StatusAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	fv := &fakeVM{}
+	s.VM = fv
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"iso-later-offline","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","iso_library_id":"` + isoID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatal("create id")
+	}
+	if err := mem.UpdateLibraryObserved(context.Background(), appdb.LibraryItem{ID: isoID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err = ts.Client().Do(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable iso start %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "installation media is unavailable") {
+		t.Fatalf("unavailable iso start body %s", raw)
+	}
+	for _, action := range fv.actions {
+		if action == "start" {
+			t.Fatal("start must not call the agent when ISO apply cannot attach")
+		}
+	}
+	wl, _ := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if wl == nil || wl.DesiredPower == "running" {
+		t.Fatalf("GET must not claim desired_power running when start cannot attach ISO: %+v", wl)
+	}
+}
+
 func TestVMCreateFailsClosedForUnavailableCloudImagePool(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

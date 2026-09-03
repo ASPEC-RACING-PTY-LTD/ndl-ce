@@ -252,6 +252,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * System-container PATCH refuses an unavailable root volume, pool,
     or network, and an invalid volume locator, before persist. GET
     no longer claims CPUs the host apply cannot jail.
+  * VM start and clone reprepare refuse an unavailable ISO library
+    item before attach. GET no longer claims desired_power running
+    when start cannot attach media GET /images would show unavailable.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
