@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -372,5 +374,76 @@ func TestPhase28OpenSessionFailsClosedWhenPersistFails(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "could not record cluster session") {
 		t.Fatalf("session persist body %s", body)
+	}
+}
+
+func TestPhase28OpenSessionFailsClosedWhenPairingConsumeFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"pairing-consume"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	peerID := created["id"].(string)
+	pairing := created["pairing_token"].(string)
+
+	usedDir := filepath.Join(s.ClusterCA.Dir, "pairing-used")
+	if err := os.WriteFile(usedDir, []byte("not-a-dir\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sessBody := `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("pairing consume %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not consume pairing token") {
+		t.Fatalf("pairing consume body %s", body)
+	}
+	if s.ClusterCA.PairingUsed(peerID) {
+		t.Fatal("failed consume must not mark pairing used")
+	}
+
+	if err := os.Remove(usedDir); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("retry after consume restore %d %s", res.StatusCode, body)
+	}
+	if !s.ClusterCA.PairingUsed(peerID) {
+		t.Fatal("successful session must consume pairing token")
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("pairing token must stay single-use %d %s", res.StatusCode, body)
 	}
 }

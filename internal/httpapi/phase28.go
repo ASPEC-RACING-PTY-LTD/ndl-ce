@@ -236,7 +236,10 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		Status: firstNonEmpty(remote.Status, ndnet.StatusUnavailable), Reason: remote.Reason,
 	})
 	if pairingOK {
-		_ = s.ClusterCA.MarkPairingUsed(peer.ID)
+		if err := s.ClusterCA.MarkPairingUsed(peer.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not consume pairing token")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_id": sessID, "accepted": true, "node_id": remote.ID,
