@@ -319,13 +319,16 @@ func (s *Server) installManifest(ctx context.Context, p *principal, m appmanifes
 		return "", "", applyErr
 	}
 	if !s.applyLocal(ctx, p.User.ClusterID, wl.NodeID) {
-		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
+		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID, wl.ID)
 		return "", "", errFailedDependency(destAgentNotConnected)
 	}
 	status := memberStatusFromWorkload(wl)
-	_ = s.Store.UpdateStackMember(ctx, appdb.StackMember{
+	if err := s.Store.UpdateStackMember(ctx, appdb.StackMember{
 		ID: mem.ID, ClusterID: p.User.ClusterID, WorkloadID: wl.ID, Status: status,
-	})
+	}); err != nil {
+		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID, wl.ID)
+		return "", "", errInternal("could not record stack member")
+	}
 	members, _ := s.Store.ListStackMembers(ctx, p.User.ClusterID, stack.ID)
 	_ = s.Store.UpdateStack(ctx, appdb.Stack{ID: stack.ID, ClusterID: p.User.ClusterID, Status: deriveStackStatus(members)})
 	if wl.ID == "" {
@@ -363,7 +366,7 @@ func (s *Server) assignStoreGPU(ctx context.Context, clusterID, workloadID, gpuI
 	return nil
 }
 
-func (s *Server) rollbackStoreStack(ctx context.Context, clusterID, stackID string) {
+func (s *Server) rollbackStoreStack(ctx context.Context, clusterID, stackID string, extraWorkloadIDs ...string) {
 	volIDs := map[string]struct{}{}
 	if stack, _ := s.Store.GetStack(ctx, clusterID, stackID); stack != nil {
 		var desired storeStackDesired
@@ -375,19 +378,25 @@ func (s *Server) rollbackStoreStack(ctx context.Context, clusterID, stackID stri
 			}
 		}
 	}
-	members, _ := s.Store.ListStackMembers(ctx, clusterID, stackID)
-	for _, mem := range members {
-		if mem.WorkloadID == "" {
-			continue
+	drop := func(workloadID string) {
+		if strings.TrimSpace(workloadID) == "" {
+			return
 		}
-		if disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, mem.WorkloadID); len(disks) > 0 {
+		if disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, workloadID); len(disks) > 0 {
 			for _, d := range disks {
 				if strings.TrimSpace(d.VolumeID) != "" {
 					volIDs[d.VolumeID] = struct{}{}
 				}
 			}
 		}
-		_ = s.Store.DeleteWorkload(ctx, clusterID, mem.WorkloadID)
+		_ = s.Store.DeleteWorkload(ctx, clusterID, workloadID)
+	}
+	for _, id := range extraWorkloadIDs {
+		drop(id)
+	}
+	members, _ := s.Store.ListStackMembers(ctx, clusterID, stackID)
+	for _, mem := range members {
+		drop(mem.WorkloadID)
 	}
 	for id := range volIDs {
 		_ = s.Store.DeleteVolume(ctx, clusterID, id)

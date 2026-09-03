@@ -81,6 +81,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * USB attach on a running VM fails closed if live QMP device_add fails. A stopped VM still records usb-host in frozen argv without inventing a live hotplug. The southbound client treats Execute Ok false as an apply error.
   * VM delete releases USB and exclusive GPU/PCI claims before runtime is removed. PCI unassign restores the assignment BDF when pci_devices is empty.
   * Logout fails closed if the session row cannot be revoked. A 204 does not clear a cookie while the session remains valid.
+  * Store install fails closed if the stack member cannot record the created workload. A 201 does not leave GET /stacks with a null member workload_id.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

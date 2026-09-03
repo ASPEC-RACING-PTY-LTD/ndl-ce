@@ -64,6 +64,10 @@ func TestPhase36OfficialSampleInstallsFromManifest(t *testing.T) {
 	if len(wls) != 1 || wls[0].Kind != oci.KindOCI {
 		t.Fatalf("workloads %+v", wls)
 	}
+	members, err := mem.ListStackMembers(context.Background(), clusterID, inst["stack_id"].(string))
+	if err != nil || len(members) != 1 || members[0].WorkloadID != wls[0].ID {
+		t.Fatalf("stack member workload %+v %v", members, err)
+	}
 }
 
 func TestPhase36RejectRunBashAndRollbackFailedInstall(t *testing.T) {
@@ -253,6 +257,59 @@ storage:
 	vols, _ := mem.ListVolumes(context.Background(), clusterID, "")
 	if len(vols) != 0 {
 		t.Fatalf("rollback left volumes %+v", vols)
+	}
+}
+
+type failUpdateStackMemberStore struct {
+	appdb.Store
+}
+
+func (f failUpdateStackMemberStore) UpdateStackMember(context.Context, appdb.StackMember) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase36InstallFailsClosedWhenMemberPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _, _ := phase22Ready(t)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+	s.Store = failUpdateStackMemberStore{Store: mem}
+
+	body, _ := json.Marshal(map[string]any{"name": "sample-web"})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("member persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record stack member") {
+		t.Fatalf("member persist body %s", raw)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 0 {
+		t.Fatalf("member persist left workloads %+v", wls)
+	}
+	stacks, _ := mem.ListStacks(context.Background(), clusterID)
+	if len(stacks) != 0 {
+		t.Fatalf("member persist left stacks %+v", stacks)
 	}
 }
 
