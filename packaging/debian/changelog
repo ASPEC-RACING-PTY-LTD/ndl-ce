@@ -287,9 +287,12 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * VM clone, export, import, restore, and migration disk import refuse a
     ZFS or LVM-thin dest the same way they refuse RBD and iSCSI. qemu-img
     convert does not write a directory qcow2 onto a zvol or thin LV.
-    Template overlay is refused; ZFS and LVM snapshots stay native.
-    GET no longer lists a clone whose start would attach a qcow2 as raw.
-    Offline migrate refuses that zvol copy before ownership moves.
+    Restore-replace of a qcow2 artifact onto a zvol or thin LV is refused
+    before stop or copy. BackupReplace dest format is qcow2 and those
+    volumes start as raw. Template overlay is refused; ZFS and LVM
+    snapshots stay native. GET no longer lists a clone whose start would
+    attach a qcow2 as raw. Offline migrate refuses that zvol copy before
+    ownership moves.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

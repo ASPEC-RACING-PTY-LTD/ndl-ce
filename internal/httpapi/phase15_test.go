@@ -759,3 +759,111 @@ func TestPhase15VMCloneExportAndTemplateFailClosedForZFS(t *testing.T) {
 		t.Fatalf("boot locator must stay a zvol: %+v want %s", vol, bootRef)
 	}
 }
+
+func TestPhase15VMRestoreFailsClosedForZFS(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.ZFS = &fakeZFS{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: node.ID, Name: "tank",
+		BackendType: storage.BackendZFS, Status: storage.StatusAvailable,
+		RootPath: storage.ZFSMountRoot + "/1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpsertZFSPool(context.Background(), appdb.ZFSPool{PoolID: poolID, ZPoolGUID: "1", ZPoolName: "tank"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	vm := &fakeVM{}
+	s.VM = vm
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"zfs-restore","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %+v", disks)
+	}
+	bootRef := ""
+	if vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID); vol != nil {
+		bootRef = vol.BackendRef
+	}
+	artID := seedVMRestoreArtifact(t, mem, cluster.ID, id, "volumes/vm-disk/boot.qcow2")
+
+	restoreNew, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	restoreNew.Header.Set("Content-Type", "application/json")
+	restoreNew.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	nres, err := ts.Client().Do(restoreNew)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nraw, _ := io.ReadAll(nres.Body)
+	_ = nres.Body.Close()
+	if nres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("restore new %d %s", nres.StatusCode, nraw)
+	}
+	if !strings.Contains(string(nraw), "ZFS pools do not store directory qcow2 copies") {
+		t.Fatalf("restore new body %s", nraw)
+	}
+
+	restore, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"replace"}`))
+	restore.Header.Set("Content-Type", "application/json")
+	restore.Header.Set("X-Nodal-Confirm", "restore")
+	restore.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rres, err := ts.Client().Do(restore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rraw, _ := io.ReadAll(rres.Body)
+	_ = rres.Body.Close()
+	if rres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("restore replace %d %s", rres.StatusCode, rraw)
+	}
+	if !strings.Contains(string(rraw), "ZFS pools do not store directory qcow2 copies") {
+		t.Fatalf("restore replace body %s", rraw)
+	}
+	for _, c := range fb.copies {
+		if c[0] == "replace" {
+			t.Fatalf("replace must not qemu-img onto the zvol: %+v", fb.copies)
+		}
+	}
+	for _, a := range vm.actions {
+		if a == "stop" {
+			t.Fatalf("replace must not stop before dest refuse: %+v", vm.actions)
+		}
+	}
+	items, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	if len(items) != 1 || items[0].ID != id {
+		t.Fatalf("GET must keep the source VM and not list a directory restore: %+v", items)
+	}
+	vol, _ := mem.GetVolume(context.Background(), cluster.ID, disks[0].VolumeID)
+	if vol == nil || vol.BackendRef != bootRef || storage.ValidateZVolPath(vol.BackendRef) != nil {
+		t.Fatalf("boot locator must stay a zvol: %+v want %s", vol, bootRef)
+	}
+}

@@ -1140,6 +1140,11 @@ func (s *Server) restoreReplaceVM(ctx context.Context, clusterID string, src app
 	if err != nil {
 		return err
 	}
+	if vol != nil {
+		if err := refuseQemuImgCopyDest(vol.BackendType); err != nil {
+			return err
+		}
+	}
 	spec, specErr := vmspec.Parse(src.SpecJSON)
 	if specErr != nil {
 		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}

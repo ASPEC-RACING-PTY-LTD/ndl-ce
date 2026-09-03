@@ -66,10 +66,11 @@ func refuseDirectoryCopyDest(backend string) error {
 	return nil
 }
 
-// refuseQemuImgCopyDest fails closed when clone, export, import, or restore
-// would qemu-img convert into a directory qcow2 on a zvol, thin LV, RBD, or
-// iSCSI pool. Those backends are host block devices. QEMUFormat for ZFS and
-// LVM is raw, so a 201 qcow2 file would start as the wrong format.
+// refuseQemuImgCopyDest fails closed when clone, export, import, restore-as-new,
+// or restore-replace would qemu-img convert into a directory qcow2 on a zvol,
+// thin LV, RBD, or iSCSI volume. Those backends are host block devices.
+// QEMUFormat for ZFS and LVM is raw, and BackupReplace dest format is qcow2,
+// so a 202 replace would start as the wrong format.
 func refuseQemuImgCopyDest(backend string) error {
 	if err := refuseDirectoryCopyDest(backend); err != nil {
 		return err
