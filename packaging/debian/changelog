@@ -70,6 +70,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * OCI create and system-container clone fail closed if disk, NIC, or clone volume persist fails.
   * VM clone, library import, restore-as-new, and migration disk import fail closed if disk or NIC persist fails.
   * GPU assign and unassign fail closed if the agent apply fails or is unavailable. A 201 does not leave an assigned row the agent did not apply.
+  * USB and PCI attach fail closed if the VM agent is unavailable. ApplyUSB failure restores spec like ApplyVFIO. A 201 does not claim a device the agent did not apply.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

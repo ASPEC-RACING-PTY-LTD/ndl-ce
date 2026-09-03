@@ -610,6 +610,10 @@ func (s *Server) attachUSB(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "usb device is not in inventory")
 		return
 	}
+	if s.VM == nil {
+		writeErr(w, http.StatusBadGateway, "vm agent is unavailable")
+		return
+	}
 	usb := vmspec.USB{Address: found.Address, Vendor: found.Vendor, Product: found.Product}
 	if err := vmspec.ValidateUSB(usb); err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
@@ -626,16 +630,18 @@ func (s *Server) attachUSB(w http.ResponseWriter, r *http.Request) {
 	spec, _ := vmspec.Parse(row.SpecJSON)
 	spec.USBs = append(spec.USBs, usb)
 	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes}); err != nil {
+		_ = s.Store.DeleteUSBAttachment(r.Context(), p.User.ClusterID, att.ID)
 		writeErr(w, http.StatusInternalServerError, "could not record USB spec")
 		return
 	}
 	launchUSB := vmspec.LaunchUSB{Address: usb.Address, Vendor: strings.ToLower(usb.Vendor), Product: strings.ToLower(usb.Product), ID: vmspec.USBDeviceID(usb.Address)}
-	if s.VM != nil {
-		if err := s.VM.ApplyUSB(r.Context(), row.ID, []vmspec.LaunchUSB{launchUSB}); err != nil {
-			_ = s.Store.DeleteUSBAttachment(r.Context(), p.User.ClusterID, att.ID)
-			writeErr(w, http.StatusConflict, err.Error())
-			return
-		}
+	if err := s.VM.ApplyUSB(r.Context(), row.ID, []vmspec.LaunchUSB{launchUSB}); err != nil {
+		_ = s.Store.DeleteUSBAttachment(r.Context(), p.User.ClusterID, att.ID)
+		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
+			ID: row.ID, SpecJSON: row.SpecJSON, Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes,
+		})
+		writeErr(w, http.StatusConflict, err.Error())
+		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "vm.usb.attach", "ok", row.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": att.ID, "address": att.Address, "vendor": att.Vendor, "product": att.Product})
@@ -692,6 +698,10 @@ func (s *Server) attachPCI(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "IOMMU is unavailable; VFIO cannot be assigned")
 		return
 	}
+	if s.VM == nil {
+		writeErr(w, http.StatusBadGateway, "vm agent is unavailable")
+		return
+	}
 	if row.Status == qemu.StatusRunning {
 		writeErr(w, http.StatusUnprocessableEntity, "stop the VM before PCI passthrough")
 		return
@@ -716,19 +726,18 @@ func (s *Server) attachPCI(w http.ResponseWriter, r *http.Request) {
 		spec.PCIHosts = append(spec.PCIHosts, id)
 	}
 	if err := s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{ID: row.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes}); err != nil {
+		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
 		writeErr(w, http.StatusInternalServerError, "could not record PCI spec")
 		return
 	}
-	if s.VM != nil {
-		hosts := pciGroupHosts(id, parsed)
-		if err := s.VM.ApplyVFIO(r.Context(), row.ID, hosts); err != nil {
-			_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
-			_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
-				ID: row.ID, SpecJSON: row.SpecJSON, Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes,
-			})
-			writeErr(w, http.StatusConflict, err.Error())
-			return
-		}
+	hosts := pciGroupHosts(id, parsed)
+	if err := s.VM.ApplyVFIO(r.Context(), row.ID, hosts); err != nil {
+		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
+		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
+			ID: row.ID, SpecJSON: row.SpecJSON, Firmware: row.Firmware, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes,
+		})
+		writeErr(w, http.StatusConflict, err.Error())
+		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "vm.pci.attach", "ok", row.ID)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": a.ID, "pci": id, "iommu_group": group})

@@ -499,6 +499,98 @@ func TestPhase18FailedVFIORollsBackAssignment(t *testing.T) {
 			t.Fatalf("failed ApplyVFIO left assignment %+v", a)
 		}
 	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl != nil && strings.Contains(string(wl.SpecJSON), "0000:03:00.0") {
+		t.Fatalf("failed ApplyVFIO left PCI in spec %+v", wl)
+	}
+}
+
+type usbFailVM struct {
+	*fakeVM
+	err error
+}
+
+func (f usbFailVM) ApplyUSB(context.Context, string, []vmspec.LaunchUSB) error {
+	return f.err
+}
+
+func TestPhase18FailedUSBRollsBackAttachmentAndSpec(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "usb-vm")
+	s.VM = usbFailVM{fakeVM: &fakeVM{}, err: errors.New("usb bind failed")}
+	id := created["id"].(string)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/usb", strings.NewReader(`{"address":"1-2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode < 400 {
+		t.Fatalf("failed usb %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+	atts, _ := mem.ListUSBAttachments(context.Background(), clusterID, id)
+	if len(atts) != 0 {
+		t.Fatalf("failed ApplyUSB left attachment %+v", atts)
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl != nil && strings.Contains(string(wl.SpecJSON), "1-2") {
+		t.Fatalf("failed ApplyUSB left USB in spec %+v", wl)
+	}
+}
+
+func TestPhase18USBAttachFailsClosedWhenAgentUnavailable(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "usb-noagent")
+	id := created["id"].(string)
+	s.VM = nil
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/usb", strings.NewReader(`{"address":"1-2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("unavailable usb %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "vm agent is unavailable") {
+		t.Fatalf("unavailable usb body %s", raw)
+	}
+	atts, _ := mem.ListUSBAttachments(context.Background(), clusterID, id)
+	if len(atts) != 0 {
+		t.Fatalf("unavailable usb leaked attachment %+v", atts)
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl != nil && strings.Contains(string(wl.SpecJSON), "1-2") {
+		t.Fatalf("unavailable usb leaked spec %+v", wl)
+	}
+}
+
+func TestPhase18PCIAttachFailsClosedWhenAgentUnavailable(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "pci-noagent")
+	id := created["id"].(string)
+	s.VM = nil
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/pci", strings.NewReader(`{"pci":"0000:03:00.0"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("unavailable pci %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "vm agent is unavailable") {
+		t.Fatalf("unavailable pci body %s", raw)
+	}
+	assigns, _ := mem.ListGPUAssignments(context.Background(), clusterID)
+	for _, a := range assigns {
+		if a.WorkloadID == id {
+			t.Fatalf("unavailable pci leaked assignment %+v", a)
+		}
+	}
+	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
+	if wl != nil && strings.Contains(string(wl.SpecJSON), "0000:03:00.0") {
+		t.Fatalf("unavailable pci leaked spec %+v", wl)
+	}
 }
 
 type failUpdateWorkloadSpecStore struct {
@@ -531,6 +623,10 @@ func TestPhase18USBAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
 	if wl != nil && strings.Contains(string(wl.SpecJSON), "1-2") {
 		t.Fatalf("failed spec persist must not rewrite USB into spec %+v", wl)
 	}
+	atts, _ := mem.ListUSBAttachments(context.Background(), clusterID, id)
+	if len(atts) != 0 {
+		t.Fatalf("failed spec persist leaked USB attachment %+v", atts)
+	}
 }
 
 func TestPhase18PCIAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
@@ -554,6 +650,12 @@ func TestPhase18PCIAttachFailsClosedWhenSpecPersistFails(t *testing.T) {
 	wl, _ := mem.GetWorkload(context.Background(), clusterID, id)
 	if wl != nil && strings.Contains(string(wl.SpecJSON), "0000:03:00.0") {
 		t.Fatalf("failed spec persist must not rewrite PCI into spec %+v", wl)
+	}
+	assigns, _ := mem.ListGPUAssignments(context.Background(), clusterID)
+	for _, a := range assigns {
+		if a.WorkloadID == id {
+			t.Fatalf("failed spec persist leaked PCI assignment %+v", a)
+		}
 	}
 }
 
