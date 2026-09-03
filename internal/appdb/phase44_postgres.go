@@ -77,8 +77,15 @@ FROM migration_sources WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 }
 
 func (p *Postgres) DeleteMigrationSource(ctx context.Context, clusterID, id string) error {
-	_, err := p.DB.ExecContext(ctx, `DELETE FROM migration_sources WHERE cluster_id=$1 AND id=$2`, clusterID, id)
-	return err
+	res, err := p.DB.ExecContext(ctx, `DELETE FROM migration_sources WHERE cluster_id=$1 AND id=$2`, clusterID, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("migration source not found")
+	}
+	return nil
 }
 
 func (p *Postgres) CreateMigrationJob(ctx context.Context, j MigrationJob) error {

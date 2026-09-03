@@ -100,6 +100,8 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Network policy apply loads every stored policy in one nft table
     replace. Applying one policy does not drop sibling rules while GET
     still shows them available.
+  * DELETE of a missing migration source fails closed. Postgres no longer
+    returns 200 ok when no catalog row was removed.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

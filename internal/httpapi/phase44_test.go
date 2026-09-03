@@ -449,3 +449,22 @@ func waitMigrationJob(t *testing.T, ts *httptest.Server, cookie, id string) map[
 	}
 	return last
 }
+
+func TestPhase44DeleteMissingMigrationSourceFailsClosed(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	missing := uuid.NewString()
+	req, _ := http.NewRequest("DELETE", ts.URL+"/api/v1/migration/sources/"+missing, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing source delete %d %s", res.StatusCode, raw)
+	}
+	if strings.Contains(string(raw), `"ok":true`) {
+		t.Fatalf("200 must not invent delete of a missing source: %s", raw)
+	}
+}
