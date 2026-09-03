@@ -143,6 +143,16 @@ func TestPolicyApplyRendersFullSetInOneTable(t *testing.T) {
 	}
 }
 
+func TestOverlayPrepRefusesInvalidVNI(t *testing.T) {
+	e := testEngine(t, testHost())
+	_, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionOverlayPrep, ObjectID: uuid.NewString(), OverlayVNI: 0,
+	})
+	if err == nil || !strings.Contains(err.Error(), "overlay vni is invalid") {
+		t.Fatalf("vni 0: %v", err)
+	}
+}
+
 func TestOverlayIsPrepNotClusterFabric(t *testing.T) {
 	e := testEngine(t, testHost())
 	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{

@@ -226,6 +226,10 @@ func (s *Server) createOverlay(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	if err := ndnet.ParseOverlayVNI(req.VNI); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	id := uuid.NewString()
 	res, err := s.advanced()(r.Context(), ndnet.AdvancedOp{
 		Action: ndnet.ActionOverlayPrep, ObjectID: id, Name: req.Name, OverlayVNI: req.VNI,

@@ -105,6 +105,35 @@ func TestPhase27VLANBondPolicyOverlay(t *testing.T) {
 	}
 }
 
+func TestPhase27OverlayCreateFailsClosedForInvalidVNI(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/overlays", strings.NewReader(`{"name":"bad","vni":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid vni %d %s", res.StatusCode, body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/networks", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if strings.Contains(string(listed), `"name":"bad"`) {
+		t.Fatalf("GET /networks must not list overlay with vni 0: %s", listed)
+	}
+}
+
 func TestPhase27ApplyOnePolicyKeepsOthers(t *testing.T) {
 	s, mem, token := testServer(t)
 	s.Network = fakeNet{apply: ndnet.ApplyResult{Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123"}}

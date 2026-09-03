@@ -124,6 +124,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * AI plan approve fails closed when plan status persist writes zero rows
     or the stored status does not match. A 200 does not invent executing
     or succeeded that GET /ai/plans would still show as preview.
+  * Overlay create refuses VNI 0 before persist. fakeNet and an unavailable
+    agent no longer 201 a catalog row GET /networks would list that apply
+    cannot install.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
