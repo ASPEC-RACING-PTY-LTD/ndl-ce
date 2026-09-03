@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -254,6 +255,123 @@ func TestSnapshotChainCap(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	if res.StatusCode != http.StatusConflict {
 		t.Fatalf("chain cap %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
+func TestOverlayChainDepthCountsUncataloguedLiveOverlay(t *testing.T) {
+	vol := uuid.NewString()
+	base := "volumes/vm-disk/" + vol + ".qcow2"
+	uncatalogued := "volumes/vm-disk/" + vol + "--" + uuid.NewString() + ".qcow2"
+	live := "volumes/vm-disk/" + vol + "--" + uuid.NewString() + ".qcow2"
+	tmpl := "volumes/vm-disk/" + vol + "-" + uuid.NewString() + "-tmpl.qcow2"
+	flat := "volumes/vm-disk/" + vol + "--flat-" + uuid.NewString() + ".qcow2"
+	leftover := []appdb.Snapshot{{
+		ID: uuid.NewString(), BackendRef: "volumes/vm-disk/" + vol + "--" + uuid.NewString() + ".qcow2",
+	}}
+	if got := overlayChainDepth(base, nil); got != 0 {
+		t.Fatalf("base depth %d", got)
+	}
+	if got := overlayChainDepth(uncatalogued, nil); got != 1 {
+		t.Fatalf("uncatalogued live depth %d", got)
+	}
+	if got := overlayChainDepth(live, []appdb.Snapshot{{ID: uuid.NewString(), BackendRef: uncatalogued}}); got != 2 {
+		t.Fatalf("live plus uncatalogued backing depth %d", got)
+	}
+	if got := overlayChainDepth(tmpl, []appdb.Snapshot{{ID: uuid.NewString(), BackendRef: base}}); got != 1 {
+		t.Fatalf("template from base depth %d", got)
+	}
+	if got := overlayChainDepth(flat, leftover); got != 0 {
+		t.Fatalf("flatten live must reset leftover catalog, got %d", got)
+	}
+	if got := overlayChainDepth(live, []appdb.Snapshot{{ID: uuid.NewString(), BackendRef: flat}}); got != 1 {
+		t.Fatalf("post-flatten overlay depth %d", got)
+	}
+}
+
+type failCreateSnapshotStore struct {
+	appdb.Store
+	remaining int
+}
+
+func (f *failCreateSnapshotStore) CreateSnapshot(ctx context.Context, snap appdb.Snapshot) error {
+	if f.remaining > 0 {
+		f.remaining--
+		return errors.New("snapshot catalog persist failed")
+	}
+	return f.Store.CreateSnapshot(ctx, snap)
+}
+
+func TestSnapshotChainCapCountsUncataloguedOverlay(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"cap-uncat","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var vm map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&vm)
+	_ = res.Body.Close()
+	vmID := vm["id"].(string)
+
+	fail := &failCreateSnapshotStore{Store: mem, remaining: 1}
+	s.Store = fail
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"lost-catalog"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("uncatalogued overlay persist %d %s", res.StatusCode, raw)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var listed map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&listed)
+	_ = res.Body.Close()
+	items, _ := listed["items"].([]any)
+	if len(items) != 0 {
+		t.Fatalf("failed persist must not catalog a snapshot %+v", listed)
+	}
+	capab := listed["capability"].(map[string]any)
+	if capab["chain_depth"] != float64(1) {
+		t.Fatalf("uncatalogued live overlay chain_depth %+v", listed)
+	}
+
+	for i := 0; i < qemu.ChainMax-1; i++ {
+		req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"s"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ = ts.Client().Do(req)
+		if res.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(res.Body)
+			t.Fatalf("snap %d: %d %s", i, res.StatusCode, b)
+		}
+		_ = res.Body.Close()
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"overflow"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusConflict {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("uncatalogued overlay must consume chain cap %d %s", res.StatusCode, b)
 	}
 	_ = res.Body.Close()
 }

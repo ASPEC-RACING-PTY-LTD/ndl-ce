@@ -117,6 +117,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Network policy create fails closed for an empty or missing workload id.
     An empty src_workload_id no longer borrows another VM MAC. A missing
     workload is 404, and GET /networks does not list a policy.
+  * Overlay chain depth counts a live qcow2 overlay that snapshot catalog
+    persist missed, including that file when a later snapshot stores it as
+    BackendRef. A follow-on 201 cannot exceed the chain cap of 16. Flatten
+    and rollback tips still start a new chain.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 

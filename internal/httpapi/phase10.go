@@ -434,16 +434,34 @@ func overlayChainReset(backendRef string) bool {
 	return strings.Contains(base, "--flat-") || strings.Contains(base, "--rb-")
 }
 
+// overlayChainLink is a qcow2 overlay file in the live chain. Flatten and
+// rollback tips start a new chain. A catalog BackendRef of the original boot
+// image is not an overlay.
+func overlayChainLink(backendRef string) bool {
+	base := path.Base(backendRef)
+	if overlayChainReset(base) {
+		return false
+	}
+	return strings.Contains(base, "--") || strings.HasSuffix(base, "-tmpl.qcow2")
+}
+
 func overlayChainDepth(backendRef string, items []appdb.Snapshot) int {
 	if overlayChainReset(backendRef) {
 		return 0
 	}
-	n := 0
+	seen := map[string]struct{}{}
+	add := func(ref string) {
+		if !overlayChainLink(ref) {
+			return
+		}
+		seen[path.Base(ref)] = struct{}{}
+	}
+	add(backendRef)
 	for i := len(items) - 1; i >= 0; i-- {
-		n++
 		if overlayChainReset(items[i].BackendRef) {
 			break
 		}
+		add(items[i].BackendRef)
 	}
-	return n
+	return len(seen)
 }
