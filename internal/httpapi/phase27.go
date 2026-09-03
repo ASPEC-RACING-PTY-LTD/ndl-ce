@@ -136,12 +136,12 @@ func (s *Server) createPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	srcMAC, err := s.workloadMAC(r.Context(), p.User.ClusterID, req.SrcWorkloadID)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, statusFor(err), err.Error())
 		return
 	}
 	dstMAC, err := s.workloadMAC(r.Context(), p.User.ClusterID, req.DstWorkloadID)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErr(w, statusFor(err), err.Error())
 		return
 	}
 	id := uuid.NewString()
@@ -247,7 +247,15 @@ func (s *Server) createOverlay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) workloadMAC(ctx context.Context, clusterID, workloadID string) (string, error) {
-	nics, err := s.Store.ListWorkloadNICs(ctx, clusterID, strings.TrimSpace(workloadID))
+	id := strings.TrimSpace(workloadID)
+	if id == "" {
+		return "", errBadRequest("src_workload_id and dst_workload_id are required")
+	}
+	wl, err := s.Store.GetWorkload(ctx, clusterID, id)
+	if err != nil || wl == nil {
+		return "", errNotFound("workload not found")
+	}
+	nics, err := s.Store.ListWorkloadNICs(ctx, clusterID, wl.ID)
 	if err != nil || len(nics) == 0 || strings.TrimSpace(nics[0].MAC) == "" {
 		return "", errUnprocessable("workload has no NIC MAC")
 	}

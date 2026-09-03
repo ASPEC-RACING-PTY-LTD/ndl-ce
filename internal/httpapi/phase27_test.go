@@ -315,3 +315,64 @@ func TestPhase27ApplyFailsClosedWhenStatusPersistFails(t *testing.T) {
 		t.Fatalf("policy persist body %s", raw)
 	}
 }
+
+func TestPhase27PolicyCreateFailsClosedForMissingAndEmptyWorkload(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	netID := uuid.NewString()
+	_ = mem.CreateNetwork(t.Context(), appdb.Network{
+		ID: netID, ClusterID: cluster.ID, NodeID: node.ID, Name: "iso", Kind: ndnet.KindIsolated,
+		Status: ndnet.StatusAvailable, BridgeName: "ndlabcd123",
+	})
+	a := uuid.NewString()
+	b := uuid.NewString()
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: a, ClusterID: cluster.ID, Name: "a", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{ID: b, ClusterID: cluster.ID, Name: "b", Kind: "vm", Status: "stopped"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: a, NetworkID: netID, MAC: "02:00:00:00:00:01"})
+	_ = mem.CreateWorkloadNIC(t.Context(), appdb.WorkloadNIC{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: b, NetworkID: netID, MAC: "02:00:00:00:00:02"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	empty, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/policies", strings.NewReader(`{"name":"stolen","action":"deny","src_workload_id":"","dst_workload_id":"`+b+`"}`))
+	empty.Header.Set("Content-Type", "application/json")
+	empty.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	emptyRes, _ := ts.Client().Do(empty)
+	emptyRaw, _ := io.ReadAll(emptyRes.Body)
+	_ = emptyRes.Body.Close()
+	if emptyRes.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty src %d %s", emptyRes.StatusCode, emptyRaw)
+	}
+	if !strings.Contains(string(emptyRaw), "src_workload_id and dst_workload_id are required") {
+		t.Fatalf("empty src body %s", emptyRaw)
+	}
+
+	missing := uuid.NewString()
+	miss, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/policies", strings.NewReader(`{"name":"ghost","action":"deny","src_workload_id":"`+missing+`","dst_workload_id":"`+b+`"}`))
+	miss.Header.Set("Content-Type", "application/json")
+	miss.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	missRes, _ := ts.Client().Do(miss)
+	missRaw, _ := io.ReadAll(missRes.Body)
+	_ = missRes.Body.Close()
+	if missRes.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing src %d %s", missRes.StatusCode, missRaw)
+	}
+	if !strings.Contains(string(missRaw), "workload not found") {
+		t.Fatalf("missing src body %s", missRaw)
+	}
+
+	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/networks", nil)
+	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	got, _ := ts.Client().Do(get)
+	listRaw, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	var listed map[string]any
+	if err := json.Unmarshal(listRaw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	pols, _ := listed["policies"].([]any)
+	if len(pols) != 0 {
+		t.Fatalf("GET must not invent a policy for a missing or empty workload: %s", listRaw)
+	}
+}
