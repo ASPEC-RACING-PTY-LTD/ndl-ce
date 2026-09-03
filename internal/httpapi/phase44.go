@@ -804,6 +804,20 @@ func discoveredFromManifest(m migration.Manifest, path string) migration.Discove
 	return w
 }
 
+func refuseExportExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appdb.WorkloadDisk) error {
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != bootVolID {
+			return errUnprocessable("export of additional data disks is not implemented")
+		}
+	}
+	for _, d := range disks {
+		if d.Role == vmspec.DiskRoleData && strings.TrimSpace(d.VolumeID) != "" && d.VolumeID != bootVolID {
+			return errUnprocessable("export of additional data disks is not implemented")
+		}
+	}
+	return nil
+}
+
 func (s *Server) buildExportPlan(ctx context.Context, clusterID, adapter string, req migrationJobBody) (migration.Plan, error) {
 	if req.WorkloadID == "" {
 		return migration.Plan{}, errUnprocessable("workload_id is required for export")
@@ -814,7 +828,7 @@ func (s *Server) buildExportPlan(ctx context.Context, clusterID, adapter string,
 	}
 	kind := wl.Kind
 	if kind == vmspec.KindVM {
-		_, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
+		vol, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
 		if locErr != nil {
 			return migration.Plan{}, locErr
 		}
@@ -822,6 +836,15 @@ func (s *Server) buildExportPlan(ctx context.Context, clusterID, adapter string,
 			if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
 				return migration.Plan{}, err
 			}
+		}
+		spec, _ := vmspec.Parse(wl.SpecJSON)
+		disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, wl.ID)
+		bootID := ""
+		if vol != nil {
+			bootID = vol.ID
+		}
+		if err := refuseExportExtraDataDisks(spec, bootID, disks); err != nil {
+			return migration.Plan{}, err
 		}
 	}
 	m := migration.Manifest{

@@ -74,7 +74,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * System-container PATCH fails closed if the workload agent is unavailable. A 200 does not rewrite CPUs or desired_power the host did not apply.
   * Store install GPU assign fails closed if the agent apply fails or is unavailable. A 201 does not leave an assigned row the agent did not apply.
   * Files chmod applies mode 0. Omitted mode is still required; mkdir still defaults 0755.
-  * Restore-replace refuses extra data disks like restore-as-new. Boot replace does not mix with unrestored data volumes.
+  * Restore-replace refuses extra data disks like restore-as-new. Boot replace does not mix with unrestored data volumes. Migration bundle export refuses extra data disks the same way. GET no longer lists a succeeded export whose manifest named data volumes the bundle did not copy.
   * PCI attach applies the union of VFIO hosts already assigned to the VM. A second passthrough does not drop the first from frozen argv. GPU VFIO assign merges and unassign subtracts instead of wiping every host.
   * GPU VFIO assign records pci_hosts on the VM spec so start reprepare cannot drop the bound devices. Unassign removes those hosts from spec.
   * Template create refuses extra data disks like clone. Deploy clones the live source, so a boot-only overlay must not be recorded as a usable template.

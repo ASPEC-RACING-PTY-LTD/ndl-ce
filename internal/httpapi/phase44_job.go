@@ -577,7 +577,7 @@ func (s *Server) runExportJob(ctx context.Context, clusterID string, j *appdb.Mi
 		return
 	}
 	if item.Kind == vmspec.KindVM || item.Kind == migration.KindVM {
-		_, pool, tip, err := s.bootVolumeLocator(ctx, clusterID, *wl)
+		vol, pool, tip, err := s.bootVolumeLocator(ctx, clusterID, *wl)
 		if err != nil {
 			fail("export", err.Error())
 			return
@@ -587,6 +587,16 @@ func (s *Server) runExportJob(ctx context.Context, clusterID string, j *appdb.Mi
 				fail("export", err.Error())
 				return
 			}
+		}
+		spec, _ := vmspec.Parse(wl.SpecJSON)
+		disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, wl.ID)
+		bootID := ""
+		if vol != nil {
+			bootID = vol.ID
+		}
+		if err := refuseExportExtraDataDisks(spec, bootID, disks); err != nil {
+			fail("export", err.Error())
+			return
 		}
 		disk := filepath.Join(stageDir, "disks", "boot.qcow2")
 		_ = os.MkdirAll(filepath.Dir(disk), 0o750)

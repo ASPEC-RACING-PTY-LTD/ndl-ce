@@ -20,6 +20,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
+	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
 func TestMigrationViewerDeniedAndSecretsRedacted(t *testing.T) {
@@ -597,5 +598,65 @@ func TestMigrationJobsGETReturnsNewestFirst(t *testing.T) {
 	}
 	if len(body.Items) != 2 || body.Items[0]["id"] != newer.ID || body.Items[1]["id"] != older.ID {
 		t.Fatalf("GET must list newest migration job first: %s", raw)
+	}
+}
+
+func TestPhase44VMMigrationExportFailsClosedForExtraDataDisk(t *testing.T) {
+	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	fb := &fakeBackup{}
+	s.Backup = fb
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "export-extra")
+	srcID := created["id"].(string)
+	wl, err := mem.GetWorkload(context.Background(), clusterID, srcID)
+	if err != nil || wl == nil {
+		t.Fatal(err)
+	}
+	spec, err := vmspec.Parse(wl.SpecJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := uuid.NewString()
+	node, _ := mem.GetNode(context.Background(), clusterID)
+	if err := mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: extra, ClusterID: clusterID, NodeID: node.ID, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		Status: storage.StatusAvailable, BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/extra.qcow2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	spec.Disks = append(spec.Disks, vmspec.Disk{Role: vmspec.DiskRoleData, VolumeID: extra})
+	if err := mem.UpdateWorkloadSpec(context.Background(), appdb.Workload{
+		ID: wl.ID, SpecJSON: vmspec.MustJSON(spec), Firmware: wl.Firmware, CPUs: wl.CPUs, MemoryBytes: wl.MemoryBytes,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: srcID, VolumeID: extra,
+		Role: vmspec.DiskRoleData, Slot: 1, Format: storage.FormatQCOW2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	exp, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"direction":"export","workload_id":"`+srcID+`"}`))
+	exp.Header.Set("Content-Type", "application/json")
+	exp.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	eres, err := ts.Client().Do(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eraw, _ := io.ReadAll(eres.Body)
+	_ = eres.Body.Close()
+	if eres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("migration export %d %s", eres.StatusCode, eraw)
+	}
+	if !strings.Contains(strings.ToLower(string(eraw)), "disk") {
+		t.Fatalf("migration export body %s", eraw)
+	}
+	if len(fb.converts) != 0 {
+		t.Fatalf("ConvertImport must not copy boot and drop extra disks: %+v", fb.converts)
+	}
+	jobs, _ := mem.ListMigrationJobs(context.Background(), clusterID, 100)
+	if len(jobs) != 0 {
+		t.Fatalf("GET must not list a succeeded extra-disk export: %+v", jobs)
 	}
 }
