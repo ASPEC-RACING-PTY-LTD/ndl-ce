@@ -1105,9 +1105,18 @@ func (s *Server) restoreReplaceVM(ctx context.Context, clusterID string, src app
 	if s.VM == nil || s.Backup == nil {
 		return errUnavailable("backup agent is unavailable")
 	}
-	_, _, tip, err := s.bootVolumeLocator(ctx, clusterID, src)
+	vol, _, tip, err := s.bootVolumeLocator(ctx, clusterID, src)
 	if err != nil {
 		return err
+	}
+	spec, specErr := vmspec.Parse(src.SpecJSON)
+	if specErr != nil {
+		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}
+	}
+	for _, d := range spec.Disks {
+		if d.Role == vmspec.DiskRoleData && d.VolumeID != "" && vol != nil && d.VolumeID != vol.ID {
+			return errUnprocessable("restore of additional data disks is not implemented")
+		}
 	}
 	if _, err := s.VM.LifecycleVM(ctx, src.ID, "stop", false); err != nil {
 		return err

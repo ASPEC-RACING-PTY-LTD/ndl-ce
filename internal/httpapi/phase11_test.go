@@ -528,6 +528,52 @@ func TestRestoreNewVMExtraDataDiskIsUnprocessable(t *testing.T) {
 	}
 }
 
+func TestRestoreReplaceVMExtraDataDiskIsUnprocessable(t *testing.T) {
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, _ := seedCompute(t, mem, cluster.ID, nodeID)
+	bootID := uuid.NewString()
+	extra := uuid.NewString()
+	for _, id := range []string{bootID, extra} {
+		if err := mem.CreateVolume(context.Background(), appdb.Volume{
+			ID: id, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+			Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+			Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+			BackendRef: "volumes/vm-disk/" + id + ".qcow2",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wlID := uuid.NewString()
+	spec := vmspec.Spec{
+		Name: "web",
+		Disks: []vmspec.Disk{
+			{Role: vmspec.DiskRoleBoot, VolumeID: bootID},
+			{Role: vmspec.DiskRoleData, VolumeID: extra},
+		},
+	}
+	src := appdb.Workload{
+		ID: wlID, ClusterID: cluster.ID, NodeID: nodeID, Name: "web", Kind: vmspec.KindVM,
+		SpecJSON: vmspec.MustJSON(spec),
+	}
+	if err := mem.CreateWorkload(context.Background(), src); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadDisk(context.Background(), appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: wlID, VolumeID: bootID, Role: vmspec.DiskRoleBoot,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	err := s.restoreReplaceVM(context.Background(), cluster.ID, src, appdb.BackupArtifact{ID: uuid.NewString()})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "disk") {
+		t.Fatalf("extra data disk replace must fail closed: %v", err)
+	}
+}
+
 func TestRestoreRefusesSystemContainer(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

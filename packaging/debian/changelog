@@ -74,6 +74,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * System-container PATCH fails closed if the workload agent is unavailable. A 200 does not rewrite CPUs or desired_power the host did not apply.
   * Store install GPU assign fails closed if the agent apply fails or is unavailable. A 201 does not leave an assigned row the agent did not apply.
   * Files chmod applies mode 0. Omitted mode is still required; mkdir still defaults 0755.
+  * Restore-replace refuses extra data disks like restore-as-new. Boot replace does not mix with unrestored data volumes.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
