@@ -33,7 +33,7 @@ func (p *Postgres) ListNetworks(ctx context.Context, clusterID string) ([]Networ
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, node_id::text, name, kind, status, reason, danger, bridge_name, uplink_ifname,
        ipv4_cidr, gateway, dhcp, dns, nat, persist_kind, warnings, management_ifindex, created_at, updated_at
-FROM networks WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM networks WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

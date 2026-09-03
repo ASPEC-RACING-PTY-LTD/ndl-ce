@@ -113,3 +113,34 @@ func TestListWorkloadDisksOrdersBySlotCreatedAtID(t *testing.T) {
 		t.Fatalf("slot 1 later created_at: %+v", got[3])
 	}
 }
+
+func TestListWorkloadsOrdersByCreatedAtID(t *testing.T) {
+	m := NewMemory()
+	clusterID := uuid.NewString()
+	stamp := time.Date(2026, 9, 3, 5, 0, 0, 0, time.UTC)
+	later := stamp.Add(time.Second)
+	lowID := "00000000-0000-4000-8000-000000000001"
+	highID := "ffffffff-ffff-4fff-8fff-ffffffffffff"
+	if err := m.CreateWorkload(context.Background(), Workload{
+		ID: highID, ClusterID: clusterID, Name: "late-id", Kind: lxc.KindSystemContainer, CreatedAt: stamp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CreateWorkload(context.Background(), Workload{
+		ID: uuid.NewString(), ClusterID: clusterID, Name: "later", Kind: lxc.KindSystemContainer, CreatedAt: later,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.CreateWorkload(context.Background(), Workload{
+		ID: lowID, ClusterID: clusterID, Name: "early-id", Kind: lxc.KindSystemContainer, CreatedAt: stamp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.ListWorkloads(context.Background(), clusterID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].ID != lowID || got[1].ID != highID || !got[2].CreatedAt.Equal(later) {
+		t.Fatalf("GET /workloads must be created_at then id: %+v", got)
+	}
+}

@@ -78,7 +78,7 @@ INSERT INTO workloads (
 }
 
 func (p *Postgres) ListWorkloads(ctx context.Context, clusterID string) ([]Workload, error) {
-	rows, err := p.DB.QueryContext(ctx, workloadSelect+` WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+	rows, err := p.DB.QueryContext(ctx, workloadSelect+` WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

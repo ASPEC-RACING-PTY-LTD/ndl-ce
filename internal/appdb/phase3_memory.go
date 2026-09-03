@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -34,6 +35,9 @@ func (m *Memory) ListStoragePools(_ context.Context, clusterID string) ([]Storag
 			out = append(out, p)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
@@ -95,6 +99,9 @@ func (m *Memory) ListVolumes(_ context.Context, clusterID, poolID string) ([]Vol
 			out = append(out, v)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
@@ -154,6 +161,9 @@ func (m *Memory) ListLibraryItems(_ context.Context, clusterID, poolID string) (
 			out = append(out, item)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 

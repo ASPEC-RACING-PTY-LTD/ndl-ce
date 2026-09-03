@@ -35,6 +35,9 @@ func (m *Memory) ListNetworks(_ context.Context, clusterID string) ([]Network, e
 			out = append(out, n)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 

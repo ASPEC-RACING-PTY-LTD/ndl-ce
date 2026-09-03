@@ -40,7 +40,7 @@ func (p *Postgres) ListStoragePools(ctx context.Context, clusterID string) ([]St
 SELECT id::text, cluster_id::text, node_id::text, name, backend_type, status, reason, root_path,
        backing, warnings, warning_text, capabilities, usable_bytes, allocated_bytes, provisioned_bytes,
        total_bytes, adopted, created_at, updated_at
-FROM storage_pools WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM storage_pools WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (p *Postgres) ListVolumes(ctx context.Context, clusterID, poolID string) ([
 SELECT id::text, cluster_id::text, node_id::text, pool_id::text, class, kind, format, size_bytes,
        status, backend_type, backend_ref, xattr_state, allocated_bytes, created_at, updated_at
 FROM volumes WHERE cluster_id=$1 AND ($2='' OR pool_id::text=$2)
-ORDER BY created_at`, clusterID, poolID)
+ORDER BY created_at, id`, clusterID, poolID)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (p *Postgres) ListLibraryItems(ctx context.Context, clusterID, poolID strin
 SELECT id::text, cluster_id::text, node_id::text, pool_id::text, kind, display_name, backend_ref,
        size_bytes, checksum_sha256, status, created_at, updated_at
 FROM library_items WHERE cluster_id=$1 AND ($2='' OR pool_id::text=$2)
-ORDER BY created_at`, clusterID, poolID)
+ORDER BY created_at, id`, clusterID, poolID)
 	if err != nil {
 		return nil, err
 	}

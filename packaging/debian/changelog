@@ -196,6 +196,10 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     reservations, are ordered by created_at then id, matching
     Postgres. Nested catalog arrays no longer shuffle under Memory
     map iteration.
+  * GET /workloads, /networks items, /storage/pools, /storage/volumes,
+    and /storage/images are ordered by created_at then id, matching
+    Postgres. Collection lists no longer shuffle under Memory map
+    iteration.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
