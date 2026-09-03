@@ -171,7 +171,7 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parentID := ""
-	if len(existing) > 0 {
+	if depth > 0 && len(existing) > 0 {
 		parentID = existing[len(existing)-1].ID
 	}
 	_, err = s.VM.SnapshotVM(r.Context(), qemu.OverlayRequest{

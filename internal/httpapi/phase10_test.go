@@ -257,3 +257,81 @@ func TestSnapshotChainCap(t *testing.T) {
 	}
 	_ = res.Body.Close()
 }
+
+func TestOverlayFlattenThenSnapshotDoesNotInheritStaleParent(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `","cpus":1,"memory_bytes":268435456}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("vm create %d %s", res.StatusCode, b)
+	}
+	var vm map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&vm)
+	_ = res.Body.Close()
+	vmID := vm["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"before-flat"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("snap create %d %s", res.StatusCode, raw)
+	}
+	var first map[string]any
+	if err := json.Unmarshal(raw, &first); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots/flatten", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "flatten")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("flatten %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"after-flat"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("post-flatten snap %d %s", res.StatusCode, raw)
+	}
+	var second map[string]any
+	if err := json.Unmarshal(raw, &second); err != nil {
+		t.Fatal(err)
+	}
+	if second["parent_id"] != "" && second["parent_id"] != nil {
+		t.Fatalf("flattened chain must not inherit leftover parent %s", raw)
+	}
+	if second["chain_depth"] != float64(1) {
+		t.Fatalf("post-flatten chain_depth %s", raw)
+	}
+	if second["id"] == first["id"] {
+		t.Fatalf("expected a new snapshot %s", raw)
+	}
+}

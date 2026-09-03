@@ -85,6 +85,7 @@ nodal (1.0.0) UNRELEASED; urgency=medium
   * Node maintain fails closed if a queued migrate operation cannot be recorded. A 200 does not invent migrate_operation_id.
   * Storage-pressure policy apply fails closed if a queued migrate operation cannot be recorded. A 200 does not invent operation_ids that GET /tasks would miss.
   * AI plan approve stops if the task row cannot be recorded. A succeeded plan does not invent operation_id that GET /tasks would miss.
+  * Overlay snapshot after flatten does not inherit leftover catalog parent_id. Flattened depth is a new chain.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
