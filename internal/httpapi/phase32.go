@@ -375,7 +375,13 @@ func (s *Server) migrateDisks(ctx context.Context, wl appdb.Workload, dest *appd
 		if vol == nil {
 			return false, nil, fmt.Errorf("workload volume is missing")
 		}
+		if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
+			return false, nil, fmt.Errorf("storage is unavailable")
+		}
 		pool, _ := s.Store.GetStoragePool(ctx, wl.ClusterID, vol.PoolID)
+		if pool != nil && pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+			return false, nil, fmt.Errorf("storage pool is unavailable")
+		}
 		backend := ""
 		root := ""
 		if pool != nil {

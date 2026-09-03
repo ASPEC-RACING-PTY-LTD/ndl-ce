@@ -612,3 +612,66 @@ func TestOverlayRollbackThenSnapshotDoesNotHitStaleChainCap(t *testing.T) {
 		t.Fatalf("post-rollback snap must not inherit leftover chain cap %d %s", res.StatusCode, raw)
 	}
 }
+
+func TestVMSnapshotCreateFailsClosedForUnavailableBootVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"web","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		raw, _ := io.ReadAll(res.Body)
+		t.Fatalf("vm create %d %s", res.StatusCode, raw)
+	}
+	var vm map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&vm)
+	_ = res.Body.Close()
+	vmID := vm["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, vmID)
+	if len(disks) != 1 {
+		t.Fatalf("source disks %+v", disks)
+	}
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: disks[0].VolumeID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+
+	list, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", nil)
+	list.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	listed, _ := ts.Client().Do(list)
+	listRaw, _ := io.ReadAll(listed.Body)
+	_ = listed.Body.Close()
+	if listed.StatusCode != http.StatusOK {
+		t.Fatalf("GET snapshots must still list when boot storage is unavailable %d %s", listed.StatusCode, listRaw)
+	}
+
+	snapsBefore, _ := mem.ListSnapshots(context.Background(), cluster.ID, vmID)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+vmID+"/snapshots", strings.NewReader(`{"name":"before-upgrade"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable boot volume snapshot %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable boot volume snapshot body %s", raw)
+	}
+	snapsAfter, _ := mem.ListSnapshots(context.Background(), cluster.ID, vmID)
+	if len(snapsAfter) != len(snapsBefore) {
+		t.Fatalf("snapshot must not persist an overlay apply cannot create: %d -> %d", len(snapsBefore), len(snapsAfter))
+	}
+}

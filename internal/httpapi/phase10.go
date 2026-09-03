@@ -392,11 +392,14 @@ func (s *Server) bootVolumeLocator(ctx context.Context, clusterID string, row ap
 	if err != nil || vol == nil {
 		return nil, nil, "", errNotFound("volume is not found")
 	}
+	if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
+		return nil, nil, "", errConflict("storage is unavailable")
+	}
 	pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
 	if err != nil || pool == nil {
 		return nil, nil, "", errNotFound("storage pool is not found")
 	}
-	if pool.Status == storage.StatusUnavailable {
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
 		return nil, nil, "", errConflict("storage pool is unavailable")
 	}
 	tip, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)

@@ -1073,6 +1073,100 @@ func TestPhase18CloneFailsClosedWhenNICPersistFails(t *testing.T) {
 	}
 }
 
+func TestPhase18CloneFailsClosedForUnavailableBootVolume(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "web")
+	srcID := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, srcID)
+	if len(disks) != 1 {
+		t.Fatalf("source disks %+v", disks)
+	}
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: disks[0].VolumeID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+srcID+"/clone", strings.NewReader(`{"name":"web-clone"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable boot volume %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable boot volume body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 1 || items[0].ID != srcID {
+		t.Fatalf("GET must not list a clone whose boot volume copy cannot read: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("clone must not persist a volume copy cannot read: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestPhase18CloneFailsClosedForUnavailableBootPool(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "web")
+	srcID := created["id"].(string)
+	if err := mem.UpdateStoragePoolObserved(context.Background(), appdb.StoragePool{ID: poolID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+srcID+"/clone", strings.NewReader(`{"name":"web-clone"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable boot pool %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage pool is unavailable") {
+		t.Fatalf("unavailable boot pool body %s", raw)
+	}
+	items, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(items) != 1 || items[0].ID != srcID {
+		t.Fatalf("GET must not list a clone whose boot pool copy cannot read: %+v", items)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("clone must not persist a volume copy cannot read: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestPhase18ExportFailsClosedForUnavailableBootVolume(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
+	created := createPhase18VM(t, ts, cookie, poolID, netID, "web")
+	srcID := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), clusterID, srcID)
+	if len(disks) != 1 {
+		t.Fatalf("source disks %+v", disks)
+	}
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: disks[0].VolumeID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	libsBefore, _ := mem.ListLibraryItems(context.Background(), clusterID, "")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+srcID+"/export", strings.NewReader(`{"display_name":"web.qcow2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("unavailable boot volume export %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("unavailable boot volume export body %s", raw)
+	}
+	libsAfter, _ := mem.ListLibraryItems(context.Background(), clusterID, "")
+	if len(libsAfter) != len(libsBefore) {
+		t.Fatalf("export must not persist a library item copy cannot read: %d -> %d", len(libsBefore), len(libsAfter))
+	}
+}
+
 func TestPhase18ImportFailsClosedWhenDiskPersistFails(t *testing.T) {
 	s, mem, ts, cookie, clusterID, poolID, netID := phase18Ready(t)
 	libID := uuid.NewString()
