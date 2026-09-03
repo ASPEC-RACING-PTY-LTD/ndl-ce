@@ -58,7 +58,7 @@ VALUES ($1,$2,$3,NULLIF($4,'')::uuid,$5,$6,$7,$8,now(),now())`,
 func (p *Postgres) ListDistributedOSDs(ctx context.Context, clusterID string) ([]DistributedOSD, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, node_id::text, COALESCE(pool_id::text, ''), disk, osd_id, status, reason, created_at, updated_at
-FROM distributed_osds WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM distributed_osds WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

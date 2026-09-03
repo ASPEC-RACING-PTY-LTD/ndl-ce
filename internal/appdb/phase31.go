@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -62,6 +63,12 @@ func (m *Memory) ListNodeGroups(_ context.Context, clusterID string) ([]NodeGrou
 			out = append(out, g)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].ID < out[j].ID
+	})
 	return out, nil
 }
 

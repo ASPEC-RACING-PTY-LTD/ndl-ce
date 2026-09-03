@@ -26,7 +26,7 @@ VALUES ($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
 func (p *Postgres) ListWGPeers(ctx context.Context, clusterID string) ([]WGPeer, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, COALESCE(node_id::text,''), name, role, public_key, listen_port, address_cidr, endpoint, allowed_ips, persistent_keepalive, iface_name, private_key_path, pairing_token_hash, last_handshake_unix, status, reason, created_at, updated_at
-FROM wg_peers WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM wg_peers WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ VALUES ($1,$2,NULLIF($3,'')::uuid,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 func (p *Postgres) ListRemoteNodes(ctx context.Context, clusterID string) ([]RemoteNode, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, COALESCE(wg_peer_id::text,''), name, listen_addr, wg_public_key, status, reason, last_seen_at, last_handshake_unix, created_at, updated_at
-FROM remote_nodes WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM remote_nodes WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

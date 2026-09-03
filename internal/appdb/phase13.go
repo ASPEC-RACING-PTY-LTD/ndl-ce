@@ -295,6 +295,9 @@ func (m *Memory) ListServicePrincipals(_ context.Context, clusterID string) ([]S
 			out = append(out, sp)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 

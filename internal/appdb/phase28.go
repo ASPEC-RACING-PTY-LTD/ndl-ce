@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"sort"
 	"time"
 )
 
@@ -80,6 +81,9 @@ func (m *Memory) ListWGPeers(_ context.Context, clusterID string) ([]WGPeer, err
 			out = append(out, p)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
@@ -137,6 +141,9 @@ func (m *Memory) ListRemoteNodes(_ context.Context, clusterID string) ([]RemoteN
 			out = append(out, n)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 

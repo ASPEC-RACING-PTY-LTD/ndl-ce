@@ -17,7 +17,7 @@ func (p *Postgres) CreateNodeGroup(ctx context.Context, g NodeGroup) error {
 }
 
 func (p *Postgres) ListNodeGroups(ctx context.Context, clusterID string) ([]NodeGroup, error) {
-	rows, err := p.DB.QueryContext(ctx, `SELECT id::text, cluster_id::text, name, created_at FROM node_groups WHERE cluster_id=$1 ORDER BY name`, clusterID)
+	rows, err := p.DB.QueryContext(ctx, `SELECT id::text, cluster_id::text, name, created_at FROM node_groups WHERE cluster_id=$1 ORDER BY name, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

@@ -264,7 +264,7 @@ func (p *Postgres) CreateServicePrincipal(ctx context.Context, sp ServicePrincip
 }
 
 func (p *Postgres) ListServicePrincipals(ctx context.Context, clusterID string) ([]ServicePrincipal, error) {
-	rows, err := p.DB.QueryContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, name, created_at FROM service_principals WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+	rows, err := p.DB.QueryContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, name, created_at FROM service_principals WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

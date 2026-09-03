@@ -39,7 +39,7 @@ VALUES ($1,$2,$3,$4,now())`, src.ID, token, username, extra); err != nil {
 func (p *Postgres) ListMigrationSources(ctx context.Context, clusterID string) ([]MigrationSource, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id, cluster_id, adapter, label, endpoint, insecure, created_at, updated_at
-FROM migration_sources WHERE cluster_id=$1 ORDER BY created_at`, clusterID)
+FROM migration_sources WHERE cluster_id=$1 ORDER BY created_at, id`, clusterID)
 	if err != nil {
 		return nil, err
 	}

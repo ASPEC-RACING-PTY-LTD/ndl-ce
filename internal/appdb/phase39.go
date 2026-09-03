@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"sort"
 	"time"
 )
 
@@ -85,6 +86,9 @@ func (m *Memory) ListDistributedOSDs(_ context.Context, clusterID string) ([]Dis
 			out = append(out, o)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessCreatedAtID(out[i].CreatedAt, out[j].CreatedAt, out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
