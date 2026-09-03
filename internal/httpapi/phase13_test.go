@@ -652,6 +652,95 @@ func TestServicePrincipalCreateFailsClosedWhenPersistFails(t *testing.T) {
 	}
 }
 
+type missBindGroupRoleStore struct {
+	appdb.Store
+}
+
+func (missBindGroupRoleStore) BindGroupRole(context.Context, string, string, string) error {
+	return nil
+}
+
+func TestPhase13BindGroupRoleFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	hash, _ := auth.HashPassword("password1")
+	view := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view-bind", PasswordHash: hash}
+	if err := mem.CreateUser(context.Background(), view); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.Viewer); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/groups", strings.NewReader(`{"name":"bind-miss"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("group %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	gid, _ := created["id"].(string)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/members", strings.NewReader(`{"user_id":"`+view.ID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("member %d %s", res.StatusCode, raw)
+	}
+	s.Store = missBindGroupRoleStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/roles", strings.NewReader(`{"role":"operator"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("role persist miss %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record group role") {
+		t.Fatalf("role persist miss body %s", raw)
+	}
+
+	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view-bind","password":"password1"}`))
+	loginBody, _ := io.ReadAll(login.Body)
+	_ = login.Body.Close()
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("viewer login %d %s", login.StatusCode, loginBody)
+	}
+	var viewCookie string
+	for _, c := range login.Cookies() {
+		if c.Name == sessionCookie {
+			viewCookie = c.Value
+		}
+	}
+	if viewCookie == "" {
+		t.Fatal("viewer cookie")
+	}
+	me, _ := http.NewRequest("GET", ts.URL+"/api/v1/me", nil)
+	me.AddCookie(&http.Cookie{Name: sessionCookie, Value: viewCookie})
+	got, _ := ts.Client().Do(me)
+	body, _ := io.ReadAll(got.Body)
+	_ = got.Body.Close()
+	if got.StatusCode != http.StatusOK {
+		t.Fatalf("GET /me %d %s", got.StatusCode, body)
+	}
+	if strings.Contains(string(body), `"operator"`) {
+		t.Fatalf("GET /me must not claim operator after persist miss: %s", body)
+	}
+}
+
 func TestPhase13GroupMemberAddFailsClosedForMissingUserAndIsIdempotent(t *testing.T) {
 	s, mem, token := testServer(t)
 	ts := httptest.NewServer(s.Handler())

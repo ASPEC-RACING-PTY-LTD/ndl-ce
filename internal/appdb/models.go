@@ -190,6 +190,7 @@ type Store interface {
 	GetGroup(ctx context.Context, clusterID, id string) (*Group, error)
 	AddGroupMember(ctx context.Context, clusterID, groupID, userID string) error
 	ListGroupMembers(ctx context.Context, clusterID, groupID string) ([]string, error)
+	ListGroupRoles(ctx context.Context, clusterID, groupID string) ([]string, error)
 	BindGroupRole(ctx context.Context, clusterID, groupID, roleName string) error
 
 	UpsertMFAMethod(ctx context.Context, m MFAMethod, totpSecret string, recoveryHashes []string) error

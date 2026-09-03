@@ -321,7 +321,23 @@ func (s *Server) bindGroupRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.BindGroupRole(r.Context(), p.User.ClusterID, g.ID, role); err != nil {
-		writeErr(w, http.StatusNotFound, "group not found")
+		writeErr(w, http.StatusInternalServerError, "could not record group role")
+		return
+	}
+	roles, err := s.Store.ListGroupRoles(r.Context(), p.User.ClusterID, g.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record group role")
+		return
+	}
+	found := false
+	for _, name := range roles {
+		if name == role {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeErr(w, http.StatusInternalServerError, "could not record group role")
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "group.role.bind", "ok", role)

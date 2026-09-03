@@ -158,6 +158,16 @@ func (m *Memory) ListGroupMembers(_ context.Context, clusterID, groupID string) 
 	return append([]string{}, m.groupMembers[groupID]...), nil
 }
 
+func (m *Memory) ListGroupRoles(_ context.Context, clusterID, groupID string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	g, ok := m.groups[groupID]
+	if !ok || g.ClusterID != clusterID {
+		return nil, fmt.Errorf("group not found")
+	}
+	return append([]string{}, m.groupRoles[groupID]...), nil
+}
+
 func (m *Memory) BindGroupRole(_ context.Context, clusterID, groupID, roleName string) error {
 	if roleName == "admin" {
 		return fmt.Errorf("groups cannot grant admin")

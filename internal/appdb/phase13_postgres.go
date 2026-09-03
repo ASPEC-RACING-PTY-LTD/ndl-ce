@@ -130,7 +130,48 @@ INSERT INTO group_role_bindings (group_id, role_id)
 SELECT $1, r.id FROM roles r
 WHERE r.cluster_id=$2 AND r.name=$3
 ON CONFLICT DO NOTHING`, groupID, clusterID, roleName)
-	return err
+	if err != nil {
+		return err
+	}
+	roles, err := p.ListGroupRoles(ctx, clusterID, groupID)
+	if err != nil {
+		return err
+	}
+	for _, name := range roles {
+		if name == roleName {
+			return nil
+		}
+	}
+	return fmt.Errorf("group role not found")
+}
+
+func (p *Postgres) ListGroupRoles(ctx context.Context, clusterID, groupID string) ([]string, error) {
+	g, err := p.GetGroup(ctx, clusterID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if g == nil {
+		return nil, fmt.Errorf("group not found")
+	}
+	rows, err := p.DB.QueryContext(ctx, `
+SELECT r.name
+FROM group_role_bindings gb
+JOIN roles r ON r.id = gb.role_id
+WHERE gb.group_id=$1 AND r.cluster_id=$2
+ORDER BY r.name`, groupID, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
 }
 
 func (p *Postgres) UpsertMFAMethod(ctx context.Context, method MFAMethod, totpSecret string, recoveryHashes []string) error {
