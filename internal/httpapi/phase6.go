@@ -48,13 +48,13 @@ type createTermRequest struct {
 }
 
 type fileMutation struct {
-	Path           string `json:"path"`
-	DestPath       string `json:"dest_path"`
+	Path           string  `json:"path"`
+	DestPath       string  `json:"dest_path"`
 	Mode           *uint32 `json:"mode"`
-	UID            *int   `json:"uid"`
-	GID            *int   `json:"gid"`
-	ExpectedMtime  string `json:"expected_mtime"`
-	ExpectedSHA256 string `json:"expected_sha256"`
+	UID            *int    `json:"uid"`
+	GID            *int    `json:"gid"`
+	ExpectedMtime  string  `json:"expected_mtime"`
+	ExpectedSHA256 string  `json:"expected_sha256"`
 }
 
 func (s *Server) createNodeTerminal(w http.ResponseWriter, r *http.Request) {
