@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -433,5 +434,63 @@ func TestUpdatesApplyFailsClosedWhenCreatePersistFails(t *testing.T) {
 	_ = got.Body.Close()
 	if strings.Contains(string(raw), `"action":"apply"`) {
 		t.Fatalf("GET last_operation must not invent apply %s", raw)
+	}
+}
+
+func TestUpdatesRollbackFindsCheckVersionOutsideClusterWindow(t *testing.T) {
+	s, mem, token := testServer(t)
+	fu := &fakeUpdate{supported: true}
+	s.Update = fu
+	cluster, _ := mem.GetCluster(context.Background())
+	check := appdb.UpdateOperation{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Action: "check", Status: appdb.UpdateSucceeded,
+		Version: "0.1.10", StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if err := mem.CreateUpdateOperation(context.Background(), check); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 21; i++ {
+		other := appdb.UpdateOperation{
+			ID: uuid.NewString(), ClusterID: cluster.ID, Action: "apply", Status: appdb.UpdateSucceeded,
+			StartedAt: time.Date(2026, 6, 1, 0, 0, i, 0, time.UTC),
+		}
+		if err := mem.CreateUpdateOperation(context.Background(), other); err != nil {
+			t.Fatal(err)
+		}
+	}
+	window, err := mem.ListUpdateOperations(context.Background(), cluster.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range window {
+		if op.ID == check.ID {
+			t.Fatalf("20-row cluster window still contains the check: %+v", window)
+		}
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/rollback", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Nodal-Confirm", "rollback-update")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("rollback %d %s", res.StatusCode, raw)
+	}
+	var op map[string]any
+	if err := json.Unmarshal(raw, &op); err != nil {
+		t.Fatal(err)
+	}
+	if op["status"] == "failed" {
+		t.Fatalf("rollback must use the recorded check version: %s", raw)
+	}
+	if len(fu.calls) == 0 || fu.calls[len(fu.calls)-1].Action != "rollback" || fu.calls[len(fu.calls)-1].Version != "0.1.10" {
+		t.Fatalf("rollback must pass the recorded check version: %+v", fu.calls)
 	}
 }

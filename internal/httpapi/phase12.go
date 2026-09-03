@@ -253,16 +253,11 @@ func (s *Server) rollbackUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) recordedControlVersion(ctx context.Context, clusterID string) string {
-	ops, err := s.Store.ListUpdateOperations(ctx, clusterID, 20)
-	if err != nil {
+	op, err := s.Store.GetLatestCheckUpdateOperation(ctx, clusterID)
+	if err != nil || op == nil {
 		return ""
 	}
-	for _, op := range ops {
-		if op.Action == "check" && op.Version != "" {
-			return op.Version
-		}
-	}
-	return ""
+	return strings.TrimSpace(op.Version)
 }
 
 func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation, error) {

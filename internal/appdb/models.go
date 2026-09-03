@@ -182,6 +182,7 @@ type Store interface {
 	CreateUpdateOperation(ctx context.Context, op UpdateOperation) error
 	ListUpdateOperations(ctx context.Context, clusterID string, limit int) ([]UpdateOperation, error)
 	GetLatestUpdateOperation(ctx context.Context, clusterID string) (*UpdateOperation, error)
+	GetLatestCheckUpdateOperation(ctx context.Context, clusterID string) (*UpdateOperation, error)
 	UpdateUpdateOperation(ctx context.Context, op UpdateOperation) error
 
 	CreateGroup(ctx context.Context, g Group) error

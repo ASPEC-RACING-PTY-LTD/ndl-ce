@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -68,6 +69,22 @@ func (m *Memory) GetLatestUpdateOperation(_ context.Context, clusterID string) (
 		}
 		cp := op
 		if latest == nil || cp.StartedAt.After(latest.StartedAt) {
+			latest = &cp
+		}
+	}
+	return latest, nil
+}
+
+func (m *Memory) GetLatestCheckUpdateOperation(_ context.Context, clusterID string) (*UpdateOperation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var latest *UpdateOperation
+	for _, op := range m.updateOps {
+		if op.ClusterID != clusterID || op.Action != "check" || strings.TrimSpace(op.Version) == "" {
+			continue
+		}
+		cp := op
+		if latest == nil || cp.StartedAt.After(latest.StartedAt) || (cp.StartedAt.Equal(latest.StartedAt) && cp.ID < latest.ID) {
 			latest = &cp
 		}
 	}

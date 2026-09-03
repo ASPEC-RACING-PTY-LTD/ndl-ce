@@ -60,6 +60,20 @@ FROM update_operations WHERE cluster_id=$1 ORDER BY started_at DESC LIMIT 1`, cl
 	return &op, nil
 }
 
+func (p *Postgres) GetLatestCheckUpdateOperation(ctx context.Context, clusterID string) (*UpdateOperation, error) {
+	row := p.DB.QueryRowContext(ctx, `
+SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), started_at, finished_at
+FROM update_operations WHERE cluster_id=$1 AND action='check' AND version <> '' ORDER BY started_at DESC, id ASC LIMIT 1`, clusterID)
+	op, err := scanUpdateOperation(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &op, nil
+}
+
 func (p *Postgres) UpdateUpdateOperation(ctx context.Context, op UpdateOperation) error {
 	_, err := p.DB.ExecContext(ctx, `
 UPDATE update_operations

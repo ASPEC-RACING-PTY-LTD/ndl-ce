@@ -207,6 +207,8 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     jobs first, matching Postgres created_at DESC, so a later job is
     not hidden behind map iteration. Workload migrate GET looks up
     that workload's latest job instead of scanning a 50-row cluster
+    window that can hide it. Host update rollback looks up the latest
+    check version the same way instead of scanning a 20-row cluster
     window that can hide it.
   * VM create refuses an extra data disk whose storage pool is
     unavailable before persist. GET /workloads no longer lists a VM
