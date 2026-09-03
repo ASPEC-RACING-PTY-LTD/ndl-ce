@@ -289,7 +289,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     convert does not write a directory qcow2 onto a zvol or thin LV.
     Restore-replace of a qcow2 artifact onto a zvol or thin LV is refused
     before stop or copy. BackupReplace dest format is qcow2 and those
-    volumes start as raw. Template overlay is refused; ZFS and LVM
+    volumes start as raw. Migration bundle export refuses a zvol or thin
+    LV source before the job is recorded. ConvertImport would treat that
+    raw device as qcow2. Template overlay is refused; ZFS and LVM
     snapshots stay native. GET no longer lists a clone whose start would
     attach a qcow2 as raw. Offline migrate refuses that zvol copy before
     ownership moves.

@@ -24,9 +24,10 @@ import (
 )
 
 type fakeBackup struct {
-	copies [][3]string
-	res    storage.CopyResult
-	err    error
+	copies   [][3]string
+	converts [][2]string
+	res      storage.CopyResult
+	err      error
 }
 
 func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (storage.CopyResult, error) {
@@ -66,6 +67,7 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 }
 
 func (f *fakeBackup) ConvertImport(_ context.Context, req qemu.ConvertRequest) error {
+	f.converts = append(f.converts, [2]string{req.SourcePath, req.DestPath})
 	if f.err != nil {
 		return f.err
 	}

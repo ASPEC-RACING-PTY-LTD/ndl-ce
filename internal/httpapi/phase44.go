@@ -813,6 +813,17 @@ func (s *Server) buildExportPlan(ctx context.Context, clusterID, adapter string,
 		return migration.Plan{}, errNotFound("workload not found")
 	}
 	kind := wl.Kind
+	if kind == vmspec.KindVM {
+		_, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
+		if locErr != nil {
+			return migration.Plan{}, locErr
+		}
+		if pool != nil {
+			if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
+				return migration.Plan{}, err
+			}
+		}
+	}
 	m := migration.Manifest{
 		SchemaVersion: migration.ManifestSchema, Kind: kind,
 		Identity: migration.Identity{Name: wl.Name, SourceID: wl.ID},

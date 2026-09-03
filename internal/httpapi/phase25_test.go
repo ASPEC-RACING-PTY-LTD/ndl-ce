@@ -798,3 +798,73 @@ func TestPhase25VMRestoreFailsClosedForLVM(t *testing.T) {
 		t.Fatalf("boot locator must stay a thin LV: %+v want %s", vol, bootRef)
 	}
 }
+
+func TestPhase25VMMigrationExportFailsClosedForLVM(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.LVM = &fakeLVM{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node := seedNode(t, mem, cluster.ID, debianInv(), false)
+	_, netID := seedCompute(t, mem, cluster.ID, node.ID)
+	poolID := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: node.ID, Name: "ndlvg",
+		BackendType: storage.BackendLVM, Status: storage.StatusAvailable,
+		RootPath: storage.LVMMountRoot + "/ndlvg",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpsertLVMVG(context.Background(), appdb.LVMVG{PoolID: poolID, VGUUID: "AbCdEfGh0123", VGName: "ndlvg"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"lvm-export","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+
+	exp, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"direction":"export","workload_id":"`+id+`"}`))
+	exp.Header.Set("Content-Type", "application/json")
+	exp.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	eres, err := ts.Client().Do(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eraw, _ := io.ReadAll(eres.Body)
+	_ = eres.Body.Close()
+	if eres.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("migration export %d %s", eres.StatusCode, eraw)
+	}
+	if !strings.Contains(string(eraw), "LVM-thin pools do not store directory qcow2 copies") {
+		t.Fatalf("migration export body %s", eraw)
+	}
+	if len(fb.converts) != 0 {
+		t.Fatalf("ConvertImport must not qemu-img a thin LV as qcow2: %+v", fb.converts)
+	}
+	jobs, _ := mem.ListMigrationJobs(context.Background(), cluster.ID, 100)
+	if len(jobs) != 0 {
+		t.Fatalf("GET must not list a succeeded thin LV export: %+v", jobs)
+	}
+}

@@ -582,6 +582,12 @@ func (s *Server) runExportJob(ctx context.Context, clusterID string, j *appdb.Mi
 			fail("export", err.Error())
 			return
 		}
+		if pool != nil {
+			if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
+				fail("export", err.Error())
+				return
+			}
+		}
 		disk := filepath.Join(stageDir, "disks", "boot.qcow2")
 		_ = os.MkdirAll(filepath.Dir(disk), 0o750)
 		if s.Backup == nil {
@@ -593,7 +599,6 @@ func (s *Server) runExportJob(ctx context.Context, clusterID string, j *appdb.Mi
 			return
 		}
 		files["disks/boot.qcow2"] = disk
-		_ = pool
 	} else {
 		_, _, root, err := s.bootVolumeLocator(ctx, clusterID, *wl)
 		if err != nil {
