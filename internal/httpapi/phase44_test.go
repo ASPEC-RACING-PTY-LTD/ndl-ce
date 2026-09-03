@@ -17,6 +17,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/migration"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
@@ -316,6 +317,67 @@ func TestMigrationDiskImportFailsClosedWhenNICPersistFails(t *testing.T) {
 	_, err := s.adoptImportedDisks(context.Background(), clusterID, "imported-guest", []string{tmp}, poolID, netID, "bios", 2, 536870912, false, "")
 	if err == nil || !strings.Contains(err.Error(), "could not record VM NIC") {
 		t.Fatalf("nic persist %v", err)
+	}
+}
+
+func TestMigrationDiskImportFailsClosedForUnavailableDestPool(t *testing.T) {
+	s, mem, _, _, clusterID, _, netID := phase18Ready(t)
+	tmp := filepath.Join(t.TempDir(), "guest.qcow2")
+	if err := os.WriteFile(tmp, []byte("qcow-data"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s.Backup = skipConvertBackup{fakeBackup: s.Backup.(*fakeBackup)}
+	offlinePool := uuid.NewString()
+	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: offlinePool, ClusterID: clusterID, Name: "mig-import-offline",
+		BackendType: storage.BackendDirectory, Status: storage.StatusUnavailable,
+		RootPath: "/var/lib/ndl/storage/mig-import-offline",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	wlsBefore, _ := mem.ListWorkloads(context.Background(), clusterID)
+	_, err := s.adoptImportedDisks(context.Background(), clusterID, "imported-guest", []string{tmp}, offlinePool, netID, "bios", 2, 536870912, false, "")
+	if err == nil || !strings.Contains(err.Error(), "storage pool is unavailable") {
+		t.Fatalf("unavailable dest pool %v", err)
+	}
+	wlsAfter, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wlsAfter) != len(wlsBefore) {
+		t.Fatalf("GET must not list a VM whose import dest pool apply cannot allocate: %+v", wlsAfter)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume apply cannot allocate: %d -> %d", len(volsBefore), len(volsAfter))
+	}
+}
+
+func TestMigrationDiskImportFailsClosedForUnavailableNetwork(t *testing.T) {
+	s, mem, _, _, clusterID, poolID, _ := phase18Ready(t)
+	tmp := filepath.Join(t.TempDir(), "guest.qcow2")
+	if err := os.WriteFile(tmp, []byte("qcow-data"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s.Backup = skipConvertBackup{fakeBackup: s.Backup.(*fakeBackup)}
+	offlineNet := uuid.NewString()
+	if err := mem.CreateNetwork(context.Background(), appdb.Network{
+		ID: offlineNet, ClusterID: clusterID, Name: "mig-import-offline",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusUnavailable, BridgeName: "ndlcafe00bb",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	volsBefore, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	wlsBefore, _ := mem.ListWorkloads(context.Background(), clusterID)
+	_, err := s.adoptImportedDisks(context.Background(), clusterID, "imported-guest", []string{tmp}, poolID, offlineNet, "bios", 2, 536870912, false, "")
+	if err == nil || !strings.Contains(err.Error(), "an available network is required") {
+		t.Fatalf("unavailable network %v", err)
+	}
+	wlsAfter, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wlsAfter) != len(wlsBefore) {
+		t.Fatalf("GET must not list a VM whose import network apply cannot attach: %+v", wlsAfter)
+	}
+	volsAfter, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(volsAfter) != len(volsBefore) {
+		t.Fatalf("import must not persist a volume apply cannot attach: %d -> %d", len(volsBefore), len(volsAfter))
 	}
 }
 

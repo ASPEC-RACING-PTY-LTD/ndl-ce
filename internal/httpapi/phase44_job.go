@@ -423,6 +423,8 @@ func (s *Server) adoptImportedDisks(ctx context.Context, clusterID, name string,
 			return nil, errUnprocessable("destination storage does not exist")
 		}
 		pool = &pools[0]
+	} else if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+		return nil, errConflict("storage pool is unavailable")
 	}
 	if networkID == "" {
 		nets, _ := s.Store.ListNetworks(ctx, clusterID)
@@ -430,6 +432,9 @@ func (s *Server) adoptImportedDisks(ctx context.Context, clusterID, name string,
 			return nil, errUnprocessable("destination network does not exist")
 		}
 		networkID = nets[0].ID
+	}
+	if _, _, err := s.resolveWorkloadNetwork(ctx, clusterID, networkID); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(name) == "" {
 		name = "imported"

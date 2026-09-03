@@ -233,6 +233,9 @@ nodal (1.0.0) UNRELEASED; urgency=medium
     migrate refuse an unavailable boot volume or pool before persist.
     GET no longer lists a clone, library export, or overlay whose
     copy or snapshot apply cannot use the boot disk.
+  * Migration disk import refuses an unavailable dest pool or
+    network before persist. GET /workloads no longer lists an
+    import copy or start cannot apply, and no dest volume is stored.
 
  -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
