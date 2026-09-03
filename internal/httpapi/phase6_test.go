@@ -919,3 +919,45 @@ func TestWorkloadFilesJoinsZFSDatasetUnderHostPath(t *testing.T) {
 		t.Fatalf("201 jail_root must be the ZFS dataset mount: %+v", created["jail_root"])
 	}
 }
+
+func TestWorkloadFilesFailsClosedForUnavailableVolume(t *testing.T) {
+	s, mem, ts, cookie, _, wlID := seedPhase6(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	disks, err := mem.ListWorkloadDisks(context.Background(), cluster.ID, wlID)
+	if err != nil || len(disks) == 0 {
+		t.Fatalf("disks %v %+v", err, disks)
+	}
+	if err := mem.UpdateVolumeObserved(context.Background(), appdb.Volume{ID: disks[0].VolumeID, Status: storage.StatusUnavailable}); err != nil {
+		t.Fatal(err)
+	}
+	fio, _ := s.IO.(*fakeIO)
+	res := doCookie(t, ts, cookie, "GET", "/api/v1/workloads/"+wlID+"/files?path=.", "")
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("files list %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "storage is unavailable") {
+		t.Fatalf("files list body %s", raw)
+	}
+	if fio != nil && fio.lastJail != "" {
+		t.Fatalf("Files must not call the agent for unavailable storage: jail=%s", fio.lastJail)
+	}
+	term := doCookie(t, ts, cookie, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	tbody, _ := io.ReadAll(term.Body)
+	_ = term.Body.Close()
+	if term.StatusCode != http.StatusConflict {
+		t.Fatalf("terminal %d %s", term.StatusCode, tbody)
+	}
+	if !strings.Contains(string(tbody), "storage is unavailable") {
+		t.Fatalf("terminal body %s", tbody)
+	}
+	admin, err := mem.GetUserByName(context.Background(), cluster.ID, "admin")
+	if err != nil || admin == nil {
+		t.Fatal(err)
+	}
+	sessions, _ := mem.ListIOSessions(context.Background(), cluster.ID, admin.ID)
+	if len(sessions) != 0 {
+		t.Fatalf("GET must not list a terminal session whose jail GET /volumes would show unavailable: %+v", sessions)
+	}
+}

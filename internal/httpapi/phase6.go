@@ -575,9 +575,15 @@ func (s *Server) workloadJail(ctx context.Context, clusterID string, w appdb.Wor
 	if err != nil || vol == nil {
 		return "", errConflict("workload volume is unavailable")
 	}
+	if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
+		return "", errConflict("storage is unavailable")
+	}
 	pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
 	if err != nil || pool == nil {
 		return "", errConflict("workload pool is unavailable")
+	}
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+		return "", errConflict("storage is unavailable")
 	}
 	joined, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
 	if err != nil {
