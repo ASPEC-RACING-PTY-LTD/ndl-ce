@@ -335,7 +335,10 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Package: additive to CE 1.0. Community Edition stays standalone.
 - Result: signed entitlement verify, license import, EE sidecar proxy, OIDC callback into CE sessions.
 - Invariant: license state never stops workloads. Edition is `ee` only with a verified entitlement and a present sidecar.
-- Honesty: SAML, LDAP, full SIEM dialects, and hosted Cloud licensing commerce are not in this CE tree.
+- Honesty: SAML, LDAP, and SIEM dialects are implemented in `ndl-ee` and
+  reached through CE extension points. Hosted Cloud licensing commerce
+  stays in `no-dal`. Live customer IdP, directory, and SIEM endpoints
+  require external credentials.
 
 
 

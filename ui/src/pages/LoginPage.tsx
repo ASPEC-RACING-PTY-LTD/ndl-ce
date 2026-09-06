@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
-import { ApiError, login, verifyMfa } from "../api/client";
-import type { MFAChallengeResponse } from "../generated/openapi";
+import { useEffect, useState, type FormEvent } from "react";
+import { ApiError, login, listSSOProviders, startOIDC, startSAML, verifyMfa } from "../api/client";
+import type { MFAChallengeResponse, SSOProvider } from "../generated/openapi";
 import { AuthBrand } from "../components/AuthBrand";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
@@ -16,6 +16,13 @@ export function LoginPage() {
   const [challenge, setChallenge] = useState<MFAChallengeResponse | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [providers, setProviders] = useState<SSOProvider[]>([]);
+
+  useEffect(() => {
+    void listSSOProviders()
+      .then((body) => setProviders((body.items ?? []).filter((p) => p.enabled)))
+      .catch(() => setProviders([]));
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -109,6 +116,50 @@ export function LoginPage() {
             {busy ? "Signing in" : "Sign in"}
           </button>
         </form>
+        {!challenge && providers.length > 0 ? (
+          <div className="stack">
+                {providers.map((p) => (
+              <button
+                key={p.id}
+                className="btn"
+                type="button"
+                disabled={busy || p.login === "bind" || !p.id}
+                onClick={() => {
+                  if (!p.id) {
+                    return;
+                  }
+                  const id = p.id;
+                  void (async () => {
+                    setFormError(null);
+                    setBusy(true);
+                    try {
+                      if (p.kind === "saml") {
+                        const start = await startSAML(id);
+                        if (start.authorization_url) {
+                          window.location.assign(start.authorization_url);
+                        }
+                        return;
+                      }
+                      const start = await startOIDC(id);
+                      if (start.authorization_url) {
+                        window.location.assign(start.authorization_url);
+                      }
+                    } catch (err) {
+                      setFormError(err instanceof ApiError ? err.message : "SSO start failed.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  })();
+                }}
+              >
+                {p.login === "bind" ? `LDAP directory: ${p.name}` : `Continue with ${p.name}`}
+              </button>
+            ))}
+            {providers.some((p) => p.login === "bind") ? (
+              <p className="lede">Directory accounts use the username and password fields above.</p>
+            ) : null}
+          </div>
+        ) : null}
         {setupOpen && !challenge ? (
           <p className="auth-alt">
             First-time appliance? <Link href="/setup">Create the first administrator</Link>

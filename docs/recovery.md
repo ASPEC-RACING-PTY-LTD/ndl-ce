@@ -375,11 +375,16 @@ sites. The licensing API is contacted only then. If that API is
 unreachable, status is grace or unreachable. Workloads are not
 stopped. Clearing the key returns the surface to absent CE.
 
-Signed entitlements are verified against `/etc/ndl/ee-trust`. Edition
-is `ee` only when that document is valid and `ndl-ee` is installed on
-the same host. Expiry and connectivity loss never stop guests. The
-sidecar is proxied at `/api/v1/enterprise/*` and is absent on a
-standalone Community Edition install.
+Signed entitlements are verified against `/etc/ndl/ee-trust`. Development
+key `ee-dev-2026` is not trusted unless `NODAL_EE_ALLOW_DEV_TRUST` is
+set. Edition is `ee` only when that document is valid and `ndl-ee` is
+installed on the same host. Expiry and connectivity loss never stop
+guests. The sidecar is proxied at `/api/v1/enterprise/*` and is absent
+on a standalone Community Edition install. OIDC, SAML, and LDAP login
+complete into CE sessions. `nodalctl license verify-artifact` checks
+signed Enterprise packages against the same trust directory. Compromised
+key ids go in `/etc/ndl/ee-trust/revoked`. Artifact SHA-256 digests go
+in `/etc/ndl/ee-trust/revoked-artifacts`.
 
 
 

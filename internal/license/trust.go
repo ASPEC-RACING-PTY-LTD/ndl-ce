@@ -92,17 +92,33 @@ func NewEphemeralSigner(keyID string) (Signer, TrustBundle, error) {
 	return Signer{KeyID: keyID, Private: priv}, TrustBundle{keyID: pub}, nil
 }
 
-func LoadTrust(dir string) TrustBundle {
-	out := DevTrust()
-	if dir == "" {
-		if env := strings.TrimSpace(os.Getenv("NODAL_EE_TRUST_DIR")); env != "" {
-			dir = env
-		} else {
-			dir = TrustDir
-		}
+func AllowDevTrust() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("NODAL_EE_ALLOW_DEV_TRUST")))
+	if v == "" {
+		v = strings.ToLower(strings.TrimSpace(os.Getenv("NDL_EE_ALLOW_DEV_KEYS")))
 	}
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func ResolveTrustDir(dir string) string {
+	if strings.TrimSpace(dir) != "" {
+		return dir
+	}
+	if env := strings.TrimSpace(os.Getenv("NODAL_EE_TRUST_DIR")); env != "" {
+		return env
+	}
+	return TrustDir
+}
+
+func LoadTrust(dir string) TrustBundle {
+	out := TrustBundle{}
+	if AllowDevTrust() {
+		out = DevTrust()
+	}
+	dir = ResolveTrustDir(dir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		applyRevokedKeys(out, dir)
 		return out
 	}
 	for _, e := range entries {
@@ -123,6 +139,41 @@ func LoadTrust(dir string) TrustBundle {
 		}
 		id := strings.TrimSuffix(name, ".pub")
 		out[id] = pub
+	}
+	applyRevokedKeys(out, dir)
+	return out
+}
+
+func applyRevokedKeys(out TrustBundle, dir string) {
+	revoked := loadRevokedLines(dir, "revoked")
+	for id := range out {
+		if _, ok := revoked[strings.ToLower(id)]; ok {
+			delete(out, id)
+		}
+	}
+}
+
+func DigestRevoked(dir, digest string) bool {
+	digest = strings.ToLower(strings.TrimSpace(digest))
+	if digest == "" {
+		return false
+	}
+	_, ok := loadRevokedLines(ResolveTrustDir(dir), "revoked-artifacts")[digest]
+	return ok
+}
+
+func loadRevokedLines(dir, name string) map[string]struct{} {
+	out := map[string]struct{}{}
+	raw, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		out[strings.ToLower(line)] = struct{}{}
 	}
 	return out
 }

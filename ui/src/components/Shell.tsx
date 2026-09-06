@@ -76,6 +76,7 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
       { href: "/groups", label: "Groups", match: (p) => p === "/groups" },
       { href: "/audit", label: "Audit", match: (p) => p === "/audit" },
       { href: "/settings/license", label: "License", match: (p) => p === "/settings/license" },
+      { href: "/settings/enterprise", label: "Enterprise", match: (p) => p === "/settings/enterprise" },
     ],
   },
 ];

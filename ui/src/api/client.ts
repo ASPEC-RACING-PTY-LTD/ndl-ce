@@ -454,6 +454,32 @@ export async function importLicense(entitlement: unknown, key?: string): Promise
   );
 }
 
+export async function listSSOProviders(): Promise<{ items?: import("../generated/openapi").SSOProvider[] }> {
+  return readJson(await request("/auth/sso/providers"));
+}
+
+export async function startOIDC(providerId: string): Promise<import("../generated/openapi").OIDCStartResponse> {
+  return readJson(
+    await request("/auth/sso/oidc/start", {
+      method: "POST",
+      body: JSON.stringify({ provider_id: providerId }),
+    }),
+  );
+}
+
+export async function startSAML(providerId: string): Promise<import("../generated/openapi").OIDCStartResponse> {
+  return readJson(
+    await request("/auth/sso/saml/start", {
+      method: "POST",
+      body: JSON.stringify({ provider_id: providerId }),
+    }),
+  );
+}
+
+export async function enterpriseJSON<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return readJson<T>(await request(path.startsWith("/") ? path : `/${path}`, init));
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

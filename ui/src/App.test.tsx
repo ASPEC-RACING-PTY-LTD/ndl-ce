@@ -102,6 +102,7 @@ const defaultRoutes = {
       contacts_api: false,
     },
   },
+  "/api/v1/auth/sso/providers": { status: 200, body: { items: [] } },
   "/api/v1/migration/adapters": { status: 200, body: { items: [] } },
   "/api/v1/migration/modes": { status: 200, body: { items: [], source_safety: "PROTECTED" } },
   "/api/v1/migration/sources": { status: 200, body: { items: [] } },

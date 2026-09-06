@@ -15,6 +15,7 @@ import (
 
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/install"
+	"github.com/no-dal/ndl-ce/internal/license"
 )
 
 func main() {
@@ -63,6 +64,7 @@ func run(args []string) error {
   license activate --key KEY --confirm activate-license
   license clear --confirm clear-license
   license import --file FILE --confirm import-license
+  license verify-artifact --manifest FILE --blob FILE
   migration adapters
   migration modes
   migration sources
@@ -962,7 +964,7 @@ func cmdAI(args []string) error {
 
 func cmdLicense(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl license show|activate|clear|import")
+		return fmt.Errorf("usage: nodalctl license show|activate|clear|import|verify-artifact")
 	}
 	switch args[0] {
 	case "show":
@@ -999,8 +1001,30 @@ func cmdLicense(args []string) error {
 			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
 		}
 		return postJSON("/api/v1/settings/license/import", map[string]any{"entitlement": ent}, true)
+	case "verify-artifact":
+		f := parseFlags(args[1:])
+		if f["manifest"] == "" || f["blob"] == "" {
+			return fmt.Errorf("usage: nodalctl license verify-artifact --manifest FILE --blob FILE")
+		}
+		manRaw, err := os.ReadFile(f["manifest"])
+		if err != nil {
+			return err
+		}
+		blob, err := os.ReadFile(f["blob"])
+		if err != nil {
+			return err
+		}
+		var man license.ArtifactManifest
+		if err := json.Unmarshal(manRaw, &man); err != nil {
+			return err
+		}
+		if err := license.VerifyArtifact(man, blob, license.LoadTrust("")); err != nil {
+			return err
+		}
+		fmt.Println("artifact signature is valid")
+		return nil
 	default:
-		return fmt.Errorf("usage: nodalctl license show|activate|clear|import")
+		return fmt.Errorf("usage: nodalctl license show|activate|clear|import|verify-artifact")
 	}
 }
 

@@ -18,7 +18,7 @@ func TestPhase43ImportSignedEntitlement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	doc, err := signer.Sign(license.Document{
 		Version: license.DocumentVersion, Edition: license.EditionEE, Organization: "Example Pty Ltd",
 		Capabilities: []string{license.CapIdentityOIDC, license.AuditExport},

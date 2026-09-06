@@ -32,7 +32,9 @@ API only when a key is present. If that API is unreachable, grace
 applies and workloads keep running. CE does not ship EE blobs or
 private repo credentials. Edition stays `ce` until a verified signed
 entitlement is valid and the Enterprise sidecar is present. Expiry
-disables Enterprise capabilities only. Guests keep running.
+disables Enterprise capabilities only. Guests keep running. Settings,
+Enterprise configures identity, SIEM export, fleet inventory, and
+advanced policy through the sidecar when entitled.
 
 ## Honesty
 

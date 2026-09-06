@@ -33,6 +33,7 @@ import { AutomationPage } from "./pages/AutomationPage";
 import { AskPage } from "./pages/AskPage";
 import { PlansPage } from "./pages/PlansPage";
 import { LicensePage } from "./pages/LicensePage";
+import { EnterprisePage } from "./pages/EnterprisePage";
 import { DocsPage } from "./pages/DocsPage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
 import { BackupsPage } from "./pages/BackupsPage";
@@ -167,6 +168,9 @@ function matchPage(path: string) {
   }
   if (path === "/settings/license") {
     return <LicensePage />;
+  }
+  if (path === "/settings/enterprise") {
+    return <EnterprisePage />;
   }
   if (path === "/docs") {
     return <DocsPage />;

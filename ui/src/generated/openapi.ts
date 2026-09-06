@@ -1930,6 +1930,19 @@ export interface OIDCStartRequest {
 export interface OIDCStartResponse {
   authorization_url?: string;
   state?: string;
+  kind?: string;
+}
+
+export interface SSOProvider {
+  id?: string;
+  kind?: string;
+  name?: string;
+  enabled?: boolean;
+  login?: string;
+}
+
+export interface SSOProviderList {
+  items?: SSOProvider[];
 }
 
 export interface MigrationAdapter {
@@ -2031,6 +2044,12 @@ export type LogoutPath = "/api/v1/auth/logout";
 export type StartOIDCPath = "/api/v1/auth/sso/oidc/start";
 
 export type OidcCallbackPath = "/api/v1/auth/sso/oidc/callback";
+
+export type ListSSOProvidersPath = "/api/v1/auth/sso/providers";
+
+export type StartSAMLPath = "/api/v1/auth/sso/saml/start";
+
+export type SamlACSPath = "/api/v1/auth/sso/saml/acs";
 
 export type GetMePath = "/api/v1/me";
 

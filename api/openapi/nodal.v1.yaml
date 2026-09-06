@@ -99,6 +99,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MeResponse"
+  /auth/sso/providers:
+    get:
+      operationId: listSSOProviders
+      summary: Public Enterprise identity providers for the login page. Empty when Community Edition.
+      responses:
+        "200":
+          description: Provider list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SSOProviderList"
+  /auth/sso/saml/start:
+    post:
+      operationId: startSAML
+      summary: Start Enterprise SAML login when entitled. Community Edition login remains available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OIDCStartRequest"
+      responses:
+        "200":
+          description: Authorization URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OIDCStartResponse"
+  /auth/sso/saml/acs:
+    post:
+      operationId: samlACS
+      summary: Complete Enterprise SAML login and issue a Community Edition session.
+      responses:
+        "200":
+          description: Authenticated principal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
   /me:
     get:
       operationId: getMe
@@ -8840,6 +8879,30 @@ components:
           type: string
         state:
           type: string
+        kind:
+          type: string
+    SSOProvider:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        login:
+          type: string
+    SSOProviderList:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SSOProvider"
     MigrationAdapter:
       type: object
       additionalProperties: false

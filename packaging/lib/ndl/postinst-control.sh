@@ -33,8 +33,10 @@ ensure_dirs() {
   # Secrets stay 0600 under this directory; /var/lib/ndl/control stays 0750.
   chmod 0751 /var/lib/ndl
   mkdir -p /etc/ndl
+  mkdir -p /etc/ndl/ee-trust
   chown root:ndl-control /etc/ndl
   chmod 0750 /etc/ndl
+  chmod 0755 /etc/ndl/ee-trust
   mkdir -p /var/lib/ndl/certs
   chown ndl-control:ndl-control /var/lib/ndl/certs
   chmod 0700 /var/lib/ndl/certs

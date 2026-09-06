@@ -232,6 +232,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/enterprise/", s.proxyEnterprise)
 	mux.HandleFunc("POST /api/v1/auth/sso/oidc/start", s.ssoStart)
 	mux.HandleFunc("GET /api/v1/auth/sso/oidc/callback", s.ssoCallback)
+	mux.HandleFunc("GET /api/v1/auth/sso/providers", s.ssoProviders)
+	mux.HandleFunc("POST /api/v1/auth/sso/saml/start", s.samlStart)
+	mux.HandleFunc("POST /api/v1/auth/sso/saml/acs", s.samlACS)
 	mux.HandleFunc("GET /api/v1/migration/adapters", s.listMigrationAdapters)
 	mux.HandleFunc("GET /api/v1/migration/modes", s.listMigrationModes)
 	mux.HandleFunc("GET /api/v1/migration/sources", s.listMigrationSources)
@@ -596,11 +599,23 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.Store.GetUserByName(r.Context(), cluster.ID, strings.TrimSpace(req.Username))
-	if err != nil || user == nil || !auth.VerifyPassword(req.Password, user.PasswordHash) {
+	localOK := err == nil && user != nil && auth.VerifyPassword(req.Password, user.PasswordHash)
+	overlay := s.policyOverlay(r.Context(), cluster.ID)
+	if localOK && overlay.BlocksLocalPassword() {
 		s.lock().Fail(key, s.now())
-		s.audit(r, cluster.ID, "", "auth.login", "denied", "invalid credentials")
-		writeErr(w, http.StatusUnauthorized, "invalid credentials")
+		s.audit(r, cluster.ID, user.ID, "auth.login", "denied", "local password disabled")
+		writeErr(w, http.StatusUnauthorized, "local password sign-in is disabled")
 		return
+	}
+	if !localOK {
+		bound, berr := s.ldapBindUser(r.Context(), cluster.ID, strings.TrimSpace(req.Username), req.Password)
+		if berr != nil || bound == nil {
+			s.lock().Fail(key, s.now())
+			s.audit(r, cluster.ID, "", "auth.login", "denied", "invalid credentials")
+			writeErr(w, http.StatusUnauthorized, "invalid credentials")
+			return
+		}
+		user = bound
 	}
 	if user.Kind == appdb.UserKindService {
 		s.lock().Fail(key, s.now())
@@ -608,9 +623,21 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
+	if err := s.enforceAdminCIDR(r, *user, overlay); err != nil {
+		s.lock().Fail(key, s.now())
+		s.audit(r, cluster.ID, user.ID, "auth.login", "denied", "admin cidr")
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
 	method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "mfa state is unavailable")
+		return
+	}
+	if overlay.RequireMFA && (method == nil || !method.Enabled) {
+		s.lock().Fail(key, s.now())
+		s.audit(r, cluster.ID, user.ID, "auth.login", "denied", "mfa required")
+		writeErr(w, http.StatusForbidden, "mfa enrollment is required")
 		return
 	}
 	if method != nil && method.Enabled {
@@ -819,7 +846,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 		ClusterID: user.ClusterID,
 		UserID:    user.ID,
 		TokenHash: secutil.HashSHA256(raw),
-		ExpiresAt: s.now().Add(sessionTTL),
+		ExpiresAt: s.now().Add(s.sessionTTL(r.Context(), user.ClusterID)),
 		AAL:       aal,
 	}
 	if err := s.Store.CreateSession(r.Context(), sess); err != nil {
