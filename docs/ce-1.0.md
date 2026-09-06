@@ -26,10 +26,13 @@ That definition is the milestone. This tree has not reached it.
 
 ## License surface
 
-Settings, License can store an EE key for a later upgrade without
-reinstall. Activation talks to a licensing API only when a key is
-present. If that API is unreachable, grace applies and workloads keep
-running. CE does not ship EE blobs or private repo credentials.
+Settings, License can store an EE key or import a signed entitlement
+for a later upgrade without reinstall. Activation talks to a licensing
+API only when a key is present. If that API is unreachable, grace
+applies and workloads keep running. CE does not ship EE blobs or
+private repo credentials. Edition stays `ce` until a verified signed
+entitlement is valid and the Enterprise sidecar is present. Expiry
+disables Enterprise capabilities only. Guests keep running.
 
 ## Honesty
 

@@ -14,5 +14,8 @@ Compatibility for this freeze:
 - The agent proto still has no `Host.Exec`. Plans and policies cannot
   add one.
 
-This freeze does not claim wire compatibility with a future EE API.
-It is not proof that the CE 1.0 hardware gates have passed.
+This freeze does not claim wire compatibility with a future EE API
+beyond the additive license import, enterprise status, and OIDC start
+or callback routes. Proxy paths under `/api/v1/enterprise/` are not
+part of the CE 1.0 freeze. It is not proof that the CE 1.0 hardware
+gates have passed.

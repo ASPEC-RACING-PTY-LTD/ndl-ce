@@ -71,6 +71,34 @@ paths:
       responses:
         "204":
           description: Logged out
+  /auth/sso/oidc/start:
+    post:
+      operationId: startOIDC
+      summary: Start Enterprise OIDC login when entitled. Community Edition login remains available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OIDCStartRequest"
+      responses:
+        "200":
+          description: Authorization URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OIDCStartResponse"
+  /auth/sso/oidc/callback:
+    get:
+      operationId: oidcCallback
+      summary: Complete Enterprise OIDC login and issue a Community Edition session.
+      responses:
+        "200":
+          description: Authenticated principal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
   /me:
     get:
       operationId: getMe
@@ -1498,6 +1526,42 @@ paths:
             type: string
             enum:
               - clear-license
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+  /settings/license/import:
+    post:
+      operationId: importLicense
+      summary: Import a signed entitlement for air-gapped activation. Workloads are not stopped.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - import-license
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LicenseImportRequest"
+      responses:
+        "200":
+          description: License status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseStatus"
+  /enterprise/status:
+    get:
+      operationId: getEnterpriseStatus
+      summary: License snapshot plus whether the Enterprise sidecar is present. Workloads are not stopped.
       responses:
         "200":
           description: License status
@@ -8682,7 +8746,7 @@ components:
     LicenseStatus:
       type: object
       additionalProperties: false
-      description: License-activation surface. Edition stays ce. Workloads are not stopped. EE blobs are not shipped.
+      description: License-activation surface. Workloads are not stopped. Edition is ee only with a valid signed entitlement and the Enterprise sidecar.
       required:
         - edition
         - status
@@ -8694,9 +8758,9 @@ components:
       properties:
         edition:
           type: string
-          description: Always ce. This tree does not unlock EE.
           enum:
             - ce
+            - ee
         status:
           type: string
           enum:
@@ -8704,6 +8768,7 @@ components:
             - grace
             - unreachable
             - active
+            - expired
         reason:
           type: string
         has_key:
@@ -8712,12 +8777,34 @@ components:
           type: string
         workloads_stopped:
           type: boolean
-          description: Always false. CE does not stop workloads for license state.
+          description: Always false. License state never stops workloads.
         ee_blobs:
           type: boolean
-          description: Always false. This tree does not ship EE artifacts.
+          description: True only when the Enterprise sidecar is present. This tree does not ship EE artifacts.
+        ee_runtime:
+          type: boolean
         contacts_api:
           type: boolean
+        degraded:
+          type: boolean
+        signed:
+          type: boolean
+        organization:
+          type: string
+        installation_id:
+          type: string
+        subscription_id:
+          type: string
+        update_channel:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+        grace_until:
+          type: string
         last_checked:
           type: string
     LicenseActivateRequest:
@@ -8727,6 +8814,31 @@ components:
         - key
       properties:
         key:
+          type: string
+    LicenseImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - entitlement
+      properties:
+        entitlement:
+          type: object
+          additionalProperties: true
+        key:
+          type: string
+    OIDCStartRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider_id:
+          type: string
+    OIDCStartResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        authorization_url:
+          type: string
+        state:
           type: string
     MigrationAdapter:
       type: object

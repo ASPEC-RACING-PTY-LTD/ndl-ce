@@ -62,6 +62,7 @@ func run(args []string) error {
   license show
   license activate --key KEY --confirm activate-license
   license clear --confirm clear-license
+  license import --file FILE --confirm import-license
   migration adapters
   migration modes
   migration sources
@@ -961,7 +962,7 @@ func cmdAI(args []string) error {
 
 func cmdLicense(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl license show|activate|clear")
+		return fmt.Errorf("usage: nodalctl license show|activate|clear|import")
 	}
 	switch args[0] {
 	case "show":
@@ -981,8 +982,25 @@ func cmdLicense(args []string) error {
 			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
 		}
 		return postJSON("/api/v1/settings/license/clear", map[string]any{}, true)
+	case "import":
+		f := parseFlags(args[1:])
+		if f["file"] == "" {
+			return fmt.Errorf("usage: nodalctl license import --file FILE --confirm import-license")
+		}
+		raw, err := os.ReadFile(f["file"])
+		if err != nil {
+			return err
+		}
+		var ent any
+		if err := json.Unmarshal(raw, &ent); err != nil {
+			return err
+		}
+		if f["confirm"] != "" {
+			_ = os.Setenv("NODAL_CONFIRM", f["confirm"])
+		}
+		return postJSON("/api/v1/settings/license/import", map[string]any{"entitlement": ent}, true)
 	default:
-		return fmt.Errorf("usage: nodalctl license show|activate|clear")
+		return fmt.Errorf("usage: nodalctl license show|activate|clear|import")
 	}
 }
 

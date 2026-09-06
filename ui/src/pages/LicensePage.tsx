@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ApiError, activateLicense, clearLicense, getLicense } from "../api/client";
+import { ApiError, activateLicense, clearLicense, getLicense, importLicense } from "../api/client";
 import type { LicenseStatus } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
@@ -67,14 +67,30 @@ export function LicensePage() {
     }
   }
 
+  async function onImport(file: File) {
+    if (!window.confirm("Import this signed entitlement? Workloads will not stop if it is expired or invalid.")) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      setStatus(await importLicense(parsed));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="page">
       <header className="page-header">
         <h1>License</h1>
         <p className="lede">
-          Community Edition does not require a key. CE 1.0 hardware gates are not proven on this host. This page does
-          not download EE blobs. Entering a key contacts a licensing API only then. If that API is unreachable, grace
-          applies and workloads are not stopped.
+          Community Edition does not require a key. Entering a key contacts a licensing API only then. Signed
+          entitlements enable Enterprise capabilities on this install. If that API is unreachable, grace applies and
+          workloads are not stopped. Expiry disables Enterprise features only.
         </p>
       </header>
       {error ? (
@@ -88,8 +104,13 @@ export function LicensePage() {
           <p>Status {status.status}.</p>
           <p>{status.reason}</p>
           <p>Has key {status.has_key ? "yes" : "no"}{status.key_suffix ? ` suffix ${status.key_suffix}` : ""}.</p>
+          <p>EE runtime {status.ee_runtime ? "yes" : "no"}.</p>
           <p>EE blobs {status.ee_blobs ? "yes" : "no"}.</p>
           <p>Workloads stopped {status.workloads_stopped ? "yes" : "no"}.</p>
+          {status.organization ? <p>Organization {status.organization}.</p> : null}
+          {status.capabilities && status.capabilities.length > 0 ? (
+            <p>Capabilities {status.capabilities.join(", ")}.</p>
+          ) : null}
           <p>
             See <Link href="/docs">Docs</Link> for CE 1.0.
           </p>
@@ -121,6 +142,22 @@ export function LicensePage() {
           <button className="btn" type="button" disabled={busy} onClick={() => void onClear()}>
             Clear license
           </button>
+          <label className="btn" htmlFor="license-entitlement-file">
+            Import entitlement
+          </label>
+          <input
+            id="license-entitlement-file"
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(ev) => {
+              const file = ev.target.files?.[0];
+              ev.target.value = "";
+              if (file) {
+                void onImport(file);
+              }
+            }}
+          />
         </article>
       ) : null}
     </section>

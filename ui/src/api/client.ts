@@ -444,6 +444,16 @@ export async function clearLicense(): Promise<import("../generated/openapi").Lic
   );
 }
 
+export async function importLicense(entitlement: unknown, key?: string): Promise<import("../generated/openapi").LicenseStatus> {
+  return readJson(
+    await request("/settings/license/import", {
+      method: "POST",
+      headers: { "X-Nodal-Confirm": "import-license" },
+      body: JSON.stringify({ entitlement, key }),
+    }),
+  );
+}
+
 export async function getNodeHardware(id: string): Promise<import("./phase2").HardwareResponse> {
   return readJson(await request(`/nodes/${id}/hardware`));
 }

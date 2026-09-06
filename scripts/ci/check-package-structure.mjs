@@ -148,12 +148,12 @@ if (!existsSync("migrations/0038_phase42.sql")) {
     errors.push("phase 42 migration must add ai_plans and ai_plan_steps");
   }
 }
-if (!existsSync("migrations/0039_phase43.sql")) {
-  errors.push("missing migrations/0039_phase43.sql license_state");
+if (!existsSync("migrations/0041_enterprise.sql")) {
+  errors.push("missing migrations/0041_enterprise.sql entitlement cache");
 } else {
-  const licSql = readFileSync("migrations/0039_phase43.sql", "utf8");
-  if (!licSql.includes("license_state") || !licSql.includes("secrets.license_keys")) {
-    errors.push("phase 43 migration must add license_state and secret keys");
+  const eeSql = readFileSync("migrations/0041_enterprise.sql", "utf8");
+  if (!eeSql.includes("entitlement_json") || !eeSql.includes("grace_until")) {
+    errors.push("enterprise migration must cache signed entitlement fields");
   }
 }
 if (!existsSync("store/official/sample-web.yaml")) {

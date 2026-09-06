@@ -1893,19 +1893,43 @@ export interface AIPlanCreateRequest {
 }
 
 export interface LicenseStatus {
-  edition: "ce";
-  status: "absent" | "grace" | "unreachable" | "active";
+  edition: "ce" | "ee";
+  status: "absent" | "grace" | "unreachable" | "active" | "expired";
   reason: string;
   has_key: boolean;
   key_suffix?: string;
   workloads_stopped: boolean;
   ee_blobs: boolean;
+  ee_runtime?: boolean;
   contacts_api: boolean;
+  degraded?: boolean;
+  signed?: boolean;
+  organization?: string;
+  installation_id?: string;
+  subscription_id?: string;
+  update_channel?: string;
+  capabilities?: string[];
+  expires_at?: string;
+  grace_until?: string;
   last_checked?: string;
 }
 
 export interface LicenseActivateRequest {
   key: string;
+}
+
+export interface LicenseImportRequest {
+  entitlement: Record<string, unknown>;
+  key?: string;
+}
+
+export interface OIDCStartRequest {
+  provider_id?: string;
+}
+
+export interface OIDCStartResponse {
+  authorization_url?: string;
+  state?: string;
 }
 
 export interface MigrationAdapter {
@@ -2003,6 +2027,10 @@ export type ClaimSetupPath = "/api/v1/setup/claim";
 export type LoginPath = "/api/v1/auth/login";
 
 export type LogoutPath = "/api/v1/auth/logout";
+
+export type StartOIDCPath = "/api/v1/auth/sso/oidc/start";
+
+export type OidcCallbackPath = "/api/v1/auth/sso/oidc/callback";
 
 export type GetMePath = "/api/v1/me";
 
@@ -2147,6 +2175,10 @@ export type ApproveAIPlanPath = "/api/v1/ai/plans/{id}/approve";
 export type GetLicensePath = "/api/v1/settings/license";
 
 export type ClearLicensePath = "/api/v1/settings/license/clear";
+
+export type ImportLicensePath = "/api/v1/settings/license/import";
+
+export type GetEnterpriseStatusPath = "/api/v1/enterprise/status";
 
 export type ListMigrationAdaptersPath = "/api/v1/migration/adapters";
 

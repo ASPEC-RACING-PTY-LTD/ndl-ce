@@ -23,6 +23,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/journald"
+	"github.com/no-dal/ndl-ce/internal/license"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
@@ -84,6 +85,10 @@ type Server struct {
 	OSDProcs     func() []string
 	AICompleter  ai.Completer
 	LicenseProbe LicenseProbe
+	EESocket     string
+	EEURL        string
+	EETrust      license.TrustBundle
+	EEPresent    func() bool
 	Hub          *EventHub
 	Migrate      migrate.Runtime
 	UI           fs.FS
@@ -222,6 +227,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/settings/license", s.getLicense)
 	mux.HandleFunc("POST /api/v1/settings/license", s.activateLicense)
 	mux.HandleFunc("POST /api/v1/settings/license/clear", s.clearLicense)
+	mux.HandleFunc("POST /api/v1/settings/license/import", s.importLicense)
+	mux.HandleFunc("GET /api/v1/enterprise/status", s.enterpriseStatus)
+	mux.HandleFunc("/api/v1/enterprise/", s.proxyEnterprise)
+	mux.HandleFunc("POST /api/v1/auth/sso/oidc/start", s.ssoStart)
+	mux.HandleFunc("GET /api/v1/auth/sso/oidc/callback", s.ssoCallback)
 	mux.HandleFunc("GET /api/v1/migration/adapters", s.listMigrationAdapters)
 	mux.HandleFunc("GET /api/v1/migration/modes", s.listMigrationModes)
 	mux.HandleFunc("GET /api/v1/migration/sources", s.listMigrationSources)
@@ -838,11 +848,17 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	}
 	prefs, _ := s.Store.GetUserPrefs(r.Context(), user.ID)
 	level, ack, ackAt := prefsJSON(prefs)
+	ed := edition
+	if cluster, err := s.Store.GetCluster(r.Context()); err == nil && cluster != nil {
+		if snap := s.licenseSnapshot(r.Context(), cluster.ID); snap.Edition == license.EditionEE {
+			ed = "Enterprise Edition"
+		}
+	}
 	out := map[string]any{
 		"user_id":     user.ID,
 		"username":    user.Username,
 		"roles":       roles,
-		"edition":     edition,
+		"edition":     ed,
 		"cluster_id":  user.ClusterID,
 		"aal":         aal,
 		"mfa_enabled": mfaEnabled,
@@ -894,6 +910,9 @@ func (s *Server) audit(r *http.Request, clusterID, actor, action, result, detail
 		Detail:      body,
 		CreatedAt:   s.now(),
 	})
+	if s.eeRuntimePresent() {
+		go s.forwardAudit(clusterID, actor, action, result)
+	}
 }
 
 func (s *Server) lock() *auth.Lockout {

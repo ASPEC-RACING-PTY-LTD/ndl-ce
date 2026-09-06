@@ -370,9 +370,16 @@ Local webhook URLs are secrets. Optional SMTP stays not_configured until a host 
 ## License (Phase 43)
 
 CE does not require a key. Settings, License stores a key only when the
-operator enters one. The licensing API is contacted only then. If that
-API is unreachable, status is grace or unreachable. Workloads are not
+operator enters one, or imports a signed entitlement for air-gapped
+sites. The licensing API is contacted only then. If that API is
+unreachable, status is grace or unreachable. Workloads are not
 stopped. Clearing the key returns the surface to absent CE.
+
+Signed entitlements are verified against `/etc/ndl/ee-trust`. Edition
+is `ee` only when that document is valid and `ndl-ee` is installed on
+the same host. Expiry and connectivity loss never stop guests. The
+sidecar is proxied at `/api/v1/enterprise/*` and is absent on a
+standalone Community Edition install.
 
 
 

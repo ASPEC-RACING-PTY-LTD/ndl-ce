@@ -75,7 +75,7 @@ func TestHTTPProbeRequiresAcceptedEntitlement(t *testing.T) {
 		{path: "/", want: ErrNotEntitled},
 		{path: "/fail", want: ErrUnreachable},
 		{path: "/accepted", want: nil},
-		{path: "/signed", want: nil},
+		{path: "/signed", want: ErrNotEntitled},
 	}
 	for _, tc := range cases {
 		probe.Endpoint = srv.URL + tc.path

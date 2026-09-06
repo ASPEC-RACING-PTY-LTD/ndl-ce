@@ -45,8 +45,11 @@ export function roleLabel(role: string): string {
 }
 
 export function editionLabel(edition?: string): string {
-  if (edition === "ce") {
+  if (edition === "ce" || edition === "Community Edition") {
     return "Community Edition";
+  }
+  if (edition === "ee" || edition === "Enterprise Edition") {
+    return "Enterprise Edition";
   }
   return edition || "Not reported";
 }

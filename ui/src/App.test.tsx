@@ -817,8 +817,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^license$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^license$/i })).toBeVisible();
     expect(screen.getByText(/does not require a key/i)).toBeVisible();
-    expect(screen.getByText(/does not download ee blobs/i)).toBeVisible();
-    expect(screen.getByText(/hardware gates are not proven on this host/i)).toBeVisible();
+    expect(screen.getByText(/workloads are not stopped/i)).toBeVisible();
     expect(await screen.findByText(/ee blobs no/i)).toBeVisible();
     expect(await screen.findByText(/workloads stopped no/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^activate license$/i })).toBeVisible();

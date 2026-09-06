@@ -250,7 +250,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <Link href="/" className="wordmark">
             No-dal
           </Link>
-          <span className="edition-badge">CE</span>
+          <span className="edition-badge">{user?.edition === "Enterprise Edition" ? "EE" : "CE"}</span>
         </div>
         <nav className="sidebar-nav" aria-label={workloadsCtx ? "Workloads" : "Appliance"}>
           {workloadsCtx ? (

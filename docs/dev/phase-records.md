@@ -330,6 +330,13 @@ Implementation evidence for accepted CE phases. This is not product UI.
 - Coverage: PROVEN IN CLOUD (absent license does not contact the licensing API, unreachable key uses grace, workloads_stopped stays false, full key never returned, viewer cannot activate, Settings License and Docs pages). FIXTURE: injected LicenseProbe. NOT PHYSICALLY VALIDATED: Debian 13 physical checklist, production apt signatures, live licensing API
 - Honesty: CE 1.0 is not reached until Debian 13 Homelab and cluster hardware gates pass. Virt and physical checklists are documents, not executed proof. CE does not require a key. No EE blobs. Ubuntu is not Tier 1. Signed install remains the documented HTTPS repo and keyring path. ISO is not booted in this tree. Packages are unsigned here. Migrate stays unwired until dest agent. Operate must use existing APIs. SkipHostCmds must fail closed.
 
+## Enterprise extension points
+
+- Package: additive to CE 1.0. Community Edition stays standalone.
+- Result: signed entitlement verify, license import, EE sidecar proxy, OIDC callback into CE sessions.
+- Invariant: license state never stops workloads. Edition is `ee` only with a verified entitlement and a present sidecar.
+- Honesty: SAML, LDAP, full SIEM dialects, and hosted Cloud licensing commerce are not in this CE tree.
+
 
 
 

@@ -10,15 +10,22 @@ const (
 	LicenseGrace       = "grace"
 	LicenseUnreachable = "unreachable"
 	LicenseActive      = "active"
+	LicenseExpired     = "expired"
 )
 
 // LicenseState is the CE license-activation surface. Empty means CE with no key.
 type LicenseState struct {
-	ClusterID   string
-	Status      string
-	Reason      string
-	LastChecked *time.Time
-	UpdatedAt   time.Time
+	ClusterID       string
+	Status          string
+	Reason          string
+	LastChecked     *time.Time
+	UpdatedAt       time.Time
+	EntitlementJSON []byte
+	Edition         string
+	ExpiresAt       *time.Time
+	GraceUntil      *time.Time
+	InstallationID  string
+	Organization    string
 }
 
 func (m *Memory) GetLicenseState(_ context.Context, clusterID string) (*LicenseState, string, error) {
