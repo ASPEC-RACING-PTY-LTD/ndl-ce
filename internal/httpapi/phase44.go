@@ -652,7 +652,8 @@ func (s *Server) capsFor(adapter string, item migration.ItemPlan, discovered []m
 				downloadable = true
 			}
 		}
-		return migration.PVECaps(running, item.Kind, backupFmt, downloadable)
+		autoBackup := item.Kind == migration.KindContainer && (item.TempBackup || item.Mode == migration.ModeBackup)
+		return migration.PVECaps(running, item.Kind, backupFmt, downloadable, autoBackup)
 	case migration.AdapterDisk, migration.AdapterOVF, migration.AdapterLibvirt:
 		return migration.Caps{Offline: false, Disk: true}
 	case migration.AdapterBackup, migration.AdapterNodal:
@@ -735,6 +736,7 @@ func (s *Server) planInputs(ctx context.Context, clusterID, adapter string, req 
 			if err != nil {
 				continue
 			}
+			m.Source.Running = w.Running
 			manifests[w.SourceID] = m
 		}
 		return d.Workloads, manifests, nil

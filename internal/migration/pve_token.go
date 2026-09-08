@@ -24,7 +24,7 @@ func ValidatePVEToken(token string) error {
 	bang := strings.Index(token, "!")
 	eq := strings.LastIndex(token, "=")
 	if at < 1 || bang < at+2 || eq < bang+2 || eq == len(token)-1 {
-		if at < 0 || bang < 0 {
+		if at < 0 && bang < 0 {
 			return fmt.Errorf("proxmox API token must be %s, not the secret alone. Example: %s", PVETokenFormat, PVETokenExample)
 		}
 		return fmt.Errorf("proxmox API token must be %s. Example: %s", PVETokenFormat, PVETokenExample)

@@ -796,3 +796,121 @@ func TestPhase44VMMigrationExportFailsClosedForExtraDataDisk(t *testing.T) {
 		t.Fatalf("GET must not list a succeeded extra-disk export: %+v", jobs)
 	}
 }
+
+func TestMigrationPlanLXCUsesTempVZdumpAndBlocksWithoutBackupStore(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, memNodeID(t, mem, cluster.ID))
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	pveOK := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/nodes"):
+			_, _ = w.Write([]byte(`{"data":[{"node":"pve1"}]}`))
+		case strings.Contains(r.URL.Path, "/qemu") && !strings.Contains(r.URL.Path, "/config"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/lxc"):
+			_, _ = w.Write([]byte(`{"data":[{"vmid":104,"name":"SoundDock","status":"running","cpus":4,"maxmem":8589934592,"maxdisk":128849018880}]}`))
+		case strings.Contains(r.URL.Path, "/lxc/104/config"):
+			_, _ = w.Write([]byte(`{"data":{"hostname":"SoundDock","cores":4,"memory":8192,"rootfs":"local-zfs:subvol-104-disk-0,size=120G","net0":"name=eth0,bridge=vmbr0"}}`))
+		case strings.Contains(r.URL.Path, "/storage") && strings.Contains(r.URL.Path, "/content"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.Contains(r.URL.Path, "/storage"):
+			_, _ = w.Write([]byte(`{"data":[{"storage":"local-zfs","type":"zfspool","content":"rootdir,images"},{"storage":"local","type":"dir","content":"backup,iso,vztmpl"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		}
+	}))
+	defer pveOK.Close()
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"`+pveOK.URL+`","token":"user@pam!tok=secret","insecure":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var src map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&src)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("source %d", res.StatusCode)
+	}
+	id, _ := src["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/plans", strings.NewReader(`{"source_id":"`+id+`","selected":["pve1/104"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("plan %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), `"backup"`) || !strings.Contains(string(raw), "temporary vzdump") {
+		t.Fatalf("expected auto vzdump plan %s", raw)
+	}
+	if strings.Contains(string(raw), `"BLOCKED"`) {
+		t.Fatalf("downloadable backup store must not block %s", raw)
+	}
+	_ = poolID
+	_ = netID
+
+	pveBlock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/nodes"):
+			_, _ = w.Write([]byte(`{"data":[{"node":"pve1"}]}`))
+		case strings.Contains(r.URL.Path, "/qemu") && !strings.Contains(r.URL.Path, "/config"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/lxc"):
+			_, _ = w.Write([]byte(`{"data":[{"vmid":104,"name":"SoundDock","status":"running","cpus":4,"maxmem":8589934592,"maxdisk":128849018880}]}`))
+		case strings.Contains(r.URL.Path, "/lxc/104/config"):
+			_, _ = w.Write([]byte(`{"data":{"hostname":"SoundDock","cores":4,"memory":8192,"rootfs":"local-lvm:subvol-104-disk-0,size=120G","net0":"name=eth0,bridge=vmbr0"}}`))
+		case strings.Contains(r.URL.Path, "/storage"):
+			_, _ = w.Write([]byte(`{"data":[{"storage":"local-lvm","type":"lvmthin","content":"rootdir,images"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		}
+	}))
+	defer pveBlock.Close()
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"`+pveBlock.URL+`","token":"user@pam!tok=secret","insecure":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	src = map[string]any{}
+	_ = json.NewDecoder(res.Body).Decode(&src)
+	_ = res.Body.Close()
+	id, _ = src["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/plans", strings.NewReader(`{"source_id":"`+id+`","selected":["pve1/104"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("blocked plan %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "BLOCKED") || !strings.Contains(string(raw), "lvmthin") {
+		t.Fatalf("expected Review block %s", raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"source_id":"`+id+`","selected":["pve1/104"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(raw), "lvmthin") {
+		t.Fatalf("start must fail in Review/preflight %d %s", res.StatusCode, raw)
+	}
+}

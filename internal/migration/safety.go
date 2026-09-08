@@ -42,6 +42,9 @@ func looksDestructive(s string) bool {
 // DiscloseMutations returns the operator-visible temporary source-side
 // operations required by a selected mode. Empty means read-only.
 func DiscloseMutations(mode string, caps Caps) []string {
+	if mode == ModeBackup && strings.Contains(caps.BackupNote, "temporary vzdump") {
+		return []string{"Create a temporary Proxmox vzdump marked ndl-temp-migration. Import it, then delete that temporary archive after verification. Operator backups are not deleted. The original container is not deleted."}
+	}
 	if mode != ModeSnapshot {
 		return nil
 	}

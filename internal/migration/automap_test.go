@@ -95,12 +95,17 @@ func TestSuggestModeForStrategy(t *testing.T) {
 		t.Fatalf("leave-running %s %+v", mode, f)
 	}
 	mode, f = SuggestModeForStrategy(running, StrategyConsistent)
-	if mode != ModeOffline || f == nil || f.Code != "source-must-stop" {
+	if mode != ModeBackup || f != nil {
 		t.Fatalf("consistent running %s %+v", mode, f)
 	}
 	mode, f = SuggestModeForStrategy(DiscoveredWorkload{Name: "ct", Caps: []string{ModeOffline}}, StrategyBackup)
 	if mode != "" || f == nil || f.Level != CompatBlocked {
 		t.Fatalf("backup blocked %s %+v", mode, f)
+	}
+	reason := "LXC rootfs on local-lvm (lvmthin) is not HTTP-downloadable. Add a directory, NFS, or CIFS storage with backup content so No-dal can create a temporary vzdump."
+	mode, f = SuggestModeForStrategy(DiscoveredWorkload{Name: "ct", Caps: []string{ModeDisk}, BlockReason: reason}, StrategyBackup)
+	if mode != "" || f == nil || f.Level != CompatBlocked || f.Message != reason {
+		t.Fatalf("block reason %s %+v", mode, f)
 	}
 	if _, err := NormalizeStrategy(StrategyMinimalInterruption); err == nil {
 		t.Fatal("minimal interruption must be unavailable")

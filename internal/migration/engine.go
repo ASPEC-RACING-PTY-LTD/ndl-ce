@@ -45,12 +45,30 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 		if _, ok := sel[w.SourceID]; !ok {
 			continue
 		}
+		if reason := strings.TrimSpace(w.BlockReason); reason != "" {
+			item := ItemPlan{
+				SourceID: w.SourceID, Name: w.Name, Kind: w.Kind, Manifest: manifests[w.SourceID],
+				Compatibility: CompatBlocked, Findings: []Finding{{Level: CompatBlocked, Code: "ct-rootfs", Message: reason}},
+				EstimatedBytes: w.EstimatedBytes, StartAfter: startAfter,
+			}
+			p.Items = append(p.Items, item)
+			continue
+		}
 		mode := modes[w.SourceID]
 		var suggested *Finding
 		if mode == "" {
-			mode, suggested = SuggestMode(w)
+			mode, suggested = SuggestModeForStrategy(w, "")
 		}
 		if mode == "" {
+			if suggested != nil && suggested.Level == CompatBlocked {
+				item := ItemPlan{
+					SourceID: w.SourceID, Name: w.Name, Kind: w.Kind, Manifest: manifests[w.SourceID],
+					Compatibility: CompatBlocked, Findings: []Finding{*suggested}, EstimatedBytes: w.EstimatedBytes,
+					StartAfter: startAfter,
+				}
+				p.Items = append(p.Items, item)
+				continue
+			}
 			return Plan{}, fmt.Errorf("no compatible migration mode is available for %s", w.Name)
 		}
 		m := manifests[w.SourceID]
@@ -69,6 +87,17 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 			findings = append(findings, *suggested)
 			compat = rollup(findings)
 		}
+		if w.TempBackup {
+			store := w.BackupStorage
+			if store == "" {
+				store = "backup storage"
+			}
+			findings = replaceFinding(findings, Finding{
+				Level: CompatWarning, Code: "ct-rootfs",
+				Message: "LXC rootfs is not HTTP-downloadable. No-dal will create a temporary vzdump on " + store + ", import it, then delete that temporary backup after verification.",
+			})
+			compat = rollup(findings)
+		}
 		if w.Snapshots > 0 {
 			findings = append(findings, SnapshotsNotMigrated())
 			if compat == CompatReady {
@@ -78,6 +107,7 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 		item := ItemPlan{
 			SourceID: w.SourceID, Name: w.Name, Kind: w.Kind, Mode: mode, Manifest: mapped,
 			Compatibility: compat, Findings: findings, EstimatedBytes: w.EstimatedBytes, StartAfter: startAfter,
+			TempBackup: w.TempBackup, BackupStorage: w.BackupStorage,
 		}
 		if ov != nil {
 			item.OverrideMapping = ov
@@ -91,6 +121,17 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 		return Plan{}, fmt.Errorf("no workloads selected")
 	}
 	return p, nil
+}
+
+func replaceFinding(existing []Finding, next Finding) []Finding {
+	out := existing[:0:0]
+	for _, f := range existing {
+		if f.Code == next.Code {
+			continue
+		}
+		out = append(out, f)
+	}
+	return append(out, next)
 }
 
 func Review(item ItemPlan, destNode string, mapping Mapping) map[string]any {

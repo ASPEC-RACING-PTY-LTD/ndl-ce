@@ -240,6 +240,9 @@ type DiscoveredWorkload struct {
 	Backups        int      `json:"backups,omitempty"`
 	Caps           []string `json:"capabilities,omitempty"`
 	EstimatedBytes int64    `json:"estimated_bytes,omitempty"`
+	TempBackup     bool     `json:"temp_backup,omitempty"`
+	BackupStorage  string   `json:"backup_storage,omitempty"`
+	BlockReason    string   `json:"block_reason,omitempty"`
 }
 
 // Discovery is the result of Connect plus Discover. It does not start a transfer.
@@ -280,6 +283,10 @@ type ItemPlan struct {
 	OverrideMapping     *Mapping  `json:"override_mapping,omitempty"`
 	LiveAck             bool      `json:"live_ack,omitempty"`
 	IdentityConflictAck bool      `json:"identity_conflict_ack,omitempty"`
+	TempBackup          bool      `json:"temp_backup,omitempty"`
+	BackupStorage       string    `json:"backup_storage,omitempty"`
+	TempBackupVol       string    `json:"temp_backup_vol,omitempty"`
+	TempBackupCreated   bool      `json:"temp_backup_created,omitempty"`
 }
 
 // Plan is the operator-reviewed intent. The engine executes this document.

@@ -117,13 +117,24 @@ func (c *PVEClient) Capabilities(src SourceConn, sourceID string) (Caps, error) 
 			}
 		}
 	}
+	node, vmid, _ := strings.Cut(sourceID, "/")
+	types := map[string]string{}
+	var st pveList
+	if err := c.get("/api2/json/nodes/"+url.PathEscape(node)+"/storage", &st); err == nil {
+		types = pveStorageTypes(st.Data)
+	}
+	autoStore, _ := FileBackupStorage(st.Data)
 	if m.Container != nil && m.Container.Rootfs != nil {
 		backupFmt = m.Container.Rootfs.Format
-		if m.Container.Rootfs.Path != "" && VolumeLooksLikeFile(m.Container.Rootfs.Path, backupFmt) {
-			downloadable = true
+		downloadable = LXCRootfsDownloadable(m.Container.Rootfs, types)
+		if !downloadable {
+			backupFmt = ""
+		}
+		if existing := newestLXCTar(collectPVEBackups(c, node, st.Data), vmid); existing != "" {
+			backupFmt = backupFormatOf(existing)
 		}
 	}
-	return PVECaps(running, m.Kind, backupFmt, downloadable), nil
+	return PVECaps(running, m.Kind, backupFmt, downloadable, autoStore != "" && m.Kind == KindContainer && !downloadable), nil
 }
 
 func (c *PVEClient) OpenArtifact(src SourceConn, sourceID, artifact string) (Readable, error) {
@@ -273,6 +284,14 @@ func looksJSONObject(b []byte) bool {
 	return strings.HasPrefix(s, "{") && strings.Contains(s, `"data"`)
 }
 
+func (c *PVEClient) ListNodeStorage(node string) ([]map[string]any, error) {
+	var wrap pveList
+	if err := c.get("/api2/json/nodes/"+url.PathEscape(node)+"/storage", &wrap); err != nil {
+		return nil, err
+	}
+	return wrap.Data, nil
+}
+
 func (c *PVEClient) ListContent(node, storage, content string) ([]map[string]any, error) {
 	path := "/api2/json/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content"
 	if content != "" {
@@ -304,30 +323,33 @@ func (c *PVEClient) ListSnapshots(node, kind, vmid string) int {
 	return n
 }
 
-func PVECaps(running bool, kind, backupFmt string, downloadable bool) Caps {
+func PVECaps(running bool, kind, backupFmt string, downloadable bool, autoBackup bool) Caps {
 	c := PVECapabilities(running, kind, backupFmt)
 	if kind == KindVM {
 		c.Offline = downloadable
 		if !downloadable {
 			c.Offline = false
 			c.SnapshotNote = firstNonEmpty(c.SnapshotNote, "Snapshot-assisted copy from Proxmox storage is not implemented.")
-		}
-		if !downloadable {
 			c.Disk = true
 		}
 	}
 	if kind == KindContainer {
 		tarBackup := backupFmt == "tar" || backupFmt == "tgz" || backupFmt == "zst" || backupFmt == "tar.zst" || backupFmt == "tar.gz"
-		c.Backup = tarBackup
+		c.Backup = tarBackup || autoBackup
 		c.Offline = downloadable
-		if !c.Backup {
-			c.BackupNote = "No completed LXC tar backup is listed on this source. Create a vzdump tar on Proxmox yourself, then import it. No-dal will not create or delete source backups."
+		c.Disk = downloadable
+		if autoBackup && !tarBackup {
+			c.BackupNote = "Rootfs is not HTTP-downloadable. No-dal will create a temporary vzdump, import it, then delete that temporary backup after verification."
+		}
+		if !c.Backup && !downloadable {
+			c.BackupNote = firstNonEmpty(c.BackupNote, "LXC rootfs is not HTTP-downloadable and no temporary vzdump can be created.")
 		}
 	}
 	return c
 }
 
-func EnrichPVEWorkload(c *PVEClient, w *DiscoveredWorkload, storageTypes map[string]string, backups []map[string]any) {
+func EnrichPVEWorkload(c *PVEClient, w *DiscoveredWorkload, storages []map[string]any, backups []map[string]any) {
+	storageTypes := pveStorageTypes(storages)
 	node, vmid, _ := strings.Cut(w.SourceID, "/")
 	m, err := c.ManifestFor(node, w.Kind, vmid)
 	if err != nil {
@@ -349,6 +371,11 @@ func EnrichPVEWorkload(c *PVEClient, w *DiscoveredWorkload, storageTypes map[str
 		}
 	}
 	if m.Container != nil {
+		if m.Container.Rootfs != nil {
+			if st, _ := pveVolume(m.Container.Rootfs.Path); st != "" {
+				w.Storage = appendUnique(w.Storage, st)
+			}
+		}
 		for _, n := range m.Container.NICs {
 			if n.Bridge != "" {
 				w.Networks = appendUnique(w.Networks, n.Bridge)
@@ -369,6 +396,9 @@ func EnrichPVEWorkload(c *PVEClient, w *DiscoveredWorkload, storageTypes map[str
 		}
 		if VolumeLooksLikeFile(volid, fmt.Sprint(b["format"])) {
 			tarFmt = backupFormatOf(volid)
+			if st, _ := pveVolume(volid); st != "" {
+				w.BackupStorage = st
+			}
 		}
 	}
 	w.Backups = match
@@ -380,14 +410,33 @@ func EnrichPVEWorkload(c *PVEClient, w *DiscoveredWorkload, storageTypes map[str
 			}
 		}
 	}
-	caps := PVECaps(w.Running, w.Kind, tarFmt, downloadable)
+	autoStore, autoReason := FileBackupStorage(storages)
+	autoBackup := false
+	if w.Kind == KindContainer && m.Container != nil {
+		downloadable = LXCRootfsDownloadable(m.Container.Rootfs, storageTypes)
+		if tarFmt != "" {
+			autoBackup = false
+		} else if !downloadable && autoStore != "" {
+			autoBackup = true
+			w.TempBackup = true
+			w.BackupStorage = autoStore
+		} else if !downloadable {
+			w.BlockReason = LXCRootfsBlockReason(m.Container.Rootfs, storageTypes, autoStore, autoReason, tarFmt != "")
+		}
+	}
+	caps := PVECaps(w.Running, w.Kind, tarFmt, downloadable, autoBackup)
 	if caps.Offline {
 		w.Caps = append(w.Caps, ModeOffline)
 	}
 	if caps.Backup {
 		w.Caps = append(w.Caps, ModeBackup)
 	}
-	w.Caps = append(w.Caps, ModeDisk)
+	if caps.Disk {
+		w.Caps = append(w.Caps, ModeDisk)
+	}
+	if w.Kind != KindContainer {
+		w.Caps = appendUnique(w.Caps, ModeDisk)
+	}
 }
 
 func backupFormatOf(name string) string {

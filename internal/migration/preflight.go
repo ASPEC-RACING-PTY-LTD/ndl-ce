@@ -20,6 +20,14 @@ type PreflightEnv struct {
 }
 
 func Preflight(item ItemPlan, caps Caps, env PreflightEnv) error {
+	if item.Compatibility == CompatBlocked || item.Compatibility == CompatUnsupported {
+		for _, f := range item.Findings {
+			if f.Level == CompatBlocked || f.Level == CompatUnsupported {
+				return fmt.Errorf("%s", f.Message)
+			}
+		}
+		return fmt.Errorf("compatibility is %s", item.Compatibility)
+	}
 	if strings.TrimSpace(item.Mode) == "" {
 		return fmt.Errorf("migration mode must be selected by the operator")
 	}
@@ -62,9 +70,6 @@ func Preflight(item ItemPlan, caps Caps, env PreflightEnv) error {
 	}
 	if !env.StagingOK {
 		return fmt.Errorf("migration staging capacity is insufficient")
-	}
-	if item.Compatibility == CompatBlocked || item.Compatibility == CompatUnsupported {
-		return fmt.Errorf("compatibility is %s", item.Compatibility)
 	}
 	if item.Compatibility == CompatRequiresMapping {
 		return fmt.Errorf("required mappings are incomplete")

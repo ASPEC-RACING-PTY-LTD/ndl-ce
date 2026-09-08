@@ -110,17 +110,28 @@ func (s *Server) runMigrationJob(ctx context.Context, clusterID, jobID string) {
 			return
 		}
 		st.Workload = item.Name
-		st.Stage = "transfer"
-		s.saveMigrationJob(ctx, j, st, "running", "transfer")
+		if item.TempBackup || (item.Mode == migration.ModeBackup && item.Kind == migration.KindContainer) {
+			st.Stage = "backup"
+			st.Message = "Creating or locating a Proxmox vzdump for " + item.Name
+			s.saveMigrationJob(ctx, j, st, "running", "backup")
+		} else {
+			st.Stage = "transfer"
+			s.saveMigrationJob(ctx, j, st, "running", "transfer")
+		}
 		item, err := s.materializeSource(ctx, clusterID, jobID, stageDir, plan, item)
 		if err != nil {
-			fail("transfer", err.Error())
+			fail(st.Stage, err.Error())
 			return
 		}
+		st.Stage = "transfer"
+		s.saveMigrationJob(ctx, j, st, "running", "transfer")
 		rep, destID, err := s.transferOne(ctx, clusterID, jobID, stageDir, plan, item)
 		if err != nil {
 			fail(st.Stage, err.Error())
 			return
+		}
+		if item.TempBackupCreated && item.TempBackupVol != "" {
+			s.cleanupTempPVEBackup(ctx, clusterID, plan.SourceID, item)
 		}
 		if destID != "" {
 			rep.WorkloadID = destID
@@ -378,18 +389,69 @@ func (s *Server) materializeSource(ctx context.Context, clusterID, jobID, stageD
 			if i := strings.Index(p, ":"); i >= 0 {
 				storage = p[:i]
 			}
-			if storage == "" || !migration.VolumeLooksLikeFile(p, item.Manifest.Container.Rootfs.Format) {
-				return item, fmt.Errorf("LXC rootfs is not a downloadable file. Import an existing vzdump tar backup, or provide a root filesystem archive")
+			downloadable := storage != "" && migration.VolumeLooksLikeFile(p, item.Manifest.Container.Rootfs.Format)
+			if !downloadable {
+				_, vmid, _ := strings.Cut(item.SourceID, "/")
+				store := item.BackupStorage
+				if store == "" {
+					store = s.pveFileBackupStore(client, node)
+				}
+				if store == "" {
+					return item, fmt.Errorf("LXC rootfs is not HTTP-downloadable and no Proxmox backup storage was selected for a temporary vzdump")
+				}
+				volid, ours, err := client.EnsureLXCTar(ctx, node, vmid, store)
+				if err != nil {
+					return item, err
+				}
+				item.TempBackupVol = volid
+				item.TempBackupCreated = ours
+				item.BackupStorage = store
+				p = volid
+				if i := strings.Index(p, ":"); i >= 0 {
+					storage = p[:i]
+				}
+			}
+			if storage == "" || !migration.VolumeLooksLikeFile(p, item.Manifest.Container.Rootfs.Format) && !migration.VolumeLooksLikeFile(p, "") {
+				return item, fmt.Errorf("LXC rootfs is not HTTP-downloadable. Automatic vzdump did not produce a downloadable tar")
 			}
 			dest := filepath.Join(stageDir, "pve", "rootfs-archive")
 			if err := client.DownloadVolume(node, storage, p, dest); err != nil {
 				return item, err
 			}
 			item.Manifest.Container.Rootfs.Path = dest
+			item.Manifest.Container.Rootfs.Format = migration.NormalizeFormat("", p)
 		}
 	}
 	_ = jobID
 	return item, nil
+}
+
+func (s *Server) pveFileBackupStore(client *migration.PVEClient, node string) string {
+	rows, err := client.ListNodeStorage(node)
+	if err != nil {
+		return ""
+	}
+	id, _ := migration.FileBackupStorage(rows)
+	return id
+}
+
+func (s *Server) cleanupTempPVEBackup(ctx context.Context, clusterID, sourceID string, item migration.ItemPlan) {
+	if !item.TempBackupCreated || item.TempBackupVol == "" {
+		return
+	}
+	src, token, _, _, err := s.Store.GetMigrationSource(ctx, clusterID, sourceID)
+	if err != nil || src == nil {
+		return
+	}
+	client := &migration.PVEClient{Base: src.Endpoint, Token: token, Insecure: src.Insecure, Client: s.HTTPClient}
+	node, _, _ := strings.Cut(item.SourceID, "/")
+	store := item.BackupStorage
+	if store == "" {
+		if i := strings.Index(item.TempBackupVol, ":"); i >= 0 {
+			store = item.TempBackupVol[:i]
+		}
+	}
+	_ = client.DeleteContent(node, store, item.TempBackupVol)
 }
 
 func safeFile(s string) string {

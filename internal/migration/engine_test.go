@@ -59,9 +59,12 @@ func TestForbiddenSourceActions(t *testing.T) {
 }
 
 func TestModeMustBeExplicit(t *testing.T) {
-	_, err := BuildPlan("j1", AdapterDisk, []DiscoveredWorkload{{SourceID: "a", Name: "n", Kind: KindVM}}, []string{"a"}, map[string]string{}, map[string]Manifest{}, Mapping{}, nil, nil, false, nil)
-	if err == nil || !strings.Contains(err.Error(), "no compatible migration mode") {
-		t.Fatalf("got %v", err)
+	plan, err := BuildPlan("j1", AdapterDisk, []DiscoveredWorkload{{SourceID: "a", Name: "n", Kind: KindVM}}, []string{"a"}, map[string]string{}, map[string]Manifest{}, Mapping{}, nil, nil, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Items) != 1 || plan.Items[0].Mode != "" || plan.Items[0].Compatibility != CompatBlocked {
+		t.Fatalf("got %+v", plan.Items)
 	}
 }
 
@@ -76,6 +79,33 @@ func TestBuildPlanSuggestsOffline(t *testing.T) {
 	}
 	if plan.Items[0].Mode != ModeOffline {
 		t.Fatalf("mode %s", plan.Items[0].Mode)
+	}
+}
+
+func TestBuildPlanBlocksLXCWithoutBackupStore(t *testing.T) {
+	reason := "LXC rootfs on local-lvm (lvmthin) is not HTTP-downloadable. Add a directory, NFS, or CIFS storage with backup content so No-dal can create a temporary vzdump."
+	plan, err := BuildPlan("j1", AdapterProxmox, []DiscoveredWorkload{
+		{SourceID: "pve/104", Name: "SoundDock", Kind: KindContainer, BlockReason: reason, Caps: []string{ModeDisk}},
+		{SourceID: "pve/100", Name: "web", Kind: KindVM, Caps: []string{ModeOffline}},
+	}, []string{"pve/104", "pve/100"}, map[string]string{"pve/104": ModeDisk}, map[string]Manifest{
+		"pve/104": {Kind: KindContainer, Container: &ContainerSection{Rootfs: &Artifact{Path: "local-lvm:subvol-104-disk-0"}}},
+		"pve/100": {Kind: KindVM, VM: &VMSection{CPUs: 1, MemoryBytes: 1, Disks: []Disk{{Format: "qcow2"}}}},
+	}, Mapping{}, nil, nil, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Items) != 2 {
+		t.Fatalf("items %d", len(plan.Items))
+	}
+	if plan.Items[0].Mode != "" || plan.Items[0].Compatibility != CompatBlocked || !strings.Contains(plan.Items[0].Findings[0].Message, "lvmthin") {
+		t.Fatalf("blocked item %+v", plan.Items[0])
+	}
+	if plan.Items[1].Mode != ModeOffline {
+		t.Fatalf("other guest %s", plan.Items[1].Mode)
+	}
+	err = Preflight(plan.Items[0], Caps{}, PreflightEnv{SourceExists: true, CredentialsOK: true, DestPoolExists: true, DestCapacityOK: true, DestNetExists: true, NameAvailable: true, ToolsOK: true, StagingOK: true})
+	if err == nil || !strings.Contains(err.Error(), "lvmthin") {
+		t.Fatalf("preflight %v", err)
 	}
 }
 

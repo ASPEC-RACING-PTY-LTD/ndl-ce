@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type PVEClient struct {
-	Base     string
-	Token    string
-	Client   *http.Client
-	Insecure bool
+	Base      string
+	Token     string
+	Client    *http.Client
+	Insecure  bool
+	PollEvery time.Duration
 }
 
 func (c *PVEClient) parseBase() (*url.URL, error) {
@@ -77,7 +79,6 @@ func (c *PVEClient) DiscoverRemote() (Discovery, error) {
 		d.Storages = append(d.Storages, NamedRef{ID: node, Name: node, Kind: "node"})
 		var st pveList
 		_ = c.get("/api2/json/nodes/"+url.PathEscape(node)+"/storage", &st)
-		types := pveStorageTypes(st.Data)
 		for _, s := range st.Data {
 			id, _ := s["storage"].(string)
 			if id == "" {
@@ -92,7 +93,7 @@ func (c *PVEClient) DiscoverRemote() (Discovery, error) {
 		}
 		for _, vm := range qemu.Data {
 			w := pveGuest(node, "vm", "Virtual Machine", vm)
-			EnrichPVEWorkload(c, &w, types, backups)
+			EnrichPVEWorkload(c, &w, st.Data, backups)
 			d.Workloads = append(d.Workloads, w)
 		}
 		var lxc pveList
@@ -101,7 +102,7 @@ func (c *PVEClient) DiscoverRemote() (Discovery, error) {
 		}
 		for _, ct := range lxc.Data {
 			w := pveGuest(node, KindContainer, "System Container", ct)
-			EnrichPVEWorkload(c, &w, types, backups)
+			EnrichPVEWorkload(c, &w, st.Data, backups)
 			d.Workloads = append(d.Workloads, w)
 		}
 		var nets pveList
@@ -197,7 +198,7 @@ func PVEManifestStorage(kind, node, vmid string, cfg map[string]any, storageType
 			}
 			m.Container.Rootfs = &Artifact{Path: volid, Format: format, Size: size}
 			if !StorageTypeDownloadable(st) || format == "dir" {
-				m.Warnings = append(m.Warnings, Finding{Level: CompatWarning, Code: "ct-rootfs", Message: "LXC rootfs is not a downloadable file. Import an existing vzdump tar backup, or provide a root filesystem archive."})
+				m.Warnings = append(m.Warnings, Finding{Level: CompatWarning, Code: "ct-rootfs", Message: "LXC rootfs is not HTTP-downloadable. Planning will use a temporary vzdump when backup storage exists, or block Review with the reason."})
 			}
 		}
 		for k, v := range cfg {
@@ -368,7 +369,7 @@ func PVECapabilities(running bool, kind, backupFmt string) Caps {
 	c.Snapshot = false
 	c.SnapshotNote = "Snapshot-assisted copy from Proxmox storage is not implemented. V1 will not create source snapshots."
 	c.Live = false
-	c.LiveNote = "Live transfer from Proxmox VE is unavailable in V1. Use Offline on a downloadable stopped disk, or an existing LXC tar backup."
+	c.LiveNote = "Live transfer from Proxmox VE is unavailable in V1. Use Offline on a downloadable stopped disk, or an LXC vzdump tar."
 	return c
 }
 

@@ -140,6 +140,11 @@ func SourceIdentifiers(m Manifest) (storage []string, nets []string) {
 		}
 	}
 	if m.Container != nil {
+		if m.Container.Rootfs != nil && m.Container.Rootfs.Path != "" {
+			if st, _ := pveVolume(m.Container.Rootfs.Path); st != "" {
+				storage = append(storage, st)
+			}
+		}
 		for _, n := range m.Container.NICs {
 			if n.Bridge != "" {
 				nets = append(nets, n.Bridge)
@@ -154,23 +159,23 @@ func Strategies() []StrategyInfo {
 	return []StrategyInfo{
 		{
 			ID: StrategyConsistent, Label: "Consistent copy", Consistency: ConsistencySafe, SourceSafety: SourceProtected,
-			Summary: "Accept downtime. Use Offline when the guest can be copied stopped, otherwise an existing backup, then disk import.",
+			Summary:     "Accept downtime. Use Offline when the guest can be copied stopped, otherwise an existing backup, then disk import.",
 			Recommended: true, Available: true,
 		},
 		{
 			ID: StrategyLeaveRunning, Label: "Leave sources running", Consistency: ConsistencyDepends, SourceSafety: SourceProtected,
-			Summary: "Prefer methods that do not require stopping the source. Uses existing backups or disk import. Offline is used only when the guest is already stopped.",
+			Summary:   "Prefer methods that do not require stopping the source. Uses existing backups or disk import. Offline is used only when the guest is already stopped.",
 			Available: true,
 		},
 		{
 			ID: StrategyBackup, Label: "Existing backups", Consistency: ConsistencySafe, SourceSafety: SourceProtected,
-			Summary: "Import captured backups only. Running guests stay running. Workloads without a usable backup are blocked.",
+			Summary:   "Import captured backups only. Running guests stay running. Workloads without a usable backup are blocked.",
 			Available: true,
 		},
 		{
 			ID: StrategyMinimalInterruption, Label: "Minimal interruption", Consistency: ConsistencyRisky, SourceSafety: SourceProtected,
-			Summary: "Would use snapshot-assisted or live transfer. Listed so the risk is visible.",
-			Available: false,
+			Summary:           "Would use snapshot-assisted or live transfer. Listed so the risk is visible.",
+			Available:         false,
 			UnavailableReason: "V1 does not perform live or snapshot-assisted transfer. Choose Consistent copy or Leave sources running.",
 		},
 	}
@@ -202,6 +207,10 @@ func SuggestMode(w DiscoveredWorkload) (string, *Finding) {
 // SuggestModeForStrategy picks a transfer method that fits the operator intent.
 // It never selects live or snapshot-assisted.
 func SuggestModeForStrategy(w DiscoveredWorkload, strategy string) (string, *Finding) {
+	if strings.TrimSpace(w.BlockReason) != "" {
+		f := Finding{Level: CompatBlocked, Code: "ct-rootfs", Message: w.BlockReason}
+		return "", &f
+	}
 	has := func(id string) bool {
 		for _, c := range w.Caps {
 			if c == id {
