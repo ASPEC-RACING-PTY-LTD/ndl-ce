@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { GetHealthPath } from "./generated/openapi";
@@ -192,6 +192,11 @@ describe("App", () => {
     expect(screen.getAllByText(/collecting data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/^CE$/)).toBeVisible();
     expect(screen.getByRole("navigation", { name: /appliance/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^workloads$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^add features$/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^automation$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^ask$/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^admin$/i }));
     expect(screen.getByRole("menuitem", { name: /log out/i })).toBeVisible();
     expect(screen.queryByText(/ci works/i)).not.toBeInTheDocument();
@@ -632,14 +637,47 @@ describe("App", () => {
       },
     });
     render(<App />);
-    expect(await screen.findByRole("heading", { name: /^features$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^features$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^add features$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^add features$/i })).toBeVisible();
     expect(await screen.findByText(/enabling kubernetes does not start kubelet/i)).toBeVisible();
     expect(await screen.findByText(/base install light/i)).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^gpu services$/i })).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^install$/i }).length).toBeGreaterThan(0);
     expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps capability enablement when switching navigation templates", async () => {
+    window.history.replaceState({}, "", "/settings/features");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/features": {
+        status: 200,
+        body: { base_install: "light", gpu_optional: true, items: [] },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^add features$/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: /^advanced$/i }));
+    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /^simple$/i }));
+    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
+    const clustering = screen.getByRole("heading", { name: /^clustering$/i }).closest("article");
+    expect(clustering).toBeTruthy();
+    fireEvent.click(within(clustering as HTMLElement).getByRole("button", { name: /^enable$/i }));
+    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /^advanced$/i }));
+    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /^simple$/i }));
+    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: /^custom$/i }));
+    expect(await screen.findByRole("heading", { name: /^custom modules$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: /^cluster$/i }));
+    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
+    expect(within(clustering as HTMLElement).getByText(/^enabled\.$/i)).toBeVisible();
   });
 
   it("renders the kubernetes page with no kube process by default", async () => {
@@ -1133,8 +1171,8 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /^authenticator$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^mfa$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^groups$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^audit$/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^groups$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^audit$/i })).not.toBeInTheDocument();
     expect(screen.getByText(/webauthn is not implemented yet/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^enroll totp$/i })).toBeVisible();
   });

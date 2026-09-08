@@ -21,6 +21,11 @@ const (
 	ModeBackup   = "backup"
 	ModeDisk     = "disk"
 
+	StrategyConsistent          = "consistent"
+	StrategyLeaveRunning        = "leave-running"
+	StrategyBackup              = "backup"
+	StrategyMinimalInterruption = "minimal-interruption"
+
 	ConsistencySafe    = "SAFE"
 	ConsistencyLowRisk = "LOW RISK"
 	ConsistencyRisky   = "RISKY"
@@ -51,6 +56,18 @@ const (
 
 	TempSnapshotPrefix = "ndl-mig-"
 )
+
+// StrategyInfo is an operator intent. It is not a transfer method.
+type StrategyInfo struct {
+	ID                string `json:"id"`
+	Label             string `json:"label"`
+	Consistency       string `json:"consistency"`
+	SourceSafety      string `json:"source_safety"`
+	Summary           string `json:"summary"`
+	Recommended       bool   `json:"recommended,omitempty"`
+	Available         bool   `json:"available"`
+	UnavailableReason string `json:"unavailable_reason,omitempty"`
+}
 
 // ModeInfo is the operator-facing description of a migration mode.
 type ModeInfo struct {
@@ -275,6 +292,7 @@ type Plan struct {
 	Mapping         Mapping    `json:"mapping"`
 	Items           []ItemPlan `json:"items"`
 	StartAfter      bool       `json:"start_after"`
+	Strategy        string     `json:"strategy,omitempty"`
 }
 
 // Report is post-migration verification. Claims only observed levels.

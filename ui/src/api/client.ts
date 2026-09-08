@@ -1557,7 +1557,7 @@ export async function listMigrationAdapters() {
 }
 
 export async function listMigrationModes() {
-  return readJson<{ items: unknown[]; source_safety?: string; source_policy?: string }>(await request("/migration/modes"));
+  return readJson<{ items: unknown[]; strategies?: unknown[]; source_safety?: string; source_policy?: string }>(await request("/migration/modes"));
 }
 
 export async function listMigrationSources() {

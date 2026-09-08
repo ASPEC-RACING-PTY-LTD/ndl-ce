@@ -60,8 +60,22 @@ func TestForbiddenSourceActions(t *testing.T) {
 
 func TestModeMustBeExplicit(t *testing.T) {
 	_, err := BuildPlan("j1", AdapterDisk, []DiscoveredWorkload{{SourceID: "a", Name: "n", Kind: KindVM}}, []string{"a"}, map[string]string{}, map[string]Manifest{}, Mapping{}, nil, nil, false, nil)
-	if err == nil || !strings.Contains(err.Error(), "mode must be selected") {
+	if err == nil || !strings.Contains(err.Error(), "no compatible migration mode") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestBuildPlanSuggestsOffline(t *testing.T) {
+	plan, err := BuildPlan("j1", AdapterProxmox, []DiscoveredWorkload{{
+		SourceID: "a", Name: "web", Kind: KindVM, Caps: []string{ModeOffline},
+	}}, []string{"a"}, map[string]string{}, map[string]Manifest{
+		"a": {Kind: KindVM, VM: &VMSection{CPUs: 1, MemoryBytes: 1, Disks: []Disk{{Format: "qcow2"}}}},
+	}, Mapping{}, nil, nil, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Items[0].Mode != ModeOffline {
+		t.Fatalf("mode %s", plan.Items[0].Mode)
 	}
 }
 

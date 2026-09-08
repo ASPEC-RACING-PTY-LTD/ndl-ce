@@ -201,6 +201,8 @@ export function navIcon(label: string): IconName {
       return "tasks";
     case "Events":
       return "events";
+    case "Add Features":
+      return "settings";
     default:
       return "info";
   }

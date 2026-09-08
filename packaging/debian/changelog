@@ -1,3 +1,10 @@
+nodal (1.0.1) UNRELEASED; urgency=medium
+
+  * Progressive disclosure: Simple is the default sidebar. Add Features enables optional capabilities. Advanced and Custom templates do not drop enablement or Custom layout. RBAC still hides Audit, Groups, and Updates.
+  * Import / Export automatic mapping uses one global strategy, then fills method, storage, network, and compatibility per guest. Proxmox tokens must be user@realm!tokenid=secret.
+
+ -- No-dal <dev@no-dal.com>  Tue, 08 Sep 2026 15:51:00 +1000
+
 nodal (1.0.0) UNRELEASED; urgency=medium
 
   * Import / Export / Migration: copy-first vendor-neutral engine, Proxmox REST discovery and downloadable file-volume import, disk/OVF/libvirt/bundle adapters, No-dal portable export, compatibility ratings, and source-safety invariants. Source destruction is not a migration operation. Live and snapshot-assisted are listed as unavailable in V1. vma paths fail closed. CE is not license-gated.

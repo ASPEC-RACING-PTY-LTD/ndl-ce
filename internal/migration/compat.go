@@ -89,6 +89,11 @@ func analyzeCT(ct ContainerSection, mapping Mapping, destNets map[string]string)
 	return out
 }
 
+// RollupFindings is the public compatibility rollup used after auto-map notes.
+func RollupFindings(findings []Finding) string {
+	return rollup(findings)
+}
+
 func rollup(findings []Finding) string {
 	rank := map[string]int{
 		CompatReady: 0, CompatWarning: 1, CompatRequiresMapping: 2, CompatUnsupported: 3, CompatBlocked: 4,

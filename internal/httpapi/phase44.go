@@ -14,7 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/migration"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
+	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
@@ -43,6 +45,7 @@ type migrationJobBody struct {
 	ExportKind          string                       `json:"export_kind"`
 	DestPath            string                       `json:"dest_path"`
 	Mode                string                       `json:"mode"`
+	Strategy            string                       `json:"strategy"`
 }
 
 func (s *Server) listMigrationAdapters(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +61,7 @@ func (s *Server) listMigrationModes(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":         migration.Modes(),
+		"strategies":    migration.Strategies(),
 		"source_safety": migration.SourceProtected,
 		"source_policy": "No-dal does not delete or clean up source infrastructure. A completed migration means: Migration verified. Source remains unchanged.",
 	})
@@ -114,6 +118,12 @@ func (s *Server) createMigrationSource(w http.ResponseWriter, r *http.Request) {
 	endpoint := strings.TrimSpace(req.Endpoint)
 	if endpoint != "" {
 		if _, err := migration.ParseHTTPEndpoint(endpoint); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.Adapter == migration.AdapterProxmox {
+		if err := migration.ValidatePVEToken(req.Token); err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -219,7 +229,7 @@ func (s *Server) migrationCompatibility(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req)
+	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req, false)
 	if err != nil {
 		writeErr(w, statusForMigrationPlan(err), err.Error())
 		return
@@ -250,7 +260,7 @@ func (s *Server) createMigrationPlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req)
+	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req, false)
 	if err != nil {
 		writeErr(w, statusForMigrationPlan(err), err.Error())
 		return
@@ -267,7 +277,7 @@ func (s *Server) createMigrationPlan(w http.ResponseWriter, r *http.Request) {
 		}
 		reviews = append(reviews, rev)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"plan": plan, "review": reviews, "source_changes": migration.SourceChangesNone()})
+	writeJSON(w, http.StatusOK, map[string]any{"plan": plan, "review": reviews, "strategy": plan.Strategy, "source_changes": migration.SourceChangesNone()})
 }
 
 func (s *Server) listMigrationJobs(w http.ResponseWriter, r *http.Request) {
@@ -326,7 +336,7 @@ func (s *Server) startMigrationJob(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req)
+	plan, err := s.buildMigrationPlan(r.Context(), p.User.ClusterID, req, true)
 	if err != nil {
 		writeErr(w, statusForMigrationPlan(err), err.Error())
 		return
@@ -471,7 +481,7 @@ func statusForMigrationPlan(err error) int {
 	return http.StatusUnprocessableEntity
 }
 
-func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req migrationJobBody) (migration.Plan, error) {
+func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req migrationJobBody, preflight bool) (migration.Plan, error) {
 	if err := validateMigrationJobPaths(req); err != nil {
 		return migration.Plan{}, err
 	}
@@ -493,6 +503,11 @@ func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req m
 	if err != nil {
 		return migration.Plan{}, err
 	}
+	strategy, err := migration.NormalizeStrategy(req.Strategy)
+	if err != nil {
+		return migration.Plan{}, errUnprocessable(err.Error())
+	}
+	req.Strategy = strategy
 	if req.Modes == nil {
 		req.Modes = map[string]string{}
 	}
@@ -507,13 +522,23 @@ func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req m
 	if len(selected) == 0 && len(discovered) == 1 {
 		selected = []string{discovered[0].SourceID}
 	}
+	autoFindings := s.applyAutomaticMigration(ctx, clusterID, selected, discovered, manifests, &req)
 	plan, err := migration.BuildPlan(uuid.NewString(), adapter, discovered, selected, req.Modes, manifests, req.Mapping, req.Overrides, migration.DefaultQEMUFormats(), req.StartAfter, req.LiveAck)
 	if err != nil {
 		return migration.Plan{}, err
 	}
+	if len(autoFindings) > 0 {
+		for i := range plan.Items {
+			plan.Items[i].Findings = overlayMigrationFindings(plan.Items[i].Findings, autoFindings)
+			plan.Items[i].Compatibility = migration.RollupFindings(plan.Items[i].Findings)
+		}
+	}
 	for i := range plan.Items {
 		if req.IdentityConflictAck[plan.Items[i].SourceID] {
 			plan.Items[i].IdentityConflictAck = true
+		}
+		if !preflight {
+			continue
 		}
 		caps := s.capsFor(adapter, plan.Items[i], discovered)
 		env, err := s.preflightEnv(ctx, clusterID, req, plan.Items[i], discovered)
@@ -525,7 +550,82 @@ func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req m
 		}
 	}
 	plan.SourceID = req.SourceID
+	plan.Strategy = req.Strategy
 	return plan, nil
+}
+
+func (s *Server) applyAutomaticMigration(ctx context.Context, clusterID string, selected []string, discovered []migration.DiscoveredWorkload, manifests map[string]migration.Manifest, req *migrationJobBody) []migration.Finding {
+	var storage, nets []string
+	want := map[string]struct{}{}
+	for _, id := range selected {
+		want[id] = struct{}{}
+	}
+	for _, w := range discovered {
+		if _, ok := want[w.SourceID]; !ok && len(want) > 0 {
+			continue
+		}
+		st, nt := migration.SourceIdentifiers(manifests[w.SourceID])
+		if len(st) == 0 {
+			st = w.Storage
+		}
+		if len(nt) == 0 {
+			nt = w.Networks
+		}
+		storage = append(storage, st...)
+		nets = append(nets, nt...)
+		if req.Modes[w.SourceID] == "" {
+			mode, _ := migration.SuggestModeForStrategy(w, req.Strategy)
+			if mode != "" {
+				req.Modes[w.SourceID] = mode
+			}
+		}
+	}
+	pools, _ := s.Store.ListStoragePools(ctx, clusterID)
+	networks, _ := s.Store.ListNetworks(ctx, clusterID)
+	var destPools []migration.DestResource
+	for _, p := range pools {
+		if p.Status != "" && p.Status != storage.StatusAvailable && p.Status != storage.StatusWarning {
+			continue
+		}
+		destPools = append(destPools, migration.DestResource{ID: p.ID, Name: p.Name, Kind: p.BackendType})
+	}
+	var destNets []migration.DestResource
+	for _, n := range networks {
+		if n.Status != "" && n.Status != ndnet.StatusAvailable && n.Status != ndnet.StatusWarning {
+			continue
+		}
+		destNets = append(destNets, migration.DestResource{ID: n.ID, Name: n.Name, Kind: n.Kind, BridgeName: n.BridgeName})
+	}
+	mapped, findings := migration.AutoMap(storage, nets, destPools, destNets, req.Mapping)
+	req.Mapping = mapped
+	if req.PoolID == "" {
+		for _, v := range mapped.Storage {
+			req.PoolID = v
+			break
+		}
+	}
+	if req.NetworkID == "" {
+		for _, v := range mapped.Network {
+			req.NetworkID = v
+			break
+		}
+	}
+	return findings
+}
+
+func overlayMigrationFindings(existing, extra []migration.Finding) []migration.Finding {
+	replace := map[string]struct{}{}
+	for _, f := range extra {
+		replace[f.Code] = struct{}{}
+	}
+	out := make([]migration.Finding, 0, len(existing)+len(extra))
+	for _, f := range existing {
+		if _, ok := replace[f.Code]; ok {
+			continue
+		}
+		out = append(out, f)
+	}
+	return append(out, extra...)
 }
 
 func (s *Server) capsFor(adapter string, item migration.ItemPlan, discovered []migration.DiscoveredWorkload) migration.Caps {

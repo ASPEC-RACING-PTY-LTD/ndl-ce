@@ -65,9 +65,23 @@ Listed only when a real path exists.
 VMware and Hyper-V guests are imported when they are already in an open disk
 or OVF form. There is no proprietary VDDK or Hyper-V WMI adapter in V1.
 
-## Modes
+## Strategy and methods
 
-The operator selects the mode. No-dal does not silently fall back.
+The operator chooses one global risk profile for the selection. That is
+intent, not a per-workload transfer method.
+
+| Strategy | Consistency | What the engine does |
+| --- | --- | --- |
+| Consistent copy (default) | SAFE | Prefer Offline on a stopped guest, then an existing backup, then disk import. Running guests that need Offline must be stopped on the source. |
+| Leave sources running | SOURCE SAFE | Prefer existing backups or disk import. Offline is used only when the guest is already stopped. |
+| Existing backups | SAFE | Backup import only. Workloads without a usable backup are blocked. |
+| Minimal interruption | RISKY | Would use snapshot or live. Unavailable in V1. |
+
+After the strategy is chosen, No-dal picks a compatible method, storage
+map, network map, and compatibility result for every selected workload.
+Live and snapshot-assisted are never auto-selected. Per-workload method
+overrides stay in Advanced. No-dal does not silently fall back to a
+riskier method than the plan.
 
 | Mode | Consistency | Notes |
 | --- | --- | --- |
@@ -129,8 +143,9 @@ Operator may import, export, and manage sources. Credentials are stored in
 
 External sources are untrusted. Archives are extracted with path, symlink,
 device, and size checks. Manifests are schema-validated. Disk convert
-arguments are allowlisted. Endpoints are http(s) only. Tokens are redacted
-from audit and JSON.
+arguments are allowlisted. Endpoints are http(s) only. A Proxmox token must be
+user@realm!tokenid=secret (example root@pam!nodal=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx),
+not the secret UUID alone. Tokens are redacted from audit and JSON.
 
 ## Operator flow
 
@@ -139,14 +154,14 @@ Import / Export in the UI, or `nodalctl migration ...`.
 CLI covers adapters, modes, sources, discover, compatibility, plan, start,
 job status, cancel, retry, staging cleanup, disk/bundle import, and export.
 
-1. Select source and connect (discovery does not start a transfer).
-2. Select workloads.
-3. Map storage and networks. Individual overrides are allowed.
-4. Select a mode. Read the consistency rating.
-5. Compatibility check.
-6. Review the actual plan.
-7. Start. Watch the job.
-8. Read the verification report. Source remains unchanged.
+1. Connect a source. Discovery runs automatically and does not start a transfer.
+2. Select workloads (Select all for a bulk move).
+3. Choose one global strategy.
+4. Review the automatic plan for every selected workload. Warnings and
+   mapping choices appear only when a decision is ambiguous or blocked.
+   Advanced keeps per-workload method and mapping overrides.
+5. Submit. Watch progress.
+6. Read the verification report. Source remains unchanged.
 
 ## Failure
 

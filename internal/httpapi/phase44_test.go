@@ -45,7 +45,7 @@ func TestMigrationViewerDeniedAndSecretsRedacted(t *testing.T) {
 		t.Fatalf("viewer adapters %d %s", res.StatusCode, raw)
 	}
 
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"https://pve.example:8006","token":"SECRET-TOKEN-VALUE"}`))
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"https://pve.example:8006","token":"user@pam!tok=SECRET-TOKEN-VALUE"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: viewCookie})
 	res, _ = ts.Client().Do(req)
@@ -59,6 +59,16 @@ func TestMigrationViewerDeniedAndSecretsRedacted(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: admin})
 	res, _ = ts.Client().Do(req)
 	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "not the secret alone") {
+		t.Fatalf("secret-only token %d %s", res.StatusCode, body)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"https://pve.example:8006","token":"user@pam!tok=SECRET-TOKEN-VALUE"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: admin})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("create source %d %s", res.StatusCode, body)
@@ -231,6 +241,77 @@ func TestMigrationOfflineRunningAndLiveAck(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "acknowledgement") && !strings.Contains(strings.ToLower(string(raw)), "unavailable") {
 		t.Fatalf("live %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestMigrationPlanAutoMapsSingleDest(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, memNodeID(t, mem, cluster.ID))
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	pve := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/nodes"):
+			_, _ = w.Write([]byte(`{"data":[{"node":"pve1"}]}`))
+		case strings.Contains(r.URL.Path, "/qemu") && !strings.Contains(r.URL.Path, "/config") && !strings.Contains(r.URL.Path, "/snapshot"):
+			_, _ = w.Write([]byte(`{"data":[{"vmid":100,"name":"web","status":"stopped","cpus":2,"maxmem":4294967296,"maxdisk":10737418240}]}`))
+		case strings.Contains(r.URL.Path, "/lxc") && !strings.Contains(r.URL.Path, "/config"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.Contains(r.URL.Path, "/storage") && strings.Contains(r.URL.Path, "/content"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.Contains(r.URL.Path, "/storage"):
+			_, _ = w.Write([]byte(`{"data":[{"storage":"local","type":"dir"}]}`))
+		case strings.Contains(r.URL.Path, "/config"):
+			_, _ = w.Write([]byte(`{"data":{"name":"web","cores":2,"memory":4096,"scsi0":"local:100/vm-100-disk-0.qcow2,size=10G","net0":"virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		}
+	}))
+	defer pve.Close()
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"`+pve.URL+`","token":"user@pam!tok=SECRET-TOKEN-VALUE","insecure":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var src map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&src)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("source %d", res.StatusCode)
+	}
+	id, _ := src["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/sources/"+id+"/discover", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), "web") {
+		t.Fatalf("discover %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/plans", strings.NewReader(`{"source_id":"`+id+`","selected":["pve1/100"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("auto plan %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), `"offline"`) {
+		t.Fatalf("expected suggested offline mode %s", raw)
+	}
+	if !strings.Contains(string(raw), poolID) || !strings.Contains(string(raw), netID) {
+		t.Fatalf("expected automatic dest mapping %s", raw)
 	}
 }
 
@@ -571,7 +652,7 @@ func TestPhase44DeleteMigrationSourceFailsClosedWhenPersistMisses(t *testing.T) 
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"https://pve.example:8006","token":"SECRET-TOKEN-VALUE"}`))
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"https://pve.example:8006","token":"user@pam!tok=SECRET-TOKEN-VALUE"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ := ts.Client().Do(req)

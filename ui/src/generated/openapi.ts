@@ -1973,6 +1973,7 @@ export interface MigrationStartRequest {
   direction?: string;
   source_id?: string;
   mode?: string;
+  strategy?: string;
   path?: string;
   xml_path?: string;
   format?: string;

@@ -67,7 +67,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "network", label: "Network", href: "/network", keywords: ["bridge", "nic"] },
   { id: "node", label: "Node", href: "/node", keywords: ["host", "hardware"] },
   { id: "cluster", label: "Cluster", href: "/settings/cluster", keywords: ["join", "worker", "node"] },
-  { id: "features", label: "Features", href: "/settings/features", keywords: ["modules", "kubernetes", "gpu", "oci"] },
+  { id: "features", label: "Add Features", href: "/settings/features", keywords: ["modules", "kubernetes", "gpu", "oci", "integrations", "features"] },
   { id: "kubernetes", label: "Kubernetes", href: "/settings/kubernetes", keywords: ["kubelet", "k8s"] },
   { id: "store", label: "Store", href: "/store", keywords: ["apps", "manifest", "jellyfin"] },
   { id: "automation", label: "Automation", href: "/automation", keywords: ["policy", "storage", "pressure", "migrate"] },

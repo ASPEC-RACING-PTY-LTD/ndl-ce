@@ -1611,7 +1611,7 @@ paths:
   /migration/plans:
     post:
       operationId: createMigrationPlan
-      summary: Build a reviewable migration plan from the actual selection.
+      summary: Build a reviewable migration plan. Mapping and mode are detected automatically when unambiguous.
       requestBody:
         content:
           application/json:
@@ -8806,7 +8806,7 @@ components:
           description: http(s) URL without userinfo. Credentials stay in token or username.
         token:
           type: string
-          description: Write-only. Never returned after save.
+          description: Write-only. Never returned after save. For adapter proxmox this must be user@realm!tokenid=secret (example root@pam!nodal=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx), not the secret UUID alone.
         username:
           type: string
         insecure:
@@ -8861,6 +8861,9 @@ components:
           type: string
         mode:
           type: string
+        strategy:
+          type: string
+          description: Global migration intent (consistent, leave-running, backup). When omitted, consistent copy is used. Per-workload modes are derived automatically unless overridden.
         path:
           type: string
           description: Disk, archive, OVF, or bundle path under No-dal storage, migration staging, or /tmp.
@@ -8872,6 +8875,7 @@ components:
         modes:
           type: object
           additionalProperties: true
+          description: Optional per-workload mode. When omitted, No-dal selects the safest compatible V1 mode. Live and snapshot-assisted are never auto-selected.
         overrides:
           type: object
           additionalProperties: true
@@ -8900,6 +8904,7 @@ components:
         mapping:
           type: object
           additionalProperties: true
+          description: Optional SOURCE to DEST overrides. When omitted, No-dal maps source storage and bridges onto destination pools and networks when the match is unambiguous.
         selected:
           type: array
           items:

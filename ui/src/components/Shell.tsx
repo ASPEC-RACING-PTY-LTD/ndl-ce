@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getHealth } from "../api/client";
 import type { HealthResponse } from "../api/types";
+import { useVisibleNav } from "../nav/NavDisclosure";
+import { moduleForPath } from "../nav/modules";
 import { WorkloadsNavigator } from "../nav/WorkloadsNavigator";
 import { isWorkloadsContext, selectedTargetFromPath, viewFromPath } from "../nav/match";
 import { isMainNavPreferred, saveLastView } from "../nav/prefs";
@@ -14,71 +16,6 @@ import { AccountMenu } from "./shell/AccountMenu";
 import { TaskIndicator } from "./shell/TaskIndicator";
 
 const SIDEBAR_KEY = "ndl-sidebar-collapsed";
-
-type NavItem = { href: string; label: string; match: (path: string) => boolean };
-
-const GROUPS: { label: string; items: NavItem[] }[] = [
-  {
-    label: "Overview",
-    items: [{ href: "/", label: "Dashboard", match: (p) => p === "/" }],
-  },
-  {
-    label: "Compute",
-    items: [
-      { href: "/workloads", label: "Workloads", match: (p) => p === "/workloads" || p.startsWith("/workloads/") },
-      { href: "/import-export", label: "Import / Export", match: (p) => p === "/import-export" },
-      { href: "/terminal", label: "Terminal", match: (p) => p === "/terminal" },
-      { href: "/stacks", label: "Stacks", match: (p) => p === "/stacks" || p.startsWith("/stacks/") },
-      { href: "/templates", label: "Templates", match: (p) => p === "/templates" },
-    ],
-  },
-  {
-    label: "Infrastructure",
-    items: [
-      { href: "/node", label: "Node", match: (p) => p === "/node" || (p.startsWith("/node/") && !p.startsWith("/nodes/")) },
-      { href: "/storage", label: "Storage", match: (p) => p === "/storage" || p.startsWith("/storage/") },
-      { href: "/network", label: "Network", match: (p) => p === "/network" || p.startsWith("/network/") },
-      { href: "/settings/cluster", label: "Cluster", match: (p) => p === "/settings/cluster" },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { href: "/tasks", label: "Tasks", match: (p) => p === "/tasks" },
-      { href: "/events", label: "Events", match: (p) => p === "/events" || p === "/node/events" },
-      { href: "/alerts", label: "Alerts", match: (p) => p === "/alerts" },
-      { href: "/backups", label: "Backups", match: (p) => p === "/backups" },
-      { href: "/automation", label: "Automation", match: (p) => p === "/automation" },
-    ],
-  },
-  {
-    label: "Intelligence",
-    items: [
-      { href: "/ask", label: "Ask", match: (p) => p === "/ask" },
-      { href: "/plans", label: "Plans", match: (p) => p === "/plans" },
-    ],
-  },
-  {
-    label: "Catalog",
-    items: [
-      { href: "/store", label: "Store", match: (p) => p === "/store" },
-      { href: "/docs", label: "Docs", match: (p) => p === "/docs" },
-    ],
-  },
-  {
-    label: "Settings",
-    items: [
-      { href: "/settings/features", label: "Features", match: (p) => p === "/settings/features" },
-      { href: "/settings/kubernetes", label: "Kubernetes", match: (p) => p === "/settings/kubernetes" },
-      { href: "/settings/certificates", label: "Certificates", match: (p) => p === "/settings/certificates" },
-      { href: "/settings/updates", label: "Updates", match: (p) => p === "/settings/updates" },
-      { href: "/settings/mfa", label: "MFA", match: (p) => p === "/settings/mfa" },
-      { href: "/groups", label: "Groups", match: (p) => p === "/groups" },
-      { href: "/audit", label: "Audit", match: (p) => p === "/audit" },
-      { href: "/settings/license", label: "License", match: (p) => p === "/settings/license" },
-    ],
-  },
-];
 
 const TAB_LABELS: Record<string, string> = {
   terminal: "Terminal",
@@ -163,7 +100,7 @@ function crumbs(path: string): { href: string; label: string }[] {
     }
     return trail;
   }
-  const top = GROUPS.flatMap((g) => g.items).find((item) => item.match(path));
+  const top = moduleForPath(path);
   return top ? [{ href: top.href, label: top.label }] : [{ href: path, label: "Page" }];
 }
 
@@ -233,6 +170,7 @@ export function Shell({ children }: { children: ReactNode }) {
     });
   }
 
+  const groups = useVisibleNav(path);
   const healthOk = health?.status === "ok";
   const healthLabel = healthOk ? "Healthy" : health ? "Degraded" : "Unavailable";
   const trail = crumbs(path);
@@ -256,7 +194,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {workloadsCtx ? (
             <WorkloadsNavigator />
           ) : (
-            GROUPS.map((group) => (
+            groups.map((group) => (
               <div className="nav-group" key={group.label}>
                 <p className="nav-group-label">{group.label}</p>
                 {group.items.map((item) => (

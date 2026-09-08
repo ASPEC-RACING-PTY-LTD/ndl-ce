@@ -65,11 +65,11 @@ func run(args []string) error {
   migration adapters
   migration modes
   migration sources
-  migration source add --adapter ADAPTER [--endpoint URL] [--token TOKEN]
+  migration source add --adapter ADAPTER [--endpoint URL] [--token user@realm!tokenid=secret]
   migration discover --id ID
-  migration plan --source-id ID --selected ID --mode MODE
-  migration compatibility --source-id ID --selected ID --mode MODE
-  migration start --source-id ID --selected ID --mode MODE
+  migration plan --source-id ID --selected ID [--strategy STRATEGY] [--mode MODE]
+  migration compatibility --source-id ID --selected ID [--strategy STRATEGY] [--mode MODE]
+  migration start --source-id ID --selected ID [--strategy STRATEGY] [--mode MODE]
   migration jobs
   migration job get --id ID
   migration cancel --id ID
@@ -999,7 +999,7 @@ func cmdMigration(args []string) error {
 		return cmdGet("/api/v1/migration/sources")
 	case "source":
 		if len(args) < 2 || args[1] != "add" {
-			return fmt.Errorf("usage: nodalctl migration source add --adapter ADAPTER [--endpoint URL] [--token TOKEN]")
+			return fmt.Errorf("usage: nodalctl migration source add --adapter ADAPTER [--endpoint URL] [--token user@realm!tokenid=secret]")
 		}
 		f := parseFlags(args[2:])
 		return postJSON("/api/v1/migration/sources", map[string]any{
@@ -1013,18 +1013,21 @@ func cmdMigration(args []string) error {
 		return postJSON("/api/v1/migration/sources/"+f["id"]+"/discover", map[string]any{}, true)
 	case "plan", "compatibility", "start":
 		f := parseFlags(args[1:])
-		if f["source-id"] == "" || f["selected"] == "" || f["mode"] == "" {
-			return fmt.Errorf("usage: nodalctl migration %s --source-id ID --selected ID --mode MODE [--pool-id ID] [--network-id ID]", args[0])
+		if f["source-id"] == "" || f["selected"] == "" {
+			return fmt.Errorf("usage: nodalctl migration %s --source-id ID --selected ID [--strategy STRATEGY] [--mode MODE] [--pool-id ID] [--network-id ID]", args[0])
 		}
 		body := map[string]any{
 			"source_id":   f["source-id"],
 			"selected":    []string{f["selected"]},
-			"modes":       map[string]string{f["selected"]: f["mode"]},
-			"mode":        f["mode"],
+			"strategy":    f["strategy"],
 			"pool_id":     f["pool-id"],
 			"network_id":  f["network-id"],
 			"start_after": f["start-after"] == "true",
 			"live_ack":    map[string]bool{f["selected"]: f["live-ack"] == "true"},
+		}
+		if f["mode"] != "" {
+			body["modes"] = map[string]string{f["selected"]: f["mode"]}
+			body["mode"] = f["mode"]
 		}
 		path := "/api/v1/migration/plans"
 		if args[0] == "compatibility" {

@@ -45,6 +45,7 @@ import { StacksPage, StackDetailPage } from "./pages/StacksPage";
 import { TasksPage } from "./pages/TasksPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
+import { NavDisclosureProvider } from "./nav/NavDisclosure";
 import { SessionProvider, useSession } from "./session";
 
 function GateNotice({ children }: { children: string }) {
@@ -239,9 +240,11 @@ function AppRoutes() {
   }
 
   return (
-    <Shell>
-      <TerminalWorkspaceProvider>{matchPage(path)}</TerminalWorkspaceProvider>
-    </Shell>
+    <NavDisclosureProvider>
+      <Shell>
+        <TerminalWorkspaceProvider>{matchPage(path)}</TerminalWorkspaceProvider>
+      </Shell>
+    </NavDisclosureProvider>
   );
 }
 

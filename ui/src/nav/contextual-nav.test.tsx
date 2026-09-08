@@ -306,14 +306,14 @@ describe("contextual navigation", () => {
     expect(screen.queryByText(/showing 200 of/i)).not.toBeInTheDocument();
   });
 
-  it("leaves Node, Storage, Network, and Cluster on the main sidebar", async () => {
+  it("leaves Node, Storage, and Network on the Simple sidebar", async () => {
     window.history.replaceState({}, "", "/storage");
     mockApi(admin);
     render(<App />);
     expect(await screen.findByRole("navigation", { name: /appliance/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^node$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^network$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: /^node$/i }));
     await waitFor(() => expect(window.location.pathname).toBe("/node"));
     expect(screen.getByRole("navigation", { name: /appliance/i })).toBeVisible();

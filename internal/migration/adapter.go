@@ -127,7 +127,7 @@ func Catalog() []AdapterInfo {
 			Discovery: true, Import: true, Export: true, ExportKind: ExportPackage,
 			Modes:      []string{ModeOffline, ModeBackup, ModeDisk},
 			Notes:      "REST discovery and QEMU/LXC config translation. Offline copies a disk only when the source storage exposes a downloadable file (directory/NFS/CIFS). LVM-thin, ZFS zvols, and RBD are not HTTP-downloadable; copy the disk on the source host and use Disk import. LXC vzdump tar/tar.gz/tar.zst backups can be downloaded. VM vma vzdump is blocked (no vma extractor). Live and snapshot-assisted are unavailable. Export writes a compatible package, not a remote qm/pct create.",
-			Credential: "API token. Prefer a token limited to VM.Audit, VM.Backup, and Datastore.Allocate where the platform allows. Broader tokens are disclosed when the platform cannot grant export-only rights.",
+			Credential: "Proxmox API token must be user@realm!tokenid=secret (example: root@pam!nodal=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). The secret UUID alone is not enough. Prefer a token limited to VM.Audit, VM.Backup, and Datastore.Allocate where the platform allows. Broader tokens are disclosed when the platform cannot grant export-only rights.",
 		},
 		{
 			ID: AdapterLibvirt, Label: "libvirt/KVM (XML plus disks)", Role: "source",

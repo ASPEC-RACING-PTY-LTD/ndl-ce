@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { paletteMatchesVisible, visibleModules } from "../nav/disclosure";
+import { useNavDisclosure } from "../nav/NavDisclosure";
 import { filterPaletteActions, visiblePaletteActions } from "../palette";
 import { navigate } from "../router";
 import { useSession } from "../session";
@@ -11,7 +13,11 @@ type CommandPaletteProps = {
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const actions = useMemo(() => visiblePaletteActions(roles), [roles]);
+  const { prefs, featureEnabled } = useNavDisclosure();
+  const actions = useMemo(() => {
+    const visibleIds = new Set(visibleModules(prefs, featureEnabled, roles).map((item) => item.id));
+    return visiblePaletteActions(roles).filter((action) => paletteMatchesVisible(action, visibleIds));
+  }, [featureEnabled, prefs, roles]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const filtered = filterPaletteActions(actions, query);
@@ -96,7 +102,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             ))
           )}
         </ul>
-        <p className="field-hint">Actions are filtered by your roles. Expert mode does not add any.</p>
+        <p className="field-hint">Actions follow your roles and the current navigation template. Expert mode does not add any.</p>
       </div>
     </div>
   );

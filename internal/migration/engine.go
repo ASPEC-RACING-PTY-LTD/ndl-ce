@@ -46,8 +46,12 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 			continue
 		}
 		mode := modes[w.SourceID]
+		var suggested *Finding
 		if mode == "" {
-			return Plan{}, fmt.Errorf("migration mode must be selected for %s", w.Name)
+			mode, suggested = SuggestMode(w)
+		}
+		if mode == "" {
+			return Plan{}, fmt.Errorf("no compatible migration mode is available for %s", w.Name)
 		}
 		m := manifests[w.SourceID]
 		if m.Kind == "" {
@@ -57,11 +61,14 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 		var ov *Mapping
 		if o, ok := overrides[w.SourceID]; ok {
 			ov = &o
-			item := o
-			_ = item
 		}
+		effective := mergeMapping(mapping, ov)
+		compat, findings := Analyze(m, effective, nil, nil, qemuFormats)
 		mapped := ApplyMapping(m, mapping, ov)
-		compat, findings := Analyze(mapped, mapping, nil, nil, qemuFormats)
+		if suggested != nil {
+			findings = append(findings, *suggested)
+			compat = rollup(findings)
+		}
 		if w.Snapshots > 0 {
 			findings = append(findings, SnapshotsNotMigrated())
 			if compat == CompatReady {
@@ -88,6 +95,7 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 
 func Review(item ItemPlan, destNode string, mapping Mapping) map[string]any {
 	return map[string]any{
+		"source_id":        item.SourceID,
 		"name":             item.Name,
 		"source":           item.Kind + " " + item.SourceID,
 		"destination":      item.Kind,

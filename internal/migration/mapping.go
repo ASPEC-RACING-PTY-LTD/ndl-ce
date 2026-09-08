@@ -2,6 +2,27 @@ package migration
 
 import "fmt"
 
+func mergeMapping(bulk Mapping, override *Mapping) Mapping {
+	out := Mapping{
+		Storage: copyMap(bulk.Storage),
+		Network: copyMap(bulk.Network),
+		VLAN:    copyMap(bulk.VLAN),
+	}
+	if override == nil {
+		return out
+	}
+	for k, v := range copyMap(override.Storage) {
+		out.Storage[k] = v
+	}
+	for k, v := range copyMap(override.Network) {
+		out.Network[k] = v
+	}
+	for k, v := range copyMap(override.VLAN) {
+		out.VLAN[k] = v
+	}
+	return out
+}
+
 func ApplyMapping(m Manifest, bulk Mapping, override *Mapping) Manifest {
 	mapn := bulk
 	if override != nil {

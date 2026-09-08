@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  analyzeMigration,
   cancelMigrationJob,
   cleanupMigrationJob,
   createMigrationPlan,
@@ -21,6 +20,7 @@ import {
 } from "../api/client";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
+import { PVE_TOKEN_EXAMPLE, PVE_TOKEN_FORMAT, pveTokenError } from "../migration/pveToken";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
 
@@ -48,6 +48,8 @@ type Mode = {
   source_mutation?: string;
 };
 type Source = { id: string; adapter: string; label: string; endpoint: string; has_credentials?: boolean };
+type DestPool = { id: string; name: string; status?: string };
+type DestNet = { id: string; name: string; bridge_name?: string; status?: string };
 type WorkloadRow = {
   source_id: string;
   name: string;
@@ -63,8 +65,21 @@ type WorkloadRow = {
   snapshots?: number;
   backups?: number;
   capabilities?: string[];
+  storage?: string[];
+  networks?: string[];
+};
+type Finding = { level?: string; code?: string; message?: string };
+type Strategy = {
+  id: string;
+  label: string;
+  consistency: string;
+  summary: string;
+  recommended?: boolean;
+  available?: boolean;
+  unavailable_reason?: string;
 };
 type ReviewRow = {
+  source_id?: string;
   name?: string;
   source?: string;
   destination?: string;
@@ -75,27 +90,85 @@ type ReviewRow = {
   storage?: Record<string, string>;
   network?: Record<string, string>;
   compatibility?: string;
-  warnings?: { level?: string; message?: string }[];
+  warnings?: Finding[];
   estimated_data?: number;
   source_changes?: string;
   start_after?: boolean;
 };
+type PlanItem = { source_id?: string; name?: string; mode?: string; findings?: Finding[]; compatibility?: string };
 
-const STEPS = ["Source", "Discovery", "Workloads", "Mapping", "Mode", "Compatibility", "Review", "Progress", "Verification"];
+const PHASES = ["Select Workloads", "Review", "Progress", "Verification"] as const;
+type Phase = "source" | "select" | "review" | "progress" | "verify";
+
+const DEFAULT_STRATEGIES: Strategy[] = [
+  {
+    id: "consistent",
+    label: "Consistent copy",
+    consistency: "SAFE",
+    summary: "Accept downtime. Use Offline when possible, then an existing backup, then disk import.",
+    recommended: true,
+    available: true,
+  },
+  {
+    id: "leave-running",
+    label: "Leave sources running",
+    consistency: "SOURCE SAFE",
+    summary: "Prefer backups or disk import so running guests can stay running.",
+    available: true,
+  },
+  {
+    id: "backup",
+    label: "Existing backups",
+    consistency: "SAFE",
+    summary: "Import captured backups only. Workloads without a backup are blocked.",
+    available: true,
+  },
+];
+
+function destLabel(id: string, pools: DestPool[], nets: DestNet[]): string {
+  const pool = pools.find((p) => p.id === id);
+  if (pool) return pool.name || id;
+  const net = nets.find((n) => n.id === id);
+  if (net) return net.name || net.bridge_name || id;
+  return id;
+}
+
+function mapLines(rec: Record<string, string> | undefined, pools: DestPool[], nets: DestNet[]): string {
+  return Object.entries(rec ?? {})
+    .map(([src, dest]) => `${src} -> ${destLabel(dest, pools, nets)}`)
+    .join(", ");
+}
+
+function findingNeedsAction(f: Finding): boolean {
+  const level = (f.level ?? "").toUpperCase();
+  return (
+    level === "REQUIRES MAPPING" ||
+    level === "BLOCKED" ||
+    level === "UNSUPPORTED" ||
+    f.code === "source-must-stop" ||
+    f.code === "mode"
+  );
+}
 
 export function ImportExportPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
   const [tab, setTab] = useState<"import" | "export">("import");
-  const [step, setStep] = useState(0);
+  const [phase, setPhase] = useState<Phase>("source");
   const [error, setError] = useState<string | null>(null);
   const [adapters, setAdapters] = useState<Adapter[]>([]);
   const [modes, setModes] = useState<Mode[]>([]);
+  const [strategies, setStrategies] = useState<Strategy[]>(DEFAULT_STRATEGIES);
+  const [strategy, setStrategy] = useState("consistent");
+  const [modeOverride, setModeOverride] = useState<Record<string, string>>({});
   const [sources, setSources] = useState<Source[]>([]);
+  const [pools, setPools] = useState<DestPool[]>([]);
+  const [nets, setNets] = useState<DestNet[]>([]);
   const [adapter, setAdapter] = useState("proxmox");
   const [endpoint, setEndpoint] = useState("");
   const [token, setToken] = useState("");
+  const [tokenError, setTokenError] = useState<string | null>(null);
   const [insecure, setInsecure] = useState(false);
   const [sourceID, setSourceID] = useState("");
   const [workloads, setWorkloads] = useState<WorkloadRow[]>([]);
@@ -103,13 +176,13 @@ export function ImportExportPage() {
   const [q, setQ] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
   const [runFilter, setRunFilter] = useState("all");
-  const [storageMap, setStorageMap] = useState("");
-  const [networkMap, setNetworkMap] = useState("");
+  const [storageOverride, setStorageOverride] = useState<Record<string, string>>({});
+  const [networkOverride, setNetworkOverride] = useState<Record<string, string>>({});
   const [modeByID, setModeByID] = useState<Record<string, string>>({});
   const [liveAck, setLiveAck] = useState<Record<string, boolean>>({});
   const [identityAck, setIdentityAck] = useState<Record<string, boolean>>({});
-  const [compatItems, setCompatItems] = useState<Record<string, unknown>[]>([]);
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
+  const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [job, setJob] = useState<Record<string, unknown> | null>(null);
   const [jobs, setJobs] = useState<Record<string, unknown>[]>([]);
   const [diskPath, setDiskPath] = useState("");
@@ -124,6 +197,8 @@ export function ImportExportPage() {
   const [exportKind, setExportKind] = useState("nodal-bundle");
   const [startAfter, setStartAfter] = useState(false);
   const [learn, setLearn] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void Promise.all([
@@ -135,15 +210,19 @@ export function ImportExportPage() {
       listMigrationJobs(),
       listWorkloads(),
     ])
-      .then(([a, m, src, pools, nets, listedJobs, wls]) => {
+      .then(([a, m, src, poolList, netList, listedJobs, wls]) => {
         setAdapters((a.items ?? []) as Adapter[]);
         setModes((m.items ?? []) as Mode[]);
+        const listed = (m.strategies ?? []) as Strategy[];
+        if (listed.length > 0) setStrategies(listed);
         setSources((src.items ?? []) as Source[]);
         setJobs((listedJobs.items ?? []) as Record<string, unknown>[]);
-        const p = pools.items?.[0]?.id ?? "";
-        const n = nets.items?.[0]?.id ?? "";
-        if (p) setPoolID(p);
-        if (n) setNetID(n);
+        const destPools = (poolList.items ?? []) as DestPool[];
+        const destNets = (netList.items ?? []) as DestNet[];
+        setPools(destPools);
+        setNets(destNets);
+        if (destPools.length === 1) setPoolID(destPools[0].id);
+        if (destNets.length === 1) setNetID(destNets[0].id);
         const first = (wls.items ?? [])[0] as { id?: string } | undefined;
         if (first?.id) setExportID(first.id);
       })
@@ -159,7 +238,8 @@ export function ImportExportPage() {
       void getMigrationJob(id)
         .then((row) => {
           setJob(row);
-          if (row.state === "succeeded") setStep(8);
+          if (row.state === "succeeded") setPhase("verify");
+          else setPhase("progress");
         })
         .catch(() => undefined);
     }, 1000);
@@ -168,20 +248,58 @@ export function ImportExportPage() {
 
   const chosen = useMemo(() => workloads.filter((w) => selected[w.source_id]), [workloads, selected]);
   const currentAdapter = adapters.find((a) => a.id === adapter);
-
-  function mapping(): { storage: Record<string, string>; network: Record<string, string> } {
-    const storage: Record<string, string> = {};
-    const network: Record<string, string> = {};
-    for (const line of storageMap.split("\n")) {
-      const [k, v] = line.split("->").map((s) => s.trim());
-      if (k && v) storage[k] = v;
+  const findings = useMemo(() => {
+    const out: Finding[] = [];
+    for (const item of planItems) {
+      for (const f of item.findings ?? []) out.push(f);
     }
-    for (const line of networkMap.split("\n")) {
-      const [k, v] = line.split("->").map((s) => s.trim());
-      if (k && v) network[k] = v;
+    for (const rev of reviews) {
+      for (const f of rev.warnings ?? []) out.push(f);
     }
-    return { storage, network };
-  }
+    return out;
+  }, [planItems, reviews]);
+  const actionFindings = useMemo(() => findings.filter(findingNeedsAction), [findings]);
+  const unmappedStorage = useMemo(() => {
+    const mapped = new Set(reviews.flatMap((r) => Object.keys(r.storage ?? {})));
+    const src = new Set<string>();
+    for (const w of chosen) {
+      for (const name of w.storage ?? []) {
+        if (!mapped.has(name) && !storageOverride[name]) src.add(name);
+      }
+    }
+    for (const f of actionFindings) {
+      if (f.code === "storage" && (f.level ?? "").toUpperCase() === "REQUIRES MAPPING") {
+        const m = /Source storage (.+) has no/.exec(f.message ?? "");
+        if (m?.[1] && !storageOverride[m[1]]) src.add(m[1]);
+      }
+    }
+    return [...src];
+  }, [chosen, reviews, storageOverride, actionFindings]);
+  const unmappedNetwork = useMemo(() => {
+    const mapped = new Set(reviews.flatMap((r) => Object.keys(r.network ?? {})));
+    const src = new Set<string>();
+    for (const w of chosen) {
+      for (const name of w.networks ?? []) {
+        if (!mapped.has(name) && !networkOverride[name]) src.add(name);
+      }
+    }
+    for (const f of actionFindings) {
+      if (f.code === "network" && (f.level ?? "").toUpperCase() === "REQUIRES MAPPING") {
+        const m = /Source network (.+) has no/.exec(f.message ?? "");
+        if (m?.[1] && !networkOverride[m[1]]) src.add(m[1]);
+      }
+    }
+    return [...src];
+  }, [chosen, reviews, networkOverride, actionFindings]);
+  const blocked = findings.some((f) => (f.level ?? "").toUpperCase() === "BLOCKED" || (f.level ?? "").toUpperCase() === "UNSUPPORTED");
+  const mustStop = chosen.some((w) => {
+    const mode = modeByID[w.source_id] || reviews.find((r) => r.name === w.name)?.migration_mode;
+    return Boolean(w.running && mode === "offline");
+  });
+  const needsLiveAck = chosen.some((w) => (modeByID[w.source_id] || reviews.find((r) => r.name === w.name)?.migration_mode) === "live" && !liveAck[w.source_id]);
+  const needsIdentityAck = startAfter && chosen.some((w) => w.running && !identityAck[w.source_id]);
+  const mappingIncomplete = unmappedStorage.length > 0 || unmappedNetwork.length > 0;
+  const canImport = !blocked && !needsLiveAck && !needsIdentityAck && !mappingIncomplete && reviews.length > 0;
 
   const filtered = workloads.filter((w) => {
     if (q && !`${w.name} ${w.source_id} ${w.node ?? ""}`.toLowerCase().includes(q.toLowerCase())) return false;
@@ -196,88 +314,101 @@ export function ImportExportPage() {
     const ack: Record<string, boolean> = {};
     const ident: Record<string, boolean> = {};
     for (const w of chosen) {
-      modesPayload[w.source_id] = modeByID[w.source_id];
+      if (modeOverride[w.source_id]) {
+        modesPayload[w.source_id] = modeOverride[w.source_id];
+      }
       if (liveAck[w.source_id]) ack[w.source_id] = true;
       if (identityAck[w.source_id]) ident[w.source_id] = true;
     }
+    const storage = { ...storageOverride };
+    const network = { ...networkOverride };
     return {
       source_id: sourceID,
       selected: chosen.map((w) => w.source_id),
+      strategy,
       modes: modesPayload,
       live_ack: ack,
       identity_conflict_ack: ident,
-      mapping: mapping(),
-      pool_id: poolID,
-      network_id: netID,
+      mapping: { storage, network },
       start_after: startAfter,
     };
   }
 
+  function applyPlan(planned: Record<string, unknown>) {
+    const revs = ((planned.review as ReviewRow[]) ?? []) as ReviewRow[];
+    setReviews(revs);
+    const items = (((planned.plan as { items?: PlanItem[] } | undefined)?.items ?? []) as PlanItem[]) ?? [];
+    setPlanItems(items);
+    setModeByID((cur) => {
+      const next = { ...cur };
+      for (const item of items) {
+        if (item.source_id && item.mode && !next[item.source_id]) {
+          next[item.source_id] = item.mode;
+        }
+      }
+      return next;
+    });
+  }
+
+  async function discoverInto(id: string) {
+    const d = (await discoverMigrationSource(id)) as { workloads?: WorkloadRow[] };
+    setWorkloads(d.workloads ?? []);
+    setSelected({});
+    setReviews([]);
+    setPlanItems([]);
+    setModeOverride({});
+    setPhase("select");
+  }
+
   async function connectSource() {
     setError(null);
+    if (adapter === "proxmox") {
+      const formatErr = pveTokenError(token);
+      if (formatErr) {
+        setTokenError(formatErr);
+        setError(formatErr);
+        return;
+      }
+    }
+    setTokenError(null);
+    setBusy(true);
     try {
       const created = (await createMigrationSource({ adapter, endpoint, token, insecure, label: adapter })) as Source;
       setSourceID(created.id);
       setToken("");
       setSources((cur) => [...cur, created]);
-      setStep(1);
+      await discoverInto(created.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connect failed");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function discover() {
+  async function goReview() {
     setError(null);
+    setBusy(true);
     try {
-      const d = (await discoverMigrationSource(sourceID)) as { workloads?: WorkloadRow[] };
-      setWorkloads(d.workloads ?? []);
-      setStep(2);
+      const planned = await createMigrationPlan(planBody());
+      applyPlan(planned);
+      setPhase("review");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Discover failed");
-    }
-  }
-
-  async function runCompat() {
-    setError(null);
-    try {
-      for (const w of chosen) {
-        if (!modeByID[w.source_id]) {
-          setError("Select a migration mode for each workload. No-dal will not choose one for you.");
-          return;
-        }
-        const mode = modes.find((m) => m.id === modeByID[w.source_id]);
-        if (mode && mode.available === false) {
-          setError(`${mode.label} is unavailable. ${mode.unavailable_reason ?? ""}`.trim());
-          return;
-        }
-        if (modeByID[w.source_id] === "live" && !liveAck[w.source_id]) {
-          setError("Live migration requires acknowledgement: I understand the risks of live migration.");
-          return;
-        }
-      }
-      const body = planBody();
-      const compat = await analyzeMigration(body);
-      setCompatItems(((compat.items as Record<string, unknown>[]) ?? []) as Record<string, unknown>[]);
-      const planned = await createMigrationPlan(body);
-      setReviews(((planned.review as ReviewRow[]) ?? []) as ReviewRow[]);
-      setStep(6);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Compatibility failed");
+      setError(err instanceof Error ? err.message : "Review failed");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function start() {
     setError(null);
+    if (!canImport) {
+      setError("Resolve the required actions before import.");
+      return;
+    }
     try {
-      for (const w of chosen) {
-        if (modeByID[w.source_id] === "live" && !liveAck[w.source_id]) {
-          setError("Live migration requires acknowledgement: I understand the risks of live migration.");
-          return;
-        }
-      }
       const started = await startMigrationJob(planBody());
       setJob(started);
-      setStep(7);
+      setPhase("progress");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Start failed");
     }
@@ -285,6 +416,12 @@ export function ImportExportPage() {
 
   async function importFile() {
     setError(null);
+    const resolvedPool = poolID || (pools.length === 1 ? pools[0].id : "");
+    const resolvedNet = netID || (nets.length === 1 ? nets[0].id : "");
+    if (!resolvedPool || !resolvedNet) {
+      setError("Choose destination storage and network. Automatic mapping needs one unambiguous destination.");
+      return;
+    }
     try {
       const isBundle = diskPath.endsWith("manifest.json") || adapter === "nodal";
       const body = {
@@ -295,13 +432,13 @@ export function ImportExportPage() {
         cpus: Number(cpus),
         memory_bytes: Number(memory),
         firmware,
-        pool_id: poolID,
-        network_id: netID,
+        pool_id: resolvedPool,
+        network_id: resolvedNet,
         start_after: startAfter,
       };
       const started = isBundle ? await importMigrationBundle(body) : await importMigrationDisk(body);
       setJob(started);
-      setStep(7);
+      setPhase("progress");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     }
@@ -309,6 +446,9 @@ export function ImportExportPage() {
 
   const status = job?.status as Record<string, unknown> | undefined;
   const reports = (status?.reports as Record<string, unknown>[] | undefined) ?? [];
+  const phaseIndex = phase === "select" ? 0 : phase === "review" ? 1 : phase === "progress" ? 2 : phase === "verify" ? 3 : -1;
+  const currentStrategy = strategies.find((s) => s.id === strategy);
+  const strategyReady = Boolean(currentStrategy && currentStrategy.available !== false);
 
   return (
     <section className="page page-wide" aria-labelledby="mig-heading">
@@ -364,7 +504,7 @@ export function ImportExportPage() {
                 .then((row) => {
                   setJob(row);
                   setTab("import");
-                  setStep(7);
+                  setPhase("progress");
                 })
                 .catch((err) => setError(err instanceof Error ? err.message : "Export failed"));
             }}
@@ -376,19 +516,31 @@ export function ImportExportPage() {
 
       {tab === "import" ? (
         <>
-          <ol className="mig-steps">
-            {STEPS.map((label, i) => (
-              <li key={label}>
-                <button type="button" className={i === step ? "btn" : "btn btn-secondary"} onClick={() => setStep(i)}>
-                  {i + 1}. {label}
-                </button>
-              </li>
-            ))}
-          </ol>
+          {phase !== "source" ? (
+            <ol className="mig-steps">
+              {PHASES.map((label, i) => (
+                <li key={label}>
+                  <button
+                    type="button"
+                    className={i === phaseIndex ? "btn" : "btn btn-secondary"}
+                    onClick={() => {
+                      if (i === 0) setPhase("select");
+                      if (i === 1 && reviews.length > 0) setPhase("review");
+                      if (i === 2 && job) setPhase("progress");
+                      if (i === 3 && job?.state === "succeeded") setPhase("verify");
+                    }}
+                  >
+                    {i + 1}. {label}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ) : null}
 
-          {step === 0 ? (
+          {phase === "source" ? (
             <article className="panel">
               <h2>Source</h2>
+              <p>Connect discovers workloads. Transfer starts only after Review.</p>
               <label htmlFor="mig-adapter">
                 Adapter
                 <select id="mig-adapter" className="field-input" value={adapter} onChange={(e) => setAdapter(e.target.value)}>
@@ -404,12 +556,25 @@ export function ImportExportPage() {
               {adapter === "proxmox" ? (
                 <>
                   <Field id="mig-ep" label="Endpoint" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-                  <Field id="mig-tok" label="API token" value={token} onChange={(e) => setToken(e.target.value)} />
+                  <Field
+                    id="mig-tok"
+                    label="Proxmox API token"
+                    value={token}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={PVE_TOKEN_EXAMPLE}
+                    error={tokenError ?? undefined}
+                    hint={`Required format: ${PVE_TOKEN_FORMAT}. Example: ${PVE_TOKEN_EXAMPLE}. Paste the full value Proxmox shows once, not the secret UUID alone.`}
+                    onChange={(e) => {
+                      setToken(e.target.value);
+                      setTokenError(null);
+                    }}
+                  />
                   <label>
                     <input type="checkbox" checked={insecure} onChange={(e) => setInsecure(e.target.checked)} /> Allow HTTP
                     (disclosed insecure)
                   </label>
-                  <button type="button" className="btn" disabled={!mutate} onClick={() => void connectSource()}>
+                  <button type="button" className="btn" disabled={!mutate || busy} onClick={() => void connectSource()}>
                     Connect
                   </button>
                 </>
@@ -433,6 +598,32 @@ export function ImportExportPage() {
                       <option value="uefi">UEFI</option>
                     </select>
                   </label>
+                  {pools.length !== 1 ? (
+                    <label htmlFor="mig-pool">
+                      Destination storage
+                      <select id="mig-pool" className="field-input" value={poolID} onChange={(e) => setPoolID(e.target.value)}>
+                        <option value="">Choose a pool</option>
+                        {pools.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {nets.length !== 1 ? (
+                    <label htmlFor="mig-net">
+                      Destination network
+                      <select id="mig-net" className="field-input" value={netID} onChange={(e) => setNetID(e.target.value)}>
+                        <option value="">Choose a network</option>
+                        {nets.map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   <label>
                     <input type="checkbox" checked={startAfter} onChange={(e) => setStartAfter(e.target.checked)} /> Start
                     destination after successful migration
@@ -450,10 +641,14 @@ export function ImportExportPage() {
                       <button
                         type="button"
                         className="btn btn-secondary"
+                        disabled={busy}
                         onClick={() => {
                           setSourceID(s.id);
                           setAdapter(s.adapter);
-                          setStep(1);
+                          setBusy(true);
+                          void discoverInto(s.id)
+                            .catch((err) => setError(err instanceof Error ? err.message : "Discover failed"))
+                            .finally(() => setBusy(false));
                         }}
                       >
                         {s.label} {s.endpoint}
@@ -465,19 +660,10 @@ export function ImportExportPage() {
             </article>
           ) : null}
 
-          {step === 1 ? (
+          {phase === "select" ? (
             <article className="panel">
-              <h2>Discovery</h2>
-              <p>Discovery does not begin migration.</p>
-              <button type="button" className="btn" disabled={!mutate || !sourceID} onClick={() => void discover()}>
-                Discover
-              </button>
-            </article>
-          ) : null}
-
-          {step === 2 ? (
-            <article className="panel">
-              <h2>Workloads</h2>
+              <h2>Select Workloads</h2>
+              <p>Select the guests, then one strategy. Method, storage, network, and compatibility are decided for the whole selection.</p>
               <div className="inline-actions">
                 <input className="field-input" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
                 <select className="field-input" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
@@ -543,138 +729,139 @@ export function ImportExportPage() {
                   </tbody>
                 </table>
               </div>
-              <button type="button" className="btn" disabled={chosen.length === 0} onClick={() => setStep(3)}>
-                Continue
+              <fieldset className="mig-strategy">
+                <legend>Strategy for {chosen.length || "selected"} workload{chosen.length === 1 ? "" : "s"}</legend>
+                {strategies.map((s) => (
+                  <label key={s.id} className={s.available === false ? "mig-mode-unavail" : undefined}>
+                    <input
+                      type="radio"
+                      name="mig-strategy"
+                      checked={strategy === s.id}
+                      disabled={s.available === false}
+                      onChange={() => setStrategy(s.id)}
+                    />
+                    {s.label}
+                    {s.recommended ? " (recommended)" : ""} {s.consistency}
+                    {s.available === false ? " Unavailable" : ""}
+                    <span className="field-hint">{s.summary}</span>
+                    {s.unavailable_reason ? <span className="field-hint">{s.unavailable_reason}</span> : null}
+                  </label>
+                ))}
+              </fieldset>
+              <button
+                type="button"
+                className="btn"
+                disabled={chosen.length === 0 || busy || !strategyReady}
+                onClick={() => void goReview()}
+              >
+                Review {chosen.length} workload{chosen.length === 1 ? "" : "s"}
               </button>
             </article>
           ) : null}
 
-          {step === 3 ? (
-            <article className="panel">
-              <h2>Mapping</h2>
-              <p>Bulk maps apply to the selection. One mapping per line as SOURCE -&gt; DEST. Never guess a destructive mapping.</p>
-              <label htmlFor="map-st">
-                Storage
-                <textarea id="map-st" className="field-input" rows={4} value={storageMap} onChange={(e) => setStorageMap(e.target.value)} />
-              </label>
-              <label htmlFor="map-net">
-                Network
-                <textarea id="map-net" className="field-input" rows={4} value={networkMap} onChange={(e) => setNetworkMap(e.target.value)} />
-              </label>
-              <button type="button" className="btn" onClick={() => setStep(4)}>
-                Continue
-              </button>
-            </article>
-          ) : null}
-
-          {step === 4 ? (
-            <article className="panel">
-              <h2>Migration mode</h2>
-              <p>You choose the mode. No-dal will not silently fall back.</p>
-              {chosen.map((w) => (
-                <fieldset key={w.source_id}>
-                  <legend>
-                    {w.name} ({w.source_id})
-                  </legend>
-                  {modes.map((m) => (
-                    <label key={m.id} className={m.available === false ? "mig-mode-unavail" : undefined}>
-                      <input
-                        type="radio"
-                        name={`mode-${w.source_id}`}
-                        checked={modeByID[w.source_id] === m.id}
-                        disabled={m.available === false}
-                        onChange={() => setModeByID({ ...modeByID, [w.source_id]: m.id })}
-                      />
-                      {m.label} {m.consistency}
-                      {m.requires_ack ? " NO GUARANTEES" : ""}
-                      {m.available === false ? " Unavailable" : ""}
-                      <button type="button" className="btn btn-secondary" onClick={() => setLearn(learn === m.id ? null : m.id)}>
-                        Learn why
-                      </button>
-                      {learn === m.id ? (
-                        <p>
-                          {m.summary} {(m.benefits ?? m.risks ?? []).join(". ")} {m.unavailable_reason} {m.source_mutation}
-                        </p>
-                      ) : null}
-                    </label>
-                  ))}
-                  {modeByID[w.source_id] === "live" ? (
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(liveAck[w.source_id])}
-                        onChange={(e) => setLiveAck({ ...liveAck, [w.source_id]: e.target.checked })}
-                      />
-                      I understand the risks of live migration.
-                    </label>
-                  ) : null}
-                </fieldset>
-              ))}
-              <label>
-                <input type="checkbox" checked={startAfter} onChange={(e) => setStartAfter(e.target.checked)} /> Start
-                destination after successful migration
-              </label>
-              <button type="button" className="btn" disabled={chosen.some((w) => !modeByID[w.source_id])} onClick={() => setStep(5)}>
-                Continue
-              </button>
-            </article>
-          ) : null}
-
-          {step === 5 ? (
-            <article className="panel">
-              <h2>Compatibility</h2>
-              <p>Risk, compatibility, and source safety are separate.</p>
-              <button type="button" className="btn" onClick={() => void runCompat()}>
-                Check compatibility
-              </button>
-              {compatItems.map((row) => (
-                <div key={String(row.source_id)} className="mig-review">
-                  <strong>
-                    {String(row.name)} {String(row.compatibility)}
-                  </strong>
-                  <p>
-                    Consistency {String(row.consistency)}. Source safety {String(row.source_safety)}. Mode {String(row.mode)}.
-                  </p>
-                </div>
-              ))}
-            </article>
-          ) : null}
-
-          {step === 6 ? (
+          {phase === "review" ? (
             <article className="panel">
               <h2>Review</h2>
-              <p>This review is generated from the actual migration plan.</p>
-              {reviews.map((rev) => (
-                <dl key={String(rev.name)} className="mig-review">
-                  <dt>Workload</dt>
-                  <dd>{rev.name}</dd>
-                  <dt>Source</dt>
-                  <dd>{rev.source}</dd>
-                  <dt>Destination</dt>
-                  <dd>
-                    {rev.destination} {rev.destination_node}
-                  </dd>
-                  <dt>Migration mode</dt>
-                  <dd>{rev.migration_mode}</dd>
-                  <dt>Consistency</dt>
-                  <dd>{rev.consistency}</dd>
-                  <dt>Source safety</dt>
-                  <dd>{rev.source_safety}</dd>
-                  <dt>Storage</dt>
-                  <dd>{Object.entries(rev.storage ?? {}).map(([k, v]) => `${k} -> ${v}`).join(", ") || "none"}</dd>
-                  <dt>Network</dt>
-                  <dd>{Object.entries(rev.network ?? {}).map(([k, v]) => `${k} -> ${v}`).join(", ") || "none"}</dd>
-                  <dt>Compatibility</dt>
-                  <dd>
-                    {rev.compatibility} {(rev.warnings ?? []).length} warnings
-                  </dd>
-                  <dt>Estimated data</dt>
-                  <dd>{rev.estimated_data ? `${Math.round(Number(rev.estimated_data) / (1 << 30))} GB` : "unknown"}</dd>
-                  <dt>Source changes</dt>
-                  <dd>{rev.source_changes}</dd>
-                </dl>
-              ))}
-              {chosen.some((w) => w.running && startAfter) ? (
+              <p>
+                Strategy: {currentStrategy?.label ?? strategy}. Method, storage, network, and compatibility were decided
+                for each selected workload.
+              </p>
+              <div className="table-wrap">
+                <table className="mig-review-table">
+                  <thead>
+                    <tr>
+                      <th>Workload</th>
+                      <th>Method</th>
+                      <th>Storage</th>
+                      <th>Network</th>
+                      <th>Compatibility</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reviews.map((rev, idx) => (
+                      <tr key={rev.source_id || String(rev.name) || String(idx)}>
+                        <td>
+                          {rev.name} <code>{rev.source_id || rev.source}</code>
+                        </td>
+                        <td>
+                          {rev.migration_mode} {rev.consistency ? `(${rev.consistency})` : ""}
+                        </td>
+                        <td>{mapLines(rev.storage, pools, nets) || "none"}</td>
+                        <td>{mapLines(rev.network, pools, nets) || "none"}</td>
+                        <td>{rev.compatibility && rev.compatibility !== "READY" ? rev.compatibility : "READY"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {actionFindings.length > 0 ? (
+                <div className="banner" role="status">
+                  <p>Action required before import:</p>
+                  <ul className="plain-list">
+                    {actionFindings.map((f, i) => (
+                      <li key={`${f.code}-${i}`}>{f.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {unmappedStorage.length > 0 ? (
+                <fieldset>
+                  <legend>Choose destination storage</legend>
+                  {unmappedStorage.map((src) => (
+                    <label key={src} htmlFor={`map-st-${src}`}>
+                      {src}
+                      <select
+                        id={`map-st-${src}`}
+                        className="field-input"
+                        value={storageOverride[src] ?? ""}
+                        onChange={(e) => setStorageOverride({ ...storageOverride, [src]: e.target.value })}
+                      >
+                        <option value="">Choose a pool</option>
+                        {pools.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
+
+              {unmappedNetwork.length > 0 ? (
+                <fieldset>
+                  <legend>Choose destination network</legend>
+                  {unmappedNetwork.map((src) => (
+                    <label key={src} htmlFor={`map-net-${src}`}>
+                      {src}
+                      <select
+                        id={`map-net-${src}`}
+                        className="field-input"
+                        value={networkOverride[src] ?? ""}
+                        onChange={(e) => setNetworkOverride({ ...networkOverride, [src]: e.target.value })}
+                      >
+                        <option value="">Choose a network</option>
+                        {nets.map((n) => (
+                          <option key={n.id} value={n.id}>
+                            {n.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
+
+              {mustStop ? (
+                <p className="banner banner-error" role="status">
+                  Offline is the compatible mode. Stop the selected running guests on the source, then continue. No-dal
+                  will not stop them.
+                </p>
+              ) : null}
+
+              {needsIdentityAck ? (
                 <label>
                   <input
                     type="checkbox"
@@ -688,15 +875,86 @@ export function ImportExportPage() {
                   NETWORK IDENTITY CONFLICT. The source may remain online with the same MAC. I accept starting the destination.
                 </label>
               ) : null}
-              <button type="button" className="btn" disabled={!mutate || reviews.length === 0} onClick={() => void start()}>
-                Start migration
+
+              {unmappedStorage.length > 0 || unmappedNetwork.length > 0 ? (
+                <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void goReview()}>
+                  Update review
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAdvanced((cur) => !cur)}
+                aria-expanded={advanced}
+              >
+                  {advanced ? "Hide Advanced" : "Advanced"}
+              </button>
+
+              {advanced ? (
+                <div className="mig-advanced">
+                  <p>Optional per-workload method overrides. Leave unchanged to keep the automatic plan.</p>
+                  {chosen.map((w) => (
+                    <fieldset key={w.source_id}>
+                      <legend>
+                        {w.name} ({w.source_id})
+                      </legend>
+                      {modes.map((m) => (
+                        <label key={m.id} className={m.available === false ? "mig-mode-unavail" : undefined}>
+                          <input
+                            type="radio"
+                            name={`mode-${w.source_id}`}
+                            checked={(modeOverride[w.source_id] || modeByID[w.source_id]) === m.id}
+                            disabled={m.available === false}
+                            onChange={() => {
+                              setModeByID({ ...modeByID, [w.source_id]: m.id });
+                              setModeOverride({ ...modeOverride, [w.source_id]: m.id });
+                            }}
+                          />
+                          {m.label} {m.consistency}
+                          {m.requires_ack ? " NO GUARANTEES" : ""}
+                          {m.available === false ? " Unavailable" : ""}
+                          <button type="button" className="btn btn-secondary" onClick={() => setLearn(learn === m.id ? null : m.id)}>
+                            Learn why
+                          </button>
+                          {learn === m.id ? (
+                            <p>
+                              {m.summary} {(m.benefits ?? m.risks ?? []).join(". ")} {m.unavailable_reason} {m.source_mutation}
+                            </p>
+                          ) : null}
+                        </label>
+                      ))}
+                      {modeByID[w.source_id] === "live" ? (
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(liveAck[w.source_id])}
+                            onChange={(e) => setLiveAck({ ...liveAck, [w.source_id]: e.target.checked })}
+                          />
+                          I understand the risks of live migration.
+                        </label>
+                      ) : null}
+                    </fieldset>
+                  ))}
+                  <label>
+                    <input type="checkbox" checked={startAfter} onChange={(e) => setStartAfter(e.target.checked)} /> Start
+                    destination after successful migration
+                  </label>
+                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void goReview()}>
+                    Apply Advanced to review
+                  </button>
+                </div>
+              ) : null}
+
+              <button type="button" className="btn" disabled={!mutate || !canImport} onClick={() => void start()}>
+                Submit
               </button>
             </article>
           ) : null}
 
-          {step === 7 || step === 8 ? (
+          {phase === "progress" || phase === "verify" ? (
             <article className="panel">
-              <h2>{step === 8 ? "Verification" : "Progress"}</h2>
+              <h2>{phase === "verify" ? "Verification" : "Progress"}</h2>
               {job ? (
                 <>
                   <p>

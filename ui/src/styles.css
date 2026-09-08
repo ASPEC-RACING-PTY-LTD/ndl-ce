@@ -1090,6 +1090,11 @@ code {
   gap: 0.15rem;
 }
 
+.feature-catalog {
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
 .muted {
   color: var(--fg-tertiary);
 }
@@ -1140,6 +1145,41 @@ code {
 
 .mig-mode-unavail {
   opacity: 0.65;
+}
+
+.mig-advanced {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border, #333);
+}
+
+.mig-strategy {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.85rem 0 0.6rem;
+  padding: 0;
+  border: 0;
+}
+
+.mig-strategy legend {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.mig-strategy label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.5rem;
+  align-items: start;
+}
+
+.mig-strategy .field-hint {
+  grid-column: 2;
+  margin: 0;
+}
+
+.mig-review-table {
+  width: 100%;
 }
 
 
