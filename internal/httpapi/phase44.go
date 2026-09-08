@@ -555,7 +555,7 @@ func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req m
 }
 
 func (s *Server) applyAutomaticMigration(ctx context.Context, clusterID string, selected []string, discovered []migration.DiscoveredWorkload, manifests map[string]migration.Manifest, req *migrationJobBody) []migration.Finding {
-	var storage, nets []string
+	var srcStorage, srcNets []string
 	want := map[string]struct{}{}
 	for _, id := range selected {
 		want[id] = struct{}{}
@@ -571,8 +571,8 @@ func (s *Server) applyAutomaticMigration(ctx context.Context, clusterID string, 
 		if len(nt) == 0 {
 			nt = w.Networks
 		}
-		storage = append(storage, st...)
-		nets = append(nets, nt...)
+		srcStorage = append(srcStorage, st...)
+		srcNets = append(srcNets, nt...)
 		if req.Modes[w.SourceID] == "" {
 			mode, _ := migration.SuggestModeForStrategy(w, req.Strategy)
 			if mode != "" {
@@ -596,7 +596,7 @@ func (s *Server) applyAutomaticMigration(ctx context.Context, clusterID string, 
 		}
 		destNets = append(destNets, migration.DestResource{ID: n.ID, Name: n.Name, Kind: n.Kind, BridgeName: n.BridgeName})
 	}
-	mapped, findings := migration.AutoMap(storage, nets, destPools, destNets, req.Mapping)
+	mapped, findings := migration.AutoMap(srcStorage, srcNets, destPools, destNets, req.Mapping)
 	req.Mapping = mapped
 	if req.PoolID == "" {
 		for _, v := range mapped.Storage {

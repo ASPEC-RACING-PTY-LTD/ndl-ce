@@ -1,5 +1,6 @@
 nodal (1.0.1) UNRELEASED; urgency=medium
 
+  * Fix Import / Export automap compile: do not shadow the storage package.
   * Progressive disclosure: Simple is the default sidebar. Add Features enables optional capabilities. Advanced and Custom templates do not drop enablement or Custom layout. RBAC still hides Audit, Groups, and Updates.
   * Import / Export automatic mapping uses one global strategy, then fills method, storage, network, and compatibility per guest. Proxmox tokens must be user@realm!tokenid=secret.
 
