@@ -16,7 +16,7 @@ func (o observer) reconcileNetworks(ctx context.Context, clusterID, nodeID strin
 	if err != nil {
 		return
 	}
-	unavail, recovered, err := appdb.ReconcileNetworks(ctx, o.Store, clusterID, items, obs)
+	unavail, recovered, degraded, err := appdb.ReconcileNetworks(ctx, o.Store, clusterID, items, obs)
 	if err != nil {
 		log.Printf("network reconcile: %v", err)
 		return
@@ -26,5 +26,8 @@ func (o observer) reconcileNetworks(ctx context.Context, clusterID, nodeID strin
 	}
 	for _, id := range recovered {
 		o.emit(ctx, clusterID, nodeID, "network.recovered", map[string]string{"network_id": id})
+	}
+	for _, id := range degraded {
+		o.emit(ctx, clusterID, nodeID, "network.degraded", map[string]string{"network_id": id, "reason": "bridge or isolated services are not ready"})
 	}
 }

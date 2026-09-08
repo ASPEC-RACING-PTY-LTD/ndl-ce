@@ -124,6 +124,22 @@ func TestCopyLocalRootfsTree(t *testing.T) {
 	}
 }
 
+func TestCopyLocalRootfsKeepsDotDotFilenames(t *testing.T) {
+	t.Parallel()
+	src := t.TempDir()
+	plantPopulatedRootfs(t, src)
+	if err := os.WriteFile(filepath.Join(src, "etc", "issue..old"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "rootfs")
+	if err := CopyLocalRootfs(src, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "etc", "issue..old")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEnrichLXCPrefersLocalHostWhenStopped(t *testing.T) {
 	dir := t.TempDir()
 	isolateLXCHost(t, filepath.Join(dir, "no-lxc"))

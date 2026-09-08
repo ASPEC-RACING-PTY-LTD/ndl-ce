@@ -46,6 +46,9 @@ type Volume struct {
 	BackendRef     string
 	XattrState     string
 	AllocatedBytes *int64
+	Owner          string
+	OwnerKind      string
+	OwnerJobID     string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

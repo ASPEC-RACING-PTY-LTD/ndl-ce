@@ -361,6 +361,7 @@ func (s *Server) startMigrationJob(w http.ResponseWriter, r *http.Request) {
 		PlanJSON: planBody, StatusJSON: stBody,
 	}
 	if err := s.Store.CreateMigrationJob(r.Context(), job); err != nil {
+		s.finishOp(r.Context(), op, "failed", "could not record migration job", 0)
 		writeErr(w, http.StatusConflict, "could not record migration job")
 		return
 	}
@@ -762,7 +763,11 @@ func (s *Server) capsFor(adapter string, item migration.ItemPlan, discovered []m
 		}
 		if item.Manifest.Container != nil && item.Manifest.Container.Rootfs != nil {
 			backupFmt = item.Manifest.Container.Rootfs.Format
-			if migration.VolumeLooksLikeFile(item.Manifest.Container.Rootfs.Path, backupFmt) {
+			if item.LocalHost || item.Mode == migration.ModeLocal {
+				downloadable = item.LocalRootfsPath != ""
+			} else if migration.IsVzdumpArchive(item.Manifest.Container.Rootfs.Path) {
+				downloadable = false
+			} else if migration.VolumeLooksLikeFile(item.Manifest.Container.Rootfs.Path, backupFmt) {
 				downloadable = true
 			}
 		}
@@ -892,9 +897,13 @@ func (s *Server) applyArchivePreflight(env *migration.PreflightEnv, item migrati
 			}
 		}
 	}
-	if migration.IsVzdumpArchive(path) && !item.TempBackup {
+	if migration.IsVzdumpArchive(path) && !item.TempBackup && !item.LocalHost && item.Mode != migration.ModeLocal {
 		if _, err := os.Stat(path); err == nil {
 			return
+		}
+		if s.Backup == nil {
+			env.ArchiveUnreadable = true
+			env.ArchiveReason = "Proxmox vzdump " + path + " is not readable in the control plane and the node agent is unavailable. Run No-dal on the Proxmox host or copy the archive here."
 		}
 	}
 }

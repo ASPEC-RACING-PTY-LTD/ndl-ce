@@ -14,12 +14,13 @@ import (
 )
 
 type observer struct {
-	Store   appdb.Store
-	Agent   agentrpc.Client
-	Hub     *httpapi.EventHub
-	Period  time.Duration
-	Nightly func(context.Context)
-	Alerts  func(context.Context)
+	Store      appdb.Store
+	Agent      agentrpc.Client
+	Hub        *httpapi.EventHub
+	Period     time.Duration
+	Nightly    func(context.Context)
+	Alerts     func(context.Context)
+	lastHealth map[string]time.Time
 }
 
 func (o observer) run(ctx context.Context) {
@@ -83,6 +84,7 @@ func (o observer) run(ctx context.Context) {
 		o.reconcileStorage(cctx, cluster.ID, node.ID)
 		o.reconcileNetworks(cctx, cluster.ID, node.ID)
 		o.reconcileWorkloads(cctx, cluster.ID, node.ID)
+		o.reconcilePlatform(cctx, cluster.ID, node.ID)
 		if o.Nightly != nil {
 			go o.Nightly(context.Background())
 		}
@@ -126,6 +128,22 @@ func (o observer) run(ctx context.Context) {
 			tick()
 		}
 	}
+}
+
+func (o observer) emitThrottled(ctx context.Context, clusterID, nodeID, typ string, payload map[string]string) {
+	key := typ
+	if payload != nil {
+		if id := payload["network_id"]; id != "" {
+			key += ":" + id
+		}
+	}
+	if o.lastHealth != nil {
+		if prev, ok := o.lastHealth[key]; ok && time.Since(prev) < 15*time.Minute {
+			return
+		}
+		o.lastHealth[key] = time.Now()
+	}
+	o.emit(ctx, clusterID, nodeID, typ, payload)
 }
 
 func (o observer) emit(ctx context.Context, clusterID, nodeID, typ string, payload map[string]string) {

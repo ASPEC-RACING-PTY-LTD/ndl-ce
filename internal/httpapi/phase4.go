@@ -350,7 +350,7 @@ func (s *Server) refreshNetworks(ctx context.Context, clusterID string) {
 	if err != nil {
 		return
 	}
-	_, _, _ = appdb.ReconcileNetworks(ctx, s.Store, clusterID, items, obs)
+	_, _, _, _ = appdb.ReconcileNetworks(ctx, s.Store, clusterID, items, obs)
 }
 
 func (s *Server) inventoryNICs(ctx context.Context, clusterID string) []map[string]any {

@@ -278,7 +278,14 @@ func (e *Engine) Observe(_ context.Context, hints []Hint) (Observation, error) {
 		}
 		if Isolated(hint.Kind) {
 			if iface, ok := lookup(host, item.BridgeName); ok {
-				if !iface.Up || !hasIPv4(iface) {
+				if (!iface.Up || !hasIPv4(iface)) && e.filesPresent(hint.NetworkID) && !e.SkipHostCmds {
+					_ = e.healIsolated(hint)
+					if refreshed, rerr := e.host(); rerr == nil {
+						host = refreshed
+						iface, ok = lookup(host, item.BridgeName)
+					}
+				}
+				if ok && (!iface.Up || !hasIPv4(iface)) {
 					item.Status = StatusWarning
 					item.Warnings = append(item.Warnings, "isolated bridge is present but not configured")
 				}
@@ -365,6 +372,31 @@ func (e *Engine) reloadNetworkd() error {
 	_ = e.run(context.Background(), "/usr/bin/systemctl", "enable", "systemd-networkd")
 	_ = e.run(context.Background(), "/usr/bin/systemctl", "start", "systemd-networkd")
 	return e.run(context.Background(), "/usr/bin/networkctl", "reload")
+}
+
+func (e *Engine) healIsolated(hint Hint) error {
+	bridge := hint.BridgeName
+	if bridge == "" {
+		name, err := BridgeName(hint.NetworkID)
+		if err != nil {
+			return err
+		}
+		bridge = name
+	}
+	plan := Plan{
+		NetworkID:  hint.NetworkID,
+		Kind:       hint.Kind,
+		BridgeName: bridge,
+		IPv4CIDR:   hint.IPv4CIDR,
+		Gateway:    hint.Gateway,
+	}
+	if err := e.ensureIsolatedReady(context.Background(), plan); err != nil {
+		return err
+	}
+	if hint.NetworkID != "" {
+		_ = e.run(context.Background(), "/usr/bin/systemctl", "start", "ndl-dnsmasq@"+hint.NetworkID+".service")
+	}
+	return nil
 }
 
 func (e *Engine) ensureIsolatedReady(ctx context.Context, plan Plan) error {

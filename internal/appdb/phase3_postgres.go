@@ -129,17 +129,21 @@ func (p *Postgres) CreateVolume(ctx context.Context, v Volume) error {
 	_, err := p.DB.ExecContext(ctx, `
 INSERT INTO volumes (
   id, cluster_id, node_id, pool_id, class, kind, format, size_bytes, status,
-  backend_type, backend_ref, xattr_state, allocated_bytes, created_at, updated_at
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+  backend_type, backend_ref, xattr_state, allocated_bytes, owner, owner_kind, owner_job_id,
+  created_at, updated_at
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
 		v.ID, v.ClusterID, v.NodeID, v.PoolID, v.Class, v.Kind, v.Format, v.SizeBytes, v.Status,
-		v.BackendType, v.BackendRef, v.XattrState, v.AllocatedBytes, v.CreatedAt, v.UpdatedAt)
+		v.BackendType, v.BackendRef, v.XattrState, v.AllocatedBytes, v.Owner, v.OwnerKind, v.OwnerJobID,
+		v.CreatedAt, v.UpdatedAt)
 	return err
 }
 
 func (p *Postgres) ListVolumes(ctx context.Context, clusterID, poolID string) ([]Volume, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, node_id::text, pool_id::text, class, kind, format, size_bytes,
-       status, backend_type, backend_ref, xattr_state, allocated_bytes, created_at, updated_at
+       status, backend_type, backend_ref, xattr_state, allocated_bytes,
+       COALESCE(owner, ''), COALESCE(owner_kind, ''), COALESCE(owner_job_id, ''),
+       created_at, updated_at
 FROM volumes WHERE cluster_id=$1 AND ($2='' OR pool_id::text=$2)
 ORDER BY created_at, id`, clusterID, poolID)
 	if err != nil {
@@ -160,7 +164,9 @@ ORDER BY created_at, id`, clusterID, poolID)
 func (p *Postgres) GetVolume(ctx context.Context, clusterID, id string) (*Volume, error) {
 	row := p.DB.QueryRowContext(ctx, `
 SELECT id::text, cluster_id::text, node_id::text, pool_id::text, class, kind, format, size_bytes,
-       status, backend_type, backend_ref, xattr_state, allocated_bytes, created_at, updated_at
+       status, backend_type, backend_ref, xattr_state, allocated_bytes,
+       COALESCE(owner, ''), COALESCE(owner_kind, ''), COALESCE(owner_job_id, ''),
+       created_at, updated_at
 FROM volumes WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	v, err := scanVolume(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -179,11 +185,19 @@ UPDATE volumes SET status=$2, xattr_state=$3, allocated_bytes=$4, updated_at=now
 	return err
 }
 
+func (p *Postgres) UpdateVolumeOwner(ctx context.Context, v Volume) error {
+	_, err := p.DB.ExecContext(ctx, `
+UPDATE volumes SET owner=$2, owner_kind=$3, owner_job_id=$4, updated_at=now() WHERE id=$1`,
+		v.ID, v.Owner, v.OwnerKind, v.OwnerJobID)
+	return err
+}
+
 func scanVolume(row rowScanner) (Volume, error) {
 	var v Volume
 	var alloc sql.NullInt64
 	if err := row.Scan(&v.ID, &v.ClusterID, &v.NodeID, &v.PoolID, &v.Class, &v.Kind, &v.Format,
-		&v.SizeBytes, &v.Status, &v.BackendType, &v.BackendRef, &v.XattrState, &alloc, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		&v.SizeBytes, &v.Status, &v.BackendType, &v.BackendRef, &v.XattrState, &alloc,
+		&v.Owner, &v.OwnerKind, &v.OwnerJobID, &v.CreatedAt, &v.UpdatedAt); err != nil {
 		return v, err
 	}
 	if alloc.Valid {

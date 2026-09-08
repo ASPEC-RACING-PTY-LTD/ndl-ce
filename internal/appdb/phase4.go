@@ -59,13 +59,14 @@ func NetworkHints(items []Network) []ndnet.Hint {
 	for _, n := range items {
 		out = append(out, ndnet.Hint{
 			NetworkID: n.ID, Kind: n.Kind, BridgeName: n.BridgeName, UplinkIfName: n.UplinkIfName,
+			IPv4CIDR: n.IPv4CIDR, Gateway: n.Gateway,
 		})
 	}
 	return out
 }
 
 // ReconcileNetworks updates availability. It never deletes desired rows.
-func ReconcileNetworks(ctx context.Context, st Store, clusterID string, desired []Network, obs ndnet.Observation) (unavailable, recovered []string, err error) {
+func ReconcileNetworks(ctx context.Context, st Store, clusterID string, desired []Network, obs ndnet.Observation) (unavailable, recovered, degraded []string, err error) {
 	seen := map[string]ndnet.ObservedNetwork{}
 	for _, item := range obs.Networks {
 		seen[item.NetworkID] = item
@@ -91,9 +92,12 @@ func ReconcileNetworks(ctx context.Context, st Store, clusterID string, desired 
 		if n.Status == ndnet.StatusUnavailable && next.Status != ndnet.StatusUnavailable {
 			recovered = append(recovered, n.ID)
 		}
+		if n.Status == ndnet.StatusAvailable && next.Status == ndnet.StatusWarning {
+			degraded = append(degraded, n.ID)
+		}
 		if err := st.UpdateNetworkObserved(ctx, next); err != nil {
-			return unavailable, recovered, err
+			return unavailable, recovered, degraded, err
 		}
 	}
-	return unavailable, recovered, nil
+	return unavailable, recovered, degraded, nil
 }

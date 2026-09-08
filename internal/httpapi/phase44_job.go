@@ -87,6 +87,11 @@ func (s *Server) runMigrationJob(ctx context.Context, clusterID, jobID string) {
 			CreatedAt: time.Now().UTC(),
 		})
 	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			fail("transfer", fmt.Sprintf("migration worker crashed: %v", rec))
+		}
+	}()
 	if canceled, _ := s.migrationCanceled(ctx, clusterID, jobID); canceled {
 		fail("canceled", "Migration canceled. Source remains unchanged.")
 		_ = migration.RemoveStaging(s.migrationStagingRoot(), jobID)
@@ -300,6 +305,7 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 		CPUs: item.Manifest.Container.CPUs, MemoryBytes: item.Manifest.Container.MemoryBytes,
 		PoolID: poolID, NetworkID: netID, Privileged: item.Manifest.Container.Privileged,
 		DesiredPower: "stopped",
+		volumeOwnerKind: storage.VolumeKindMigration, volumeJobID: jobID,
 	}
 	if item.StartAfter {
 		req.DesiredPower = "running"
@@ -309,20 +315,22 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 	if err != nil {
 		return "", "", err
 	}
+	rollback := func() {
+		if volRow != nil {
+			s.rollbackImportedContainer(ctx, clusterID, *volRow, rootPath, jobID)
+		}
+	}
 	if s.Backup != nil {
 		if err := s.Backup.ExtractArchive(ctx, srcPath, rootPath); err != nil {
+			rollback()
 			return "", "", err
 		}
 	} else {
-		rootfs := filepath.Join(stageDir, "rootfs")
-		if err := s.extractOrCopyRootfs(ctx, srcPath, rootfs); err != nil {
-			return "", "", err
-		}
-		if err := copyDir(rootfs, rootPath); err != nil {
-			return "", "", err
-		}
+		rollback()
+		return "", "", errUnavailable("workload agent is unavailable")
 	}
 	if err := migration.VerifyCopiedRootfs(rootPath); err != nil {
+		rollback()
 		return "", "", fmt.Errorf("imported container rootfs is empty or incomplete: %w", err)
 	}
 	uidMap, gidMap := lxc.DefaultUIDMap, lxc.DefaultGIDMap
@@ -343,6 +351,7 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 			DNS: n.DNS,
 		})
 		if err != nil {
+			rollback()
 			return "", "", err
 		}
 	} else {
@@ -356,9 +365,11 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 		IP: importIP, SkipImage: true, NoStart: !item.StartAfter,
 	})
 	if err != nil {
+		rollback()
 		return "", "", err
 	}
 	if err := migration.VerifyCopiedRootfs(rootPath); err != nil {
+		rollback()
 		return "", "", fmt.Errorf("container rootfs verification failed after import: %w", err)
 	}
 	row := appdb.Workload{
@@ -369,18 +380,21 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`[]`),
 	}
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
+		rollback()
 		return "", "", err
 	}
 	if volRow != nil {
 		if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, VolumeID: volRow.ID, Role: "root",
 		}); err != nil {
+			rollback()
 			return "", "", errInternal("could not record container disk")
 		}
 	}
 	if err := s.Store.CreateWorkloadNIC(ctx, nicFromIP(appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, NetworkID: netw.ID, MAC: mac,
 	}, importIP)); err != nil {
+		rollback()
 		return "", "", errInternal("could not record container NIC")
 	}
 	return row.ID, rootPath, nil
@@ -457,11 +471,10 @@ func (s *Server) materializeSource(ctx context.Context, clusterID, jobID, stageD
 			if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 				return item, err
 			}
-			if s.Backup != nil {
-				if err := s.Backup.ExtractArchive(ctx, src, dest); err != nil {
-					return item, err
-				}
-			} else if err := migration.CopyLocalRootfs(src, dest); err != nil {
+			if s.Backup == nil {
+				return item, errUnavailable("workload agent is unavailable")
+			}
+			if err := s.Backup.ExtractArchive(ctx, src, dest); err != nil {
 				return item, err
 			}
 			if err := migration.VerifyCopiedRootfs(dest); err != nil {
@@ -503,7 +516,21 @@ func (s *Server) materializeSource(ctx context.Context, clusterID, jobID, stageD
 			}
 			dest := filepath.Join(stageDir, "pve", migration.ArchiveStagingName(p))
 			if err := client.DownloadVolume(node, storage, p, dest); err != nil {
-				return item, err
+				if s.Backup == nil {
+					return item, err
+				}
+				copied := false
+				for _, cand := range client.BackupFileCandidates(node, p, storage, nil) {
+					if copyErr := s.Backup.ExtractArchive(ctx, cand, dest); copyErr == nil {
+						if st, stErr := os.Stat(dest); stErr == nil && st.Size() > 0 && !st.IsDir() {
+							copied = true
+							break
+						}
+					}
+				}
+				if !copied {
+					return item, err
+				}
 			}
 			item.Manifest.Container.Rootfs.Path = dest
 			item.Manifest.Container.Rootfs.Format = migration.NormalizeFormat("", p)
@@ -844,6 +871,53 @@ func (s *Server) saveMigrationJob(ctx context.Context, j *appdb.MigrationJob, st
 	j.Stage = stage
 	j.StatusJSON = body
 	_ = s.Store.UpdateMigrationJob(ctx, *j)
+	if j.OperationID == "" {
+		return
+	}
+	progress := 5
+	if state == "succeeded" {
+		progress = 100
+	} else if state == "failed" || state == "canceled" {
+		progress = 0
+	} else if stage == "transfer" {
+		progress = 40
+	} else if stage == "backup" {
+		progress = 20
+	} else if stage == "verified" {
+		progress = 90
+	}
+	s.finishOp(ctx, appdb.Operation{
+		ID: j.OperationID, ClusterID: j.ClusterID, Kind: "migration." + j.Direction,
+		State: "running", Stage: stage,
+	}, func() string {
+		if state == "succeeded" || state == "failed" || state == "canceled" {
+			return state
+		}
+		return "running"
+	}(), firstNonEmpty(st.Message, stage), progress)
+}
+
+func (s *Server) rollbackImportedContainer(ctx context.Context, clusterID string, vol appdb.Volume, rootPath, jobID string) {
+	_ = s.Store.InsertEvent(ctx, appdb.Event{
+		ID: uuid.NewString(), ClusterID: clusterID, Type: "migration.volume.rollback",
+		Payload: mustJSONBytes(map[string]string{
+			"volume_id": vol.ID, "job_id": jobID, "backend_ref": vol.BackendRef, "path": rootPath,
+		}),
+		CreatedAt: time.Now().UTC(),
+	})
+	if s.Storage != nil {
+		pool, _ := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
+		root := ""
+		if pool != nil {
+			root = pool.RootPath
+		}
+		_ = s.Storage.DestroyDirectoryVolume(ctx, storage.CreateVolumeRequest{
+			VolumeID: vol.ID, PoolID: vol.PoolID, RootPath: root, Class: vol.Class,
+			Format: vol.Format, BackendRef: vol.BackendRef, Size: vol.SizeBytes,
+			Owner: storage.VolumeOwnerName, OwnerKind: storage.VolumeKindMigration, JobID: jobID,
+		}, storage.PoolHint{PoolID: vol.PoolID, BackendType: vol.BackendType, RootPath: root})
+	}
+	_ = s.Store.DeleteVolume(ctx, clusterID, vol.ID)
 }
 
 func (s *Server) migrationCanceled(ctx context.Context, clusterID, id string) (bool, error) {

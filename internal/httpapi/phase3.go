@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 type StorageRPC interface {
 	CreateDirectoryPool(ctx context.Context, req storage.CreatePoolRequest, existing []string) (storage.CreatePoolResult, error)
 	CreateDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) (storage.CreateVolumeResult, error)
+	DestroyDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error
 	GetStorage(ctx context.Context, hints []storage.PoolHint) (storage.Observation, error)
 	UploadLibrary(ctx context.Context, begin storage.BeginUploadRequest, hint storage.PoolHint, r io.Reader, expectedSHA string) (storage.UploadResult, error)
 }
@@ -504,7 +506,9 @@ func (s *Server) startOp(ctx context.Context, clusterID, nodeID, kind, stage str
 		ID: uuid.NewString(), ClusterID: clusterID, NodeID: nodeID, Kind: kind,
 		State: "running", Stage: stage, Progress: &progress, UpdatedAt: time.Now().UTC(),
 	}
-	_ = s.Store.UpsertOperation(ctx, op)
+	if err := s.Store.UpsertOperation(ctx, op); err != nil {
+		log.Printf("operation start persist %s %s: %v", op.Kind, op.ID, err)
+	}
 	return op
 }
 
@@ -523,7 +527,9 @@ func (s *Server) finishOp(ctx context.Context, op appdb.Operation, state, messag
 		op.Stage = "done"
 	}
 	op.UpdatedAt = time.Now().UTC()
-	_ = s.Store.UpsertOperation(ctx, op)
+	if err := s.Store.UpsertOperation(ctx, op); err != nil {
+		log.Printf("operation finish persist %s %s %s: %v", op.Kind, op.ID, state, err)
+	}
 }
 
 func looksLikeCreateIDs(message string) bool {

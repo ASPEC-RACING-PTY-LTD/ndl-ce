@@ -45,12 +45,14 @@ func RelJail(root, name string) (string, error) {
 	if filepath.IsAbs(name) || strings.HasPrefix(name, "/") || strings.HasPrefix(name, `\`) {
 		return "", fmt.Errorf("absolute path refused")
 	}
-	if strings.Contains(name, "..") {
+	clean := filepath.Clean(name)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("path traversal refused")
 	}
-	clean := filepath.Clean(name)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "..") {
-		return "", fmt.Errorf("path traversal refused")
+	for _, part := range strings.Split(filepath.ToSlash(clean), "/") {
+		if part == ".." {
+			return "", fmt.Errorf("path traversal refused")
+		}
 	}
 	joined := filepath.Join(root, clean)
 	rootClean := filepath.Clean(root)

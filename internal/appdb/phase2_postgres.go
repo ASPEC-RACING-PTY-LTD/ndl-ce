@@ -65,6 +65,18 @@ func (p *Postgres) UpsertOperation(ctx context.Context, op Operation) error {
 	if op.CreatedAt.IsZero() {
 		op.CreatedAt = op.UpdatedAt
 	}
+	if op.IdempotencyKey != "" {
+		existing, err := p.GetOperationByIdempotency(ctx, op.ClusterID, op.IdempotencyKey)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			op.ID = existing.ID
+			if !existing.CreatedAt.IsZero() {
+				op.CreatedAt = existing.CreatedAt
+			}
+		}
+	}
 	key := any(nil)
 	if op.IdempotencyKey != "" {
 		key = op.IdempotencyKey
@@ -80,8 +92,7 @@ func (p *Postgres) UpsertOperation(ctx context.Context, op Operation) error {
 	_, err := p.DB.ExecContext(ctx, `
 INSERT INTO operations (id, cluster_id, node_id, kind, state, idempotency_key, progress, stage, message, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-ON CONFLICT (cluster_id, idempotency_key) WHERE idempotency_key IS NOT NULL
-DO UPDATE SET
+ON CONFLICT (id) DO UPDATE SET
   state = EXCLUDED.state,
   progress = EXCLUDED.progress,
   stage = EXCLUDED.stage,

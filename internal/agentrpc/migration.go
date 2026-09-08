@@ -2,7 +2,6 @@ package agentrpc
 
 import (
 	"context"
-	"io"
 	"os"
 
 	"connectrpc.com/connect"
@@ -25,6 +24,17 @@ func (h *Handler) execDiskConvert(ctx context.Context, m *agentv1.DiskConvert) (
 func (h *Handler) execArchiveExtract(_ context.Context, m *agentv1.ArchiveExtract) (*connect.Response[agentv1.ExecuteResponse], error) {
 	src := m.GetSourcePath()
 	dest := m.GetDestPath()
+	if destInfo, err := os.Lstat(dest); err != nil && migration.LooksLikeArchiveDest(dest) {
+		if err := migration.CopyHostArchive(src, dest); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "copy-archive"}), nil
+	} else if err == nil && !destInfo.IsDir() && migration.LooksLikeArchiveDest(dest) {
+		if err := migration.CopyHostArchive(src, dest); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "copy-archive"}), nil
+	}
 	if err := migration.ValidateHostPath(dest); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -35,22 +45,10 @@ func (h *Handler) execArchiveExtract(_ context.Context, m *agentv1.ArchiveExtrac
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "copy"}), nil
 	}
-	if err := migration.ValidateHostPath(src); err != nil {
+	if err := migration.ValidateHostPath(src); err != nil && !migration.AllowedBackupSource(src) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	f, err := os.Open(src)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
-	}
-	defer f.Close()
-	r, err := migration.MaybeDecompress(f, src)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
-	}
-	if c, ok := r.(io.Closer); ok && r != f {
-		defer c.Close()
-	}
-	if err := migration.ExtractTar(r, dest, 0); err != nil {
+	if err := migration.ExtractVzdumpOrRootfs(src, dest); err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "extract"}), nil

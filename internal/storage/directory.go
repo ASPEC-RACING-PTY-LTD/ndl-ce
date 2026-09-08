@@ -528,6 +528,13 @@ func (d Directory) CreateVolume(ctx context.Context, req CreateVolumeRequest, hi
 		if err := h.MkdirAll(abs, 0o750); err != nil {
 			return CreateVolumeResult{}, err
 		}
+		if req.OwnerKind != "" || req.JobID != "" {
+			_ = WriteVolumeOwner(abs, VolumeOwner{
+				Owner: firstNonEmpty(req.Owner, VolumeOwnerName),
+				Kind:  firstNonEmpty(req.OwnerKind, VolumeKindOperator),
+				JobID: req.JobID,
+			})
+		}
 	} else {
 		argv, err := QEMUCreateArgv(h.QEMUBin, format, abs, req.Size)
 		if err != nil {
@@ -559,6 +566,50 @@ func (d Directory) CreateVolume(ctx context.Context, req CreateVolumeRequest, hi
 		Allocated:  alloc,
 		XattrState: xattrState,
 	}, nil
+}
+
+// DestroyVolume removes a Directory volume after ownership checks.
+// It never deletes a volume owned by another owner.
+func (d Directory) DestroyVolume(_ context.Context, req CreateVolumeRequest, hint PoolHint) error {
+	if _, err := uuid.Parse(req.VolumeID); err != nil {
+		return fmt.Errorf("volume_id must be a UUID")
+	}
+	if hint.RootPath == "" {
+		hint.RootPath = req.RootPath
+	}
+	rel := strings.TrimSpace(req.BackendRef)
+	if rel == "" {
+		_, format, err := classKindFormat(req.Class, req.Format)
+		if err != nil {
+			return err
+		}
+		rel = volumeRel(req.Class, req.VolumeID, format)
+	}
+	abs, err := JoinUnder(hint.RootPath, rel)
+	if err != nil {
+		return err
+	}
+	if err := d.refuseEscape(hint.RootPath, abs); err != nil {
+		return err
+	}
+	if owner, ok := ReadVolumeOwner(abs); ok {
+		if !strings.EqualFold(owner.Owner, VolumeOwnerName) {
+			return fmt.Errorf("refusing to delete a volume No-dal does not own")
+		}
+		if owner.Kind == VolumeKindOperator && req.OwnerKind != VolumeKindOperator {
+			return fmt.Errorf("refusing to delete an operator volume")
+		}
+		if req.JobID != "" && owner.JobID != "" && owner.JobID != req.JobID {
+			return fmt.Errorf("refusing to delete a volume owned by another migration job")
+		}
+	} else if req.OwnerKind != VolumeKindMigration {
+		return fmt.Errorf("refusing to delete a volume without No-dal ownership")
+	}
+	if err := os.RemoveAll(abs); err != nil {
+		return err
+	}
+	_ = d.host().Remove(abs + ".ndl-owned")
+	return nil
 }
 
 func (d Directory) writeVolumeXattr(abs, volumeID string) string {

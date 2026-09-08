@@ -31,6 +31,9 @@ func (f fakeStorage) CreateDirectoryPool(context.Context, storage.CreatePoolRequ
 func (f fakeStorage) CreateDirectoryVolume(context.Context, storage.CreateVolumeRequest, storage.PoolHint) (storage.CreateVolumeResult, error) {
 	return f.vol, f.err
 }
+func (f fakeStorage) DestroyDirectoryVolume(context.Context, storage.CreateVolumeRequest, storage.PoolHint) error {
+	return f.err
+}
 func (f fakeStorage) GetStorage(context.Context, []storage.PoolHint) (storage.Observation, error) {
 	return f.obs, nil
 }

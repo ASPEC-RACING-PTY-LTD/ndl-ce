@@ -205,8 +205,8 @@ func WriteTar(dir, dest string) error {
 		if rel == "." {
 			return nil
 		}
-		if strings.Contains(rel, "..") {
-			return fmt.Errorf("path traversal refused")
+		if _, err := RelJail(dir, filepath.ToSlash(rel)); err != nil {
+			return err
 		}
 		mode := info.Mode()
 		if mode&os.ModeDevice != 0 || mode&os.ModeNamedPipe != 0 || mode&os.ModeSocket != 0 {

@@ -71,7 +71,7 @@ func ArchiveStagingName(volid string) string {
 	return "rootfs-archive"
 }
 
-func (c *PVEClient) localBackupFile(node, volid, storage string, metaJSON []byte) (string, bool) {
+func (c *PVEClient) BackupFileCandidates(node, volid, storage string, metaJSON []byte) []string {
 	var candidates []string
 	candidates = append(candidates, pathsFromVolumeMeta(metaJSON)...)
 	if rows, err := c.ListNodeStorage(node); err == nil {
@@ -79,6 +79,7 @@ func (c *PVEClient) localBackupFile(node, volid, storage string, metaJSON []byte
 	}
 	candidates = append(candidates, defaultVzdumpPaths(volid)...)
 	seen := map[string]struct{}{}
+	var out []string
 	for _, p := range candidates {
 		p = filepath.Clean(strings.TrimSpace(p))
 		if p == "" || p == "." {
@@ -91,6 +92,13 @@ func (c *PVEClient) localBackupFile(node, volid, storage string, metaJSON []byte
 		if !allowedBackupSource(p) {
 			continue
 		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func (c *PVEClient) localBackupFile(node, volid, storage string, metaJSON []byte) (string, bool) {
+	for _, p := range c.BackupFileCandidates(node, volid, storage, metaJSON) {
 		st, err := os.Stat(p)
 		if err != nil || st.IsDir() {
 			continue

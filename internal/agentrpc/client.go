@@ -168,7 +168,7 @@ func (c Client) CreateDirectoryPool(ctx context.Context, req storage.CreatePoolR
 
 // CreateDirectoryVolume is a typed Execute method.
 func (c Client) CreateDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) (storage.CreateVolumeResult, error) {
-	backing, _ := json.Marshal(hint.Backing)
+	backing, _ := json.Marshal(volumeRPCPayload(hint, req, ""))
 	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_CreateDirectoryVolume{CreateDirectoryVolume: &agentv1.CreateDirectoryVolume{
 			VolumeId: req.VolumeID, PoolId: req.PoolID, RootPath: req.RootPath, Class: req.Class,
@@ -183,6 +183,46 @@ func (c Client) CreateDirectoryVolume(ctx context.Context, req storage.CreateVol
 		return storage.CreateVolumeResult{}, err
 	}
 	return out, nil
+}
+
+func (c Client) DestroyDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error {
+	backing, _ := json.Marshal(volumeRPCPayload(hint, req, "destroy"))
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_CreateDirectoryVolume{CreateDirectoryVolume: &agentv1.CreateDirectoryVolume{
+			VolumeId: req.VolumeID, PoolId: req.PoolID, RootPath: req.RootPath, Class: req.Class,
+			SizeBytes: req.Size, Format: req.Format, BackingJson: backing,
+		}},
+	}))
+	return err
+}
+
+func volumeRPCPayload(hint storage.PoolHint, req storage.CreateVolumeRequest, action string) map[string]any {
+	out := map[string]any{}
+	if hint.Backing.FSUUID != "" {
+		out["fs_uuid"] = hint.Backing.FSUUID
+	}
+	if hint.Backing.Device != "" {
+		out["device"] = hint.Backing.Device
+	}
+	if hint.Backing.ThinPool != "" {
+		out["thin_pool"] = hint.Backing.ThinPool
+	}
+	if action != "" {
+		out["ndl_volume_action"] = action
+	}
+	if req.Owner != "" {
+		out["ndl_owner"] = req.Owner
+	}
+	if req.OwnerKind != "" {
+		out["ndl_owner_kind"] = req.OwnerKind
+	}
+	if req.JobID != "" {
+		out["ndl_job_id"] = req.JobID
+	}
+	if req.BackendRef != "" {
+		out["ndl_backend_ref"] = req.BackendRef
+	}
+	return out
 }
 
 func encodeNetworkHints(hints []ndnet.Hint) []*agentv1.NetworkHint {

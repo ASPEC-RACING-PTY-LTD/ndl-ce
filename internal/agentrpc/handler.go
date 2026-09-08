@@ -142,13 +142,29 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 	case req.Msg.GetCreateDirectoryVolume() != nil:
 		m := req.Msg.GetCreateDirectoryVolume()
 		hint := storage.PoolHint{PoolID: m.GetPoolId(), BackendType: storage.BackendDirectory, RootPath: m.GetRootPath()}
+		var extra struct {
+			Action     string `json:"ndl_volume_action"`
+			Owner      string `json:"ndl_owner"`
+			OwnerKind  string `json:"ndl_owner_kind"`
+			JobID      string `json:"ndl_job_id"`
+			BackendRef string `json:"ndl_backend_ref"`
+		}
 		if len(m.GetBackingJson()) > 0 {
 			_ = json.Unmarshal(m.GetBackingJson(), &hint.Backing)
+			_ = json.Unmarshal(m.GetBackingJson(), &extra)
 		}
-		res, err := h.driver().CreateVolume(ctx, storage.CreateVolumeRequest{
+		volReq := storage.CreateVolumeRequest{
 			VolumeID: m.GetVolumeId(), PoolID: m.GetPoolId(), RootPath: m.GetRootPath(),
 			Class: m.GetClass(), Size: m.GetSizeBytes(), Format: m.GetFormat(),
-		}, hint)
+			Owner: extra.Owner, OwnerKind: extra.OwnerKind, JobID: extra.JobID, BackendRef: extra.BackendRef,
+		}
+		if extra.Action == "destroy" {
+			if err := h.driver().DestroyVolume(ctx, volReq, hint); err != nil {
+				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "destroyed"}), nil
+		}
+		res, err := h.driver().CreateVolume(ctx, volReq, hint)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}

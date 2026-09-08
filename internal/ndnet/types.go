@@ -62,6 +62,8 @@ type Hint struct {
 	Kind         string `json:"kind"`
 	BridgeName   string `json:"bridge_name"`
 	UplinkIfName string `json:"uplink_ifname,omitempty"`
+	IPv4CIDR     string `json:"ipv4_cidr,omitempty"`
+	Gateway      string `json:"gateway,omitempty"`
 }
 
 // Iface is one observed host interface. Tests inject these via HostView.

@@ -342,7 +342,7 @@ func copyRootfsTree(src, dest string) error {
 		}
 		target, err := RelJail(dest, filepath.ToSlash(rel))
 		if err != nil {
-			return err
+			return nil
 		}
 		return copyRootfsPath(path, target, dest, d)
 	})

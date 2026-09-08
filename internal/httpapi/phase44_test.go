@@ -1181,3 +1181,61 @@ func TestMigrationRetrySkipsCompletedAndDiagnosticsBundle(t *testing.T) {
 		t.Fatal("completed dest must remain")
 	}
 }
+
+func TestRollbackImportedContainerRemovesOwnedVolume(t *testing.T) {
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID := uuid.NewString()
+	_ = mem.CreateStoragePool(context.Background(), appdb.StoragePool{
+		ID: poolID, ClusterID: cluster.ID, NodeID: nodeID, Name: "local",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable, RootPath: "/var/lib/ndl/storage/local",
+	})
+	volID := uuid.NewString()
+	jobID := uuid.NewString()
+	tiny := int64(1024)
+	_ = mem.CreateVolume(context.Background(), appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, NodeID: nodeID, PoolID: poolID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		SizeBytes: 4 << 30, Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/container-root/" + volID, AllocatedBytes: &tiny,
+		Owner: storage.VolumeOwnerName, OwnerKind: storage.VolumeKindMigration, OwnerJobID: jobID,
+	})
+	s.Storage = fakeStorage{}
+	s.rollbackImportedContainer(context.Background(), cluster.ID, appdb.Volume{
+		ID: volID, ClusterID: cluster.ID, PoolID: poolID, Class: storage.ClassContainerRoot,
+		Format: storage.FormatDirectory, BackendRef: "volumes/container-root/" + volID,
+		SizeBytes: 4 << 30, BackendType: storage.BackendDirectory,
+	}, "/var/lib/ndl/storage/local/volumes/container-root/"+volID, jobID)
+	if got, _ := mem.GetVolume(context.Background(), cluster.ID, volID); got != nil {
+		t.Fatal("rollback must forget the dest volume")
+	}
+	ev, _ := mem.ListEvents(context.Background(), cluster.ID, 20)
+	found := false
+	for _, e := range ev {
+		if e.Type == "migration.volume.rollback" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("rollback must record evidence")
+	}
+}
+
+func TestStartAndFinishOpPersistsByID(t *testing.T) {
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	op := s.startOp(context.Background(), cluster.ID, "", "pool.create", "validating", 10)
+	s.finishOp(context.Background(), op, "succeeded", "directory pool created", 100)
+	ops, _ := mem.ListOperations(context.Background(), cluster.ID, 20)
+	var got *appdb.Operation
+	for i := range ops {
+		if ops[i].ID == op.ID {
+			got = &ops[i]
+		}
+	}
+	if got == nil || got.State != "succeeded" || got.Stage != "done" {
+		t.Fatalf("%+v", got)
+	}
+}

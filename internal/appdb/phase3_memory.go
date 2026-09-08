@@ -131,6 +131,21 @@ func (m *Memory) UpdateVolumeObserved(_ context.Context, v Volume) error {
 	return nil
 }
 
+func (m *Memory) UpdateVolumeOwner(_ context.Context, v Volume) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.volumes[v.ID]
+	if !ok {
+		return fmt.Errorf("volume not found")
+	}
+	cur.Owner = v.Owner
+	cur.OwnerKind = v.OwnerKind
+	cur.OwnerJobID = v.OwnerJobID
+	cur.UpdatedAt = time.Now().UTC()
+	m.volumes[v.ID] = cur
+	return nil
+}
+
 func (m *Memory) CreateLibraryItem(_ context.Context, item LibraryItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

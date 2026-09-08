@@ -70,6 +70,8 @@ type createWorkloadRequest struct {
 	IPv6Address            string            `json:"ipv6_address"`
 	IPv6Gateway            string            `json:"ipv6_gateway"`
 	DNS                    []string          `json:"dns"`
+	volumeOwnerKind        string            `json:"-"`
+	volumeJobID            string            `json:"-"`
 }
 
 type patchWorkloadRequest struct {
@@ -405,9 +407,14 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		return nil, nil, "", nil, errUnavailable("storage agent is unavailable")
 	}
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
+	ownerKind := strings.TrimSpace(req.volumeOwnerKind)
+	if ownerKind == "" {
+		ownerKind = storage.VolumeKindOperator
+	}
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
 		VolumeID: volumeID, PoolID: pool.ID, RootPath: pool.RootPath,
 		Class: storage.ClassContainerRoot, Size: lxc.DefaultRootSize, Format: storage.FormatDirectory,
+		Owner: storage.VolumeOwnerName, OwnerKind: ownerKind, JobID: req.volumeJobID,
 	}, hint)
 	if err != nil && !errors.Is(err, storage.ErrDuplicate) {
 		return nil, nil, "", nil, err
@@ -421,6 +428,7 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
 		SizeBytes: lxc.DefaultRootSize, Status: storage.StatusAvailable,
 		BackendType: storage.BackendDirectory, BackendRef: backend,
+		Owner: storage.VolumeOwnerName, OwnerKind: ownerKind, OwnerJobID: req.volumeJobID,
 	}
 	if existing, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existing == nil {
 		if err := s.Store.CreateVolume(ctx, row); err != nil {

@@ -439,6 +439,61 @@ func TestUnwritablePool(t *testing.T) {
 	}
 }
 
+func TestDirectoryVolumeOwnerAndDestroy(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 10<<30)
+	poolID := uuid.NewString()
+	root := base + "/pool"
+	if _, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: poolID, RootPath: root, Create: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	jobID := uuid.NewString()
+	_, err := d.CreateVolume(context.Background(), CreateVolumeRequest{
+		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Size: 4 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindMigration, JobID: jobID,
+	}, PoolHint{PoolID: poolID, BackendType: BackendDirectory, RootPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	abs := filepath.Join(filepath.FromSlash(root), "volumes", ClassContainerRoot, volID)
+	if !MigrationVolumeOwned(abs, jobID) {
+		t.Fatal("migration owner marker missing")
+	}
+	if err := d.DestroyVolume(context.Background(), CreateVolumeRequest{
+		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Format: FormatDirectory, OwnerKind: VolumeKindMigration, JobID: jobID,
+	}, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(abs); !os.IsNotExist(err) {
+		t.Fatalf("volume still present: %v", err)
+	}
+}
+
+func TestDirectoryDestroyRefusesOperatorVolume(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 10<<30)
+	poolID := uuid.NewString()
+	root := base + "/pool"
+	if _, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: poolID, RootPath: root, Create: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	_, err := d.CreateVolume(context.Background(), CreateVolumeRequest{
+		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Size: 4 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindOperator,
+	}, PoolHint{PoolID: poolID, BackendType: BackendDirectory, RootPath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = d.DestroyVolume(context.Background(), CreateVolumeRequest{
+		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Format: FormatDirectory, OwnerKind: VolumeKindMigration,
+	}, PoolHint{PoolID: poolID, RootPath: root})
+	if err == nil {
+		t.Fatal("operator volume must not be deleted by migration cleanup")
+	}
+}
+
 func contains(xs []string, v string) bool {
 	for _, x := range xs {
 		if x == v {

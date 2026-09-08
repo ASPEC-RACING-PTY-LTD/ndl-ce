@@ -225,12 +225,16 @@ type CreatePoolResult struct {
 
 // CreateVolumeRequest is a typed volume create. Destination path is not caller-chosen.
 type CreateVolumeRequest struct {
-	VolumeID string `json:"volume_id"`
-	PoolID   string `json:"pool_id"`
-	RootPath string `json:"root_path"`
-	Class    string `json:"class"`
-	Size     int64  `json:"size_bytes"`
-	Format   string `json:"format"`
+	VolumeID  string `json:"volume_id"`
+	PoolID    string `json:"pool_id"`
+	RootPath  string `json:"root_path"`
+	Class     string `json:"class"`
+	Size      int64  `json:"size_bytes"`
+	Format    string `json:"format"`
+	Owner      string `json:"owner,omitempty"`
+	OwnerKind  string `json:"owner_kind,omitempty"`
+	JobID      string `json:"job_id,omitempty"`
+	BackendRef string `json:"backend_ref,omitempty"`
 }
 
 // CreateVolumeResult is returned after a successful volume create.
