@@ -105,7 +105,7 @@ const DEFAULT_STRATEGIES: Strategy[] = [
     id: "consistent",
     label: "Consistent copy",
     consistency: "SAFE",
-    summary: "Accept downtime. Use Offline when possible, then an existing backup, then disk import.",
+    summary: "Accept downtime. Prefer Local Host on this machine, then Offline, then an existing backup, then disk import.",
     recommended: true,
     available: true,
   },
@@ -294,7 +294,7 @@ export function ImportExportPage() {
   const blocked = findings.some((f) => (f.level ?? "").toUpperCase() === "BLOCKED" || (f.level ?? "").toUpperCase() === "UNSUPPORTED");
   const mustStop = chosen.some((w) => {
     const mode = modeByID[w.source_id] || reviews.find((r) => r.name === w.name)?.migration_mode;
-    return Boolean(w.running && mode === "offline");
+    return Boolean(w.running && (mode === "offline" || mode === "local"));
   });
   const needsLiveAck = chosen.some((w) => (modeByID[w.source_id] || reviews.find((r) => r.name === w.name)?.migration_mode) === "live" && !liveAck[w.source_id]);
   const needsIdentityAck = startAfter && chosen.some((w) => w.running && !identityAck[w.source_id]);

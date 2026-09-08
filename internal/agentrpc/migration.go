@@ -25,10 +25,17 @@ func (h *Handler) execDiskConvert(ctx context.Context, m *agentv1.DiskConvert) (
 func (h *Handler) execArchiveExtract(_ context.Context, m *agentv1.ArchiveExtract) (*connect.Response[agentv1.ExecuteResponse], error) {
 	src := m.GetSourcePath()
 	dest := m.GetDestPath()
-	if err := migration.ValidateHostPath(src); err != nil {
+	if err := migration.ValidateHostPath(dest); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	if err := migration.ValidateHostPath(dest); err != nil {
+	info, err := os.Stat(src)
+	if err == nil && info.IsDir() {
+		if err := migration.CopyLocalRootfs(src, dest); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "copy"}), nil
+	}
+	if err := migration.ValidateHostPath(src); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	f, err := os.Open(src)

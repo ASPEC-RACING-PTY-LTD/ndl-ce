@@ -66,9 +66,11 @@ type Caps struct {
 	Live               bool
 	Backup             bool
 	Disk               bool
+	Local              bool
 	SnapshotNote       string
 	LiveNote           string
 	BackupNote         string
+	LocalNote          string
 	TemporaryMutations []string
 }
 
@@ -99,6 +101,11 @@ func (c Caps) ModeAvailable(mode string) (bool, string) {
 			return true, ""
 		}
 		return false, "Disk or archive import is unavailable for this source."
+	case ModeLocal:
+		if c.Local {
+			return true, ""
+		}
+		return false, firstNonEmpty(c.LocalNote, "Local Host Migration is unavailable. Proxmox and No-dal must share this machine, and the LXC must already be stopped.")
 	default:
 		return false, "Unknown migration mode."
 	}
@@ -125,8 +132,8 @@ func Catalog() []AdapterInfo {
 		{
 			ID: AdapterProxmox, Label: "Proxmox VE", Role: "source",
 			Discovery: true, Import: true, Export: true, ExportKind: ExportPackage,
-			Modes:      []string{ModeOffline, ModeBackup, ModeDisk},
-			Notes:      "REST discovery and QEMU/LXC config translation. Offline copies a disk only when the source storage exposes a downloadable file (directory/NFS/CIFS). LVM-thin, ZFS zvols, and RBD VM disks are not HTTP-downloadable; copy the disk on the source host and use Disk import. LXC on those backends uses a temporary vzdump when a directory, NFS, or CIFS backup store exists. The temporary archive is deleted after verification. PBS backup stores are not downloadable. VM vma vzdump is blocked (no vma extractor). Live and snapshot-assisted are unavailable. Export writes a compatible package, not a remote qm/pct create.",
+			Modes:      []string{ModeLocal, ModeOffline, ModeBackup, ModeDisk},
+			Notes:      "REST discovery and QEMU/LXC config translation. When Proxmox and No-dal share this host, stopped LXC rootfs on local directory, LVM, or ZFS storage is copied in place (Local Host). That path does not use vzdump or HTTP. Offline copies a disk only when the source storage exposes a downloadable file (directory/NFS/CIFS). LVM-thin, ZFS zvols, and RBD VM disks are not HTTP-downloadable; copy the disk on the source host and use Disk import. LXC on those backends uses Local Host when possible, otherwise a temporary vzdump when a directory, NFS, or CIFS backup store exists. The temporary archive is deleted after verification. PBS backup stores are not downloadable. VM vma vzdump is blocked (no vma extractor). Live and snapshot-assisted are unavailable. Export writes a compatible package, not a remote qm/pct create.",
 			Credential: "Proxmox API token must be user@realm!tokenid=secret (example: root@pam!nodal=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). The secret UUID alone is not enough. Prefer a token limited to VM.Audit, VM.Backup, and Datastore.Allocate where the platform allows. Broader tokens are disclosed when the platform cannot grant export-only rights.",
 		},
 		{
@@ -168,6 +175,17 @@ func AdapterByID(id string) (AdapterInfo, error) {
 // Modes returns the operator catalog of migration modes.
 func Modes() []ModeInfo {
 	return []ModeInfo{
+		{
+			ID: ModeLocal, Label: "Local Host", Consistency: ConsistencySafe, SourceSafety: SourceProtected,
+			Summary: "Copies a stopped LXC rootfs on this machine when Proxmox and No-dal share the host.",
+			Benefits: []string{
+				"no vzdump",
+				"no HTTP transfer",
+				"preserves container configuration and networking",
+				"copy-first; source is not changed",
+			},
+			RequiresStopped: true, Available: true,
+		},
 		{
 			ID: ModeOffline, Label: "Offline", Consistency: ConsistencySafe, SourceSafety: SourceProtected,
 			Summary: "Migrates a workload from a stable, stopped state.",

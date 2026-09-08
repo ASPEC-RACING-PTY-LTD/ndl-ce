@@ -115,6 +115,11 @@ func TestOfflineRefusesRunning(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Fatalf("got %v", err)
 	}
+	item = ItemPlan{Mode: ModeLocal, Compatibility: CompatReady}
+	err = Preflight(item, Caps{Local: true}, PreflightEnv{SourceExists: true, SourceRunning: true, CredentialsOK: true, DestPoolExists: true, DestCapacityOK: true, DestNetExists: true, NameAvailable: true, ToolsOK: true, StagingOK: true})
+	if err == nil || !strings.Contains(err.Error(), "Local Host") {
+		t.Fatalf("local running %v", err)
+	}
 }
 
 func TestLiveRequiresAckAndCapability(t *testing.T) {

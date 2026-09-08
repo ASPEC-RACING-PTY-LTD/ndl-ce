@@ -56,7 +56,7 @@ Listed only when a real path exists.
 | Adapter | Role | What works | What does not |
 | --- | --- | --- | --- |
 | No-dal portable bundle | both | Round-trip import/export with checksums | Not a hypervisor remote create |
-| Proxmox VE | source + compatible export | REST discovery, QEMU/LXC config translation, HTTP download of directory/NFS/CIFS file volumes, LXC vzdump tar/tar.gz/tar.zst, automatic temporary vzdump for LXC on LVM-thin/ZFS when a downloadable backup store exists | LVM-thin/ZFS zvol/RBD VM disks are not HTTP-downloadable; PBS backups cannot be downloaded; vma vzdump has no extractor; live and snapshot-assisted are unavailable; export does not call `qm create` |
+| Proxmox VE | source + compatible export | REST discovery, QEMU/LXC config translation, Local Host copy of stopped LXC rootfs when Proxmox and No-dal share the machine, HTTP download of directory/NFS/CIFS file volumes, LXC vzdump tar/tar.gz/tar.zst, automatic temporary vzdump for LXC on LVM-thin/ZFS when Local Host is unavailable and a downloadable backup store exists | LVM-thin/ZFS zvol/RBD VM disks are not HTTP-downloadable; PBS backups cannot be downloaded; vma vzdump has no extractor; live and snapshot-assisted are unavailable; export does not call `qm create` |
 | libvirt/KVM | source | Domain XML plus QEMU-compatible disks | No virsh, no libvirt runtime |
 | Disk / archive | both | QCOW2, RAW, VMDK, VHD (vpc), VHDX via qemu-img; container tar/tar.gz/tar.zst | Missing VM hardware is not invented |
 | OVF / OVA | both | Parse OVF/OVA, convert disks, write OVF package | Not a remote vSphere create |
@@ -72,26 +72,32 @@ intent, not a per-workload transfer method.
 
 | Strategy | Consistency | What the engine does |
 | --- | --- | --- |
-| Consistent copy (default) | SAFE | Prefer Offline on a stopped guest, then an existing backup, then disk import. Running guests that need Offline must be stopped on the source. |
+| Consistent copy (default) | SAFE | Prefer Local Host on this machine, then Offline on a stopped guest, then an existing backup, then disk import. Running guests that need Offline or Local Host must be stopped on the source. |
 | Leave sources running | SOURCE SAFE | Prefer existing backups or disk import. Offline is used only when the guest is already stopped. |
 | Existing backups | SAFE | Backup import only. Workloads without a usable backup are blocked. |
 | Minimal interruption | RISKY | Would use snapshot or live. Unavailable in V1. |
 
 After the strategy is chosen, No-dal picks a compatible method, storage
 map, network map, and compatibility result for every selected workload.
-Proxmox LXC guests whose rootfs is LVM-thin, ZFS, or another
-non-downloadable backend are planned as a temporary vzdump when a
-directory, NFS, or CIFS backup store exists. Those guests never enter
-Transfer with a raw rootfs download. If a temporary vzdump cannot be
-created, Review blocks that guest with the exact reason. The temporary
-archive is deleted after verification. Operator backups are not deleted.
+When Proxmox and No-dal share the same physical host, stopped LXC guests
+on local directory, LVM, or ZFS storage use Local Host Migration: a
+copy-first import of the rootfs that preserves configuration and
+networking, without vzdump or HTTP. Running guests on that path must be
+stopped on Proxmox first. No-dal will not stop them. If Local Host is
+not available, LXC guests on LVM-thin, ZFS, or another non-downloadable
+backend are planned as a temporary vzdump when a directory, NFS, or CIFS
+backup store exists. Those guests never enter Transfer with a raw rootfs
+download. If neither path can run, Review blocks that guest with the
+exact reason. Temporary vzdump archives are deleted after verification.
+Operator backups are not deleted.
 Live and snapshot-assisted are never auto-selected. Per-workload method
 overrides stay in Advanced. No-dal does not silently fall back to a
 riskier method than the plan.
 
 | Mode | Consistency | Notes |
 | --- | --- | --- |
-| Offline | SAFE | Source must already be stopped. No-dal will not stop it. For Proxmox VMs, also requires a downloadable file volume. LXC on LVM-thin or ZFS uses a temporary vzdump instead of Offline. |
+| Local Host | SAFE | Preferred for Proxmox LXC when both products are on this machine and the container is already stopped. Copies the rootfs from local LVM, ZFS, or directory storage. Source is not changed. |
+| Offline | SAFE | Source must already be stopped. No-dal will not stop it. For Proxmox VMs, also requires a downloadable file volume. LXC on LVM-thin or ZFS uses Local Host when possible, otherwise a temporary vzdump. |
 | Snapshot-assisted | LOW RISK | Listed so the risk model is visible. V1 adapters do not create source snapshots. Unavailable. |
 | Live | RISKY, NO GUARANTEES | Listed so the risk is visible. V1 does not perform live transfer. Unavailable. Requires acknowledgement if a future adapter enables it. |
 | Existing Backup | SAFE | Imports a captured artifact. Operator backups are never deleted. A temporary vzdump created for LXC on non-downloadable storage is deleted after verification. |

@@ -159,12 +159,12 @@ func Strategies() []StrategyInfo {
 	return []StrategyInfo{
 		{
 			ID: StrategyConsistent, Label: "Consistent copy", Consistency: ConsistencySafe, SourceSafety: SourceProtected,
-			Summary:     "Accept downtime. Use Offline when the guest can be copied stopped, otherwise an existing backup, then disk import.",
+			Summary:     "Accept downtime. Prefer Local Host on this machine, then Offline when the guest can be copied stopped, otherwise an existing backup, then disk import.",
 			Recommended: true, Available: true,
 		},
 		{
 			ID: StrategyLeaveRunning, Label: "Leave sources running", Consistency: ConsistencyDepends, SourceSafety: SourceProtected,
-			Summary:   "Prefer methods that do not require stopping the source. Uses existing backups or disk import. Offline is used only when the guest is already stopped.",
+			Summary:   "Prefer methods that do not require stopping the source. Uses existing backups or disk import. Local Host or Offline is used only when the guest is already stopped.",
 			Available: true,
 		},
 		{
@@ -221,6 +221,9 @@ func SuggestModeForStrategy(w DiscoveredWorkload, strategy string) (string, *Fin
 	}
 	switch strategy {
 	case StrategyLeaveRunning:
+		if has(ModeLocal) && !w.Running {
+			return ModeLocal, nil
+		}
 		if has(ModeBackup) {
 			return ModeBackup, nil
 		}
@@ -242,6 +245,9 @@ func SuggestModeForStrategy(w DiscoveredWorkload, strategy string) (string, *Fin
 		f := Finding{Level: CompatBlocked, Code: "mode", Message: "Existing backups strategy requires a usable backup for " + w.Name + "."}
 		return "", &f
 	default:
+		if has(ModeLocal) && !w.Running {
+			return ModeLocal, nil
+		}
 		if has(ModeOffline) && !w.Running {
 			return ModeOffline, nil
 		}

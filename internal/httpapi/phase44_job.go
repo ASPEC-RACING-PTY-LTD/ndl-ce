@@ -110,7 +110,11 @@ func (s *Server) runMigrationJob(ctx context.Context, clusterID, jobID string) {
 			return
 		}
 		st.Workload = item.Name
-		if item.TempBackup || (item.Mode == migration.ModeBackup && item.Kind == migration.KindContainer) {
+		if item.Mode == migration.ModeLocal || item.LocalHost {
+			st.Stage = "transfer"
+			st.Message = "Copying local LXC rootfs for " + item.Name
+			s.saveMigrationJob(ctx, j, st, "running", "transfer")
+		} else if item.TempBackup || (item.Mode == migration.ModeBackup && item.Kind == migration.KindContainer) {
 			st.Stage = "backup"
 			st.Message = "Creating or locating a Proxmox vzdump for " + item.Name
 			s.saveMigrationJob(ctx, j, st, "running", "backup")
@@ -384,6 +388,32 @@ func (s *Server) materializeSource(ctx context.Context, clusterID, jobID, stageD
 	}
 	if item.Manifest.Container != nil && item.Manifest.Container.Rootfs != nil {
 		p := item.Manifest.Container.Rootfs.Path
+		if item.Mode == migration.ModeLocal || item.LocalHost {
+			src := item.LocalRootfsPath
+			if src == "" {
+				rows, _ := client.ListNodeStorage(node)
+				src, _, _ = migration.ResolveLXCRootfsHostPath(p, rows, nil)
+			}
+			if src == "" {
+				return item, fmt.Errorf("Local Host Migration could not resolve the LXC rootfs on this machine")
+			}
+			dest := filepath.Join(stageDir, "pve", "rootfs")
+			if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+				return item, err
+			}
+			if err := migration.CopyLocalRootfs(src, dest); err != nil {
+				if s.Backup != nil {
+					if copyErr := s.Backup.ExtractArchive(ctx, src, dest); copyErr != nil {
+						return item, err
+					}
+				} else {
+					return item, err
+				}
+			}
+			item.Manifest.Container.Rootfs.Path = dest
+			item.Manifest.Container.Rootfs.Format = "dir"
+			return item, nil
+		}
 		if migration.ValidateHostPath(p) != nil {
 			storage := ""
 			if i := strings.Index(p, ":"); i >= 0 {

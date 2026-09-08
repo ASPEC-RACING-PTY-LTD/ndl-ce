@@ -134,7 +134,13 @@ func (c *PVEClient) Capabilities(src SourceConn, sourceID string) (Caps, error) 
 			backupFmt = backupFormatOf(existing)
 		}
 	}
-	return PVECaps(running, m.Kind, backupFmt, downloadable, autoStore != "" && m.Kind == KindContainer && !downloadable), nil
+	localCopy := false
+	if m.Kind == KindContainer && !running && m.Container != nil {
+		if _, _, ready := DetectLocalLXC(c.Base, st.Data, m.Container.Rootfs, running); ready {
+			localCopy = true
+		}
+	}
+	return PVECaps(running, m.Kind, backupFmt, downloadable, autoStore != "" && m.Kind == KindContainer && !downloadable, localCopy), nil
 }
 
 func (c *PVEClient) OpenArtifact(src SourceConn, sourceID, artifact string) (Readable, error) {
@@ -323,7 +329,7 @@ func (c *PVEClient) ListSnapshots(node, kind, vmid string) int {
 	return n
 }
 
-func PVECaps(running bool, kind, backupFmt string, downloadable bool, autoBackup bool) Caps {
+func PVECaps(running bool, kind, backupFmt string, downloadable bool, autoBackup bool, localCopy bool) Caps {
 	c := PVECapabilities(running, kind, backupFmt)
 	if kind == KindVM {
 		c.Offline = downloadable
@@ -338,10 +344,14 @@ func PVECaps(running bool, kind, backupFmt string, downloadable bool, autoBackup
 		c.Backup = tarBackup || autoBackup
 		c.Offline = downloadable
 		c.Disk = downloadable
+		c.Local = localCopy
+		if localCopy {
+			c.LocalNote = "Proxmox and No-dal share this host. The stopped LXC rootfs will be copied locally. No vzdump and no HTTP transfer. Source is not changed."
+		}
 		if autoBackup && !tarBackup {
 			c.BackupNote = "Rootfs is not HTTP-downloadable. No-dal will create a temporary vzdump, import it, then delete that temporary backup after verification."
 		}
-		if !c.Backup && !downloadable {
+		if !c.Backup && !downloadable && !localCopy {
 			c.BackupNote = firstNonEmpty(c.BackupNote, "LXC rootfs is not HTTP-downloadable and no temporary vzdump can be created.")
 		}
 	}
@@ -414,17 +424,28 @@ func EnrichPVEWorkload(c *PVEClient, w *DiscoveredWorkload, storages []map[strin
 	autoBackup := false
 	if w.Kind == KindContainer && m.Container != nil {
 		downloadable = LXCRootfsDownloadable(m.Container.Rootfs, storageTypes)
-		if tarFmt != "" {
+		localPath, sameHost, localReady := DetectLocalLXC(c.Base, storages, m.Container.Rootfs, w.Running)
+		if localReady {
+			w.LocalHost = true
+			w.LocalRootfsPath = localPath
+			w.BlockReason = ""
+		} else if tarFmt != "" {
 			autoBackup = false
 		} else if !downloadable && autoStore != "" {
 			autoBackup = true
 			w.TempBackup = true
 			w.BackupStorage = autoStore
+		} else if !downloadable && sameHost && localPath != "" && w.Running {
+			st, kind := rootfsStoreKind(m.Container.Rootfs, storageTypes)
+			w.BlockReason = LXCRootfsLocalStopReason(w.Name, st, kind)
 		} else if !downloadable {
 			w.BlockReason = LXCRootfsBlockReason(m.Container.Rootfs, storageTypes, autoStore, autoReason, tarFmt != "")
 		}
 	}
-	caps := PVECaps(w.Running, w.Kind, tarFmt, downloadable, autoBackup)
+	caps := PVECaps(w.Running, w.Kind, tarFmt, downloadable, autoBackup, w.LocalHost)
+	if caps.Local {
+		w.Caps = append(w.Caps, ModeLocal)
+	}
 	if caps.Offline {
 		w.Caps = append(w.Caps, ModeOffline)
 	}
@@ -462,6 +483,22 @@ func appendUnique(in []string, v string) []string {
 		}
 	}
 	return append(in, v)
+}
+
+func rootfsStoreKind(root *Artifact, storageTypes map[string]string) (store, kind string) {
+	if root != nil {
+		store, _ = pveVolume(root.Path)
+	}
+	if store == "" {
+		store = "rootfs"
+	}
+	if storageTypes != nil {
+		kind = storageTypes[store]
+	}
+	if kind == "" {
+		kind = "unknown"
+	}
+	return store, kind
 }
 
 func pveStorageTypes(rows []map[string]any) map[string]string {

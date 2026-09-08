@@ -653,7 +653,8 @@ func (s *Server) capsFor(adapter string, item migration.ItemPlan, discovered []m
 			}
 		}
 		autoBackup := item.Kind == migration.KindContainer && (item.TempBackup || item.Mode == migration.ModeBackup)
-		return migration.PVECaps(running, item.Kind, backupFmt, downloadable, autoBackup)
+		localCopy := item.LocalHost || item.Mode == migration.ModeLocal
+		return migration.PVECaps(running, item.Kind, backupFmt, downloadable, autoBackup, localCopy)
 	case migration.AdapterDisk, migration.AdapterOVF, migration.AdapterLibvirt:
 		return migration.Caps{Offline: false, Disk: true}
 	case migration.AdapterBackup, migration.AdapterNodal:

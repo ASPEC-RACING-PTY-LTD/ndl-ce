@@ -44,6 +44,9 @@ func Preflight(item ItemPlan, caps Caps, env PreflightEnv) error {
 	if item.Mode == ModeOffline && env.SourceRunning {
 		return fmt.Errorf("Offline migration requires a stopped source. Stop the workload on the source, then retry. No-dal will not stop it for you")
 	}
+	if item.Mode == ModeLocal && env.SourceRunning {
+		return fmt.Errorf("Local Host Migration requires a stopped LXC. Stop it on Proxmox, then retry. No-dal will not stop it")
+	}
 	if item.Mode == ModeLive && !item.LiveAck {
 		return fmt.Errorf("Live migration requires explicit acknowledgement of risk")
 	}

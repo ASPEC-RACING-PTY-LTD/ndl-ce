@@ -198,7 +198,7 @@ func PVEManifestStorage(kind, node, vmid string, cfg map[string]any, storageType
 			}
 			m.Container.Rootfs = &Artifact{Path: volid, Format: format, Size: size}
 			if !StorageTypeDownloadable(st) || format == "dir" {
-				m.Warnings = append(m.Warnings, Finding{Level: CompatWarning, Code: "ct-rootfs", Message: "LXC rootfs is not HTTP-downloadable. Planning will use a temporary vzdump when backup storage exists, or block Review with the reason."})
+				m.Warnings = append(m.Warnings, Finding{Level: CompatWarning, Code: "ct-rootfs", Message: "LXC rootfs is not HTTP-downloadable. Planning prefers Local Host Migration on this machine, then a temporary vzdump when backup storage exists, or blocks Review with the reason."})
 			}
 		}
 		for k, v := range cfg {

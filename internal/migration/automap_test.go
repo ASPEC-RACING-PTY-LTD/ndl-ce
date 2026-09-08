@@ -90,7 +90,11 @@ func TestSuggestMode(t *testing.T) {
 func TestSuggestModeForStrategy(t *testing.T) {
 	t.Parallel()
 	running := DiscoveredWorkload{Name: "web", Caps: []string{ModeOffline, ModeBackup}, Running: true}
-	mode, f := SuggestModeForStrategy(running, StrategyLeaveRunning)
+	mode, f := SuggestModeForStrategy(DiscoveredWorkload{Name: "ct", Caps: []string{ModeLocal, ModeBackup}, Running: false}, StrategyConsistent)
+	if mode != ModeLocal || f != nil {
+		t.Fatalf("local %s %+v", mode, f)
+	}
+	mode, f = SuggestModeForStrategy(running, StrategyLeaveRunning)
 	if mode != ModeBackup || f != nil {
 		t.Fatalf("leave-running %s %+v", mode, f)
 	}

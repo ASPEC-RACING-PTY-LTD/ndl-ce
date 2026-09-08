@@ -87,7 +87,13 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 			findings = append(findings, *suggested)
 			compat = rollup(findings)
 		}
-		if w.TempBackup {
+		if w.LocalHost {
+			findings = replaceFinding(findings, Finding{
+				Level: CompatReady, Code: "ct-rootfs",
+				Message: "Local Host Migration will copy the stopped LXC rootfs on this machine. No vzdump and no HTTP transfer. Configuration and networking are preserved. Source is not changed.",
+			})
+			compat = rollup(findings)
+		} else if w.TempBackup {
 			store := w.BackupStorage
 			if store == "" {
 				store = "backup storage"
@@ -108,6 +114,7 @@ func BuildPlan(id, adapter string, discovered []DiscoveredWorkload, selected []s
 			SourceID: w.SourceID, Name: w.Name, Kind: w.Kind, Mode: mode, Manifest: mapped,
 			Compatibility: compat, Findings: findings, EstimatedBytes: w.EstimatedBytes, StartAfter: startAfter,
 			TempBackup: w.TempBackup, BackupStorage: w.BackupStorage,
+			LocalHost: w.LocalHost, LocalRootfsPath: w.LocalRootfsPath,
 		}
 		if ov != nil {
 			item.OverrideMapping = ov

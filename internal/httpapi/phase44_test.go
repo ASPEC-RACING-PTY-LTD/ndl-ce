@@ -914,3 +914,79 @@ func TestMigrationPlanLXCUsesTempVZdumpAndBlocksWithoutBackupStore(t *testing.T)
 		t.Fatalf("start must fail in Review/preflight %d %s", res.StatusCode, raw)
 	}
 }
+
+func TestMigrationPlanLXCUsesLocalHostWhenStopped(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	_, _ = seedCompute(t, mem, cluster.ID, memNodeID(t, mem, cluster.ID))
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	root := filepath.Join(t.TempDir(), "vz", "images", "104", "subvol-104-disk-0")
+	if err := os.MkdirAll(root, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "hostname"), []byte("SoundDock\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vz := filepath.Dir(filepath.Dir(filepath.Dir(root)))
+	storageJSON, _ := json.Marshal(map[string]any{
+		"data": []map[string]any{
+			{"storage": "local", "type": "dir", "content": "rootdir,images,backup", "path": vz},
+		},
+	})
+
+	pve := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/nodes"):
+			_, _ = w.Write([]byte(`{"data":[{"node":"pve1"}]}`))
+		case strings.Contains(r.URL.Path, "/qemu") && !strings.Contains(r.URL.Path, "/config"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/lxc"):
+			_, _ = w.Write([]byte(`{"data":[{"vmid":104,"name":"SoundDock","status":"stopped","cpus":4,"maxmem":8589934592,"maxdisk":128849018880}]}`))
+		case strings.Contains(r.URL.Path, "/lxc/104/config"):
+			_, _ = w.Write([]byte(`{"data":{"hostname":"SoundDock","cores":4,"memory":8192,"rootfs":"local:subvol-104-disk-0,size=120G","net0":"name=eth0,bridge=vmbr0"}}`))
+		case strings.Contains(r.URL.Path, "/storage") && strings.Contains(r.URL.Path, "/content"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.Contains(r.URL.Path, "/storage"):
+			_, _ = w.Write(storageJSON)
+		default:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		}
+	}))
+	defer pve.Close()
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"`+pve.URL+`","token":"user@pam!tok=secret","insecure":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var src map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&src)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("source %d", res.StatusCode)
+	}
+	id, _ := src["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/plans", strings.NewReader(`{"source_id":"`+id+`","selected":["pve1/104"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("plan %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), `"mode":"local"`) || !strings.Contains(string(raw), `"local_host":true`) {
+		t.Fatalf("expected local host plan %s", raw)
+	}
+	if strings.Contains(string(raw), `"BLOCKED"`) || strings.Contains(string(raw), `"temp_backup":true`) {
+		t.Fatalf("local host must not block or use vzdump %s", raw)
+	}
+}

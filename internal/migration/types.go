@@ -20,6 +20,7 @@ const (
 	ModeLive     = "live"
 	ModeBackup   = "backup"
 	ModeDisk     = "disk"
+	ModeLocal    = "local"
 
 	StrategyConsistent          = "consistent"
 	StrategyLeaveRunning        = "leave-running"
@@ -223,26 +224,28 @@ type Finding struct {
 
 // DiscoveredWorkload is a pre-migration inventory row.
 type DiscoveredWorkload struct {
-	SourceID       string   `json:"source_id"`
-	Name           string   `json:"name"`
-	Kind           string   `json:"kind"`
-	TypeLabel      string   `json:"type_label"`
-	Running        bool     `json:"running"`
-	Node           string   `json:"node,omitempty"`
-	CPUs           int      `json:"cpus,omitempty"`
-	MemoryBytes    int64    `json:"memory_bytes,omitempty"`
-	DiskBytes      int64    `json:"disk_bytes,omitempty"`
-	Storage        []string `json:"storage,omitempty"`
-	Networks       []string `json:"networks,omitempty"`
-	IP             string   `json:"ip,omitempty"`
-	Firmware       string   `json:"firmware,omitempty"`
-	Snapshots      int      `json:"snapshots,omitempty"`
-	Backups        int      `json:"backups,omitempty"`
-	Caps           []string `json:"capabilities,omitempty"`
-	EstimatedBytes int64    `json:"estimated_bytes,omitempty"`
-	TempBackup     bool     `json:"temp_backup,omitempty"`
-	BackupStorage  string   `json:"backup_storage,omitempty"`
-	BlockReason    string   `json:"block_reason,omitempty"`
+	SourceID        string   `json:"source_id"`
+	Name            string   `json:"name"`
+	Kind            string   `json:"kind"`
+	TypeLabel       string   `json:"type_label"`
+	Running         bool     `json:"running"`
+	Node            string   `json:"node,omitempty"`
+	CPUs            int      `json:"cpus,omitempty"`
+	MemoryBytes     int64    `json:"memory_bytes,omitempty"`
+	DiskBytes       int64    `json:"disk_bytes,omitempty"`
+	Storage         []string `json:"storage,omitempty"`
+	Networks        []string `json:"networks,omitempty"`
+	IP              string   `json:"ip,omitempty"`
+	Firmware        string   `json:"firmware,omitempty"`
+	Snapshots       int      `json:"snapshots,omitempty"`
+	Backups         int      `json:"backups,omitempty"`
+	Caps            []string `json:"capabilities,omitempty"`
+	EstimatedBytes  int64    `json:"estimated_bytes,omitempty"`
+	TempBackup      bool     `json:"temp_backup,omitempty"`
+	BackupStorage   string   `json:"backup_storage,omitempty"`
+	BlockReason     string   `json:"block_reason,omitempty"`
+	LocalHost       bool     `json:"local_host,omitempty"`
+	LocalRootfsPath string   `json:"local_rootfs_path,omitempty"`
 }
 
 // Discovery is the result of Connect plus Discover. It does not start a transfer.
@@ -287,6 +290,8 @@ type ItemPlan struct {
 	BackupStorage       string    `json:"backup_storage,omitempty"`
 	TempBackupVol       string    `json:"temp_backup_vol,omitempty"`
 	TempBackupCreated   bool      `json:"temp_backup_created,omitempty"`
+	LocalHost           bool      `json:"local_host,omitempty"`
+	LocalRootfsPath     string    `json:"local_rootfs_path,omitempty"`
 }
 
 // Plan is the operator-reviewed intent. The engine executes this document.
