@@ -14,7 +14,11 @@ test -f /lib/systemd/system/nodal-ct@.service
 test -f /lib/systemd/system/ndl-agent.service
 grep -qx 'NoNewPrivileges=yes' /lib/systemd/system/ndl-agent.service
 grep -qx 'DevicePolicy=closed' /lib/systemd/system/ndl-agent.service
-grep -qx 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE' /lib/systemd/system/ndl-agent.service
+grep -qx 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE' /lib/systemd/system/ndl-agent.service
+if grep -q 'CAP_FOWNER' /lib/systemd/system/ndl-control.service; then
+  echo "ndl-control.service must not gain CAP_FOWNER" >&2
+  exit 1
+fi
 if grep -q 'CapabilityBoundingSet=~' /lib/systemd/system/ndl-agent.service; then
   echo "ndl-agent.service must not ship CapabilityBoundingSet=~" >&2
   exit 1
@@ -165,7 +169,7 @@ echo "CT received isolated DHCP address"
 ATTACH_UID=$(systemd-run --wait --collect --pipe --quiet \
   -p User=root \
   -p NoNewPrivileges=yes \
-  -p 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE' \
+  -p 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE' \
   -p DevicePolicy=closed \
   -p 'DeviceAllow=char-pts rw' \
   -p 'DeviceAllow=/dev/ptmx rw' \

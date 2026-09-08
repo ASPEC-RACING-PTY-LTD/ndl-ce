@@ -508,6 +508,25 @@ func TestWriteTarRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPVENetAndReviewIP(t *testing.T) {
+	n := pveNet("name=eth0,bridge=vmbr0,hwaddr=BC:24:11:00:00:02,ip=10.0.0.8/24,gw=10.0.0.1")
+	if n.Bridge != "vmbr0" || n.MAC != "BC:24:11:00:00:02" || n.IPv4Mode != "static" || n.IPv4Address != "10.0.0.8/24" || n.IPv4Gateway != "10.0.0.1" {
+		t.Fatalf("%+v", n)
+	}
+	dhcp := pveNet("name=eth0,bridge=vmbr0,ip=dhcp")
+	if dhcp.IPv4Mode != "dhcp" || dhcp.IPv6Mode != "" {
+		t.Fatalf("%+v", dhcp)
+	}
+	rev := Review(ItemPlan{
+		SourceID: "pve/104", Name: "ct", Kind: KindContainer, Mode: ModeLocal,
+		Manifest: Manifest{Kind: KindContainer, Container: &ContainerSection{NICs: []NIC{n}}},
+	}, "node-a", Mapping{Network: map[string]string{"vmbr0": "LAN"}})
+	sum, _ := rev["network_summary"].(string)
+	if !strings.Contains(sum, "IPv4 Static 10.0.0.8/24 via 10.0.0.1") || !strings.Contains(sum, "IPv6 Disabled") {
+		t.Fatalf("%+v", rev)
+	}
+}
+
 func unixSetxattr(path string) error {
 	return nil
 }

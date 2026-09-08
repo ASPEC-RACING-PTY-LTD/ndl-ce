@@ -209,6 +209,9 @@ func PVEManifestStorage(kind, node, vmid string, cfg map[string]any, storageType
 				m.Container.NICs = append(m.Container.NICs, pveNet(fmt.Sprint(v)))
 			}
 		}
+		if ns, ok := cfg["nameserver"].(string); ok && len(m.Container.NICs) > 0 {
+			m.Container.NICs[0].DNS = strings.Fields(ns)
+		}
 		m.Warnings = append(m.Warnings, SnapshotsNotMigrated())
 		return m
 	}
@@ -320,19 +323,54 @@ func pveVolume(spec string) (storage string, size int64) {
 func pveNet(spec string) NIC {
 	n := NIC{Model: "virtio"}
 	for i, p := range strings.Split(spec, ",") {
-		if i == 0 && strings.Contains(p, "=") {
-			kv := strings.SplitN(p, "=", 2)
-			n.Model = kv[0]
-			n.MAC = kv[1]
+		kv := strings.SplitN(p, "=", 2)
+		if len(kv) != 2 {
+			continue
 		}
-		if strings.HasPrefix(p, "bridge=") {
-			n.Bridge = strings.TrimPrefix(p, "bridge=")
-		}
-		if strings.HasPrefix(p, "tag=") {
-			fmt.Sscanf(strings.TrimPrefix(p, "tag="), "%d", &n.VLAN)
+		key, val := kv[0], kv[1]
+		switch key {
+		case "name":
+		case "hwaddr":
+			n.MAC = val
+		case "bridge":
+			n.Bridge = val
+		case "tag":
+			fmt.Sscanf(val, "%d", &n.VLAN)
+		case "ip":
+			n.IPv4Mode, n.IPv4Address = parsePVEIP(val)
+		case "gw":
+			n.IPv4Gateway = val
+		case "ip6":
+			n.IPv6Mode, n.IPv6Address = parsePVEIP(val)
+		case "gw6":
+			n.IPv6Gateway = val
+		default:
+			if i == 0 && n.MAC == "" {
+				n.Model = key
+				n.MAC = val
+			}
 		}
 	}
 	return n
+}
+
+func parsePVEIP(val string) (mode, addr string) {
+	raw := strings.TrimSpace(val)
+	switch strings.ToLower(raw) {
+	case "", "manual", "none":
+		return "disabled", ""
+	case "dhcp", "auto":
+		return "dhcp", ""
+	default:
+		if !strings.Contains(raw, "/") {
+			if strings.Contains(raw, ":") {
+				raw += "/64"
+			} else {
+				raw += "/24"
+			}
+		}
+		return "static", raw
+	}
 }
 
 func parseSize(s string) int64 {

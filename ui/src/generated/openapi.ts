@@ -754,6 +754,13 @@ export interface CreateWorkloadRequest {
   memory_bytes?: number;
   pool_id?: string;
   network_id?: string;
+  ipv4_mode?: "dhcp" | "static" | "disabled";
+  ipv4_address?: string;
+  ipv4_gateway?: string;
+  ipv6_mode?: "dhcp" | "static" | "disabled";
+  ipv6_address?: string;
+  ipv6_gateway?: string;
+  dns?: string[];
   volume_id?: string;
   volume_ids?: string[];
   registry_id?: string;
@@ -892,6 +899,28 @@ export interface UpdateWorkloadRequest {
   firmware?: string;
   iso_library_id?: string;
   nocloud?: NoCloud;
+  ipv4_mode?: "dhcp" | "static" | "disabled";
+  ipv4_address?: string;
+  ipv4_gateway?: string;
+  ipv6_mode?: "dhcp" | "static" | "disabled";
+  ipv6_address?: string;
+  ipv6_gateway?: string;
+  dns?: string[];
+}
+
+export interface BulkDeleteWorkloadsRequest {
+  ids: string[];
+}
+
+export interface BulkDeleteWorkloadResult {
+  id: string;
+  name?: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface BulkDeleteWorkloadsResponse {
+  results: BulkDeleteWorkloadResult[];
 }
 
 export interface CloneWorkloadRequest {
@@ -2194,6 +2223,8 @@ export type MaintainNodePath = "/api/v1/nodes/{id}/maintain";
 export type ExitNodeMaintenancePath = "/api/v1/nodes/{id}/maintain/exit";
 
 export type ListWorkloadsPath = "/api/v1/workloads";
+
+export type BulkDeleteWorkloadsPath = "/api/v1/workloads/bulk-delete";
 
 export type GetWorkloadPath = "/api/v1/workloads/{id}";
 

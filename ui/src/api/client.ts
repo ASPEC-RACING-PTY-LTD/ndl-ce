@@ -828,6 +828,13 @@ export async function createWorkload(
     memory_bytes?: number;
     pool_id?: string;
     network_id?: string;
+    ipv4_mode?: string;
+    ipv4_address?: string;
+    ipv4_gateway?: string;
+    ipv6_mode?: string;
+    ipv6_address?: string;
+    ipv6_gateway?: string;
+    dns?: string[];
     registry_id?: string;
     volume_ids?: string[];
     health?: { http_path?: string; port?: number };
@@ -967,6 +974,13 @@ export async function patchWorkload(
     autostart?: boolean;
     firmware?: string;
     name?: string;
+    ipv4_mode?: string;
+    ipv4_address?: string;
+    ipv4_gateway?: string;
+    ipv6_mode?: string;
+    ipv6_address?: string;
+    ipv6_gateway?: string;
+    dns?: string[];
   },
 ): Promise<import("./phase5").Workload> {
   return readJson(
@@ -1177,6 +1191,17 @@ export async function migrateWorkload(
     await request(`/workloads/${id}/migrate`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function bulkDeleteWorkloads(
+  ids: string[],
+): Promise<import("../generated/openapi").BulkDeleteWorkloadsResponse> {
+  return readJson(
+    await request("/workloads/bulk-delete", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
     }),
   );
 }

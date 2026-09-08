@@ -209,14 +209,20 @@ func (p *Postgres) CreateWorkloadNIC(ctx context.Context, n WorkloadNIC) error {
 		n.CreatedAt = time.Now().UTC()
 	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO workload_nics (id, cluster_id, workload_id, network_id, mac, ipv4, pci_addr, model, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, n.ID, n.ClusterID, n.WorkloadID, n.NetworkID, n.MAC, n.IPv4, n.PCIAddr, n.Model, n.CreatedAt)
+INSERT INTO workload_nics (id, cluster_id, workload_id, network_id, mac, ipv4, ipv4_mode, ipv4_address, ipv4_gateway, ipv6_mode, ipv6_address, ipv6_gateway, dns, pci_addr, model, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		n.ID, n.ClusterID, n.WorkloadID, n.NetworkID, n.MAC, n.IPv4,
+		n.IPv4Mode, n.IPv4Address, n.IPv4Gateway, n.IPv6Mode, n.IPv6Address, n.IPv6Gateway, n.DNS,
+		n.PCIAddr, n.Model, n.CreatedAt)
 	return err
 }
 
 func (p *Postgres) ListWorkloadNICs(ctx context.Context, clusterID, workloadID string) ([]WorkloadNIC, error) {
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, workload_id::text, network_id::text, mac, ipv4, COALESCE(pci_addr,''), COALESCE(model,''), created_at
+SELECT id::text, cluster_id::text, workload_id::text, network_id::text, mac, ipv4,
+       COALESCE(ipv4_mode,'dhcp'), COALESCE(ipv4_address,''), COALESCE(ipv4_gateway,''),
+       COALESCE(ipv6_mode,'disabled'), COALESCE(ipv6_address,''), COALESCE(ipv6_gateway,''),
+       COALESCE(dns,''), COALESCE(pci_addr,''), COALESCE(model,''), created_at
 FROM workload_nics WHERE cluster_id=$1 AND ($2='' OR workload_id::text=$2)
 ORDER BY created_at, id`, clusterID, workloadID)
 	if err != nil {
@@ -226,7 +232,9 @@ ORDER BY created_at, id`, clusterID, workloadID)
 	var out []WorkloadNIC
 	for rows.Next() {
 		var n WorkloadNIC
-		if err := rows.Scan(&n.ID, &n.ClusterID, &n.WorkloadID, &n.NetworkID, &n.MAC, &n.IPv4, &n.PCIAddr, &n.Model, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.ClusterID, &n.WorkloadID, &n.NetworkID, &n.MAC, &n.IPv4,
+			&n.IPv4Mode, &n.IPv4Address, &n.IPv4Gateway, &n.IPv6Mode, &n.IPv6Address, &n.IPv6Gateway, &n.DNS,
+			&n.PCIAddr, &n.Model, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -235,7 +243,14 @@ ORDER BY created_at, id`, clusterID, workloadID)
 }
 
 func (p *Postgres) UpdateWorkloadNIC(ctx context.Context, n WorkloadNIC) error {
-	_, err := p.DB.ExecContext(ctx, `UPDATE workload_nics SET ipv4=$2, pci_addr=COALESCE(NULLIF($3,''), pci_addr), model=COALESCE(NULLIF($4,''), model) WHERE id=$1`, n.ID, n.IPv4, n.PCIAddr, n.Model)
+	_, err := p.DB.ExecContext(ctx, `
+UPDATE workload_nics SET ipv4=$2,
+    ipv4_mode=COALESCE(NULLIF($3,''), ipv4_mode), ipv4_address=$4, ipv4_gateway=$5,
+    ipv6_mode=COALESCE(NULLIF($6,''), ipv6_mode), ipv6_address=$7, ipv6_gateway=$8,
+    dns=$9,
+    pci_addr=COALESCE(NULLIF($10,''), pci_addr), model=COALESCE(NULLIF($11,''), model)
+WHERE id=$1`,
+		n.ID, n.IPv4, n.IPv4Mode, n.IPv4Address, n.IPv4Gateway, n.IPv6Mode, n.IPv6Address, n.IPv6Gateway, n.DNS, n.PCIAddr, n.Model)
 	return err
 }
 

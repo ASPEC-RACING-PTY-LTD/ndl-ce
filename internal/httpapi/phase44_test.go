@@ -925,10 +925,15 @@ func TestMigrationPlanLXCUsesLocalHostWhenStopped(t *testing.T) {
 	cookie := claimAdmin(t, ts, token)
 
 	root := filepath.Join(t.TempDir(), "vz", "images", "104", "subvol-104-disk-0")
-	if err := os.MkdirAll(root, 0o750); err != nil {
+	for _, d := range []string{"sbin", "usr/bin", "bin", "etc"} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(d)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "sbin", "init"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "hostname"), []byte("SoundDock\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "etc", "hosts"), []byte("127.0.0.1 localhost\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	vz := filepath.Dir(filepath.Dir(filepath.Dir(root)))

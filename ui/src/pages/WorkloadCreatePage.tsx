@@ -5,6 +5,12 @@ import type { StoragePool } from "../api/phase3";
 import { ErrorState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { Icon } from "../components/Icon";
+import {
+  ContainerIPFields,
+  containerIPBody,
+  defaultContainerIPForm,
+  summarizeContainerIP,
+} from "../components/form/ContainerIPFields";
 import { NetworkPicker } from "../components/form/NetworkPicker";
 import { OsImagePicker } from "../components/form/OsImagePicker";
 import { StoragePicker } from "../components/form/StoragePicker";
@@ -32,6 +38,7 @@ export function WorkloadCreatePage() {
   const [memoryMiB, setMemoryMiB] = useState("256");
   const [poolID, setPoolID] = useState("");
   const [networkID, setNetworkID] = useState("");
+  const [ip, setIP] = useState(defaultContainerIPForm);
   const [privileged, setPrivileged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,6 +88,7 @@ export function WorkloadCreatePage() {
           memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
           pool_id: poolID || undefined,
           network_id: networkID,
+          ...containerIPBody(ip),
           privileged: admin ? privileged : false,
         },
         `ui-create-${name}`,
@@ -144,6 +152,7 @@ export function WorkloadCreatePage() {
           onChange={setNetworkID}
           expert={isExpert(mode)}
         />
+        <ContainerIPFields id="ct-ip" form={ip} onChange={setIP} />
         {isAdvanced(mode) ? (
           admin ? (
             <label className="check-row">
@@ -158,7 +167,7 @@ export function WorkloadCreatePage() {
           <strong>Review</strong>
           <span>
             {name}, {osLabel(pin)}, {cpus} CPU, {memoryMiB} MiB, {pool?.name || "no pool"},{" "}
-            {net ? `${net.name} (${kindLabel(net.kind)})` : "no network"}
+            {net ? `${net.name} (${kindLabel(net.kind)})` : "no network"}, {summarizeContainerIP(ip)}
             {privileged ? ", privileged" : ""}
           </span>
         </div>
@@ -173,6 +182,7 @@ export function WorkloadCreatePage() {
                 memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
                 pool_id: poolID || undefined,
                 network_id: networkID,
+                ...containerIPBody(ip),
                 privileged: admin ? privileged : false,
               },
               null,

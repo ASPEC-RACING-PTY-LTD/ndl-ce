@@ -124,9 +124,9 @@ func TestHostMapStart(t *testing.T) {
 	}
 }
 
-func TestEnsureGuestDHCP(t *testing.T) {
+func TestEnsureGuestNetwork(t *testing.T) {
 	root := t.TempDir()
-	if err := ensureGuestDHCP(root); err != nil {
+	if err := ensureGuestNetwork(root, IPConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(root, "etc", "network", "interfaces"))
@@ -136,7 +136,10 @@ func TestEnsureGuestDHCP(t *testing.T) {
 	if !strings.Contains(string(b), "iface eth0 inet dhcp") {
 		t.Fatal(string(b))
 	}
-	if err := ensureGuestDHCP(root); err != nil {
+	if strings.Contains(string(b), "inet6") {
+		t.Fatal(string(b))
+	}
+	if err := ensureGuestNetwork(root, IPConfig{}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -166,6 +169,34 @@ func TestMACStableAndLocallyAdministered(t *testing.T) {
 	}
 	if first[0]&0x02 == 0 {
 		t.Fatal("mac must be locally administered")
+	}
+}
+
+func TestRenderConfigWritesIndependentIP(t *testing.T) {
+	cfg := RenderConfig(Spec{
+		WorkloadID: uuid.NewString(), Name: "ct", RootfsPath: "/vol/root",
+		BridgeName: "ndldeadbeef", MAC: "02:00:00:00:00:01",
+		IP: IPConfig{IPv4Mode: IPModeStatic, IPv4Address: "10.0.0.8/24", IPv4Gateway: "10.0.0.1"},
+	})
+	if !strings.Contains(cfg, "lxc.net.0.ipv4.address = 10.0.0.8/24") {
+		t.Fatal(cfg)
+	}
+	if !strings.Contains(cfg, "lxc.net.0.ipv4.gateway = 10.0.0.1") {
+		t.Fatal(cfg)
+	}
+	if !strings.Contains(cfg, "lxc.net.0.ipv6.address = none") {
+		t.Fatal(cfg)
+	}
+	v6 := RenderConfig(Spec{
+		WorkloadID: uuid.NewString(), Name: "ct", RootfsPath: "/vol/root",
+		BridgeName: "ndldeadbeef",
+		IP:         IPConfig{IPv4Mode: IPModeDisabled, IPv6Mode: IPModeDHCP},
+	})
+	if !strings.Contains(v6, "lxc.net.0.ipv4.address = none") {
+		t.Fatal(v6)
+	}
+	if strings.Contains(v6, "lxc.net.0.ipv6.address") {
+		t.Fatal(v6)
 	}
 }
 

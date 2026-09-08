@@ -1,7 +1,6 @@
 package lxc
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -100,6 +99,11 @@ func normalizeSpec(spec Spec) (Spec, error) {
 	if spec.Name == "" {
 		spec.Name = spec.WorkloadID
 	}
+	ip, err := NormalizeIPConfig(spec.IP)
+	if err != nil {
+		return Spec{}, err
+	}
+	spec.IP = ip
 	return spec, nil
 }
 
@@ -283,6 +287,7 @@ func specChanged(prev, next Spec) bool {
 	return prev.CPUs != next.CPUs || prev.MemoryBytes != next.MemoryBytes ||
 		prev.BridgeName != next.BridgeName || prev.Privileged != next.Privileged ||
 		prev.UIDMap != next.UIDMap || prev.GIDMap != next.GIDMap || prev.Name != next.Name ||
+		prev.MAC != next.MAC || !prev.IP.Equal(next.IP) ||
 		strings.Join(prev.GPUDevices, "\n") != strings.Join(next.GPUDevices, "\n")
 }
 
@@ -293,7 +298,7 @@ func (e *Engine) prepareRootfs(spec Spec) error {
 	if err := validateRootfsPath(spec.RootfsPath); err != nil {
 		return err
 	}
-	if err := ensureGuestDHCP(spec.RootfsPath); err != nil {
+	if err := ensureGuestNetwork(spec.RootfsPath, spec.IP); err != nil {
 		return err
 	}
 	if spec.Privileged {
@@ -363,26 +368,6 @@ func remapRootfs(rootfs string, uid, gid int) error {
 	})
 }
 
-func ensureGuestDHCP(rootfs string) error {
-	ifaces := filepath.Join(rootfs, "etc", "network", "interfaces")
-	if b, err := os.ReadFile(ifaces); err == nil && bytes.Contains(bytes.ToLower(b), []byte("dhcp")) {
-		return nil
-	}
-	netd := filepath.Join(rootfs, "etc", "systemd", "network")
-	if entries, err := os.ReadDir(netd); err == nil {
-		for _, e := range entries {
-			b, _ := os.ReadFile(filepath.Join(netd, e.Name()))
-			if bytes.Contains(bytes.ToLower(b), []byte("dhcp")) {
-				return nil
-			}
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(ifaces), 0o755); err != nil {
-		return err
-	}
-	const body = "auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet dhcp\n"
-	return os.WriteFile(ifaces, []byte(body), 0o644)
-}
 
 func (e *Engine) copyRootfs(ctx context.Context, src, dst string) error {
 	if e.SkipHostCmds || e.FakeUnpack {

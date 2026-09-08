@@ -28,8 +28,8 @@ func (h *Handler) execArchiveExtract(_ context.Context, m *agentv1.ArchiveExtrac
 	if err := migration.ValidateHostPath(dest); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	info, err := os.Stat(src)
-	if err == nil && info.IsDir() {
+	info, err := os.Lstat(src)
+	if err == nil && (info.IsDir() || info.Mode()&os.ModeDevice != 0) {
 		if err := migration.CopyLocalRootfs(src, dest); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}

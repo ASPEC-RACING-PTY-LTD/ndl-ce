@@ -142,7 +142,7 @@ func replaceFinding(existing []Finding, next Finding) []Finding {
 }
 
 func Review(item ItemPlan, destNode string, mapping Mapping) map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"source_id":        item.SourceID,
 		"name":             item.Name,
 		"source":           item.Kind + " " + item.SourceID,
@@ -159,6 +159,77 @@ func Review(item ItemPlan, destNode string, mapping Mapping) map[string]any {
 		"source_changes":   SourceChangesNone(),
 		"start_after":      item.StartAfter,
 	}
+	if nic := reviewNIC(item); nic != nil {
+		v4 := nic.IPv4Mode
+		v6 := nic.IPv6Mode
+		if v4 == "" {
+			v4 = "dhcp"
+		}
+		if v6 == "" {
+			v6 = "disabled"
+		}
+		out["ipv4"] = lxcFamilySummary(v4, nic.IPv4Address, nic.IPv4Gateway)
+		out["ipv6"] = lxcFamilySummary(v6, nic.IPv6Address, nic.IPv6Gateway)
+		if len(nic.DNS) > 0 {
+			out["dns"] = strings.Join(nic.DNS, ", ")
+		}
+		out["network_summary"] = reviewNetworkSummary(*nic)
+	}
+	return out
+}
+
+func reviewNIC(item ItemPlan) *NIC {
+	if item.Manifest.Container != nil && len(item.Manifest.Container.NICs) > 0 {
+		n := item.Manifest.Container.NICs[0]
+		return &n
+	}
+	if item.Manifest.VM != nil && len(item.Manifest.VM.NICs) > 0 {
+		n := item.Manifest.VM.NICs[0]
+		return &n
+	}
+	return nil
+}
+
+func lxcFamilySummary(mode, addr, gateway string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "static":
+		if gateway != "" {
+			return "Static " + addr + " via " + gateway
+		}
+		if addr != "" {
+			return "Static " + addr
+		}
+		return "Static"
+	case "disabled":
+		return "Disabled"
+	case "dhcp":
+		return "DHCP"
+	default:
+		if addr != "" {
+			if gateway != "" {
+				return "Static " + addr + " via " + gateway
+			}
+			return "Static " + addr
+		}
+		return "DHCP"
+	}
+}
+
+func reviewNetworkSummary(n NIC) string {
+	if n.IPv4Mode == "" {
+		n.IPv4Mode = "dhcp"
+	}
+	if n.IPv6Mode == "" {
+		n.IPv6Mode = "disabled"
+	}
+	parts := []string{
+		"IPv4 " + lxcFamilySummary(n.IPv4Mode, n.IPv4Address, n.IPv4Gateway),
+		"IPv6 " + lxcFamilySummary(n.IPv6Mode, n.IPv6Address, n.IPv6Gateway),
+	}
+	if len(n.DNS) > 0 {
+		parts = append(parts, "DNS "+strings.Join(n.DNS, ", "))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func modeConsistency(mode string) string {

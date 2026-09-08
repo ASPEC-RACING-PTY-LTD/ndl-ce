@@ -1,6 +1,9 @@
 nodal (1.0.1) UNRELEASED; urgency=medium
 
-  * Proxmox Local Host Migration copies a stopped LXC rootfs on the same machine from local LVM, ZFS, or directory storage. It is preferred automatically, preserves configuration and networking, and does not use vzdump or HTTP. Copy-first verification leaves the source unchanged.
+  * Local Host Migration resolves a populated Proxmox LXC rootfs (prefer /var/lib/lxc/{vmid}/rootfs) instead of an empty ZFS dataset mountpoint. Copy fails unless the source and destination contain an executable init and nontrivial content. transfer_complete and configuration_verified are not recorded for a skeleton dest. After this fix, rerun migration rather than reuse those volumes.
+  * Workloads can multi-select system containers, Select All, and delete them in one confirmation. The API processes every selected id, returns per-container success or failure, and requires compute.delete.
+  * ndl-agent CapabilityBoundingSet includes CAP_FOWNER so Local Host Migration can chmod, lchown, and fchownat UID-mapped destination trees. Without it those calls return EPERM even as root. ndl-control stays CAP_NET_BIND_SERVICE only.
+  * System containers have independent IPv4 and IPv6 modes (DHCP, Static, Disabled). Static uses address/CIDR, gateway, and optional DNS. A configured family leaves the other disabled unless set. DHCP IPv4 remains the default. LXC config and guest network files apply the same policy. Migration Review shows the resulting addressing.
   * Proxmox LXC on LVM-thin or ZFS uses a temporary vzdump when a directory, NFS, or CIFS backup store exists. Review blocks the guest with the exact reason when that path cannot run. The temporary archive is deleted after verification.
   * Fix Import / Export automap compile: do not shadow the storage package.
   * Progressive disclosure: Simple is the default sidebar. Add Features enables optional capabilities. Advanced and Custom templates do not drop enablement or Custom layout. RBAC still hides Audit, Groups, and Updates.

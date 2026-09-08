@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { listWorkloads } from "../api/client";
+import { bulkDeleteWorkloads, listWorkloads } from "../api/client";
 import type { Workload } from "../api/phase5";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState, ErrorState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
@@ -12,6 +13,12 @@ import { kindLabel, osLabel } from "../labels";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
 
+const containerKind = "system-container";
+
+function isContainer(w: Workload): boolean {
+  return w.kind === containerKind;
+}
+
 export function WorkloadsPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
@@ -19,6 +26,15 @@ export function WorkloadsPage() {
   const [items, setItems] = useState<Workload[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState<{ id: string; name?: string; ok: boolean; error?: string }[] | null>(null);
+
+  async function reload() {
+    const listed = await listWorkloads();
+    setItems(listed.items ?? []);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +63,52 @@ export function WorkloadsPage() {
     }
     return list.filter((w) => w.name.toLowerCase().includes(q) || (w.kind ?? "").toLowerCase().includes(q));
   }, [items, query]);
+
+  const selectable = useMemo(() => filtered.filter(isContainer), [filtered]);
+  const selectedItems = useMemo(
+    () => selectable.filter((w) => selected.includes(w.id)),
+    [selectable, selected],
+  );
+  const allSelected = selectable.length > 0 && selectedItems.length === selectable.length;
+
+  function toggle(id: string) {
+    setSelected((cur) => (cur.includes(id) ? cur.filter((n) => n !== id) : [...cur, id]));
+  }
+
+  async function onConfirmDelete() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await bulkDeleteWorkloads(selectedItems.map((w) => w.id));
+      setResults(res.results ?? []);
+      setConfirmOpen(false);
+      setSelected([]);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bulk delete failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const headers = mutate
+    ? [
+        <input
+          key="all"
+          type="checkbox"
+          aria-label="Select all"
+          checked={allSelected}
+          disabled={selectable.length === 0}
+          onChange={(e) => setSelected(e.target.checked ? selectable.map((w) => w.id) : [])}
+        />,
+        "Name",
+        "Type",
+        "Status",
+        "Image",
+        "IPv4",
+        "Memory",
+      ]
+    : ["Name", "Type", "Status", "Image", "IPv4", "Memory"];
 
   return (
     <section className="page" aria-labelledby="workloads-heading">
@@ -81,6 +143,20 @@ export function WorkloadsPage() {
         }
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
+      {results ? (
+        <div className="banner" role="status">
+          <p>
+            Deleted {results.filter((r) => r.ok).length} of {results.length} containers.
+          </p>
+          <ul>
+            {results.map((r) => (
+              <li key={r.id}>
+                {r.name || r.id}: {r.ok ? "deleted" : r.error || "failed"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="stack">
         <div className="toolbar">
           <label className="search-field">
@@ -94,10 +170,15 @@ export function WorkloadsPage() {
               aria-label="Search workloads"
             />
           </label>
+          {mutate && selectedItems.length > 0 ? (
+            <button className="btn btn-danger" type="button" disabled={busy} onClick={() => setConfirmOpen(true)}>
+              Delete selected
+            </button>
+          ) : null}
         </div>
         <ResourceTable
-          headers={["Name", "Type", "Status", "Image", "IPv4", "Memory"]}
-          numeric={[5]}
+          headers={headers}
+          numeric={mutate ? [6] : [5]}
           empty={
             <EmptyState title="No workloads yet">
               {mutate
@@ -105,24 +186,60 @@ export function WorkloadsPage() {
                 : "No workloads are visible yet. Creating them requires operator or admin."}
             </EmptyState>
           }
-          rows={filtered.map((w) => [
-            <Link key="name" href={`/workloads/${w.id}`}>
-              {w.name}
-            </Link>,
-            <span key="kind" className="type-cell">
-              <Icon name="workloads" size={14} />
-              {kindLabel(w.kind)}
-            </span>,
-            <span key="st">
-              <StatusBadge status={w.status} />
-              {w.status === "warning" || w.status === "failed" ? ` ${w.reason || ""}` : ""}
-            </span>,
-            osLabel(w.image_pin),
-            w.nics?.[0]?.ipv4 || "Not reported",
-            formatBytes(w.memory_bytes),
-          ])}
+          rows={filtered.map((w) => {
+            const cells = [
+              <Link key="name" href={`/workloads/${w.id}`}>
+                {w.name}
+              </Link>,
+              <span key="kind" className="type-cell">
+                <Icon name="workloads" size={14} />
+                {kindLabel(w.kind)}
+              </span>,
+              <span key="st">
+                <StatusBadge status={w.status} />
+                {w.status === "warning" || w.status === "failed" ? ` ${w.reason || ""}` : ""}
+              </span>,
+              osLabel(w.image_pin),
+              w.nics?.[0]?.ipv4 || "Not reported",
+              formatBytes(w.memory_bytes),
+            ];
+            if (!mutate) {
+              return cells;
+            }
+            return [
+              isContainer(w) ? (
+                <input
+                  key="sel"
+                  type="checkbox"
+                  aria-label={`Select ${w.name}`}
+                  checked={selected.includes(w.id)}
+                  onChange={() => toggle(w.id)}
+                />
+              ) : (
+                <span key="sel" />
+              ),
+              ...cells,
+            ];
+          })}
         />
       </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete containers"
+        confirmLabel="Delete"
+        danger
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => void onConfirmDelete()}
+      >
+        <p>
+          Delete {selectedItems.length} container{selectedItems.length === 1 ? "" : "s"}? This cannot be undone.
+        </p>
+        <ul>
+          {selectedItems.map((w) => (
+            <li key={w.id}>{w.name}</li>
+          ))}
+        </ul>
+      </ConfirmDialog>
     </section>
   );
 }

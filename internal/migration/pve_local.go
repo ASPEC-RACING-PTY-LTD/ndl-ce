@@ -1,9 +1,9 @@
 package migration
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -12,6 +12,10 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+// lxcHostRoot is the Proxmox LXC mount parent. Tests replace it so an empty
+// ZFS dataset path cannot win over a populated /var/lib/lxc/{vmid}/rootfs.
+var lxcHostRoot = "/var/lib/lxc"
 
 // LocalHostFacts describes this machine for same-host Proxmox detection.
 type LocalHostFacts struct {
@@ -97,12 +101,30 @@ func ResolveLXCRootfsHostPath(volid string, storages []map[string]any, exists fu
 	row := storageRowByName(storages, store)
 	kind := strings.ToLower(fmt.Sprint(row["type"]))
 	vmid := volVMID(name)
+	var firstDev string
 	for _, cand := range lxcRootfsCandidates(row, store, name, vmid) {
-		if exists(cand) {
+		if !exists(cand) {
+			continue
+		}
+		if VerifyCopiedRootfs(cand) == nil {
 			return cand, kind, true
 		}
+		if firstDev == "" && pathIsBlockDevice(cand) {
+			firstDev = cand
+		}
+	}
+	if firstDev != "" {
+		return firstDev, kind, true
 	}
 	return "", kind, false
+}
+
+func pathIsBlockDevice(p string) bool {
+	st, err := os.Lstat(p)
+	if err != nil {
+		return false
+	}
+	return st.Mode()&os.ModeDevice != 0
 }
 
 func pveVolParts(volid string) (store, name string) {
@@ -175,7 +197,7 @@ func lxcRootfsCandidates(row map[string]any, store, name, vmid string) []string 
 		}
 	}
 	if vmid != "" {
-		out = append(out, filepath.Join("/var/lib/lxc", vmid, "rootfs"))
+		out = append([]string{filepath.Join(lxcHostRoot, vmid, "rootfs")}, out...)
 	}
 	_ = store
 	return uniqueNonEmpty(out)
@@ -248,9 +270,18 @@ func ValidateLocalMigrationPath(p string) error {
 	return fmt.Errorf("local rootfs path is not an allowed Proxmox volume location")
 }
 
+var (
+	mountROFn = mountRO
+	unmountFn = func(p string) error { return unix.Unmount(p, unix.MNT_DETACH) }
+)
+
 // CopyLocalRootfs copies a local LXC rootfs tree into dest. Dest must be a
-// No-dal staging or storage path. Source data is read-only. A block device
-// is mounted read-only for the copy and then unmounted.
+// No-dal staging or storage path. Source data is read-only: the copy never
+// chmod, chown, or otherwise mutates the source. A block device is mounted
+// read-only for the copy and then unmounted. Dest ownership, mode, POSIX
+// ACLs, user xattrs, and relative symlinks are restored from the source.
+// An empty or skeleton source is an error; success requires dest to contain
+// an executable init and nontrivial transferred content.
 func CopyLocalRootfs(src, dest string) error {
 	if err := ValidateHostPath(dest); err != nil {
 		return err
@@ -272,10 +303,10 @@ func CopyLocalRootfs(src, dest string) error {
 		if err := os.MkdirAll(mnt, 0o750); err != nil {
 			return err
 		}
-		if err := mountRO(src, mnt); err != nil {
+		if err := mountROFn(src, mnt); err != nil {
 			return err
 		}
-		defer func() { _ = unix.Unmount(mnt, unix.MNT_DETACH) }()
+		defer func() { _ = unmountFn(mnt) }()
 		return copyRootfsTree(mnt, dest)
 	}
 	return fmt.Errorf("local LXC rootfs is not a directory or mountable volume")
@@ -292,53 +323,87 @@ func mountRO(dev, dest string) error {
 
 func copyRootfsTree(src, dest string) error {
 	src = filepath.Clean(src)
+	if err := RequirePopulatedLXCRootfs(src); err != nil {
+		return fmt.Errorf("local LXC source rootfs is empty or incomplete: %w", err)
+	}
 	if err := os.MkdirAll(dest, 0o750); err != nil {
 		return err
 	}
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
 			return err
 		}
 		if rel == "." {
-			return nil
+			return copyDestMeta(path, dest, false)
 		}
-		target, err := RelJail(dest, rel)
+		target, err := RelJail(dest, filepath.ToSlash(rel))
 		if err != nil {
 			return err
 		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		switch {
-		case info.Mode()&os.ModeSocket != 0, info.Mode()&os.ModeDevice != 0, info.Mode()&os.ModeNamedPipe != 0:
-			return nil
-		case d.Type()&os.ModeSymlink != 0:
-			link, err := os.Readlink(path)
-			if err != nil {
-				return err
-			}
-			if filepath.IsAbs(link) || strings.Contains(filepath.Clean(link), "..") {
-				return nil
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
-				return err
-			}
-			_ = os.Remove(target)
-			return os.Symlink(link, target)
-		case d.IsDir():
-			return os.MkdirAll(target, info.Mode().Perm()|0o700)
-		default:
-			return copyRegularFile(path, target, info.Mode().Perm())
-		}
+		return copyRootfsPath(path, target, dest, d)
 	})
+	if err != nil {
+		return err
+	}
+	if err := VerifyCopiedRootfs(dest); err != nil {
+		return fmt.Errorf("local LXC copy produced an empty or incomplete rootfs: %w", err)
+	}
+	return nil
 }
 
-func copyRegularFile(src, dest string, perm os.FileMode) error {
+func symlinkStaysInRoot(destRoot, destPath, link string) bool {
+	if filepath.IsAbs(link) {
+		return false
+	}
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(destPath), link))
+	root := filepath.Clean(destRoot)
+	return resolved == root || strings.HasPrefix(resolved, root+string(os.PathSeparator))
+}
+
+func copyRootfsPath(src, dest, destRoot string, d os.DirEntry) error {
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	mode := info.Mode()
+	switch {
+	case mode&os.ModeSymlink != 0:
+		link, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		if !symlinkStaysInRoot(destRoot, dest, link) {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+			return err
+		}
+		_ = os.Remove(dest)
+		if err := os.Symlink(link, dest); err != nil {
+			return err
+		}
+		return copyDestMeta(src, dest, true)
+	case mode.IsDir():
+		if err := os.MkdirAll(dest, 0o750); err != nil {
+			return err
+		}
+		return copyDestMeta(src, dest, false)
+	case mode.IsRegular():
+		if err := copyRegularFile(src, dest); err != nil {
+			return err
+		}
+		return copyDestMeta(src, dest, false)
+	default:
+		_ = d
+		return nil
+	}
+}
+
+func copyRegularFile(src, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return err
 	}
@@ -347,10 +412,7 @@ func copyRegularFile(src, dest string, perm os.FileMode) error {
 		return err
 	}
 	defer in.Close()
-	if perm == 0 {
-		perm = 0o644
-	}
-	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
 	if err != nil {
 		return err
 	}
@@ -360,4 +422,58 @@ func copyRegularFile(src, dest string, perm os.FileMode) error {
 		return copyErr
 	}
 	return closeErr
+}
+
+func copyDestMeta(src, dest string, symlink bool) error {
+	var st unix.Stat_t
+	if err := unix.Lstat(src, &st); err != nil {
+		return err
+	}
+	if err := unix.Lchown(dest, int(st.Uid), int(st.Gid)); err != nil && !errors.Is(err, unix.EPERM) {
+		return fmt.Errorf("preserve owner %s: %w", dest, err)
+	}
+	if !symlink {
+		if err := unix.Chmod(dest, uint32(st.Mode&0o7777)); err != nil && !errors.Is(err, unix.EPERM) {
+			return fmt.Errorf("preserve mode %s: %w", dest, err)
+		}
+	}
+	return copyAllowedXattrs(src, dest)
+}
+
+func allowedCopyXattr(name string) bool {
+	if name == "" || strings.Contains(name, "..") || strings.ContainsAny(name, "=\x00") {
+		return false
+	}
+	if strings.HasPrefix(name, "user.") {
+		return true
+	}
+	return name == "system.posix_acl_access" || name == "system.posix_acl_default"
+}
+
+func copyAllowedXattrs(src, dest string) error {
+	sz, err := unix.Llistxattr(src, nil)
+	if err != nil || sz == 0 {
+		return nil
+	}
+	buf := make([]byte, sz)
+	n, err := unix.Llistxattr(src, buf)
+	if err != nil || n == 0 {
+		return nil
+	}
+	for _, name := range strings.Split(string(buf[:n]), "\x00") {
+		if !allowedCopyXattr(name) {
+			continue
+		}
+		vsz, err := unix.Lgetxattr(src, name, nil)
+		if err != nil || vsz == 0 {
+			continue
+		}
+		val := make([]byte, vsz)
+		got, err := unix.Lgetxattr(src, name, val)
+		if err != nil || got == 0 {
+			continue
+		}
+		_ = unix.Lsetxattr(dest, name, val[:got], 0)
+	}
+	return nil
 }

@@ -60,6 +60,7 @@ func RenderConfig(spec Spec) string {
 		if spec.MAC != "" {
 			fmt.Fprintf(&b, "lxc.net.0.hwaddr = %s\n", spec.MAC)
 		}
+		b.WriteString(renderNetIP(spec.IP))
 	}
 	if !spec.Privileged {
 		uid := spec.UIDMap

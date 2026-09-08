@@ -162,20 +162,21 @@ func (s *Server) transferOne(ctx context.Context, clusterID, jobID, stageDir str
 		"Source safety": migration.SourceProtected,
 		"Source":        migration.SourceUnchanged(),
 	}
-	observed := []string{migration.VerifyTransfer}
+	var observed []string
 	switch item.Kind {
 	case migration.KindContainer:
-		id, err := s.importContainerItem(ctx, clusterID, jobID, stageDir, plan, item)
+		id, rootPath, err := s.importContainerItem(ctx, clusterID, jobID, stageDir, plan, item)
 		if err != nil {
 			return migration.Report{}, "", err
 		}
+		obs, err := migration.ObservedContainerTransfer(rootPath, item.StartAfter)
+		if err != nil {
+			return migration.Report{}, "", fmt.Errorf("destination rootfs is empty or incomplete: %w", err)
+		}
+		observed = obs
 		fields["Root filesystem"] = "Imported"
 		fields["Ownership/xattrs"] = "Copied when present in the archive"
 		fields["Historical snapshots"] = "Not migrated"
-		observed = append(observed, migration.VerifyConfig)
-		if item.StartAfter {
-			observed = append(observed, migration.VerifyBoot)
-		}
 		rep := migration.NewReport(item.Name, item.Mode, fields, observed)
 		rep.WorkloadID = id
 		return rep, id, nil
@@ -186,7 +187,7 @@ func (s *Server) transferOne(ctx context.Context, clusterID, jobID, stageDir str
 		}
 		fields["Disks"] = "Imported"
 		fields["Historical snapshots"] = "Not migrated"
-		observed = append(observed, migration.VerifyConfig)
+		observed = []string{migration.VerifyTransfer, migration.VerifyConfig}
 		if item.StartAfter {
 			observed = append(observed, migration.VerifyBoot)
 		}
@@ -242,21 +243,17 @@ func (s *Server) importVMItem(ctx context.Context, clusterID, jobID, stageDir st
 	return wl.ID, nil
 }
 
-func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stageDir string, plan migration.Plan, item migration.ItemPlan) (string, error) {
+func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stageDir string, plan migration.Plan, item migration.ItemPlan) (string, string, error) {
 	if s.Workloads == nil || s.Storage == nil {
-		return "", errUnavailable("workload agent is unavailable")
+		return "", "", errUnavailable("workload agent is unavailable")
 	}
 	srcPath := item.SourceID
 	if item.Manifest.Container != nil && item.Manifest.Container.Rootfs != nil && item.Manifest.Container.Rootfs.Path != "" {
 		srcPath = item.Manifest.Container.Rootfs.Path
 	}
-	rootfs := filepath.Join(stageDir, "rootfs")
-	if err := s.extractOrCopyRootfs(ctx, srcPath, rootfs); err != nil {
-		return "", err
-	}
 	node, err := s.Store.GetNode(ctx, clusterID)
 	if err != nil || node == nil {
-		return "", errUnprocessable("local node is not enrolled")
+		return "", "", errUnprocessable("local node is not enrolled")
 	}
 	poolID := firstMapValue(plan.Mapping.Storage)
 	netID := firstMapValue(plan.Mapping.Network)
@@ -275,16 +272,23 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 	ids := s.planCreateIDs(ctx, clusterID, node.ID, "", "")
 	_, netw, rootPath, volRow, err := s.prepareRoot(ctx, clusterID, node.ID, req, ids.VolumeID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if s.Backup != nil {
 		if err := s.Backup.ExtractArchive(ctx, srcPath, rootPath); err != nil {
-			if copyErr := copyDir(rootfs, rootPath); copyErr != nil {
-				return "", err
-			}
+			return "", "", err
 		}
-	} else if err := copyDir(rootfs, rootPath); err != nil {
-		return "", err
+	} else {
+		rootfs := filepath.Join(stageDir, "rootfs")
+		if err := s.extractOrCopyRootfs(ctx, srcPath, rootfs); err != nil {
+			return "", "", err
+		}
+		if err := copyDir(rootfs, rootPath); err != nil {
+			return "", "", err
+		}
+	}
+	if err := migration.VerifyCopiedRootfs(rootPath); err != nil {
+		return "", "", fmt.Errorf("imported container rootfs is empty or incomplete: %w", err)
 	}
 	uidMap, gidMap := lxc.DefaultUIDMap, lxc.DefaultGIDMap
 	if item.Manifest.Container != nil && item.Manifest.Container.UIDMap != "" {
@@ -292,18 +296,35 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 		gidMap = item.Manifest.Container.GIDMap
 	}
 	mac := lxc.MACFromUUID(ids.WorkloadID)
-	if item.Manifest.Container != nil && len(item.Manifest.Container.NICs) > 0 && item.Manifest.Container.NICs[0].MAC != "" {
-		mac = item.Manifest.Container.NICs[0].MAC
+	var importIP lxc.IPConfig
+	if item.Manifest.Container != nil && len(item.Manifest.Container.NICs) > 0 {
+		n := item.Manifest.Container.NICs[0]
+		if n.MAC != "" {
+			mac = n.MAC
+		}
+		importIP, err = lxc.NormalizeIPConfig(lxc.IPConfig{
+			IPv4Mode: n.IPv4Mode, IPv4Address: n.IPv4Address, IPv4Gateway: n.IPv4Gateway,
+			IPv6Mode: n.IPv6Mode, IPv6Address: n.IPv6Address, IPv6Gateway: n.IPv6Gateway,
+			DNS: n.DNS,
+		})
+		if err != nil {
+			return "", "", err
+		}
+	} else {
+		importIP, _ = lxc.NormalizeIPConfig(lxc.IPConfig{})
 	}
 	res, err := s.Workloads.CreateCT(ctx, lxc.Spec{
 		WorkloadID: ids.WorkloadID, Name: item.Name, ImagePin: "imported",
 		CPUs: req.CPUs, MemoryBytes: req.MemoryBytes, VolumeID: ids.VolumeID,
 		RootfsPath: rootPath, NetworkID: netw.ID, BridgeName: netw.BridgeName,
 		MAC: mac, Privileged: req.Privileged, UIDMap: uidMap, GIDMap: gidMap,
-		SkipImage: true, NoStart: !item.StartAfter,
+		IP: importIP, SkipImage: true, NoStart: !item.StartAfter,
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	if err := migration.VerifyCopiedRootfs(rootPath); err != nil {
+		return "", "", fmt.Errorf("container rootfs verification failed after import: %w", err)
 	}
 	row := appdb.Workload{
 		ID: ids.WorkloadID, ClusterID: clusterID, NodeID: node.ID, OwnerNodeID: node.ID, DesiredNodeID: node.ID,
@@ -313,21 +334,21 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`[]`),
 	}
 	if err := s.Store.CreateWorkload(ctx, row); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if volRow != nil {
 		if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
 			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, VolumeID: volRow.ID, Role: "root",
 		}); err != nil {
-			return "", errInternal("could not record container disk")
+			return "", "", errInternal("could not record container disk")
 		}
 	}
-	if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+	if err := s.Store.CreateWorkloadNIC(ctx, nicFromIP(appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID, NetworkID: netw.ID, MAC: mac,
-	}); err != nil {
-		return "", errInternal("could not record container NIC")
+	}, importIP)); err != nil {
+		return "", "", errInternal("could not record container NIC")
 	}
-	return row.ID, nil
+	return row.ID, rootPath, nil
 }
 
 func (s *Server) convertOrCopyDisk(ctx context.Context, src, format, dest string) error {
@@ -401,14 +422,15 @@ func (s *Server) materializeSource(ctx context.Context, clusterID, jobID, stageD
 			if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 				return item, err
 			}
-			if err := migration.CopyLocalRootfs(src, dest); err != nil {
-				if s.Backup != nil {
-					if copyErr := s.Backup.ExtractArchive(ctx, src, dest); copyErr != nil {
-						return item, err
-					}
-				} else {
+			if s.Backup != nil {
+				if err := s.Backup.ExtractArchive(ctx, src, dest); err != nil {
 					return item, err
 				}
+			} else if err := migration.CopyLocalRootfs(src, dest); err != nil {
+				return item, err
+			}
+			if err := migration.VerifyCopiedRootfs(dest); err != nil {
+				return item, fmt.Errorf("Local Host Migration copied an empty or incomplete rootfs: %w", err)
 			}
 			item.Manifest.Container.Rootfs.Path = dest
 			item.Manifest.Container.Rootfs.Format = "dir"

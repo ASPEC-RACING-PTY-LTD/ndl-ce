@@ -89,6 +89,10 @@ type ReviewRow = {
   source_safety?: string;
   storage?: Record<string, string>;
   network?: Record<string, string>;
+  ipv4?: string;
+  ipv6?: string;
+  dns?: string;
+  network_summary?: string;
   compatibility?: string;
   warnings?: Finding[];
   estimated_data?: number;
@@ -787,7 +791,16 @@ export function ImportExportPage() {
                           {rev.migration_mode} {rev.consistency ? `(${rev.consistency})` : ""}
                         </td>
                         <td>{mapLines(rev.storage, pools, nets) || "none"}</td>
-                        <td>{mapLines(rev.network, pools, nets) || "none"}</td>
+                        <td>
+                          <div>{mapLines(rev.network, pools, nets) || "none"}</div>
+                          {rev.network_summary ? <div className="muted">{rev.network_summary}</div> : null}
+                          {!rev.network_summary && (rev.ipv4 || rev.ipv6) ? (
+                            <div className="muted">
+                              IPv4 {rev.ipv4 || "DHCP"}, IPv6 {rev.ipv6 || "Disabled"}
+                              {rev.dns ? `, DNS ${rev.dns}` : ""}
+                            </div>
+                          ) : null}
+                        </td>
                         <td>{rev.compatibility && rev.compatibility !== "READY" ? rev.compatibility : "READY"}</td>
                       </tr>
                     ))}

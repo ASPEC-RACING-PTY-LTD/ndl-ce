@@ -27,17 +27,20 @@ func TestEndpointIsLocalHost(t *testing.T) {
 	}
 }
 
+func isolateLXCHost(t *testing.T, root string) {
+	t.Helper()
+	prev := lxcHostRoot
+	lxcHostRoot = root
+	t.Cleanup(func() { lxcHostRoot = prev })
+}
+
 func TestResolveLXCRootfsHostPath(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
+	isolateLXCHost(t, filepath.Join(dir, "no-lxc"))
 	zfs := filepath.Join(dir, "rpool", "data", "subvol-104-disk-0")
-	if err := os.MkdirAll(zfs, 0o750); err != nil {
-		t.Fatal(err)
-	}
+	plantPopulatedRootfs(t, zfs)
 	images := filepath.Join(dir, "vz", "images", "104", "subvol-104-disk-0")
-	if err := os.MkdirAll(images, 0o750); err != nil {
-		t.Fatal(err)
-	}
+	plantPopulatedRootfs(t, images)
 	exists := func(p string) bool {
 		_, err := os.Stat(p)
 		return err == nil
@@ -62,15 +65,52 @@ func TestResolveLXCRootfsHostPath(t *testing.T) {
 	}
 }
 
+func TestResolveLXCRootfsPrefersPopulatedLXCMount(t *testing.T) {
+	dir := t.TempDir()
+	emptyZFS := filepath.Join(dir, "rpool", "data", "subvol-121-disk-0")
+	if err := os.MkdirAll(emptyZFS, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	plantSkeletonRootfs(t, emptyZFS)
+	lxcRoot := filepath.Join(dir, "lxc")
+	populated := filepath.Join(lxcRoot, "121", "rootfs")
+	plantPopulatedRootfs(t, populated)
+	isolateLXCHost(t, lxcRoot)
+	exists := func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	}
+	got, kind, ok := ResolveLXCRootfsHostPath("local-zfs:subvol-121-disk-0", []map[string]any{
+		{"storage": "local-zfs", "type": "zfspool", "pool": filepath.Join(dir, "rpool", "data")},
+	}, exists)
+	if !ok || kind != "zfspool" || got != populated {
+		t.Fatalf("must prefer populated LXC mount, got %v %s %s", ok, kind, got)
+	}
+}
+
+func TestResolveLXCRootfsIgnoresEmptyZFSDataset(t *testing.T) {
+	dir := t.TempDir()
+	isolateLXCHost(t, filepath.Join(dir, "no-lxc"))
+	emptyZFS := filepath.Join(dir, "rpool", "data", "subvol-104-disk-0")
+	if err := os.MkdirAll(emptyZFS, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	exists := func(p string) bool {
+		_, err := os.Stat(p)
+		return err == nil
+	}
+	got, _, ok := ResolveLXCRootfsHostPath("local-zfs:subvol-104-disk-0", []map[string]any{
+		{"storage": "local-zfs", "type": "zfspool", "pool": filepath.Join(dir, "rpool", "data")},
+	}, exists)
+	if ok {
+		t.Fatalf("empty ZFS dataset must not resolve: %s", got)
+	}
+}
+
 func TestCopyLocalRootfsTree(t *testing.T) {
 	t.Parallel()
 	src := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(src, "etc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(src, "etc", "hosts"), []byte("127.0.0.1 localhost\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	plantPopulatedRootfs(t, src)
 	dest := filepath.Join(t.TempDir(), "rootfs")
 	if err := CopyLocalRootfs(src, dest); err != nil {
 		t.Fatal(err)
@@ -79,14 +119,16 @@ func TestCopyLocalRootfsTree(t *testing.T) {
 	if err != nil || !strings.Contains(string(body), "localhost") {
 		t.Fatalf("copied %v %s", err, body)
 	}
+	if err := VerifyCopiedRootfs(dest); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestEnrichLXCPrefersLocalHostWhenStopped(t *testing.T) {
 	dir := t.TempDir()
+	isolateLXCHost(t, filepath.Join(dir, "no-lxc"))
 	root := filepath.Join(dir, "rpool", "data", "subvol-104-disk-0")
-	if err := os.MkdirAll(root, 0o750); err != nil {
-		t.Fatal(err)
-	}
+	plantPopulatedRootfs(t, root)
 	old := localHostFacts
 	localHostFacts = func() LocalHostFacts {
 		return LocalHostFacts{

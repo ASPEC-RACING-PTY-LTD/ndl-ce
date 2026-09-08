@@ -9,6 +9,13 @@ export type WorkloadNIC = {
   network_id: string;
   mac: string;
   ipv4?: string;
+  ipv4_mode?: string;
+  ipv4_address?: string;
+  ipv4_gateway?: string;
+  ipv6_mode?: string;
+  ipv6_address?: string;
+  ipv6_gateway?: string;
+  dns?: string[];
   pci_addr?: string;
   model?: string;
 };

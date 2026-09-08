@@ -4012,6 +4012,7 @@ type CTCreate struct {
 	GidMap        string                 `protobuf:"bytes,13,opt,name=gid_map,json=gidMap,proto3" json:"gid_map,omitempty"`
 	SkipImage     bool                   `protobuf:"varint,14,opt,name=skip_image,json=skipImage,proto3" json:"skip_image,omitempty"`
 	NoStart       bool                   `protobuf:"varint,15,opt,name=no_start,json=noStart,proto3" json:"no_start,omitempty"`
+	IpConfigJson  string                 `protobuf:"bytes,16,opt,name=ip_config_json,json=ipConfigJson,proto3" json:"ip_config_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4149,6 +4150,13 @@ func (x *CTCreate) GetNoStart() bool {
 		return x.NoStart
 	}
 	return false
+}
+
+func (x *CTCreate) GetIpConfigJson() string {
+	if x != nil {
+		return x.IpConfigJson
+	}
+	return ""
 }
 
 type CTLifecycle struct {
@@ -6312,7 +6320,7 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\x05force\x18\x02 \x01(\bR\x05force\"2\n" +
 	"\x0fQemuProtoStatus\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
-	"workloadId\"\xaf\x03\n" +
+	"workloadId\"\xd5\x03\n" +
 	"\bCTCreate\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x12\n" +
@@ -6336,7 +6344,8 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\agid_map\x18\r \x01(\tR\x06gidMap\x12\x1d\n" +
 	"\n" +
 	"skip_image\x18\x0e \x01(\bR\tskipImage\x12\x19\n" +
-	"\bno_start\x18\x0f \x01(\bR\anoStart\"\xf1\x01\n" +
+	"\bno_start\x18\x0f \x01(\bR\anoStart\x12$\n" +
+	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xf1\x01\n" +
 	"\vCTLifecycle\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x16\n" +

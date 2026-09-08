@@ -169,7 +169,8 @@ job status, cancel, retry, staging cleanup, disk/bundle import, and export.
 1. Connect a source. Discovery runs automatically and does not start a transfer.
 2. Select workloads (Select all for a bulk move).
 3. Choose one global strategy.
-4. Review the automatic plan for every selected workload. Warnings and
+4. Review the automatic plan for every selected workload, including IPv4
+   and IPv6 addressing for each guest. Warnings and
    mapping choices appear only when a decision is ambiguous or blocked.
    Advanced keeps per-workload method and mapping overrides.
 5. Submit. Watch progress.

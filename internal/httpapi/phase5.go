@@ -63,6 +63,13 @@ type createWorkloadRequest struct {
 	RequireStorageClass    string            `json:"require_storage_class"`
 	AffinityWorkloadID     string            `json:"affinity_workload_id"`
 	AntiAffinityWorkloadID string            `json:"anti_affinity_workload_id"`
+	IPv4Mode               string            `json:"ipv4_mode"`
+	IPv4Address            string            `json:"ipv4_address"`
+	IPv4Gateway            string            `json:"ipv4_gateway"`
+	IPv6Mode               string            `json:"ipv6_mode"`
+	IPv6Address            string            `json:"ipv6_address"`
+	IPv6Gateway            string            `json:"ipv6_gateway"`
+	DNS                    []string          `json:"dns"`
 }
 
 type patchWorkloadRequest struct {
@@ -74,6 +81,13 @@ type patchWorkloadRequest struct {
 	Autostart    *bool           `json:"autostart"`
 	ISOLibraryID *string         `json:"iso_library_id"`
 	NoCloud      *vmspec.NoCloud `json:"nocloud"`
+	IPv4Mode     string          `json:"ipv4_mode"`
+	IPv4Address  string          `json:"ipv4_address"`
+	IPv4Gateway  string          `json:"ipv4_gateway"`
+	IPv6Mode     string          `json:"ipv6_mode"`
+	IPv6Address  string          `json:"ipv6_address"`
+	IPv6Gateway  string          `json:"ipv6_gateway"`
+	DNS          []string        `json:"dns"`
 }
 
 type cloneWorkloadRequest struct {
@@ -207,6 +221,11 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		req.DesiredPower = "running"
 	}
 	mac := lxc.MACFromUUID(ids.WorkloadID)
+	ip, err := operatorIPConfig(req.IPv4Mode, req.IPv4Address, req.IPv4Gateway, req.IPv6Mode, req.IPv6Address, req.IPv6Gateway, req.DNS)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	op := s.startOpKeyed(r.Context(), p.User.ClusterID, node.ID, "workload.create", "creating", key, mustCreateMsg(ids), 20)
 	if req.Privileged {
 		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create.privileged", "ok", ids.WorkloadID)
@@ -216,7 +235,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		CPUs: req.CPUs, MemoryBytes: req.MemoryBytes, VolumeID: ids.VolumeID,
 		RootfsPath: rootfs, NetworkID: netw.ID, BridgeName: netw.BridgeName,
 		MAC: mac, Privileged: req.Privileged, UIDMap: lxc.DefaultUIDMap, GIDMap: lxc.DefaultGIDMap,
-		NoStart: req.DesiredPower == "stopped",
+		IP: ip, NoStart: req.DesiredPower == "stopped",
 	})
 	if err != nil {
 		s.finishOp(r.Context(), op, "failed", mustCreateMsg(ids), 0)
@@ -257,10 +276,10 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.Store.CreateWorkloadNIC(r.Context(), appdb.WorkloadNIC{
+	if err := s.Store.CreateWorkloadNIC(r.Context(), nicFromIP(appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
 		NetworkID: netw.ID, MAC: firstNonEmpty(res.MAC, mac),
-	}); err != nil {
+	}, ip)); err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not record container NIC")
 		return
 	}
@@ -476,6 +495,15 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 				return
 			}
 		}
+		if action == "delete" {
+			if err := s.deleteSystemContainer(r.Context(), p, *row); err != nil {
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
+			s.audit(r, p.User.ClusterID, p.User.ID, "workload.delete", "ok", row.ID)
+			writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *row))
+			return
+		}
 		op := s.startOp(r.Context(), p.User.ClusterID, row.NodeID, "workload."+action, action, 40)
 		res, err := s.Workloads.LifecycleCT(r.Context(), req)
 		if err != nil {
@@ -516,8 +544,107 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 	}
 }
 
+type bulkDeleteWorkloadsRequest struct {
+	IDs []string `json:"ids"`
+}
+
+func (s *Server) deleteSystemContainer(ctx context.Context, p *principal, row appdb.Workload) error {
+	if s.Workloads == nil {
+		return errUnavailable("workload agent is unavailable")
+	}
+	if err := s.releaseWorkloadClaims(ctx, p.User.ClusterID, row.ID); err != nil {
+		return err
+	}
+	op := s.startOp(ctx, p.User.ClusterID, row.NodeID, "workload.delete", "delete", 40)
+	if _, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: row.ID, Action: "delete"}); err != nil {
+		s.finishOp(ctx, op, "failed", err.Error(), 0)
+		return err
+	}
+	if err := s.Store.DeleteWorkload(ctx, p.User.ClusterID, row.ID); err != nil {
+		s.finishOp(ctx, op, "failed", err.Error(), 0)
+		return errInternal("could not record container delete")
+	}
+	gone, err := s.Store.GetWorkload(ctx, p.User.ClusterID, row.ID)
+	if err != nil || gone != nil {
+		s.finishOp(ctx, op, "failed", "could not record container delete", 0)
+		return errInternal("could not record container delete")
+	}
+	s.finishOp(ctx, op, "succeeded", "deleted", 100)
+	return nil
+}
+
+func uniqueWorkloadIDs(ids []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func (s *Server) bulkDeleteWorkloads(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.ComputeDelete)
+	if err != nil {
+		return
+	}
+	var req bulkDeleteWorkloadsRequest
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	ids := uniqueWorkloadIDs(req.IDs)
+	if len(ids) == 0 {
+		writeErr(w, http.StatusBadRequest, "ids are required")
+		return
+	}
+	if len(ids) > 500 {
+		writeErr(w, http.StatusBadRequest, "too many ids")
+		return
+	}
+	results := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		results = append(results, s.deleteOneBulkContainer(r, p, id))
+	}
+	s.refreshWorkloads(r.Context(), p.User.ClusterID)
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+func (s *Server) deleteOneBulkContainer(r *http.Request, p *principal, id string) map[string]any {
+	row, err := s.Store.GetWorkload(r.Context(), p.User.ClusterID, id)
+	if err != nil || row == nil {
+		return map[string]any{"id": id, "name": "", "ok": false, "error": "workload not found"}
+	}
+	out := map[string]any{"id": row.ID, "name": row.Name}
+	if row.Kind != lxc.KindSystemContainer {
+		out["ok"] = false
+		out["error"] = "bulk delete is limited to system containers"
+		return out
+	}
+	if err := s.deleteSystemContainer(r.Context(), p, *row); err != nil {
+		out["ok"] = false
+		out["error"] = err.Error()
+		return out
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "workload.delete", "ok", row.ID)
+	out["ok"] = true
+	return out
+}
+
+func patchHasIP(req patchWorkloadRequest) bool {
+	return req.IPv4Mode != "" || req.IPv4Address != "" || req.IPv4Gateway != "" ||
+		req.IPv6Mode != "" || req.IPv6Address != "" || req.IPv6Gateway != "" || req.DNS != nil
+}
+
 func patchSpecChange(req patchWorkloadRequest) bool {
-	return req.Name != "" || req.CPUs > 0 || req.MemoryBytes > 0 || req.Firmware != "" || req.Autostart != nil || req.ISOLibraryID != nil || req.NoCloud != nil
+	return req.Name != "" || req.CPUs > 0 || req.MemoryBytes > 0 || req.Firmware != "" || req.Autostart != nil || req.ISOLibraryID != nil || req.NoCloud != nil || patchHasIP(req)
 }
 
 func (s *Server) authorizeWorkloadPatch(w http.ResponseWriter, r *http.Request, req patchWorkloadRequest) (*principal, error) {
@@ -572,10 +699,16 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var ctIP lxc.IPConfig
 	if row.Kind == lxc.KindSystemContainer {
 		ctRoot, ctVolID, ctBridge, ctMAC, ctNetID, err = s.ctApplyLocators(r.Context(), p.User.ClusterID, row.ID)
 		if err != nil {
 			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		ctIP, err = s.mergeCTIP(r.Context(), p.User.ClusterID, row.ID, req)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
@@ -604,7 +737,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			MemoryBytes: next.MemoryBytes, VolumeID: ctVolID, RootfsPath: ctRoot, NetworkID: ctNetID,
 			BridgeName: ctBridge, MAC: ctMAC, Privileged: next.Privileged, UIDMap: next.UIDMap, GIDMap: next.GIDMap,
 			GPUDevices: s.gpuDeviceNodes(r.Context(), p.User.ClusterID, row.ID),
-			NoStart:    next.DesiredPower == "stopped",
+			IP:         ctIP, NoStart: next.DesiredPower == "stopped",
 		}); err != nil {
 			writeErr(w, statusFor(err), err.Error())
 			return
@@ -808,10 +941,13 @@ func (s *Server) recordClone(ctx context.Context, clusterID string, src appdb.Wo
 	}
 	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID)
 	if len(nics) > 0 {
-		if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
-			ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: row.ID,
-			NetworkID: nics[0].NetworkID, MAC: firstNonEmpty(res.MAC, req.CloneMAC),
-		}); err != nil {
+		cloned := nics[0]
+		cloned.ID = uuid.NewString()
+		cloned.ClusterID = clusterID
+		cloned.WorkloadID = row.ID
+		cloned.MAC = firstNonEmpty(res.MAC, req.CloneMAC)
+		cloned.IPv4 = ""
+		if err := s.Store.CreateWorkloadNIC(ctx, cloned); err != nil {
 			return errInternal("could not record container NIC")
 		}
 	}
@@ -842,7 +978,12 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 	}
 	nicOut := make([]map[string]any, 0, len(nics))
 	for _, n := range nics {
-		nicOut = append(nicOut, map[string]any{"id": n.ID, "network_id": n.NetworkID, "mac": n.MAC, "ipv4": n.IPv4, "pci_addr": n.PCIAddr, "model": n.Model})
+		nicOut = append(nicOut, map[string]any{
+			"id": n.ID, "network_id": n.NetworkID, "mac": n.MAC, "ipv4": n.IPv4,
+			"ipv4_mode": n.IPv4Mode, "ipv4_address": n.IPv4Address, "ipv4_gateway": n.IPv4Gateway,
+			"ipv6_mode": n.IPv6Mode, "ipv6_address": n.IPv6Address, "ipv6_gateway": n.IPv6Gateway,
+			"dns": lxc.SplitDNS(n.DNS), "pci_addr": n.PCIAddr, "model": n.Model,
+		})
 	}
 	var pid any
 	if w.PID != nil {
@@ -889,6 +1030,91 @@ func (s *Server) startOpKeyed(ctx context.Context, clusterID, nodeID, kind, stag
 	}
 	_ = s.Store.UpsertOperation(ctx, op)
 	return op
+}
+
+func operatorIPConfig(v4Mode, v4Addr, v4Gw, v6Mode, v6Addr, v6Gw string, dns []string) (lxc.IPConfig, error) {
+	cfg, err := lxc.NormalizeIPConfig(lxc.IPConfig{
+		IPv4Mode: v4Mode, IPv4Address: v4Addr, IPv4Gateway: v4Gw,
+		IPv6Mode: v6Mode, IPv6Address: v6Addr, IPv6Gateway: v6Gw, DNS: dns,
+	})
+	if err != nil {
+		return lxc.IPConfig{}, err
+	}
+	if err := lxc.RequireStaticGateways(cfg); err != nil {
+		return lxc.IPConfig{}, err
+	}
+	return cfg, nil
+}
+
+func ipFromNIC(n appdb.WorkloadNIC) lxc.IPConfig {
+	cfg, err := lxc.NormalizeIPConfig(lxc.IPConfig{
+		IPv4Mode: n.IPv4Mode, IPv4Address: n.IPv4Address, IPv4Gateway: n.IPv4Gateway,
+		IPv6Mode: n.IPv6Mode, IPv6Address: n.IPv6Address, IPv6Gateway: n.IPv6Gateway,
+		DNS: lxc.SplitDNS(n.DNS),
+	})
+	if err != nil {
+		return lxc.IPConfig{IPv4Mode: lxc.IPModeDHCP, IPv6Mode: lxc.IPModeDisabled}
+	}
+	return cfg
+}
+
+func nicFromIP(n appdb.WorkloadNIC, ip lxc.IPConfig) appdb.WorkloadNIC {
+	n.IPv4Mode = ip.IPv4Mode
+	n.IPv4Address = ip.IPv4Address
+	n.IPv4Gateway = ip.IPv4Gateway
+	n.IPv6Mode = ip.IPv6Mode
+	n.IPv6Address = ip.IPv6Address
+	n.IPv6Gateway = ip.IPv6Gateway
+	n.DNS = lxc.JoinDNS(ip.DNS)
+	return n
+}
+
+func (s *Server) mergeCTIP(ctx context.Context, clusterID, workloadID string, req patchWorkloadRequest) (lxc.IPConfig, error) {
+	nics, err := s.Store.ListWorkloadNICs(ctx, clusterID, workloadID)
+	if err != nil {
+		return lxc.IPConfig{}, err
+	}
+	ip := lxc.IPConfig{IPv4Mode: lxc.IPModeDHCP, IPv6Mode: lxc.IPModeDisabled}
+	var nic appdb.WorkloadNIC
+	if len(nics) > 0 {
+		nic = nics[0]
+		ip = ipFromNIC(nic)
+	}
+	if req.IPv4Mode != "" {
+		ip.IPv4Mode = req.IPv4Mode
+	}
+	if req.IPv4Address != "" {
+		ip.IPv4Address = req.IPv4Address
+	}
+	if req.IPv4Gateway != "" {
+		ip.IPv4Gateway = req.IPv4Gateway
+	}
+	if req.IPv6Mode != "" {
+		ip.IPv6Mode = req.IPv6Mode
+	}
+	if req.IPv6Address != "" {
+		ip.IPv6Address = req.IPv6Address
+	}
+	if req.IPv6Gateway != "" {
+		ip.IPv6Gateway = req.IPv6Gateway
+	}
+	if req.DNS != nil {
+		ip.DNS = req.DNS
+	}
+	if patchHasIP(req) {
+		ip, err = operatorIPConfig(ip.IPv4Mode, ip.IPv4Address, ip.IPv4Gateway, ip.IPv6Mode, ip.IPv6Address, ip.IPv6Gateway, ip.DNS)
+	} else {
+		ip, err = lxc.NormalizeIPConfig(ip)
+	}
+	if err != nil {
+		return lxc.IPConfig{}, err
+	}
+	if nic.ID != "" {
+		if err := s.Store.UpdateWorkloadNIC(ctx, nicFromIP(nic, ip)); err != nil {
+			return lxc.IPConfig{}, err
+		}
+	}
+	return ip, nil
 }
 
 func normalizeKind(kind string) string {

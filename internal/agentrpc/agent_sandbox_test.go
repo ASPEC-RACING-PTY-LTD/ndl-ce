@@ -9,12 +9,15 @@ import (
 	"testing"
 )
 
-// Least-privilege bounding set for typed lxc-attach of unprivileged CTs on Debian 13.
+// Least-privilege bounding set for typed lxc-attach of unprivileged CTs on Debian 13
+// and dest chmod/lchown/fchownat during Local Host Migration of UID-mapped rootfs.
+// CAP_FOWNER: chmod/lchown/fchownat on files the agent does not own return EPERM
+// without it, even as root. Privileged filesystem work stays in ndl-agent.
 // CAP_SETFCAP: kernel >= 5.12 rejects uid_map writes that map host uid 0 without it.
 // LXC userns_exec_minimal maps the agent's uid 0 into a helper user namespace
 // before moving the attach process into the container cgroup.
 // CAP_SYS_PTRACE: setns into another process requires PTRACE_MODE_ATTACH_REALCREDS.
-const requiredAgentCapabilityBoundingSet = "CAP_NET_ADMIN CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE"
+const requiredAgentCapabilityBoundingSet = "CAP_NET_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE"
 
 func agentServiceUnit(t *testing.T) string {
 	t.Helper()
@@ -99,5 +102,33 @@ func TestAgentUnitDocumentsSETFCAPAndPTRACE(t *testing.T) {
 	}
 	if !strings.Contains(unit, "CAP_SYS_PTRACE") || !strings.Contains(unit, "setns") {
 		t.Fatal("unit must document CAP_SYS_PTRACE for setns")
+	}
+}
+
+func TestAgentUnitIncludesFOWNERForMappedRootfsChmod(t *testing.T) {
+	unit := agentServiceUnit(t)
+	if !strings.Contains(requiredAgentCapabilityBoundingSet, "CAP_FOWNER") {
+		t.Fatal("required agent bounding set must include CAP_FOWNER")
+	}
+	if !strings.Contains(unit, "CAP_FOWNER") {
+		t.Fatal("ndl-agent.service must include CAP_FOWNER for dest chmod/lchown/fchownat")
+	}
+	if !strings.Contains(unit, "fchownat") && !strings.Contains(unit, "lchown") {
+		t.Fatal("unit must document CAP_FOWNER for Local Host dest chmod/lchown/fchownat")
+	}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("caller")
+	}
+	control, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "systemd", "ndl-control.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(control)
+	if strings.Contains(text, "CAP_FOWNER") {
+		t.Fatal("ndl-control must not gain CAP_FOWNER; mapped-rootfs chmod stays in ndl-agent")
+	}
+	if !regexp.MustCompile(`(?m)^CapabilityBoundingSet=CAP_NET_BIND_SERVICE$`).MatchString(text) {
+		t.Fatal("ndl-control CapabilityBoundingSet must stay CAP_NET_BIND_SERVICE only")
 	}
 }

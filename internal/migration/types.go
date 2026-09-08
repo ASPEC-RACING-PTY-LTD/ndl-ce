@@ -167,12 +167,19 @@ type Disk struct {
 
 // NIC describes one network interface.
 type NIC struct {
-	ID      string `json:"id,omitempty"`
-	Model   string `json:"model,omitempty"`
-	MAC     string `json:"mac,omitempty"`
-	Bridge  string `json:"bridge,omitempty"`
-	VLAN    int    `json:"vlan,omitempty"`
-	Network string `json:"network,omitempty"`
+	ID          string   `json:"id,omitempty"`
+	Model       string   `json:"model,omitempty"`
+	MAC         string   `json:"mac,omitempty"`
+	Bridge      string   `json:"bridge,omitempty"`
+	VLAN        int      `json:"vlan,omitempty"`
+	Network     string   `json:"network,omitempty"`
+	IPv4Mode    string   `json:"ipv4_mode,omitempty"`
+	IPv4Address string   `json:"ipv4_address,omitempty"`
+	IPv4Gateway string   `json:"ipv4_gateway,omitempty"`
+	IPv6Mode    string   `json:"ipv6_mode,omitempty"`
+	IPv6Address string   `json:"ipv6_address,omitempty"`
+	IPv6Gateway string   `json:"ipv6_gateway,omitempty"`
+	DNS         []string `json:"dns,omitempty"`
 }
 
 // CloudInit is transferable guest seed data.

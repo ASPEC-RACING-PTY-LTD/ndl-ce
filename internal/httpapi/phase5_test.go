@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,8 +25,10 @@ type fakeWorkloads struct {
 	life     lxc.Result
 	obs      lxc.Observation
 	err      error
+	failIDs  map[string]error
 	creates  int
 	vols     []string
+	deleted  []string
 	lastSpec lxc.Spec
 	lastLife lxc.LifecycleRequest
 }
@@ -57,6 +60,17 @@ func (f *fakeWorkloads) CreateCT(_ context.Context, spec lxc.Spec) (lxc.Result, 
 
 func (f *fakeWorkloads) LifecycleCT(_ context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
 	f.lastLife = req
+	if f.failIDs != nil {
+		if err := f.failIDs[req.WorkloadID]; err != nil {
+			return lxc.Result{}, err
+		}
+	}
+	if f.err != nil {
+		return lxc.Result{}, f.err
+	}
+	if req.Action == "delete" {
+		f.deleted = append(f.deleted, req.WorkloadID)
+	}
 	res := f.life
 	if res.WorkloadID == "" {
 		if req.Action == "clone" {
@@ -69,7 +83,7 @@ func (f *fakeWorkloads) LifecycleCT(_ context.Context, req lxc.LifecycleRequest)
 			res.Status = lxc.StatusRunning
 		}
 	}
-	return res, f.err
+	return res, nil
 }
 
 func (f *fakeWorkloads) GetWorkloads(context.Context, []lxc.Hint) (lxc.Observation, error) {
@@ -155,12 +169,74 @@ func TestWorkloadCreateAndIdempotency(t *testing.T) {
 	if len(nics) != 1 || nics[0].NetworkID != netID {
 		t.Fatalf("nics %+v", nics)
 	}
+	if fw.lastSpec.IP.IPv4Mode != lxc.IPModeDHCP || fw.lastSpec.IP.IPv6Mode != lxc.IPModeDisabled {
+		t.Fatalf("default IP %+v", fw.lastSpec.IP)
+	}
+	if nics[0].IPv4Mode != lxc.IPModeDHCP || nics[0].IPv6Mode != lxc.IPModeDisabled {
+		t.Fatalf("stored IP %+v", nics[0])
+	}
 	vols, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
 	if len(vols) != 1 {
 		t.Fatalf("second volume created: %d", len(vols))
 	}
 	if len(fw.vols) > 0 && fw.vols[0] != disks[0].VolumeID {
 		t.Fatalf("volume mismatch %s %s", fw.vols[0], disks[0].VolumeID)
+	}
+}
+
+func TestWorkloadCreateStaticIP(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{
+		vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+			BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+			Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+		}},
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"static-ct","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","ipv4_mode":"static","ipv4_address":"10.8.0.20/24","ipv4_gateway":"10.8.0.1","ipv6_mode":"disabled","dns":["1.1.1.1"]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("create %d %s", res.StatusCode, b)
+	}
+	var created map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&created)
+	_ = res.Body.Close()
+	if fw.lastSpec.IP.IPv4Mode != lxc.IPModeStatic || fw.lastSpec.IP.IPv4Address != "10.8.0.20/24" || fw.lastSpec.IP.IPv6Mode != lxc.IPModeDisabled {
+		t.Fatalf("agent spec %+v", fw.lastSpec.IP)
+	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, created["id"].(string))
+	if len(nics) != 1 || nics[0].IPv4Address != "10.8.0.20/24" || nics[0].IPv4Gateway != "10.8.0.1" {
+		t.Fatalf("nics %+v", nics)
+	}
+	patch, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+created["id"].(string), strings.NewReader(`{"ipv6_mode":"dhcp"}`))
+	patch.Header.Set("Content-Type", "application/json")
+	patch.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	pres, err := ts.Client().Do(patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pres.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(pres.Body)
+		t.Fatalf("patch %d %s", pres.StatusCode, b)
+	}
+	_ = pres.Body.Close()
+	if fw.lastSpec.IP.IPv6Mode != lxc.IPModeDHCP || fw.lastSpec.IP.IPv4Mode != lxc.IPModeStatic {
+		t.Fatalf("patched spec %+v", fw.lastSpec.IP)
 	}
 }
 
@@ -304,6 +380,161 @@ func TestLifecycleTokenCannotDeleteWorkload(t *testing.T) {
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("lifecycle must not delete %d %s", res.StatusCode, b)
 	}
+}
+
+func TestBulkDeleteWorkloads(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	a := uuid.NewString()
+	b := uuid.NewString()
+	c := uuid.NewString()
+	vmID := uuid.NewString()
+	for _, w := range []appdb.Workload{
+		{ID: a, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID, Name: "AspecRacing", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped, ImagePin: "imported"},
+		{ID: b, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID, Name: "SoundDock", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped, ImagePin: "imported"},
+		{ID: c, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID, Name: "Failing", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped, ImagePin: "imported"},
+		{ID: vmID, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID, Name: "Ubuntu", Kind: "vm", Status: "stopped"},
+	} {
+		if err := mem.CreateWorkload(context.Background(), w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fw := &fakeWorkloads{failIDs: map[string]error{c: errors.New("agent refused delete")}}
+	s.Workloads = fw
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	view := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view-bulk"}
+	_ = mem.CreateUser(context.Background(), view)
+	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.Viewer)
+	vtok := "ndl_view_bulk"
+	_ = mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: view.ID, Name: "v",
+		TokenHash: secutil.HashSHA256(vtok), Prefix: "ndl_vb",
+	})
+	denied, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/bulk-delete", strings.NewReader(`{"ids":["`+a+`"]}`))
+	denied.Header.Set("Content-Type", "application/json")
+	denied.Header.Set("Authorization", "Bearer "+vtok)
+	dres, err := ts.Client().Do(denied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dres.StatusCode != http.StatusForbidden {
+		b, _ := io.ReadAll(dres.Body)
+		t.Fatalf("viewer bulk delete %d %s", dres.StatusCode, b)
+	}
+	_ = dres.Body.Close()
+
+	life := "ndl_life_bulk"
+	admin, err := mem.GetUserByName(context.Background(), cluster.ID, "admin")
+	if err != nil || admin == nil {
+		t.Fatal("admin")
+	}
+	if err := mem.CreateToken(context.Background(), appdb.APIToken{
+		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: admin.ID, Name: "life",
+		TokenHash: secutil.HashSHA256(life), Prefix: "ndl_lb",
+		Permissions: []string{rbac.ComputeLifecycle, rbac.ComputeRead},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	lifeReq, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/bulk-delete", strings.NewReader(`{"ids":["`+a+`"]}`))
+	lifeReq.Header.Set("Content-Type", "application/json")
+	lifeReq.Header.Set("Authorization", "Bearer "+life)
+	lres, err := ts.Client().Do(lifeReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lres.StatusCode != http.StatusForbidden {
+		raw, _ := io.ReadAll(lres.Body)
+		t.Fatalf("lifecycle must not bulk delete %d %s", lres.StatusCode, raw)
+	}
+	_ = lres.Body.Close()
+
+	body := `{"ids":["` + a + `","` + b + `","` + c + `","` + vmID + `","missing"]}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/bulk-delete", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("bulk delete %d %s", res.StatusCode, raw)
+	}
+	var out struct {
+		Results []struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Results) != 5 {
+		t.Fatalf("results %s", raw)
+	}
+	byID := map[string]struct {
+		OK    bool
+		Error string
+		Name  string
+	}{}
+	for _, r := range out.Results {
+		byID[r.ID] = struct {
+			OK    bool
+			Error string
+			Name  string
+		}{r.OK, r.Error, r.Name}
+	}
+	if !byID[a].OK || byID[a].Name != "AspecRacing" || !byID[b].OK {
+		t.Fatalf("success rows %s", raw)
+	}
+	if byID[c].OK || !strings.Contains(byID[c].Error, "agent refused") {
+		t.Fatalf("partial fail %s", raw)
+	}
+	if byID[vmID].OK || !strings.Contains(byID[vmID].Error, "system containers") {
+		t.Fatalf("vm refused %s", raw)
+	}
+	if byID["missing"].OK || !strings.Contains(byID["missing"].Error, "not found") {
+		t.Fatalf("missing %s", raw)
+	}
+	if gone, _ := mem.GetWorkload(context.Background(), cluster.ID, a); gone != nil {
+		t.Fatal("deleted container must leave the catalog")
+	}
+	if gone, _ := mem.GetWorkload(context.Background(), cluster.ID, b); gone != nil {
+		t.Fatal("deleted container must leave the catalog")
+	}
+	if stay, _ := mem.GetWorkload(context.Background(), cluster.ID, c); stay == nil {
+		t.Fatal("failed delete must remain")
+	}
+	if stay, _ := mem.GetWorkload(context.Background(), cluster.ID, vmID); stay == nil {
+		t.Fatal("vm must remain")
+	}
+}
+
+func TestBulkDeleteWorkloadsEmptyIDs(t *testing.T) {
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/bulk-delete", strings.NewReader(`{"ids":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("empty ids %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
 }
 
 func TestLifecycleTokenCannotCloneOrPatchSpec(t *testing.T) {

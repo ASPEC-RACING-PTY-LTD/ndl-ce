@@ -3,6 +3,7 @@ package agentrpc
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
@@ -92,13 +93,33 @@ func (h *Handler) GetWorkloads(ctx context.Context, req *connect.Request[agentv1
 	}), nil
 }
 
+func mustIPJSON(cfg lxc.IPConfig) string {
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func ipConfigFromJSON(raw string) lxc.IPConfig {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return lxc.IPConfig{}
+	}
+	var cfg lxc.IPConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return lxc.IPConfig{}
+	}
+	return cfg
+}
+
 func specFromCTCreate(m *agentv1.CTCreate) lxc.Spec {
 	return lxc.Spec{
 		WorkloadID: m.GetWorkloadId(), Name: m.GetName(), ImagePin: m.GetImagePin(),
 		CPUs: int(m.GetCpus()), MemoryBytes: m.GetMemoryBytes(), VolumeID: m.GetVolumeId(),
 		RootfsPath: m.GetRootfsPath(), NetworkID: m.GetNetworkId(), BridgeName: m.GetBridgeName(),
 		MAC: m.GetMac(), Privileged: m.GetPrivileged(), UIDMap: m.GetUidMap(), GIDMap: m.GetGidMap(),
-		SkipImage: m.GetSkipImage(), NoStart: m.GetNoStart(),
+		SkipImage: m.GetSkipImage(), NoStart: m.GetNoStart(), IP: ipConfigFromJSON(m.GetIpConfigJson()),
 	}
 }
 

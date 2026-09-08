@@ -122,8 +122,9 @@ func ensureOtherTraverse(path string) error {
 	if chmodErr == nil {
 		return nil
 	}
-	// ndl-agent's bounding set has no CAP_FOWNER. After chown to ndl-qemu,
-	// chmod fails. Take ownership with CAP_CHOWN, add traverse, restore.
+	// Current ndl-agent includes CAP_FOWNER, so chmod of a non-owned path
+	// can succeed. Older units did not. Take ownership with CAP_CHOWN, add
+	// traverse, restore when chmod still fails.
 	sys, ok := st.Sys().(*syscall.Stat_t)
 	if !ok {
 		return chmodErr

@@ -457,6 +457,7 @@ message CTCreate {
   string gid_map = 13;
   bool skip_image = 14;
   bool no_start = 15;
+  string ip_config_json = 16;
 }
 
 message CTLifecycle {

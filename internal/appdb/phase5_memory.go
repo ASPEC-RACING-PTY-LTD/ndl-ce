@@ -251,6 +251,17 @@ func (m *Memory) UpdateWorkloadNIC(_ context.Context, n WorkloadNIC) error {
 		return fmt.Errorf("workload nic not found")
 	}
 	cur.IPv4 = n.IPv4
+	if n.IPv4Mode != "" {
+		cur.IPv4Mode = n.IPv4Mode
+	}
+	cur.IPv4Address = n.IPv4Address
+	cur.IPv4Gateway = n.IPv4Gateway
+	if n.IPv6Mode != "" {
+		cur.IPv6Mode = n.IPv6Mode
+	}
+	cur.IPv6Address = n.IPv6Address
+	cur.IPv6Gateway = n.IPv6Gateway
+	cur.DNS = n.DNS
 	if n.PCIAddr != "" {
 		cur.PCIAddr = n.PCIAddr
 	}

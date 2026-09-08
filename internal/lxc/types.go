@@ -65,6 +65,7 @@ type Spec struct {
 	UIDMap      string   `json:"uid_map"`
 	GIDMap      string   `json:"gid_map"`
 	GPUDevices  []string `json:"gpu_devices,omitempty"`
+	IP          IPConfig `json:"ip,omitempty"`
 	SkipImage   bool     `json:"skip_image,omitempty"`
 	NoStart     bool     `json:"no_start,omitempty"`
 }

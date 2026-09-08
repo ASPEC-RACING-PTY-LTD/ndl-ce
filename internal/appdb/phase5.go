@@ -61,15 +61,22 @@ type WorkloadDisk struct {
 
 // WorkloadNIC attaches a network. MAC is allocated from the workload UUID.
 type WorkloadNIC struct {
-	ID         string
-	ClusterID  string
-	WorkloadID string
-	NetworkID  string
-	MAC        string
-	IPv4       string
-	PCIAddr    string
-	Model      string
-	CreatedAt  time.Time
+	ID          string
+	ClusterID   string
+	WorkloadID  string
+	NetworkID   string
+	MAC         string
+	IPv4        string
+	IPv4Mode    string
+	IPv4Address string
+	IPv4Gateway string
+	IPv6Mode    string
+	IPv6Address string
+	IPv6Gateway string
+	DNS         string
+	PCIAddr     string
+	Model       string
+	CreatedAt   time.Time
 }
 
 // VMCidata is managed NoCloud seed metadata. Secrets are never stored here.

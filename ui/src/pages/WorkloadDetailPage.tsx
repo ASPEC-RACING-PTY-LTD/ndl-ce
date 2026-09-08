@@ -15,6 +15,13 @@ import type { USBDeviceRow, WorkloadGuest } from "../api/client";
 import type { Workload } from "../api/phase5";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorState, LoadingState } from "../components/EmptyState";
+import {
+  ContainerIPFields,
+  containerIPBody,
+  defaultContainerIPForm,
+  summarizeContainerIP,
+  type ContainerIPForm,
+} from "../components/form/ContainerIPFields";
 import { Field } from "../components/Field";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
@@ -39,6 +46,7 @@ export function WorkloadDetailPage() {
   const [item, setItem] = useState<Workload | null>(null);
   const [cpus, setCpus] = useState("1");
   const [memoryMiB, setMemoryMiB] = useState("256");
+  const [ip, setIP] = useState<ContainerIPForm>(defaultContainerIPForm);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
@@ -57,6 +65,16 @@ export function WorkloadDetailPage() {
     setItem(w);
     setCpus(String(w.cpus ?? 1));
     setMemoryMiB(String(Math.round((w.memory_bytes ?? 256 * 1024 * 1024) / (1024 * 1024))));
+    const nic = w.nics?.[0];
+    setIP({
+      ipv4Mode: nic?.ipv4_mode || "dhcp",
+      ipv4Address: nic?.ipv4_address || "",
+      ipv4Gateway: nic?.ipv4_gateway || "",
+      ipv6Mode: nic?.ipv6_mode || "disabled",
+      ipv6Address: nic?.ipv6_address || "",
+      ipv6Gateway: nic?.ipv6_gateway || "",
+      dns: (nic?.dns ?? []).join(", "),
+    });
     if (w.kind === "vm") {
       try {
         setGuest(await getWorkloadGuest(w.id));
@@ -151,6 +169,7 @@ export function WorkloadDetailPage() {
       await patchWorkload(id, {
         cpus: Number(cpus) || 1,
         memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
+        ...(item?.kind === "system-container" ? containerIPBody(ip) : {}),
       });
       await reload();
     } catch (err) {
@@ -394,7 +413,11 @@ export function WorkloadDetailPage() {
           </div>
           <div>
             <dt>IPv4</dt>
-            <dd>{ipv4 || "Not reported"}</dd>
+            <dd>{ipv4 || item.nics?.[0]?.ipv4_address || "Not reported"}</dd>
+          </div>
+          <div>
+            <dt>Addressing</dt>
+            <dd>{item.kind === "system-container" ? summarizeContainerIP(ip) : mac ? "MAC assigned" : "Not reported"}</dd>
           </div>
           <div>
             <dt>MAC</dt>
@@ -558,6 +581,7 @@ export function WorkloadDetailPage() {
               onChange={(e) => setMemoryMiB(e.target.value)}
             />
           </div>
+          {item.kind === "system-container" ? <ContainerIPFields id="wl-ip" form={ip} onChange={setIP} /> : null}
           <div className="btn-row">
             <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void onSave()}>
               Save spec

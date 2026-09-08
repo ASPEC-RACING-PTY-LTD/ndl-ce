@@ -1901,6 +1901,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workloads/bulk-delete:
+    post:
+      operationId: bulkDeleteWorkloads
+      summary: Delete multiple system containers in one request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkDeleteWorkloadsRequest"
+      responses:
+        "200":
+          description: Per-container results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkDeleteWorkloadsResponse"
+        "403":
+          description: Requires compute.delete
   /workloads/{id}:
     get:
       operationId: getWorkload
@@ -5949,6 +5968,30 @@ components:
           type: string
         network_id:
           type: string
+        ipv4_mode:
+          type: string
+          enum:
+            - dhcp
+            - static
+            - disabled
+        ipv4_address:
+          type: string
+        ipv4_gateway:
+          type: string
+        ipv6_mode:
+          type: string
+          enum:
+            - dhcp
+            - static
+            - disabled
+        ipv6_address:
+          type: string
+        ipv6_gateway:
+          type: string
+        dns:
+          type: array
+          items:
+            type: string
         volume_id:
           type: string
         volume_ids:
@@ -6275,6 +6318,65 @@ components:
           type: string
         nocloud:
           $ref: "#/components/schemas/NoCloud"
+        ipv4_mode:
+          type: string
+          enum:
+            - dhcp
+            - static
+            - disabled
+        ipv4_address:
+          type: string
+        ipv4_gateway:
+          type: string
+        ipv6_mode:
+          type: string
+          enum:
+            - dhcp
+            - static
+            - disabled
+        ipv6_address:
+          type: string
+        ipv6_gateway:
+          type: string
+        dns:
+          type: array
+          items:
+            type: string
+    BulkDeleteWorkloadsRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - ids
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+    BulkDeleteWorkloadResult:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - ok
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        ok:
+          type: boolean
+        error:
+          type: string
+    BulkDeleteWorkloadsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkDeleteWorkloadResult"
     CloneWorkloadRequest:
       type: object
       additionalProperties: false
