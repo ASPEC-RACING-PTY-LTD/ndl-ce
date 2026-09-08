@@ -105,6 +105,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
   /tokens:
+    get:
+      operationId: listTokens
+      summary: List API tokens for the cluster
+      parameters:
+        - name: include_revoked
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenListResponse"
     post:
       operationId: createToken
       summary: Create an API token
@@ -1680,7 +1696,7 @@ paths:
   /migration/jobs/{id}/retry:
     post:
       operationId: retryMigrationJob
-      summary: Retry or resume a failed job after validating source identity.
+      summary: Retry or resume a failed job after re-running preflight. Completed destinations are skipped.
       parameters:
         - name: id
           in: path
@@ -1690,6 +1706,23 @@ paths:
       responses:
         "202":
           description: Job
+  /migration/jobs/{id}/diagnostics:
+    get:
+      operationId: getMigrationJobDiagnostics
+      summary: Full migration diagnostics bundle for AI debugging (plan, stages, logs, events, mappings, metadata, health checks). Tokens are not included.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diagnostics bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationDiagnosticsBundle"
   /migration/jobs/{id}/cleanup:
     post:
       operationId: cleanupMigrationStaging
@@ -2123,6 +2156,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MigrateWorkloadResponse"
+  /workloads/{id}/migration-diagnostics:
+    get:
+      operationId: getWorkloadMigrationDiagnostics
+      summary: Diagnostics bundle for the latest migration job that produced or targeted this workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diagnostics bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MigrationDiagnosticsBundle"
+        "404":
+          description: Workload or related migration job not found
   /workloads/{id}/clone:
     post:
       operationId: cloneWorkload
@@ -4350,6 +4402,15 @@ components:
           items:
             type: string
           description: Must be a subset of the creator grants. Empty inherits the creator role.
+        preset:
+          type: string
+          enum:
+            - readonly-debug
+            - full-audit
+        ttl_hours:
+          type: integer
+          minimum: 0
+          maximum: 8760
     CreateTokenResponse:
       type: object
       additionalProperties: false
@@ -4364,6 +4425,62 @@ components:
           type: string
         token:
           type: string
+        name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+        preset:
+          type: string
+    TokenListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TokenListItem"
+    TokenListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - prefix
+        - user_id
+        - disabled
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        prefix:
+          type: string
+        user_id:
+          type: string
+        username:
+          type: string
+        user_kind:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+        expires_at:
+          type: string
+        expired:
+          type: boolean
+        revoked_at:
+          type: string
+        disabled:
+          type: boolean
     RevokeTokenRequest:
       type: object
       additionalProperties: false
@@ -7795,6 +7912,19 @@ components:
       properties:
         name:
           type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        preset:
+          type: string
+          enum:
+            - readonly-debug
+            - full-audit
+        ttl_hours:
+          type: integer
+          minimum: 0
+          maximum: 8760
     ServicePrincipalCreated:
       type: object
       additionalProperties: false
@@ -7817,6 +7947,14 @@ components:
           type: string
           enum:
             - service
+        permissions:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+        preset:
+          type: string
     GPUListResponse:
       type: object
       additionalProperties: false
@@ -9015,5 +9153,63 @@ components:
           type: string
         export_kind:
           type: string
+    MigrationDiagnosticsBundle:
+      type: object
+      additionalProperties: false
+      properties:
+        job:
+          $ref: "#/components/schemas/MigrationJob"
+        plan:
+          type: object
+          additionalProperties: true
+        status:
+          type: object
+          additionalProperties: true
+        stages:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        logs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        mappings:
+          type: object
+          additionalProperties: true
+        source:
+          type: object
+          additionalProperties: true
+        destinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Workload"
+        health_checks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - name
+              - ok
+            properties:
+              name:
+                type: string
+              ok:
+                type: boolean
+              detail:
+                type: string
+        operation:
+          type: object
+          additionalProperties: true
+        health:
+          type: object
+          additionalProperties: true
 
 

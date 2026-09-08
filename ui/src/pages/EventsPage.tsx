@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getTimeline, listEvents } from "../api/client";
 import type { EventItem } from "../api/phase2";
+import { ActivityDetail, fieldsFromRecord } from "../components/ActivityDetail";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
@@ -23,6 +24,8 @@ export function EventsPage() {
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [openTimeline, setOpenTimeline] = useState<string | null>(null);
+  const [openEvent, setOpenEvent] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,16 +97,33 @@ export function EventsPage() {
           <p>No timeline entries in this window.</p>
         ) : (
           <ul className="activity-list">
-            {timeline.map((item) => (
-              <li key={item.kind + item.id}>
-                <span>
-                  <strong>{item.kind}</strong> {item.title}
-                  {item.result ? ` ${item.result}` : ""}
-                  {item.state ? ` ${item.state}` : ""}
-                </span>
-                <span className="muted">{formatWhen(item.created_at)}</span>
-              </li>
-            ))}
+            {timeline.map((item) => {
+              const key = item.kind + item.id;
+              return (
+                <li key={key} className={openTimeline === key ? "is-open" : undefined}>
+                  <button type="button" className="activity-toggle" onClick={() => setOpenTimeline(openTimeline === key ? null : key)}>
+                    <span>
+                      <strong>{item.kind}</strong> {item.title}
+                      {item.result ? ` ${item.result}` : ""}
+                      {item.state ? ` ${item.state}` : ""}
+                    </span>
+                    <span className="muted">{formatWhen(item.created_at)}</span>
+                  </button>
+                  {openTimeline === key ? (
+                    <ActivityDetail
+                      title={`${item.kind} ${item.title}`.trim()}
+                      fields={fieldsFromRecord(item as unknown as Record<string, unknown>, [
+                        { label: "id", value: item.id },
+                        { label: "kind", value: item.kind },
+                        { label: "created", value: item.created_at },
+                      ])}
+                      raw={item}
+                      onClose={() => setOpenTimeline(null)}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -123,18 +143,46 @@ export function EventsPage() {
         {items == null ? (
           <LoadingState />
         ) : (
-          <ResourceTable
-            headers={["Event", "Detail", "When"]}
-            empty={<p>No events yet.</p>}
-            rows={filtered.map((item) => {
-              const facts = payloadFacts(item.payload);
-              return [
-                eventHeadline(item.type, item.payload),
-                facts.length ? facts.map((f) => `${f.label} ${f.value}`).join(" · ") : "No extra detail",
-                formatWhen(item.created_at),
-              ];
-            })}
-          />
+          <>
+            <ResourceTable
+              headers={["Event", "Detail", "When"]}
+              empty={<p>No events yet.</p>}
+              selected={filtered.findIndex((item) => item.id === openEvent)}
+              onRowClick={(index) => {
+                const item = filtered[index];
+                setOpenEvent(item && openEvent === item.id ? null : item?.id ?? null);
+              }}
+              rows={filtered.map((item) => {
+                const facts = payloadFacts(item.payload);
+                return [
+                  eventHeadline(item.type, item.payload),
+                  facts.length ? facts.map((f) => `${f.label} ${f.value}`).join(" · ") : "No extra detail",
+                  formatWhen(item.created_at),
+                ];
+              })}
+            />
+            {openEvent
+              ? (() => {
+                  const item = filtered.find((row) => row.id === openEvent);
+                  if (!item) {
+                    return null;
+                  }
+                  return (
+                    <ActivityDetail
+                      title={eventHeadline(item.type, item.payload)}
+                      fields={fieldsFromRecord(item.payload, [
+                        { label: "event id", value: item.id },
+                        { label: "type", value: item.type },
+                        { label: "created", value: item.created_at },
+                        ...(item.node_id ? [{ label: "node id", value: item.node_id }] : []),
+                      ])}
+                      raw={item}
+                      onClose={() => setOpenEvent(null)}
+                    />
+                  );
+                })()
+              : null}
+          </>
         )}
       </div>
     </section>

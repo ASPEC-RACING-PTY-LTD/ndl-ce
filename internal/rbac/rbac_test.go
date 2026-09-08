@@ -183,3 +183,17 @@ func TestPermissionsForAutomationIsNarrowerThanOperator(t *testing.T) {
 		t.Fatalf("seed automation %v", seed[Automation])
 	}
 }
+
+func TestTokenPresets(t *testing.T) {
+	debug := PermissionsForTokenPreset(TokenPresetReadonlyDebug)
+	if !Authorize(debug, ComputeRead) || !Authorize(debug, MigrationRead) || !Authorize(debug, EventsRead) || Authorize(debug, AuditRead) || Authorize(debug, ComputeDelete) {
+		t.Fatalf("readonly-debug %v", debug)
+	}
+	audit := PermissionsForTokenPreset(TokenPresetFullAudit)
+	if !Authorize(audit, AuditRead) || !Authorize(audit, NodeRead) || Authorize(audit, IdentityTokenCreate) {
+		t.Fatalf("full-audit %v", audit)
+	}
+	if PermissionsForTokenPreset("nope") != nil {
+		t.Fatal("unknown preset")
+	}
+}

@@ -103,11 +103,38 @@ func (s *Server) runMigrationJob(ctx context.Context, clusterID, jobID string) {
 		return
 	}
 	var reports []migration.Report
-	for _, item := range plan.Items {
+	if len(j.StatusJSON) > 0 {
+		var prev migration.JobStatus
+		if json.Unmarshal(j.StatusJSON, &prev) == nil {
+			reports = append(reports, prev.Reports...)
+		}
+	}
+	for i, item := range plan.Items {
 		if canceled, _ := s.migrationCanceled(ctx, clusterID, jobID); canceled {
 			fail("canceled", "Migration canceled. Source remains unchanged.")
 			_ = migration.RemoveStaging(root, jobID)
 			return
+		}
+		if done, ok := migration.CompletedReport(reports, item.SourceID, item.Name); ok {
+			if s.destinationImportOK(ctx, clusterID, done.WorkloadID, item.Name) {
+				st.Message = "Skipping already imported " + item.Name
+				s.saveMigrationJob(ctx, j, st, "running", "transfer")
+				continue
+			}
+			if wl := s.lookupWorkload(ctx, clusterID, done.WorkloadID, item.Name); wl != nil && migration.DestLooksPartial(wl.Status, wl.ImagePin, wl.ImageVerified) {
+				fail("preflight", "a partial or failed destination already exists for "+item.Name+". Remove that workload and its volumes; No-dal will not reuse a corrupt import")
+				return
+			}
+		}
+		if existing, _ := s.Store.GetWorkloadByName(ctx, clusterID, item.Name); existing != nil {
+			if migration.DestLooksPartial(existing.Status, existing.ImagePin, existing.ImageVerified) {
+				fail("preflight", "a partial or failed destination already exists for "+item.Name+". Remove that workload and its volumes; No-dal will not reuse a corrupt import")
+				return
+			}
+			if existing.ImagePin == "imported" {
+				fail("preflight", "destination workload name is already in use")
+				return
+			}
 		}
 		st.Workload = item.Name
 		if item.Mode == migration.ModeLocal || item.LocalHost {
@@ -124,13 +151,17 @@ func (s *Server) runMigrationJob(ctx context.Context, clusterID, jobID string) {
 		}
 		item, err := s.materializeSource(ctx, clusterID, jobID, stageDir, plan, item)
 		if err != nil {
+			s.cleanupTempPVEBackup(ctx, clusterID, plan.SourceID, item)
 			fail(st.Stage, err.Error())
 			return
 		}
+		plan.Items[i] = item
+		s.persistMigrationPlan(ctx, j, plan)
 		st.Stage = "transfer"
 		s.saveMigrationJob(ctx, j, st, "running", "transfer")
 		rep, destID, err := s.transferOne(ctx, clusterID, jobID, stageDir, plan, item)
 		if err != nil {
+			s.cleanupTempPVEBackup(ctx, clusterID, plan.SourceID, item)
 			fail(st.Stage, err.Error())
 			return
 		}
@@ -141,6 +172,8 @@ func (s *Server) runMigrationJob(ctx context.Context, clusterID, jobID string) {
 			rep.WorkloadID = destID
 		}
 		reports = append(reports, rep)
+		st.Reports = reports
+		s.saveMigrationJob(ctx, j, st, "running", "transfer")
 	}
 	st.State = "succeeded"
 	st.Stage = "verified"
@@ -179,6 +212,7 @@ func (s *Server) transferOne(ctx context.Context, clusterID, jobID, stageDir str
 		fields["Historical snapshots"] = "Not migrated"
 		rep := migration.NewReport(item.Name, item.Mode, fields, observed)
 		rep.WorkloadID = id
+		rep.SourceID = item.SourceID
 		return rep, id, nil
 	default:
 		id, err := s.importVMItem(ctx, clusterID, jobID, stageDir, plan, item)
@@ -193,6 +227,7 @@ func (s *Server) transferOne(ctx context.Context, clusterID, jobID, stageDir str
 		}
 		rep := migration.NewReport(item.Name, item.Mode, fields, observed)
 		rep.WorkloadID = id
+		rep.SourceID = item.SourceID
 		return rep, id, nil
 	}
 }
@@ -466,7 +501,7 @@ func (s *Server) materializeSource(ctx context.Context, clusterID, jobID, stageD
 			if storage == "" || !migration.VolumeLooksLikeFile(p, item.Manifest.Container.Rootfs.Format) && !migration.VolumeLooksLikeFile(p, "") {
 				return item, fmt.Errorf("LXC rootfs is not HTTP-downloadable. Automatic vzdump did not produce a downloadable tar")
 			}
-			dest := filepath.Join(stageDir, "pve", "rootfs-archive")
+			dest := filepath.Join(stageDir, "pve", migration.ArchiveStagingName(p))
 			if err := client.DownloadVolume(node, storage, p, dest); err != nil {
 				return item, err
 			}
@@ -502,6 +537,9 @@ func (s *Server) cleanupTempPVEBackup(ctx context.Context, clusterID, sourceID s
 		if i := strings.Index(item.TempBackupVol, ":"); i >= 0 {
 			store = item.TempBackupVol[:i]
 		}
+	}
+	if !client.OwnedTempBackup(node, store, item.TempBackupVol) {
+		return
 	}
 	_ = client.DeleteContent(node, store, item.TempBackupVol)
 }
@@ -778,6 +816,26 @@ func (s *Server) runExportJob(ctx context.Context, clusterID string, j *appdb.Mi
 	}, []string{migration.VerifyTransfer, migration.VerifyConfig})}
 	s.saveMigrationJob(ctx, j, st, "succeeded", "verified")
 	s.finishOp(ctx, op, "succeeded", st.Message, 100)
+}
+
+func (s *Server) persistMigrationPlan(ctx context.Context, j *appdb.MigrationJob, plan migration.Plan) {
+	body, err := json.Marshal(plan)
+	if err != nil {
+		return
+	}
+	j.PlanJSON = body
+	_ = s.Store.UpdateMigrationJob(ctx, *j)
+}
+
+func (s *Server) destinationImportOK(ctx context.Context, clusterID, workloadID, name string) bool {
+	wl := s.lookupWorkload(ctx, clusterID, workloadID, name)
+	if wl == nil {
+		return false
+	}
+	if migration.DestLooksPartial(wl.Status, wl.ImagePin, wl.ImageVerified) {
+		return false
+	}
+	return wl.ImagePin == "imported" || wl.Status == "running" || wl.Status == "stopped"
 }
 
 func (s *Server) saveMigrationJob(ctx context.Context, j *appdb.MigrationJob, st migration.JobStatus, state, stage string) {

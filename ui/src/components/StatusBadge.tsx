@@ -16,10 +16,14 @@ function tone(status?: string): "ok" | "warn" | "bad" | "info" | "neutral" {
     case "stopping":
     case "degraded":
     case "pending":
+    case "canceling":
       return "warn";
     case "failed":
     case "unavailable":
       return "bad";
+    case "canceled":
+    case "cancelled":
+      return "info";
     case "collecting":
     case "stopped":
       return "info";

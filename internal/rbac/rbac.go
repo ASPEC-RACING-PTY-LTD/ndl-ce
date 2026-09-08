@@ -84,6 +84,9 @@ const (
 	MigrationExport       = "migration.export"
 	MigrationManage       = "migration.manage"
 	All                   = "*"
+
+	TokenPresetReadonlyDebug = "readonly-debug"
+	TokenPresetFullAudit     = "full-audit"
 )
 
 // Catalog is deny-by-default.
@@ -128,6 +131,22 @@ func (Catalog) PermissionsForRole(role string) []string {
 // ComputeMigrate only.
 func PermissionsForAutomation() []string {
 	return []string{PolicyApply, ComputeMigrate, ComputeRead, NodeRead, StorageRead}
+}
+
+// PermissionsForTokenPreset returns a scoped REST grant list. Unknown presets return nil.
+func PermissionsForTokenPreset(preset string) []string {
+	switch strings.ToLower(strings.TrimSpace(preset)) {
+	case TokenPresetReadonlyDebug:
+		return []string{
+			ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead,
+			ComputeRead, FilesRead, BackupRead, PolicyRead, FeatureRead, SettingsLicenseRead,
+			SettingsTLSRead, MigrationRead,
+		}
+	case TokenPresetFullAudit:
+		return append(PermissionsForTokenPreset(TokenPresetReadonlyDebug), AuditRead)
+	default:
+		return nil
+	}
 }
 
 // Authorize reports whether grants include permission.

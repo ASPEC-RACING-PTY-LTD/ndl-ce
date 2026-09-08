@@ -12,6 +12,7 @@ import {
 import type { EventItem, MetricsResponse, NodeSummary, TaskItem } from "../api/phase2";
 import type { Network } from "../api/phase4";
 import type { StoragePool } from "../api/phase3";
+import { ActivityDetail, fieldsFromRecord } from "../components/ActivityDetail";
 import { ErrorState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
@@ -40,6 +41,8 @@ export function DashboardPage() {
   const [workloadCounts, setWorkloadCounts] = useState({ running: 0, stopped: 0, other: 0 });
   const [healthOk, setHealthOk] = useState<boolean | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [openEvent, setOpenEvent] = useState<string | null>(null);
+  const [openTask, setOpenTask] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,7 +190,9 @@ export function DashboardPage() {
             ) : null}
             {failedTasks.map((task) => (
               <p key={task.id} className="banner banner-error" role="alert">
-                {taskKindLabel(task.kind)} failed{task.message ? `: ${task.message}` : ""}
+                <button type="button" className="linkish" onClick={() => setOpenTask(task.id)}>
+                  {taskKindLabel(task.kind)} failed{task.message ? `: ${humanTaskMessage(task.message)}` : ""}
+                </button>
               </p>
             ))}
           </div>
@@ -260,10 +265,25 @@ export function DashboardPage() {
           ) : (
             <ul className="activity-list">
               {events.map((e) => (
-                <li key={e.id}>
-                  <Icon name="events" size={14} />
-                  <span>{eventHeadline(e.type, e.payload)}</span>
-                  <span className="muted">{formatWhen(e.created_at)}</span>
+                <li key={e.id} className={openEvent === e.id ? "is-open" : undefined}>
+                  <button type="button" className="activity-toggle" onClick={() => setOpenEvent(openEvent === e.id ? null : e.id)}>
+                    <Icon name="events" size={14} />
+                    <span>{eventHeadline(e.type, e.payload)}</span>
+                    <span className="muted">{formatWhen(e.created_at)}</span>
+                  </button>
+                  {openEvent === e.id ? (
+                    <ActivityDetail
+                      title={eventHeadline(e.type, e.payload)}
+                      fields={fieldsFromRecord(e.payload, [
+                        { label: "event id", value: e.id },
+                        { label: "type", value: e.type },
+                        { label: "created", value: e.created_at },
+                        ...(e.node_id ? [{ label: "node id", value: e.node_id }] : []),
+                      ])}
+                      raw={e}
+                      onClose={() => setOpenEvent(null)}
+                    />
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -279,13 +299,30 @@ export function DashboardPage() {
           ) : (
             <ul className="activity-list">
               {tasks.map((t) => (
-                <li key={t.id}>
-                  <StatusBadge status={t.state} />
-                  <span>
-                    {taskKindLabel(t.kind)}
-                    {humanTaskMessage(t.message) ? ` ${humanTaskMessage(t.message)}` : ""}
-                  </span>
-                  <span className="muted">{formatWhen(t.updated_at)}</span>
+                <li key={t.id} className={openTask === t.id ? "is-open" : undefined}>
+                  <button type="button" className="activity-toggle" onClick={() => setOpenTask(openTask === t.id ? null : t.id)}>
+                    <StatusBadge status={t.state} />
+                    <span>
+                      {taskKindLabel(t.kind)}
+                      {humanTaskMessage(t.message) ? ` ${humanTaskMessage(t.message)}` : ""}
+                    </span>
+                    <span className="muted">{formatWhen(t.updated_at)}</span>
+                  </button>
+                  {openTask === t.id ? (
+                    <ActivityDetail
+                      title={taskKindLabel(t.kind)}
+                      fields={fieldsFromRecord(t as unknown as Record<string, unknown>, [
+                        { label: "job id", value: t.id },
+                        { label: "stage", value: t.stage || "Not reported" },
+                        { label: "status", value: t.state },
+                        { label: "created", value: t.created_at || "Not reported" },
+                        { label: "updated", value: t.updated_at || "Not reported" },
+                        { label: "error", value: humanTaskMessage(t.message) || t.message || "None" },
+                      ])}
+                      raw={t}
+                      onClose={() => setOpenTask(null)}
+                    />
+                  ) : null}
                 </li>
               ))}
             </ul>

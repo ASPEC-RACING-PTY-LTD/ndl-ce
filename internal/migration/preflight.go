@@ -17,6 +17,13 @@ type PreflightEnv struct {
 	StagingOK      bool
 	DestPoolBytes  int64
 	EstimatedBytes int64
+	// Negative gates default to false so existing callers stay valid.
+	ArchiveUnreadable  bool
+	ArchiveUnsupported bool
+	PartialDestUnsafe  bool
+	DuplicateName      bool
+	DuplicateDestID    bool
+	ArchiveReason      string
 }
 
 func Preflight(item ItemPlan, caps Caps, env PreflightEnv) error {
@@ -65,6 +72,21 @@ func Preflight(item ItemPlan, caps Caps, env PreflightEnv) error {
 	if !env.DestNetExists {
 		return fmt.Errorf("destination network does not exist")
 	}
+	if env.ArchiveUnsupported {
+		return fmt.Errorf("%s", firstNonEmpty(env.ArchiveReason, "archive type is not supported"))
+	}
+	if env.ArchiveUnreadable {
+		return fmt.Errorf("%s", firstNonEmpty(env.ArchiveReason, "backup or archive path is not readable on this host"))
+	}
+	if env.PartialDestUnsafe {
+		return fmt.Errorf("a partial or failed destination already exists for %s. Remove that workload and its volumes; No-dal will not reuse a corrupt import", item.Name)
+	}
+	if env.DuplicateName {
+		return fmt.Errorf("duplicate destination name %s in this bulk plan", item.Name)
+	}
+	if env.DuplicateDestID {
+		return fmt.Errorf("duplicate destination identity in this bulk plan")
+	}
 	if !env.NameAvailable {
 		return fmt.Errorf("destination workload name is already in use")
 	}
@@ -81,6 +103,64 @@ func Preflight(item ItemPlan, caps Caps, env PreflightEnv) error {
 		return fmt.Errorf("NETWORK IDENTITY CONFLICT. The source workload appears to remain online and the destination may retain the same MAC address. Starting both may cause network conflicts")
 	}
 	return nil
+}
+
+// CheckDuplicateDests reports colliding destination names or source IDs in a bulk plan.
+func CheckDuplicateDests(items []ItemPlan) error {
+	names := map[string]string{}
+	ids := map[string]struct{}{}
+	for _, item := range items {
+		name := strings.ToLower(strings.TrimSpace(item.Name))
+		if name != "" {
+			if prev, ok := names[name]; ok {
+				return fmt.Errorf("duplicate destination name %s (sources %s and %s)", item.Name, prev, item.SourceID)
+			}
+			names[name] = item.SourceID
+		}
+		if item.SourceID == "" {
+			continue
+		}
+		if _, ok := ids[item.SourceID]; ok {
+			return fmt.Errorf("duplicate destination identity %s in this bulk plan", item.SourceID)
+		}
+		ids[item.SourceID] = struct{}{}
+	}
+	return nil
+}
+
+func ArchiveSupported(path, format string) (ok bool, reason string) {
+	low := strings.ToLower(path + " " + format)
+	if IsVMA(path) || strings.Contains(low, ".vma") || strings.EqualFold(strings.TrimSpace(format), "vma") {
+		return false, "VM vma vzdump is not supported"
+	}
+	if strings.Contains(low, "pbs:") || strings.EqualFold(strings.TrimSpace(format), "pbs") {
+		return false, "Proxmox Backup Server archives cannot be imported over the content API"
+	}
+	return true, ""
+}
+
+func DestLooksPartial(status, imagePin string, verified bool) bool {
+	st := strings.ToLower(strings.TrimSpace(status))
+	pin := strings.ToLower(strings.TrimSpace(imagePin))
+	if pin != "imported" {
+		return false
+	}
+	if st == "failed" || st == "unavailable" || st == "error" || strings.Contains(st, "fail") {
+		return true
+	}
+	return !verified && (st == "" || st == "creating" || st == "pending")
+}
+
+func CompletedReport(reports []Report, sourceID, name string) (Report, bool) {
+	for _, r := range reports {
+		if sourceID != "" && r.SourceID == sourceID && r.WorkloadID != "" {
+			return r, true
+		}
+		if name != "" && strings.EqualFold(r.Name, name) && r.WorkloadID != "" && r.SourceID == sourceID {
+			return r, true
+		}
+	}
+	return Report{}, false
 }
 
 func NoSilentFallback(requested, available string) error {

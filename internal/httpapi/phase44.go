@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -414,6 +415,14 @@ func (s *Server) retryMigrationJob(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "only failed or canceled jobs can be retried")
 		return
 	}
+	var plan migration.Plan
+	_ = json.Unmarshal(j.PlanJSON, &plan)
+	var st migration.JobStatus
+	_ = json.Unmarshal(j.StatusJSON, &st)
+	if err := s.preflightExistingPlan(r.Context(), p.User.ClusterID, plan, st.Reports); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	j.CancelRequested = false
 	j.State = "running"
 	j.Stage = "preflight"
@@ -424,6 +433,100 @@ func (s *Server) retryMigrationJob(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, p.User.ClusterID, p.User.ID, "migration.retry", "ok", j.ID)
 	go s.runMigrationJob(context.Background(), p.User.ClusterID, j.ID)
 	writeJSON(w, http.StatusAccepted, migrationJobJSON(*j))
+}
+
+func bodyFromPlan(plan migration.Plan) migrationJobBody {
+	return migrationJobBody{
+		SourceID:   plan.SourceID,
+		Adapter:    plan.Adapter,
+		Mapping:    plan.Mapping,
+		Strategy:   plan.Strategy,
+		StartAfter: plan.StartAfter,
+	}
+}
+
+func (s *Server) probeMigrationSource(ctx context.Context, clusterID string, req migrationJobBody) (exists, creds bool) {
+	exists, creds = true, true
+	if req.SourceID == "" {
+		return exists, creds
+	}
+	src, token, _, _, err := s.Store.GetMigrationSource(ctx, clusterID, req.SourceID)
+	if err != nil || src == nil {
+		if req.Adapter == migration.AdapterProxmox {
+			return false, false
+		}
+		return exists, creds
+	}
+	if src.Adapter != migration.AdapterProxmox {
+		return exists, creds
+	}
+	client := &migration.PVEClient{Base: src.Endpoint, Token: token, Insecure: src.Insecure, Client: s.HTTPClient}
+	if _, err := client.DiscoverRemote(); err != nil {
+		return false, false
+	}
+	return exists, creds
+}
+
+func (s *Server) discoverForPreflight(ctx context.Context, clusterID string, req migrationJobBody) []migration.DiscoveredWorkload {
+	if req.SourceID == "" {
+		return nil
+	}
+	src, token, username, _, err := s.Store.GetMigrationSource(ctx, clusterID, req.SourceID)
+	if err != nil || src == nil {
+		return nil
+	}
+	d, err := s.discoverFrom(src, token, username)
+	if err != nil {
+		return nil
+	}
+	return d.Workloads
+}
+
+func (s *Server) lookupWorkload(ctx context.Context, clusterID, workloadID, name string) *appdb.Workload {
+	if workloadID != "" {
+		if wl, _ := s.Store.GetWorkload(ctx, clusterID, workloadID); wl != nil {
+			return wl
+		}
+	}
+	if name != "" {
+		if wl, _ := s.Store.GetWorkloadByName(ctx, clusterID, name); wl != nil {
+			return wl
+		}
+	}
+	return nil
+}
+
+func (s *Server) preflightExistingPlan(ctx context.Context, clusterID string, plan migration.Plan, reports []migration.Report) error {
+	if plan.Direction == "export" {
+		return nil
+	}
+	if err := migration.CheckDuplicateDests(plan.Items); err != nil {
+		return err
+	}
+	req := bodyFromPlan(plan)
+	if exists, creds := s.probeMigrationSource(ctx, clusterID, req); !exists || !creds {
+		return fmt.Errorf("source credentials are no longer valid")
+	}
+	discovered := s.discoverForPreflight(ctx, clusterID, req)
+	for _, item := range plan.Items {
+		if done, ok := migration.CompletedReport(reports, item.SourceID, item.Name); ok {
+			if s.destinationImportOK(ctx, clusterID, done.WorkloadID, item.Name) {
+				continue
+			}
+			if wl := s.lookupWorkload(ctx, clusterID, done.WorkloadID, item.Name); wl != nil && migration.DestLooksPartial(wl.Status, wl.ImagePin, wl.ImageVerified) {
+				return fmt.Errorf("a partial or failed destination already exists for %s. Remove that workload and its volumes; No-dal will not reuse a corrupt import", item.Name)
+			}
+		}
+		caps := s.capsFor(plan.Adapter, item, discovered)
+		env, err := s.preflightEnv(ctx, clusterID, req, item, discovered)
+		if err != nil {
+			return err
+		}
+		if err := migration.Preflight(item, caps, env); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) migrationSourceJSON(src appdb.MigrationSource, hasCred bool) map[string]any {
@@ -438,6 +541,12 @@ func migrationJobJSON(j appdb.MigrationJob) map[string]any {
 		"id": j.ID, "adapter": j.Adapter, "direction": j.Direction, "state": j.State, "stage": j.Stage,
 		"source_id": j.SourceID, "operation_id": j.OperationID, "cancel_requested": j.CancelRequested,
 		"source_untouched": true,
+	}
+	if !j.CreatedAt.IsZero() {
+		out["created_at"] = j.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	if !j.UpdatedAt.IsZero() {
+		out["updated_at"] = j.UpdatedAt.UTC().Format(time.RFC3339)
 	}
 	if len(j.StatusJSON) > 0 {
 		var st any
@@ -546,6 +655,11 @@ func (s *Server) buildMigrationPlan(ctx context.Context, clusterID string, req m
 			return migration.Plan{}, err
 		}
 		if err := migration.Preflight(plan.Items[i], caps, env); err != nil {
+			return migration.Plan{}, err
+		}
+	}
+	if preflight {
+		if err := migration.CheckDuplicateDests(plan.Items); err != nil {
 			return migration.Plan{}, err
 		}
 	}
@@ -673,13 +787,22 @@ func (s *Server) preflightEnv(ctx context.Context, clusterID string, req migrati
 		if d.SourceID == item.SourceID {
 			env.SourceRunning = d.Running
 			env.EstimatedBytes = d.EstimatedBytes
+			if d.EstimatedBytes == 0 {
+				env.EstimatedBytes = d.DiskBytes
+			}
 		}
 	}
 	if req.Path != "" {
 		if _, err := os.Stat(req.Path); err != nil {
 			env.SourceExists = false
+			env.ArchiveUnreadable = true
+			env.ArchiveReason = "source path is not readable"
 		}
 	}
+	if env.EstimatedBytes == 0 {
+		env.EstimatedBytes = item.EstimatedBytes
+	}
+	s.applyArchivePreflight(&env, item)
 	poolID := req.PoolID
 	if poolID == "" && req.Mapping.Storage != nil {
 		for _, v := range req.Mapping.Storage {
@@ -691,6 +814,17 @@ func (s *Server) preflightEnv(ctx context.Context, clusterID string, req migrati
 		pool, err := s.Store.GetStoragePool(ctx, clusterID, poolID)
 		if err != nil || pool == nil {
 			env.DestPoolExists = false
+		} else {
+			if pool.Status != "" && pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+				env.DestPoolExists = false
+			}
+			if pool.UsableBytes != nil {
+				env.DestPoolBytes = *pool.UsableBytes
+				need := env.EstimatedBytes
+				if need > 0 && *pool.UsableBytes < need+int64(storage.MinPoolFreeBytes) {
+					env.DestCapacityOK = false
+				}
+			}
 		}
 	}
 	netID := req.NetworkID
@@ -704,6 +838,8 @@ func (s *Server) preflightEnv(ctx context.Context, clusterID string, req migrati
 		netw, err := s.Store.GetNetwork(ctx, clusterID, netID)
 		if err != nil || netw == nil {
 			env.DestNetExists = false
+		} else if netw.Status != "" && netw.Status != ndnet.StatusAvailable && netw.Status != ndnet.StatusWarning {
+			env.DestNetExists = false
 		}
 	}
 	name := req.Name
@@ -712,10 +848,55 @@ func (s *Server) preflightEnv(ctx context.Context, clusterID string, req migrati
 	}
 	if name != "" {
 		if existing, _ := s.Store.GetWorkloadByName(ctx, clusterID, name); existing != nil {
-			env.NameAvailable = false
+			if migration.DestLooksPartial(existing.Status, existing.ImagePin, existing.ImageVerified) {
+				env.PartialDestUnsafe = true
+			} else {
+				env.NameAvailable = false
+			}
 		}
 	}
 	return env, nil
+}
+
+func (s *Server) applyArchivePreflight(env *migration.PreflightEnv, item migration.ItemPlan) {
+	path, format := "", ""
+	if item.Manifest.Container != nil && item.Manifest.Container.Rootfs != nil {
+		path = item.Manifest.Container.Rootfs.Path
+		format = item.Manifest.Container.Rootfs.Format
+	}
+	if item.LocalRootfsPath != "" {
+		path = item.LocalRootfsPath
+	}
+	if item.Manifest.VM != nil {
+		for _, d := range item.Manifest.VM.Disks {
+			if d.Source != "" {
+				path = d.Source
+				format = d.Format
+				break
+			}
+		}
+	}
+	if ok, reason := migration.ArchiveSupported(path, format); !ok {
+		env.ArchiveUnsupported = true
+		env.ArchiveReason = reason
+	}
+	if item.LocalHost || item.Mode == migration.ModeLocal {
+		src := item.LocalRootfsPath
+		if src == "" {
+			src = path
+		}
+		if src != "" && migration.ValidateLocalMigrationPath(src) == nil {
+			if err := migration.VerifyCopiedRootfs(src); err != nil {
+				env.ArchiveUnreadable = true
+				env.ArchiveReason = "local LXC rootfs is empty or unreadable: " + err.Error()
+			}
+		}
+	}
+	if migration.IsVzdumpArchive(path) && !item.TempBackup {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+	}
 }
 
 func (s *Server) planInputs(ctx context.Context, clusterID, adapter string, req migrationJobBody) ([]migration.DiscoveredWorkload, map[string]migration.Manifest, error) {

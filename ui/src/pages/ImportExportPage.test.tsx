@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { MeResponse } from "../api/types";
@@ -307,5 +307,90 @@ describe("ImportExportPage", () => {
     expect(body.strategy).toBe("leave-running");
     expect(body.selected).toEqual(["pve1/100", "pve1/101"]);
     expect(body.modes ?? {}).toEqual({});
+  });
+
+  it("restores an active persisted job into Progress and expands historical jobs from diagnostics", async () => {
+    const running = {
+      id: "job-run",
+      adapter: "proxmox",
+      direction: "import",
+      state: "running",
+      stage: "transfer",
+      created_at: "2026-09-08T01:00:00Z",
+      updated_at: "2026-09-08T01:01:00Z",
+      source_untouched: true,
+      status: { workload: "web", percent: 41, message: "Copying disks", stage: "transfer" },
+      plan: {
+        destination_node: "node-a",
+        mapping: { storage: { local: "pool-1" }, network: { vmbr0: "net-1" } },
+        items: [{ name: "web", mode: "offline", source_id: "pve1/100" }],
+      },
+    };
+    const failed = {
+      id: "job-fail",
+      adapter: "disk",
+      direction: "import",
+      state: "failed",
+      stage: "preflight",
+      created_at: "2026-09-08T00:00:00Z",
+      updated_at: "2026-09-08T00:05:00Z",
+      status: { workload: "db", percent: 0, message: "archive unreadable", stage: "preflight" },
+      plan: { items: [{ name: "db", mode: "disk", source_id: "/tmp/db.qcow2" }] },
+    };
+    const routes: Record<string, { status: number; body?: unknown }> = {
+      "/api/v1/health": { status: 200, body: { status: "ok", service: "ndl-control" } },
+      "/api/v1/setup/status": { status: 200, body: { open: false } },
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/nodes": { status: 200, body: { items: [] } },
+      "/api/v1/tasks": { status: 200, body: { items: [] } },
+      "/api/v1/storage/pools": { status: 200, body: { items: [{ id: "pool-1", name: "Fast-ZFS" }] } },
+      "/api/v1/networks": { status: 200, body: { items: [{ id: "net-1", name: "LAN" }], nics: [] } },
+      "/api/v1/workloads": { status: 200, body: { items: [] } },
+      "/api/v1/migration/adapters": { status: 200, body: { items: [{ id: "proxmox", label: "Proxmox VE" }] } },
+      "/api/v1/migration/modes": { status: 200, body: { source_safety: "PROTECTED", items: [] } },
+      "/api/v1/migration/sources": { status: 200, body: { items: [] } },
+      "/api/v1/migration/jobs": { status: 200, body: { items: [running, failed] } },
+      "/api/v1/migration/jobs/job-run": { status: 200, body: running },
+      "/api/v1/migration/jobs/job-fail/diagnostics": {
+        status: 200,
+        body: {
+          job: failed,
+          plan: failed.plan,
+          status: failed.status,
+          logs: [{ source: "job", message: "archive unreadable" }],
+          mappings: failed.plan,
+          source: { label: "files", present: true },
+          destinations: [],
+          health_checks: [{ name: "archive_readable", ok: false, detail: "archive unreadable" }],
+        },
+      },
+      "POST /api/v1/migration/jobs/job-fail/retry": { status: 202, body: { ...failed, state: "running", stage: "preflight" } },
+    };
+    const fetchMock = mockApi(routes);
+    window.history.replaceState({}, "", "/import-export");
+    const first = render(<App />);
+    expect(await screen.findByRole("heading", { name: /^progress$/i })).toBeVisible();
+    expect(screen.getByText(/copying disks/i)).toBeVisible();
+    expect(screen.getByText(/41%/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /web · running/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /db · failed/i })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /db · failed/i }));
+    expect(await screen.findByRole("button", { name: /copy details/i })).toBeVisible();
+    expect(await screen.findByRole("button", { name: /copy diagnostics/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^retry$/i })).toBeVisible();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/migration/jobs/job-fail/diagnostics"))).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^retry$/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/migration/jobs/job-fail/retry"))).toBe(true);
+    });
+
+    first.unmount();
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^progress$/i })).toBeVisible();
+    expect(screen.getByText(/copying disks/i)).toBeVisible();
   });
 });

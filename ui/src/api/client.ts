@@ -1501,6 +1501,77 @@ export async function listAudit() {
   return readJson<import("../generated/openapi").AuditListResponse>(await request("/audit"));
 }
 
+export type APITokenItem = {
+  id: string;
+  name: string;
+  prefix: string;
+  user_id: string;
+  username?: string;
+  user_kind?: string;
+  permissions?: string[];
+  created_at?: string;
+  expires_at?: string;
+  expired?: boolean;
+  revoked_at?: string;
+  disabled?: boolean;
+};
+
+export type CreatedAPIToken = {
+  id: string;
+  prefix: string;
+  token: string;
+  name?: string;
+  permissions?: string[];
+  expires_at?: string;
+  preset?: string;
+};
+
+export async function listAPITokens(includeRevoked = false) {
+  const suffix = includeRevoked ? "?include_revoked=1" : "";
+  return readJson<{ items: APITokenItem[] }>(await request(`/tokens${suffix}`));
+}
+
+export async function createAPIToken(body: {
+  name: string;
+  permissions?: string[];
+  preset?: string;
+  ttl_hours?: number;
+}): Promise<CreatedAPIToken> {
+  return readJson<CreatedAPIToken>(await request("/tokens", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function revokeAPIToken(id: string): Promise<void> {
+  const res = await request("/tokens/revoke", { method: "POST", body: JSON.stringify({ id }) });
+  if (res.status === 204) {
+    return;
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+}
+
+export type ServicePrincipalItem = {
+  id: string;
+  name: string;
+  user_id: string;
+  kind?: string;
+};
+
+export async function listServicePrincipals() {
+  return readJson<{ items: ServicePrincipalItem[] }>(await request("/service-principals"));
+}
+
+export async function createServicePrincipal(body: {
+  name: string;
+  permissions?: string[];
+  preset?: string;
+  ttl_hours?: number;
+}) {
+  return readJson<ServicePrincipalItem & { token: string; permissions?: string[]; expires_at?: string; preset?: string }>(
+    await request("/service-principals", { method: "POST", body: JSON.stringify(body) }),
+  );
+}
+
 export async function listGroups() {
   return readJson<import("../generated/openapi").GroupListResponse>(await request("/groups"));
 }
@@ -1635,6 +1706,14 @@ export async function importMigrationBundle(body: Record<string, unknown>) {
 
 export async function retryMigrationJob(id: string) {
   return readJson<Record<string, unknown>>(await request(`/migration/jobs/${id}/retry`, { method: "POST", body: "{}" }));
+}
+
+export async function getMigrationJobDiagnostics(id: string) {
+  return readJson<Record<string, unknown>>(await request(`/migration/jobs/${id}/diagnostics`));
+}
+
+export async function getWorkloadMigrationDiagnostics(id: string) {
+  return readJson<Record<string, unknown>>(await request(`/workloads/${id}/migration-diagnostics`));
 }
 
 export async function cleanupMigrationJob(id: string) {

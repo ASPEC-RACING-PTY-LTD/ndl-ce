@@ -317,6 +317,7 @@ type Plan struct {
 // Report is post-migration verification. Claims only observed levels.
 type Report struct {
 	WorkloadID    string            `json:"workload_id,omitempty"`
+	SourceID      string            `json:"source_id,omitempty"`
 	Name          string            `json:"name"`
 	Fields        map[string]string `json:"fields"`
 	Consistency   string            `json:"consistency"`

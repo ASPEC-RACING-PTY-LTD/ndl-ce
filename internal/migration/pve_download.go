@@ -229,32 +229,80 @@ func (c *PVEClient) DownloadVolume(node, storage, volid, dest string) error {
 	if storage == "" || volid == "" || node == "" {
 		return fmt.Errorf("proxmox volume is invalid")
 	}
-	path := "/api2/json/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content/" + url.PathEscape(volid)
+	var lastJSON []byte
+	for _, path := range pveContentGETPaths(node, storage, volid) {
+		head, rest, err := c.fetchVolumeBody(path)
+		if err != nil {
+			continue
+		}
+		if looksArchiveBytes(head) || !looksJSONObject(head) {
+			return writeDownload(dest, head, rest)
+		}
+		lastJSON = append([]byte(nil), head...)
+		if rest != nil {
+			_ = rest.Close()
+		}
+		break
+	}
+	if local, ok := c.localBackupFile(node, volid, storage, lastJSON); ok {
+		return copyAllowedBackupFile(local, dest)
+	}
+	return fmt.Errorf("%s", backupAccessError(volid, lastJSON))
+}
+
+func pveContentGETPaths(node, storage, volid string) []string {
+	base := "/api2/json/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content/"
+	name := volid
+	if i := strings.Index(volid, ":"); i >= 0 {
+		name = volid[i+1:]
+	}
+	return []string{
+		base + url.PathEscape(volid),
+		base + url.PathEscape(name),
+		base + url.PathEscape(volid) + "?download=1",
+		base + url.PathEscape(name) + "?download=1",
+	}
+}
+
+func (c *PVEClient) fetchVolumeBody(path string) (head []byte, rest io.ReadCloser, err error) {
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(c.Base, "/")+path, nil)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "PVEAPIToken="+c.Token)
 	}
+	req.Header.Set("Accept", "application/octet-stream, application/x-tar, application/zstd, */*")
 	res, err := c.downloadHTTP().Do(req)
 	if err != nil {
-		return fmt.Errorf("proxmox source is unavailable")
+		return nil, nil, fmt.Errorf("proxmox source is unavailable")
 	}
-	defer res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("proxmox permission failure")
+		_ = res.Body.Close()
+		return nil, nil, fmt.Errorf("proxmox permission failure")
 	}
 	if res.StatusCode >= 400 {
-		return fmt.Errorf("proxmox volume download failed (%d)", res.StatusCode)
+		_ = res.Body.Close()
+		return nil, nil, fmt.Errorf("proxmox volume download failed (%d)", res.StatusCode)
 	}
-	ct := strings.ToLower(res.Header.Get("Content-Type"))
 	limited := io.LimitReader(res.Body, pveMaxDownload+1)
-	peek := make([]byte, 256)
+	peek := make([]byte, 512)
 	n, _ := io.ReadFull(limited, peek)
-	head := peek[:n]
-	if strings.Contains(ct, "json") || looksJSONObject(head) {
-		return fmt.Errorf("source storage does not expose a downloadable disk file for %s. Copy the image on the source host and use Disk import, or import an LXC tar backup", volid)
+	head = peek[:n]
+	return head, &downloadRest{limited: limited, body: res.Body}, nil
+}
+
+type downloadRest struct {
+	limited io.Reader
+	body    io.ReadCloser
+}
+
+func (d *downloadRest) Read(p []byte) (int, error) { return d.limited.Read(p) }
+func (d *downloadRest) Close() error               { return d.body.Close() }
+
+func writeDownload(dest string, head []byte, rest io.ReadCloser) error {
+	if rest != nil {
+		defer rest.Close()
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return err
@@ -268,7 +316,10 @@ func (c *PVEClient) DownloadVolume(node, storage, volid, dest string) error {
 		_ = os.Remove(dest)
 		return err
 	}
-	written, err := io.Copy(f, limited)
+	var written int64
+	if rest != nil {
+		written, err = io.Copy(f, rest)
+	}
 	closeErr := f.Close()
 	if err != nil {
 		_ = os.Remove(dest)
@@ -278,7 +329,7 @@ func (c *PVEClient) DownloadVolume(node, storage, volid, dest string) error {
 		_ = os.Remove(dest)
 		return closeErr
 	}
-	if int64(n)+written > pveMaxDownload {
+	if int64(len(head))+written > pveMaxDownload {
 		_ = os.Remove(dest)
 		return fmt.Errorf("proxmox volume exceeds download size limit")
 	}

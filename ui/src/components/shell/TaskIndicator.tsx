@@ -4,6 +4,7 @@ import { formatWhen } from "../../format";
 import { humanTaskMessage, taskStageLabel } from "../../humanize";
 import { taskKindLabel } from "../../labels";
 import { useQuery } from "../../query";
+import { ActivityDetail, fieldsFromRecord } from "../ActivityDetail";
 import { Icon } from "../Icon";
 import { Link } from "../Link";
 import { StatusBadge } from "../StatusBadge";
@@ -19,6 +20,7 @@ function isFailed(state?: string): boolean {
 export function TaskIndicator() {
   const { data } = useQuery("tasks", () => listTasks(), 5000);
   const [open, setOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const items = data ?? [];
   const running = items.filter((t) => isActive(t.state));
@@ -76,14 +78,30 @@ export function TaskIndicator() {
           ) : (
             <ul className="activity-list">
               {items.slice(0, 6).map((task) => (
-                <li key={task.id}>
-                  <StatusBadge status={task.state} />
-                  <span>
-                    {taskKindLabel(task.kind)}
-                    {humanTaskMessage(task.message) ? ` ${humanTaskMessage(task.message)}` : ""}
-                    {task.stage ? <span className="muted"> · {taskStageLabel(task.stage)}</span> : null}
-                  </span>
-                  <span className="muted">{formatWhen(task.updated_at)}</span>
+                <li key={task.id} className={detailId === task.id ? "is-open" : undefined}>
+                  <button type="button" className="activity-toggle" onClick={() => setDetailId(detailId === task.id ? null : task.id)}>
+                    <StatusBadge status={task.state} />
+                    <span>
+                      {taskKindLabel(task.kind)}
+                      {humanTaskMessage(task.message) ? ` ${humanTaskMessage(task.message)}` : ""}
+                      {task.stage ? <span className="muted"> · {taskStageLabel(task.stage)}</span> : null}
+                    </span>
+                    <span className="muted">{formatWhen(task.updated_at)}</span>
+                  </button>
+                  {detailId === task.id ? (
+                    <ActivityDetail
+                      title={taskKindLabel(task.kind)}
+                      fields={fieldsFromRecord(task as unknown as Record<string, unknown>, [
+                        { label: "job id", value: task.id },
+                        { label: "stage", value: task.stage || "Not reported" },
+                        { label: "status", value: task.state },
+                        { label: "updated", value: task.updated_at || "Not reported" },
+                        { label: "error", value: humanTaskMessage(task.message) || task.message || "None" },
+                      ])}
+                      raw={task}
+                      onClose={() => setDetailId(null)}
+                    />
+                  ) : null}
                 </li>
               ))}
             </ul>

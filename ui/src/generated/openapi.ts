@@ -50,12 +50,37 @@ export interface MFAChallengeResponse {
 export interface CreateTokenRequest {
   name: string;
   permissions?: string[];
+  preset?: "readonly-debug" | "full-audit";
+  ttl_hours?: number;
 }
 
 export interface CreateTokenResponse {
   id: string;
   prefix: string;
   token: string;
+  name?: string;
+  permissions?: string[];
+  expires_at?: string;
+  preset?: string;
+}
+
+export interface TokenListResponse {
+  items: TokenListItem[];
+}
+
+export interface TokenListItem {
+  id: string;
+  name: string;
+  prefix: string;
+  user_id: string;
+  username?: string;
+  user_kind?: string;
+  permissions?: string[];
+  created_at?: string;
+  expires_at?: string;
+  expired?: boolean;
+  revoked_at?: string;
+  disabled: boolean;
 }
 
 export interface RevokeTokenRequest {
@@ -1485,6 +1510,9 @@ export interface ServicePrincipal {
 
 export interface CreateServicePrincipalRequest {
   name: string;
+  permissions?: string[];
+  preset?: "readonly-debug" | "full-audit";
+  ttl_hours?: number;
 }
 
 export interface ServicePrincipalCreated {
@@ -1493,6 +1521,9 @@ export interface ServicePrincipalCreated {
   user_id: string;
   token: string;
   kind: "service";
+  permissions?: string[];
+  expires_at?: string;
+  preset?: string;
 }
 
 export interface GPUListResponse {
@@ -2024,6 +2055,21 @@ export interface MigrationStartRequest {
   export_kind?: string;
 }
 
+export interface MigrationDiagnosticsBundle {
+  job?: MigrationJob;
+  plan?: Record<string, unknown>;
+  status?: Record<string, unknown>;
+  stages?: Record<string, unknown>[];
+  logs?: Record<string, unknown>[];
+  events?: Record<string, unknown>[];
+  mappings?: Record<string, unknown>;
+  source?: Record<string, unknown>;
+  destinations?: Workload[];
+  health_checks?: Record<string, unknown>[];
+  operation?: Record<string, unknown>;
+  health?: Record<string, unknown>;
+}
+
 export type GetHealthPath = "/api/v1/health";
 
 export type GetSetupStatusPath = "/api/v1/setup/status";
@@ -2036,7 +2082,7 @@ export type LogoutPath = "/api/v1/auth/logout";
 
 export type GetMePath = "/api/v1/me";
 
-export type CreateTokenPath = "/api/v1/tokens";
+export type ListTokensPath = "/api/v1/tokens";
 
 export type RevokeTokenPath = "/api/v1/tokens/revoke";
 
@@ -2200,6 +2246,8 @@ export type CancelMigrationJobPath = "/api/v1/migration/jobs/{id}/cancel";
 
 export type RetryMigrationJobPath = "/api/v1/migration/jobs/{id}/retry";
 
+export type GetMigrationJobDiagnosticsPath = "/api/v1/migration/jobs/{id}/diagnostics";
+
 export type CleanupMigrationStagingPath = "/api/v1/migration/jobs/{id}/cleanup";
 
 export type ImportMigrationDiskPath = "/api/v1/migration/import/disk";
@@ -2241,6 +2289,8 @@ export type ForceStopWorkloadPath = "/api/v1/workloads/{id}/force-stop";
 export type DeleteWorkloadPath = "/api/v1/workloads/{id}/delete";
 
 export type GetWorkloadMigratePath = "/api/v1/workloads/{id}/migrate";
+
+export type GetWorkloadMigrationDiagnosticsPath = "/api/v1/workloads/{id}/migration-diagnostics";
 
 export type CloneWorkloadPath = "/api/v1/workloads/{id}/clone";
 

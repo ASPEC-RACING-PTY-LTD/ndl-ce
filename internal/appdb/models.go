@@ -36,7 +36,9 @@ type Store interface {
 	CreateToken(ctx context.Context, t APIToken) error
 	GetTokenByHash(ctx context.Context, hash string) (*APIToken, error)
 	GetToken(ctx context.Context, id string) (*APIToken, error)
+	ListTokens(ctx context.Context, clusterID string) ([]APIToken, error)
 	RevokeToken(ctx context.Context, id, userID string) error
+	RevokeClusterToken(ctx context.Context, clusterID, id string) error
 
 	UpsertNode(ctx context.Context, n Node) error
 	GetNode(ctx context.Context, clusterID string) (*Node, error)
@@ -424,6 +426,8 @@ type APIToken struct {
 	TokenHash   string
 	Prefix      string
 	Permissions []string
+	CreatedAt   time.Time
+	ExpiresAt   *time.Time
 	RevokedAt   *time.Time
 }
 

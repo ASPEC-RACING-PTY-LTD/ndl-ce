@@ -24,6 +24,14 @@ export type Capability = {
 export const NAV_MODULES: NavModule[] = [
   { id: "dashboard", href: "/", label: "Dashboard", group: "Overview", match: (p) => p === "/", simple: true },
   {
+    id: "api-access",
+    href: "/api-access",
+    label: "API Access",
+    group: "Overview",
+    match: (p) => p === "/api-access",
+    simple: true,
+  },
+  {
     id: "workloads",
     href: "/workloads",
     label: "Workloads",

@@ -20,6 +20,16 @@ import {
 } from "../api/client";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
+import { MigrationJobDetail } from "../components/MigrationJobDetail";
+import { StatusBadge } from "../components/StatusBadge";
+import {
+  findActiveMigrationJob,
+  isActiveMigrationState,
+  isRetryableMigrationState,
+  jobHeadline,
+  jobStateOf,
+  listedMigrationJobs,
+} from "../migration/jobView";
 import { PVE_TOKEN_EXAMPLE, PVE_TOKEN_FORMAT, pveTokenError } from "../migration/pveToken";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
@@ -189,6 +199,7 @@ export function ImportExportPage() {
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [job, setJob] = useState<Record<string, unknown> | null>(null);
   const [jobs, setJobs] = useState<Record<string, unknown>[]>([]);
+  const [openJobId, setOpenJobId] = useState<string | null>(null);
   const [diskPath, setDiskPath] = useState("");
   const [diskName, setDiskName] = useState("imported");
   const [diskKind, setDiskKind] = useState("vm");
@@ -220,7 +231,8 @@ export function ImportExportPage() {
         const listed = (m.strategies ?? []) as Strategy[];
         if (listed.length > 0) setStrategies(listed);
         setSources((src.items ?? []) as Source[]);
-        setJobs((listedJobs.items ?? []) as Record<string, unknown>[]);
+        const persisted = listedMigrationJobs(listedJobs);
+        setJobs(persisted);
         const destPools = (poolList.items ?? []) as DestPool[];
         const destNets = (netList.items ?? []) as DestNet[];
         setPools(destPools);
@@ -229,26 +241,42 @@ export function ImportExportPage() {
         if (destNets.length === 1) setNetID(destNets[0].id);
         const first = (wls.items ?? [])[0] as { id?: string } | undefined;
         if (first?.id) setExportID(first.id);
+        const active = findActiveMigrationJob(persisted);
+        if (active && typeof active.id === "string") {
+          setJob(active);
+          setTab("import");
+          setPhase("progress");
+          void getMigrationJob(active.id)
+            .then((row) => {
+              setJob(row);
+              setPhase(row.state === "succeeded" ? "verify" : "progress");
+            })
+            .catch(() => undefined);
+        }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unavailable"));
   }, []);
 
+  const activeJobId = typeof job?.id === "string" ? job.id : "";
+  const activeJobState = jobStateOf(job);
+
   useEffect(() => {
-    const id = typeof job?.id === "string" ? job.id : "";
-    if (!id || (job?.state !== "running" && job?.state !== "canceling")) {
+    if (!activeJobId || !isActiveMigrationState(activeJobState)) {
       return;
     }
     const t = window.setInterval(() => {
-      void getMigrationJob(id)
-        .then((row) => {
+      void Promise.all([getMigrationJob(activeJobId), listMigrationJobs()])
+        .then(([row, listed]) => {
           setJob(row);
-          if (row.state === "succeeded") setPhase("verify");
-          else setPhase("progress");
+          setJobs(listedMigrationJobs(listed));
+          if (row.state === "succeeded") {
+            setPhase("verify");
+          }
         })
         .catch(() => undefined);
     }, 1000);
     return () => window.clearInterval(t);
-  }, [job]);
+  }, [activeJobId, activeJobState]);
 
   const chosen = useMemo(() => workloads.filter((w) => selected[w.source_id]), [workloads, selected]);
   const currentAdapter = adapters.find((a) => a.id === adapter);
@@ -403,6 +431,29 @@ export function ImportExportPage() {
     }
   }
 
+  function refreshJobs() {
+    return listMigrationJobs()
+      .then((listed) => setJobs(listedMigrationJobs(listed)))
+      .catch(() => undefined);
+  }
+
+  function showPersistedJob(row: Record<string, unknown>) {
+    setJob(row);
+    setTab("import");
+    setPhase(row.state === "succeeded" ? "verify" : "progress");
+  }
+
+  async function retryPersistedJob(id: string) {
+    setError(null);
+    try {
+      const row = await retryMigrationJob(id);
+      showPersistedJob(row);
+      await refreshJobs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Retry failed");
+    }
+  }
+
   async function start() {
     setError(null);
     if (!canImport) {
@@ -411,8 +462,8 @@ export function ImportExportPage() {
     }
     try {
       const started = await startMigrationJob(planBody());
-      setJob(started);
-      setPhase("progress");
+      showPersistedJob(started);
+      await refreshJobs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Start failed");
     }
@@ -441,8 +492,8 @@ export function ImportExportPage() {
         start_after: startAfter,
       };
       const started = isBundle ? await importMigrationBundle(body) : await importMigrationDisk(body);
-      setJob(started);
-      setPhase("progress");
+      showPersistedJob(started);
+      await refreshJobs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     }
@@ -506,9 +557,8 @@ export function ImportExportPage() {
             onClick={() => {
               void startMigrationJob({ direction: "export", workload_id: exportID, export_kind: exportKind, adapter: "nodal", mode: "disk" })
                 .then((row) => {
-                  setJob(row);
-                  setTab("import");
-                  setPhase("progress");
+                  showPersistedJob(row);
+                  return refreshJobs();
                 })
                 .catch((err) => setError(err instanceof Error ? err.message : "Export failed"));
             }}
@@ -979,19 +1029,34 @@ export function ImportExportPage() {
                     </p>
                   ) : null}
                   {job.state === "running" ? (
-                    <button type="button" className="btn btn-secondary" onClick={() => void cancelMigrationJob(String(job.id)).then(setJob)}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() =>
+                        void cancelMigrationJob(String(job.id))
+                          .then((row) => {
+                            setJob(row);
+                            return refreshJobs();
+                          })
+                          .catch((err) => setError(err instanceof Error ? err.message : "Cancel failed"))
+                      }
+                    >
                       Cancel
                     </button>
                   ) : null}
-                  {job.state === "failed" || job.state === "canceled" ? (
+                  {isRetryableMigrationState(jobStateOf(job)) ? (
                     <div className="inline-actions">
-                      <button type="button" className="btn" onClick={() => void retryMigrationJob(String(job.id)).then(setJob)}>
+                      <button type="button" className="btn" disabled={!mutate} onClick={() => void retryPersistedJob(String(job.id))}>
                         Retry
                       </button>
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        onClick={() => void cleanupMigrationJob(String(job.id)).then((row) => setJob({ ...job, ...row }))}
+                        onClick={() =>
+                          void cleanupMigrationJob(String(job.id))
+                            .then((row) => setJob({ ...job, ...row }))
+                            .catch((err) => setError(err instanceof Error ? err.message : "Cleanup failed"))
+                        }
                       >
                         Clean No-dal staging
                       </button>
@@ -1027,13 +1092,45 @@ export function ImportExportPage() {
 
       <article className="panel">
         <h2>Recent jobs</h2>
-        <ul className="plain-list">
-          {jobs.map((j) => (
-            <li key={String(j.id)}>
-              {String(j.adapter)} {String(j.direction)} {String(j.state)} {String(j.id)}
-            </li>
-          ))}
-        </ul>
+        {jobs.length === 0 ? (
+          <p>No migration jobs yet.</p>
+        ) : (
+          <ul className="activity-list">
+            {jobs.map((j) => {
+              const id = String(j.id ?? "");
+              const title = jobHeadline(j);
+              const state = jobStateOf(j);
+              return (
+                <li key={id || title} className={openJobId === id ? "is-open" : undefined}>
+                  <button
+                    type="button"
+                    className="activity-toggle"
+                    onClick={() => {
+                      const next = openJobId === id ? null : id;
+                      setOpenJobId(next);
+                      if (next && isActiveMigrationState(state)) {
+                        showPersistedJob(j);
+                      }
+                    }}
+                  >
+                    <StatusBadge status={state || String(j.state ?? "unknown")} />
+                    <span>{title}</span>
+                    <span className="muted">{String(j.updated_at ?? id)}</span>
+                  </button>
+                  {openJobId === id ? (
+                    <MigrationJobDetail
+                      job={j}
+                      canRetry={mutate}
+                      onClose={() => setOpenJobId(null)}
+                      onRetry={(jobId) => void retryPersistedJob(jobId)}
+                      onOpenProgress={(row) => showPersistedJob(row)}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </article>
     </section>
   );

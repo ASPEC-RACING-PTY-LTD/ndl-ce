@@ -995,3 +995,189 @@ func TestMigrationPlanLXCUsesLocalHostWhenStopped(t *testing.T) {
 		t.Fatalf("local host must not block or use vzdump %s", raw)
 	}
 }
+
+func writeTmpMigrationFile(t *testing.T, suffix, body string) string {
+	t.Helper()
+	path := filepath.Join("/tmp", "ndl-mig-"+uuid.NewString()+suffix)
+	if err := os.WriteFile(path, []byte(body), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	return path
+}
+
+func TestMigrationSubmitRejectsUnsupportedArchiveAndPartialDest(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, memNodeID(t, mem, cluster.ID))
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	vma := writeTmpMigrationFile(t, ".vma", "vma-bytes")
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"adapter":"disk","mode":"disk","path":"`+vma+`","name":"vma-guest","kind":"vm","cpus":1,"memory_bytes":134217728,"pool_id":"`+poolID+`","network_id":"`+netID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "vma") {
+		t.Fatalf("vma %d %s", res.StatusCode, raw)
+	}
+
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: uuid.NewString(), ClusterID: cluster.ID, NodeID: memNodeID(t, mem, cluster.ID),
+		Name: "partial-guest", Kind: "vm", Status: "failed", ImagePin: "imported", ImageVerified: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	qcow := writeTmpMigrationFile(t, ".qcow2", "qcow-data")
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(`{"adapter":"disk","mode":"disk","path":"`+qcow+`","name":"partial-guest","kind":"vm","cpus":1,"memory_bytes":134217728,"pool_id":"`+poolID+`","network_id":"`+netID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "partial") {
+		t.Fatalf("partial %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestMigrationSubmitRejectsDuplicateDestNames(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, memNodeID(t, mem, cluster.ID))
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	pve := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/nodes"):
+			_, _ = w.Write([]byte(`{"data":[{"node":"pve1"}]}`))
+		case strings.Contains(r.URL.Path, "/qemu") && !strings.Contains(r.URL.Path, "/config"):
+			_, _ = w.Write([]byte(`{"data":[{"vmid":100,"name":"web","status":"stopped","cpus":1,"maxmem":134217728,"maxdisk":1073741824},{"vmid":101,"name":"web","status":"stopped","cpus":1,"maxmem":134217728,"maxdisk":1073741824}]}`))
+		case strings.Contains(r.URL.Path, "/lxc"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.Contains(r.URL.Path, "/100/config"):
+			_, _ = w.Write([]byte(`{"data":{"name":"web","cores":1,"memory":128,"scsi0":"local:100/vm-100-disk-0.qcow2,size=1G","net0":"virtio=AA:BB:CC:DD:EE:01,bridge=vmbr0"}}`))
+		case strings.Contains(r.URL.Path, "/101/config"):
+			_, _ = w.Write([]byte(`{"data":{"name":"web","cores":1,"memory":128,"scsi0":"local:101/vm-101-disk-0.qcow2,size=1G","net0":"virtio=AA:BB:CC:DD:EE:02,bridge=vmbr0"}}`))
+		case strings.Contains(r.URL.Path, "/storage"):
+			_, _ = w.Write([]byte(`{"data":[{"storage":"local","type":"dir","content":"images,iso,backup"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		}
+	}))
+	defer pve.Close()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/sources", strings.NewReader(`{"adapter":"proxmox","endpoint":"`+pve.URL+`","token":"user@pam!tok=secret","insecure":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var src map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&src)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("source %d", res.StatusCode)
+	}
+	id, _ := src["id"].(string)
+	body := `{"source_id":"` + id + `","selected":["pve1/100","pve1/101"],"modes":{"pve1/100":"offline","pve1/101":"offline"},"mapping":{"storage":{"local":"` + poolID + `"},"network":{"vmbr0":"` + netID + `"}}}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(string(raw)), "duplicate") {
+		t.Fatalf("duplicate %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestMigrationRetrySkipsCompletedAndDiagnosticsBundle(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	destID := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: destID, ClusterID: cluster.ID, NodeID: nodeID, Name: "already-in",
+		Kind: "vm", Status: "stopped", ImagePin: "imported", ImageVerified: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	plan := migration.Plan{
+		ID: uuid.NewString(), Direction: "import", Adapter: migration.AdapterDisk,
+		Items: []migration.ItemPlan{{
+			SourceID: "/tmp/already.qcow2", Name: "already-in", Kind: migration.KindVM,
+			Mode: migration.ModeDisk, Compatibility: migration.CompatReady,
+		}},
+	}
+	planBody, _ := json.Marshal(plan)
+	st := migration.JobStatus{
+		ID: uuid.NewString(), State: "failed", Stage: "transfer", SourceUntouched: true, Retryable: true,
+		Reports: []migration.Report{{SourceID: "/tmp/already.qcow2", Name: "already-in", WorkloadID: destID}},
+	}
+	stBody, _ := json.Marshal(st)
+	job := appdb.MigrationJob{
+		ID: st.ID, ClusterID: cluster.ID, Adapter: migration.AdapterDisk, Direction: "import",
+		State: "failed", Stage: "transfer", PlanJSON: planBody, StatusJSON: stBody,
+	}
+	if err := mem.CreateMigrationJob(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.InsertEvent(context.Background(), appdb.Event{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Type: "migration.failed",
+		Payload: mustJSONBytes(map[string]string{"job_id": job.ID, "error": "transfer failed"}), CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	diag, _ := http.NewRequest("GET", ts.URL+"/api/v1/migration/jobs/"+job.ID+"/diagnostics", nil)
+	diag.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	dres, _ := ts.Client().Do(diag)
+	draw, _ := io.ReadAll(dres.Body)
+	_ = dres.Body.Close()
+	if dres.StatusCode != http.StatusOK {
+		t.Fatalf("diagnostics %d %s", dres.StatusCode, draw)
+	}
+	if !strings.Contains(string(draw), `"health_checks"`) || !strings.Contains(string(draw), `"already-in"`) || !strings.Contains(string(draw), destID) {
+		t.Fatalf("bundle %s", draw)
+	}
+	if strings.Contains(string(draw), "SECRET") || strings.Contains(string(draw), `"token"`) {
+		t.Fatalf("token leaked %s", draw)
+	}
+
+	wlDiag, _ := http.NewRequest("GET", ts.URL+"/api/v1/workloads/"+destID+"/migration-diagnostics", nil)
+	wlDiag.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	wres, _ := ts.Client().Do(wlDiag)
+	wraw, _ := io.ReadAll(wres.Body)
+	_ = wres.Body.Close()
+	if wres.StatusCode != http.StatusOK || !strings.Contains(string(wraw), job.ID) {
+		t.Fatalf("workload diagnostics %d %s", wres.StatusCode, wraw)
+	}
+
+	retry, _ := http.NewRequest("POST", ts.URL+"/api/v1/migration/jobs/"+job.ID+"/retry", strings.NewReader("{}"))
+	retry.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rres, _ := ts.Client().Do(retry)
+	rraw, _ := io.ReadAll(rres.Body)
+	_ = rres.Body.Close()
+	if rres.StatusCode != http.StatusAccepted {
+		t.Fatalf("retry %d %s", rres.StatusCode, rraw)
+	}
+	got := waitMigrationJob(t, ts, cookie, job.ID)
+	if got["state"] != "succeeded" {
+		t.Fatalf("retry job %+v", got)
+	}
+	if wl, _ := mem.GetWorkload(context.Background(), cluster.ID, destID); wl == nil || wl.Name != "already-in" {
+		t.Fatal("completed dest must remain")
+	}
+}

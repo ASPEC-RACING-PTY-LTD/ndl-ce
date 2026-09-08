@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
+import { APIAccessPage } from "./pages/APIAccessPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -189,6 +190,9 @@ function matchPage(path: string) {
   }
   if (path === "/backups") {
     return <BackupsPage />;
+  }
+  if (path === "/api-access") {
+    return <APIAccessPage />;
   }
   if (path === "/") {
     return <DashboardPage />;

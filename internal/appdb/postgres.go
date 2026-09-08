@@ -229,17 +229,18 @@ func (p *Postgres) RevokeUserSessions(ctx context.Context, userID string) error 
 }
 
 func (p *Postgres) CreateToken(ctx context.Context, t APIToken) error {
-	_, err := p.DB.ExecContext(ctx, `INSERT INTO api_tokens (id, cluster_id, user_id, name, token_hash, prefix, permissions) VALUES ($1,$2,$3,$4,$5,$6,COALESCE(string_to_array(NULLIF($7, ''), ','), '{}'))`,
-		t.ID, t.ClusterID, t.UserID, t.Name, t.TokenHash, t.Prefix, strings.Join(t.Permissions, ","))
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO api_tokens (id, cluster_id, user_id, name, token_hash, prefix, permissions, expires_at) VALUES ($1,$2,$3,$4,$5,$6,COALESCE(string_to_array(NULLIF($7, ''), ','), '{}'),$8)`,
+		t.ID, t.ClusterID, t.UserID, t.Name, t.TokenHash, t.Prefix, strings.Join(t.Permissions, ","), t.ExpiresAt)
 	return err
 }
 
-func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, revoked_at, COALESCE(array_to_string(permissions, ','), '') FROM api_tokens WHERE token_hash=$1`, hash)
+func scanAPIToken(row interface {
+	Scan(dest ...any) error
+}) (*APIToken, error) {
 	var t APIToken
-	var revoked sql.NullTime
+	var revoked, expires sql.NullTime
 	var permCSV string
-	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &revoked, &permCSV); err != nil {
+	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &t.CreatedAt, &revoked, &expires, &permCSV); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -247,6 +248,9 @@ func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, 
 	}
 	if revoked.Valid {
 		t.RevokedAt = &revoked.Time
+	}
+	if expires.Valid {
+		t.ExpiresAt = &expires.Time
 	}
 	if permCSV != "" {
 		t.Permissions = strings.Split(permCSV, ",")
@@ -254,28 +258,49 @@ func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, 
 	return &t, nil
 }
 
+const apiTokenSelect = `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, created_at, revoked_at, expires_at, COALESCE(array_to_string(permissions, ','), '') FROM api_tokens`
+
+func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, error) {
+	return scanAPIToken(p.DB.QueryRowContext(ctx, apiTokenSelect+` WHERE token_hash=$1`, hash))
+}
+
 func (p *Postgres) GetToken(ctx context.Context, id string) (*APIToken, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, revoked_at, COALESCE(array_to_string(permissions, ','), '') FROM api_tokens WHERE id=$1`, id)
-	var t APIToken
-	var revoked sql.NullTime
-	var permCSV string
-	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &revoked, &permCSV); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
+	return scanAPIToken(p.DB.QueryRowContext(ctx, apiTokenSelect+` WHERE id=$1`, id))
+}
+
+func (p *Postgres) ListTokens(ctx context.Context, clusterID string) ([]APIToken, error) {
+	rows, err := p.DB.QueryContext(ctx, apiTokenSelect+` WHERE cluster_id=$1 ORDER BY created_at DESC`, clusterID)
+	if err != nil {
 		return nil, err
 	}
-	if revoked.Valid {
-		t.RevokedAt = &revoked.Time
+	defer rows.Close()
+	var out []APIToken
+	for rows.Next() {
+		tok, err := scanAPIToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		if tok != nil {
+			out = append(out, *tok)
+		}
 	}
-	if permCSV != "" {
-		t.Permissions = strings.Split(permCSV, ",")
-	}
-	return &t, nil
+	return out, rows.Err()
 }
 
 func (p *Postgres) RevokeToken(ctx context.Context, id, userID string) error {
 	res, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("token not found")
+	}
+	return nil
+}
+
+func (p *Postgres) RevokeClusterToken(ctx context.Context, clusterID, id string) error {
+	res, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE id=$1 AND cluster_id=$2 AND revoked_at IS NULL`, id, clusterID)
 	if err != nil {
 		return err
 	}

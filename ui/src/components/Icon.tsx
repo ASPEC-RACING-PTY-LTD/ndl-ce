@@ -203,6 +203,8 @@ export function navIcon(label: string): IconName {
       return "events";
     case "Add Features":
       return "settings";
+    case "API Access":
+      return "settings";
     default:
       return "info";
   }

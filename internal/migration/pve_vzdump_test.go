@@ -160,3 +160,26 @@ func TestEnrichLXCUsesTempVZdumpOrBlocks(t *testing.T) {
 		t.Fatalf("temp plan %v %+v", err, plan)
 	}
 }
+
+func TestOwnedTempBackupRequiresNoDalNote(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api2/json/nodes/pve/storage/local/content", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+			{"vmid": 104.0, "volid": "local:backup/vzdump-lxc-104-op.tar.zst", "format": "tar.zst", "notes": "weekly"},
+			{"vmid": 104.0, "volid": "local:backup/vzdump-lxc-104-ndl.tar.zst", "format": "tar.zst", "notes": TempDumpNote},
+		}})
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	c := &PVEClient{Base: ts.URL, Token: "user@pam!tok=secret", Insecure: true, Client: ts.Client()}
+	if c.OwnedTempBackup("pve", "local", "local:backup/vzdump-lxc-104-op.tar.zst") {
+		t.Fatal("operator backup must not be owned")
+	}
+	if !c.OwnedTempBackup("pve", "local", "local:backup/vzdump-lxc-104-ndl.tar.zst") {
+		t.Fatal("ndl temp backup must be owned")
+	}
+	if c.OwnedTempBackup("pve", "local", "local:backup/vzdump-lxc-104-missing.tar.zst") {
+		t.Fatal("missing vol")
+	}
+}

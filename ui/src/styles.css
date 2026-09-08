@@ -1035,7 +1035,7 @@ code {
 
 .activity-list li {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   align-items: start;
   padding: 0.55rem 0;
@@ -1044,6 +1044,76 @@ code {
 
 .activity-list li:last-child {
   border-bottom: 0;
+}
+
+.activity-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: start;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-toggle:hover,
+.activity-toggle:focus-visible {
+  color: var(--fg);
+}
+
+.activity-detail {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0.7rem 0.8rem;
+  background: var(--bg-canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.activity-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.activity-detail-value {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-detail-raw {
+  margin: 0;
+  max-height: 16rem;
+  overflow: auto;
+  font-size: 0.75rem;
+}
+
+tr.is-clickable {
+  cursor: pointer;
+}
+
+.linkish {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.token-reveal {
+  overflow-wrap: anywhere;
 }
 
 .stack {

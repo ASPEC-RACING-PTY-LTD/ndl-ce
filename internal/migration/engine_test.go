@@ -403,6 +403,26 @@ func TestStagingCleanupIsLocal(t *testing.T) {
 	}
 }
 
+func TestRemoveStagingRefusesForeignOwner(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "job-user")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, StagingOwnerFile), []byte(`{"owner":"operator","kind":"user-backup","job_id":"job-user"}`+"\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "keep.tar.zst"), []byte("user"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveStaging(root, "job-user"); err == nil || !strings.Contains(err.Error(), "does not own") {
+		t.Fatalf("foreign staging %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "keep.tar.zst")); err != nil {
+		t.Fatal("user backup was removed")
+	}
+}
+
 func TestConvertNotRunWithoutRunner(t *testing.T) {
 	e := &Engine{StagingRoot: t.TempDir()}
 	if err := e.ConvertDisk(context.Background(), "/tmp/a.qcow2", "qcow2", "/tmp/b.qcow2", "qcow2"); err == nil {
@@ -475,9 +495,80 @@ func TestPVEDownloadFileAndRejectJSON(t *testing.T) {
 	bad := filepath.Join(dir, "bad.bin")
 	if err := c.DownloadVolume("pve", "local", "local:json-vol", bad); err == nil {
 		t.Fatal("json metadata must not count as a disk")
+	} else if !strings.Contains(err.Error(), "downloadable disk file") {
+		t.Fatalf("disk json error %v", err)
 	}
 	if !StorageTypeDownloadable("dir") || StorageTypeDownloadable("lvmthin") {
 		t.Fatal("storage type downloadable")
+	}
+}
+
+func TestPVEDownloadVzdumpJSONUsesLocalDump(t *testing.T) {
+	vz := t.TempDir()
+	dump := filepath.Join(vz, "dump")
+	if err := os.MkdirAll(dump, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	volid := "local:backup/vzdump-lxc-107-2026_09_08-12_00_00.tar.zst"
+	src := filepath.Join(dump, "vzdump-lxc-107-2026_09_08-12_00_00.tar.zst")
+	if err := os.WriteFile(src, []byte("vzdump-archive-bytes"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api2/json/nodes/pve/storage/local/content/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"volid": volid, "format": "tar.zst", "content": "backup",
+		}})
+	})
+	mux.HandleFunc("/api2/json/nodes/pve/storage", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+			{"storage": "local", "type": "dir", "path": vz, "content": "backup,images,rootdir"},
+		}})
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	c := &PVEClient{Base: ts.URL, Token: "t", Insecure: true, Client: ts.Client()}
+	dest := filepath.Join(t.TempDir(), ArchiveStagingName(volid))
+	if err := c.DownloadVolume("pve", "local", volid, dest); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(dest)
+	if err != nil || string(body) != "vzdump-archive-bytes" {
+		t.Fatalf("got %v %q", err, body)
+	}
+}
+
+func TestPVEDownloadVzdumpJSONWithoutLocalFileFailsPrecisely(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api2/json/nodes/pve/storage/local/content/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"volid": "local:backup/vzdump-lxc-107-2026_09_08-12_00_00.tar.zst", "format": "tar.zst",
+		}})
+	})
+	mux.HandleFunc("/api2/json/nodes/pve/storage", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+			{"storage": "local", "type": "dir", "path": "/var/lib/vz", "content": "backup"},
+		}})
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	c := &PVEClient{Base: ts.URL, Token: "t", Insecure: true, Client: ts.Client()}
+	err := c.DownloadVolume("pve", "local", "local:backup/vzdump-lxc-107-2026_09_08-12_00_00.tar.zst", filepath.Join(t.TempDir(), "rootfs-archive.tar.zst"))
+	if err == nil {
+		t.Fatal("expected archive access failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "vzdump archive") || !strings.Contains(msg, "not a disk image") || strings.Contains(msg, "downloadable disk file") {
+		t.Fatalf("precise archive error %q", msg)
+	}
+}
+
+func TestArchiveStagingNameKeepsTarSuffix(t *testing.T) {
+	got := ArchiveStagingName("local:backup/vzdump-lxc-107-2026_09_08-12_00_00.tar.zst")
+	if got != "vzdump-lxc-107-2026_09_08-12_00_00.tar.zst" {
+		t.Fatalf("got %s", got)
 	}
 }
 
@@ -524,6 +615,66 @@ func TestPVENetAndReviewIP(t *testing.T) {
 	sum, _ := rev["network_summary"].(string)
 	if !strings.Contains(sum, "IPv4 Static 10.0.0.8/24 via 10.0.0.1") || !strings.Contains(sum, "IPv6 Disabled") {
 		t.Fatalf("%+v", rev)
+	}
+}
+
+func TestPreflightArchiveAndPartialGates(t *testing.T) {
+	env := PreflightEnv{SourceExists: true, CredentialsOK: true, DestPoolExists: true, DestCapacityOK: true, DestNetExists: true, NameAvailable: true, ToolsOK: true, StagingOK: true}
+	item := ItemPlan{Mode: ModeDisk, Compatibility: CompatReady, Name: "ct"}
+	if err := Preflight(item, Caps{Disk: true}, env); err != nil {
+		t.Fatal(err)
+	}
+	bad := env
+	bad.ArchiveUnsupported = true
+	bad.ArchiveReason = "VM vma vzdump is not supported"
+	if err := Preflight(item, Caps{Disk: true}, bad); err == nil || !strings.Contains(err.Error(), "vma") {
+		t.Fatalf("unsupported %v", err)
+	}
+	unread := env
+	unread.ArchiveUnreadable = true
+	if err := Preflight(item, Caps{Disk: true}, unread); err == nil || !strings.Contains(err.Error(), "readable") {
+		t.Fatalf("unreadable %v", err)
+	}
+	partial := env
+	partial.PartialDestUnsafe = true
+	if err := Preflight(item, Caps{Disk: true}, partial); err == nil || !strings.Contains(err.Error(), "partial") {
+		t.Fatalf("partial %v", err)
+	}
+	dup := env
+	dup.DuplicateName = true
+	if err := Preflight(item, Caps{Disk: true}, dup); err == nil || !strings.Contains(err.Error(), "duplicate destination name") {
+		t.Fatalf("dup name %v", err)
+	}
+}
+
+func TestCheckDuplicateDestsAndArchiveSupport(t *testing.T) {
+	if err := CheckDuplicateDests([]ItemPlan{{SourceID: "a", Name: "web"}, {SourceID: "b", Name: "Web"}}); err == nil {
+		t.Fatal("same dest name")
+	}
+	if err := CheckDuplicateDests([]ItemPlan{{SourceID: "a", Name: "one"}, {SourceID: "a", Name: "two"}}); err == nil {
+		t.Fatal("same source id")
+	}
+	if err := CheckDuplicateDests([]ItemPlan{{SourceID: "a", Name: "one"}, {SourceID: "b", Name: "two"}}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, reason := ArchiveSupported("local:backup/vzdump-qemu-100.vma.zst", "vma"); ok || !strings.Contains(reason, "vma") {
+		t.Fatalf("vma %v %s", ok, reason)
+	}
+	if ok, reason := ArchiveSupported("pbs:store/vm/100", "pbs"); ok || !strings.Contains(reason, "Backup Server") {
+		t.Fatalf("pbs %v %s", ok, reason)
+	}
+	if ok, _ := ArchiveSupported("local:backup/vzdump-lxc-104.tar.zst", "tar.zst"); !ok {
+		t.Fatal("lxc tar")
+	}
+	if !DestLooksPartial("failed", "imported", false) || DestLooksPartial("running", "imported", true) {
+		t.Fatal("partial")
+	}
+	if !DestLooksPartial("creating", "imported", false) || DestLooksPartial("stopped", "alpine", false) {
+		t.Fatal("creating vs native")
+	}
+	rep, ok := CompletedReport([]Report{{SourceID: "pve/1", Name: "web", WorkloadID: "w1"}}, "pve/1", "web")
+	if !ok || rep.WorkloadID != "w1" {
+		t.Fatal("completed")
 	}
 }
 

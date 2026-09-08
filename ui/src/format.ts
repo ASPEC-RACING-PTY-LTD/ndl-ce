@@ -22,6 +22,11 @@ export function honestStatus(value?: string): string {
       return "Stopped";
     case "failed":
       return "Failed";
+    case "canceling":
+      return "Canceling";
+    case "canceled":
+    case "cancelled":
+      return "Canceled";
     case "succeeded":
       return "Succeeded";
     case "completed":

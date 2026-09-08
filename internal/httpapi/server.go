@@ -131,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/v1/me", s.me)
 	mux.HandleFunc("PATCH /api/v1/me", s.patchMe)
+	mux.HandleFunc("GET /api/v1/tokens", s.listTokens)
 	mux.HandleFunc("POST /api/v1/tokens", s.createToken)
 	mux.HandleFunc("POST /api/v1/tokens/revoke", s.revokeToken)
 	mux.HandleFunc("GET /api/v1/nodes", s.listNodes)
@@ -236,6 +237,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/migration/jobs/{id}", s.getMigrationJob)
 	mux.HandleFunc("POST /api/v1/migration/jobs/{id}/cancel", s.cancelMigrationJob)
 	mux.HandleFunc("POST /api/v1/migration/jobs/{id}/retry", s.retryMigrationJob)
+	mux.HandleFunc("GET /api/v1/migration/jobs/{id}/diagnostics", s.getMigrationJobDiagnostics)
 	mux.HandleFunc("POST /api/v1/migration/jobs/{id}/cleanup", s.cleanupMigrationStaging)
 	mux.HandleFunc("POST /api/v1/migration/import/disk", s.importMigrationDisk)
 	mux.HandleFunc("POST /api/v1/migration/import/bundle", s.importMigrationBundle)
@@ -247,6 +249,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/bulk-delete", s.bulkDeleteWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads/import", s.importVM)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/migration-diagnostics", s.getWorkloadMigrationDiagnostics)
 	mux.HandleFunc("GET /api/v1/workloads/{id}", s.getWorkload)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/guest", s.getWorkloadGuest)
 	mux.HandleFunc("PATCH /api/v1/workloads/{id}", s.patchWorkload)
@@ -666,42 +669,46 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string   `json:"name"`
 		Permissions []string `json:"permissions"`
+		Preset      string   `json:"preset"`
+		TTLHours    int      `json:"ttl_hours"`
 	}
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	for _, perm := range req.Permissions {
-		if !rbac.Authorize(p.Grants, perm) {
-			writeErr(w, http.StatusForbidden, "token permissions cannot exceed the creator")
+	perms, err := s.resolveTokenGrants(p, req.Preset, req.Permissions)
+	if err != nil {
+		if strings.Contains(err.Error(), "exceed") {
+			writeErr(w, http.StatusForbidden, err.Error())
 			return
 		}
-	}
-	raw, err := secutil.RandomHex(24)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	plain := "ndl_" + raw
-	tok := appdb.APIToken{
-		ID:          uuid.NewString(),
-		ClusterID:   p.User.ClusterID,
-		UserID:      p.User.ID,
-		Name:        strings.TrimSpace(req.Name),
-		TokenHash:   secutil.HashSHA256(plain),
-		Prefix:      plain[:8],
-		Permissions: req.Permissions,
+	expires, err := tokenExpiry(s.now(), req.TTLHours)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
 	}
-	if err := s.Store.CreateToken(r.Context(), tok); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	tok, plain, ok := issueAPIToken(s, w, r, p.User.ClusterID, p.User.ID, req.Name, perms, expires)
+	if !ok {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "token.create", "ok", tok.ID)
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":     tok.ID,
-		"prefix": tok.Prefix,
-		"token":  plain,
-	})
+	out := map[string]any{
+		"id":          tok.ID,
+		"prefix":      tok.Prefix,
+		"token":       plain,
+		"name":        tok.Name,
+		"permissions": tok.Permissions,
+	}
+	if tok.ExpiresAt != nil {
+		out["expires_at"] = tok.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if req.Preset != "" {
+		out["preset"] = strings.TrimSpace(req.Preset)
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
@@ -716,12 +723,32 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "id is required")
 		return
 	}
-	if err := s.Store.RevokeToken(r.Context(), req.ID, p.User.ID); err != nil {
+	existing, err := s.Store.GetToken(r.Context(), req.ID)
+	if err != nil || existing == nil || existing.ClusterID != p.User.ClusterID {
+		writeErr(w, http.StatusNotFound, "token not found")
+		return
+	}
+	clusterWide := hasRole(p, rbac.Admin) || hasRole(p, rbac.Operator)
+	if existing.UserID == p.User.ID {
+		if err := s.Store.RevokeToken(r.Context(), req.ID, p.User.ID); err != nil {
+			writeErr(w, http.StatusNotFound, "token not found")
+			return
+		}
+	} else if clusterWide {
+		if err := s.Store.RevokeClusterToken(r.Context(), p.User.ClusterID, req.ID); err != nil {
+			writeErr(w, http.StatusNotFound, "token not found")
+			return
+		}
+	} else {
 		writeErr(w, http.StatusNotFound, "token not found")
 		return
 	}
 	tok, err := s.Store.GetToken(r.Context(), req.ID)
-	if err != nil || tok == nil || tok.RevokedAt == nil || tok.UserID != p.User.ID {
+	if err != nil || tok == nil || tok.RevokedAt == nil {
+		writeErr(w, http.StatusInternalServerError, "could not revoke token")
+		return
+	}
+	if existing.UserID == p.User.ID && tok.UserID != p.User.ID {
 		writeErr(w, http.StatusInternalServerError, "could not revoke token")
 		return
 	}
@@ -749,6 +776,9 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 	if tok := bearer(r); tok != "" {
 		row, err := s.Store.GetTokenByHash(r.Context(), secutil.HashSHA256(tok))
 		if err != nil || row == nil || row.RevokedAt != nil {
+			return nil, errors.New("invalid token")
+		}
+		if row.ExpiresAt != nil && s.now().After(*row.ExpiresAt) {
 			return nil, errors.New("invalid token")
 		}
 		u, err := s.Store.GetUser(r.Context(), row.UserID)

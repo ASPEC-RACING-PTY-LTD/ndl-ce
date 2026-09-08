@@ -18,8 +18,8 @@ const (
 )
 
 // FileBackupStorage returns a directory, NFS, CIFS, or similar store that can
-// hold a downloadable vzdump. PBS is refused because the content API cannot
-// download those archives.
+// hold a vzdump archive. PBS is refused because those archives cannot be read
+// as a host file or streamed over the content API.
 func FileBackupStorage(storages []map[string]any) (id string, reason string) {
 	var pbs []string
 	var other []string
@@ -293,6 +293,26 @@ func (c *PVEClient) WaitTask(ctx context.Context, node, upid string) error {
 		case <-time.After(c.pollEvery()):
 		}
 	}
+}
+
+// OwnedTempBackup is true only when the volume still carries the No-dal
+// temporary-migration note. Operator backups are never owned.
+func (c *PVEClient) OwnedTempBackup(node, storage, volid string) bool {
+	if node == "" || storage == "" || volid == "" || !IsVzdumpArchive(volid) {
+		return false
+	}
+	rows, err := c.ListContent(node, storage, "backup")
+	if err != nil {
+		return false
+	}
+	for _, row := range rows {
+		id, _ := row["volid"].(string)
+		if id != volid {
+			continue
+		}
+		return notesMarkTempDump(row)
+	}
+	return false
 }
 
 func (c *PVEClient) DeleteContent(node, storage, volid string) error {

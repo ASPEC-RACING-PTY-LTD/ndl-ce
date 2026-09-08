@@ -359,6 +359,9 @@ func (m *Memory) RevokeUserSessions(_ context.Context, userID string) error {
 func (m *Memory) CreateToken(_ context.Context, t APIToken) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt = time.Now().UTC()
+	}
 	m.tokens[t.TokenHash] = t
 	return nil
 }
@@ -385,12 +388,38 @@ func (m *Memory) GetToken(_ context.Context, id string) (*APIToken, error) {
 	return nil, nil
 }
 
+func (m *Memory) ListTokens(_ context.Context, clusterID string) ([]APIToken, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]APIToken, 0)
+	for _, t := range m.tokens {
+		if t.ClusterID == clusterID {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
 func (m *Memory) RevokeToken(_ context.Context, id, userID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := time.Now().UTC()
 	for k, t := range m.tokens {
 		if t.ID == id && t.UserID == userID {
+			t.RevokedAt = &now
+			m.tokens[k] = t
+			return nil
+		}
+	}
+	return fmt.Errorf("token not found")
+}
+
+func (m *Memory) RevokeClusterToken(_ context.Context, clusterID, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now().UTC()
+	for k, t := range m.tokens {
+		if t.ID == id && t.ClusterID == clusterID {
 			t.RevokedAt = &now
 			m.tokens[k] = t
 			return nil

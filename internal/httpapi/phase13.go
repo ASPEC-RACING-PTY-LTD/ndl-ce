@@ -371,10 +371,27 @@ func (s *Server) createServicePrincipal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
+		Preset      string   `json:"preset"`
+		TTLHours    int      `json:"ttl_hours"`
 	}
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
 		writeErr(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	perms, err := s.resolveTokenGrants(p, req.Preset, req.Permissions)
+	if err != nil {
+		if strings.Contains(err.Error(), "exceed") {
+			writeErr(w, http.StatusForbidden, err.Error())
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	expires, err := tokenExpiry(s.now(), req.TTLHours)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	u := appdb.User{
@@ -389,18 +406,8 @@ func (s *Server) createServicePrincipal(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	raw, err := secutil.RandomHex(24)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	plain := "ndl_" + raw
-	tok := appdb.APIToken{
-		ID: uuid.NewString(), ClusterID: p.User.ClusterID, UserID: u.ID,
-		Name: "service", TokenHash: secutil.HashSHA256(plain), Prefix: plain[:8],
-	}
-	if err := s.Store.CreateToken(r.Context(), tok); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	tok, plain, ok := issueAPIToken(s, w, r, p.User.ClusterID, u.ID, "service", perms, expires)
+	if !ok {
 		return
 	}
 	sp := appdb.ServicePrincipal{ID: uuid.NewString(), ClusterID: p.User.ClusterID, UserID: u.ID, Name: strings.TrimSpace(req.Name)}
@@ -409,9 +416,17 @@ func (s *Server) createServicePrincipal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "service-principal.create", "ok", sp.ID)
-	writeJSON(w, http.StatusCreated, map[string]any{
+	out := map[string]any{
 		"id": sp.ID, "name": sp.Name, "user_id": u.ID, "token": plain, "kind": appdb.UserKindService,
-	})
+		"permissions": tok.Permissions,
+	}
+	if tok.ExpiresAt != nil {
+		out["expires_at"] = tok.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if strings.TrimSpace(req.Preset) != "" {
+		out["preset"] = strings.TrimSpace(req.Preset)
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 func (s *Server) listServicePrincipals(w http.ResponseWriter, r *http.Request) {
