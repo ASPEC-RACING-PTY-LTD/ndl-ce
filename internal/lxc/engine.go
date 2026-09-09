@@ -252,7 +252,13 @@ func (e *Engine) writeAppliedConfig(id string) error {
 	if e.SkipHostCmds || e.FakeUnpack {
 		return nil
 	}
-	return ensureGuestNetwork(spec.RootfsPath, spec.IP)
+	if err := ensureGuestNetwork(spec.RootfsPath, spec.IP); err != nil {
+		return err
+	}
+	if spec.Privileged {
+		return nil
+	}
+	return chownGuestNetFiles(spec.RootfsPath, hostMapStart(spec.UIDMap), hostMapStart(spec.GIDMap))
 }
 
 func (e *Engine) waitUnitActive(ctx context.Context, id string) error {

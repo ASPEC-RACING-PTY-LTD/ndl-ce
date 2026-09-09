@@ -1771,6 +1771,9 @@ func TestWorkloadCreateExplicitMAC(t *testing.T) {
 	if created["mac"] != want {
 		t.Fatalf("response mac %v", created["mac"])
 	}
+	if spec, _ := created["spec"].(map[string]any); spec["schema_version"] == "ndl.vm.spec.v1" {
+		t.Fatalf("system-container must not serialize VM defaults: %v", created["spec"])
+	}
 	if fw.lastSpec.MAC != want {
 		t.Fatalf("agent spec mac %s", fw.lastSpec.MAC)
 	}

@@ -366,6 +366,27 @@ func writeGuestDHCPUnit(rootfs string) error {
 	return os.Symlink("/etc/systemd/system/ndl-dhclient.service", link)
 }
 
+func chownGuestNetFiles(rootfs string, uid, gid int) error {
+	rels := []string{
+		"etc/systemd/system/systemd-networkd.service.d",
+		"etc/systemd/system/systemd-networkd.service.d/zzzz-ndl-lxc.conf",
+		"usr/local/sbin/ndl-guest-ipv4",
+		"etc/systemd/system/ndl-dhclient.service",
+		"etc/systemd/network/10-eth0.network",
+		"etc/network/interfaces",
+	}
+	for _, rel := range rels {
+		p := filepath.Join(rootfs, rel)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if err := os.Chown(p, uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 const guestNetworkdDropin = `[Service]
 RestrictNamespaces=no
 ProtectSystem=no
