@@ -2,12 +2,21 @@ export class Terminal {
   element: HTMLDivElement;
   cols = 80;
   rows = 24;
+  private textarea: HTMLTextAreaElement;
   private resizeHandler: ((size: { cols: number; rows: number }) => void) | null = null;
 
   constructor() {
     this.element = document.createElement("div");
     this.element.dataset.testid = "xterm";
     this.element.className = "xterm";
+    this.textarea = document.createElement("textarea");
+    this.textarea.className = "xterm-helper-textarea";
+    this.textarea.setAttribute("aria-label", "Terminal input");
+    this.element.appendChild(this.textarea);
+  }
+
+  focus() {
+    this.textarea.focus();
   }
 
   loadAddon(addon?: { activate?: (term: Terminal) => void }) {

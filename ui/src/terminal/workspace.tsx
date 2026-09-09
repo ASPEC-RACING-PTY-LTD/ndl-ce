@@ -484,7 +484,11 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       return;
     }
     if (rt.term.element.parentElement !== el) {
+      const keepFocus = document.activeElement instanceof Node && rt.term.element.contains(document.activeElement);
       el.appendChild(rt.term.element);
+      if (keepFocus) {
+        rt.term.focus();
+      }
     }
     try {
       rt.fit.fit();

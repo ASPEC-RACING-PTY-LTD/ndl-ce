@@ -12,9 +12,8 @@ import {
   termStyle,
   type TermSizePref,
 } from "../terminal/size";
-import { statusLabel } from "../terminal/types";
+import { statusLabel, type TermConnState, type TermTab } from "../terminal/types";
 import { useTerminalWorkspace } from "../terminal/workspace";
-import type { TermTab } from "../terminal/types";
 
 function eventPoint(ev: {
   clientX?: number;
@@ -40,6 +39,51 @@ function identityMeta(tab: TermTab): string {
     bits.push(tab.target.status === "running" ? "Running" : tab.target.status || statusLabel(tab.state));
   }
   return bits.join(" | ");
+}
+
+function TermSlot({
+  tabId,
+  active,
+  ioSessionId,
+  state,
+  attach,
+  detach,
+}: {
+  tabId: string;
+  active: boolean;
+  ioSessionId: string;
+  state: TermConnState;
+  attach: (tabId: string, el: HTMLElement) => void;
+  detach: (tabId: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    attach(tabId, el);
+    return () => detach(tabId);
+  }, [tabId, attach, detach]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    attach(tabId, el);
+  }, [tabId, attach, ioSessionId, state]);
+
+  return (
+    <div
+      ref={ref}
+      className={"term-slot" + (active ? " is-active" : "")}
+      data-term-slot={tabId}
+      data-io-session={ioSessionId}
+      data-active={active ? "true" : "false"}
+    />
+  );
 }
 
 export function TerminalPane({
@@ -77,8 +121,6 @@ export function TerminalPane({
   const tab = tabs.find((t) => t.tabId === activeId) ?? null;
   const lastFit = useRef({ w: 0, h: 0, id: "" });
   const size = termStyle(pref, limit);
-  const slotEls = useRef(new Map<string, HTMLElement>());
-  const attachKey = tabs.map((t) => `${t.tabId}:${t.state}:${t.ioSessionId ?? ""}`).join("|");
 
   const measureLimit = useCallback(() => {
     const el = holder.current;
@@ -113,25 +155,6 @@ export function TerminalPane({
     }
     measureLimit();
   }, [pref, measureLimit, activeId]);
-
-  const bindSlot = useCallback(
-    (tabId: string, el: HTMLElement | null) => {
-      if (el) {
-        slotEls.current.set(tabId, el);
-        attach(tabId, el);
-        return;
-      }
-      slotEls.current.delete(tabId);
-      detach(tabId);
-    },
-    [attach, detach],
-  );
-
-  useLayoutEffect(() => {
-    for (const [tabId, el] of slotEls.current) {
-      attach(tabId, el);
-    }
-  }, [attachKey, attach]);
 
   useLayoutEffect(() => {
     if (!activeId) {
@@ -404,13 +427,14 @@ export function TerminalPane({
         {dropActive ? <div className="term-drop">Drop files to upload into this session directory</div> : null}
         <div className="term-slots">
           {tabs.map((item) => (
-            <div
+            <TermSlot
               key={item.tabId}
-              className={"term-slot" + (item.tabId === activeId ? " is-active" : "")}
-              data-term-slot={item.tabId}
-              data-io-session={item.ioSessionId || ""}
-              data-active={item.tabId === activeId ? "true" : "false"}
-              ref={(el) => bindSlot(item.tabId, el)}
+              tabId={item.tabId}
+              active={item.tabId === activeId}
+              ioSessionId={item.ioSessionId || ""}
+              state={item.state}
+              attach={attach}
+              detach={detach}
             />
           ))}
         </div>

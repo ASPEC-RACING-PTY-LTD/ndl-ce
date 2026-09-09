@@ -436,6 +436,61 @@ describe("Terminal workspace", () => {
     expect(created).toHaveLength(1);
   });
 
+  it("keeps xterm focused in the same slot after cwd and connection updates", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
+    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitConnected();
+    const slot = document.querySelector(".term-slot.is-active") as HTMLElement | null;
+    expect(slot).toBeTruthy();
+    const termEl = slot?.querySelector('[data-testid="xterm"]') as HTMLElement | null;
+    const input = termEl?.querySelector("textarea") as HTMLTextAreaElement | null;
+    expect(termEl).toBeTruthy();
+    expect(input).toBeTruthy();
+    input?.focus();
+    expect(document.activeElement).toBe(input);
+    sockets[0]?.pushCwd("/home/ndl");
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/home\/ndl/));
+    expect(termEl?.parentElement).toBe(slot);
+    expect(termEl?.closest(".term-hold")).toBeNull();
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("leaves each session xterm in its own slot when switching tabs", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
+    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitConnected();
+    fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /new terminal here/i }));
+    await waitFor(() => expect(sockets.length).toBe(2));
+    sockets[0]?.pushCwd("/app");
+    sockets[1]?.pushCwd("/etc");
+    const slots = () => Array.from(document.querySelectorAll("[data-term-slot]")) as HTMLElement[];
+    await waitFor(() => expect(slots()).toHaveLength(2));
+    const firstTerm = slots()[0].querySelector('[data-testid="xterm"]');
+    const secondTerm = slots()[1].querySelector('[data-testid="xterm"]');
+    expect(firstTerm?.parentElement).toBe(slots()[0]);
+    expect(secondTerm?.parentElement).toBe(slots()[1]);
+    fireEvent.click(screen.getAllByRole("tab")[0]);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/app/));
+    fireEvent.click(screen.getAllByRole("tab")[1]);
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/etc/));
+    expect(firstTerm?.parentElement).toBe(slots()[0]);
+    expect(secondTerm?.parentElement).toBe(slots()[1]);
+    const activeInput = document.querySelector(".term-slot.is-active textarea") as HTMLTextAreaElement | null;
+    activeInput?.focus();
+    expect(document.activeElement).toBe(activeInput);
+    sockets[1]?.pushCwd("/var/tmp");
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/var\/tmp/));
+    expect(document.activeElement).toBe(activeInput);
+    expect(secondTerm?.parentElement).toBe(slots()[1]);
+  });
+
   it("sends a throttled PTY resize when the terminal box changes", async () => {
     installIO();
     window.history.replaceState({}, "", "/workloads/wl-a/terminal");
