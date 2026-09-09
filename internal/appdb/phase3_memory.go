@@ -68,6 +68,9 @@ func (m *Memory) UpdateStoragePoolObserved(_ context.Context, p StoragePool) err
 	cur.AllocatedBytes = p.AllocatedBytes
 	cur.ProvisionedBytes = p.ProvisionedBytes
 	cur.TotalBytes = p.TotalBytes
+	if len(p.Backing) > 0 {
+		cur.Backing = p.Backing
+	}
 	cur.UpdatedAt = time.Now().UTC()
 	m.pools[p.ID] = cur
 	return nil

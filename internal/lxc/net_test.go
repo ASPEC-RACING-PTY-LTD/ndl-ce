@@ -3,6 +3,7 @@ package lxc
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -80,11 +81,49 @@ func TestEnsureGuestNetworkStaticAndDNS(t *testing.T) {
 	if !strings.Contains(nd, "Address=10.1.2.8/24") || !strings.Contains(nd, "IPv6AcceptRA=no") {
 		t.Fatal(nd)
 	}
+	drop, err := os.ReadFile(filepath.Join(root, "etc", "systemd", "system", "systemd-networkd.service.d", "zzzz-ndl-lxc.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(drop), "RestrictNamespaces=no") {
+		t.Fatal(string(drop))
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc", "systemd", "system", "ndl-dhclient.service")); err == nil {
+		t.Fatal("static IPv4 must not enable the DHCP unit")
+	}
 	resolv, err := os.ReadFile(filepath.Join(root, "etc", "resolv.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(resolv), "nameserver 1.1.1.1") {
 		t.Fatal(string(resolv))
+	}
+}
+
+func TestEnsureGuestNetworkDHCPWritesClientUnit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("guest DHCP enablement writes a Unix systemd symlink")
+	}
+	root := t.TempDir()
+	if err := ensureGuestNetwork(root, IPConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile(filepath.Join(root, "usr", "local", "sbin", "ndl-guest-ipv4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(script)
+	if !strings.Contains(body, "dhclient") || !strings.Contains(body, "udhcpc") {
+		t.Fatal(body)
+	}
+	unit, err := os.ReadFile(filepath.Join(root, "etc", "systemd", "system", "ndl-dhclient.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(unit), "ndl-guest-ipv4") {
+		t.Fatal(string(unit))
+	}
+	if _, err := os.Lstat(filepath.Join(root, "etc", "systemd", "system", "multi-user.target.wants", "ndl-dhclient.service")); err != nil {
+		t.Fatal(err)
 	}
 }

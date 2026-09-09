@@ -325,7 +325,9 @@ func MountLVMArgv(dev, mount string) ([]string, error) {
 	if strings.Contains(mount, "..") {
 		return nil, fmt.Errorf("lvm mount is invalid")
 	}
-	return []string{LVMMountBin, "-o", "nouuid", dev, mount}, nil
+	// No-dal formats LVM container roots as ext4. nouuid is an XFS option
+	// and Debian 13 util-linux feeds it to fsconfig(), which ext4 rejects.
+	return []string{LVMMountBin, dev, mount}, nil
 }
 
 func refuseExportArgv(argv []string) error {

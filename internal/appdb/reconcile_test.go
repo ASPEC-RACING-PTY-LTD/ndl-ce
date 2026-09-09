@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -91,5 +92,43 @@ func TestReconcileStorageKeepsZFSVolumesWhenPoolAvailable(t *testing.T) {
 	vol, _ := m.GetVolume(context.Background(), cluster, volID)
 	if vol == nil || vol.Status != storage.StatusAvailable {
 		t.Fatalf("zfs volume must stay available: %+v", vol)
+	}
+}
+
+func TestReconcileStoragePersistsRootBacked(t *testing.T) {
+	m := NewMemory()
+	cluster := uuid.NewString()
+	node := uuid.NewString()
+	poolID := uuid.NewString()
+	_ = m.CreateCluster(context.Background(), Cluster{ID: cluster, Name: "local"})
+	_ = m.CreateStoragePool(context.Background(), StoragePool{
+		ID: poolID, ClusterID: cluster, NodeID: node, Name: "local",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: "/var/lib/ndl/storage/local", Backing: []byte(`{"fs_uuid":"ROOTFS"}`),
+	})
+	pools, _ := m.ListStoragePools(context.Background(), cluster)
+	_, _, err := ReconcileStorage(context.Background(), m, cluster, pools, storage.Observation{
+		Pools: []storage.ObservedPool{{
+			PoolID: poolID, Status: storage.StatusWarning,
+			Backing: storage.BackingIdentity{
+				FSUUID: "ROOTFS", FSType: "ext4", MountPoint: "/", Device: "/dev/sda1",
+				Dev: 1, RootBacked: true,
+			},
+			Warnings: []string{storage.WarnRootFilesystem},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := m.GetStoragePool(context.Background(), cluster, poolID)
+	if got == nil {
+		t.Fatal("pool missing")
+	}
+	var backing storage.BackingIdentity
+	if err := json.Unmarshal(got.Backing, &backing); err != nil {
+		t.Fatal(err)
+	}
+	if !backing.RootBacked || backing.MountPoint != "/" {
+		t.Fatalf("root_backed must persist: %+v", backing)
 	}
 }

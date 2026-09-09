@@ -1771,6 +1771,9 @@ func TestWorkloadCreateExplicitMAC(t *testing.T) {
 	if created["mac"] != want {
 		t.Fatalf("response mac %v", created["mac"])
 	}
+	if spec, _ := created["spec"].(map[string]any); spec["schema_version"] == "ndl.vm.spec.v1" {
+		t.Fatalf("system-container must not serialize VM defaults: %v", created["spec"])
+	}
 	if fw.lastSpec.MAC != want {
 		t.Fatalf("agent spec mac %s", fw.lastSpec.MAC)
 	}
@@ -1782,18 +1785,32 @@ func TestWorkloadCreateExplicitMAC(t *testing.T) {
 
 func TestWorkloadCreateRejectsInvalidAndDuplicateMAC(t *testing.T) {
 	s, _, token, poolID, netID, _ := seedCTServer(t)
+	var volCreates int
+	s.Storage = fakeStorage{
+		vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+			BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+			Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+		}},
+		volCreates: &volCreates,
+	}
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 	bad := `{"name":"bad-mac","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","mac":"not-a-mac"}`
 	code, raw := postCT(t, ts, cookie, bad)
-	if code == http.StatusCreated {
-		t.Fatalf("invalid mac must fail: %s", raw)
+	if code != http.StatusBadRequest || !strings.Contains(string(raw), "mac must") {
+		t.Fatalf("invalid mac must fail: %d %s", code, raw)
+	}
+	if volCreates != 0 {
+		t.Fatalf("invalid mac must not allocate storage: %d", volCreates)
 	}
 	ok := `{"name":"first-mac","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","mac":"bc:24:11:00:00:01"}`
 	code, raw = postCT(t, ts, cookie, ok)
 	if code != http.StatusCreated {
 		t.Fatalf("first %d %s", code, raw)
+	}
+	if volCreates != 1 {
+		t.Fatalf("first create volumes %d", volCreates)
 	}
 	dup := `{"name":"dup-mac","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","mac":"BC-24-11-00-00-01"}`
 	code, raw = postCT(t, ts, cookie, dup)
@@ -1802,6 +1819,36 @@ func TestWorkloadCreateRejectsInvalidAndDuplicateMAC(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "already used") {
 		t.Fatalf("duplicate message %s", raw)
+	}
+	if volCreates != 1 {
+		t.Fatalf("duplicate mac must not allocate another volume: %d", volCreates)
+	}
+}
+
+func TestWorkloadCreatePersistsVolumeMountError(t *testing.T) {
+	s, mem, token, poolID, netID, _ := seedCTServer(t)
+	s.Storage = fakeStorage{err: errors.New("failed_precondition: exit status 32: mount: failed to setup loop device")}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"loop-fail","kind":"system-container","image_pin":"debian/trixie/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	code, raw := postCT(t, ts, cookie, body)
+	if code == http.StatusCreated {
+		t.Fatalf("volume mount failure must fail create: %s", raw)
+	}
+	if !strings.Contains(string(raw), "loop device") {
+		t.Fatalf("api must return mount error: %s", raw)
+	}
+	cluster, _ := mem.GetCluster(context.Background())
+	ops, _ := mem.ListOperations(context.Background(), cluster.ID, 20)
+	var failed *appdb.Operation
+	for i := range ops {
+		if ops[i].Kind == "workload.create" && ops[i].State == "failed" {
+			failed = &ops[i]
+		}
+	}
+	if failed == nil || !strings.Contains(failed.Message, "loop device") {
+		t.Fatalf("failed task must persist mount error: %+v", ops)
 	}
 }
 

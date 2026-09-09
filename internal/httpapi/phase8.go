@@ -71,6 +71,12 @@ func AdaptVM(client any) VMRPC {
 }
 
 func specJSON(w appdb.Workload) json.RawMessage {
+	if w.Kind != vmspec.KindVM {
+		if len(w.SpecJSON) == 0 {
+			return json.RawMessage(`{}`)
+		}
+		return w.SpecJSON
+	}
 	if len(w.SpecJSON) == 0 {
 		return json.RawMessage(`{}`)
 	}

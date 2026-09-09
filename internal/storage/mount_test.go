@@ -40,6 +40,26 @@ func TestSameBacking(t *testing.T) {
 	}
 }
 
+func TestDedicatedMountLost(t *testing.T) {
+	data := BackingIdentity{FSUUID: "DATAFS", MountPoint: "/mnt/data", Device: "/dev/sdb1", Dev: 2, RootBacked: false}
+	naked := BackingIdentity{FSUUID: "ROOTFS", MountPoint: "/", Device: "/dev/sda1", Dev: 1, RootBacked: true}
+	if !DedicatedMountLost(data, naked) {
+		t.Fatal("dedicated mount that falls onto root must fail closed")
+	}
+	root := BackingIdentity{FSUUID: "ROOTFS", MountPoint: "/", Device: "/dev/sda1", Dev: 1, RootBacked: true}
+	if DedicatedMountLost(root, naked) {
+		t.Fatal("intentional root-backed pool must not look like a disappeared mount")
+	}
+	legacy := BackingIdentity{FSUUID: "ROOTFS", Dev: 1, RootBacked: false}
+	if DedicatedMountLost(legacy, naked) {
+		t.Fatal("legacy root UUID without root_backed must stay available")
+	}
+	legacySlash := BackingIdentity{FSUUID: "ROOTFS", MountPoint: "/", RootBacked: false}
+	if DedicatedMountLost(legacySlash, naked) {
+		t.Fatal("legacy mount_point=/ must be treated as intentional")
+	}
+}
+
 func TestQEMUCreateArgvTyped(t *testing.T) {
 	argv, err := QEMUCreateArgv("/usr/bin/qemu-img", FormatQCOW2, "/pool/vol.qcow2", 1<<30)
 	if err != nil {

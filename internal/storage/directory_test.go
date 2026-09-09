@@ -233,10 +233,53 @@ func TestMountDisappearanceBlocksWrites(t *testing.T) {
 	if obs.Pools[0].Status != StatusUnavailable {
 		t.Fatalf("naked mountpoint must be unavailable: %+v", obs.Pools[0])
 	}
+	if obs.Pools[0].Reason != backingDisappearedReason {
+		t.Fatalf("reason=%q", obs.Pools[0].Reason)
+	}
 	if _, err := d.CreateVolume(context.Background(), CreateVolumeRequest{
 		VolumeID: uuid.NewString(), PoolID: id, RootPath: root, Class: ClassVMDisk, Size: 1 << 30,
 	}, hint); err == nil {
 		t.Fatal("must not write into naked mountpoint")
+	}
+}
+
+func TestObserveIntentionalRootBackedStaysAvailable(t *testing.T) {
+	d, base := fixtureDir(t, "", true, 10<<30)
+	id := uuid.NewString()
+	root := base + "/onroot"
+	res, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: id, RootPath: root, Create: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Backing.RootBacked {
+		t.Fatal("setup must be root-backed")
+	}
+	obs := d.Observe([]PoolHint{{
+		PoolID: id, BackendType: BackendDirectory, RootPath: root, Backing: res.Backing,
+	}})
+	if obs.Pools[0].Status == StatusUnavailable {
+		t.Fatalf("intentional root-backed pool must stay usable: %+v", obs.Pools[0])
+	}
+	if !contains(obs.Pools[0].Warnings, WarnRootFilesystem) {
+		t.Fatalf("want root warning: %+v", obs.Pools[0])
+	}
+}
+
+func TestLegacyRootRecordWithoutFlagStaysAvailable(t *testing.T) {
+	d, base := fixtureDir(t, "", true, 10<<30)
+	id := uuid.NewString()
+	root := base + "/legacy"
+	res, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: id, RootPath: root, Create: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := res.Backing
+	legacy.RootBacked = false
+	obs := d.Observe([]PoolHint{{
+		PoolID: id, BackendType: BackendDirectory, RootPath: root, Backing: legacy,
+	}})
+	if obs.Pools[0].Status == StatusUnavailable {
+		t.Fatalf("legacy root UUID without root_backed must stay usable: %+v", obs.Pools[0])
 	}
 }
 

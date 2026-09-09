@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +19,8 @@ func TestDirectoryRootArgv(t *testing.T) {
 		t.Fatalf("%v %v", mkfs, err)
 	}
 	loop, err := MountLoopArgv(img, mnt)
-	if err != nil || !strings.Contains(strings.Join(loop, " "), "loop,nouuid") {
+	joined := strings.Join(loop, " ")
+	if err != nil || !strings.Contains(joined, "-o loop ") || strings.Contains(joined, "nouuid") {
 		t.Fatalf("%v %v", loop, err)
 	}
 	if _, err := MountLoopArgv(img, "/etc/passwd"); err != nil {
@@ -57,7 +59,7 @@ func TestDirectoryContainerRootEnforcesSize(t *testing.T) {
 	if st.Size() != 8<<30 {
 		t.Fatalf("image size %d", st.Size())
 	}
-	if len(ran) < 2 || !strings.Contains(ran[0], BinMkfsExt4) || !strings.Contains(ran[1], "loop,nouuid") {
+	if len(ran) < 2 || !strings.Contains(ran[0], BinMkfsExt4) || !strings.Contains(ran[1], "-o loop ") || strings.Contains(ran[1], "nouuid") {
 		t.Fatalf("limit commands: %v", ran)
 	}
 }
@@ -96,5 +98,159 @@ func TestDirectoryResizeRefusesShrink(t *testing.T) {
 	req.Size = 4 << 30
 	if err := d.ResizeVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err == nil {
 		t.Fatal("shrink must be refused")
+	}
+}
+
+func TestDirectoryResizeRunsE2fsck(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 20<<30)
+	var ran []string
+	d.Run = func(_ context.Context, name string, args ...string) error {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	poolID := uuid.NewString()
+	root := base + "/pool"
+	if _, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: poolID, RootPath: root, Create: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	req := CreateVolumeRequest{
+		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Size: 8 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindOperator,
+	}
+	if _, err := d.CreateVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	ran = nil
+	req.Size = 10 << 30
+	if err := d.ResizeVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(ran, "\n")
+	if !strings.Contains(joined, BinE2fsck) || !strings.Contains(joined, BinResize2fs) {
+		t.Fatalf("grow must fsck then resize: %v", ran)
+	}
+	e2 := -1
+	rs := -1
+	for i, c := range ran {
+		if strings.Contains(c, BinE2fsck) {
+			e2 = i
+		}
+		if strings.Contains(c, BinResize2fs) {
+			rs = i
+		}
+	}
+	if e2 < 0 || rs < 0 || e2 > rs {
+		t.Fatalf("e2fsck must run before resize2fs: %v", ran)
+	}
+}
+
+func TestDirectoryResizeSameSizeStillFscks(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 20<<30)
+	var ran []string
+	d.Run = func(_ context.Context, name string, args ...string) error {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	poolID := uuid.NewString()
+	root := base + "/pool"
+	if _, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: poolID, RootPath: root, Create: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	req := CreateVolumeRequest{
+		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Size: 8 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindOperator,
+	}
+	if _, err := d.CreateVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	ran = nil
+	if err := d.ResizeVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(ran, "\n")
+	if !strings.Contains(joined, BinE2fsck) || !strings.Contains(joined, BinResize2fs) {
+		t.Fatalf("same-size grow must still complete the filesystem: %v", ran)
+	}
+}
+
+func TestEnsureDirectoryRootMounted(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 10<<30)
+	var ran []string
+	d.Run = func(_ context.Context, name string, args ...string) error {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	abs := filepath.Join(filepath.FromSlash(base), "root")
+	if err := os.MkdirAll(abs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.EnsureDirectoryRootMounted(context.Background(), abs); err != nil {
+		t.Fatal(err)
+	}
+	if len(ran) != 0 {
+		t.Fatalf("no image must not mount: %v", ran)
+	}
+	if err := os.WriteFile(abs+VolumeSizeExt, []byte("img"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.EnsureDirectoryRootMounted(context.Background(), abs); err != nil {
+		t.Fatal(err)
+	}
+	if len(ran) != 1 || !strings.Contains(ran[0], "-o loop ") || strings.Contains(ran[0], "nouuid") {
+		t.Fatalf("want loop mount, got %v", ran)
+	}
+}
+
+func TestRestoreLoopMountsRefusesSlash(t *testing.T) {
+	d := Directory{Run: func(context.Context, string, ...string) error { return nil }}
+	if err := d.RestoreLoopMounts(context.Background(), "/"); err == nil {
+		t.Fatal("must refuse /")
+	}
+}
+
+func TestMountLoopExt4AcceptsLoopAndRejectsNouuid(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to loop-mount")
+	}
+	if _, err := os.Stat(BinMkfsExt4); err != nil {
+		t.Skip("mkfs.ext4 is not installed")
+	}
+	dir := t.TempDir()
+	img := filepath.Join(dir, "root.img")
+	mnt := filepath.Join(dir, "mnt")
+	if err := os.Mkdir(mnt, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(64 << 20); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(BinMkfsExt4, "-F", "-q", img).CombinedOutput(); err != nil {
+		t.Fatalf("mkfs: %s %v", out, err)
+	}
+	if out, err := exec.Command(BinMount, "-o", "loop,nouuid", img, mnt).CombinedOutput(); err == nil {
+		_ = exec.Command(BinUmount, mnt).Run()
+		t.Fatal("ext4 must reject nouuid")
+	} else if !strings.Contains(string(out), "nouuid") && !strings.Contains(string(out), "Unknown parameter") {
+		t.Fatalf("unexpected nouuid failure: %s %v", out, err)
+	}
+	argv, err := MountLoopArgv(img, mnt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil {
+		t.Fatalf("loop mount: %s %v", out, err)
+	}
+	if err := exec.Command(BinUmount, mnt).Run(); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -4,8 +4,10 @@ package lxc
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -150,6 +152,98 @@ func assertOwner(t *testing.T, path string, uid, gid int) {
 	if int(sys.Uid) != uid || int(sys.Gid) != gid {
 		t.Fatalf("%s uid/gid %d:%d want %d:%d", path, sys.Uid, sys.Gid, uid, gid)
 	}
+}
+
+func TestUnpackTarMappedLiveDoesNotNeedCachePathname(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live userns extract")
+	}
+	if _, err := exec.LookPath(BinUsernsExec); err != nil {
+		t.Skip("lxc-usernsexec not installed")
+	}
+	if _, err := exec.LookPath("xz"); err != nil {
+		t.Skip("xz not installed")
+	}
+	dir := t.TempDir()
+	cacheDir := filepath.Join(dir, "cache")
+	rootfs := filepath.Join(dir, "rootfs")
+	if err := os.MkdirAll(cacheDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(rootfs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(cacheDir, "root.tar.xz")
+	if err := writeTinyRootTarXZ(archive); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(archive, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(cacheDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{}
+	if err := e.unpackTar(context.Background(), Spec{UIDMap: DefaultUIDMap, GIDMap: DefaultGIDMap}, archive, rootfs); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o640 {
+		t.Fatalf("cache mode must stay 0640, got %o", st.Mode().Perm())
+	}
+	host, err := os.ReadFile(filepath.Join(rootfs, "etc", "hostname"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(host) != "guest\n" {
+		t.Fatalf("extracted %q", host)
+	}
+	info, err := os.Stat(filepath.Join(rootfs, "etc", "hostname"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if statUID(info) != 100000 {
+		t.Fatalf("mapped uid %d", statUID(info))
+	}
+}
+
+func writeTinyRootTarXZ(dest string) error {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	hdr := &tar.Header{Name: "etc/hostname", Mode: 0o644, Size: 6, Uid: 0, Gid: 0}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	if _, err := tw.Write([]byte("guest\n")); err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	cmd := exec.Command("xz", "-c")
+	cmd.Stdin = bytes.NewReader(buf.Bytes())
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
+	if err != nil {
+		return err
+	}
+	cmd.Stdout = out
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+func statUID(info os.FileInfo) int {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return -1
+	}
+	return int(st.Uid)
 }
 
 func TestUnpackTarUnprivilegedErrorsRemainFatal(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -11,22 +12,24 @@ import (
 // tarExtractArgs is the GNU tar vector for a host-readable archive path.
 // Privileged containers extract as host root, so the cache pathname is fine.
 func tarExtractArgs(archive, rootfs string) []string {
-	return tarExtractArgsWithFile(archive, rootfs, archive)
-}
-
-// tarExtractStdinArgs reads the archive from stdin. Used inside lxc-usernsexec
-// so mapped root (host UID 100000) never opens the root-owned cache path.
-func tarExtractStdinArgs(archive, rootfs string) []string {
-	return tarExtractArgsWithFile(archive, rootfs, "-")
-}
-
-func tarExtractArgsWithFile(archive, rootfs, file string) []string {
-	args := []string{"--numeric-owner", "-x", "-C", rootfs, "-f", file}
+	args := []string{"--numeric-owner", "-x", "-C", rootfs, "-f", archive}
 	if strings.HasSuffix(archive, ".tar.xz") || strings.HasSuffix(archive, ".xz") {
-		args = []string{"--numeric-owner", "-xJ", "-C", rootfs, "-f", file}
+		args = []string{"--numeric-owner", "-xJ", "-C", rootfs, "-f", archive}
 	} else if strings.HasSuffix(archive, ".tar.gz") || strings.HasSuffix(archive, ".tgz") {
-		args = []string{"--numeric-owner", "-xz", "-C", rootfs, "-f", file}
+		args = []string{"--numeric-owner", "-xz", "-C", rootfs, "-f", archive}
 	}
+	return args
+}
+
+// tarStdinArgs reads the archive from stdin. dest is typically "." after the
+// privileged parent chdirs into the rootfs so mapped tar never opens the
+// root-owned cache path and does not need to traverse it.
+func tarStdinArgs(archive, dest string) []string {
+	args := tarExtractArgs(archive, dest)
+	if len(args) < 2 {
+		return args
+	}
+	args[len(args)-1] = "-"
 	return args
 }
 
@@ -34,11 +37,9 @@ func usernsMapFlag(mapping string) string {
 	return strings.ReplaceAll(strings.Join(strings.Fields(strings.TrimSpace(mapping)), " "), " ", ":")
 }
 
-// usernsExtractArgs runs tar as mapped root so archive UIDs land on the
-// persisted host map (0 -> 100000, 100 -> 100100) and chmod is permitted.
-// The archive path is used only to choose the decompressor. The bytes come
-// from stdin, which the privileged parent already opened.
-func usernsExtractArgs(uidMap, gidMap, archive, rootfs string) []string {
+// usernsExtractArgs runs tar as mapped root. The archive is supplied on
+// stdin by the privileged parent. dest is typically "." after chdir.
+func usernsExtractArgs(uidMap, gidMap, archive, dest string) []string {
 	if uidMap == "" {
 		uidMap = DefaultUIDMap
 	}
@@ -46,7 +47,7 @@ func usernsExtractArgs(uidMap, gidMap, archive, rootfs string) []string {
 		gidMap = DefaultGIDMap
 	}
 	out := []string{"-m", usernsMapFlag(uidMap), "-m", usernsMapFlag(gidMap), "--", BinTar}
-	out = append(out, tarExtractStdinArgs(archive, rootfs)...)
+	out = append(out, tarStdinArgs(archive, dest)...)
 	return out
 }
 
@@ -68,33 +69,73 @@ func (e *Engine) unpackTar(ctx context.Context, spec Spec, archive, rootfs strin
 	if err := validateRootfsPath(rootfs); err != nil {
 		return err
 	}
-	src, err := os.Open(archive)
-	if err != nil {
-		return fmt.Errorf("open cached image: %w", err)
-	}
-	defer src.Close()
-	if err := e.prepareMappedExtractRoot(rootfs, spec); err != nil {
-		return err
-	}
-	args := usernsExtractArgs(spec.UIDMap, spec.GIDMap, archive, rootfs)
+	args := usernsExtractArgs(spec.UIDMap, spec.GIDMap, archive, ".")
 	for _, a := range args {
 		if a == archive {
 			return fmt.Errorf("unprivileged extract must not pass the cache path into the user namespace")
 		}
 	}
-	_, err = e.runStdin(ctx, src, BinUsernsExec, args...)
-	if err != nil {
+	if e.RunStdin != nil {
+		src, err := os.Open(archive)
+		if err != nil {
+			return fmt.Errorf("open cached image: %w", err)
+		}
+		defer src.Close()
+		_, err = e.RunStdin(ctx, BinUsernsExec, src, args...)
+		if err != nil {
+			return fmt.Errorf("unprivileged rootfs extract: %w", err)
+		}
+		return nil
+	}
+	if e.Run != nil {
+		_, err := e.Run(ctx, BinUsernsExec, args...)
+		if err != nil {
+			return fmt.Errorf("unprivileged rootfs extract: %w", err)
+		}
+		return nil
+	}
+	if e.SkipHostCmds {
+		return nil
+	}
+	if err := prepareMappedExtractRoot(rootfs, spec.UIDMap, spec.GIDMap); err != nil {
+		return fmt.Errorf("unprivileged rootfs extract: %w", err)
+	}
+	if err := e.unpackTarMapped(ctx, args, archive, rootfs); err != nil {
 		return fmt.Errorf("unprivileged rootfs extract: %w", err)
 	}
 	return nil
 }
 
-func (e *Engine) prepareMappedExtractRoot(rootfs string, spec Spec) error {
-	if e.Run != nil || e.RunStdin != nil || e.SkipHostCmds {
-		return nil
-	}
-	if err := ensureTraverse(rootfs); err != nil {
+func prepareMappedExtractRoot(rootfs, uidMap, gidMap string) error {
+	if err := os.MkdirAll(rootfs, 0o750); err != nil {
 		return err
 	}
-	return chownMappedRoot(rootfs, hostMapStart(spec.UIDMap), hostMapStart(spec.GIDMap))
+	uid := hostMapStart(uidMap)
+	gid := hostMapStart(gidMap)
+	if err := os.Chown(rootfs, uid, gid); err != nil {
+		return fmt.Errorf("chown mapped rootfs: %w", err)
+	}
+	return os.Chmod(rootfs, 0o750)
+}
+
+func (e *Engine) unpackTarMapped(ctx context.Context, args []string, archive, rootfs string) error {
+	if !allowedBin(BinUsernsExec) {
+		return fmt.Errorf("refusing unlisted binary %s", BinUsernsExec)
+	}
+	f, err := os.Open(archive)
+	if err != nil {
+		return fmt.Errorf("open archive: %w", err)
+	}
+	defer f.Close()
+	cmd := exec.CommandContext(ctx, BinUsernsExec, args...)
+	cmd.Dir = rootfs
+	cmd.Stdin = f
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if len(out) == 0 {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }

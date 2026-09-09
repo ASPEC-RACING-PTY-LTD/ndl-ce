@@ -14,6 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/qemu"
+	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
 func main() {
@@ -34,6 +35,7 @@ func main() {
 		OCI:       &oci.Engine{DataDir: dir},
 	}
 	recoverStaleNetwork(dir)
+	restoreDirectoryRoots(dir)
 	go scrapeMetrics(ms, dir)
 	go h.RefreshLoop(30 * time.Second)
 	go h.SessionLoop(dir, 30*time.Second)
@@ -54,6 +56,11 @@ func recoverStaleNetwork(dataDir string) {
 	eng := &ndnet.Engine{StateDir: filepath.Join(dataDir, "net")}
 	_ = eng.RecoverStale(time.Now().UTC())
 	_ = eng.RestoreNAT(context.Background())
+}
+
+func restoreDirectoryRoots(dataDir string) {
+	d := storage.Directory{Run: storage.LiveRun}
+	_ = d.RestoreLoopMounts(context.Background(), filepath.Join(dataDir, "storage"))
 }
 
 func scrapeMetrics(ms *metrics.Store, dataDir string) {

@@ -119,6 +119,66 @@ func SameBacking(expected, observed BackingIdentity) bool {
 	return false
 }
 
+const backingDisappearedReason = "backing mount disappeared; refusing to use the naked mountpoint on the root filesystem"
+
+// MergeBackingIntent copies missing locator fields from the on-disk marker
+// onto the control-plane hint. Marker RootBacked wins when the hint omitted it.
+func MergeBackingIntent(hint, marker BackingIdentity) BackingIdentity {
+	out := hint
+	if out.FSUUID == "" {
+		out.FSUUID = marker.FSUUID
+	}
+	if out.Dev == 0 {
+		out.Dev = marker.Dev
+	}
+	if out.Device == "" {
+		out.Device = marker.Device
+	}
+	if out.MountPoint == "" {
+		out.MountPoint = marker.MountPoint
+	}
+	if out.FSType == "" {
+		out.FSType = marker.FSType
+	}
+	if marker.RootBacked {
+		out.RootBacked = true
+	}
+	return out
+}
+
+// IntendedRootBacked reports a Directory pool that was created on the host
+// root filesystem, including legacy records that omitted root_backed.
+func IntendedRootBacked(expected BackingIdentity) bool {
+	if expected.RootBacked {
+		return true
+	}
+	return expected.MountPoint == "/"
+}
+
+// DedicatedMountLost reports a dedicated/external backing mount that is gone
+// so the pool directory now sits on the host root filesystem.
+func DedicatedMountLost(expected, observed BackingIdentity) bool {
+	if !observed.RootBacked || IntendedRootBacked(expected) {
+		return false
+	}
+	if SameBacking(expected, observed) {
+		return false
+	}
+	if expected.MountPoint != "" && expected.MountPoint != "/" {
+		return true
+	}
+	if expected.FSUUID != "" && observed.FSUUID != "" && expected.FSUUID != observed.FSUUID {
+		return true
+	}
+	if expected.Dev != 0 && observed.Dev != 0 && expected.Dev != observed.Dev {
+		return true
+	}
+	if expected.Device != "" && observed.Device != "" && expected.Device != observed.Device {
+		return true
+	}
+	return false
+}
+
 func backingFromMount(m Mount, dev uint64, uuidFallback string, rootDev uint64, rootUUID string) BackingIdentity {
 	uuid := m.FSUUID
 	if uuid == "" {

@@ -226,6 +226,7 @@ func (d Directory) observeHint(hint PoolHint) (ObservedPool, []ObservedVolume, [
 	if obs.Status == StatusUnavailable {
 		return obs, nil, nil
 	}
+	d.restoreContainerRoots(root)
 	vols, libs := d.scanOwned(root, hint.PoolID)
 	alloc, prov := sumObserved(vols, libs)
 	obs.Capacity.AllocatedBytes = int64ptr(alloc)
@@ -291,20 +292,18 @@ func (d Directory) observeRoot(root, poolID string, expected BackingIdentity, re
 				Backing: backing,
 			}, nil
 		}
-		if expected.FSUUID == "" && expected.Dev == 0 {
-			expected = marker.Backing
+		expected = MergeBackingIntent(expected, marker.Backing)
+		if DedicatedMountLost(expected, backing) {
+			return ObservedPool{
+				PoolID: poolID, BackendType: BackendDirectory, RootPath: root,
+				Status: StatusUnavailable, Reason: backingDisappearedReason,
+				Backing: backing,
+			}, nil
 		}
 		if !SameBacking(expected, backing) {
 			return ObservedPool{
 				PoolID: poolID, BackendType: BackendDirectory, RootPath: root,
 				Status: StatusUnavailable, Reason: ErrBackingChanged.Error(),
-				Backing: backing,
-			}, nil
-		}
-		if expected.RootBacked == false && backing.RootBacked {
-			return ObservedPool{
-				PoolID: poolID, BackendType: BackendDirectory, RootPath: root,
-				Status: StatusUnavailable, Reason: "backing mount disappeared; refusing to use the naked mountpoint on the root filesystem",
 				Backing: backing,
 			}, nil
 		}
