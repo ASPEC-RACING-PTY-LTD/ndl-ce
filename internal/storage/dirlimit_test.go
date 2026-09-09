@@ -98,3 +98,38 @@ func TestDirectoryResizeRefusesShrink(t *testing.T) {
 		t.Fatal("shrink must be refused")
 	}
 }
+
+func TestEnsureDirectoryRootMounted(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 10<<30)
+	var ran []string
+	d.Run = func(_ context.Context, name string, args ...string) error {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	abs := filepath.Join(filepath.FromSlash(base), "root")
+	if err := os.MkdirAll(abs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.EnsureDirectoryRootMounted(context.Background(), abs); err != nil {
+		t.Fatal(err)
+	}
+	if len(ran) != 0 {
+		t.Fatalf("no image must not mount: %v", ran)
+	}
+	if err := os.WriteFile(abs+VolumeSizeExt, []byte("img"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.EnsureDirectoryRootMounted(context.Background(), abs); err != nil {
+		t.Fatal(err)
+	}
+	if len(ran) != 1 || !strings.Contains(ran[0], "loop,nouuid") {
+		t.Fatalf("want loop mount, got %v", ran)
+	}
+}
+
+func TestRestoreLoopMountsRefusesSlash(t *testing.T) {
+	d := Directory{Run: func(context.Context, string, ...string) error { return nil }}
+	if err := d.RestoreLoopMounts(context.Background(), "/"); err == nil {
+		t.Fatal("must refuse /")
+	}
+}

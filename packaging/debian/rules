@@ -37,6 +37,7 @@ override_dh_auto_build:
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-agent ./cmd/ndl-agent
 	$(GO_CD) go build -o $(GO_OUT)build/nodalctl ./cmd/nodalctl
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-network-rollback ./cmd/ndl-network-rollback
+	$(GO_CD) go build -o $(GO_OUT)build/ndl-ct-prepare ./cmd/ndl-ct-prepare
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-qemu-launch ./cmd/ndl-qemu-launch
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-oci-launch ./cmd/ndl-oci-launch
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-guest ./cmd/ndl-guest
@@ -55,6 +56,7 @@ override_dh_auto_install:
 	install -m 0755 build/ndl-oci-launch debian/tmp/usr/sbin/ndl-oci-launch
 	install -m 0755 build/ndl-guest debian/tmp/usr/sbin/ndl-guest
 	install -m 0755 build/ndl-network-rollback debian/tmp/usr/lib/ndl/ndl-network-rollback
+	install -m 0755 build/ndl-ct-prepare debian/tmp/usr/lib/ndl/ndl-ct-prepare
 	install -m 0755 build/nodalctl debian/tmp/usr/bin/nodalctl
 	test -f $(MODROOT)/ui/dist/index.html
 	test -d $(MODROOT)/ui/dist/assets

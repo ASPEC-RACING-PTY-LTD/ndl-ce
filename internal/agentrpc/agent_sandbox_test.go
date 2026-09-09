@@ -74,6 +74,32 @@ func TestAgentUnitKeepsLeastPrivilegeAttachSandbox(t *testing.T) {
 	}
 }
 
+func TestCTUnitPreparesDirectoryRootMount(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("caller")
+	}
+	root := filepath.Join(filepath.Dir(file), "..", "..")
+	unit, err := os.ReadFile(filepath.Join(root, "systemd", "nodal-ct@.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(unit)
+	if !strings.Contains(text, "ExecStartPre=/usr/lib/ndl/ndl-ct-prepare %i") {
+		t.Fatal("nodal-ct@.service must remount a sized directory root before lxc-start")
+	}
+	if strings.Contains(text, "BindsTo=ndl-agent") || strings.Contains(text, "Requires=ndl-agent") {
+		t.Fatal("container units must not bind to ndl-agent")
+	}
+	install, err := os.ReadFile(filepath.Join(root, "packaging", "debian", "ndl-agent.install"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(install), "usr/lib/ndl/ndl-ct-prepare") {
+		t.Fatal("ndl-agent.install must ship ndl-ct-prepare")
+	}
+}
+
 func TestDebianRulesInstallsAgentUnitFromSystemdTree(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

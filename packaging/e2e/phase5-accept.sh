@@ -11,6 +11,8 @@ sleep 2
 systemctl is-active ndl-control ndl-agent
 test -S /run/ndl/agent.sock
 test -f /lib/systemd/system/nodal-ct@.service
+grep -q 'ExecStartPre=/usr/lib/ndl/ndl-ct-prepare %i' /lib/systemd/system/nodal-ct@.service
+test -x /usr/lib/ndl/ndl-ct-prepare
 test -f /lib/systemd/system/ndl-agent.service
 grep -qx 'NoNewPrivileges=yes' /lib/systemd/system/ndl-agent.service
 grep -qx 'DevicePolicy=closed' /lib/systemd/system/ndl-agent.service

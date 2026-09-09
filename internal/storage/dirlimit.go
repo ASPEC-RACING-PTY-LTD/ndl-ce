@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	BinMkfsExt4  = "/usr/sbin/mkfs.ext4"
-	BinMount     = "/usr/bin/mount"
-	BinUmount    = "/usr/bin/umount"
-	BinResize2fs = "/usr/sbin/resize2fs"
+	BinMkfsExt4   = "/usr/sbin/mkfs.ext4"
+	BinMount      = "/usr/bin/mount"
+	BinUmount     = "/usr/bin/umount"
+	BinResize2fs  = "/usr/sbin/resize2fs"
 	VolumeSizeExt = ".img"
 )
 
@@ -208,4 +208,78 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 		}
 	}
 	return nil
+}
+
+func (d Directory) restoreContainerRoots(root string) {
+	if d.Run == nil {
+		return
+	}
+	dir := path.Join(root, "volumes", ClassContainerRoot)
+	ents, err := d.host().ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		name := e.Name()
+		if !strings.HasSuffix(name, VolumeSizeExt) {
+			continue
+		}
+		abs := path.Join(dir, strings.TrimSuffix(name, VolumeSizeExt))
+		_ = d.EnsureDirectoryRootMounted(context.Background(), abs)
+	}
+}
+
+// RestoreLoopMounts remounts bounded Directory container-root images under storageRoot.
+func (d Directory) RestoreLoopMounts(ctx context.Context, storageRoot string) error {
+	storageRoot = path.Clean(storageRoot)
+	if storageRoot == "" || storageRoot == "/" {
+		return fmt.Errorf("storage root is invalid")
+	}
+	ents, err := os.ReadDir(storageRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		d.restoreContainerRoots(path.Join(storageRoot, e.Name()))
+	}
+	return nil
+}
+
+// EnsureDirectoryRootMounted loop-mounts a sized container-root image onto abs.
+// A missing image is treated as a legacy unbounded directory and is left alone.
+func (d Directory) EnsureDirectoryRootMounted(ctx context.Context, abs string) error {
+	abs = path.Clean(abs)
+	if abs == "" || abs == "/" || strings.Contains(abs, "..") || !strings.HasPrefix(abs, "/") {
+		return fmt.Errorf("container root path is invalid")
+	}
+	img := directoryRootImage(abs)
+	if _, err := os.Stat(img); err != nil {
+		return nil
+	}
+	if d.containerRootMounted(abs) {
+		return nil
+	}
+	if d.Run == nil {
+		return fmt.Errorf("container root image is present but not mounted")
+	}
+	mnt, err := MountLoopArgv(img, abs)
+	if err != nil {
+		return err
+	}
+	return d.runLimit(ctx, mnt[0], mnt[1:]...)
+}
+
+func (d Directory) containerRootMounted(abs string) bool {
+	text, err := d.host().ReadMounts()
+	if err != nil {
+		return false
+	}
+	cover, ok := CoveringMount(abs, ParseMountinfo(text))
+	return ok && cover.MountPoint == abs
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
 // Engine drives liblxc through typed argv and written config files.
@@ -164,6 +165,7 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	if err := os.MkdirAll(spec.RootfsPath, 0o750); err != nil {
 		return Result{}, err
 	}
+	e.ensureRootfsPathMounted(ctx, spec.RootfsPath)
 	var verified bool
 	var sha string
 	if spec.SkipImage {
@@ -206,6 +208,7 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 // Start starts nodal-ct@<uuid> via systemd.
 func (e *Engine) Start(ctx context.Context, id string) error {
 	e.ensureAppliedTraverse(id)
+	e.ensureRootfsMounted(ctx, id)
 	_, err := e.run(ctx, BinSystemctl, "start", unitName(id))
 	return err
 }
@@ -219,6 +222,7 @@ func (e *Engine) Stop(ctx context.Context, id string) error {
 // Restart restarts the CT unit.
 func (e *Engine) Restart(ctx context.Context, id string) error {
 	e.ensureAppliedTraverse(id)
+	e.ensureRootfsMounted(ctx, id)
 	_, err := e.run(ctx, BinSystemctl, "restart", unitName(id))
 	return err
 }
@@ -381,6 +385,21 @@ func (e *Engine) cleanupFailedRootfs(rootfs string) {
 	_ = os.RemoveAll(rootfs)
 }
 
+func (e *Engine) ensureRootfsMounted(ctx context.Context, id string) {
+	applied, err := e.readApplied(id)
+	if err != nil {
+		return
+	}
+	e.ensureRootfsPathMounted(ctx, applied.Spec.RootfsPath)
+}
+
+func (e *Engine) ensureRootfsPathMounted(ctx context.Context, rootfs string) {
+	if e.SkipHostCmds || e.FakeUnpack {
+		return
+	}
+	d := storage.Directory{Run: storage.LiveRun}
+	_ = d.EnsureDirectoryRootMounted(ctx, rootfs)
+}
 
 func (e *Engine) copyRootfs(ctx context.Context, src, dst string) error {
 	if e.SkipHostCmds || e.FakeUnpack {

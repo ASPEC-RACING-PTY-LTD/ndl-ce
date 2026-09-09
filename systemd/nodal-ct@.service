@@ -8,6 +8,7 @@ After=nodal-workloads.target
 # Foreground monitor. Type=forking plus lxc-start -d loses the main PID
 # and systemd immediately runs ExecStop.
 Type=simple
+ExecStartPre=/usr/lib/ndl/ndl-ct-prepare %i
 ExecStart=/usr/bin/lxc-start -P /var/lib/ndl/runtime/lxc -n %i -F
 ExecStop=/usr/bin/lxc-stop -P /var/lib/ndl/runtime/lxc -n %i --timeout 30
 KillMode=mixed
