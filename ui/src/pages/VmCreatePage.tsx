@@ -22,7 +22,7 @@ export function VmCreatePage() {
   const [images, setImages] = useState<LibraryItem[]>([]);
   const [name, setName] = useState("vm-1");
   const [cpus, setCpus] = useState("2");
-  const [memoryMiB, setMemoryMiB] = useState("2048");
+  const [memoryGB, setMemoryGB] = useState("2");
   const [poolID, setPoolID] = useState("");
   const [networkID, setNetworkID] = useState("");
   const [firmware, setFirmware] = useState("bios");
@@ -68,7 +68,7 @@ export function VmCreatePage() {
   const body = buildVmCreateBody({
     name,
     cpus,
-    memoryMiB,
+    memoryGB,
     networkID,
     poolID,
     firmware,
@@ -141,11 +141,11 @@ export function VmCreatePage() {
           <Field id="vm-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
           <Field
             id="vm-mem"
-            label="Memory (MiB)"
+            label="Memory (GB)"
             type="number"
-            min={64}
-            value={memoryMiB}
-            onChange={(e) => setMemoryMiB(e.target.value)}
+            min={1}
+            value={memoryGB}
+            onChange={(e) => setMemoryGB(e.target.value)}
           />
           <fieldset>
             <legend className="field-label">Placement</legend>
@@ -252,7 +252,7 @@ export function VmCreatePage() {
             </div>
             <div>
               <dt>Memory</dt>
-              <dd>{memoryMiB} MiB</dd>
+              <dd>{memoryGB} GB</dd>
             </div>
             <div>
               <dt>Firmware</dt>

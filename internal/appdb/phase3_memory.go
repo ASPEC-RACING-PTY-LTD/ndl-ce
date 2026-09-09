@@ -131,6 +131,19 @@ func (m *Memory) UpdateVolumeObserved(_ context.Context, v Volume) error {
 	return nil
 }
 
+func (m *Memory) UpdateVolumeSize(_ context.Context, clusterID, id string, sizeBytes int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.volumes[id]
+	if !ok || cur.ClusterID != clusterID {
+		return fmt.Errorf("volume not found")
+	}
+	cur.SizeBytes = sizeBytes
+	cur.UpdatedAt = time.Now().UTC()
+	m.volumes[id] = cur
+	return nil
+}
+
 func (m *Memory) UpdateVolumeOwner(_ context.Context, v Volume) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -260,7 +260,7 @@ export function NetworkPage() {
                 {net.danger === "dangerous" ? " dangerous" : ""}
                 {mutate ? (
                   <button className="btn btn-ghost" type="button" onClick={() => void onApply(net.id)}>
-                    Apply
+                    {net.status === "available" ? "Re-apply" : "Apply"}
                   </button>
                 ) : null}
               </li>

@@ -18,20 +18,31 @@ import (
 )
 
 type fakeStorage struct {
-	pool storage.CreatePoolResult
-	vol  storage.CreateVolumeResult
-	img  storage.UploadResult
-	obs  storage.Observation
-	err  error
+	pool      storage.CreatePoolResult
+	vol       storage.CreateVolumeResult
+	img       storage.UploadResult
+	obs       storage.Observation
+	err       error
+	lastSize  *int64
+	destroyed *[]string
 }
 
 func (f fakeStorage) CreateDirectoryPool(context.Context, storage.CreatePoolRequest, []string) (storage.CreatePoolResult, error) {
 	return f.pool, f.err
 }
-func (f fakeStorage) CreateDirectoryVolume(context.Context, storage.CreateVolumeRequest, storage.PoolHint) (storage.CreateVolumeResult, error) {
+func (f fakeStorage) CreateDirectoryVolume(_ context.Context, req storage.CreateVolumeRequest, _ storage.PoolHint) (storage.CreateVolumeResult, error) {
+	if f.lastSize != nil {
+		*f.lastSize = req.Size
+	}
 	return f.vol, f.err
 }
-func (f fakeStorage) DestroyDirectoryVolume(context.Context, storage.CreateVolumeRequest, storage.PoolHint) error {
+func (f fakeStorage) DestroyDirectoryVolume(_ context.Context, req storage.CreateVolumeRequest, _ storage.PoolHint) error {
+	if f.destroyed != nil {
+		*f.destroyed = append(*f.destroyed, req.VolumeID)
+	}
+	return f.err
+}
+func (f fakeStorage) ResizeDirectoryVolume(context.Context, storage.CreateVolumeRequest, storage.PoolHint) error {
 	return f.err
 }
 func (f fakeStorage) GetStorage(context.Context, []storage.PoolHint) (storage.Observation, error) {

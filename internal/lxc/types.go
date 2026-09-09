@@ -18,8 +18,9 @@ const (
 	DefaultUIDMap      = "u 0 100000 65536"
 	DefaultGIDMap      = "g 0 100000 65536"
 	DefaultCPUs        = 1
-	DefaultMemoryBytes = 256 << 20
-	DefaultRootSize    = 4 << 30
+	DefaultMemoryBytes = 1 << 30
+	MinRootSize        = 1 << 30
+	DefaultRootSize    = 8 << 30
 	LastAppliedSchema  = "ndl.workload.last-applied.v1"
 	RootfsMarker       = ".ndl-rootfs-ok"
 )
@@ -33,9 +34,10 @@ const (
 	BinLXCAttach  = "/usr/bin/lxc-attach"
 	BinLXCConsole = "/usr/bin/lxc-console"
 	BinSystemctl  = "/usr/bin/systemctl"
-	BinTar        = "/usr/bin/tar"
-	BinCP         = "/usr/bin/cp"
-	BinGPGV       = "/usr/bin/gpgv"
+	BinTar         = "/usr/bin/tar"
+	BinUsernsExec  = "/usr/bin/lxc-usernsexec"
+	BinCP          = "/usr/bin/cp"
+	BinGPGV        = "/usr/bin/gpgv"
 )
 
 const (

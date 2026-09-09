@@ -27,6 +27,9 @@ type OpFacts struct {
 	Workloads []Workload
 	Jobs      []MigrationJob
 	Now       time.Time
+	// StartedAt is when this control-plane process began. Running rows last
+	// updated before that instant cannot still be in-flight in this process.
+	StartedAt time.Time
 }
 
 // OpDecision is one idempotent reconciliation result.
@@ -99,6 +102,15 @@ func ReconcileOperation(op Operation, facts OpFacts) OpDecision {
 	if op.UpdatedAt.IsZero() {
 		stale = now.Sub(op.CreatedAt) >= OpHeartbeatStale
 	}
+	if !facts.StartedAt.IsZero() {
+		mark := op.UpdatedAt
+		if mark.IsZero() {
+			mark = op.CreatedAt
+		}
+		if !mark.IsZero() && mark.Before(facts.StartedAt) {
+			stale = true
+		}
+	}
 
 	switch {
 	case strings.HasPrefix(op.Kind, "migration."):
@@ -120,6 +132,15 @@ func ReconcileOperation(op Operation, facts OpFacts) OpDecision {
 		if stale {
 			return finishDecision(op, OpStateFailed, "network create did not persist", op.Stage, 0,
 				"network is missing and the task has no heartbeat", now)
+		}
+	case op.Kind == "network.apply":
+		if networkExists(facts.Networks) {
+			return finishDecision(op, OpStateSucceeded, "network applied", "done", 100,
+				"network exists; apply task row never closed", now)
+		}
+		if stale {
+			return finishDecision(op, OpStateFailed, "network apply did not persist", op.Stage, 0,
+				"network is missing and the apply task has no heartbeat", now)
 		}
 	case op.Kind == "workload.delete":
 		if len(facts.Workloads) == 0 || !workloadExists(facts.Workloads) {

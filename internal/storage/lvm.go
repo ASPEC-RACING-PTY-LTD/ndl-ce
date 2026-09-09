@@ -13,6 +13,7 @@ const (
 	LVMBinPV        = "/usr/sbin/pvcreate"
 	LVMBinVG        = "/usr/sbin/vgcreate"
 	LVMBinLV        = "/usr/sbin/lvcreate"
+	LVMBinExtend    = "/usr/sbin/lvextend"
 	LVMBinConvert   = "/usr/sbin/lvconvert"
 	LVMBinVGS       = "/usr/sbin/vgs"
 	LVMBinLVS       = "/usr/sbin/lvs"
@@ -209,6 +210,22 @@ func LVCreateThinArgv(vg, lv string, sizeBytes int64) ([]string, error) {
 	return []string{LVMBinLV, "-V", fmt.Sprintf("%dB", sizeBytes), "-T", vg + "/" + LVMThinPoolName, "-n", lv}, nil
 }
 
+// LVExtendArgv grows a thin LV to an absolute byte size. Shrink is refused by the caller.
+func LVExtendArgv(vg, lv string, sizeBytes int64) ([]string, error) {
+	vg, err := ParseVGName(vg)
+	if err != nil {
+		return nil, err
+	}
+	lv, err = ParseLVName(lv)
+	if err != nil {
+		return nil, err
+	}
+	if sizeBytes < MinRootBytes {
+		return nil, fmt.Errorf("thin lv size is too small")
+	}
+	return []string{LVMBinExtend, "-L", fmt.Sprintf("%dB", sizeBytes), vg + "/" + lv}, nil
+}
+
 // LVSnapshotArgv creates a thin snapshot of an origin LV.
 func LVSnapshotArgv(vg, origin, snap string) ([]string, error) {
 	vg, err := ParseVGName(vg)
@@ -317,7 +334,7 @@ func refuseExportArgv(argv []string) error {
 			return fmt.Errorf(LVMExportRefuse)
 		}
 	}
-	if len(argv) > 0 && (argv[0] == LVMBinPV || argv[0] == LVMBinVG || argv[0] == LVMBinLV || argv[0] == LVMBinConvert || argv[0] == LVMBinVGS || argv[0] == LVMBinLVS || argv[0] == LVMBinPVS || argv[0] == LVMMkfsBin || argv[0] == LVMMountBin) {
+	if len(argv) > 0 && (argv[0] == LVMBinPV || argv[0] == LVMBinVG || argv[0] == LVMBinLV || argv[0] == LVMBinExtend || argv[0] == LVMBinConvert || argv[0] == LVMBinVGS || argv[0] == LVMBinLVS || argv[0] == LVMBinPVS || argv[0] == LVMMkfsBin || argv[0] == LVMMountBin || argv[0] == BinResize2fs) {
 		return nil
 	}
 	if len(argv) == 0 {

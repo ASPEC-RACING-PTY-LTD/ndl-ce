@@ -68,6 +68,7 @@ const (
 	MarkerFile          = ".ndl-pool.json"
 	MarkerSchema        = "ndl.storage.pool.v1"
 	MinBlockBytes       = 1 << 20
+	MinRootBytes        = 1 << 30
 	MaxVolumeBytes      = 8 << 40
 	DefaultLibraryMax   = 64 << 30
 	MinPoolFreeBytes    = 16 << 20

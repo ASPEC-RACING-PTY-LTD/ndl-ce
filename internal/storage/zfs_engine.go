@@ -126,6 +126,8 @@ func (e ZFSEngine) Apply(ctx context.Context, op ZFSOp) (ZFSResult, error) {
 		return res, nil
 	case "create-volume":
 		return e.createVolume(ctx, op)
+	case "resize-volume":
+		return e.resizeVolume(ctx, op)
 	case "snapshot":
 		ds, err := DatasetName(op.Name, op.VolumeID)
 		if err != nil {
@@ -205,7 +207,7 @@ func (e ZFSEngine) createVolume(ctx context.Context, op ZFSOp) (ZFSResult, error
 		res.BackendRef = ZVolPath(ds)
 	case ClassContainerRoot, ClassISO, ClassTemplate, ClassBackupStaging:
 		mount := ZFSMountRoot + "/" + op.PoolID + "/volumes/" + op.Class + "/" + op.VolumeID
-		argv, err := ZFSCreateDatasetArgv(ds, mount)
+		argv, err := ZFSCreateDatasetArgv(ds, mount, op.SizeBytes)
 		if err != nil {
 			return ZFSResult{}, err
 		}
@@ -215,6 +217,29 @@ func (e ZFSEngine) createVolume(ctx context.Context, op ZFSOp) (ZFSResult, error
 		return ZFSResult{}, fmt.Errorf("storage class is unsupported on ZFS")
 	}
 	if err := e.exec(ctx, res.Argv); err != nil {
+		res.Status = StatusFailed
+		res.Reason = err.Error()
+		return res, nil
+	}
+	res.Status = StatusAvailable
+	return res, nil
+}
+
+func (e ZFSEngine) resizeVolume(ctx context.Context, op ZFSOp) (ZFSResult, error) {
+	ds, err := DatasetName(op.Name, op.VolumeID)
+	if err != nil {
+		return ZFSResult{}, err
+	}
+	res := ZFSResult{Capabilities: ZFSCapabilities(), Incremental: true, PoolID: op.PoolID, Name: op.Name, Dataset: ds}
+	if op.Class == ClassVMDisk {
+		return ZFSResult{}, fmt.Errorf("zvol grow is not implemented here")
+	}
+	argv, err := ZFSSetQuotaArgv(ds, op.SizeBytes)
+	if err != nil {
+		return ZFSResult{}, err
+	}
+	res.Argv = argv
+	if err := e.exec(ctx, argv); err != nil {
 		res.Status = StatusFailed
 		res.Reason = err.Error()
 		return res, nil

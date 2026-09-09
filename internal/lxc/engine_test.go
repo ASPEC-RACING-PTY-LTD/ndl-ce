@@ -172,6 +172,26 @@ func TestMACStableAndLocallyAdministered(t *testing.T) {
 	}
 }
 
+func TestNormalizeMACAcceptsProxmoxForm(t *testing.T) {
+	got, err := NormalizeMAC("BC:24:11:00:00:02")
+	if err != nil || got != "bc:24:11:00:00:02" {
+		t.Fatalf("%s %v", got, err)
+	}
+	hyphen, err := NormalizeMAC("BC-24-11-00-00-02")
+	if err != nil || hyphen != got {
+		t.Fatalf("hyphen %s %v", hyphen, err)
+	}
+	if _, err := NormalizeMAC("ff:ff:ff:ff:ff:ff"); err == nil {
+		t.Fatal("broadcast must be rejected")
+	}
+	if _, err := NormalizeMAC("01:00:00:00:00:00"); err == nil {
+		t.Fatal("multicast must be rejected")
+	}
+	if _, err := NormalizeMAC("zz:00:00:00:00:00"); err == nil {
+		t.Fatal("invalid must be rejected")
+	}
+}
+
 func TestRenderConfigWritesIndependentIP(t *testing.T) {
 	cfg := RenderConfig(Spec{
 		WorkloadID: uuid.NewString(), Name: "ct", RootfsPath: "/vol/root",
@@ -316,6 +336,45 @@ func TestDryCreateWritesLastApplied(t *testing.T) {
 	}
 	if !res.ImageVerified {
 		t.Fatal("image must be sha256 verified")
+	}
+}
+
+func TestCreatePersistsExplicitMACInConfigAndReplay(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	vol := uuid.NewString()
+	root := filepath.Join(e.DataDir, "rootfs", id)
+	want := "bc:24:11:00:00:0a"
+	res, err := e.Create(context.Background(), Spec{
+		WorkloadID: id, Name: "keep-mac", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: vol, RootfsPath: root, BridgeName: "ndldeadbeef", MAC: want, NoStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.MAC != want {
+		t.Fatalf("create mac %s", res.MAC)
+	}
+	cfg, err := os.ReadFile(e.configPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfg), "lxc.net.0.hwaddr = "+want) {
+		t.Fatalf("config missing hwaddr: %s", cfg)
+	}
+	again, err := e.Create(context.Background(), Spec{
+		WorkloadID: id, Name: "keep-mac", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: uuid.NewString(), RootfsPath: root, BridgeName: "ndldeadbeef", NoStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.MAC != want {
+		t.Fatalf("replay must keep explicit mac %s", again.MAC)
+	}
+	cfg2, _ := os.ReadFile(e.configPath(id))
+	if !strings.Contains(string(cfg2), "lxc.net.0.hwaddr = "+want) {
+		t.Fatalf("replay dropped hwaddr: %s", cfg2)
 	}
 }
 

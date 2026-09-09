@@ -6,6 +6,7 @@ import { Field } from "../components/Field";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { canMutate, uxLevel } from "../ux";
+import { bytesFromGB, parseMemoryGB } from "../memory";
 
 export function OciCreatePage() {
   const session = useSession();
@@ -20,7 +21,7 @@ export function OciCreatePage() {
   const [registryID, setRegistryID] = useState("");
   const [networkID, setNetworkID] = useState("");
   const [cpus, setCpus] = useState("1");
-  const [memoryMiB, setMemoryMiB] = useState("256");
+  const [memoryGB, setMemoryGB] = useState("1");
   const [healthPath, setHealthPath] = useState("/healthz");
   const [healthPort, setHealthPort] = useState("8080");
   const [privileged, setPrivileged] = useState(false);
@@ -69,7 +70,7 @@ export function OciCreatePage() {
           registry_id: registryID || undefined,
           network_id: networkID || undefined,
           cpus: Number(cpus) || 1,
-          memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
+          memory_bytes: bytesFromGB(parseMemoryGB(memoryGB, 1)),
           health,
           privileged: admin ? privileged : false,
         },
@@ -120,11 +121,11 @@ export function OciCreatePage() {
         <Field id="oci-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
         <Field
           id="oci-mem"
-          label="Memory (MiB)"
+          label="Memory (GB)"
           type="number"
-          min={64}
-          value={memoryMiB}
-          onChange={(e) => setMemoryMiB(e.target.value)}
+          min={1}
+          value={memoryGB}
+          onChange={(e) => setMemoryGB(e.target.value)}
         />
         <div className="field">
           <label className="field-label" htmlFor="oci-net">

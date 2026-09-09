@@ -75,6 +75,8 @@ func (e LVMEngine) Apply(ctx context.Context, op LVMOp) (LVMResult, error) {
 		return e.createPool(ctx, op)
 	case "create-volume":
 		return e.createVolume(ctx, op)
+	case "resize-volume":
+		return e.resizeVolume(ctx, op)
 	case "snapshot":
 		return e.snapshot(ctx, op)
 	case "rollback":
@@ -198,6 +200,48 @@ func (e LVMEngine) createVolume(ctx context.Context, op LVMOp) (LVMResult, error
 		}
 	}
 	res.Status = StatusAvailable
+	return res, nil
+}
+
+func (e LVMEngine) resizeVolume(ctx context.Context, op LVMOp) (LVMResult, error) {
+	vg, err := ParseVGName(op.Name)
+	if err != nil {
+		return LVMResult{}, err
+	}
+	lv, err := ParseLVName(op.VolumeID)
+	if err != nil {
+		return LVMResult{}, err
+	}
+	res := LVMResult{Capabilities: LVMCapabilities(), Incremental: false, PoolID: op.PoolID, Name: vg, ThinPool: LVMThinPoolName}
+	argv, err := LVExtendArgv(vg, lv, op.SizeBytes)
+	if err != nil {
+		return LVMResult{}, err
+	}
+	res.Argv = argv
+	if e.SkipHostCmds {
+		res.Status = StatusUnavailable
+		res.Reason = "host commands skipped; LVM was not run"
+		return res, nil
+	}
+	if err := e.exec(ctx, argv); err != nil {
+		res.Status = StatusFailed
+		res.Reason = err.Error()
+		return res, nil
+	}
+	dev := LVMDevicePath(vg, lv)
+	if op.Class != ClassVMDisk {
+		resize := []string{BinResize2fs, dev}
+		if err := e.exec(ctx, resize); err != nil {
+			res.Status = StatusFailed
+			res.Reason = err.Error()
+			return res, nil
+		}
+	}
+	res.Status = StatusAvailable
+	res.BackendRef = LVMDevicePath(vg, lv)
+	if op.Class != ClassVMDisk {
+		res.BackendRef = LVMMountRoot + "/" + op.PoolID + "/volumes/" + op.Class + "/" + op.VolumeID
+	}
 	return res, nil
 }
 

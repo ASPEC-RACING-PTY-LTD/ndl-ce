@@ -59,7 +59,8 @@ type WorkloadDisk struct {
 	CreatedAt  time.Time
 }
 
-// WorkloadNIC attaches a network. MAC is allocated from the workload UUID.
+// WorkloadNIC attaches a network. MAC is generated from the workload UUID
+// unless the operator supplies one.
 type WorkloadNIC struct {
 	ID          string
 	ClusterID   string

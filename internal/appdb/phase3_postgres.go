@@ -185,6 +185,13 @@ UPDATE volumes SET status=$2, xattr_state=$3, allocated_bytes=$4, updated_at=now
 	return err
 }
 
+func (p *Postgres) UpdateVolumeSize(ctx context.Context, clusterID, id string, sizeBytes int64) error {
+	_, err := p.DB.ExecContext(ctx, `
+UPDATE volumes SET size_bytes=$3, updated_at=now() WHERE cluster_id=$1 AND id=$2`,
+		clusterID, id, sizeBytes)
+	return err
+}
+
 func (p *Postgres) UpdateVolumeOwner(ctx context.Context, v Volume) error {
 	_, err := p.DB.ExecContext(ctx, `
 UPDATE volumes SET owner=$2, owner_kind=$3, owner_job_id=$4, updated_at=now() WHERE id=$1`,

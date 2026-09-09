@@ -122,7 +122,19 @@ func (e *Engine) DryRun(_ context.Context, spec Spec) (Preview, error) {
 			return Preview{}, err
 		}
 	}
-	return PreviewOf(plan), nil
+	prev := PreviewOf(plan)
+	if plan.Kind == KindLANBridge {
+		prev.HostManagers = e.InspectHostManagers(plan.UplinkIfName)
+		prev.StaleUplinks = e.listStaleUplinkClaims(plan.UplinkIfName, plan.NetworkID)
+		prev.AlreadyApplied = e.lanAlreadyApplied(plan, host) && len(hostManagerActions(prev.HostManagers)) == 0
+		for _, item := range prev.HostManagers {
+			prev.Warnings = append(prev.Warnings, item.Manager+": "+item.Detail)
+		}
+		for _, stale := range prev.StaleUplinks {
+			prev.Warnings = append(prev.Warnings, "stale No-dal uplink file "+stale.Path+" also matches "+plan.UplinkIfName)
+		}
+	}
+	return prev, nil
 }
 
 // Apply writes persistence files, reloads networkd, and starts isolated services.
@@ -150,8 +162,27 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		}
 	}
 
+	managers := []HostManagerConflict{}
+	if plan.Kind == KindLANBridge {
+		managers = e.InspectHostManagers(plan.UplinkIfName)
+		if conflicts := hostManagerConflicts(managers); len(conflicts) > 0 {
+			return ApplyResult{}, fmt.Errorf("uplink %s is still owned by %s (%s); move that unit before No-dal can enslave it", plan.UplinkIfName, conflicts[0].Manager, conflicts[0].Path)
+		}
+		if e.lanAlreadyApplied(plan, host) && len(hostManagerActions(managers)) == 0 {
+			return ApplyResult{
+				NetworkID: plan.NetworkID, Name: plan.Name, Kind: plan.Kind,
+				BridgeName: plan.BridgeName, UplinkIfName: plan.UplinkIfName,
+				Status: StatusAvailable, Reason: "already applied", AlreadyApplied: true,
+				DHCP: plan.DHCP, DNS: plan.DNS, NAT: plan.NAT,
+				ManagementIfIndex: host.ManagementIfIndex, ManagementIfName: host.ManagementIfName,
+				Warnings: plan.Warnings,
+			}, nil
+		}
+	}
+
 	armed := false
 	if plan.Kind == KindLANBridge {
+		e.backupResolvIfPresent()
 		if _, err := e.armRollback(plan, host); err != nil {
 			return ApplyResult{}, err
 		}
@@ -171,6 +202,22 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		return ApplyResult{}, err
 	}
 
+	if plan.Kind == KindLANBridge {
+		if _, err := e.migrateUplinkManagers(ctx, plan.UplinkIfName, hostManagerActions(managers)); err != nil {
+			return fail(err)
+		}
+		e.releaseStaleUplinkClaims(plan.UplinkIfName, plan.NetworkID)
+		if e.persistMatches(plan) && lanBridgeLive(plan, host) {
+			return ApplyResult{
+				NetworkID: plan.NetworkID, Name: plan.Name, Kind: plan.Kind,
+				BridgeName: plan.BridgeName, UplinkIfName: plan.UplinkIfName,
+				Status: StatusAvailable, Reason: "already applied", AlreadyApplied: true,
+				DHCP: plan.DHCP, DNS: plan.DNS, NAT: plan.NAT,
+				ManagementIfIndex: host.ManagementIfIndex, ManagementIfName: host.ManagementIfName,
+				RollbackArmed: armed, Warnings: plan.Warnings,
+			}, nil
+		}
+	}
 	if err := e.writeFiles(plan); err != nil {
 		return fail(err)
 	}
@@ -309,7 +356,30 @@ func (e *Engine) Observe(_ context.Context, hints []Hint) (Observation, error) {
 			item.Status = StatusWarning
 			item.Warnings = append(item.Warnings, "LAN-bridge must not run isolated DHCP")
 		}
+		if hint.Kind == KindLANBridge && hint.UplinkIfName != "" {
+			if up, ok := lookup(host, hint.UplinkIfName); ok && item.BridgeName != "" && !sameIface(up.Master, item.BridgeName) {
+				item.Status = StatusWarning
+				item.Warnings = append(item.Warnings, "uplink is not enslaved to "+item.BridgeName)
+			}
+			for _, stale := range e.listStaleUplinkClaims(hint.UplinkIfName, hint.NetworkID) {
+				item.Status = StatusWarning
+				item.Warnings = append(item.Warnings, "stale No-dal uplink file "+stale.Path+" also matches "+hint.UplinkIfName)
+			}
+		}
 		obs.Networks = append(obs.Networks, item)
+	}
+	keep := map[string]bool{}
+	for _, hint := range hints {
+		if id := strings.ToLower(strings.TrimSpace(hint.NetworkID)); id != "" {
+			keep[id] = true
+		}
+	}
+	if len(keep) > 0 {
+		if orphans := e.sweepOrphanUplinkFiles(keep); len(orphans) > 0 && len(obs.Networks) > 0 {
+			for _, orphan := range orphans {
+				obs.Networks[0].Warnings = append(obs.Networks[0].Warnings, "removed stale No-dal uplink files for "+orphan.NetworkID)
+			}
+		}
 	}
 	return obs, nil
 }

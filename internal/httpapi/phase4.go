@@ -148,6 +148,7 @@ func (s *Server) createNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.Store.CreateNetwork(r.Context(), row); err != nil {
 		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		s.refreshNetworks(r.Context(), p.User.ClusterID)
 		writeErr(w, http.StatusConflict, "could not record network")
 		return
 	}
@@ -203,6 +204,13 @@ func (s *Server) applyNetwork(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, preview)
 		return
 	}
+	if preview.AlreadyApplied {
+		n.Reason = "already applied"
+		op := s.startOp(r.Context(), p.User.ClusterID, n.NodeID, "network.apply", "done", 100)
+		s.finishOp(r.Context(), op, "succeeded", "already applied", 100)
+		writeJSON(w, http.StatusOK, networkJSON(*n))
+		return
+	}
 	if !s.authorizeDanger(w, r, p, preview, req) {
 		return
 	}
@@ -224,12 +232,20 @@ func (s *Server) applyNetwork(w http.ResponseWriter, r *http.Request) {
 		n.ManagementIfIndex = &idx
 	}
 	if err := s.Store.UpdateNetworkObserved(r.Context(), *n); err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
 		writeErr(w, http.StatusInternalServerError, "could not record network")
 		return
 	}
-	s.finishOp(r.Context(), op, "succeeded", "network applied", 100)
+	msg := "network applied"
+	if res.AlreadyApplied {
+		msg = "already applied"
+		n.Reason = firstNonEmpty(res.Reason, msg)
+	}
+	s.finishOp(r.Context(), op, "succeeded", msg, 100)
 	s.audit(r, p.User.ClusterID, p.User.ID, "network.apply", "ok", n.ID)
-	s.emitEvent(r.Context(), p.User.ClusterID, n.NodeID, "network.applied", map[string]string{"network_id": n.ID})
+	if !res.AlreadyApplied {
+		s.emitEvent(r.Context(), p.User.ClusterID, n.NodeID, "network.applied", map[string]string{"network_id": n.ID})
+	}
 	writeJSON(w, http.StatusOK, networkJSON(*n))
 }
 
@@ -343,11 +359,14 @@ func (s *Server) refreshNetworks(ctx context.Context, clusterID string) {
 		return
 	}
 	items, err := s.Store.ListNetworks(ctx, clusterID)
-	if err != nil || len(items) == 0 {
+	if err != nil {
 		return
 	}
 	obs, err := s.Network.GetNetworks(ctx, appdb.NetworkHints(items))
 	if err != nil {
+		return
+	}
+	if len(items) == 0 {
 		return
 	}
 	_, _, _, _ = appdb.ReconcileNetworks(ctx, s.Store, clusterID, items, obs)

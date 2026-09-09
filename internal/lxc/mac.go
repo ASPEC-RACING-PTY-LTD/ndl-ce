@@ -3,10 +3,24 @@ package lxc
 import (
 	"crypto/sha256"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/google/uuid"
 )
+
+// NormalizeMAC accepts colon, hyphen, or dotted hardware addresses and
+// returns lowercase colon form. Multicast and non-EUI-48 values are rejected.
+func NormalizeMAC(raw string) (string, error) {
+	mac, err := net.ParseMAC(strings.TrimSpace(raw))
+	if err != nil || len(mac) != 6 {
+		return "", fmt.Errorf("mac must be six octets")
+	}
+	if mac[0]&0x01 != 0 {
+		return "", fmt.Errorf("mac must be unicast")
+	}
+	return mac.String(), nil
+}
 
 // MACFromUUID returns a stable locally-administered unicast MAC derived from id.
 func MACFromUUID(id string) string {

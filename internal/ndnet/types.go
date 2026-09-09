@@ -146,8 +146,26 @@ type Preview struct {
 	Files             []File   `json:"files"`
 	ManagementIfIndex int      `json:"management_ifindex"`
 	ManagementIfName  string   `json:"management_ifname"`
-	Warnings          []string `json:"warnings,omitempty"`
-	DryRun            bool     `json:"dry_run"`
+	Warnings          []string               `json:"warnings,omitempty"`
+	DryRun            bool                   `json:"dry_run"`
+	AlreadyApplied    bool                   `json:"already_applied,omitempty"`
+	HostManagers      []HostManagerConflict  `json:"host_managers,omitempty"`
+	StaleUplinks      []StaleUplinkClaim     `json:"stale_uplinks,omitempty"`
+}
+
+// HostManagerConflict is a competing host network manager on an uplink.
+type HostManagerConflict struct {
+	Manager string `json:"manager"`
+	Path    string `json:"path,omitempty"`
+	Detail  string `json:"detail"`
+	Action  string `json:"action"`
+}
+
+// StaleUplinkClaim is a No-dal persist file that already matches an uplink.
+type StaleUplinkClaim struct {
+	NetworkID string `json:"network_id"`
+	Path      string `json:"path"`
+	Bridge    string `json:"bridge,omitempty"`
 }
 
 // ApplyResult is the agent apply outcome.
@@ -169,6 +187,7 @@ type ApplyResult struct {
 	ManagementIfName  string   `json:"management_ifname"`
 	RollbackArmed     bool     `json:"rollback_armed"`
 	RolledBack        bool     `json:"rolled_back"`
+	AlreadyApplied    bool     `json:"already_applied,omitempty"`
 	Warnings          []string `json:"warnings,omitempty"`
 }
 

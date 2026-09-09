@@ -28,6 +28,7 @@ import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes, honestStatus } from "../format";
+import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
 import { kindLabel } from "../labels";
 import { canMutate } from "../rbac";
 import { currentPath, navigate } from "../router";
@@ -45,8 +46,10 @@ export function WorkloadDetailPage() {
   const id = workloadIDFromPath();
   const [item, setItem] = useState<Workload | null>(null);
   const [cpus, setCpus] = useState("1");
-  const [memoryMiB, setMemoryMiB] = useState("256");
+  const [memoryGB, setMemoryGB] = useState("1");
+  const [diskGB, setDiskGB] = useState("8");
   const [ip, setIP] = useState<ContainerIPForm>(defaultContainerIPForm);
+  const [mac, setMAC] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
@@ -64,8 +67,10 @@ export function WorkloadDetailPage() {
     const w = await getWorkload(id);
     setItem(w);
     setCpus(String(w.cpus ?? 1));
-    setMemoryMiB(String(Math.round((w.memory_bytes ?? 256 * 1024 * 1024) / (1024 * 1024))));
+    setMemoryGB(gbFromBytes(w.memory_bytes, 1));
+    setDiskGB(gbFromBytes(w.disk_bytes, 8));
     const nic = w.nics?.[0];
+    setMAC(w.mac || nic?.mac || "");
     setIP({
       ipv4Mode: nic?.ipv4_mode || "dhcp",
       ipv4Address: nic?.ipv4_address || "",
@@ -168,8 +173,12 @@ export function WorkloadDetailPage() {
     try {
       await patchWorkload(id, {
         cpus: Number(cpus) || 1,
-        memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
+        memory_bytes: bytesFromGB(parseMemoryGB(memoryGB, 1)),
+        ...(item?.kind === "system-container"
+          ? { disk_bytes: bytesFromGB(parseMemoryGB(diskGB, 8)) }
+          : {}),
         ...(item?.kind === "system-container" ? containerIPBody(ip) : {}),
+        ...(item?.kind === "system-container" && mac.trim() ? { mac: mac.trim() } : {}),
       });
       await reload();
     } catch (err) {
@@ -189,7 +198,7 @@ export function WorkloadDetailPage() {
   }
 
   const ipv4 = item.nics?.[0]?.ipv4;
-  const mac = item.nics?.[0]?.mac;
+  const currentMAC = item.mac || item.nics?.[0]?.mac;
   const guestOk = guest?.nodal_ga?.state === "ok";
 
   return (
@@ -396,6 +405,10 @@ export function WorkloadDetailPage() {
             <dd>{formatBytes(item.memory_bytes)}</dd>
           </div>
           <div>
+            <dt>Disk</dt>
+            <dd>{item.disk_bytes ? formatBytes(item.disk_bytes) : "Not reported"}</dd>
+          </div>
+          <div>
             <dt>Node</dt>
             <dd>{item.node_id || "Not reported"}</dd>
           </div>
@@ -417,11 +430,11 @@ export function WorkloadDetailPage() {
           </div>
           <div>
             <dt>Addressing</dt>
-            <dd>{item.kind === "system-container" ? summarizeContainerIP(ip) : mac ? "MAC assigned" : "Not reported"}</dd>
+            <dd>{item.kind === "system-container" ? summarizeContainerIP(ip) : currentMAC ? "MAC assigned" : "Not reported"}</dd>
           </div>
           <div>
             <dt>MAC</dt>
-            <dd>{mac || "Not reported"}</dd>
+            <dd>{currentMAC || "Not reported"}</dd>
           </div>
           {item.kind === "vm" ? (
             <>
@@ -574,14 +587,34 @@ export function WorkloadDetailPage() {
             <Field id="wl-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
             <Field
               id="wl-mem"
-              label="Memory (MiB)"
+              label="Memory (GB)"
               type="number"
-              min={64}
-              value={memoryMiB}
-              onChange={(e) => setMemoryMiB(e.target.value)}
+              min={1}
+              value={memoryGB}
+              onChange={(e) => setMemoryGB(e.target.value)}
             />
           </div>
+          {item.kind === "system-container" ? (
+            <Field
+              id="wl-disk"
+              label="Disk size (GB)"
+              type="number"
+              min={1}
+              value={diskGB}
+              onChange={(e) => setDiskGB(e.target.value)}
+              hint="Growing only. Stop the container first. Shrinking is not supported."
+            />
+          ) : null}
           {item.kind === "system-container" ? <ContainerIPFields id="wl-ip" form={ip} onChange={setIP} /> : null}
+          {item.kind === "system-container" ? (
+            <Field
+              id="wl-mac"
+              label="MAC address"
+              value={mac}
+              onChange={(e) => setMAC(e.target.value)}
+              hint="Stop the container before changing MAC. The new address is written to the LXC interface. Leave unchanged to keep the current reservation."
+            />
+          ) : null}
           <div className="btn-row">
             <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void onSave()}>
               Save spec

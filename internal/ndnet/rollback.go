@@ -45,6 +45,9 @@ func (e *Engine) armRollback(plan Plan, host HostView) (ActiveRollback, error) {
 	if err := snapshotDir(e.networkDir(), snap); err != nil {
 		return ActiveRollback{}, err
 	}
+	if err := e.snapshotHostManagers(snap); err != nil {
+		return ActiveRollback{}, err
+	}
 	active := ActiveRollback{
 		ID:                  plan.NetworkID,
 		Deadline:            e.now().Add(ProbeWindow),
@@ -81,6 +84,7 @@ func (e *Engine) restoreSnapshot(active ActiveRollback) error {
 	if err := replaceDir(active.SnapshotDir, active.TargetDir); err != nil {
 		return err
 	}
+	_ = e.restoreHostManagers(active.SnapshotDir)
 	return e.reloadNetworkd()
 }
 

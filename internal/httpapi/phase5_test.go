@@ -169,6 +169,9 @@ func TestWorkloadCreateAndIdempotency(t *testing.T) {
 	if len(nics) != 1 || nics[0].NetworkID != netID {
 		t.Fatalf("nics %+v", nics)
 	}
+	if nics[0].MAC != lxc.MACFromUUID(first["id"].(string)) || fw.lastSpec.MAC != nics[0].MAC {
+		t.Fatalf("generated mac nic=%s spec=%s", nics[0].MAC, fw.lastSpec.MAC)
+	}
 	if fw.lastSpec.IP.IPv4Mode != lxc.IPModeDHCP || fw.lastSpec.IP.IPv6Mode != lxc.IPModeDisabled {
 		t.Fatalf("default IP %+v", fw.lastSpec.IP)
 	}
@@ -1562,4 +1565,316 @@ func TestCTCreateJoinsExistingRootUnderVolumePool(t *testing.T) {
 	if len(disks) != 1 || disks[0].VolumeID != volID {
 		t.Fatalf("GET disks must list the existing root volume: %+v", disks)
 	}
+}
+
+func TestWorkloadCreateDefaultDiskAndMemory(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	var size int64
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{
+		vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+			BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+			Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+		}},
+		lastSize: &size,
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"disk-default","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	if size != lxc.DefaultRootSize {
+		t.Fatalf("default disk %d", size)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created["disk_bytes"] != float64(lxc.DefaultRootSize) {
+		t.Fatalf("disk_bytes %v", created["disk_bytes"])
+	}
+	if created["memory_bytes"] != float64(lxc.DefaultMemoryBytes) {
+		t.Fatalf("memory_bytes %v", created["memory_bytes"])
+	}
+	ops, _ := mem.ListOperations(context.Background(), cluster.ID, 20)
+	found := false
+	for _, op := range ops {
+		if op.Kind == "workload.create" && op.State == "succeeded" && op.Progress != nil && *op.Progress == 100 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("create task must reach succeeded: %+v", ops)
+	}
+}
+
+func TestWorkloadCreatePersistsTarErrorAndCleansVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	destroyed := []string{}
+	s.Workloads = &fakeWorkloads{err: errors.New("failed_precondition: exit status 2: /usr/bin/tar: ./var/lib/apt/lists/auxfiles: Cannot change mode")}
+	s.Storage = fakeStorage{
+		vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+			BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+			Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+		}},
+		destroyed: &destroyed,
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"debian-fail","kind":"system-container","image_pin":"debian/trixie/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","disk_bytes":8589934592}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "retry-debian")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode == http.StatusCreated {
+		t.Fatalf("create must fail: %s", raw)
+	}
+	if !strings.Contains(string(raw), "Cannot change mode") {
+		t.Fatalf("api must return tar error: %s", raw)
+	}
+	ops, _ := mem.ListOperations(context.Background(), cluster.ID, 20)
+	var failed *appdb.Operation
+	for i := range ops {
+		if ops[i].Kind == "workload.create" && ops[i].State == "failed" {
+			failed = &ops[i]
+		}
+	}
+	if failed == nil || !strings.Contains(failed.Message, "Cannot change mode") {
+		t.Fatalf("failed task must persist tar error: %+v", ops)
+	}
+	if !strings.Contains(failed.Message, `"workload_id"`) {
+		t.Fatal("failed task must keep create ids for retry")
+	}
+	if len(destroyed) != 1 {
+		t.Fatalf("failed create must destroy the dest volume: %v", destroyed)
+	}
+	vols, _ := mem.ListVolumes(context.Background(), cluster.ID, "")
+	if len(vols) != 0 {
+		t.Fatalf("volume row must be removed: %+v", vols)
+	}
+	req2, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Idempotency-Key", "retry-debian")
+	req2.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	s.Workloads = &fakeWorkloads{}
+	res2, err := ts.Client().Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res2.Body)
+		t.Fatalf("retry after cleanup %d %s", res2.StatusCode, b)
+	}
+	_ = res2.Body.Close()
+}
+
+func TestWorkloadCreateRejectsTinyDisk(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Workloads = &fakeWorkloads{}
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"tiny","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","disk_bytes":1048576}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode == http.StatusCreated {
+		t.Fatal("1 MiB disk must be rejected")
+	}
+	_ = res.Body.Close()
+}
+
+func seedCTServer(t *testing.T) (*Server, *appdb.Memory, string, string, string, *fakeWorkloads) {
+	t.Helper()
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	return s, mem, token, poolID, netID, fw
+}
+
+func postCT(t *testing.T, ts *httptest.Server, cookie, body string) (int, []byte) {
+	t.Helper()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	return res.StatusCode, raw
+}
+
+func TestWorkloadCreateExplicitMAC(t *testing.T) {
+	s, mem, token, poolID, netID, fw := seedCTServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	want := "bc:24:11:00:00:aa"
+	body := `{"name":"keep-mac","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","mac":"BC:24:11:00:00:AA"}`
+	code, raw := postCT(t, ts, cookie, body)
+	if code != http.StatusCreated {
+		t.Fatalf("create %d %s", code, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created["mac"] != want {
+		t.Fatalf("response mac %v", created["mac"])
+	}
+	if fw.lastSpec.MAC != want {
+		t.Fatalf("agent spec mac %s", fw.lastSpec.MAC)
+	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, created["id"].(string))
+	if len(nics) != 1 || nics[0].MAC != want {
+		t.Fatalf("stored nic %+v", nics)
+	}
+}
+
+func TestWorkloadCreateRejectsInvalidAndDuplicateMAC(t *testing.T) {
+	s, _, token, poolID, netID, _ := seedCTServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	bad := `{"name":"bad-mac","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","mac":"not-a-mac"}`
+	code, raw := postCT(t, ts, cookie, bad)
+	if code == http.StatusCreated {
+		t.Fatalf("invalid mac must fail: %s", raw)
+	}
+	ok := `{"name":"first-mac","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","mac":"bc:24:11:00:00:01"}`
+	code, raw = postCT(t, ts, cookie, ok)
+	if code != http.StatusCreated {
+		t.Fatalf("first %d %s", code, raw)
+	}
+	dup := `{"name":"dup-mac","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","mac":"BC-24-11-00-00-01"}`
+	code, raw = postCT(t, ts, cookie, dup)
+	if code == http.StatusCreated {
+		t.Fatalf("duplicate mac must fail: %s", raw)
+	}
+	if !strings.Contains(string(raw), "already used") {
+		t.Fatalf("duplicate message %s", raw)
+	}
+}
+
+func TestWorkloadPatchMACRequiresStopAndPersists(t *testing.T) {
+	s, mem, token, poolID, netID, fw := seedCTServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"mac-edit","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	code, raw := postCT(t, ts, cookie, body)
+	if code != http.StatusCreated {
+		t.Fatalf("create %d %s", code, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id := created["id"].(string)
+	row, _ := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if row == nil {
+		t.Fatal("missing workload")
+	}
+	row.Status = lxc.StatusRunning
+	if err := mem.UpdateWorkloadObserved(context.Background(), *row); err != nil {
+		t.Fatal(err)
+	}
+	patch, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"mac":"bc:24:11:00:00:22"}`))
+	patch.Header.Set("Content-Type", "application/json")
+	patch.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	pres, err := ts.Client().Do(patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pres.StatusCode == http.StatusOK {
+		t.Fatal("running container must refuse MAC change")
+	}
+	_ = pres.Body.Close()
+	row.Status = lxc.StatusStopped
+	if err := mem.UpdateWorkloadObserved(context.Background(), *row); err != nil {
+		t.Fatal(err)
+	}
+	patch2, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"mac":"bc:24:11:00:00:22"}`))
+	patch2.Header.Set("Content-Type", "application/json")
+	patch2.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	pres2, err := ts.Client().Do(patch2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pres2.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(pres2.Body)
+		t.Fatalf("stopped patch %d %s", pres2.StatusCode, b)
+	}
+	_ = pres2.Body.Close()
+	if fw.lastSpec.MAC != "bc:24:11:00:00:22" {
+		t.Fatalf("applied mac %s", fw.lastSpec.MAC)
+	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, id)
+	if len(nics) != 1 || nics[0].MAC != "bc:24:11:00:00:22" {
+		t.Fatalf("persisted nic %+v", nics)
+	}
+	patch3, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"mac":"bc:24:11:00:00:22"}`))
+	patch3.Header.Set("Content-Type", "application/json")
+	patch3.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	row.Status = lxc.StatusRunning
+	_ = mem.UpdateWorkloadObserved(context.Background(), *row)
+	pres3, err := ts.Client().Do(patch3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pres3.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(pres3.Body)
+		t.Fatalf("same mac while running must be allowed %d %s", pres3.StatusCode, b)
+	}
+	_ = pres3.Body.Close()
 }

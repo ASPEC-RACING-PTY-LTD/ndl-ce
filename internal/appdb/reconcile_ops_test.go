@@ -32,6 +32,28 @@ func TestReconcileOperationSucceedsWhenPoolExists(t *testing.T) {
 	}
 }
 
+func TestReconcileOperationSucceedsWhenNetworkApplyExists(t *testing.T) {
+	now := time.Now().UTC()
+	op := Operation{ID: uuid.NewString(), Kind: "network.apply", State: OpStateRunning, Stage: "applying", UpdatedAt: now.Add(-30 * time.Second)}
+	dec := ReconcileOperation(op, OpFacts{Networks: []Network{{ID: uuid.NewString()}}, Now: now})
+	if !dec.Changed || dec.Operation.State != OpStateSucceeded || dec.Operation.Message != "network applied" {
+		t.Fatalf("%+v", dec)
+	}
+	if dec.Operation.Progress == nil || *dec.Operation.Progress != 100 {
+		t.Fatalf("progress %+v", dec.Operation.Progress)
+	}
+}
+
+func TestReconcileOperationAbandonsPreStartRunning(t *testing.T) {
+	now := time.Now().UTC()
+	started := now.Add(-time.Minute)
+	op := Operation{ID: uuid.NewString(), Kind: "pool.create", State: OpStateRunning, Stage: "validating", UpdatedAt: now.Add(-2 * time.Minute)}
+	dec := ReconcileOperation(op, OpFacts{Now: now, StartedAt: started})
+	if !dec.Changed || dec.Operation.State != OpStateFailed {
+		t.Fatalf("crash leftover must close: %+v", dec)
+	}
+}
+
 func TestReconcileOperationSucceedsWhenNetworkExists(t *testing.T) {
 	now := time.Now().UTC()
 	op := Operation{ID: uuid.NewString(), Kind: "network.create", State: OpStateRunning, Stage: "applying", UpdatedAt: now.Add(-3 * time.Hour)}

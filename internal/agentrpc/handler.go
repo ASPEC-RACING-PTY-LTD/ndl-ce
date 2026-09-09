@@ -164,6 +164,12 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 			}
 			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "destroyed"}), nil
 		}
+		if extra.Action == "resize" {
+			if err := h.driver().ResizeVolume(ctx, volReq, hint); err != nil {
+				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "resized"}), nil
+		}
 		res, err := h.driver().CreateVolume(ctx, volReq, hint)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)

@@ -9,11 +9,14 @@ import (
 
 func (o observer) reconcileNetworks(ctx context.Context, clusterID, nodeID string) {
 	items, err := o.Store.ListNetworks(ctx, clusterID)
-	if err != nil || len(items) == 0 {
+	if err != nil {
 		return
 	}
 	obs, err := o.Agent.GetNetworks(ctx, appdb.NetworkHints(items))
 	if err != nil {
+		return
+	}
+	if len(items) == 0 {
 		return
 	}
 	unavail, recovered, degraded, err := appdb.ReconcileNetworks(ctx, o.Store, clusterID, items, obs)

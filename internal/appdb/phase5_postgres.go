@@ -248,9 +248,10 @@ UPDATE workload_nics SET ipv4=$2,
     ipv4_mode=COALESCE(NULLIF($3,''), ipv4_mode), ipv4_address=$4, ipv4_gateway=$5,
     ipv6_mode=COALESCE(NULLIF($6,''), ipv6_mode), ipv6_address=$7, ipv6_gateway=$8,
     dns=$9,
-    pci_addr=COALESCE(NULLIF($10,''), pci_addr), model=COALESCE(NULLIF($11,''), model)
+    pci_addr=COALESCE(NULLIF($10,''), pci_addr), model=COALESCE(NULLIF($11,''), model),
+    mac=COALESCE(NULLIF($12,''), mac)
 WHERE id=$1`,
-		n.ID, n.IPv4, n.IPv4Mode, n.IPv4Address, n.IPv4Gateway, n.IPv6Mode, n.IPv6Address, n.IPv6Gateway, n.DNS, n.PCIAddr, n.Model)
+		n.ID, n.IPv4, n.IPv4Mode, n.IPv4Address, n.IPv4Gateway, n.IPv6Mode, n.IPv6Address, n.IPv6Gateway, n.DNS, n.PCIAddr, n.Model, n.MAC)
 	return err
 }
 

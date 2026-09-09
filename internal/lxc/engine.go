@@ -93,9 +93,6 @@ func normalizeSpec(spec Spec) (Spec, error) {
 	if spec.GIDMap == "" {
 		spec.GIDMap = DefaultGIDMap
 	}
-	if spec.MAC == "" {
-		spec.MAC = MACFromUUID(spec.WorkloadID)
-	}
 	if spec.Name == "" {
 		spec.Name = spec.WorkloadID
 	}
@@ -114,11 +111,21 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if spec.MAC != "" {
+		mac, merr := NormalizeMAC(spec.MAC)
+		if merr != nil {
+			return Result{}, merr
+		}
+		spec.MAC = mac
+	}
 	if prev, err := e.readApplied(spec.WorkloadID); err == nil && prev.Spec.WorkloadID == spec.WorkloadID {
 		spec.VolumeID = prev.Spec.VolumeID
 		spec.RootfsPath = prev.Spec.RootfsPath
 		if spec.MAC == "" {
 			spec.MAC = prev.Spec.MAC
+		}
+		if spec.MAC == "" {
+			spec.MAC = MACFromUUID(spec.WorkloadID)
 		}
 		if err := e.prepareRootfs(spec); err != nil {
 			return Result{}, err
@@ -134,15 +141,22 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 		if err := e.enableUnit(ctx, spec.WorkloadID); err != nil {
 			return Result{}, err
 		}
-		if err := e.Start(ctx, spec.WorkloadID); err != nil {
-			return Result{}, err
+		status := StatusStopped
+		if !spec.NoStart {
+			if err := e.Start(ctx, spec.WorkloadID); err != nil {
+				return Result{}, err
+			}
+			status = StatusRunning
 		}
 		return Result{
 			WorkloadID: prev.Spec.WorkloadID, VolumeID: prev.Spec.VolumeID,
 			RootfsPath: prev.Spec.RootfsPath, MAC: spec.MAC,
 			ImageVerified: prev.ImageVerified, ImageSHA256: prev.ImageSHA256,
-			Status: StatusRunning,
+			Status: status,
 		}, nil
+	}
+	if spec.MAC == "" {
+		spec.MAC = MACFromUUID(spec.WorkloadID)
 	}
 	if err := os.MkdirAll(filepath.Dir(e.configPath(spec.WorkloadID)), 0o750); err != nil {
 		return Result{}, err
@@ -158,8 +172,9 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 		}
 	} else {
 		var err error
-		verified, sha, err = e.fetchAndUnpack(ctx, spec.ImagePin, spec.RootfsPath)
+		verified, sha, err = e.fetchAndUnpack(ctx, spec, spec.RootfsPath)
 		if err != nil {
+			e.cleanupFailedRootfs(spec.RootfsPath)
 			return Result{}, err
 		}
 	}
@@ -304,7 +319,7 @@ func (e *Engine) prepareRootfs(spec Spec) error {
 	if spec.Privileged {
 		return nil
 	}
-	if err := remapRootfs(spec.RootfsPath, hostMapStart(spec.UIDMap), hostMapStart(spec.GIDMap)); err != nil {
+	if err := shiftRootfs(spec.RootfsPath, hostMapStart(spec.UIDMap), hostMapStart(spec.GIDMap)); err != nil {
 		return err
 	}
 	if err := ensureTraverse(spec.RootfsPath); err != nil {
@@ -359,13 +374,11 @@ func validateRootfsPath(p string) error {
 	return nil
 }
 
-func remapRootfs(rootfs string, uid, gid int) error {
-	return filepath.Walk(rootfs, func(p string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		return os.Lchown(p, uid, gid)
-	})
+func (e *Engine) cleanupFailedRootfs(rootfs string) {
+	if rootfs == "" || validateRootfsPath(rootfs) != nil {
+		return
+	}
+	_ = os.RemoveAll(rootfs)
 }
 
 

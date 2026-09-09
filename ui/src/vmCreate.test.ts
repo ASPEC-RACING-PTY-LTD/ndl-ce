@@ -4,7 +4,7 @@ import { buildVmCreateBody, type VmCreateFields } from "./vmCreate";
 const fields: VmCreateFields = {
   name: "vm-1",
   cpus: "2",
-  memoryMiB: "2048",
+  memoryGB: "2",
   networkID: "net",
   poolID: "pool",
   firmware: "bios",

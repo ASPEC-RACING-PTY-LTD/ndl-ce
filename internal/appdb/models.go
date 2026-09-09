@@ -93,6 +93,7 @@ type Store interface {
 	GetVolume(ctx context.Context, clusterID, id string) (*Volume, error)
 	UpdateVolumeObserved(ctx context.Context, v Volume) error
 	UpdateVolumeOwner(ctx context.Context, v Volume) error
+	UpdateVolumeSize(ctx context.Context, clusterID, id string, sizeBytes int64) error
 
 	CreateLibraryItem(ctx context.Context, item LibraryItem) error
 	ListLibraryItems(ctx context.Context, clusterID, poolID string) ([]LibraryItem, error)

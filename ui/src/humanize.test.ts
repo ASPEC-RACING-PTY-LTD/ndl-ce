@@ -32,5 +32,8 @@ describe("humanize", () => {
     expect(humanTaskMessage("Pulling image")).toBe("Pulling image");
     expect(humanTaskMessage('{"workload_id":"w-1","volume_id":"v-1"}')).toBe("");
     expect(humanTaskMessage('{"workload_id":"w-1","name":"web-01"}')).toBe("Name web-01");
+    expect(humanTaskMessage('{"workload_id":"w-1","error":"tar: cannot change mode"}')).toBe(
+      "tar: cannot change mode",
+    );
   });
 });

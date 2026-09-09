@@ -6041,6 +6041,10 @@ components:
           type: integer
         memory_bytes:
           type: integer
+        disk_bytes:
+          type: integer
+        mac:
+          type: string
         privileged:
           type: boolean
         pid:
@@ -6081,6 +6085,11 @@ components:
           type: integer
         memory_bytes:
           type: integer
+        disk_bytes:
+          type: integer
+        mac:
+          type: string
+          description: Optional container MAC. When omitted, No-dal generates a stable locally-administered address.
         pool_id:
           type: string
         network_id:
@@ -6424,6 +6433,8 @@ components:
         cpus:
           type: integer
         memory_bytes:
+          type: integer
+        disk_bytes:
           type: integer
         desired_power:
           type: string

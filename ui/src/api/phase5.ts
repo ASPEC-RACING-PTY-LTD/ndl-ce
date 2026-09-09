@@ -2,6 +2,7 @@ export type WorkloadDisk = {
   id: string;
   volume_id: string;
   role?: string;
+  size_bytes?: number;
 };
 
 export type WorkloadNIC = {
@@ -31,6 +32,8 @@ export type Workload = {
   image_verified?: boolean;
   cpus?: number;
   memory_bytes?: number;
+  disk_bytes?: number;
+  mac?: string;
   privileged?: boolean;
   pid?: number | null;
   unit_active?: boolean;

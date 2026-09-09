@@ -344,6 +344,96 @@ describe("App", () => {
     expect(screen.getByText(/ifindex 2/i)).toBeVisible();
   });
 
+  it("creates a management-NIC LAN bridge by sending X-Nodal-Confirm after typing the interface", async () => {
+    window.history.replaceState({}, "", "/network");
+    const confirmToken = "hmac-confirm-token";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = new URL(url, "http://localhost").pathname;
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (path === "/api/v1/me") {
+        return jsonResponse(200, admin);
+      }
+      if (path === "/api/v1/networks" && method === "GET") {
+        return jsonResponse(200, {
+          first_run: true,
+          items: [],
+          nics: [{ name: "enp6s0", ifindex: 2, state: "up", addresses: ["192.168.1.10/24"] }],
+        });
+      }
+      if (path === "/api/v1/networks" && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          dry_run?: boolean;
+          confirm_ifname?: string;
+          uplink_ifname?: string;
+        };
+        if (body.dry_run) {
+          expect(new Headers(init?.headers).get("X-Nodal-Confirm")).toBeNull();
+          return jsonResponse(200, {
+            kind: "lan-bridge",
+            danger: "dangerous",
+            requires_confirm: true,
+            typed_ifname: "enp6s0",
+            uplink_ifname: "enp6s0",
+            dry_run: true,
+            management_ifname: "enp6s0",
+          });
+        }
+        const confirm = new Headers(init?.headers).get("X-Nodal-Confirm");
+        if (!confirm) {
+          expect(body.confirm_ifname).toBe("enp6s0");
+          expect(body.uplink_ifname).toBe("enp6s0");
+          return jsonResponse(409, {
+            error: "confirmation_required",
+            code: "confirmation_required",
+            typed_ifname: "enp6s0",
+            confirm_token: confirmToken,
+            message: "Enslaving the management NIC requires typing the interface name and sending X-Nodal-Confirm.",
+          });
+        }
+        expect(confirm).toBe(confirmToken);
+        expect(body.confirm_ifname).toBe("enp6s0");
+        return jsonResponse(201, {
+          id: "net-1",
+          name: "lan",
+          kind: "lan-bridge",
+          status: "available",
+          uplink_ifname: "enp6s0",
+        });
+      }
+      const hit = defaultRoutes[path as keyof typeof defaultRoutes];
+      if (hit) {
+        return jsonResponse(hit.status, "body" in hit ? hit.body : undefined);
+      }
+      return jsonResponse(404, { error: `unmocked ${path}` });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /first-run guest network/i })).toBeVisible();
+    fireEvent.change(screen.getByLabelText(/^kind$/i), { target: { value: "lan-bridge" } });
+    fireEvent.change(screen.getByLabelText(/uplink interface/i), { target: { value: "enp6s0" } });
+    fireEvent.change(screen.getByLabelText(/type the interface name to confirm/i), { target: { value: "enp6s0" } });
+    fireEvent.click(screen.getByRole("button", { name: /dry-run/i }));
+    expect(await screen.findByText(/"requires_confirm": true/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /create network/i }));
+    await waitFor(() => {
+      const creates = fetchMock.mock.calls.filter(([input, init]) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(url, "http://localhost").pathname;
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (path !== "/api/v1/networks" || method !== "POST") {
+          return false;
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as { dry_run?: boolean };
+        return !body.dry_run;
+      });
+      expect(creates).toHaveLength(2);
+      expect(new Headers(creates[1]?.[1]?.headers).get("X-Nodal-Confirm")).toBe(confirmToken);
+    });
+  });
+
   it("shows the remote worker WireGuard helper", async () => {
     window.history.replaceState({}, "", "/node");
     mockApi({

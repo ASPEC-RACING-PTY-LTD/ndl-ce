@@ -686,30 +686,39 @@ export async function listNetworks(): Promise<import("./phase4").NetworkListResp
   return readJson(await request("/networks"));
 }
 
-export async function createNetwork(
-  body: {
-    name: string;
-    kind: string;
-    ipv4_cidr?: string;
-    uplink_ifname?: string;
-    confirm_ifname?: string;
-    dry_run?: boolean;
-  },
-  confirmToken?: string,
-): Promise<import("./phase4").Network | import("./phase4").NetworkPreview | import("./phase4").ConfirmRequired> {
-  const headers = new Headers();
-  if (confirmToken) {
-    headers.set("X-Nodal-Confirm", confirmToken);
-  }
-  const res = await request("/networks", {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-  const parsed = (await res.json().catch(() => ({ error: `Request failed (${res.status})` }))) as
-    | import("./phase4").Network
-    | import("./phase4").NetworkPreview
-    | import("./phase4").ConfirmRequired;
+type NetworkWriteBody = {
+  name: string;
+  kind: string;
+  ipv4_cidr?: string;
+  uplink_ifname?: string;
+  confirm_ifname?: string;
+  dry_run?: boolean;
+};
+
+type NetworkWriteResult =
+  | import("./phase4").Network
+  | import("./phase4").NetworkPreview
+  | import("./phase4").ConfirmRequired;
+
+const nodalConfirmHeader = "X-Nodal-Confirm";
+
+function isConfirmRequired(value: unknown): value is import("./phase4").ConfirmRequired {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "code" in value &&
+      (value as import("./phase4").ConfirmRequired).code === "confirmation_required",
+  );
+}
+
+function ifnamesMatch(typed?: string, expected?: string): boolean {
+  const a = typed?.trim().toLowerCase() ?? "";
+  const b = expected?.trim().toLowerCase() ?? "";
+  return a !== "" && a === b;
+}
+
+async function parseNetworkWrite(res: Response): Promise<NetworkWriteResult> {
+  const parsed = (await res.json().catch(() => ({ error: `Request failed (${res.status})` }))) as NetworkWriteResult;
   if (res.status === 409) {
     return parsed;
   }
@@ -721,35 +730,74 @@ export async function createNetwork(
   return parsed;
 }
 
+async function postNetworkCreate(body: NetworkWriteBody, confirmToken?: string): Promise<NetworkWriteResult> {
+  const headers = new Headers();
+  if (confirmToken) {
+    headers.set(nodalConfirmHeader, confirmToken);
+  }
+  return parseNetworkWrite(
+    await request("/networks", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+function shouldRetryDangerousConfirm(
+  result: NetworkWriteResult,
+  typedIfName: string | undefined,
+  alreadyConfirmed: boolean,
+  dryRun: boolean | undefined,
+): string | undefined {
+  if (dryRun || alreadyConfirmed || !isConfirmRequired(result)) {
+    return undefined;
+  }
+  const token = result.confirm_token?.trim();
+  if (!token || !ifnamesMatch(typedIfName, result.typed_ifname)) {
+    return undefined;
+  }
+  return token;
+}
+
+export async function createNetwork(
+  body: NetworkWriteBody,
+  confirmToken?: string,
+): Promise<NetworkWriteResult> {
+  const first = await postNetworkCreate(body, confirmToken);
+  const retryToken = shouldRetryDangerousConfirm(first, body.confirm_ifname, Boolean(confirmToken), body.dry_run);
+  if (!retryToken) {
+    return first;
+  }
+  return postNetworkCreate(body, retryToken);
+}
+
 export async function applyNetwork(
   id: string,
   dryRun: boolean,
   confirmIfName?: string,
   confirmToken?: string,
-): Promise<import("./phase4").Network | import("./phase4").NetworkPreview | import("./phase4").ConfirmRequired> {
-  const headers = new Headers();
-  if (confirmToken) {
-    headers.set("X-Nodal-Confirm", confirmToken);
+): Promise<NetworkWriteResult> {
+  const post = async (token?: string) => {
+    const headers = new Headers();
+    if (token) {
+      headers.set(nodalConfirmHeader, token);
+    }
+    const q = dryRun ? "?dry_run=true" : "";
+    return parseNetworkWrite(
+      await request(`/networks/${id}/apply${q}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ confirm_ifname: confirmIfName, dry_run: dryRun }),
+      }),
+    );
+  };
+  const first = await post(confirmToken);
+  const retryToken = shouldRetryDangerousConfirm(first, confirmIfName, Boolean(confirmToken), dryRun);
+  if (!retryToken) {
+    return first;
   }
-  const q = dryRun ? "?dry_run=true" : "";
-  const res = await request(`/networks/${id}/apply${q}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ confirm_ifname: confirmIfName, dry_run: dryRun }),
-  });
-  const parsed = (await res.json().catch(() => ({ error: `Request failed (${res.status})` }))) as
-    | import("./phase4").Network
-    | import("./phase4").NetworkPreview
-    | import("./phase4").ConfirmRequired;
-  if (res.status === 409) {
-    return parsed;
-  }
-  if (!res.ok) {
-    const message =
-      parsed && "error" in parsed && typeof parsed.error === "string" ? parsed.error : `Request failed (${res.status})`;
-    throw new ApiError(res.status, message);
-  }
-  return parsed;
+  return post(retryToken);
 }
 
 export async function createVLAN(body: {
@@ -826,6 +874,8 @@ export async function createWorkload(
     image_pin?: string;
     cpus?: number;
     memory_bytes?: number;
+    disk_bytes?: number;
+    mac?: string;
     pool_id?: string;
     network_id?: string;
     ipv4_mode?: string;
@@ -970,6 +1020,7 @@ export async function patchWorkload(
   body: {
     cpus?: number;
     memory_bytes?: number;
+    disk_bytes?: number;
     desired_power?: string;
     autostart?: boolean;
     firmware?: string;
@@ -981,6 +1032,7 @@ export async function patchWorkload(
     ipv6_address?: string;
     ipv6_gateway?: string;
     dns?: string[];
+    mac?: string;
   },
 ): Promise<import("./phase5").Workload> {
   return readJson(

@@ -33,6 +33,8 @@ if grep -q 'NoNewPrivileges=no' /lib/systemd/system/ndl-agent.service; then
 fi
 grep -q 'DeviceAllow=char-pts rw' /lib/systemd/system/ndl-agent.service
 grep -q 'DeviceAllow=/dev/ptmx rw' /lib/systemd/system/ndl-agent.service
+grep -q 'DeviceAllow=/dev/loop-control rw' /lib/systemd/system/ndl-agent.service
+grep -q 'DeviceAllow=block-loop rw' /lib/systemd/system/ndl-agent.service
 
 systemctl show -p LoadState --value lxc-net.service | grep -qx masked
 systemctl is-active lxc-net.service >/dev/null 2>&1 && exit 1 || true

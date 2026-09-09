@@ -63,18 +63,18 @@ func (e *Engine) imageBase() string {
 	return DefaultImageBase
 }
 
-func (e *Engine) fetchAndUnpack(ctx context.Context, pin, rootfs string) (verified bool, sha string, err error) {
+func (e *Engine) fetchAndUnpack(ctx context.Context, spec Spec, rootfs string) (verified bool, sha string, err error) {
 	if err := os.MkdirAll(rootfs, 0o750); err != nil {
 		return false, "", err
 	}
 	if e.SkipHostCmds && e.HTTP == nil {
 		return false, "", writeRootfsMarker(rootfs)
 	}
-	art, err := e.resolveImage(ctx, pin)
+	art, err := e.resolveImage(ctx, spec.ImagePin)
 	if err != nil {
 		return false, "", err
 	}
-	archive, err := e.ensureCached(ctx, pin, art)
+	archive, err := e.ensureCached(ctx, spec.ImagePin, art)
 	if err != nil {
 		return false, "", err
 	}
@@ -87,7 +87,7 @@ func (e *Engine) fetchAndUnpack(ctx context.Context, pin, rootfs string) (verifi
 	if err := e.verifyGPG(ctx, archive, art.Path); err != nil {
 		return false, "", err
 	}
-	if err := e.unpackTar(ctx, archive, rootfs); err != nil {
+	if err := e.unpackTar(ctx, spec, archive, rootfs); err != nil {
 		return false, "", err
 	}
 	if err := writeRootfsMarker(rootfs); err != nil {
@@ -269,17 +269,6 @@ func dearmorPublicKey(armor []byte) ([]byte, error) {
 		return nil, fmt.Errorf("embedded LXC image key is too short")
 	}
 	return out, nil
-}
-
-func (e *Engine) unpackTar(ctx context.Context, archive, rootfs string) error {
-	args := []string{"-x", "-C", rootfs, "-f", archive}
-	if strings.HasSuffix(archive, ".tar.xz") || strings.HasSuffix(archive, ".xz") {
-		args = []string{"-xJ", "-C", rootfs, "-f", archive}
-	} else if strings.HasSuffix(archive, ".tar.gz") || strings.HasSuffix(archive, ".tgz") {
-		args = []string{"-xz", "-C", rootfs, "-f", archive}
-	}
-	_, err := e.run(ctx, BinTar, args...)
-	return err
 }
 
 func writeRootfsMarker(rootfs string) error {

@@ -1,7 +1,7 @@
 export type VmCreateFields = {
   name: string;
   cpus: string;
-  memoryMiB: string;
+  memoryGB: string;
   networkID: string;
   poolID: string;
   firmware: string;
@@ -23,7 +23,7 @@ export function buildVmCreateBody(fields: VmCreateFields) {
     network_id: fields.networkID,
     pool_id: fields.poolID || undefined,
     cpus: Number(fields.cpus) || 2,
-    memory_bytes: (Number(fields.memoryMiB) || 2048) * 1024 * 1024,
+    memory_bytes: (Number(fields.memoryGB) || 2) * 1024 * 1024 * 1024,
     firmware: fields.firmware,
     autostart: fields.autostart,
     cloud_image_id: fields.cloudImageID || undefined,

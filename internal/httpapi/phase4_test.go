@@ -150,6 +150,23 @@ func TestNetworkDangerousRequiresConfirmAndBlocksOperator(t *testing.T) {
 	if body["code"] != "confirmation_required" || body["typed_ifname"] != "eth0" {
 		t.Fatalf("%v", body)
 	}
+	if _, ok := body["confirm_token"].(string); !ok || body["confirm_token"] == "" {
+		t.Fatalf("409 must include confirm_token for X-Nodal-Confirm: %v", body)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/networks", strings.NewReader(`{"name":"lan","kind":"lan-bridge","uplink_ifname":"eth0","confirm_ifname":"eth0"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, "eth0")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusConflict {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("typed ifname is not a valid X-Nodal-Confirm value: %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
 
 	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op"}
 	_ = mem.CreateUser(context.Background(), op)
@@ -208,6 +225,61 @@ func TestNetworkAdminConfirmAppliesLANBridge(t *testing.T) {
 	if created["dhcp"] != false || created["kind"] != ndnet.KindLANBridge {
 		t.Fatalf("%v", created)
 	}
+}
+
+func TestNetworkApplyAlreadyAppliedSkipsDangerousReapply(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	netID := uuid.NewString()
+	_ = mem.CreateNetwork(context.Background(), appdb.Network{
+		ID: netID, ClusterID: cluster.ID, NodeID: nodeID, Name: "lan", Kind: ndnet.KindLANBridge,
+		Status: ndnet.StatusAvailable, BridgeName: "ndl0804ec5a", UplinkIfName: "eth0",
+	})
+	var applied int
+	s.Network = countingNet{
+		fakeNet: fakeNet{
+			preview: ndnet.Preview{Kind: ndnet.KindLANBridge, Danger: ndnet.DangerDangerous, RequiresConfirm: true, TypedIfName: "eth0", AlreadyApplied: true},
+			apply:   ndnet.ApplyResult{Kind: ndnet.KindLANBridge, Status: ndnet.StatusUnavailable, Reason: "should not apply"},
+		},
+		applyCount: &applied,
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/networks/"+netID+"/apply", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("already applied %d %s", res.StatusCode, b)
+	}
+	var body map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&body)
+	_ = res.Body.Close()
+	if body["reason"] != "already applied" {
+		t.Fatalf("%v", body)
+	}
+	if applied != 0 {
+		t.Fatalf("apply ran %d times", applied)
+	}
+}
+
+type countingNet struct {
+	fakeNet
+	applyCount *int
+}
+
+func (c countingNet) ApplyNetwork(ctx context.Context, spec ndnet.Spec) (ndnet.ApplyResult, error) {
+	if c.applyCount != nil {
+		*c.applyCount++
+	}
+	return c.fakeNet.ApplyNetwork(ctx, spec)
 }
 
 func TestNetworkViewerCannotMutate(t *testing.T) {

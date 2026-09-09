@@ -196,6 +196,17 @@ func (c Client) DestroyDirectoryVolume(ctx context.Context, req storage.CreateVo
 	return err
 }
 
+func (c Client) ResizeDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error {
+	backing, _ := json.Marshal(volumeRPCPayload(hint, req, "resize"))
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_CreateDirectoryVolume{CreateDirectoryVolume: &agentv1.CreateDirectoryVolume{
+			VolumeId: req.VolumeID, PoolId: req.PoolID, RootPath: req.RootPath, Class: req.Class,
+			SizeBytes: req.Size, Format: req.Format, BackingJson: backing,
+		}},
+	}))
+	return err
+}
+
 func volumeRPCPayload(hint storage.PoolHint, req storage.CreateVolumeRequest, action string) map[string]any {
 	out := map[string]any{}
 	if hint.Backing.FSUUID != "" {

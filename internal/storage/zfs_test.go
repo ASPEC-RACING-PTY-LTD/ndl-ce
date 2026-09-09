@@ -73,12 +73,24 @@ func TestZFSVolumeArgv(t *testing.T) {
 		t.Fatalf("%v %v", zvol, err)
 	}
 	mount := ZFSMountRoot + "/pool/volumes/container-root/" + "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-	dsArgv, err := ZFSCreateDatasetArgv(ds, mount)
+	dsArgv, err := ZFSCreateDatasetArgv(ds, mount, 8<<30)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(dsArgv[0], ZFSBin) {
 		t.Fatal(dsArgv)
+	}
+	joined := strings.Join(dsArgv, " ")
+	if !strings.Contains(joined, "refquota=8589934592") || !strings.Contains(joined, "quota=8589934592") {
+		t.Fatalf("dataset must set quota: %v", dsArgv)
+	}
+	grow, err := ZFSSetQuotaArgv(ds, 16<<30)
+	joinedGrow := strings.Join(grow, " ")
+	if err != nil || !strings.Contains(joinedGrow, "refquota=17179869184") {
+		t.Fatalf("grow %v %v", grow, err)
+	}
+	if strings.Contains(joinedGrow, " quota=") {
+		t.Fatalf("set should use refquota only: %v", grow)
 	}
 	snap, err := ZFSSnapshotArgv(ds, "s1")
 	if err != nil {

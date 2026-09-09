@@ -11,10 +11,14 @@ import (
 )
 
 func (h *Handler) driver() storage.Directory {
+	d := storage.Directory{}
 	if h.Storage != nil {
-		return *h.Storage
+		d = *h.Storage
 	}
-	return storage.Directory{}
+	if d.Run == nil && !h.SkipHostCmds {
+		d.Run = storage.LiveRun
+	}
+	return d
 }
 
 func (h *Handler) uploads() *storage.Uploads {

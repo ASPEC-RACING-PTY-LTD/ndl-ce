@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -32,6 +33,7 @@ type createWorkloadRequest struct {
 	ImagePin               string            `json:"image_pin"`
 	CPUs                   int               `json:"cpus"`
 	MemoryBytes            int64             `json:"memory_bytes"`
+	DiskBytes              int64             `json:"disk_bytes"`
 	PoolID                 string            `json:"pool_id"`
 	NetworkID              string            `json:"network_id"`
 	VolumeID               string            `json:"volume_id"`
@@ -70,6 +72,7 @@ type createWorkloadRequest struct {
 	IPv6Address            string            `json:"ipv6_address"`
 	IPv6Gateway            string            `json:"ipv6_gateway"`
 	DNS                    []string          `json:"dns"`
+	MAC                    string            `json:"mac"`
 	volumeOwnerKind        string            `json:"-"`
 	volumeJobID            string            `json:"-"`
 }
@@ -78,6 +81,7 @@ type patchWorkloadRequest struct {
 	Name         string          `json:"name"`
 	CPUs         int             `json:"cpus"`
 	MemoryBytes  int64           `json:"memory_bytes"`
+	DiskBytes    int64           `json:"disk_bytes"`
 	DesiredPower string          `json:"desired_power"`
 	Firmware     string          `json:"firmware"`
 	Autostart    *bool           `json:"autostart"`
@@ -90,6 +94,7 @@ type patchWorkloadRequest struct {
 	IPv6Address  string          `json:"ipv6_address"`
 	IPv6Gateway  string          `json:"ipv6_gateway"`
 	DNS          []string        `json:"dns"`
+	MAC          string          `json:"mac"`
 }
 
 type cloneWorkloadRequest struct {
@@ -222,7 +227,11 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	if req.DesiredPower == "" {
 		req.DesiredPower = "running"
 	}
-	mac := lxc.MACFromUUID(ids.WorkloadID)
+	mac, err := s.resolveWorkloadMAC(r.Context(), p.User.ClusterID, ids.WorkloadID, req.MAC)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
 	ip, err := operatorIPConfig(req.IPv4Mode, req.IPv4Address, req.IPv4Gateway, req.IPv6Mode, req.IPv6Address, req.IPv6Gateway, req.DNS)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -240,7 +249,8 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		IP: ip, NoStart: req.DesiredPower == "stopped",
 	})
 	if err != nil {
-		s.finishOp(r.Context(), op, "failed", mustCreateMsg(ids), 0)
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		s.rollbackFailedCT(r.Context(), p.User.ClusterID, volRow, rootfs)
 		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "denied", err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -355,6 +365,10 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 	if netw.Status != ndnet.StatusAvailable && netw.Status != ndnet.StatusWarning {
 		return nil, nil, "", nil, errConflict("an available network is required")
 	}
+	size, err := resolveRootDiskBytes(req, pool)
+	if err != nil {
+		return nil, nil, "", nil, err
+	}
 	if existing, _ := s.Store.GetVolume(ctx, clusterID, volumeID); existing != nil {
 		if existing.Class != storage.ClassContainerRoot {
 			return nil, nil, "", nil, errConflict("volume is not a container-root")
@@ -376,7 +390,7 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		return vpool, netw, loc, existing, nil
 	}
 	if pool.BackendType == storage.BackendZFS {
-		row, err := s.createZFSVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, lxc.DefaultRootSize)
+		row, err := s.createZFSVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, size)
 		if err != nil {
 			return nil, nil, "", nil, err
 		}
@@ -387,7 +401,7 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 		return pool, netw, loc, &row, nil
 	}
 	if pool.BackendType == storage.BackendLVM {
-		row, err := s.createLVMVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, lxc.DefaultRootSize)
+		row, err := s.createLVMVolume(ctx, clusterID, *pool, storage.ClassContainerRoot, size)
 		if err != nil {
 			return nil, nil, "", nil, err
 		}
@@ -413,7 +427,7 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 	}
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
 		VolumeID: volumeID, PoolID: pool.ID, RootPath: pool.RootPath,
-		Class: storage.ClassContainerRoot, Size: lxc.DefaultRootSize, Format: storage.FormatDirectory,
+		Class: storage.ClassContainerRoot, Size: size, Format: storage.FormatDirectory,
 		Owner: storage.VolumeOwnerName, OwnerKind: ownerKind, JobID: req.volumeJobID,
 	}, hint)
 	if err != nil && !errors.Is(err, storage.ErrDuplicate) {
@@ -426,7 +440,7 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 	row := appdb.Volume{
 		ID: volumeID, ClusterID: clusterID, NodeID: nodeID, PoolID: pool.ID,
 		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
-		SizeBytes: lxc.DefaultRootSize, Status: storage.StatusAvailable,
+		SizeBytes: size, Status: storage.StatusAvailable,
 		BackendType: storage.BackendDirectory, BackendRef: backend,
 		Owner: storage.VolumeOwnerName, OwnerKind: ownerKind, OwnerJobID: req.volumeJobID,
 	}
@@ -652,7 +666,7 @@ func patchHasIP(req patchWorkloadRequest) bool {
 }
 
 func patchSpecChange(req patchWorkloadRequest) bool {
-	return req.Name != "" || req.CPUs > 0 || req.MemoryBytes > 0 || req.Firmware != "" || req.Autostart != nil || req.ISOLibraryID != nil || req.NoCloud != nil || patchHasIP(req)
+	return req.Name != "" || req.CPUs > 0 || req.MemoryBytes > 0 || req.DiskBytes > 0 || req.MAC != "" || req.Firmware != "" || req.Autostart != nil || req.ISOLibraryID != nil || req.NoCloud != nil || patchHasIP(req)
 }
 
 func (s *Server) authorizeWorkloadPatch(w http.ResponseWriter, r *http.Request, req patchWorkloadRequest) (*principal, error) {
@@ -719,6 +733,24 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if strings.TrimSpace(req.MAC) != "" {
+			nextMAC, merr := s.resolveWorkloadMAC(r.Context(), p.User.ClusterID, row.ID, req.MAC)
+			if merr != nil {
+				writeErr(w, statusFor(merr), merr.Error())
+				return
+			}
+			if !sameMAC(nextMAC, ctMAC) {
+				if !strings.EqualFold(row.Status, lxc.StatusStopped) {
+					writeErr(w, http.StatusConflict, "stop the container before changing its MAC")
+					return
+				}
+				if err := s.updateWorkloadMAC(r.Context(), p.User.ClusterID, row.ID, nextMAC); err != nil {
+					writeErr(w, statusFor(err), err.Error())
+					return
+				}
+				ctMAC = nextMAC
+			}
+		}
 	}
 	next := *row
 	if req.CPUs > 0 {
@@ -726,6 +758,12 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MemoryBytes > 0 {
 		next.MemoryBytes = req.MemoryBytes
+	}
+	if req.DiskBytes > 0 && row.Kind == lxc.KindSystemContainer {
+		if err := s.growCTDisk(r.Context(), p.User.ClusterID, *row, req.DiskBytes); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
 	}
 	if req.DesiredPower != "" {
 		next.DesiredPower = req.DesiredPower
@@ -830,10 +868,14 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	}
 	cloneID := uuid.NewString()
 	cloneVol := uuid.NewString()
+	cloneSize := vol.SizeBytes
+	if cloneSize < lxc.MinRootSize {
+		cloneSize = lxc.DefaultRootSize
+	}
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
 	res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
 		VolumeID: cloneVol, PoolID: pool.ID, RootPath: pool.RootPath,
-		Class: storage.ClassContainerRoot, Size: lxc.DefaultRootSize, Format: storage.FormatDirectory,
+		Class: storage.ClassContainerRoot, Size: cloneSize, Format: storage.FormatDirectory,
 	}, hint)
 	if err != nil && !errors.Is(err, storage.ErrDuplicate) {
 		return lxc.LifecycleRequest{}, err
@@ -845,7 +887,7 @@ func (s *Server) prepareClone(ctx context.Context, clusterID string, src appdb.W
 	if err := s.Store.CreateVolume(ctx, appdb.Volume{
 		ID: cloneVol, ClusterID: clusterID, NodeID: src.NodeID, PoolID: pool.ID,
 		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
-		SizeBytes: lxc.DefaultRootSize, Status: storage.StatusAvailable,
+		SizeBytes: cloneSize, Status: storage.StatusAvailable,
 		BackendType: storage.BackendDirectory, BackendRef: backend,
 	}); err != nil {
 		return lxc.LifecycleRequest{}, errInternal("could not record clone volume")
@@ -981,8 +1023,16 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 	disks, _ := s.Store.ListWorkloadDisks(ctx, w.ClusterID, w.ID)
 	nics, _ := s.Store.ListWorkloadNICs(ctx, w.ClusterID, w.ID)
 	diskOut := make([]map[string]any, 0, len(disks))
+	var diskBytes int64
 	for _, d := range disks {
-		diskOut = append(diskOut, map[string]any{"id": d.ID, "volume_id": d.VolumeID, "role": d.Role, "slot": d.Slot, "pci_addr": d.BusAddr, "read_only": d.ReadOnly, "format": d.Format})
+		item := map[string]any{"id": d.ID, "volume_id": d.VolumeID, "role": d.Role, "slot": d.Slot, "pci_addr": d.BusAddr, "read_only": d.ReadOnly, "format": d.Format}
+		if vol, err := s.Store.GetVolume(ctx, w.ClusterID, d.VolumeID); err == nil && vol != nil {
+			item["size_bytes"] = vol.SizeBytes
+			if d.Role == "root" || diskBytes == 0 {
+				diskBytes = vol.SizeBytes
+			}
+		}
+		diskOut = append(diskOut, item)
 	}
 	nicOut := make([]map[string]any, 0, len(nics))
 	for _, n := range nics {
@@ -1009,7 +1059,7 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"id": w.ID, "node_id": w.NodeID, "name": w.Name, "kind": w.Kind,
 		"status": w.Status, "reason": w.Reason, "desired_power": w.DesiredPower,
 		"image_pin": w.ImagePin, "image_verified": w.ImageVerified,
-		"cpus": w.CPUs, "memory_bytes": w.MemoryBytes, "privileged": w.Privileged,
+		"cpus": w.CPUs, "memory_bytes": w.MemoryBytes, "disk_bytes": diskBytes, "privileged": w.Privileged,
 		"uid_map": w.UIDMap, "gid_map": w.GIDMap, "pid": pid, "unit_active": w.UnitActive,
 		"migrate_ready": w.MigrateReady, "migrate_blockers": blockers, "devices": devices,
 		"warnings": w.Warnings, "disks": diskOut, "nics": nicOut,
@@ -1018,6 +1068,9 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"desired_node_id": w.DesiredNodeID, "owner_node_id": w.OwnerNodeID,
 		"ownership_epoch": w.OwnershipEpoch,
 		"created_at":      w.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if len(nics) > 0 && nics[0].MAC != "" {
+		out["mac"] = nics[0].MAC
 	}
 	if w.Kind == oci.KindOCI {
 		out["health"] = ociHealthFromWorkload(w)
@@ -1032,11 +1085,13 @@ func (s *Server) startOpKeyed(ctx context.Context, clusterID, nodeID, kind, stag
 		State: "running", Stage: stage, Message: message, IdempotencyKey: key,
 		Progress: &progress, UpdatedAt: time.Now().UTC(),
 	}
-	if existing, _ := s.Store.GetOperationByIdempotency(ctx, clusterID, key); existing != nil && key != "" {
+	if existing, _ := s.Store.GetOperationByIdempotency(persistOpCtx(ctx), clusterID, key); existing != nil && key != "" {
 		op.ID = existing.ID
 		op.CreatedAt = existing.CreatedAt
 	}
-	_ = s.Store.UpsertOperation(ctx, op)
+	if err := s.Store.UpsertOperation(persistOpCtx(ctx), op); err != nil {
+		log.Printf("operation start persist %s %s: %v", op.Kind, op.ID, err)
+	}
 	return op
 }
 
@@ -1172,4 +1227,156 @@ func statusFor(err error) int {
 		return se.status
 	}
 	return http.StatusBadRequest
+}
+
+func sameMAC(a, b string) bool {
+	left, lerr := lxc.NormalizeMAC(a)
+	right, rerr := lxc.NormalizeMAC(b)
+	if lerr != nil || rerr != nil {
+		return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+	}
+	return left == right
+}
+
+func (s *Server) resolveWorkloadMAC(ctx context.Context, clusterID, workloadID, raw string) (string, error) {
+	mac := strings.TrimSpace(raw)
+	if mac == "" {
+		mac = lxc.MACFromUUID(workloadID)
+	} else {
+		normalized, err := lxc.NormalizeMAC(mac)
+		if err != nil {
+			return "", errBadRequest(err.Error())
+		}
+		mac = normalized
+	}
+	nics, err := s.Store.ListWorkloadNICs(ctx, clusterID, "")
+	if err != nil {
+		return "", err
+	}
+	for _, nic := range nics {
+		if nic.WorkloadID == workloadID {
+			continue
+		}
+		if sameMAC(nic.MAC, mac) {
+			return "", errConflict("mac is already used by another workload")
+		}
+	}
+	return mac, nil
+}
+
+func (s *Server) updateWorkloadMAC(ctx context.Context, clusterID, workloadID, mac string) error {
+	nics, err := s.Store.ListWorkloadNICs(ctx, clusterID, workloadID)
+	if err != nil {
+		return err
+	}
+	if len(nics) == 0 {
+		return errConflict("container has no network interface")
+	}
+	nic := nics[0]
+	nic.MAC = mac
+	return s.Store.UpdateWorkloadNIC(ctx, nic)
+}
+
+func resolveRootDiskBytes(req createWorkloadRequest, pool *appdb.StoragePool) (int64, error) {
+	size := req.DiskBytes
+	if size < 1 {
+		size = lxc.DefaultRootSize
+	}
+	if size < lxc.MinRootSize {
+		return 0, errBadRequest("disk size must be at least 1 GB")
+	}
+	if pool != nil && pool.UsableBytes != nil && *pool.UsableBytes < size {
+		return 0, errConflict("storage pool does not have enough free space for the requested disk size")
+	}
+	return size, nil
+}
+
+func (s *Server) rollbackFailedCT(ctx context.Context, clusterID string, vol *appdb.Volume, rootfs string) {
+	if vol == nil {
+		return
+	}
+	ctx = persistOpCtx(ctx)
+	if s.Storage != nil {
+		pool, _ := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
+		root := ""
+		if pool != nil {
+			root = pool.RootPath
+		}
+		_ = s.Storage.DestroyDirectoryVolume(ctx, storage.CreateVolumeRequest{
+			VolumeID: vol.ID, PoolID: vol.PoolID, RootPath: root, Class: vol.Class,
+			Format: vol.Format, BackendRef: vol.BackendRef, Size: vol.SizeBytes,
+			Owner: storage.VolumeOwnerName, OwnerKind: firstNonEmpty(vol.OwnerKind, storage.VolumeKindOperator),
+			JobID: vol.OwnerJobID,
+		}, storage.PoolHint{PoolID: vol.PoolID, BackendType: vol.BackendType, RootPath: root})
+	}
+	_ = s.Store.DeleteVolume(ctx, clusterID, vol.ID)
+	_ = rootfs
+}
+
+func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Workload, size int64) error {
+	if size < lxc.MinRootSize {
+		return errBadRequest("disk size must be at least 1 GB")
+	}
+	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, row.ID)
+	if err != nil || len(disks) == 0 {
+		return errConflict("container has no root volume")
+	}
+	vol, err := s.Store.GetVolume(ctx, clusterID, disks[0].VolumeID)
+	if err != nil || vol == nil {
+		return errConflict("container root volume is unavailable")
+	}
+	if size < vol.SizeBytes {
+		return errBadRequest("shrinking a container disk is not supported")
+	}
+	if size == vol.SizeBytes {
+		return nil
+	}
+	if !strings.EqualFold(row.Status, lxc.StatusStopped) && !strings.EqualFold(row.DesiredPower, "stopped") {
+		return errConflict("stop the container before growing its disk")
+	}
+	pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
+	if err != nil || pool == nil {
+		return errConflict("storage pool is not found")
+	}
+	if pool.UsableBytes != nil && *pool.UsableBytes < size-vol.SizeBytes {
+		return errConflict("storage pool does not have enough free space to grow the disk")
+	}
+	switch pool.BackendType {
+	case storage.BackendDirectory:
+		if s.Storage == nil {
+			return errUnavailable("storage agent is unavailable")
+		}
+		if err := s.Storage.ResizeDirectoryVolume(ctx, storage.CreateVolumeRequest{
+			VolumeID: vol.ID, PoolID: pool.ID, RootPath: pool.RootPath, Class: vol.Class,
+			Size: size, Format: vol.Format, BackendRef: vol.BackendRef,
+			Owner: storage.VolumeOwnerName, OwnerKind: storage.VolumeKindOperator,
+		}, appdb.PoolHints([]appdb.StoragePool{*pool})[0]); err != nil {
+			return err
+		}
+	case storage.BackendZFS:
+		res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
+			Action: "resize-volume", PoolID: pool.ID, Name: s.zfsPoolName(ctx, *pool),
+			VolumeID: vol.ID, Class: vol.Class, SizeBytes: size,
+		})
+		if err != nil {
+			return err
+		}
+		if res.Status == storage.StatusFailed || res.Status == storage.StatusUnavailable {
+			return errUnprocessable(firstNonEmpty(res.Reason, "zfs disk grow failed"))
+		}
+	case storage.BackendLVM:
+		res, err := s.lvm().LVMPool(ctx, storage.LVMOp{
+			Action: "resize-volume", PoolID: pool.ID, Name: s.lvmVGName(ctx, *pool),
+			VolumeID: vol.ID, Class: vol.Class, SizeBytes: size,
+		})
+		if err != nil {
+			return err
+		}
+		if res.Status == storage.StatusFailed || res.Status == storage.StatusUnavailable {
+			return errUnprocessable(firstNonEmpty(res.Reason, "lvm disk grow failed"))
+		}
+	default:
+		return errUnprocessable("growing this storage backend is not supported")
+	}
+	return s.Store.UpdateVolumeSize(ctx, clusterID, vol.ID, size)
 }

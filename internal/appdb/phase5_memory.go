@@ -262,6 +262,9 @@ func (m *Memory) UpdateWorkloadNIC(_ context.Context, n WorkloadNIC) error {
 	cur.IPv6Address = n.IPv6Address
 	cur.IPv6Gateway = n.IPv6Gateway
 	cur.DNS = n.DNS
+	if n.MAC != "" {
+		cur.MAC = n.MAC
+	}
 	if n.PCIAddr != "" {
 		cur.PCIAddr = n.PCIAddr
 	}

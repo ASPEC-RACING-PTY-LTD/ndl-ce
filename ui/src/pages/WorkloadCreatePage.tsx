@@ -22,6 +22,7 @@ import { navigate } from "../router";
 import { useSession } from "../session";
 import { uxLevel } from "../ux";
 import { isAdvanced, isExpert, type UxLevel } from "../ux-mode";
+import { bytesFromGB, parseMemoryGB } from "../memory";
 
 export function WorkloadCreatePage() {
   const session = useSession();
@@ -35,10 +36,12 @@ export function WorkloadCreatePage() {
   const [name, setName] = useState("alpine");
   const [pin, setPin] = useState(FALLBACK_IMAGE_PINS[0]);
   const [cpus, setCpus] = useState("1");
-  const [memoryMiB, setMemoryMiB] = useState("256");
+  const [memoryGB, setMemoryGB] = useState("1");
+  const [diskGB, setDiskGB] = useState("8");
   const [poolID, setPoolID] = useState("");
   const [networkID, setNetworkID] = useState("");
   const [ip, setIP] = useState(defaultContainerIPForm);
+  const [mac, setMAC] = useState("");
   const [privileged, setPrivileged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,10 +88,12 @@ export function WorkloadCreatePage() {
           kind: "system-container",
           image_pin: pin,
           cpus: Number(cpus) || 1,
-          memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
+          memory_bytes: bytesFromGB(parseMemoryGB(memoryGB, 1)),
+          disk_bytes: bytesFromGB(parseMemoryGB(diskGB, 8)),
           pool_id: poolID || undefined,
           network_id: networkID,
           ...containerIPBody(ip),
+          ...(mac.trim() ? { mac: mac.trim() } : {}),
           privileged: admin ? privileged : false,
         },
         `ui-create-${name}`,
@@ -129,13 +134,24 @@ export function WorkloadCreatePage() {
           <Field id="ct-cpus" label="CPUs" type="number" min={1} value={cpus} onChange={(e) => setCpus(e.target.value)} />
           <Field
             id="ct-mem"
-            label="Memory (MiB)"
+            label="Memory (GB)"
             type="number"
-            min={64}
-            value={memoryMiB}
-            onChange={(e) => setMemoryMiB(e.target.value)}
+            min={1}
+            step={1}
+            value={memoryGB}
+            onChange={(e) => setMemoryGB(e.target.value)}
           />
         </div>
+        <Field
+          id="ct-disk"
+          label="Disk size (GB)"
+          type="number"
+          min={1}
+          step={1}
+          value={diskGB}
+          onChange={(e) => setDiskGB(e.target.value)}
+          hint="The container cannot use more than this. Growing later is supported. Shrinking is not."
+        />
         <StoragePicker
           id="ct-pool"
           label="Storage pool"
@@ -153,6 +169,14 @@ export function WorkloadCreatePage() {
           expert={isExpert(mode)}
         />
         <ContainerIPFields id="ct-ip" form={ip} onChange={setIP} />
+        <Field
+          id="ct-mac"
+          label="MAC address"
+          value={mac}
+          onChange={(e) => setMAC(e.target.value)}
+          hint="Optional. Leave blank to generate. Enter the original MAC to keep an existing DHCP reservation. No-dal does not assign the IP."
+          placeholder="aa:bb:cc:dd:ee:ff"
+        />
         {isAdvanced(mode) ? (
           admin ? (
             <label className="check-row">
@@ -166,8 +190,9 @@ export function WorkloadCreatePage() {
         <div className="review-box">
           <strong>Review</strong>
           <span>
-            {name}, {osLabel(pin)}, {cpus} CPU, {memoryMiB} MiB, {pool?.name || "no pool"},{" "}
-            {net ? `${net.name} (${kindLabel(net.kind)})` : "no network"}, {summarizeContainerIP(ip)}
+            {name}, {osLabel(pin)}, {cpus} CPU, {memoryGB} GB RAM, {diskGB} GB disk, {pool?.name || "no pool"},{" "}
+            {net ? `${net.name} (${kindLabel(net.kind)})` : "no network"}, {summarizeContainerIP(ip)},{" "}
+            {mac.trim() ? `MAC ${mac.trim()}` : "generated MAC"}
             {privileged ? ", privileged" : ""}
           </span>
         </div>
@@ -179,10 +204,12 @@ export function WorkloadCreatePage() {
                 kind: "system-container",
                 image_pin: pin,
                 cpus: Number(cpus) || 1,
-                memory_bytes: (Number(memoryMiB) || 256) * 1024 * 1024,
+                memory_bytes: bytesFromGB(parseMemoryGB(memoryGB, 1)),
+                disk_bytes: bytesFromGB(parseMemoryGB(diskGB, 8)),
                 pool_id: poolID || undefined,
                 network_id: networkID,
                 ...containerIPBody(ip),
+                ...(mac.trim() ? { mac: mac.trim() } : {}),
                 privileged: admin ? privileged : false,
               },
               null,

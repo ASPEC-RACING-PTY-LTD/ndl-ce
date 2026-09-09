@@ -13,7 +13,7 @@ type Runner func(ctx context.Context, name string, args ...string) ([]byte, erro
 
 func allowedBin(name string) bool {
 	switch name {
-	case BinLXCStart, BinLXCStop, BinLXCInfo, BinLXCCopy, BinSystemctl, BinTar, BinCP, BinGPGV:
+	case BinLXCStart, BinLXCStop, BinLXCInfo, BinLXCCopy, BinSystemctl, BinTar, BinUsernsExec, BinCP, BinGPGV:
 		return true
 	default:
 		return false

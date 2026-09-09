@@ -17,6 +17,9 @@ import (
 type Directory struct {
 	Host Host
 	Now  func() time.Time
+	// Run executes mkfs/mount/umount/resize2fs for sized container roots.
+	// Tests leave it nil so they do not mount loop devices.
+	Run CommandRunner
 	// AllowTestPrefix, when set, permits pool roots under that cleaned path.
 	// Production callers must leave this empty so /tmp and other forbidden
 	// prefixes stay rejected.
@@ -508,6 +511,14 @@ func (d Directory) CreateVolume(ctx context.Context, req CreateVolumeRequest, hi
 	if pool.Capacity.UsableBytes != nil && *pool.Capacity.UsableBytes < MinPoolFreeBytes {
 		return CreateVolumeResult{}, ErrCapacity
 	}
+	if kind == KindFilesystem && req.Class == ClassContainerRoot {
+		if req.Size < MinRootBytes {
+			return CreateVolumeResult{}, ErrInvalidSize
+		}
+		if pool.Capacity.UsableBytes != nil && *pool.Capacity.UsableBytes < req.Size {
+			return CreateVolumeResult{}, ErrCapacity
+		}
+	}
 	rel := volumeRel(req.Class, req.VolumeID, format)
 	abs, err := JoinUnder(pool.RootPath, rel)
 	if err != nil {
@@ -527,6 +538,13 @@ func (d Directory) CreateVolume(ctx context.Context, req CreateVolumeRequest, hi
 	if kind == KindFilesystem {
 		if err := h.MkdirAll(abs, 0o750); err != nil {
 			return CreateVolumeResult{}, err
+		}
+		if req.Class == ClassContainerRoot {
+			if err := d.enforceContainerRootSize(ctx, abs, req.Size); err != nil {
+				_ = os.RemoveAll(abs)
+				_ = os.Remove(directoryRootImage(abs))
+				return CreateVolumeResult{}, err
+			}
 		}
 		if req.OwnerKind != "" || req.JobID != "" {
 			_ = WriteVolumeOwner(abs, VolumeOwner{
@@ -605,9 +623,11 @@ func (d Directory) DestroyVolume(_ context.Context, req CreateVolumeRequest, hin
 	} else if req.OwnerKind != VolumeKindMigration {
 		return fmt.Errorf("refusing to delete a volume without No-dal ownership")
 	}
+	d.unmountContainerRoot(context.Background(), abs)
 	if err := os.RemoveAll(abs); err != nil {
 		return err
 	}
+	_ = os.Remove(directoryRootImage(abs))
 	_ = d.host().Remove(abs + ".ndl-owned")
 	return nil
 }

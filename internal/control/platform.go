@@ -11,6 +11,8 @@ import (
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
+var processStarted = time.Now().UTC()
+
 func (o observer) reconcilePlatform(ctx context.Context, clusterID, nodeID string) {
 	o.reconcileOperations(ctx, clusterID, nodeID)
 	o.sweepOrphanVolumes(ctx, clusterID, nodeID)
@@ -27,7 +29,8 @@ func (o observer) reconcileOperations(ctx context.Context, clusterID, nodeID str
 	workloads, _ := o.Store.ListWorkloads(ctx, clusterID)
 	jobs, _ := o.Store.ListMigrationJobs(ctx, clusterID, 200)
 	facts := appdb.OpFacts{
-		Pools: pools, Networks: nets, Workloads: workloads, Jobs: jobs, Now: time.Now().UTC(),
+		Pools: pools, Networks: nets, Workloads: workloads, Jobs: jobs,
+		Now: time.Now().UTC(), StartedAt: processStarted,
 	}
 	for _, op := range ops {
 		dec := appdb.ReconcileOperation(op, facts)

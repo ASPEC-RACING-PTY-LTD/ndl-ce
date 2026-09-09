@@ -92,6 +92,9 @@ export type NetworkPreview = {
   dhcp?: boolean;
   dry_run?: boolean;
   warnings?: string[];
+  already_applied?: boolean;
+  host_managers?: { manager: string; path?: string; detail: string; action: string }[];
+  stale_uplinks?: { network_id: string; path: string; bridge?: string }[];
 };
 
 export type ConfirmRequired = {

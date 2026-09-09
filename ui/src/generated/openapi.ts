@@ -758,6 +758,8 @@ export interface Workload {
   image_verified?: boolean;
   cpus?: number;
   memory_bytes?: number;
+  disk_bytes?: number;
+  mac?: string;
   privileged?: boolean;
   pid?: number;
   unit_active?: boolean;
@@ -777,6 +779,8 @@ export interface CreateWorkloadRequest {
   image_pin?: string;
   cpus?: number;
   memory_bytes?: number;
+  disk_bytes?: number;
+  mac?: string;
   pool_id?: string;
   network_id?: string;
   ipv4_mode?: "dhcp" | "static" | "disabled";
@@ -919,6 +923,7 @@ export interface UpdateWorkloadRequest {
   name?: string;
   cpus?: number;
   memory_bytes?: number;
+  disk_bytes?: number;
   desired_power?: string;
   autostart?: boolean;
   firmware?: string;

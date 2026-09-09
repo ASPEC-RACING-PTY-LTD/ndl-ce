@@ -71,7 +71,14 @@ export function humanTaskMessage(message?: string): string {
     try {
       const parsed = JSON.parse(trimmed) as unknown;
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return payloadFacts(parsed as Record<string, unknown>)
+        const rec = parsed as Record<string, unknown>;
+        if (typeof rec.error === "string" && rec.error.trim()) {
+          return rec.error;
+        }
+        if (typeof rec.message === "string" && rec.message.trim() && rec.message !== "created") {
+          return rec.message;
+        }
+        return payloadFacts(rec)
           .map((fact) => `${fact.label} ${fact.value}`)
           .join(" · ");
       }

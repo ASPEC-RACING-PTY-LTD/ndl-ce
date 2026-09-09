@@ -21,6 +21,7 @@ type StorageRPC interface {
 	CreateDirectoryPool(ctx context.Context, req storage.CreatePoolRequest, existing []string) (storage.CreatePoolResult, error)
 	CreateDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) (storage.CreateVolumeResult, error)
 	DestroyDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error
+	ResizeDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error
 	GetStorage(ctx context.Context, hints []storage.PoolHint) (storage.Observation, error)
 	UploadLibrary(ctx context.Context, begin storage.BeginUploadRequest, hint storage.PoolHint, r io.Reader, expectedSHA string) (storage.UploadResult, error)
 }
@@ -501,12 +502,19 @@ func zfsGUID(ctx context.Context, st appdb.Store, poolID string) string {
 	return z.ZPoolGUID
 }
 
+func persistOpCtx(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
+}
+
 func (s *Server) startOp(ctx context.Context, clusterID, nodeID, kind, stage string, progress int) appdb.Operation {
 	op := appdb.Operation{
 		ID: uuid.NewString(), ClusterID: clusterID, NodeID: nodeID, Kind: kind,
 		State: "running", Stage: stage, Progress: &progress, UpdatedAt: time.Now().UTC(),
 	}
-	if err := s.Store.UpsertOperation(ctx, op); err != nil {
+	if err := s.Store.UpsertOperation(persistOpCtx(ctx), op); err != nil {
 		log.Printf("operation start persist %s %s: %v", op.Kind, op.ID, err)
 	}
 	return op
@@ -515,25 +523,71 @@ func (s *Server) startOp(ctx context.Context, clusterID, nodeID, kind, stage str
 func (s *Server) finishOp(ctx context.Context, op appdb.Operation, state, message string, progress int) {
 	op.State = state
 	op.Progress = &progress
-	if looksLikeCreateIDs(op.Message) && !looksLikeCreateIDs(message) {
-		op.Stage = message
-	} else {
-		op.Message = message
-		if state == "succeeded" {
-			op.Stage = "done"
-		}
-	}
-	if state == "succeeded" && looksLikeCreateIDs(op.Message) {
+	op.Message = mergeOpMessage(op.Message, message, state)
+	if state == "succeeded" {
 		op.Stage = "done"
 	}
 	op.UpdatedAt = time.Now().UTC()
-	if err := s.Store.UpsertOperation(ctx, op); err != nil {
+	if err := s.Store.UpsertOperation(persistOpCtx(ctx), op); err != nil {
 		log.Printf("operation finish persist %s %s %s: %v", op.Kind, op.ID, state, err)
 	}
 }
 
 func looksLikeCreateIDs(message string) bool {
 	return strings.Contains(message, `"workload_id"`)
+}
+
+type opMessage struct {
+	WorkloadID string `json:"workload_id,omitempty"`
+	VolumeID   string `json:"volume_id,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+func parseOpMessage(raw string) opMessage {
+	var out opMessage
+	if looksLikeCreateIDs(raw) {
+		_ = json.Unmarshal([]byte(raw), &out)
+	}
+	return out
+}
+
+func mergeOpMessage(prev, next, state string) string {
+	ids := parseOpMessage(prev)
+	more := parseOpMessage(next)
+	if more.WorkloadID != "" {
+		ids.WorkloadID = more.WorkloadID
+	}
+	if more.VolumeID != "" {
+		ids.VolumeID = more.VolumeID
+	}
+	if ids.WorkloadID == "" && ids.VolumeID == "" {
+		return next
+	}
+	if state == "failed" {
+		errText := strings.TrimSpace(next)
+		if looksLikeCreateIDs(next) {
+			errText = more.Error
+		}
+		ids.Error = errText
+		ids.Message = ""
+	} else {
+		if looksLikeCreateIDs(next) {
+			if more.Message != "" {
+				ids.Message = more.Message
+			} else if more.Error == "" {
+				ids.Message = "created"
+			}
+		} else {
+			ids.Message = next
+		}
+		ids.Error = ""
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return next
+	}
+	return string(b)
 }
 
 func (s *Server) emitEvent(ctx context.Context, clusterID, nodeID, typ string, payload map[string]string) {

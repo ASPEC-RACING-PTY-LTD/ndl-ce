@@ -142,15 +142,35 @@ func ZFSCreatePoolArgv(name string, disks []string) ([]string, error) {
 	return argv, nil
 }
 
-// ZFSCreateDatasetArgv creates a per-UUID dataset for CT roots.
-func ZFSCreateDatasetArgv(dataset, mount string) ([]string, error) {
+// ZFSCreateDatasetArgv creates a per-UUID dataset for CT roots with a quota.
+func ZFSCreateDatasetArgv(dataset, mount string, sizeBytes int64) ([]string, error) {
 	if strings.Contains(dataset, " ") || strings.Contains(dataset, "..") {
 		return nil, fmt.Errorf("dataset locator is invalid")
 	}
 	if !strings.HasPrefix(mount, ZFSMountRoot+"/") {
 		return nil, fmt.Errorf("dataset mount must be under the ZFS storage root")
 	}
-	return []string{ZFSBin, "create", "-o", "mountpoint=" + mount, dataset}, nil
+	if sizeBytes > 0 && sizeBytes < MinRootBytes {
+		return nil, fmt.Errorf("dataset size is too small")
+	}
+	argv := []string{ZFSBin, "create", "-o", "mountpoint=" + mount}
+	if sizeBytes >= MinRootBytes {
+		quota := fmt.Sprintf("%d", sizeBytes)
+		argv = append(argv, "-o", "refquota="+quota, "-o", "quota="+quota)
+	}
+	return append(argv, dataset), nil
+}
+
+// ZFSSetQuotaArgv grows a dataset quota. It never lowers the limit.
+func ZFSSetQuotaArgv(dataset string, sizeBytes int64) ([]string, error) {
+	if strings.Contains(dataset, " ") || strings.Contains(dataset, "..") {
+		return nil, fmt.Errorf("dataset locator is invalid")
+	}
+	if sizeBytes < MinRootBytes {
+		return nil, fmt.Errorf("dataset size is too small")
+	}
+	quota := fmt.Sprintf("%d", sizeBytes)
+	return []string{ZFSBin, "set", "refquota=" + quota, dataset}, nil
 }
 
 // ZFSCreateZVolArgv creates a zvol for a VM disk.

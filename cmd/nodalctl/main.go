@@ -116,7 +116,7 @@ func run(args []string) error {
   network policy apply --id ID
   guest status --id ID
   workload list
-  workload create --kind system-container --name NAME --image-pin PIN --pool-id ID --network-id ID [--cpus N] [--memory-bytes N] [--privileged]
+  workload create --kind system-container --name NAME --image-pin PIN --pool-id ID --network-id ID [--cpus N] [--memory-bytes N] [--disk-bytes N] [--mac MAC] [--privileged]
   workload create --kind vm --name NAME --network-id ID [--pool-id ID] [--cpus N] [--memory-bytes N] [--firmware bios|uefi] [--cloud-image-id ID] [--iso-library-id ID] [--autostart] [--nocloud-user USER] [--nocloud-host HOST]
   workload create --kind oci --name NAME --image-pin IMAGE [--registry-id ID] [--network-id ID] [--volume-id ID] [--cpus N] [--memory-bytes N] [--privileged]
   registry list
@@ -130,7 +130,7 @@ func run(args []string) error {
   workload stop --id ID
   workload restart --id ID
   workload force-stop --id ID
-  workload update --id ID [--cpus N] [--memory-bytes N] [--autostart true|false]
+  workload update --id ID [--cpus N] [--memory-bytes N] [--disk-bytes N] [--mac MAC] [--autostart true|false]
   workload delete --id ID
   workload clone --id ID [--name NAME]
   workload migrate --id ID --dest-node-id ID [--mode live|offline]
@@ -1259,8 +1259,10 @@ func cmdWorkload(args []string) error {
 		}
 		var cpus int
 		var mem int64
+		var disk int64
 		fmt.Sscan(f["cpus"], &cpus)
 		fmt.Sscan(f["memory-bytes"], &mem)
+		fmt.Sscan(f["disk-bytes"], &disk)
 		body := map[string]any{
 			"name": f["name"], "kind": kind, "image_pin": f["image-pin"],
 			"pool_id": f["pool-id"], "network_id": f["network-id"],
@@ -1303,6 +1305,12 @@ func cmdWorkload(args []string) error {
 		if mem > 0 {
 			body["memory_bytes"] = mem
 		}
+		if disk > 0 {
+			body["disk_bytes"] = disk
+		}
+		if f["mac"] != "" {
+			body["mac"] = f["mac"]
+		}
 		headers := map[string]string{}
 		if key := f["idempotency-key"]; key != "" {
 			headers["Idempotency-Key"] = key
@@ -1333,18 +1341,26 @@ func cmdWorkload(args []string) error {
 	case "update":
 		f := parseFlags(args[1:])
 		if f["id"] == "" {
-			return fmt.Errorf("usage: nodalctl workload update --id ID [--cpus N] [--memory-bytes N] [--autostart true|false]")
+			return fmt.Errorf("usage: nodalctl workload update --id ID [--cpus N] [--memory-bytes N] [--disk-bytes N] [--mac MAC] [--autostart true|false]")
 		}
 		body := map[string]any{}
 		var cpus int
 		var mem int64
+		var disk int64
 		fmt.Sscan(f["cpus"], &cpus)
 		fmt.Sscan(f["memory-bytes"], &mem)
+		fmt.Sscan(f["disk-bytes"], &disk)
 		if cpus > 0 {
 			body["cpus"] = cpus
 		}
 		if mem > 0 {
 			body["memory_bytes"] = mem
+		}
+		if disk > 0 {
+			body["disk_bytes"] = disk
+		}
+		if f["mac"] != "" {
+			body["mac"] = f["mac"]
 		}
 		if f["autostart"] == "true" || f["autostart"] == "false" {
 			body["autostart"] = f["autostart"] == "true"
