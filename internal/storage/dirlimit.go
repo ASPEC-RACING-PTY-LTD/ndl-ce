@@ -13,6 +13,7 @@ const (
 	BinMkfsExt4   = "/usr/sbin/mkfs.ext4"
 	BinMount      = "/usr/bin/mount"
 	BinUmount     = "/usr/bin/umount"
+	BinE2fsck     = "/usr/sbin/e2fsck"
 	BinResize2fs  = "/usr/sbin/resize2fs"
 	VolumeSizeExt = ".img"
 )
@@ -22,7 +23,7 @@ type CommandRunner func(ctx context.Context, name string, args ...string) error
 
 func allowedLimitBin(name string) bool {
 	switch name {
-	case BinMkfsExt4, BinMount, BinUmount, BinResize2fs:
+	case BinMkfsExt4, BinMount, BinUmount, BinE2fsck, BinResize2fs:
 		return true
 	default:
 		return false
@@ -37,6 +38,11 @@ func LiveRun(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if name == BinE2fsck {
+			if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() <= 1 {
+				return nil
+			}
+		}
 		if len(out) == 0 {
 			return err
 		}
@@ -96,6 +102,14 @@ func Resize2fsArgv(img string) ([]string, error) {
 		return nil, fmt.Errorf("resize2fs path is invalid")
 	}
 	return []string{BinResize2fs, img}, nil
+}
+
+func E2fsckImageArgv(img string) ([]string, error) {
+	img = path.Clean(img)
+	if img == "" || strings.Contains(img, "..") || !strings.HasPrefix(img, "/") {
+		return nil, fmt.Errorf("e2fsck path is invalid")
+	}
+	return []string{BinE2fsck, "-f", "-p", img}, nil
 }
 
 func (d Directory) enforceContainerRootSize(ctx context.Context, abs string, size int64) error {
@@ -179,22 +193,28 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 	if req.Size < st.Size() {
 		return fmt.Errorf("shrinking a container disk is not supported")
 	}
-	if req.Size == st.Size() {
-		return nil
-	}
 	d.unmountContainerRoot(ctx, abs)
-	f, err := os.OpenFile(img, os.O_RDWR, 0o640)
-	if err != nil {
-		return err
-	}
-	if err := f.Truncate(req.Size); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
+	if req.Size > st.Size() {
+		f, err := os.OpenFile(img, os.O_RDWR, 0o640)
+		if err != nil {
+			return err
+		}
+		if err := f.Truncate(req.Size); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
 	}
 	if d.Run != nil {
+		fsck, err := E2fsckImageArgv(img)
+		if err != nil {
+			return err
+		}
+		if err := d.runLimit(ctx, fsck[0], fsck[1:]...); err != nil {
+			return err
+		}
 		resize, err := Resize2fsArgv(img)
 		if err != nil {
 			return err
