@@ -19,8 +19,10 @@ func TestTarExtractArgsNumericOwner(t *testing.T) {
 	}
 }
 
-func TestUsernsExtractArgsMapAndTar(t *testing.T) {
-	args := usernsExtractArgs(DefaultUIDMap, DefaultGIDMap, "/img/root.tar.xz", "/var/lib/ndl/rootfs/x")
+func TestUsernsExtractArgsReadStdinNotCachePath(t *testing.T) {
+	archive := "/var/lib/ndl/cache/lxc-images/debian/trixie/amd64/default/deadbeef.tar.xz"
+	rootfs := "/var/lib/ndl/storage/rootfs/x"
+	args := usernsExtractArgs(DefaultUIDMap, DefaultGIDMap, archive, rootfs)
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "-m u:0:100000:65536") || !strings.Contains(joined, "-m g:0:100000:65536") {
 		t.Fatalf("map flags: %v", args)
@@ -28,12 +30,87 @@ func TestUsernsExtractArgsMapAndTar(t *testing.T) {
 	if args[4] != "--" || args[5] != BinTar {
 		t.Fatalf("must exec tar through usernsexec: %v", args)
 	}
-	if !strings.Contains(joined, "--numeric-owner") {
+	if !strings.Contains(joined, "--numeric-owner") || !strings.Contains(joined, "-xJ") {
 		t.Fatalf("%v", args)
+	}
+	if !strings.Contains(joined, "-f -") {
+		t.Fatalf("mapped tar must read stdin: %v", args)
+	}
+	for _, a := range args {
+		if a == archive || strings.Contains(a, "lxc-images") {
+			t.Fatalf("cache path must not enter the user namespace: %v", args)
+		}
 	}
 }
 
-func TestUnpackTarUnprivilegedUsesUserns(t *testing.T) {
+func TestUnpackTarUnprivilegedReadsRestrictedCacheViaStdin(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache", "debian", "trixie", "amd64", "default")
+	if err := os.MkdirAll(cache, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(cache, "a4b36e63a2d16d508e7191e8ed20bed908e71e928bb92b30ddd46861c7c6edf9.tar.xz")
+	if err := os.WriteFile(archive, []byte("ndl-restricted-image"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(dir, "cache"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(cache, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(archive, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	rootfs := filepath.Join(dir, "rootfs")
+	if err := os.MkdirAll(rootfs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotName string
+	var gotArgs []string
+	var gotStdin []byte
+	e := &Engine{
+		RunStdin: func(_ context.Context, name string, stdin *os.File, args ...string) ([]byte, error) {
+			gotName = name
+			gotArgs = append([]string{}, args...)
+			if stdin == nil {
+				t.Fatal("privileged parent must pass the open archive")
+			}
+			buf := make([]byte, 64)
+			n, err := stdin.Read(buf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotStdin = buf[:n]
+			return nil, nil
+		},
+	}
+	if err := e.unpackTar(context.Background(), Spec{UIDMap: DefaultUIDMap, GIDMap: DefaultGIDMap}, archive, rootfs); err != nil {
+		t.Fatal(err)
+	}
+	if gotName != BinUsernsExec {
+		t.Fatalf("name=%s", gotName)
+	}
+	joined := strings.Join(gotArgs, " ")
+	if !strings.Contains(joined, "-f -") {
+		t.Fatalf("must extract from stdin: %v", gotArgs)
+	}
+	for _, a := range gotArgs {
+		if a == archive {
+			t.Fatal("mapped tar must not receive the cache pathname")
+		}
+	}
+	if string(gotStdin) != "ndl-restricted-image" {
+		t.Fatalf("stdin %q", gotStdin)
+	}
+	st, err := os.Stat(archive)
+	if err != nil || st.Mode().Perm() != 0o640 {
+		t.Fatalf("cache mode changed: %v %v", st, err)
+	}
+}
+
+func TestUnpackTarPrivilegedUsesHostTar(t *testing.T) {
 	var gotName string
 	var gotArgs []string
 	e := &Engine{
@@ -43,30 +120,14 @@ func TestUnpackTarUnprivilegedUsesUserns(t *testing.T) {
 			return nil, nil
 		},
 	}
-	if err := e.unpackTar(context.Background(), Spec{UIDMap: DefaultUIDMap, GIDMap: DefaultGIDMap}, "/img/a.tar.xz", "/rootfs"); err != nil {
-		t.Fatal(err)
-	}
-	if gotName != BinUsernsExec {
-		t.Fatalf("name=%s", gotName)
-	}
-	if strings.Join(gotArgs, " ") != strings.Join(usernsExtractArgs(DefaultUIDMap, DefaultGIDMap, "/img/a.tar.xz", "/rootfs"), " ") {
-		t.Fatalf("%v", gotArgs)
-	}
-}
-
-func TestUnpackTarPrivilegedUsesHostTar(t *testing.T) {
-	var gotName string
-	e := &Engine{
-		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
-			gotName = name
-			return nil, nil
-		},
-	}
 	if err := e.unpackTar(context.Background(), Spec{Privileged: true}, "/img/a.tar.xz", "/rootfs"); err != nil {
 		t.Fatal(err)
 	}
 	if gotName != BinTar {
 		t.Fatalf("name=%s", gotName)
+	}
+	if !strings.Contains(strings.Join(gotArgs, " "), "/img/a.tar.xz") {
+		t.Fatalf("privileged extract may open the cache path: %v", gotArgs)
 	}
 }
 

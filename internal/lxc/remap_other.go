@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 )
 
+func chownMappedRoot(string, int, int) error { return nil }
+
 func shiftRootfs(rootfs string, uidBase, gidBase int) error {
 	if uidBase < 1 {
 		uidBase = 100000

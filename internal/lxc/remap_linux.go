@@ -8,6 +8,16 @@ import (
 	"syscall"
 )
 
+func chownMappedRoot(rootfs string, uidBase, gidBase int) error {
+	if uidBase < 1 {
+		uidBase = 100000
+	}
+	if gidBase < 1 {
+		gidBase = 100000
+	}
+	return os.Chown(rootfs, uidBase, gidBase)
+}
+
 // shiftRootfs adds the host map base to inodes that still have namespace UIDs.
 // Files already extracted through lxc-usernsexec (uid >= base) are left alone.
 // Guest network files written as host root afterwards are shifted to mapped root.

@@ -22,6 +22,7 @@ type Engine struct {
 	ImageBase    string
 	HTTP         HTTPDoer
 	Run          Runner
+	RunStdin     StdinRunner
 	Now          func() time.Time
 	SkipHostCmds bool
 	FakeUnpack   bool
