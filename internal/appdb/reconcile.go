@@ -41,24 +41,8 @@ func ReconcileStorage(ctx context.Context, st Store, clusterID string, pools []S
 			next.AllocatedBytes = seen.Capacity.AllocatedBytes
 			next.ProvisionedBytes = seen.Capacity.ProvisionedBytes
 			next.TotalBytes = seen.Capacity.TotalBytes
-			if seen.MetadataPercent != nil || seen.Backing.ThinPool != "" || seen.Backing.FSUUID != "" {
-				var backing storage.BackingIdentity
-				if len(next.Backing) > 0 {
-					_ = json.Unmarshal(next.Backing, &backing)
-				}
-				if seen.Backing.FSUUID != "" {
-					backing.FSUUID = seen.Backing.FSUUID
-				}
-				if seen.Backing.Device != "" {
-					backing.Device = seen.Backing.Device
-				}
-				if seen.Backing.ThinPool != "" {
-					backing.ThinPool = seen.Backing.ThinPool
-				}
-				if seen.MetadataPercent != nil {
-					backing.MetadataPercent = seen.MetadataPercent
-				}
-				next.Backing, _ = json.Marshal(backing)
+			if seen.MetadataPercent != nil || seen.Backing.ThinPool != "" || seen.Backing.FSUUID != "" || seen.Backing.MountPoint != "" {
+				next.Backing, _ = json.Marshal(mergeObservedBacking(next.Backing, seen.Backing))
 			}
 		}
 		if err := st.UpdateStoragePoolObserved(ctx, next); err != nil {
@@ -109,4 +93,35 @@ func ReconcileStorage(ctx context.Context, st Store, clusterID string, pools []S
 		}
 	}
 	return unavailable, recovered, nil
+}
+
+func mergeObservedBacking(stored json.RawMessage, seen storage.BackingIdentity) storage.BackingIdentity {
+	var backing storage.BackingIdentity
+	if len(stored) > 0 {
+		_ = json.Unmarshal(stored, &backing)
+	}
+	if seen.FSUUID != "" {
+		backing.FSUUID = seen.FSUUID
+	}
+	if seen.Device != "" {
+		backing.Device = seen.Device
+	}
+	if seen.FSType != "" {
+		backing.FSType = seen.FSType
+	}
+	if seen.MountPoint != "" {
+		backing.MountPoint = seen.MountPoint
+	}
+	if seen.Dev != 0 {
+		backing.Dev = seen.Dev
+	}
+	if seen.ThinPool != "" {
+		backing.ThinPool = seen.ThinPool
+	}
+	if seen.MetadataPercent != nil {
+		backing.MetadataPercent = seen.MetadataPercent
+	}
+	backing.RootBacked = seen.RootBacked
+	backing.Shared = seen.Shared
+	return backing
 }

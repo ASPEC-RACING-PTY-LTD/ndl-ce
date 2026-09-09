@@ -76,14 +76,18 @@ func (p *Postgres) UpdateStoragePoolObserved(ctx context.Context, pool StoragePo
 	if len(pool.Capabilities) == 0 {
 		pool.Capabilities = json.RawMessage(`{}`)
 	}
+	if len(pool.Backing) == 0 {
+		pool.Backing = json.RawMessage(`{}`)
+	}
 	warnJSON, textJSON := warningJSON(pool.Warnings, pool.WarningText)
 	_, err := p.DB.ExecContext(ctx, `
 UPDATE storage_pools SET
   status=$2, reason=$3, warnings=$4, warning_text=$5, capabilities=$6,
-  usable_bytes=$7, allocated_bytes=$8, provisioned_bytes=$9, total_bytes=$10, updated_at=now()
+  usable_bytes=$7, allocated_bytes=$8, provisioned_bytes=$9, total_bytes=$10,
+  backing=$11, updated_at=now()
 WHERE id=$1`,
 		pool.ID, pool.Status, pool.Reason, warnJSON, textJSON, pool.Capabilities,
-		pool.UsableBytes, pool.AllocatedBytes, pool.ProvisionedBytes, pool.TotalBytes)
+		pool.UsableBytes, pool.AllocatedBytes, pool.ProvisionedBytes, pool.TotalBytes, pool.Backing)
 	return err
 }
 
