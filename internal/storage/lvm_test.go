@@ -70,6 +70,22 @@ func TestLVMArgvNeverExportsVG(t *testing.T) {
 	}
 }
 
+func TestMountLVMArgvDoesNotPassNouuid(t *testing.T) {
+	dev := "/dev/mapper/ndlvg-aaaaaaaa--aaaa--4aaa--8aaa--aaaaaaaaaaaa"
+	mnt := LVMMountRoot + "/ndlvg/volumes/container-root/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	argv, err := MountLVMArgv(dev, mnt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(argv, " ")
+	if strings.Contains(joined, "nouuid") {
+		t.Fatalf("ext4 lvm mounts must not pass nouuid: %v", argv)
+	}
+	if argv[0] != LVMMountBin || argv[len(argv)-2] != dev || argv[len(argv)-1] != mnt {
+		t.Fatalf("%v", argv)
+	}
+}
+
 func TestLVMCreateRefusesRootDisk(t *testing.T) {
 	if _, err := ParseLVMDisk("/dev/sda", "/dev/sda"); err == nil {
 		t.Fatal("root")

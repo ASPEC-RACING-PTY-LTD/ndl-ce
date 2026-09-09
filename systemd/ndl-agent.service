@@ -10,6 +10,8 @@ Documentation=https://no-dal.com
 # Switch to Type=notify when that lands.
 Type=simple
 User=root
+# Load loop before the agent starts so /dev/loop-control exists for DeviceAllow.
+ExecStartPre=-/sbin/modprobe loop
 ExecStart=/usr/sbin/ndl-agent
 Restart=on-failure
 RestartSec=2

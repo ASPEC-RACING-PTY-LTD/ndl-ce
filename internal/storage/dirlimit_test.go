@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +19,8 @@ func TestDirectoryRootArgv(t *testing.T) {
 		t.Fatalf("%v %v", mkfs, err)
 	}
 	loop, err := MountLoopArgv(img, mnt)
-	if err != nil || !strings.Contains(strings.Join(loop, " "), "loop,nouuid") {
+	joined := strings.Join(loop, " ")
+	if err != nil || !strings.Contains(joined, "-o loop ") || strings.Contains(joined, "nouuid") {
 		t.Fatalf("%v %v", loop, err)
 	}
 	if _, err := MountLoopArgv(img, "/etc/passwd"); err != nil {
@@ -57,7 +59,7 @@ func TestDirectoryContainerRootEnforcesSize(t *testing.T) {
 	if st.Size() != 8<<30 {
 		t.Fatalf("image size %d", st.Size())
 	}
-	if len(ran) < 2 || !strings.Contains(ran[0], BinMkfsExt4) || !strings.Contains(ran[1], "loop,nouuid") {
+	if len(ran) < 2 || !strings.Contains(ran[0], BinMkfsExt4) || !strings.Contains(ran[1], "-o loop ") || strings.Contains(ran[1], "nouuid") {
 		t.Fatalf("limit commands: %v", ran)
 	}
 }
@@ -122,7 +124,7 @@ func TestEnsureDirectoryRootMounted(t *testing.T) {
 	if err := d.EnsureDirectoryRootMounted(context.Background(), abs); err != nil {
 		t.Fatal(err)
 	}
-	if len(ran) != 1 || !strings.Contains(ran[0], "loop,nouuid") {
+	if len(ran) != 1 || !strings.Contains(ran[0], "-o loop ") || strings.Contains(ran[0], "nouuid") {
 		t.Fatalf("want loop mount, got %v", ran)
 	}
 }
@@ -131,5 +133,50 @@ func TestRestoreLoopMountsRefusesSlash(t *testing.T) {
 	d := Directory{Run: func(context.Context, string, ...string) error { return nil }}
 	if err := d.RestoreLoopMounts(context.Background(), "/"); err == nil {
 		t.Fatal("must refuse /")
+	}
+}
+
+func TestMountLoopExt4AcceptsLoopAndRejectsNouuid(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to loop-mount")
+	}
+	if _, err := os.Stat(BinMkfsExt4); err != nil {
+		t.Skip("mkfs.ext4 is not installed")
+	}
+	dir := t.TempDir()
+	img := filepath.Join(dir, "root.img")
+	mnt := filepath.Join(dir, "mnt")
+	if err := os.Mkdir(mnt, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(64 << 20); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(BinMkfsExt4, "-F", "-q", img).CombinedOutput(); err != nil {
+		t.Fatalf("mkfs: %s %v", out, err)
+	}
+	if out, err := exec.Command(BinMount, "-o", "loop,nouuid", img, mnt).CombinedOutput(); err == nil {
+		_ = exec.Command(BinUmount, mnt).Run()
+		t.Fatal("ext4 must reject nouuid")
+	} else if !strings.Contains(string(out), "nouuid") && !strings.Contains(string(out), "Unknown parameter") {
+		t.Fatalf("unexpected nouuid failure: %s %v", out, err)
+	}
+	argv, err := MountLoopArgv(img, mnt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil {
+		t.Fatalf("loop mount: %s %v", out, err)
+	}
+	if err := exec.Command(BinUmount, mnt).Run(); err != nil {
+		t.Fatal(err)
 	}
 }

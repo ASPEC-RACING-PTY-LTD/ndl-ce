@@ -76,7 +76,10 @@ func MountLoopArgv(img, mount string) ([]string, error) {
 	if !strings.HasPrefix(img, "/") || !strings.HasPrefix(mount, "/") {
 		return nil, fmt.Errorf("loop mount locators must be absolute")
 	}
-	return []string{BinMount, "-o", "loop,nouuid", img, mount}, nil
+	// loop is a mount(8) userspace option. Do not pass filesystem-specific
+	// flags such as nouuid (XFS). Debian 13 util-linux feeds remaining -o
+	// values to fsconfig(), and ext4 rejects unknown parameters.
+	return []string{BinMount, "-o", "loop", img, mount}, nil
 }
 
 func UmountArgv(mount string) ([]string, error) {

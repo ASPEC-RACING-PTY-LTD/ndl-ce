@@ -13,3 +13,4 @@ lib/systemd/system/nodal-ct@.service
 lib/systemd/system/nodal-vm@.service
 lib/systemd/system/nodal-oci@.service
 etc/apparmor.d/local/usr.bin.qemu-system-x86_64
+usr/lib/modules-load.d/ndl-agent.conf

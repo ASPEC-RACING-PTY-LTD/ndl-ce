@@ -213,11 +213,6 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ids := s.planCreateIDs(r.Context(), p.User.ClusterID, node.ID, key, req.VolumeID)
-	pool, netw, rootfs, volRow, err := s.prepareRoot(r.Context(), p.User.ClusterID, node.ID, req, ids.VolumeID)
-	if err != nil {
-		writeErr(w, statusFor(err), err.Error())
-		return
-	}
 	if req.CPUs < 1 {
 		req.CPUs = lxc.DefaultCPUs
 	}
@@ -238,6 +233,12 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	op := s.startOpKeyed(r.Context(), p.User.ClusterID, node.ID, "workload.create", "creating", key, mustCreateMsg(ids), 20)
+	pool, netw, rootfs, volRow, err := s.prepareRoot(r.Context(), p.User.ClusterID, node.ID, req, ids.VolumeID)
+	if err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
 	if req.Privileged {
 		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create.privileged", "ok", ids.WorkloadID)
 	}

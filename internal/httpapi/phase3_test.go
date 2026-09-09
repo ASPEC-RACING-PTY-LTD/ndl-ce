@@ -18,13 +18,14 @@ import (
 )
 
 type fakeStorage struct {
-	pool      storage.CreatePoolResult
-	vol       storage.CreateVolumeResult
-	img       storage.UploadResult
-	obs       storage.Observation
-	err       error
-	lastSize  *int64
-	destroyed *[]string
+	pool       storage.CreatePoolResult
+	vol        storage.CreateVolumeResult
+	img        storage.UploadResult
+	obs        storage.Observation
+	err        error
+	lastSize   *int64
+	destroyed  *[]string
+	volCreates *int
 }
 
 func (f fakeStorage) CreateDirectoryPool(context.Context, storage.CreatePoolRequest, []string) (storage.CreatePoolResult, error) {
@@ -33,6 +34,9 @@ func (f fakeStorage) CreateDirectoryPool(context.Context, storage.CreatePoolRequ
 func (f fakeStorage) CreateDirectoryVolume(_ context.Context, req storage.CreateVolumeRequest, _ storage.PoolHint) (storage.CreateVolumeResult, error) {
 	if f.lastSize != nil {
 		*f.lastSize = req.Size
+	}
+	if f.volCreates != nil {
+		*f.volCreates++
 	}
 	return f.vol, f.err
 }
