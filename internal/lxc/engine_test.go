@@ -204,7 +204,7 @@ func TestRenderConfigWritesIndependentIP(t *testing.T) {
 	if !strings.Contains(cfg, "lxc.net.0.ipv4.gateway = 10.0.0.1") {
 		t.Fatal(cfg)
 	}
-	if !strings.Contains(cfg, "lxc.net.0.ipv6.address = none") {
+	if strings.Contains(cfg, "lxc.net.0.ipv6.address") {
 		t.Fatal(cfg)
 	}
 	v6 := RenderConfig(Spec{
@@ -212,11 +212,14 @@ func TestRenderConfigWritesIndependentIP(t *testing.T) {
 		BridgeName: "ndldeadbeef",
 		IP:         IPConfig{IPv4Mode: IPModeDisabled, IPv6Mode: IPModeDHCP},
 	})
-	if !strings.Contains(v6, "lxc.net.0.ipv4.address = none") {
+	if strings.Contains(v6, "lxc.net.0.ipv4.address") {
 		t.Fatal(v6)
 	}
 	if strings.Contains(v6, "lxc.net.0.ipv6.address") {
 		t.Fatal(v6)
+	}
+	if strings.Contains(cfg, " = none") || strings.Contains(v6, " = none") {
+		t.Fatal("LXC 6 rejects address = none")
 	}
 }
 

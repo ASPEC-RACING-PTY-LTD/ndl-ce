@@ -190,7 +190,7 @@ func renderNetIP(cfg IPConfig) string {
 			fmt.Fprintf(&b, "lxc.net.0.ipv4.gateway = %s\n", n.IPv4Gateway)
 		}
 	case IPModeDisabled:
-		b.WriteString("lxc.net.0.ipv4.address = none\n")
+		// Omit ipv4.address. LXC 6 on Debian 13 rejects the sentinel "none".
 	}
 	switch n.IPv6Mode {
 	case IPModeStatic:
@@ -199,7 +199,9 @@ func renderNetIP(cfg IPConfig) string {
 			fmt.Fprintf(&b, "lxc.net.0.ipv6.gateway = %s\n", n.IPv6Gateway)
 		}
 	case IPModeDisabled:
-		b.WriteString("lxc.net.0.ipv6.address = none\n")
+		// Guest networkd sets IPv6AcceptRA=no. Do not write
+		// lxc.net.0.ipv6.address = none; LXC 6 treats that as an invalid address
+		// and lxc-start refuses to load the container.
 	}
 	return b.String()
 }

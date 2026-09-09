@@ -209,8 +209,13 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 func (e *Engine) Start(ctx context.Context, id string) error {
 	e.ensureAppliedTraverse(id)
 	e.ensureRootfsMounted(ctx, id)
-	_, err := e.run(ctx, BinSystemctl, "start", unitName(id))
-	return err
+	if err := e.writeAppliedConfig(id); err != nil {
+		return err
+	}
+	if _, err := e.run(ctx, BinSystemctl, "start", unitName(id)); err != nil {
+		return err
+	}
+	return e.waitUnitActive(ctx, id)
 }
 
 // Stop stops the CT unit. The process is not held by the agent.
@@ -223,8 +228,54 @@ func (e *Engine) Stop(ctx context.Context, id string) error {
 func (e *Engine) Restart(ctx context.Context, id string) error {
 	e.ensureAppliedTraverse(id)
 	e.ensureRootfsMounted(ctx, id)
-	_, err := e.run(ctx, BinSystemctl, "restart", unitName(id))
-	return err
+	if err := e.writeAppliedConfig(id); err != nil {
+		return err
+	}
+	if _, err := e.run(ctx, BinSystemctl, "restart", unitName(id)); err != nil {
+		return err
+	}
+	return e.waitUnitActive(ctx, id)
+}
+
+func (e *Engine) writeAppliedConfig(id string) error {
+	applied, err := e.readApplied(id)
+	if err != nil {
+		return nil
+	}
+	spec, err := normalizeSpec(applied.Spec)
+	if err != nil {
+		return err
+	}
+	return e.writeConfig(spec)
+}
+
+func (e *Engine) waitUnitActive(ctx context.Context, id string) error {
+	if e.SkipHostCmds && e.Run == nil {
+		return nil
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	var last string
+	for {
+		state, _ := e.unitState(ctx, id)
+		last = state
+		if state == "active" {
+			return nil
+		}
+		if state == "failed" {
+			return fmt.Errorf("container unit failed to start")
+		}
+		if time.Now().After(deadline) {
+			if last == "" {
+				last = "unknown"
+			}
+			return fmt.Errorf("container unit did not become active (%s)", last)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 func (e *Engine) ensureAppliedTraverse(id string) {
