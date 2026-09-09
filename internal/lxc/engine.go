@@ -246,7 +246,13 @@ func (e *Engine) writeAppliedConfig(id string) error {
 	if err != nil {
 		return err
 	}
-	return e.writeConfig(spec)
+	if err := e.writeConfig(spec); err != nil {
+		return err
+	}
+	if e.SkipHostCmds || e.FakeUnpack {
+		return nil
+	}
+	return ensureGuestNetwork(spec.RootfsPath, spec.IP)
 }
 
 func (e *Engine) waitUnitActive(ctx context.Context, id string) error {

@@ -219,8 +219,17 @@ func ensureGuestNetwork(rootfs string, cfg IPConfig) error {
 		return err
 	}
 	netd := filepath.Join(rootfs, "etc", "systemd", "network")
-	if st, err := os.Stat(netd); err == nil && st.IsDir() {
-		if err := os.WriteFile(filepath.Join(netd, "10-eth0.network"), []byte(guestNetworkd(n)), 0o644); err != nil {
+	if err := os.MkdirAll(netd, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(netd, "10-eth0.network"), []byte(guestNetworkd(n)), 0o644); err != nil {
+		return err
+	}
+	if err := writeGuestNetworkdDropin(rootfs); err != nil {
+		return err
+	}
+	if n.IPv4Mode == IPModeDHCP {
+		if err := writeGuestDHCPUnit(rootfs); err != nil {
 			return err
 		}
 	}
@@ -323,6 +332,81 @@ func guestNetworkd(n IPConfig) string {
 	}
 	return b.String()
 }
+
+func writeGuestNetworkdDropin(rootfs string) error {
+	dir := filepath.Join(rootfs, "etc", "systemd", "system", "systemd-networkd.service.d")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "zzzz-ndl-lxc.conf"), []byte(guestNetworkdDropin), 0o644)
+}
+
+func writeGuestDHCPUnit(rootfs string) error {
+	if err := os.MkdirAll(filepath.Join(rootfs, "usr", "local", "sbin"), 0o755); err != nil {
+		return err
+	}
+	script := filepath.Join(rootfs, "usr", "local", "sbin", "ndl-guest-ipv4")
+	if err := os.WriteFile(script, []byte(guestDHCPScript), 0o755); err != nil {
+		return err
+	}
+	unitDir := filepath.Join(rootfs, "etc", "systemd", "system")
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
+		return err
+	}
+	unit := filepath.Join(unitDir, "ndl-dhclient.service")
+	if err := os.WriteFile(unit, []byte(guestDHCPUnit), 0o644); err != nil {
+		return err
+	}
+	wants := filepath.Join(rootfs, "etc", "systemd", "system", "multi-user.target.wants")
+	if err := os.MkdirAll(wants, 0o755); err != nil {
+		return err
+	}
+	link := filepath.Join(wants, "ndl-dhclient.service")
+	_ = os.Remove(link)
+	return os.Symlink("/etc/systemd/system/ndl-dhclient.service", link)
+}
+
+const guestNetworkdDropin = `[Service]
+RestrictNamespaces=no
+ProtectSystem=no
+ProtectHome=no
+PrivateUsers=no
+ProtectKernelLogs=no
+ProtectKernelModules=no
+ProtectClock=no
+BindReadOnlyPaths=
+`
+
+const guestDHCPScript = `#!/bin/sh
+set -e
+if command -v dhclient >/dev/null 2>&1; then
+  exec dhclient -4 -d eth0
+fi
+if command -v udhcpc >/dev/null 2>&1; then
+  exec udhcpc -i eth0
+fi
+if command -v dhcpcd >/dev/null 2>&1; then
+  exec dhcpcd -4 -B eth0
+fi
+echo "ndl-guest-ipv4: no DHCP client is installed" >&2
+exit 1
+`
+
+const guestDHCPUnit = `[Unit]
+Description=No-dal IPv4 DHCP
+After=network-pre.target
+Wants=network.target
+Before=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/ndl-guest-ipv4
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+`
 
 // SplitDNS parses a comma or space separated nameserver list.
 func SplitDNS(s string) []string {

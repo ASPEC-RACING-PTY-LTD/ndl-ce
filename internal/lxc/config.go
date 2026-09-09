@@ -13,14 +13,20 @@ func (e *Engine) writeConfig(spec Spec) error {
 	if err := os.MkdirAll(filepath.Dir(e.configPath(spec.WorkloadID)), 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(e.configPath(spec.WorkloadID), []byte(hostLXCIncludes()+RenderConfig(spec)+hostLXCOverrides()), 0o640)
+	return os.WriteFile(e.configPath(spec.WorkloadID), []byte(hostLXCIncludes(spec)+RenderConfig(spec)+hostLXCOverrides()), 0o640)
 }
 
-func hostLXCIncludes() string {
+func hostLXCIncludes(spec Spec) string {
+	var b strings.Builder
 	if _, err := os.Stat("/usr/share/lxc/config/common.conf"); err == nil {
-		return "lxc.include = /usr/share/lxc/config/common.conf\n"
+		b.WriteString("lxc.include = /usr/share/lxc/config/common.conf\n")
 	}
-	return ""
+	if !spec.Privileged {
+		if _, err := os.Stat("/usr/share/lxc/config/userns.conf"); err == nil {
+			b.WriteString("lxc.include = /usr/share/lxc/config/userns.conf\n")
+		}
+	}
+	return b.String()
 }
 
 func hostLXCOverrides() string {
@@ -49,7 +55,11 @@ func RenderConfig(spec Spec) string {
 	fmt.Fprintf(&b, "lxc.rootfs.path = dir:%s\n", spec.RootfsPath)
 	fmt.Fprintf(&b, "lxc.tty.max = 1\n")
 	fmt.Fprintf(&b, "lxc.pty.max = 1024\n")
-	fmt.Fprintf(&b, "lxc.mount.auto = proc:mixed sys:mixed cgroup:mixed\n")
+	if spec.Privileged {
+		fmt.Fprintf(&b, "lxc.mount.auto = proc:mixed sys:mixed cgroup:mixed\n")
+	} else {
+		fmt.Fprintf(&b, "lxc.mount.auto = proc:mixed sys:rw cgroup:mixed\n")
+	}
 	fmt.Fprintf(&b, "lxc.cgroup2.memory.max = %d\n", mem)
 	fmt.Fprintf(&b, "lxc.cgroup2.cpu.max = %d 100000\n", cpus*100000)
 	if spec.BridgeName != "" {
