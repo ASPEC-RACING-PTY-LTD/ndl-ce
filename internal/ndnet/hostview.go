@@ -52,13 +52,16 @@ func CollectHostView(root string) (HostView, error) {
 				}
 			}
 		}
+		if raw, err := os.ReadFile(filepath.Join(netDir, name, "address")); err == nil {
+			iface.HardwareAddr = normalizeMAC(string(raw))
+		}
 		view.Ifaces = append(view.Ifaces, iface)
 	}
 	attachLiveAddresses(&view)
-	view.DefaultRouteIf = firstNonEmpty(
-		defaultRouteIf(filepath.Join(root, "proc/net/route")),
-		ipv6DefaultIf(filepath.Join(root, "proc/net/ipv6_route")),
-	)
+	routeIf, gw := defaultIPv4Route(filepath.Join(root, "proc/net/route"))
+	view.DefaultRouteIf = firstNonEmpty(routeIf, ipv6DefaultIf(filepath.Join(root, "proc/net/ipv6_route")))
+	view.DefaultGateway = gw
+	view.Nameservers = readNameservers(filepath.Join(root, "etc/resolv.conf"))
 	return attachManagement(view), nil
 }
 
@@ -69,7 +72,7 @@ func viewFromLive() HostView {
 		return view
 	}
 	for _, iface := range ifaces {
-		item := Iface{Name: iface.Name, IfIndex: iface.Index, Kind: "device", Up: iface.Flags&net.FlagUp != 0}
+		item := Iface{Name: iface.Name, IfIndex: iface.Index, Kind: "device", Up: iface.Flags&net.FlagUp != 0, HardwareAddr: normalizeMAC(iface.HardwareAddr.String())}
 		if iface.Flags&net.FlagLoopback != 0 {
 			item.Kind = "loopback"
 		}
@@ -119,10 +122,10 @@ func attachManagement(view HostView) HostView {
 	return view
 }
 
-func defaultRouteIf(path string) string {
+func defaultIPv4Route(path string) (iface, gateway string) {
 	f, err := os.Open(path)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	defer f.Close()
 	sc := bufio.NewScanner(f)
@@ -131,14 +134,86 @@ func defaultRouteIf(path string) string {
 	}
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
-		if len(fields) < 2 {
+		if len(fields) < 3 {
 			continue
 		}
 		if fields[1] == "00000000" {
-			return fields[0]
+			return fields[0], procHexIPv4(fields[2])
 		}
 	}
-	return ""
+	return "", ""
+}
+
+func procHexIPv4(h string) string {
+	h = strings.TrimSpace(h)
+	if len(h) != 8 {
+		return ""
+	}
+	var b [4]byte
+	for i := 0; i < 4; i++ {
+		v, err := strconv.ParseUint(h[i*2:i*2+2], 16, 8)
+		if err != nil {
+			return ""
+		}
+		b[3-i] = byte(v)
+	}
+	ip := net.IPv4(b[0], b[1], b[2], b[3]).To4()
+	if ip == nil || ip.IsUnspecified() {
+		return ""
+	}
+	return ip.String()
+}
+
+func readNameservers(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]struct{}{}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "nameserver" {
+			continue
+		}
+		ip := net.ParseIP(fields[1])
+		if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		s := ip.String()
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+func normalizeMAC(raw string) string {
+	mac, err := net.ParseMAC(strings.TrimSpace(raw))
+	if err != nil || len(mac) != 6 {
+		return ""
+	}
+	if mac[0]&1 != 0 {
+		return ""
+	}
+	zero := true
+	for _, v := range mac {
+		if v != 0 {
+			zero = false
+			break
+		}
+	}
+	if zero {
+		return ""
+	}
+	return mac.String()
+}
+
+func sameMAC(a, b string) bool {
+	left, right := normalizeMAC(a), normalizeMAC(b)
+	return left != "" && left == right
 }
 
 func ipv6DefaultIf(path string) string {

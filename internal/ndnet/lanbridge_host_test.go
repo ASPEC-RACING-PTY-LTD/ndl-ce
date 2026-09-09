@@ -116,7 +116,7 @@ func TestApplyLANBridgeRemovesStaleUplinkFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := uuid.NewString()
-	oldFiles := lanBridgeFiles(old, "ndlstale01", "eth0")
+	oldFiles := lanBridgeFiles(old, "ndlstale01", "eth0", testHost())
 	for _, file := range oldFiles {
 		if err := os.WriteFile(filepath.Join(e.NetworkDir, file.RelPath), []byte(file.Body), 0644); err != nil {
 			t.Fatal(err)
@@ -143,12 +143,12 @@ func TestObserveSweepsOrphanUplinkFiles(t *testing.T) {
 	if err := os.MkdirAll(e.NetworkDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range lanBridgeFiles(orphan, "ndlorphan", "eth0") {
+	for _, file := range lanBridgeFiles(orphan, "ndlorphan", "eth0", testHost()) {
 		if err := os.WriteFile(filepath.Join(e.NetworkDir, file.RelPath), []byte(file.Body), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, file := range lanBridgeFiles(keepID, "ndlkeep01", "eth1") {
+	for _, file := range lanBridgeFiles(keepID, "ndlkeep01", "eth1", testHost()) {
 		if err := os.WriteFile(filepath.Join(e.NetworkDir, file.RelPath), []byte(file.Body), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -172,9 +172,11 @@ func TestApplyLANBridgeIdempotentSkipsReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := testHost()
-	host.Ifaces = append(host.Ifaces, Iface{Name: bridge, IfIndex: 9, Kind: "bridge", Addresses: []string{"192.168.1.10/24"}, Up: true})
+	host.Ifaces = append(host.Ifaces, Iface{Name: bridge, IfIndex: 9, Kind: "bridge", Addresses: []string{"192.168.1.10/24"}, HardwareAddr: "34:5a:60:6a:03:1f", Up: true})
 	host.Ifaces[1].Master = bridge
 	host.DefaultRouteIf = bridge
+	host.ManagementIfName = bridge
+	host.ManagementIfIndex = 9
 	e := testEngine(t, host)
 	plan, err := BuildPlan(Spec{NetworkID: id, Name: "lan", Kind: KindLANBridge, UplinkIfName: "eth0", ConfirmIfName: "eth0"}, host)
 	if err != nil {
@@ -254,5 +256,117 @@ func TestFailedProbeRestoresIfupdown(t *testing.T) {
 	got, _ := os.ReadFile(e.etcPath("network", "interfaces"))
 	if string(got) != orig {
 		t.Fatalf("rollback must restore ifupdown:\n%s", got)
+	}
+}
+
+func TestObserveHealsLANBridgeMACAndStaticAddress(t *testing.T) {
+	id := uuid.NewString()
+	bridge, err := BridgeName(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := testHost()
+	host.Ifaces = append(host.Ifaces, Iface{
+		Name: bridge, IfIndex: 9, Kind: "bridge", Addresses: []string{"192.168.1.10/24"},
+		HardwareAddr: "f2:67:74:3b:4e:a1", Up: true,
+	})
+	host.Ifaces[1].Master = bridge
+	host.DefaultRouteIf = bridge
+	host.ManagementIfName = bridge
+	host.ManagementIfIndex = 9
+	e := testEngine(t, host)
+	if err := os.MkdirAll(e.NetworkDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	old := "[NetDev]\nName=" + bridge + "\nKind=bridge\n"
+	br := "[Match]\nName=" + bridge + "\n\n[Network]\nDHCP=yes\nKeepConfiguration=yes\n"
+	up := "[Match]\nName=eth0\n\n[Network]\nBridge=" + bridge + "\n"
+	for _, file := range []File{
+		{RelPath: persistName(id, ".netdev"), Body: old},
+		{RelPath: persistName(id, ".network"), Body: br},
+		{RelPath: persistName(id, "-uplink.network"), Body: up},
+	} {
+		if err := os.WriteFile(filepath.Join(e.NetworkDir, file.RelPath), []byte(file.Body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var calls []string
+	e.Run = func(_ context.Context, name string, args ...string) error {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	obs, err := e.Observe(context.Background(), []Hint{{NetworkID: id, Kind: KindLANBridge, UplinkIfName: "eth0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(obs.Networks) != 1 {
+		t.Fatalf("%+v", obs)
+	}
+	netdev, _ := os.ReadFile(filepath.Join(e.NetworkDir, persistName(id, ".netdev")))
+	network, _ := os.ReadFile(filepath.Join(e.NetworkDir, persistName(id, ".network")))
+	uplink, _ := os.ReadFile(filepath.Join(e.NetworkDir, persistName(id, "-uplink.network")))
+	if !strings.Contains(string(netdev), "MACAddress=34:5a:60:6a:03:1f") {
+		t.Fatalf("heal must persist the uplink MAC:\n%s", netdev)
+	}
+	if !strings.Contains(string(network), "Address=192.168.1.10/24") || !strings.Contains(string(network), "Gateway=192.168.1.1") || strings.Contains(string(network), "DHCP=yes") {
+		t.Fatalf("heal must persist the host address and disable bridge DHCP:\n%s", network)
+	}
+	if strings.Contains(string(uplink), "\nAddress=") || strings.Contains(string(uplink), "DHCP=") {
+		t.Fatalf("uplink must stay unnumbered:\n%s", uplink)
+	}
+	joined := strings.Join(calls, "\n")
+	if !strings.Contains(joined, "link set dev "+bridge+" address 34:5a:60:6a:03:1f") {
+		t.Fatalf("heal must set the live bridge MAC:\n%s", joined)
+	}
+}
+
+func TestApplyLANBridgeSetsLiveMACWhenAlreadyApplied(t *testing.T) {
+	id := uuid.NewString()
+	bridge, err := BridgeName(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := testHost()
+	host.Ifaces = append(host.Ifaces, Iface{
+		Name: bridge, IfIndex: 9, Kind: "bridge", Addresses: []string{"192.168.1.10/24"},
+		HardwareAddr: "aa:bb:cc:dd:ee:ff", Up: true,
+	})
+	host.Ifaces[1].Master = bridge
+	host.DefaultRouteIf = bridge
+	host.ManagementIfName = bridge
+	host.ManagementIfIndex = 9
+	e := testEngine(t, host)
+	plan, err := BuildPlan(Spec{NetworkID: id, Name: "lan", Kind: KindLANBridge, UplinkIfName: "eth0", ConfirmIfName: "eth0"}, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(e.NetworkDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range plan.Files {
+		if err := os.WriteFile(filepath.Join(e.NetworkDir, file.RelPath), []byte(file.Body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var calls []string
+	e.Run = func(_ context.Context, name string, args ...string) error {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	res, err := e.Apply(context.Background(), Spec{
+		NetworkID: id, Name: "lan", Kind: KindLANBridge, UplinkIfName: "eth0", ConfirmIfName: "eth0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.AlreadyApplied {
+		t.Fatalf("%+v", res)
+	}
+	joined := strings.Join(calls, "\n")
+	if strings.Contains(joined, "networkctl reload") {
+		t.Fatalf("already-applied must not reload networkd:\n%s", joined)
+	}
+	if !strings.Contains(joined, "link set dev "+bridge+" address 34:5a:60:6a:03:1f") {
+		t.Fatalf("already-applied must still enforce the uplink MAC:\n%s", joined)
 	}
 }
