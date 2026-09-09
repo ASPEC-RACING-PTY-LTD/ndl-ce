@@ -123,7 +123,10 @@ func BuildPlan(spec Spec, host HostView) (Plan, error) {
 	plan.DHCP = false
 	plan.DNS = false
 	plan.NAT = false
-	plan.Files = lanBridgeFiles(id, bridge, plan.UplinkIfName)
+	if gw := strings.TrimSpace(host.DefaultGateway); gw != "" && lanBridgeCarriesDefaultRoute(host, bridge, plan.UplinkIfName) {
+		plan.Gateway = gw
+	}
+	plan.Files = lanBridgeFiles(id, bridge, plan.UplinkIfName, host)
 	plan.NFT = renderNFT(plan)
 	plan.Warnings = append(plan.Warnings, class.Reason)
 	if class.Danger == DangerDangerous {
@@ -190,15 +193,105 @@ func isolatedFiles(id, bridge string, gw net.IP, n *net.IPNet, nat bool) []File 
 	}
 }
 
-func lanBridgeFiles(id, bridge, uplink string) []File {
+func lanBridgeFiles(id, bridge, uplink string, host HostView) []File {
 	netdev := "[NetDev]\nName=" + bridge + "\nKind=bridge\n"
-	br := "[Match]\nName=" + bridge + "\n\n[Network]\nDHCP=yes\nKeepConfiguration=yes\n"
+	if mac := lanBridgeMAC(host, uplink); mac != "" {
+		netdev += "MACAddress=" + mac + "\n"
+	}
+	addrs, gw, dns := lanBridgeHostIP(host, bridge, uplink)
+	var b strings.Builder
+	b.WriteString("[Match]\nName=" + bridge + "\n\n[Network]\n")
+	if len(addrs) > 0 {
+		// Keep the observed host address. DHCP=yes on a new bridge MAC/DUID
+		// obtains a different lease than the physical uplink reservation.
+		b.WriteString("DHCP=no\nKeepConfiguration=static\n")
+		for _, addr := range addrs {
+			b.WriteString("Address=" + addr + "\n")
+		}
+		if gw != "" {
+			b.WriteString("Gateway=" + gw + "\n")
+		}
+		for _, ns := range dns {
+			b.WriteString("DNS=" + ns + "\n")
+		}
+	} else {
+		b.WriteString("DHCP=yes\nKeepConfiguration=yes\n\n[DHCP]\nClientIdentifier=mac\n")
+	}
 	up := "[Match]\nName=" + uplink + "\n\n[Network]\nBridge=" + bridge + "\n"
 	return []File{
 		{RelPath: persistName(id, ".netdev"), Body: netdev},
-		{RelPath: persistName(id, ".network"), Body: br},
+		{RelPath: persistName(id, ".network"), Body: b.String()},
 		{RelPath: persistName(id, "-uplink.network"), Body: up},
 	}
+}
+
+func lanBridgeMAC(host HostView, uplink string) string {
+	iface, ok := lookup(host, uplink)
+	if !ok {
+		return ""
+	}
+	return normalizeMAC(iface.HardwareAddr)
+}
+
+func lanBridgeCarriesDefaultRoute(host HostView, bridge, uplink string) bool {
+	return sameIface(host.DefaultRouteIf, uplink) || sameIface(host.DefaultRouteIf, bridge)
+}
+
+func lanBridgeHostIP(host HostView, bridge, uplink string) (addrs []string, gw string, dns []string) {
+	if up, ok := lookup(host, uplink); ok {
+		addrs = ipv4CIDRs(up.Addresses)
+	}
+	if len(addrs) == 0 {
+		if br, ok := lookup(host, bridge); ok {
+			addrs = ipv4CIDRs(br.Addresses)
+		}
+	}
+	if lanBridgeCarriesDefaultRoute(host, bridge, uplink) {
+		if mgmt := ipv4CIDRs(host.ManagementAddresses); len(mgmt) > 0 {
+			addrs = mgmt
+		}
+		gw = strings.TrimSpace(host.DefaultGateway)
+		dns = append([]string{}, host.Nameservers...)
+	}
+	return addrs, gw, dns
+}
+
+func ipv4CIDRs(addrs []string) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, raw := range addrs {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		ip, n, err := net.ParseCIDR(raw)
+		if err != nil {
+			ip = net.ParseIP(raw)
+			if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+				continue
+			}
+			raw = ip.To4().String() + "/32"
+			ip, n, err = net.ParseCIDR(raw)
+			if err != nil {
+				continue
+			}
+		}
+		ip4 := ip.To4()
+		if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() || ip4.IsUnspecified() {
+			continue
+		}
+		ones, bits := n.Mask.Size()
+		if bits != 32 || ones <= 0 || ones > 32 {
+			continue
+		}
+		s := fmt.Sprintf("%s/%d", ip4.String(), ones)
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 func persistName(id, suffix string) string {

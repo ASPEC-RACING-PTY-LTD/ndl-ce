@@ -169,6 +169,7 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 			return ApplyResult{}, fmt.Errorf("uplink %s is still owned by %s (%s); move that unit before No-dal can enslave it", plan.UplinkIfName, conflicts[0].Manager, conflicts[0].Path)
 		}
 		if e.lanAlreadyApplied(plan, host) && len(hostManagerActions(managers)) == 0 {
+			_ = e.ensureLANBridgeMAC(ctx, plan, host)
 			return ApplyResult{
 				NetworkID: plan.NetworkID, Name: plan.Name, Kind: plan.Kind,
 				BridgeName: plan.BridgeName, UplinkIfName: plan.UplinkIfName,
@@ -208,6 +209,7 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		}
 		e.releaseStaleUplinkClaims(plan.UplinkIfName, plan.NetworkID)
 		if e.persistMatches(plan) && lanBridgeLive(plan, host) {
+			_ = e.ensureLANBridgeMAC(ctx, plan, host)
 			return ApplyResult{
 				NetworkID: plan.NetworkID, Name: plan.Name, Kind: plan.Kind,
 				BridgeName: plan.BridgeName, UplinkIfName: plan.UplinkIfName,
@@ -223,6 +225,9 @@ func (e *Engine) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 	}
 	if err := e.reloadNetworkd(); err != nil {
 		return fail(err)
+	}
+	if plan.Kind == KindLANBridge {
+		_ = e.ensureLANBridgeMAC(ctx, plan, host)
 	}
 	if Isolated(plan.Kind) {
 		if err := e.ensureIsolatedReady(ctx, plan); err != nil {
@@ -361,6 +366,21 @@ func (e *Engine) Observe(_ context.Context, hints []Hint) (Observation, error) {
 				item.Status = StatusWarning
 				item.Warnings = append(item.Warnings, "uplink is not enslaved to "+item.BridgeName)
 			}
+			if healed, herr := e.healLANBridge(hint); herr == nil && healed {
+				item.Warnings = append(item.Warnings, "repaired LAN-bridge MAC and host address persistence")
+				if refreshed, rerr := e.host(); rerr == nil {
+					host = refreshed
+				}
+			} else if herr != nil {
+				item.Status = StatusWarning
+				item.Warnings = append(item.Warnings, "LAN-bridge heal failed: "+herr.Error())
+			}
+			if up, ok := lookup(host, hint.UplinkIfName); ok {
+				if br, ok := lookup(host, item.BridgeName); ok && lanBridgeMAC(host, hint.UplinkIfName) != "" && !sameMAC(br.HardwareAddr, up.HardwareAddr) {
+					item.Status = StatusWarning
+					item.Warnings = append(item.Warnings, "bridge MAC does not match uplink "+hint.UplinkIfName)
+				}
+			}
 			for _, stale := range e.listStaleUplinkClaims(hint.UplinkIfName, hint.NetworkID) {
 				item.Status = StatusWarning
 				item.Warnings = append(item.Warnings, "stale No-dal uplink file "+stale.Path+" also matches "+hint.UplinkIfName)
@@ -467,6 +487,57 @@ func (e *Engine) healIsolated(hint Hint) error {
 		_ = e.run(context.Background(), "/usr/bin/systemctl", "start", "ndl-dnsmasq@"+hint.NetworkID+".service")
 	}
 	return nil
+}
+
+func (e *Engine) healLANBridge(hint Hint) (bool, error) {
+	uplink := strings.TrimSpace(hint.UplinkIfName)
+	if !ValidIfName(uplink) {
+		return false, nil
+	}
+	host, err := e.host()
+	if err != nil {
+		return false, err
+	}
+	spec := Spec{
+		NetworkID:    hint.NetworkID,
+		Name:         hint.NetworkID,
+		Kind:         KindLANBridge,
+		UplinkIfName: uplink,
+	}
+	plan, err := BuildPlan(spec, host)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+	if !e.persistMatches(plan) {
+		if err := e.writeFiles(plan); err != nil {
+			return false, err
+		}
+		changed = true
+		if err := e.reloadNetworkd(); err != nil {
+			return true, err
+		}
+	}
+	if err := e.ensureLANBridgeMAC(context.Background(), plan, host); err != nil {
+		return changed, err
+	}
+	if live, ok := lookup(host, plan.BridgeName); ok {
+		if mac := lanBridgeMAC(host, uplink); mac != "" && !sameMAC(live.HardwareAddr, mac) {
+			changed = true
+		}
+	}
+	return changed, nil
+}
+
+func (e *Engine) ensureLANBridgeMAC(ctx context.Context, plan Plan, host HostView) error {
+	mac := lanBridgeMAC(host, plan.UplinkIfName)
+	if mac == "" || !ValidIfName(plan.BridgeName) {
+		return nil
+	}
+	if live, ok := lookup(host, plan.BridgeName); ok && sameMAC(live.HardwareAddr, mac) {
+		return nil
+	}
+	return e.run(ctx, ipBin(), "link", "set", "dev", plan.BridgeName, "address", mac)
 }
 
 func (e *Engine) ensureIsolatedReady(ctx context.Context, plan Plan) error {
@@ -712,7 +783,7 @@ func (e *Engine) Delete(ctx context.Context, spec Spec) error {
 	}
 	switch spec.Kind {
 	case KindLANBridge:
-		plan.Files = lanBridgeFiles(id, plan.BridgeName, spec.UplinkIfName)
+		plan.Files = lanBridgeFiles(id, plan.BridgeName, spec.UplinkIfName, HostView{})
 	default:
 		plan.Files = []File{
 			{RelPath: persistName(id, ".netdev")},

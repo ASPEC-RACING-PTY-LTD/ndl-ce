@@ -11,10 +11,12 @@ func testHost() HostView {
 	return HostView{
 		Ifaces: []Iface{
 			{Name: "lo", IfIndex: 1, Kind: "loopback"},
-			{Name: "eth0", IfIndex: 2, Kind: "device", Addresses: []string{"192.168.1.10/24"}, Up: true},
-			{Name: "eth1", IfIndex: 3, Kind: "device", Up: true},
+			{Name: "eth0", IfIndex: 2, Kind: "device", Addresses: []string{"192.168.1.10/24"}, HardwareAddr: "34:5a:60:6a:03:1f", Up: true},
+			{Name: "eth1", IfIndex: 3, Kind: "device", HardwareAddr: "02:00:00:00:00:11", Up: true},
 		},
 		DefaultRouteIf:      "eth0",
+		DefaultGateway:      "192.168.1.1",
+		Nameservers:         []string{"192.168.1.1"},
 		ManagementIfIndex:   2,
 		ManagementIfName:    "eth0",
 		ManagementAddresses: []string{"192.168.1.10/24"},
@@ -88,6 +90,9 @@ func TestBuildPlanLANBridgeNeverDHCP(t *testing.T) {
 	}
 	if !strings.Contains(joined, "Bridge="+plan.BridgeName) {
 		t.Fatal("uplink must join the bridge")
+	}
+	if !strings.Contains(joined, "MACAddress=02:00:00:00:00:11") {
+		t.Fatal("LAN-bridge must clone the uplink MAC")
 	}
 }
 

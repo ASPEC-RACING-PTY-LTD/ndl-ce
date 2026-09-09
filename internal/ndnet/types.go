@@ -68,18 +68,21 @@ type Hint struct {
 
 // Iface is one observed host interface. Tests inject these via HostView.
 type Iface struct {
-	Name      string
-	IfIndex   int
-	Addresses []string
-	Kind      string
-	Master    string
-	Up        bool
+	Name         string
+	IfIndex      int
+	Addresses    []string
+	HardwareAddr string
+	Kind         string
+	Master       string
+	Up           bool
 }
 
 // HostView is the fake-netlink snapshot used for danger classification.
 type HostView struct {
 	Ifaces              []Iface
 	DefaultRouteIf      string
+	DefaultGateway      string
+	Nameservers         []string
 	ManagementIfIndex   int
 	ManagementIfName    string
 	ManagementAddresses []string
@@ -128,29 +131,29 @@ type Plan struct {
 
 // Preview is the dry-run API/agent result.
 type Preview struct {
-	NetworkID         string   `json:"network_id"`
-	Name              string   `json:"name"`
-	Kind              string   `json:"kind"`
-	BridgeName        string   `json:"bridge_name"`
-	UplinkIfName      string   `json:"uplink_ifname,omitempty"`
-	EgressIfName      string   `json:"egress_ifname,omitempty"`
-	IPv4CIDR          string   `json:"ipv4_cidr,omitempty"`
-	Gateway           string   `json:"gateway,omitempty"`
-	Danger            string   `json:"danger"`
-	DangerReason      string   `json:"danger_reason"`
-	RequiresConfirm   bool     `json:"requires_confirm"`
-	TypedIfName       string   `json:"typed_ifname,omitempty"`
-	DHCP              bool     `json:"dhcp"`
-	DNS               bool     `json:"dns"`
-	NAT               bool     `json:"nat"`
-	Files             []File   `json:"files"`
-	ManagementIfIndex int      `json:"management_ifindex"`
-	ManagementIfName  string   `json:"management_ifname"`
-	Warnings          []string               `json:"warnings,omitempty"`
-	DryRun            bool                   `json:"dry_run"`
-	AlreadyApplied    bool                   `json:"already_applied,omitempty"`
-	HostManagers      []HostManagerConflict  `json:"host_managers,omitempty"`
-	StaleUplinks      []StaleUplinkClaim     `json:"stale_uplinks,omitempty"`
+	NetworkID         string                `json:"network_id"`
+	Name              string                `json:"name"`
+	Kind              string                `json:"kind"`
+	BridgeName        string                `json:"bridge_name"`
+	UplinkIfName      string                `json:"uplink_ifname,omitempty"`
+	EgressIfName      string                `json:"egress_ifname,omitempty"`
+	IPv4CIDR          string                `json:"ipv4_cidr,omitempty"`
+	Gateway           string                `json:"gateway,omitempty"`
+	Danger            string                `json:"danger"`
+	DangerReason      string                `json:"danger_reason"`
+	RequiresConfirm   bool                  `json:"requires_confirm"`
+	TypedIfName       string                `json:"typed_ifname,omitempty"`
+	DHCP              bool                  `json:"dhcp"`
+	DNS               bool                  `json:"dns"`
+	NAT               bool                  `json:"nat"`
+	Files             []File                `json:"files"`
+	ManagementIfIndex int                   `json:"management_ifindex"`
+	ManagementIfName  string                `json:"management_ifname"`
+	Warnings          []string              `json:"warnings,omitempty"`
+	DryRun            bool                  `json:"dry_run"`
+	AlreadyApplied    bool                  `json:"already_applied,omitempty"`
+	HostManagers      []HostManagerConflict `json:"host_managers,omitempty"`
+	StaleUplinks      []StaleUplinkClaim    `json:"stale_uplinks,omitempty"`
 }
 
 // HostManagerConflict is a competing host network manager on an uplink.
