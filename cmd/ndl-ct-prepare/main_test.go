@@ -45,6 +45,12 @@ func TestPrepareCTRewritesObsoleteApparmor(t *testing.T) {
 		if !strings.Contains(body, "lxc.apparmor.allow_nesting = 1") {
 			t.Fatal(body)
 		}
+		if !strings.Contains(body, "lxc.seccomp.allow_nesting = 1") {
+			t.Fatal(body)
+		}
+		if !strings.Contains(body, "lxc.hook.start-host = "+lxc.BinNestingApparmor) {
+			t.Fatal(body)
+		}
 		if strings.Contains(body, "unconfined") {
 			t.Fatal(body)
 		}

@@ -339,6 +339,13 @@ func TestDryCreateWritesLastApplied(t *testing.T) {
 	if _, err := os.Stat(e.lastAppliedPath(id)); err != nil {
 		t.Fatal(err)
 	}
+	applied, err := e.readApplied(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.Spec.Nesting == nil || !*applied.Spec.Nesting {
+		t.Fatal("create must persist nesting in last-applied")
+	}
 	if _, err := os.Stat(filepath.Join(root, RootfsMarker)); err != nil {
 		t.Fatal("fake unpack must write marker")
 	}
@@ -382,6 +389,13 @@ func TestReconcileRuntimeConfigsRewritesObsoleteApparmor(t *testing.T) {
 	assertHostApparmor(t, string(cfg))
 	if !strings.Contains(string(cfg), "lxc.idmap = "+DefaultUIDMap) {
 		t.Fatal("reconcile must keep unprivileged idmap")
+	}
+	applied, err := e.readApplied(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !SpecWantsNesting(applied.Spec) || applied.Spec.Nesting == nil || !*applied.Spec.Nesting {
+		t.Fatal("reconcile must persist nesting in last-applied")
 	}
 	again, err := os.ReadFile(e.configPath(id))
 	if err != nil {

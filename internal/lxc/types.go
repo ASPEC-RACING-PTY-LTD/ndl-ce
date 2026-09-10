@@ -27,17 +27,19 @@ const (
 
 // Compile-time privileged binary paths. Never assembled from a shell string.
 const (
-	BinLXCStart   = "/usr/bin/lxc-start"
-	BinLXCStop    = "/usr/bin/lxc-stop"
-	BinLXCInfo    = "/usr/bin/lxc-info"
-	BinLXCCopy    = "/usr/bin/lxc-copy"
-	BinLXCAttach  = "/usr/bin/lxc-attach"
-	BinLXCConsole = "/usr/bin/lxc-console"
-	BinSystemctl  = "/usr/bin/systemctl"
-	BinTar        = "/usr/bin/tar"
-	BinUsernsExec = "/usr/bin/lxc-usernsexec"
-	BinCP         = "/usr/bin/cp"
-	BinGPGV       = "/usr/bin/gpgv"
+	BinLXCStart        = "/usr/bin/lxc-start"
+	BinLXCStop         = "/usr/bin/lxc-stop"
+	BinLXCInfo         = "/usr/bin/lxc-info"
+	BinLXCCopy         = "/usr/bin/lxc-copy"
+	BinLXCAttach       = "/usr/bin/lxc-attach"
+	BinLXCConsole      = "/usr/bin/lxc-console"
+	BinSystemctl       = "/usr/bin/systemctl"
+	BinTar             = "/usr/bin/tar"
+	BinUsernsExec      = "/usr/bin/lxc-usernsexec"
+	BinCP              = "/usr/bin/cp"
+	BinGPGV            = "/usr/bin/gpgv"
+	BinApparmorParser  = "/usr/sbin/apparmor_parser"
+	BinNestingApparmor = "/usr/lib/ndl/ndl-lxc-nesting-apparmor"
 )
 
 // ApparmorGeneratedProfile asks LXC to generate a confined profile at start.
@@ -73,6 +75,18 @@ type Spec struct {
 	IP          IPConfig `json:"ip,omitempty"`
 	SkipImage   bool     `json:"skip_image,omitempty"`
 	NoStart     bool     `json:"no_start,omitempty"`
+	// Nesting is the Docker/nested-container capability set. Nil means on.
+	// False is an explicit opt-out. Do not omit the field; false must persist.
+	Nesting *bool `json:"nesting"`
+}
+
+// SpecWantsNesting reports whether the Docker/nested-container feature set is on.
+// Missing last-applied JSON defaults to on so upgrades cannot drop it.
+func SpecWantsNesting(s Spec) bool {
+	if s.Nesting != nil {
+		return *s.Nesting
+	}
+	return true
 }
 
 // Applied is last-applied on disk.

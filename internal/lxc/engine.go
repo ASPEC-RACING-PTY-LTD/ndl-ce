@@ -104,6 +104,10 @@ func normalizeSpec(spec Spec) (Spec, error) {
 		return Spec{}, err
 	}
 	spec.IP = ip
+	if spec.Nesting == nil {
+		on := true
+		spec.Nesting = &on
+	}
 	return spec, nil
 }
 
@@ -391,6 +395,10 @@ func (e *Engine) Clone(ctx context.Context, req LifecycleRequest) (Result, error
 	if err := e.copyRootfs(ctx, src.Spec.RootfsPath, dst.RootfsPath); err != nil {
 		return Result{}, err
 	}
+	dst, err = normalizeSpec(dst)
+	if err != nil {
+		return Result{}, err
+	}
 	if err := os.MkdirAll(filepath.Dir(e.configPath(dst.WorkloadID)), 0o750); err != nil {
 		return Result{}, err
 	}
@@ -412,6 +420,7 @@ func specChanged(prev, next Spec) bool {
 		prev.BridgeName != next.BridgeName || prev.Privileged != next.Privileged ||
 		prev.UIDMap != next.UIDMap || prev.GIDMap != next.GIDMap || prev.Name != next.Name ||
 		prev.MAC != next.MAC || !prev.IP.Equal(next.IP) ||
+		SpecWantsNesting(prev) != SpecWantsNesting(next) ||
 		strings.Join(prev.GPUDevices, "\n") != strings.Join(next.GPUDevices, "\n")
 }
 

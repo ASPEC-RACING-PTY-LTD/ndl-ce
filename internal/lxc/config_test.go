@@ -8,7 +8,7 @@ import (
 )
 
 func TestHostLXCOverridesUsesGeneratedNestingWhenApparmor(t *testing.T) {
-	got := hostLXCOverrides()
+	got := hostLXCOverrides(Spec{})
 	if _, err := os.Stat("/sys/kernel/security/apparmor"); err != nil {
 		if !strings.Contains(got, "unconfined") {
 			t.Fatalf("want unconfined without securityfs, got %q", got)
@@ -39,8 +39,25 @@ func TestHostLXCOverridesUnconfinedWithoutSecurityfs(t *testing.T) {
 	if _, err := os.Stat("/sys/kernel/security/apparmor"); err == nil {
 		t.Skip("securityfs is present on this host")
 	}
-	if !strings.Contains(hostLXCOverrides(), "unconfined") {
-		t.Fatal(hostLXCOverrides())
+	if !strings.Contains(hostLXCOverrides(Spec{}), "unconfined") {
+		t.Fatal(hostLXCOverrides(Spec{}))
+	}
+}
+
+func TestNestingOptOutOmitsNestedEngineKeys(t *testing.T) {
+	off := false
+	got := hostLXCOverrides(Spec{Nesting: &off})
+	if _, err := os.Stat("/sys/kernel/security/apparmor"); err != nil {
+		t.Skip("securityfs missing")
+	}
+	if strings.Contains(got, "allow_nesting") || strings.Contains(got, "seccomp.allow_nesting") {
+		t.Fatal(got)
+	}
+	if strings.Contains(got, BinNestingApparmor) || strings.Contains(got, "/dev/fuse") {
+		t.Fatal(got)
+	}
+	if !strings.Contains(got, "lxc.apparmor.raw = deny mount -> /proc/") {
+		t.Fatal(got)
 	}
 }
 
@@ -62,6 +79,9 @@ func TestUnprivilegedRenderKeepsIDMap(t *testing.T) {
 	if !strings.Contains(got, "lxc.idmap = "+DefaultUIDMap) {
 		t.Fatal(got)
 	}
+	if !strings.Contains(got, "lxc.mount.auto = proc:mixed sys:rw cgroup:mixed") {
+		t.Fatal(got)
+	}
 	if strings.Contains(got, "unconfined") {
 		t.Fatal(got)
 	}
@@ -79,7 +99,19 @@ func assertGeneratedNesting(t *testing.T, cfg string) {
 	if !strings.Contains(cfg, "lxc.apparmor.allow_nesting = 1") {
 		t.Fatalf("want allow_nesting=1, got %q", cfg)
 	}
+	if !strings.Contains(cfg, "lxc.seccomp.allow_nesting = 1") {
+		t.Fatalf("want seccomp.allow_nesting=1, got %q", cfg)
+	}
+	if !strings.Contains(cfg, "lxc.mount.entry = /dev/fuse dev/fuse none bind,optional,create=file 0 0") {
+		t.Fatalf("want fuse device bind, got %q", cfg)
+	}
+	if !strings.Contains(cfg, "lxc.hook.start-host = "+BinNestingApparmor) {
+		t.Fatalf("want nesting AppArmor hook, got %q", cfg)
+	}
 	if strings.Contains(cfg, "lxc-container-ndl-nesting") {
 		t.Fatal("obsolete static nesting profile must not remain")
+	}
+	if strings.Contains(cfg, "lxc.apparmor.profile = unconfined") {
+		t.Fatal("nesting must not unconfine")
 	}
 }

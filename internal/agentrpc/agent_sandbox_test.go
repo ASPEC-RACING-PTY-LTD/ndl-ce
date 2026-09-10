@@ -105,6 +105,9 @@ func TestCTUnitPreparesDirectoryRootMount(t *testing.T) {
 	if !strings.Contains(string(install), "usr/lib/ndl/ndl-ct-prepare") {
 		t.Fatal("ndl-agent.install must ship ndl-ct-prepare")
 	}
+	if !strings.Contains(string(install), "usr/lib/ndl/ndl-lxc-nesting-apparmor") {
+		t.Fatal("ndl-agent.install must ship ndl-lxc-nesting-apparmor")
+	}
 }
 
 func TestDebianRulesInstallsAgentUnitFromSystemdTree(t *testing.T) {
@@ -120,6 +123,9 @@ func TestDebianRulesInstallsAgentUnitFromSystemdTree(t *testing.T) {
 	text := string(rules)
 	if !strings.Contains(text, "systemd/ndl-agent.service") {
 		t.Fatal("debian/rules must install systemd/ndl-agent.service")
+	}
+	if !strings.Contains(text, "./cmd/ndl-lxc-nesting-apparmor") {
+		t.Fatal("debian/rules must build ndl-lxc-nesting-apparmor")
 	}
 	install, err := os.ReadFile(filepath.Join(root, "packaging", "debian", "ndl-agent.install"))
 	if err != nil {

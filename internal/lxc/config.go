@@ -12,7 +12,7 @@ func (e *Engine) writeConfig(spec Spec) error {
 	if err := os.MkdirAll(filepath.Dir(e.configPath(spec.WorkloadID)), 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(e.configPath(spec.WorkloadID), []byte(hostLXCIncludes(spec)+RenderConfig(spec)+hostLXCOverrides()), 0o640)
+	return os.WriteFile(e.configPath(spec.WorkloadID), []byte(hostLXCIncludes(spec)+RenderConfig(spec)+hostLXCOverrides(spec)), 0o640)
 }
 
 func hostLXCIncludes(spec Spec) string {
@@ -28,16 +28,35 @@ func hostLXCIncludes(spec Spec) string {
 	return b.String()
 }
 
-func hostLXCOverrides() string {
+func hostLXCOverrides(spec Spec) string {
 	// The apparmor kernel module can be present while the LSM is not usable
 	// (no securityfs). A generated profile would then prevent lxc-start.
 	if _, err := os.Stat("/sys/kernel/security/apparmor"); err != nil {
 		return "lxc.apparmor.profile = unconfined\n"
 	}
-	// LXC generates a confined profile at start. allow_nesting asks that
-	// generator for nested-container rules so Docker, containerd, and BuildKit
-	// can mount without a No-DAL static allowlist. Do not unconfine.
-	return "lxc.apparmor.profile = " + ApparmorGeneratedProfile + "\nlxc.apparmor.allow_nesting = 1\n"
+	if !SpecWantsNesting(spec) {
+		return "lxc.apparmor.profile = " + ApparmorGeneratedProfile + "\n" +
+			"lxc.apparmor.raw = deny mount -> /proc/,\n" +
+			"lxc.apparmor.raw = deny mount -> /sys/,\n"
+	}
+	return nestingLXCConfig()
+}
+
+func nestingLXCConfig() string {
+	// Coherent nested-engine feature set for an unprivileged system container.
+	// Generated AppArmor plus allow_nesting is LXC's nested-container policy
+	// (overlay, bind, rbind, cgroup, fuse mounts). seccomp.allow_nesting lets
+	// Docker/runc load a nested filter. userns.conf (included for unprivileged
+	// guests) keeps keyctl by leaving cap.drop/keep empty. The start-host hook
+	// applies current LXC generated-profile nesting semantics on hosts whose
+	// liblxc still emits the pre-6.0.6 /proc and /sys write denials. Do not
+	// unconfine, and do not add a No-DAL blanket mount rule.
+	return "lxc.apparmor.profile = " + ApparmorGeneratedProfile + "\n" +
+		"lxc.apparmor.allow_nesting = 1\n" +
+		"lxc.seccomp.allow_nesting = 1\n" +
+		"lxc.mount.entry = /dev/fuse dev/fuse none bind,optional,create=file 0 0\n" +
+		"lxc.hook.version = 1\n" +
+		"lxc.hook.start-host = " + BinNestingApparmor + "\n"
 }
 
 // RenderConfig writes an LXC 5.x config. Privileged containers omit idmap.

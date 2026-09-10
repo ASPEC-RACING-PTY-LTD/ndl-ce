@@ -105,7 +105,13 @@ func (e *Engine) RewriteRuntimeConfig(id string) error {
 	if err != nil {
 		return err
 	}
-	return e.writeConfig(spec)
+	if err := e.writeConfig(spec); err != nil {
+		return err
+	}
+	if applied.Spec.Nesting == nil || specChanged(applied.Spec, spec) {
+		return e.writeApplied(spec, applied.ImageVerified, applied.ImageSHA256)
+	}
+	return nil
 }
 
 // ReconcileRuntimeConfigs rewrites every applied system-container config
