@@ -50,6 +50,25 @@ func hostShellArgv() []string {
 	return []string{"/bin/sh", "-l"}
 }
 
+// ctRootShell starts a root login shell in /root. /bin/login -f is not used:
+// PAM/securetty on unprivileged LXC leaves a blank PTY or exits, which the UI
+// shows as a disconnected terminal.
+const ctRootShell = "cd /root 2>/dev/null; if [ -x /bin/bash ]; then exec /bin/bash --login; fi; exec /bin/sh -l"
+
+func ctAttachArgv(lxcPath, id string) []string {
+	return []string{
+		"/usr/bin/lxc-attach", "-P", lxcPath, "-n", id,
+		"--clear-env",
+		"-v", "TERM=xterm-256color",
+		"-v", "LANG=C.UTF-8",
+		"-v", "HOME=/root",
+		"-v", "USER=root",
+		"-v", "LOGNAME=root",
+		"-v", "SHELL=/bin/bash",
+		"--", "/bin/sh", "-c", ctRootShell,
+	}
+}
+
 func termArgv(req termRequest) ([]string, error) {
 	kind := strings.TrimSpace(req.TargetKind)
 	mode := strings.TrimSpace(req.CWD)
@@ -67,13 +86,7 @@ func termArgv(req termRequest) ([]string, error) {
 		if kind == "system-container-console" || mode == "console" {
 			return []string{"/usr/bin/lxc-console", "-P", lxcPath, "-n", req.TargetID}, nil
 		}
-		return []string{
-			"/usr/bin/lxc-attach", "-P", lxcPath, "-n", req.TargetID,
-			"--clear-env",
-			"-v", "TERM=xterm-256color",
-			"-v", "LANG=C.UTF-8",
-			"--", "/bin/login", "-f", "root",
-		}, nil
+		return ctAttachArgv(lxcPath, req.TargetID), nil
 	default:
 		return nil, fmt.Errorf("unsupported terminal target %q", kind)
 	}

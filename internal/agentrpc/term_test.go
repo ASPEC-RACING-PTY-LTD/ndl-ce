@@ -18,15 +18,7 @@ func TestTermArgvSystemContainerUsesTypedLXCAttach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{
-		"/usr/bin/lxc-attach",
-		"-P", "/var/lib/ndl/runtime/lxc",
-		"-n", id,
-		"--clear-env",
-		"-v", "TERM=xterm-256color",
-		"-v", "LANG=C.UTF-8",
-		"--", "/bin/login", "-f", "root",
-	}
+	want := ctAttachArgv("/var/lib/ndl/runtime/lxc", id)
 	if strings.Join(argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("got %#v want %#v", argv, want)
 	}
@@ -40,14 +32,17 @@ func TestTermArgvSystemContainerUsesTypedLXCAttach(t *testing.T) {
 	if !strings.Contains(joined, "--clear-env") || !strings.Contains(joined, "LANG=C.UTF-8") {
 		t.Fatal("attach must not leak host LANG")
 	}
-	if !strings.Contains(joined, "/bin/login -f root") {
-		t.Fatal("system-container terminal must be a root login shell")
+	if strings.Contains(joined, "/bin/login") {
+		t.Fatal("login -f leaves a blank or dead PTY on unprivileged LXC")
 	}
-	if strings.Contains(joined, "/bin/sh -l") || strings.Contains(joined, "/bin/bash -l") {
-		t.Fatal("must not attach a non-login shell that leaves cwd /")
+	if !strings.Contains(joined, "HOME=/root") || !strings.Contains(joined, "USER=root") {
+		t.Fatal("root login environment is required")
 	}
-	if strings.Contains(joined, "sh -c") || strings.Contains(joined, "Host.Exec") {
-		t.Fatal("typed attach must not become a shell command")
+	if !strings.Contains(joined, "cd /root") || !strings.Contains(joined, "bash --login") {
+		t.Fatal("must start a bash login shell in /root")
+	}
+	if argv[0] != "/usr/bin/lxc-attach" || strings.Contains(joined, "Host.Exec") {
+		t.Fatal("typed attach must not become a host shell command")
 	}
 }
 
@@ -60,7 +55,10 @@ func TestTermArgvWorkloadAliasUsesTypedLXCAttach(t *testing.T) {
 		t.Fatalf("workload terminal must use default LXC path: %#v", argv)
 	}
 	joined := strings.Join(argv, " ")
-	if !strings.Contains(joined, "/bin/login -f root") {
+	if strings.Contains(joined, "/bin/login") {
+		t.Fatal("workload alias must not use login -f")
+	}
+	if !strings.Contains(joined, "bash --login") {
 		t.Fatal("workload alias must open a root login shell")
 	}
 }
