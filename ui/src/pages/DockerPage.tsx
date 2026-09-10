@@ -129,6 +129,7 @@ export function DockerPage() {
   const [view, setView] = useState<ViewMode>("hierarchy");
   const [openMachines, setOpenMachines] = useState<Record<string, boolean>>({});
   const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({});
+  const [idleOpen, setIdleOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [logs, setLogs] = useState<string>("");
   const [logFor, setLogFor] = useState<string | null>(null);
@@ -143,7 +144,7 @@ export function DockerPage() {
         const copy = { ...cur };
         for (const m of next.machines ?? []) {
           if (copy[m.id] === undefined) {
-            copy[m.id] = true;
+            copy[m.id] = (m.container_count ?? 0) > 0;
           }
         }
         return copy;
@@ -237,6 +238,10 @@ export function DockerPage() {
 
   const summary = inv?.summary;
   const machines = inv?.machines ?? [];
+  const visibleMachines = machines.filter((m) => machineFilter === "all" || m.id === machineFilter);
+  const groupIdle = view === "hierarchy" && machineFilter === "all";
+  const activeMachines = groupIdle ? visibleMachines.filter((m) => (m.container_count ?? 0) > 0) : visibleMachines;
+  const idleMachines = groupIdle ? visibleMachines.filter((m) => (m.container_count ?? 0) === 0) : [];
 
   return (
     <section className="page page-wide" aria-labelledby="docker-heading">
@@ -368,9 +373,8 @@ export function DockerPage() {
           />
         </article>
       ) : (
-        machines
-          .filter((m) => machineFilter === "all" || m.id === machineFilter)
-          .map((m) => (
+        <>
+          {activeMachines.map((m) => (
             <MachineBlock
               key={m.id}
               machine={m}
@@ -388,7 +392,11 @@ export function DockerPage() {
               onLogs={loadLogs}
               onTerm={openTerm}
             />
-          ))
+          ))}
+          {idleMachines.length > 0 ? (
+            <IdleEngines machines={idleMachines} open={idleOpen} onToggle={() => setIdleOpen((v) => !v)} />
+          ) : null}
+        </>
       )}
 
       {selectedRow ? (
@@ -404,6 +412,49 @@ export function DockerPage() {
         />
       ) : null}
     </section>
+  );
+}
+
+function IdleEngines({
+  machines,
+  open,
+  onToggle,
+}: {
+  machines: DockerMachine[];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <article className="panel docker-idle">
+      <header className="docker-machine-head">
+        <button className="linkish docker-head-name" type="button" onClick={onToggle} aria-expanded={open}>
+          {open ? "▾" : "▸"} Engines with no containers
+        </button>
+        <span className="docker-head-status">
+          <StatusBadge status="healthy" label="Reachable" />
+        </span>
+        <span className="meta docker-head-meta">{machines.length} engines</span>
+      </header>
+      {open ? (
+        <div className="docker-idle-list">
+          {machines.map((m) => (
+            <div key={m.id} className="docker-idle-row">
+              <span className="docker-clip" title={m.name}>
+                {m.name}
+              </span>
+              <span className="docker-head-status">
+                <StatusBadge status={healthTone(m.health)} label={m.health_reason || honestCap(m.health) || "Reachable"} />
+              </span>
+              <span className="meta docker-head-meta">
+                {m.kind === "host" ? "Host" : "System container"}
+                {m.ipv4 ? ` · ${m.ipv4}` : ""}
+                {m.docker_version ? ` · Docker ${m.docker_version}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -464,7 +515,9 @@ function MachineBlock({
       ) : null}
       {open ? (
         projects.length === 0 ? (
-          <p className="meta">No services match the current filters.</p>
+          (machine.container_count ?? 0) > 0 || (machine.projects ?? []).length > 0 ? (
+            <p className="meta">No services match the current filters.</p>
+          ) : null
         ) : (
           <div className="table-wrap docker-table">
             <table>

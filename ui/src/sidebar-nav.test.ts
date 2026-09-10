@@ -16,21 +16,16 @@ function rule(selector: string): string {
 }
 
 describe("sidebar-nav scrollbar", () => {
-  it("keeps the nav scrollable while hiding only that scrollbar", () => {
+  it("hides native scrollbar chrome site-wide while leaving overflow scrolling", () => {
     const nav = rule(".sidebar-nav {");
     expect(nav).toContain("overflow-y: auto");
-    expect(nav).toContain("scrollbar-width: none");
-    expect(nav).toContain("-ms-overflow-style: none");
     expect(nav).not.toContain("overflow: hidden");
     expect(nav).not.toContain("overflow-y: hidden");
 
-    const webkit = rule(".sidebar-nav::-webkit-scrollbar {");
-    expect(webkit).toContain("display: none");
-    expect(webkit).toContain("width: 0");
-
-    expect(css.split("scrollbar-width: none").length - 1).toBe(1);
-    expect(css.split("::-webkit-scrollbar").length - 1).toBe(1);
-    expect(css).toContain(".sidebar-nav::-webkit-scrollbar");
+    expect(css).toContain("scrollbar-width: none");
+    expect(css).toContain("-ms-overflow-style: none");
+    expect(css).toContain("*::-webkit-scrollbar");
+    expect(css).toContain("display: none");
   });
 
   it("lets the terminal fill remaining layout instead of a fixed viewport offset", () => {

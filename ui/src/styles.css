@@ -70,6 +70,21 @@ html,
 body,
 #root {
   min-height: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 body {
@@ -466,14 +481,6 @@ code {
   flex: 1 1 auto;
   overflow-y: auto;
   min-height: 0;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.sidebar-nav::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
 }
 
 .ctx-back {
@@ -876,6 +883,7 @@ code {
 .page {
   display: grid;
   gap: var(--space-4);
+  align-content: start;
 }
 
 .page-wide {
@@ -2215,8 +2223,26 @@ body > .term-hold[aria-hidden="true"] {
   overflow: visible;
 }
 
+.docker-idle {
+  padding: var(--space-2) var(--space-3);
+}
+
+.docker-idle-list {
+  display: grid;
+  gap: 0.15rem;
+  margin-top: var(--space-2);
+}
+
+.docker-idle-row {
+  display: grid;
+  grid-template-columns: minmax(0, 22%) minmax(9rem, 14%) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0.55rem;
+  min-height: 1.7rem;
+}
+
 .docker-detail {
-  margin-top: var(--space-4);
+  margin-top: 0;
 }
 
 .docker-logs {

@@ -179,6 +179,16 @@ describe("Docker page", () => {
                 },
               ],
             },
+            {
+              id: "idle",
+              name: "cursor",
+              kind: "lxc",
+              daemon_ok: true,
+              health: "healthy",
+              health_reason: "Docker is reachable",
+              container_count: 0,
+              projects: [],
+            },
           ],
           projects: [],
           containers: [
@@ -231,6 +241,9 @@ describe("Docker page", () => {
     expect(document.querySelectorAll(".docker-table").length).toBe(1);
     expect(screen.getAllByText(/running · update failed/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/\/srv\/shop/)).toBeVisible();
+    expect(screen.getByRole("button", { name: /engines with no containers/i })).toBeVisible();
+    expect(screen.queryByText(/no services match the current filters/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /cursor/i })).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: /more actions/i })[0]);
     fireEvent.click(screen.getByRole("menuitem", { name: /^restart$/i }));
     await waitFor(() => expect(posted.some((b) => b.includes("restart"))).toBe(true));
@@ -243,5 +256,6 @@ describe("Docker page", () => {
     expect(css).toContain(".docker-table .docker-col-status");
     expect(css).toContain(".docker-table .docker-col-image");
     expect(css).toContain(".docker-machine-head,\n.docker-project-head");
+    expect(css).toContain(".docker-idle");
   });
 });
