@@ -42,6 +42,15 @@ rest of the user-namespace capability set stay available. No-DAL does
 not add a keyctl-blocking seccomp filter. Debian `common.seccomp` still
 blocks `kexec_load`, `open_by_handle_at`, and module load/unload.
 
+Those guests share one host uid map (`0 -> 100000`). Nested Docker
+creates session keyrings against that host uid. Debian's default
+per-uid key quota (200) is shared across every unprivileged container
+on that map. No-DAL ships `usr/lib/sysctl.d/ndl-lxc-keys.conf` and
+raises `kernel.keys.maxkeys` / `kernel.keys.maxbytes` at agent start
+so runc is not rejected with "unable to create session key: disk quota
+exceeded". Guests cannot write those sysctls. The agent never lowers an
+already sufficient host value.
+
 The generated nesting profile is LXC's nested-container policy (overlay,
 bind, rbind, cgroup, fuse). The start-host hook patches that generated
 profile on liblxc versions that still emit `/proc` and `/sys`

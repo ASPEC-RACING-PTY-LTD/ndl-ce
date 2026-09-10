@@ -296,13 +296,30 @@ func ensureGuestPythonCompat(rootfs string, enable bool) error {
 	return nil
 }
 
-func writeGuestDNSFallback(rootfs string) error {
+func writeGuestDNSFallback(rootfs string, spec Spec) error {
 	dir := filepath.Join(rootfs, "etc", "systemd", "resolved.conf.d")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	body := "[Resolve]\nFallbackDNS=8.8.8.8 1.1.1.1\n"
-	return os.WriteFile(filepath.Join(rootfs, guestDNSFallbackRel), []byte(body), 0o644)
+	if err := os.WriteFile(filepath.Join(rootfs, guestDNSFallbackRel), []byte(body), 0o644); err != nil {
+		return err
+	}
+	return chownMappedGuest(rootfs, spec, "etc/systemd/resolved.conf.d")
+}
+
+func chownMappedGuest(rootfs string, spec Spec, rels ...string) error {
+	if spec.Privileged {
+		return nil
+	}
+	uid := hostMapStart(spec.UIDMap)
+	gid := hostMapStart(spec.GIDMap)
+	for _, rel := range rels {
+		if err := chownGuestPath(filepath.Join(rootfs, rel), uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func guestBaselineChownRels() []string {

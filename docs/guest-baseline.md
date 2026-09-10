@@ -29,6 +29,8 @@ checked against the mapped UID/GID (`u/g 0 100000 65536`), not host root 0.
 
 A host umask that leaves `/` or `/etc` as `0750` is how `_apt` loses DNS while
 root networking still works. Creation no longer assumes the template is sane.
+Host-written No-DAL files (`etc/ndl`, DNS fallback drop-ins) are chowned onto
+the mapped UID/GID so they are not `nobody` inside the guest.
 
 ## Readiness
 
@@ -85,3 +87,5 @@ not a reservation. Pool available space is physical StatFS free space minus a
 16 MiB safety floor. Aggregate 50 GiB sparse roots may exceed the pool's
 physical size. Workload start is not rejected for that overcommit. Physical
 low-free warnings stay informational until the filesystem is actually exhausted.
+
+Unprivileged nested Docker also needs host keyring quota. See `docs/docker.md`.

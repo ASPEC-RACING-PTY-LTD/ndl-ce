@@ -40,6 +40,8 @@ grep -q 'DeviceAllow=block-loop rw' /lib/systemd/system/ndl-agent.service
 grep -q 'ExecStartPre=-/sbin/modprobe loop' /lib/systemd/system/ndl-agent.service
 test -f /usr/lib/modules-load.d/ndl-agent.conf
 grep -qx loop /usr/lib/modules-load.d/ndl-agent.conf
+test -f /usr/lib/sysctl.d/ndl-lxc-keys.conf
+grep -q 'kernel.keys.maxkeys' /usr/lib/sysctl.d/ndl-lxc-keys.conf
 
 systemctl show -p LoadState --value lxc-net.service | grep -qx masked
 systemctl is-active lxc-net.service >/dev/null 2>&1 && exit 1 || true

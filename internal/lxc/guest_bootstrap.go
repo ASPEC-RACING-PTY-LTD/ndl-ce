@@ -53,7 +53,7 @@ func (e *Engine) bootstrapGuest(ctx context.Context, id string, reconcileOnly bo
 	if reconcileOnly {
 		first = false
 	}
-	if err := e.ensureGuestDNS(ctx, id, rootfs); err != nil {
+	if err := e.ensureGuestDNS(ctx, id, rootfs, spec); err != nil {
 		if first && !reconcileOnly {
 			return err
 		}
@@ -66,11 +66,11 @@ func (e *Engine) bootstrapGuest(ctx context.Context, id string, reconcileOnly bo
 	return nil
 }
 
-func (e *Engine) ensureGuestDNS(ctx context.Context, id, rootfs string) error {
+func (e *Engine) ensureGuestDNS(ctx context.Context, id, rootfs string, spec Spec) error {
 	if e.guestDNSOK(ctx, id) {
 		return nil
 	}
-	if err := writeGuestDNSFallback(rootfs); err != nil {
+	if err := writeGuestDNSFallback(rootfs, spec); err != nil {
 		return fmt.Errorf("dns fallback: %w", err)
 	}
 	_, _ = e.attach(ctx, id, "/bin/systemctl", "restart", "systemd-resolved")
@@ -113,7 +113,7 @@ func (e *Engine) ensureGuestPackages(ctx context.Context, id, rootfs string, spe
 	}
 	if !first {
 		if missing := e.missingGuestPackages(ctx, id, pkgs); len(missing) == 0 {
-			return e.writeBaselineMarker(rootfs, false)
+			return e.writeBaselineMarker(rootfs, spec, false)
 		} else {
 			pkgs = missing
 		}
@@ -139,7 +139,7 @@ func (e *Engine) ensureGuestPackages(ctx context.Context, id, rootfs string, spe
 			return fmt.Errorf("apt install %s failed: %w", strings.Join(pkgs, " "), err)
 		}
 	}
-	return e.writeBaselineMarker(rootfs, first)
+	return e.writeBaselineMarker(rootfs, spec, first)
 }
 
 func (e *Engine) missingGuestPackages(ctx context.Context, id string, pkgs []string) []string {
@@ -172,7 +172,7 @@ func (e *Engine) aptNoninteractive(ctx context.Context, id string, aptArgs ...st
 	return err
 }
 
-func (e *Engine) writeBaselineMarker(rootfs string, upgraded bool) error {
+func (e *Engine) writeBaselineMarker(rootfs string, spec Spec, upgraded bool) error {
 	if err := os.MkdirAll(filepath.Join(rootfs, guestNDLDir), 0o755); err != nil {
 		return err
 	}
@@ -181,5 +181,5 @@ func (e *Engine) writeBaselineMarker(rootfs string, upgraded bool) error {
 		return err
 	}
 	_ = os.Remove(filepath.Join(rootfs, guestFirstBootstrapRel))
-	return nil
+	return chownMappedGuest(rootfs, spec, guestNDLDir)
 }

@@ -36,6 +36,7 @@ func main() {
 	}
 	recoverStaleNetwork(dir)
 	restoreDirectoryRoots(dir)
+	lxc.EnsureHostKeyringQuota()
 	reconcileRuntimeLXC(h.Workloads)
 	go scrapeMetrics(ms, dir)
 	go h.RefreshLoop(30 * time.Second)

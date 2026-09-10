@@ -1107,6 +1107,55 @@ func TestCTStartFailsClosedForUnavailableRootVolume(t *testing.T) {
 	}
 }
 
+func TestCTStartAllowsThinOvercommitWarningPool(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"alpine-src","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	if err := mem.UpdateStoragePoolObserved(context.Background(), appdb.StoragePool{
+		ID: poolID, Status: storage.StatusWarning, Warnings: []string{storage.WarnThinOvercommit},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	start, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/start", strings.NewReader("{}"))
+	start.Header.Set("Content-Type", "application/json")
+	start.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(start)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("thin overcommit warning must not block start %d %s", res.StatusCode, raw)
+	}
+	if fw.lastLife.Action != "start" {
+		t.Fatalf("start must reach the agent: %+v", fw.lastLife)
+	}
+}
+
 func TestCTStartFailsClosedForUnavailableNetwork(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
