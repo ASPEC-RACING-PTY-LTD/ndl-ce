@@ -27,13 +27,17 @@ func TestParseRejectsHostExecShapedKeys(t *testing.T) {
 }
 
 func TestUsedPercentAndLowPrioritySelect(t *testing.T) {
-	usable, alloc := int64(100), int64(90)
-	pct, ok := UsedPercent(&usable, &alloc)
+	total, usable := int64(100), int64(10)
+	pct, ok := UsedPercent(&total, &usable)
 	if !ok || pct != 90 {
 		t.Fatalf("%d %v", pct, ok)
 	}
-	if _, ok := UsedPercent(nil, &alloc); ok {
+	if _, ok := UsedPercent(nil, &usable); ok {
 		t.Fatal("unavailable")
+	}
+	prov := int64(150)
+	if over, ok := UsedPercent(&total, &usable); !ok || over != 90 {
+		t.Fatalf("logical provisioned %d must not change physical fill", prov)
 	}
 	pool := "pool-1"
 	vols := []appdb.Volume{{ID: "vol-hi", PoolID: pool}, {ID: "vol-lo", PoolID: pool}}

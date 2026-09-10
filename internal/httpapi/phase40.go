@@ -164,7 +164,7 @@ func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, 
 	pressured := false
 	failed := false
 	for _, pool := range pools {
-		pct, ok := automation.UsedPercent(pool.UsableBytes, pool.AllocatedBytes)
+		pct, ok := automation.UsedPercent(pool.TotalBytes, pool.UsableBytes)
 		if !ok || pct < pol.ThresholdPercent {
 			continue
 		}

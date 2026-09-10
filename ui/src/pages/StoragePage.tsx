@@ -39,6 +39,26 @@ function capacityLabel(value: number | null | undefined, status: string): string
   return formatBytes(value);
 }
 
+function physicalUsedBytes(p: StoragePool): number | null {
+  if (p.physical_used_bytes != null) {
+    return p.physical_used_bytes;
+  }
+  if (p.total_bytes == null || p.usable_bytes == null) {
+    return null;
+  }
+  return Math.max(p.total_bytes - p.usable_bytes, 0);
+}
+
+function overcommitNote(p: StoragePool): string | null {
+  if (p.provisioned_bytes == null || p.total_bytes == null || p.total_bytes <= 0) {
+    return null;
+  }
+  if (p.provisioned_bytes <= p.total_bytes) {
+    return null;
+  }
+  return `Logical provisioned ${formatBytes(p.provisioned_bytes)} / Physical capacity ${formatBytes(p.total_bytes)}. Sparse volumes share physical space and are not a reservation.`;
+}
+
 export function StoragePage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
@@ -631,9 +651,10 @@ export function StoragePage() {
                   <th>Name</th>
                   <th>Status</th>
                   <th>Backend</th>
-                  <th>Usable</th>
-                  <th>Allocated</th>
-                  <th>Provisioned</th>
+                  <th>Physical total</th>
+                  <th>Physical used</th>
+                  <th>Physical available</th>
+                  <th>Logical provisioned</th>
                 </tr>
               </thead>
               <tbody>
@@ -646,8 +667,9 @@ export function StoragePage() {
                     </td>
                     <td>{p.status}</td>
                     <td>{p.backend_type}</td>
+                    <td>{capacityLabel(p.total_bytes, p.status)}</td>
+                    <td>{capacityLabel(physicalUsedBytes(p), p.status)}</td>
                     <td>{capacityLabel(p.usable_bytes, p.status)}</td>
-                    <td>{capacityLabel(p.allocated_bytes, p.status)}</td>
                     <td>{capacityLabel(p.provisioned_bytes, p.status)}</td>
                   </tr>
                 ))}
@@ -681,6 +703,26 @@ export function StoragePage() {
               <dd>{pool.status}</dd>
             </div>
             <div>
+              <dt>Physical total</dt>
+              <dd>{capacityLabel(pool.total_bytes, pool.status)}</dd>
+            </div>
+            <div>
+              <dt>Physical used</dt>
+              <dd>{capacityLabel(physicalUsedBytes(pool), pool.status)}</dd>
+            </div>
+            <div>
+              <dt>Physical available</dt>
+              <dd>{capacityLabel(pool.usable_bytes, pool.status)}</dd>
+            </div>
+            <div>
+              <dt>Logical provisioned</dt>
+              <dd>{capacityLabel(pool.provisioned_bytes, pool.status)}</dd>
+            </div>
+            <div>
+              <dt>Volume allocated</dt>
+              <dd>{capacityLabel(pool.allocated_bytes, pool.status)}</dd>
+            </div>
+            <div>
               <dt>Classes</dt>
               <dd>{(pool.storage_classes ?? []).join(", ")}</dd>
             </div>
@@ -695,6 +737,11 @@ export function StoragePage() {
               </div>
             ) : null}
           </dl>
+          {overcommitNote(pool) ? (
+            <p className="banner banner-warn" role="status">
+              {overcommitNote(pool)}
+            </p>
+          ) : null}
           {(pool.warning_text ?? []).map((text) => (
             <p key={text} className="banner banner-warn" role="status">
               {text}
@@ -785,8 +832,8 @@ export function StoragePage() {
                   <th>UUID</th>
                   <th>Class</th>
                   <th>Status</th>
-                  <th>Provisioned</th>
-                  <th>Allocated</th>
+                  <th>Logical size</th>
+                  <th>Physical allocated</th>
                 </tr>
               </thead>
               <tbody>

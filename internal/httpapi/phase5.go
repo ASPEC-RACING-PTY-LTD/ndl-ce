@@ -1286,8 +1286,10 @@ func resolveRootDiskBytes(req createWorkloadRequest, pool *appdb.StoragePool) (i
 	if size < lxc.MinRootSize {
 		return 0, errBadRequest("disk size must be at least 1 GB")
 	}
-	if pool != nil && pool.UsableBytes != nil && *pool.UsableBytes < size {
-		return 0, errConflict("storage pool does not have enough free space for the requested disk size")
+	if pool != nil {
+		if err := storage.AdmitPhysicalFree(pool.UsableBytes); err != nil {
+			return 0, errConflict("storage pool does not have enough physical free space")
+		}
 	}
 	return size, nil
 }
@@ -1339,8 +1341,8 @@ func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Wor
 	if err != nil || pool == nil {
 		return errConflict("storage pool is not found")
 	}
-	if pool.UsableBytes != nil && *pool.UsableBytes < size-vol.SizeBytes {
-		return errConflict("storage pool does not have enough free space to grow the disk")
+	if err := storage.AdmitPhysicalFree(pool.UsableBytes); err != nil {
+		return errConflict("storage pool does not have enough physical free space to grow the disk")
 	}
 	switch pool.BackendType {
 	case storage.BackendDirectory:

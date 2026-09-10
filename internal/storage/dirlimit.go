@@ -174,6 +174,16 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 	if hint.RootPath == "" {
 		hint.RootPath = req.RootPath
 	}
+	if hint.PoolID == "" {
+		hint.PoolID = req.PoolID
+	}
+	pool, err := d.AssertWritablePool(hint)
+	if err != nil {
+		return err
+	}
+	if err := AdmitPhysicalFree(pool.Capacity.UsableBytes); err != nil {
+		return err
+	}
 	rel := strings.TrimSpace(req.BackendRef)
 	if rel == "" {
 		rel = volumeRel(req.Class, req.VolumeID, FormatDirectory)

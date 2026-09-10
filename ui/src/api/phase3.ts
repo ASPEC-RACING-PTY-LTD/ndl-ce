@@ -20,6 +20,7 @@ export type StoragePool = {
   allocated_bytes?: number | null;
   provisioned_bytes?: number | null;
   total_bytes?: number | null;
+  physical_used_bytes?: number | null;
   metadata_percent?: number | null;
   storage_classes?: string[];
   adopted?: boolean;

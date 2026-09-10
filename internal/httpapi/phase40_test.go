@@ -52,11 +52,12 @@ func TestPhase40StoragePressureCreatesVisibleOperation(t *testing.T) {
 	}
 	policyID, _ := created["id"].(string)
 
-	usable, alloc := int64(100<<30), int64(90<<30)
+	usable, alloc := int64(10<<30), int64(90<<30)
+	total := int64(100 << 30)
 	pool := appdb.StoragePool{
 		ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ClusterID: cluster.ID, NodeID: node.ID,
 		Name: "full", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
-		UsableBytes: &usable, AllocatedBytes: &alloc,
+		UsableBytes: &usable, AllocatedBytes: &alloc, TotalBytes: &total,
 	}
 	if err := mem.CreateStoragePool(context.Background(), pool); err != nil {
 		t.Fatal(err)
@@ -201,11 +202,12 @@ func TestPhase40RequireApprovalNeedsConfirm(t *testing.T) {
 	}
 	policyID, _ := created["id"].(string)
 
-	usable, alloc := int64(100<<30), int64(90<<30)
+	usable, alloc := int64(10<<30), int64(90<<30)
+	total := int64(100 << 30)
 	pool := appdb.StoragePool{
 		ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab", ClusterID: cluster.ID, NodeID: node.ID,
 		Name: "full", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
-		UsableBytes: &usable, AllocatedBytes: &alloc,
+		UsableBytes: &usable, AllocatedBytes: &alloc, TotalBytes: &total,
 	}
 	if err := mem.CreateStoragePool(context.Background(), pool); err != nil {
 		t.Fatal(err)
@@ -331,10 +333,11 @@ func TestPhase40AttemptedMigrateFailureIsNotSucceeded(t *testing.T) {
 	node := seedNode(t, mem, cluster.ID, debianInv(), false)
 	worker := seedNode(t, mem, cluster.ID, debianInv(), false)
 	destUsable, destAlloc := int64(100<<30), int64(10<<30)
+	destTotal := int64(110 << 30)
 	if err := mem.CreateStoragePool(context.Background(), appdb.StoragePool{
 		ID: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeea", ClusterID: cluster.ID, NodeID: worker.ID,
 		Name: "dest", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
-		UsableBytes: &destUsable, AllocatedBytes: &destAlloc, RootPath: "/var/lib/ndl/storage/dest",
+		UsableBytes: &destUsable, AllocatedBytes: &destAlloc, TotalBytes: &destTotal, RootPath: "/var/lib/ndl/storage/dest",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -357,11 +360,12 @@ func TestPhase40AttemptedMigrateFailureIsNotSucceeded(t *testing.T) {
 	}
 	policyID, _ := created["id"].(string)
 
-	usable, alloc := int64(100<<30), int64(90<<30)
+	usable, alloc := int64(10<<30), int64(90<<30)
+	total := int64(100 << 30)
 	pool := appdb.StoragePool{
 		ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac", ClusterID: cluster.ID, NodeID: node.ID,
 		Name: "full", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
-		UsableBytes: &usable, AllocatedBytes: &alloc, RootPath: "/var/lib/ndl/storage/local",
+		UsableBytes: &usable, AllocatedBytes: &alloc, TotalBytes: &total, RootPath: "/var/lib/ndl/storage/local",
 	}
 	if err := mem.CreateStoragePool(context.Background(), pool); err != nil {
 		t.Fatal(err)
@@ -479,11 +483,12 @@ func TestPhase40ApplyFailsClosedWhenMigrateOpPersistFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	usable, alloc := int64(100<<30), int64(90<<30)
+	usable, alloc := int64(10<<30), int64(90<<30)
+	total := int64(100 << 30)
 	pool := appdb.StoragePool{
 		ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ClusterID: cluster.ID, NodeID: node.ID,
 		Name: "full", BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
-		UsableBytes: &usable, AllocatedBytes: &alloc,
+		UsableBytes: &usable, AllocatedBytes: &alloc, TotalBytes: &total,
 	}
 	if err := mem.CreateStoragePool(context.Background(), pool); err != nil {
 		t.Fatal(err)

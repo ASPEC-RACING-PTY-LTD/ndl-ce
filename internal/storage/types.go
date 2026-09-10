@@ -88,8 +88,10 @@ type VolumeHandle struct {
 	Format      string `json:"format"`
 }
 
-// Capacity distinguishes physical and logical sizes.
-// Unavailable pools must leave these nil rather than report zero.
+// Capacity distinguishes physical filesystem facts from logical volume limits.
+// UsableBytes and TotalBytes are StatFS physical capacity of the backing store.
+// AllocatedBytes is actual blocks currently consumed by owned volumes.
+// ProvisionedBytes is the sum of logical volume maxima and is not reserved.
 type Capacity struct {
 	UsableBytes      *int64 `json:"usable_bytes"`
 	AllocatedBytes   *int64 `json:"allocated_bytes"`
@@ -226,12 +228,12 @@ type CreatePoolResult struct {
 
 // CreateVolumeRequest is a typed volume create. Destination path is not caller-chosen.
 type CreateVolumeRequest struct {
-	VolumeID  string `json:"volume_id"`
-	PoolID    string `json:"pool_id"`
-	RootPath  string `json:"root_path"`
-	Class     string `json:"class"`
-	Size      int64  `json:"size_bytes"`
-	Format    string `json:"format"`
+	VolumeID   string `json:"volume_id"`
+	PoolID     string `json:"pool_id"`
+	RootPath   string `json:"root_path"`
+	Class      string `json:"class"`
+	Size       int64  `json:"size_bytes"`
+	Format     string `json:"format"`
 	Owner      string `json:"owner,omitempty"`
 	OwnerKind  string `json:"owner_kind,omitempty"`
 	JobID      string `json:"job_id,omitempty"`

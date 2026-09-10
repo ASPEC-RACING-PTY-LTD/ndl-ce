@@ -4,12 +4,17 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appdb"
 )
 
-// UsedPercent is allocated/usable when both are known. Unavailable pools return ok=false.
-func UsedPercent(usable, allocated *int64) (int, bool) {
-	if usable == nil || allocated == nil || *usable <= 0 {
+// UsedPercent is physical filesystem used over physical total. Logical
+// provisioned volume size is not a reservation and is not used here.
+func UsedPercent(total, usable *int64) (int, bool) {
+	if total == nil || usable == nil || *total <= 0 {
 		return 0, false
 	}
-	pct := int((*allocated * 100) / *usable)
+	used := *total - *usable
+	if used < 0 {
+		used = 0
+	}
+	pct := int((used * 100) / *total)
 	if pct < 0 {
 		pct = 0
 	}

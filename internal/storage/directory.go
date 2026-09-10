@@ -231,6 +231,7 @@ func (d Directory) observeHint(hint PoolHint) (ObservedPool, []ObservedVolume, [
 	alloc, prov := sumObserved(vols, libs)
 	obs.Capacity.AllocatedBytes = int64ptr(alloc)
 	obs.Capacity.ProvisionedBytes = int64ptr(prov)
+	applyCapacityWarnings(&obs, prov)
 	return obs, vols, libs
 }
 
@@ -380,7 +381,11 @@ func (d Directory) scanOwned(root, poolID string) ([]ObservedVolume, []ObservedL
 			continue
 		}
 		for _, e := range ents {
-			abs := path.Join(dir, e.Name())
+			name := e.Name()
+			if strings.HasSuffix(name, VolumeSizeExt) {
+				continue
+			}
+			abs := path.Join(dir, name)
 			rel, err := RelUnder(root, abs)
 			if err != nil {
 				continue
@@ -395,8 +400,12 @@ func (d Directory) scanOwned(root, poolID string) ([]ObservedVolume, []ObservedL
 				Class: cls, Kind: kind, Format: format, Status: StatusAvailable,
 			}
 			if kind == KindFilesystem {
-				alloc, logi, _ := h.WalkSize(abs)
-				st.Allocated, st.Provisioned = alloc, logi
+				if cls == ClassContainerRoot {
+					observeContainerRootSize(h, abs, &st)
+				} else {
+					alloc, logi, _ := h.WalkSize(abs)
+					st.Allocated, st.Provisioned = alloc, logi
+				}
 				st.XattrState = XattrUnsupported
 			} else {
 				if n, err := h.Allocated(abs); err == nil {
@@ -442,6 +451,28 @@ func (d Directory) scanOwned(root, poolID string) ([]ObservedVolume, []ObservedL
 		}
 	}
 	return vols, libs
+}
+
+// observeContainerRootSize sets provisioned from the sparse image's logical
+// size and allocated from actual blocks. The mount directory is overlay of
+// the same image and must not be WalkSize'd as provisioned capacity.
+func observeContainerRootSize(h Host, abs string, st *ObservedVolume) {
+	img := directoryRootImage(abs)
+	info, err := h.Stat(img)
+	if err != nil {
+		alloc, logi, werr := h.WalkSize(abs)
+		if werr != nil {
+			return
+		}
+		st.Allocated, st.Provisioned = alloc, logi
+		return
+	}
+	st.Provisioned = info.Size()
+	if n, err := h.Allocated(img); err == nil {
+		st.Allocated = n
+		return
+	}
+	st.Allocated = info.Size()
 }
 
 func (d Directory) readVolumeXattr(abs, volumeID string) string {
@@ -514,8 +545,8 @@ func (d Directory) CreateVolume(ctx context.Context, req CreateVolumeRequest, hi
 		if req.Size < MinRootBytes {
 			return CreateVolumeResult{}, ErrInvalidSize
 		}
-		if pool.Capacity.UsableBytes != nil && *pool.Capacity.UsableBytes < req.Size {
-			return CreateVolumeResult{}, ErrCapacity
+		if err := AdmitPhysicalFree(pool.Capacity.UsableBytes); err != nil {
+			return CreateVolumeResult{}, err
 		}
 	}
 	rel := volumeRel(req.Class, req.VolumeID, format)
@@ -568,7 +599,11 @@ func (d Directory) CreateVolume(ctx context.Context, req CreateVolumeRequest, hi
 		xattrState = d.writeVolumeXattr(abs, req.VolumeID)
 	}
 	alloc := int64(0)
-	if n, err := h.Allocated(abs); err == nil {
+	if req.Class == ClassContainerRoot {
+		if n, err := h.Allocated(directoryRootImage(abs)); err == nil {
+			alloc = n
+		}
+	} else if n, err := h.Allocated(abs); err == nil {
 		alloc = n
 	}
 	return CreateVolumeResult{
@@ -593,6 +628,16 @@ func (d Directory) DestroyVolume(_ context.Context, req CreateVolumeRequest, hin
 	}
 	if hint.RootPath == "" {
 		hint.RootPath = req.RootPath
+	}
+	if hint.PoolID == "" {
+		hint.PoolID = req.PoolID
+	}
+	pool, err := d.AssertWritablePool(hint)
+	if err != nil {
+		return err
+	}
+	if err := AdmitPhysicalFree(pool.Capacity.UsableBytes); err != nil {
+		return err
 	}
 	rel := strings.TrimSpace(req.BackendRef)
 	if rel == "" {

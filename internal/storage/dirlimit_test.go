@@ -64,7 +64,7 @@ func TestDirectoryContainerRootEnforcesSize(t *testing.T) {
 	}
 }
 
-func TestDirectoryContainerRootRejectsOverCapacity(t *testing.T) {
+func TestDirectoryContainerRootAllowsSparseOverCapacity(t *testing.T) {
 	d, base := fixtureDir(t, "", false, 4<<30)
 	poolID := uuid.NewString()
 	root := base + "/pool"
@@ -73,10 +73,29 @@ func TestDirectoryContainerRootRejectsOverCapacity(t *testing.T) {
 	}
 	_, err := d.CreateVolume(context.Background(), CreateVolumeRequest{
 		VolumeID: uuid.NewString(), PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
-		Size: 8 << 30, Format: FormatDirectory,
+		Size: 8 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindOperator,
+	}, PoolHint{PoolID: poolID, BackendType: BackendDirectory, RootPath: root})
+	if err != nil {
+		t.Fatalf("sparse 8 GiB root on 4 GiB free must be admitted: %v", err)
+	}
+}
+
+func TestDirectoryContainerRootRejectsPhysicallyExhausted(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 20<<20)
+	poolID := uuid.NewString()
+	root := base + "/pool"
+	if _, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: poolID, RootPath: root, Create: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	d.Host.StatFS = func(string) (FSStat, error) {
+		return FSStat{BlockSize: 4096, Blocks: 100000, BlocksFree: 2048, BlocksAvail: 2048, Dev: 2}, nil
+	}
+	_, err := d.CreateVolume(context.Background(), CreateVolumeRequest{
+		VolumeID: uuid.NewString(), PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Size: 8 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindOperator,
 	}, PoolHint{PoolID: poolID, BackendType: BackendDirectory, RootPath: root})
 	if err == nil {
-		t.Fatal("expected capacity error")
+		t.Fatal("expected capacity error when physical free is below the safety floor")
 	}
 }
 

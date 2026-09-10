@@ -1925,3 +1925,23 @@ func TestWorkloadPatchMACRequiresStopAndPersists(t *testing.T) {
 	}
 	_ = pres3.Body.Close()
 }
+
+func TestResolveRootDiskAllowsSparseOvercommit(t *testing.T) {
+	usable := int64(4 << 30)
+	pool := &appdb.StoragePool{UsableBytes: &usable, Status: storage.StatusWarning}
+	size, err := resolveRootDiskBytes(createWorkloadRequest{DiskBytes: 50 << 30}, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size != 50<<30 {
+		t.Fatalf("size %d", size)
+	}
+}
+
+func TestResolveRootDiskRejectsPhysicallyExhausted(t *testing.T) {
+	usable := int64(4096)
+	pool := &appdb.StoragePool{UsableBytes: &usable, Status: storage.StatusWarning}
+	if _, err := resolveRootDiskBytes(createWorkloadRequest{DiskBytes: 8 << 30}, pool); err == nil {
+		t.Fatal("expected physical free-space error")
+	}
+}

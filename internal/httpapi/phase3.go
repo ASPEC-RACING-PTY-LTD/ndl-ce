@@ -612,6 +612,9 @@ func poolJSON(p appdb.StoragePool) map[string]any {
 		"warnings": p.Warnings, "warning_text": p.WarningText, "capabilities": caps,
 		"usable_bytes": p.UsableBytes, "allocated_bytes": p.AllocatedBytes,
 		"provisioned_bytes": p.ProvisionedBytes, "total_bytes": p.TotalBytes,
+		"physical_used_bytes": storage.PhysicalUsedBytes(storage.Capacity{
+			TotalBytes: p.TotalBytes, UsableBytes: p.UsableBytes,
+		}),
 		"adopted": p.Adopted, "created_at": p.CreatedAt.UTC().Format(time.RFC3339),
 		"storage_classes": []string{
 			storage.ClassVMDisk, storage.ClassContainerRoot, storage.ClassISO,

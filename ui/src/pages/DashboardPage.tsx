@@ -101,7 +101,16 @@ export function DashboardPage() {
   const cpuNow = lastPoint(cpuSeries);
   const memNow = lastPoint(memSeries);
   const usableBytes = pools.reduce((sum, p) => sum + (p.usable_bytes ?? 0), 0);
-  const allocatedBytes = pools.reduce((sum, p) => sum + (p.allocated_bytes ?? 0), 0);
+  const physicalUsedBytes = pools.reduce((sum, p) => {
+    if (p.physical_used_bytes != null) {
+      return sum + p.physical_used_bytes;
+    }
+    if (p.total_bytes == null || p.usable_bytes == null) {
+      return sum;
+    }
+    return sum + Math.max(p.total_bytes - p.usable_bytes, 0);
+  }, 0);
+  const provisionedBytes = pools.reduce((sum, p) => sum + (p.provisioned_bytes ?? 0), 0);
   const attention = [
     needStorage ? { href: "/storage", text: "No usable storage pool yet. Create a Directory pool on the Storage page." } : null,
     needNetwork ? { href: "/network", text: "No guest network yet. Create an isolated network on the Network page." } : null,
@@ -149,7 +158,11 @@ export function DashboardPage() {
         <div className="status-tile">
           <span className="label">Storage</span>
           <span className="value">{pools.length ? formatBytes(usableBytes) : "Not reported"}</span>
-          <span className="meta">{pools.length ? `${formatBytes(allocatedBytes)} allocated` : "No pool yet"}</span>
+          <span className="meta">
+            {pools.length
+              ? `${formatBytes(physicalUsedBytes)} used · ${formatBytes(provisionedBytes)} logical`
+              : "No pool yet"}
+          </span>
         </div>
       </div>
       <div className="meter-grid">

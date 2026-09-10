@@ -144,7 +144,7 @@ export function AutomationPage() {
             <Field
               id="policy-threshold"
               label="Threshold percent"
-              hint="If a pool is at or above this allocated percent, enqueue migrate of the lowest-priority VM. Queued migrate is not live until the dest agent is connected."
+              hint="If a pool's physical filesystem used percent is at or above this threshold, enqueue migrate of the lowest-priority VM. Logical provisioned size is not a reservation. Queued migrate is not live until the dest agent is connected."
               value={threshold}
               onChange={(e) => setThreshold(e.target.value)}
             />
