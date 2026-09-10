@@ -446,6 +446,21 @@ if (!agentInstall.includes("nodal-oci@.service")) {
 if (!agentInstall.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
   errors.push("ndl-agent.install must install the QEMU AppArmor local profile");
 }
+if (!agentInstall.includes("etc/apparmor.d/lxc/lxc-ndl-nesting")) {
+  errors.push("ndl-agent.install must install the LXC nesting AppArmor profile");
+}
+const nestingProfile = existsSync("packaging/apparmor/lxc/lxc-ndl-nesting")
+  ? readFileSync("packaging/apparmor/lxc/lxc-ndl-nesting", "utf8")
+  : "";
+if (!nestingProfile.includes("profile lxc-container-ndl-nesting")) {
+  errors.push("LXC nesting profile must be named lxc-container-ndl-nesting");
+}
+if (!nestingProfile.includes("mount options=(ro,rbind)") || !nestingProfile.includes("mount options in (")) {
+  errors.push("LXC nesting profile must allow BuildKit rbind ro snapshot binds");
+}
+if (nestingProfile.includes("unconfined") || /(^|\n)\s*mount,\s*(\n|$)/.test(nestingProfile)) {
+  errors.push("LXC nesting profile must not unconfine containers or allow every mount");
+}
 const rules = existsSync("packaging/debian/rules")
   ? readFileSync("packaging/debian/rules", "utf8")
   : "";
@@ -497,6 +512,9 @@ if (!rules.includes("nodal-vm@.service")) {
 }
 if (!rules.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
   errors.push("debian/rules must install the QEMU AppArmor local profile");
+}
+if (!rules.includes("lxc-ndl-nesting")) {
+  errors.push("debian/rules must install the LXC nesting AppArmor profile");
 }
 if (/libvirt/i.test(rules) || /libvirt/i.test(agentInstall)) {
   errors.push("packaging must not use libvirt");

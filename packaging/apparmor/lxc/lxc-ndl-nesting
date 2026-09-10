@@ -14,8 +14,17 @@ profile lxc-container-ndl-nesting flags=(attach_disconnected,mediate_deleted) {
   mount fstype=cgroup -> /sys/fs/cgroup/**,
   mount fstype=cgroup2 -> /sys/fs/cgroup/**,
   mount fstype=overlay,
+
+  # Docker Engine, containerd, and BuildKit inside unprivileged CTs.
+  # AppArmor options= is an exact flag set. BuildKit snapshot binds use
+  # Options:[rbind ro] from /var/lib/containerd/.../fs onto
+  # /var/lib/docker/tmp/buildkit-mount*. That is not a match for
+  # options=(rw,rbind). options in (...) allows any subset of these flags.
+  mount options in (rw,ro,bind,rbind,rprivate,rslave,rshared,private,slave,shared,nosuid,nodev,noexec,silent),
   mount options=(rw,bind),
+  mount options=(ro,bind),
   mount options=(rw,rbind),
+  mount options=(ro,rbind),
   mount options=(rw,rshared) -> /,
   mount options=(rw,rprivate),
   mount options=(rw,rslave),
@@ -23,7 +32,15 @@ profile lxc-container-ndl-nesting flags=(attach_disconnected,mediate_deleted) {
   mount options=(rw,slave),
   mount options=(rw,shared),
   mount options=(rw,rbind) -> /tmp/**,
+  mount options=(ro,rbind) -> /tmp/**,
   mount options=(rw,rbind) -> /var/lib/docker/**,
+  mount options=(ro,rbind) -> /var/lib/docker/**,
   mount options=(rw,rbind) -> /var/lib/containerd/**,
+  mount options=(ro,rbind) -> /var/lib/containerd/**,
+  mount options=(rw,rbind) -> /var/lib/buildkit/**,
+  mount options=(ro,rbind) -> /var/lib/buildkit/**,
   mount options=(rw,rbind) -> /run/**,
+  mount options=(ro,rbind) -> /run/**,
+  mount options=(ro,rbind) /var/lib/containerd/** -> /var/lib/docker/**,
+  mount options=(rw,rbind) /var/lib/containerd/** -> /var/lib/docker/**,
 }
