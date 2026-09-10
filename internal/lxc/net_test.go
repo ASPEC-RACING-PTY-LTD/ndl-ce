@@ -187,7 +187,7 @@ func TestEnsureGuestNetworkReconcilesCommentResolvToResolved(t *testing.T) {
 
 func TestProvisionGuestDHCPResolvUsesResolved(t *testing.T) {
 	root := t.TempDir()
-	if err := provisionGuest(root, "aspecracing", IPConfig{}); err != nil {
+	if err := provisionGuest(root, Spec{Name: "aspecracing"}); err != nil {
 		t.Fatal(err)
 	}
 	assertGuestResolvedResolv(t, root)
@@ -251,7 +251,7 @@ func TestProvisionGuestHostnameLocale(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "etc", "hosts"), []byte("127.0.0.1 localhost\n127.0.1.1\tLXCNAME\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := provisionGuest(root, "aspecracing", IPConfig{}); err != nil {
+	if err := provisionGuest(root, Spec{Name: "aspecracing"}); err != nil {
 		t.Fatal(err)
 	}
 	hn, err := os.ReadFile(filepath.Join(root, "etc", "hostname"))
@@ -275,14 +275,14 @@ func TestProvisionGuestHostnameLocale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(loc) != "LANG=C.UTF-8\n" {
+	if !strings.Contains(string(loc), "LANG=C.UTF-8") || !strings.Contains(string(loc), "LC_ALL=C.UTF-8") {
 		t.Fatal(string(loc))
 	}
 	conf, err := os.ReadFile(filepath.Join(root, "etc", "locale.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(conf) != "LANG=C.UTF-8\n" {
+	if !strings.Contains(string(conf), "LANG=C.UTF-8") || !strings.Contains(string(conf), "LC_ALL=C.UTF-8") {
 		t.Fatal(string(conf))
 	}
 	assertGuestResolvedResolv(t, root)
@@ -293,7 +293,7 @@ func TestChownGuestNetFilesDanglingResolvSymlink(t *testing.T) {
 		t.Skip("Lchown is a Unix mapped-root path")
 	}
 	root := t.TempDir()
-	if err := provisionGuest(root, "aspecracing", IPConfig{}); err != nil {
+	if err := provisionGuest(root, Spec{Name: "aspecracing"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := chownGuestNetFiles(root, 100000, 100000); err != nil {

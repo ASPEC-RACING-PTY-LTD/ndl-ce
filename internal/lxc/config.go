@@ -93,6 +93,14 @@ func RenderConfig(spec Spec) string {
 		}
 		b.WriteString(renderNetIP(spec.IP))
 	}
+	if spec.TUN {
+		b.WriteString("lxc.cgroup2.devices.allow = c 10:200 rwm\n")
+		b.WriteString("lxc.mount.entry = /dev/net/tun dev/net/tun none bind,optional,create=file 0 0\n")
+	}
+	if spec.AllowMknod {
+		b.WriteString("lxc.cgroup2.devices.allow = c *:* mknod\n")
+		b.WriteString("lxc.cgroup2.devices.allow = b *:* mknod\n")
+	}
 	if !spec.Privileged {
 		uid := spec.UIDMap
 		if uid == "" {

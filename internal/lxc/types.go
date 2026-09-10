@@ -78,6 +78,15 @@ type Spec struct {
 	// Nesting is the Docker/nested-container capability set. Nil means on.
 	// False is an explicit opt-out. Do not omit the field; false must persist.
 	Nesting *bool `json:"nesting"`
+	// TUN binds /dev/net/tun and allows c 10:200. Off by default.
+	TUN bool `json:"tun,omitempty"`
+	// AllowMknod is optional and off by default.
+	AllowMknod bool `json:"allow_mknod,omitempty"`
+	// SSHRoot installs/configures OpenSSH root login when explicitly requested.
+	SSHRoot bool `json:"ssh_root,omitempty"`
+	// PythonSystemPIP removes Debian EXTERNALLY-MANAGED markers. Off by default
+	// because it weakens PEP 668. Enable only for installer compatibility.
+	PythonSystemPIP bool `json:"python_system_pip,omitempty"`
 }
 
 // SpecWantsNesting reports whether the Docker/nested-container feature set is on.

@@ -23,7 +23,7 @@ func TestRootLoginShellStaysOpenInHome(t *testing.T) {
 	}
 	cmd := exec.Command("/bin/sh", "-c", ctRootShell)
 	cmd.Env = []string{
-		"TERM=xterm-256color",
+		"TERM=linux",
 		"LANG=C.UTF-8",
 		"HOME=/root",
 		"USER=root",

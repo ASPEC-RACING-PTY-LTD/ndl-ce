@@ -168,7 +168,7 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	if err := os.MkdirAll(filepath.Dir(e.configPath(spec.WorkloadID)), 0o750); err != nil {
 		return Result{}, err
 	}
-	if err := os.MkdirAll(spec.RootfsPath, 0o750); err != nil {
+	if err := os.MkdirAll(spec.RootfsPath, 0o755); err != nil {
 		return Result{}, err
 	}
 	e.ensureRootfsPathMounted(ctx, spec.RootfsPath)
@@ -273,7 +273,7 @@ func (e *Engine) ApplyGuestFiles(id string) error {
 	if strings.TrimSpace(spec.RootfsPath) == "" {
 		return nil
 	}
-	if err := provisionGuest(spec.RootfsPath, hostnameOf(spec.Name, spec.WorkloadID), spec.IP); err != nil {
+	if err := provisionGuest(spec.RootfsPath, spec); err != nil {
 		return err
 	}
 	if spec.Privileged {
@@ -322,17 +322,20 @@ func (e *Engine) waitContainerReady(ctx context.Context, id string) error {
 	if e.SkipHostCmds && e.Run == nil {
 		return nil
 	}
+	needIP := e.waitNeedsIPv4(id)
 	deadline := time.Now().Add(e.containerReadyWait())
 	var last string
 	for {
-		pid, _, err := e.lxcInfo(ctx, id)
-		if err == nil && pid > 0 {
-			return nil
+		pid, ipv4, err := e.lxcInfo(ctx, id)
+		if err == nil && pid > 0 && (!needIP || ipv4 != "") {
+			return e.bootstrapGuest(ctx, id, false)
 		}
 		if err != nil {
 			last = err.Error()
-		} else {
+		} else if pid <= 0 {
 			last = "init pid is not reported"
+		} else {
+			last = "eth0 has no IPv4 address"
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("container %s did not become attachable (%s)", id, last)
@@ -430,7 +433,9 @@ func specChanged(prev, next Spec) bool {
 		prev.UIDMap != next.UIDMap || prev.GIDMap != next.GIDMap || prev.Name != next.Name ||
 		prev.MAC != next.MAC || !prev.IP.Equal(next.IP) ||
 		SpecWantsNesting(prev) != SpecWantsNesting(next) ||
-		strings.Join(prev.GPUDevices, "\n") != strings.Join(next.GPUDevices, "\n")
+		strings.Join(prev.GPUDevices, "\n") != strings.Join(next.GPUDevices, "\n") ||
+		prev.TUN != next.TUN || prev.AllowMknod != next.AllowMknod ||
+		prev.SSHRoot != next.SSHRoot || prev.PythonSystemPIP != next.PythonSystemPIP
 }
 
 func (e *Engine) prepareRootfs(spec Spec) error {
@@ -440,13 +445,19 @@ func (e *Engine) prepareRootfs(spec Spec) error {
 	if err := validateRootfsPath(spec.RootfsPath); err != nil {
 		return err
 	}
-	if err := provisionGuest(spec.RootfsPath, hostnameOf(spec.Name, spec.WorkloadID), spec.IP); err != nil {
+	if err := provisionGuest(spec.RootfsPath, spec); err != nil {
+		return err
+	}
+	if err := maybeMarkFirstBootstrap(spec.RootfsPath); err != nil {
 		return err
 	}
 	if spec.Privileged {
-		return nil
+		return sanitizeRootfs(spec.RootfsPath, spec)
 	}
 	if err := shiftRootfs(spec.RootfsPath, hostMapStart(spec.UIDMap), hostMapStart(spec.GIDMap)); err != nil {
+		return err
+	}
+	if err := sanitizeRootfs(spec.RootfsPath, spec); err != nil {
 		return err
 	}
 	if err := ensureTraverse(spec.RootfsPath); err != nil {

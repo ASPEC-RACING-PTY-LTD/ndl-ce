@@ -59,6 +59,9 @@ from last-applied so reboot and reconcile cannot drop it. Existing
 system containers are migrated the same way. A running guest keeps its
 current kernel AppArmor label until the next start.
 
+See `docs/guest-baseline.md` for Debian package, DNS, locale, console,
+and Python-compat behaviour that runs around this feature set.
+
 Nested Docker can create containers, namespaces, cgroups, overlay
 mounts, bind/rbind mounts, networking, volumes, BuildKit workloads,
 and namespaced sysctls. It cannot:

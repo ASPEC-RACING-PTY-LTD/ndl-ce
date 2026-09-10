@@ -64,7 +64,7 @@ func (e *Engine) imageBase() string {
 }
 
 func (e *Engine) fetchAndUnpack(ctx context.Context, spec Spec, rootfs string) (verified bool, sha string, err error) {
-	if err := os.MkdirAll(rootfs, 0o750); err != nil {
+	if err := os.MkdirAll(rootfs, 0o755); err != nil {
 		return false, "", err
 	}
 	if e.SkipHostCmds && e.HTTP == nil {

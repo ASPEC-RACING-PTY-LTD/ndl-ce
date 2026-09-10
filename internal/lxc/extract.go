@@ -59,6 +59,12 @@ func validateArchivePath(p string) error {
 }
 
 func (e *Engine) unpackTar(ctx context.Context, spec Spec, archive, rootfs string) error {
+	return withCreateUmask(0o022, func() error {
+		return e.unpackTarUnmasked(ctx, spec, archive, rootfs)
+	})
+}
+
+func (e *Engine) unpackTarUnmasked(ctx context.Context, spec Spec, archive, rootfs string) error {
 	if spec.Privileged {
 		_, err := e.run(ctx, BinTar, tarExtractArgs(archive, rootfs)...)
 		return err
@@ -115,7 +121,7 @@ func prepareMappedExtractRoot(rootfs, uidMap, gidMap string) error {
 	if err := os.Chown(rootfs, uid, gid); err != nil {
 		return fmt.Errorf("chown mapped rootfs: %w", err)
 	}
-	return os.Chmod(rootfs, 0o750)
+	return os.Chmod(rootfs, 0o755)
 }
 
 func (e *Engine) unpackTarMapped(ctx context.Context, args []string, archive, rootfs string) error {

@@ -61,7 +61,7 @@ func ctAttachArgv(lxcPath, id string) []string {
 	return []string{
 		"/usr/bin/lxc-attach", "-P", lxcPath, "-n", id,
 		"--clear-env",
-		"-v", "TERM=xterm-256color",
+		"-v", "TERM=linux",
 		"-v", "LANG=C.UTF-8",
 		"-v", "HOME=/root",
 		"-v", "USER=root",

@@ -122,5 +122,9 @@ func (e *Engine) RewriteRuntimeConfig(id string) error {
 func (e *Engine) ReconcileRuntimeConfigs() {
 	for _, id := range e.ListAppliedIDs() {
 		_ = e.writeAppliedConfig(id)
+		pid, _, err := e.lxcInfo(context.Background(), id)
+		if err == nil && pid > 0 {
+			_ = e.bootstrapGuest(context.Background(), id, true)
+		}
 	}
 }

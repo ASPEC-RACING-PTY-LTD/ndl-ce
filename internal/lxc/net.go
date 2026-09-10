@@ -239,19 +239,6 @@ func ensureGuestNetwork(rootfs string, cfg IPConfig) error {
 	return replaceGuestResolvConf(rootfs, n.DNS)
 }
 
-func provisionGuest(rootfs, hostname string, cfg IPConfig) error {
-	if err := ensureGuestNetwork(rootfs, cfg); err != nil {
-		return err
-	}
-	if err := ensureGuestIdentity(rootfs, hostname); err != nil {
-		return err
-	}
-	if err := ensureGuestLocale(rootfs); err != nil {
-		return err
-	}
-	return ensureGuestNano(rootfs)
-}
-
 func ensureGuestIdentity(rootfs, hostname string) error {
 	hostname = strings.TrimSpace(hostname)
 	if hostname == "" {
@@ -277,17 +264,6 @@ func ensureGuestIdentity(rootfs, hostname string) error {
 		text = strings.TrimRight(text, "\n") + "\n127.0.1.1\t" + hostname + "\n"
 	}
 	return os.WriteFile(hostsPath, []byte(text), 0o644)
-}
-
-func ensureGuestLocale(rootfs string) error {
-	body := []byte("LANG=C.UTF-8\n")
-	if err := os.MkdirAll(filepath.Join(rootfs, "etc", "default"), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(rootfs, "etc", "default", "locale"), body, 0o644); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(rootfs, "etc", "locale.conf"), body, 0o644)
 }
 
 // guestResolvedResolv is systemd-resolved's real nameserver file, not the
@@ -472,6 +448,7 @@ func chownGuestNetFiles(rootfs string, uid, gid int) error {
 		"usr/lib/x86_64-linux-gnu/libncursesw.so.6",
 		"usr/lib/x86_64-linux-gnu/libtinfo.so.6",
 	}
+	rels = append(rels, guestBaselineChownRels()...)
 	for _, rel := range rels {
 		if err := chownGuestPath(filepath.Join(rootfs, rel), uid, gid); err != nil {
 			return err

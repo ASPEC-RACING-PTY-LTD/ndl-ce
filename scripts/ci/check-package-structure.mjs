@@ -55,6 +55,7 @@ const required = [
   "docs/store.md",
   "docs/ai.md",
   "docs/docker.md",
+  "docs/guest-baseline.md",
   "docs/api-compatibility.md",
   "docs/checklists/ce-1.0-virt.md",
   "docs/checklists/ce-1.0-physical.md",
