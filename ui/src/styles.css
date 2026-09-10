@@ -2077,17 +2077,142 @@ body > .term-hold[aria-hidden="true"] {
 
 .docker-machine-head,
 .docker-project-head {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 22%) minmax(9rem, 14%) minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  column-gap: 0.55rem;
+  margin-bottom: 0;
 }
 
-.docker-project {
-  margin: var(--space-3) 0 0 var(--space-3);
-  padding-left: var(--space-3);
+.docker-head-name,
+.docker-head-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-head-status {
+  min-width: 0;
+}
+
+.docker-project-head {
   border-left: 2px solid var(--line);
+  padding-left: var(--space-3);
+}
+
+.docker-project-row td {
+  padding: 0.7rem 0 0.2rem;
+  border-bottom: 0;
+  height: auto;
+}
+
+.docker-project-row:hover {
+  background: transparent;
+}
+
+.docker-table table,
+.docker-table-flat table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.docker-table td:not(.docker-col-menu),
+.docker-table th,
+.docker-table-flat td:not(:last-child),
+.docker-table-flat th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-table .docker-col-service {
+  width: 22%;
+}
+
+.docker-table .docker-col-status {
+  width: 14%;
+}
+
+.docker-table .docker-col-image {
+  width: 22%;
+}
+
+.docker-table .docker-col-ports {
+  width: 18%;
+}
+
+.docker-table .docker-col-uptime {
+  width: 8%;
+}
+
+.docker-table .docker-col-cpu {
+  width: 8%;
+}
+
+.docker-table .docker-col-actions {
+  width: 8%;
+}
+
+.docker-table-flat table col:nth-child(1),
+.docker-table-flat th:nth-child(1),
+.docker-table-flat td:nth-child(1) {
+  width: 20%;
+}
+
+.docker-table-flat table col:nth-child(2),
+.docker-table-flat th:nth-child(2),
+.docker-table-flat td:nth-child(2) {
+  width: 12%;
+}
+
+.docker-table-flat table col:nth-child(3),
+.docker-table-flat th:nth-child(3),
+.docker-table-flat td:nth-child(3) {
+  width: 12%;
+}
+
+.docker-table-flat table col:nth-child(4),
+.docker-table-flat th:nth-child(4),
+.docker-table-flat td:nth-child(4) {
+  width: 14%;
+}
+
+.docker-table-flat table col:nth-child(5),
+.docker-table-flat th:nth-child(5),
+.docker-table-flat td:nth-child(5) {
+  width: 18%;
+}
+
+.docker-table-flat table col:nth-child(6),
+.docker-table-flat th:nth-child(6),
+.docker-table-flat td:nth-child(6) {
+  width: 12%;
+}
+
+.docker-table-flat table col:nth-child(7),
+.docker-table-flat th:nth-child(7),
+.docker-table-flat td:nth-child(7) {
+  width: 6%;
+}
+
+.docker-table-flat table col:nth-child(8),
+.docker-table-flat th:nth-child(8),
+.docker-table-flat td:nth-child(8) {
+  width: 6%;
+}
+
+.docker-clip {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-table td.docker-col-menu,
+.docker-table-flat td:last-child {
+  overflow: visible;
 }
 
 .docker-detail {

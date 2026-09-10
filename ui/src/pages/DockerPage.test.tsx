@@ -1,4 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { MeResponse } from "../api/types";
@@ -111,16 +114,16 @@ describe("Docker page", () => {
       "/api/v1/docker": {
         status: 200,
         body: {
-          summary: { machines: 1, projects: 1, containers: 1, running: 1, stopped: 0, healthy: 0, degraded: 1, critical: 0, daemons_down: 0, update_failed: 1 },
+          summary: { machines: 1, projects: 2, containers: 2, running: 2, stopped: 0, healthy: 0, degraded: 1, critical: 0, daemons_down: 0, update_failed: 1 },
           machines: [
             {
               id: "host",
-              name: "Host",
-              kind: "host",
+              name: "AspecRacing",
+              kind: "lxc",
               daemon_ok: true,
               health: "degraded",
               health_reason: "Update failed",
-              container_count: 1,
+              container_count: 2,
               projects: [
                 {
                   id: "host/shop",
@@ -134,7 +137,7 @@ describe("Docker page", () => {
                     {
                       id: "host/abc123abc123",
                       machine_id: "host",
-                      machine_name: "Host",
+                      machine_name: "AspecRacing",
                       container_id: "abc123abc123",
                       name: "shop-web-1",
                       service: "web",
@@ -148,6 +151,32 @@ describe("Docker page", () => {
                     },
                   ],
                 },
+                {
+                  id: "host/aspecracing",
+                  machine_id: "host",
+                  name: "aspecracing",
+                  working_dir: "/root/aspecracing",
+                  health: "healthy",
+                  status_label: "Running",
+                  running: 1,
+                  containers: [
+                    {
+                      id: "host/def456def456",
+                      machine_id: "host",
+                      machine_name: "AspecRacing",
+                      container_id: "def456def456",
+                      name: "aspecracing-admin-1",
+                      service: "admin",
+                      project: "aspecracing",
+                      working_dir: "/root/aspecracing",
+                      image: "aspecracing-admin",
+                      state: "running",
+                      health: "healthy",
+                      status_label: "Running",
+                      restart_count: 0,
+                    },
+                  ],
+                },
               ],
             },
           ],
@@ -156,7 +185,7 @@ describe("Docker page", () => {
             {
               id: "host/abc123abc123",
               machine_id: "host",
-              machine_name: "Host",
+              machine_name: "AspecRacing",
               container_id: "abc123abc123",
               name: "shop-web-1",
               service: "web",
@@ -167,6 +196,21 @@ describe("Docker page", () => {
               health: "degraded",
               status_label: "Running · Update Failed",
               restart_count: 1,
+            },
+            {
+              id: "host/def456def456",
+              machine_id: "host",
+              machine_name: "AspecRacing",
+              container_id: "def456def456",
+              name: "aspecracing-admin-1",
+              service: "admin",
+              project: "aspecracing",
+              working_dir: "/root/aspecracing",
+              image: "aspecracing-admin",
+              state: "running",
+              health: "healthy",
+              status_label: "Running",
+              restart_count: 0,
             },
           ],
         },
@@ -180,10 +224,24 @@ describe("Docker page", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^docker$/i })).toBeVisible();
     expect(await screen.findByText(/shop-web-1/i)).toBeVisible();
+    expect(screen.getByText(/aspecracing-admin-1/i)).toBeVisible();
+    expect(screen.getAllByRole("columnheader", { name: /^service$/i })).toHaveLength(1);
+    expect(screen.getAllByRole("columnheader", { name: /^status$/i })).toHaveLength(1);
+    expect(screen.getAllByRole("columnheader", { name: /^image$/i })).toHaveLength(1);
+    expect(document.querySelectorAll(".docker-table").length).toBe(1);
     expect(screen.getAllByText(/running · update failed/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/\/srv\/shop/)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /more actions/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /more actions/i })[0]);
     fireEvent.click(screen.getByRole("menuitem", { name: /^restart$/i }));
     await waitFor(() => expect(posted.some((b) => b.includes("restart"))).toBe(true));
+  });
+
+  it("pins docker column tracks in CSS so names cannot shift the grid", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../styles.css"), "utf8");
+    expect(css).toContain("table-layout: fixed");
+    expect(css).toContain(".docker-table .docker-col-service");
+    expect(css).toContain(".docker-table .docker-col-status");
+    expect(css).toContain(".docker-table .docker-col-image");
+    expect(css).toContain(".docker-machine-head,\n.docker-project-head");
   });
 });

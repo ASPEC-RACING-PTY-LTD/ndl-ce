@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ApiError,
   dockerContainerAction,
@@ -75,6 +76,42 @@ function portText(c: DockerContainer): string {
     .slice(0, 3)
     .map((p) => (p.public_port ? `${p.public_port}:${p.private_port}` : String(p.private_port)))
     .join(", ");
+}
+
+function containerMenu(
+  c: DockerContainer,
+  mutate: boolean,
+  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate") => void,
+  onLogs: (c: DockerContainer) => void,
+  onTerm: (c: DockerContainer) => void,
+): ReactNode {
+  if (!mutate) {
+    return "";
+  }
+  return (
+    <ActionMenu
+      items={[
+        { label: "Start", onClick: () => onAction(c, "start") },
+        { label: "Stop", onClick: () => onAction(c, "stop") },
+        { label: "Restart", onClick: () => onAction(c, "restart") },
+        { label: "Logs", onClick: () => onLogs(c) },
+        { label: "Terminal", onClick: () => onTerm(c) },
+        { label: "Pull image", onClick: () => onAction(c, "pull") },
+        { label: "Recreate", onClick: () => onAction(c, "recreate") },
+      ]}
+    />
+  );
+}
+
+function ServiceCell({ c }: { c: DockerContainer }) {
+  const service = c.service || c.name;
+  const extra = c.name && c.name !== service ? c.name : "";
+  return (
+    <span className="docker-clip" title={[service, extra].filter(Boolean).join(" ")}>
+      <strong>{service}</strong>
+      {extra ? <span className="meta"> {extra}</span> : null}
+    </span>
+  );
 }
 
 export function DockerPage() {
@@ -304,33 +341,28 @@ export function DockerPage() {
         <article className="panel">
           <h2>Containers</h2>
           <ResourceTable
+            className="docker-table docker-table-flat"
             headers={["Container", "Machine", "Project", "Status", "Image", "Ports", "Restarts", ""]}
+            numeric={[6]}
             rows={containers.map((c) => [
-              <button key="n" className="linkish" type="button" onClick={() => setSelected(c.id)}>
+              <button key="n" className="linkish docker-clip" type="button" title={c.name} onClick={() => setSelected(c.id)}>
                 {c.name}
               </button>,
-              c.machine_name || c.machine_id,
-              c.project || "Standalone",
+              <span key="m" className="docker-clip" title={c.machine_name || c.machine_id}>
+                {c.machine_name || c.machine_id}
+              </span>,
+              <span key="p" className="docker-clip" title={c.project || "Standalone"}>
+                {c.project || "Standalone"}
+              </span>,
               <StatusBadge key="s" status={healthTone(c.health)} label={c.status_label} />,
-              c.image || "Not reported",
-              portText(c),
+              <span key="i" className="docker-clip" title={c.image || "Not reported"}>
+                {c.image || "Not reported"}
+              </span>,
+              <span key="pt" className="docker-clip" title={portText(c)}>
+                {portText(c)}
+              </span>,
               String(c.restart_count ?? 0),
-              mutate ? (
-                <ActionMenu
-                  key="a"
-                  items={[
-                    { label: "Start", onClick: () => void runAction(c, "start") },
-                    { label: "Stop", onClick: () => void runAction(c, "stop") },
-                    { label: "Restart", onClick: () => void runAction(c, "restart") },
-                    { label: "Logs", onClick: () => void loadLogs(c) },
-                    { label: "Terminal", onClick: () => openTerm(c) },
-                    { label: "Pull image", onClick: () => void runAction(c, "pull") },
-                    { label: "Recreate", onClick: () => void runAction(c, "recreate") },
-                  ]}
-                />
-              ) : (
-                ""
-              ),
+              containerMenu(c, mutate, (row, action) => void runAction(row, action), (row) => void loadLogs(row), openTerm),
             ])}
             empty={<p>No containers match the current filters.</p>}
           />
@@ -412,11 +444,13 @@ function MachineBlock({
   return (
     <article className="panel docker-machine">
       <header className="docker-machine-head">
-        <button className="linkish" type="button" onClick={onToggle} aria-expanded={open}>
+        <button className="linkish docker-head-name" type="button" onClick={onToggle} aria-expanded={open} title={machine.name}>
           {open ? "▾" : "▸"} {machine.name}
         </button>
-        <StatusBadge status={healthTone(machine.health)} label={machine.health_reason || honestCap(machine.health)} />
-        <span className="meta">
+        <span className="docker-head-status">
+          <StatusBadge status={healthTone(machine.health)} label={machine.health_reason || honestCap(machine.health)} />
+        </span>
+        <span className="meta docker-head-meta">
           {machine.kind === "host" ? "Host" : "System container"}
           {machine.ipv4 ? ` · ${machine.ipv4}` : ""}
           {machine.docker_version ? ` · Docker ${machine.docker_version}` : ""}
@@ -428,25 +462,57 @@ function MachineBlock({
           {machine.daemon_error}
         </p>
       ) : null}
-      {open
-        ? projects.map((p) => (
-            <ProjectBlock
-              key={p.id}
-              project={p}
-              open={openProjects[p.id] !== false}
-              onToggle={() => onToggleProject(p.id)}
-              query={query}
-              healthFilter={healthFilter}
-              selected={selected}
-              onSelect={onSelect}
-              mutate={mutate}
-              busy={busy}
-              onAction={onAction}
-              onLogs={onLogs}
-              onTerm={onTerm}
-            />
-          ))
-        : null}
+      {open ? (
+        projects.length === 0 ? (
+          <p className="meta">No services match the current filters.</p>
+        ) : (
+          <div className="table-wrap docker-table">
+            <table>
+              <colgroup>
+                <col className="docker-col-service" />
+                <col className="docker-col-status" />
+                <col className="docker-col-image" />
+                <col className="docker-col-ports" />
+                <col className="docker-col-uptime" />
+                <col className="docker-col-cpu" />
+                <col className="docker-col-actions" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Status</th>
+                  <th>Image</th>
+                  <th>Ports</th>
+                  <th className="num">Uptime</th>
+                  <th className="num">CPU</th>
+                  <th>
+                    <span className="visually-hidden">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p) => (
+                  <ProjectBlock
+                    key={p.id}
+                    project={p}
+                    open={openProjects[p.id] !== false}
+                    onToggle={() => onToggleProject(p.id)}
+                    query={query}
+                    healthFilter={healthFilter}
+                    selected={selected}
+                    onSelect={onSelect}
+                    mutate={mutate}
+                    onAction={onAction}
+                    onLogs={onLogs}
+                    onTerm={onTerm}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : null}
+      {busy ? <p className="meta">Working {busy}</p> : null}
     </article>
   );
 }
@@ -460,7 +526,6 @@ function ProjectBlock({
   selected,
   onSelect,
   mutate,
-  busy,
   onAction,
   onLogs,
   onTerm,
@@ -473,61 +538,67 @@ function ProjectBlock({
   selected: string | null;
   onSelect: (id: string) => void;
   mutate: boolean;
-  busy: string | null;
   onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate") => void;
   onLogs: (c: DockerContainer) => void;
   onTerm: (c: DockerContainer) => void;
 }) {
   const rows = (project.containers ?? []).filter((c) => (healthFilter === "all" || c.health === healthFilter) && matchesQuery(c, query));
   return (
-    <div className="docker-project">
-      <header className="docker-project-head">
-        <button className="linkish" type="button" onClick={onToggle} aria-expanded={open}>
-          {open ? "▾" : "▸"} {project.name}
-        </button>
-        <StatusBadge status={healthTone(project.health)} label={project.status_label} />
-        <span className="meta">
-          {project.working_dir || "No working directory"}
-          {` · ${project.running ?? 0} running`}
-        </span>
-      </header>
-      {open ? (
-        <ResourceTable
-          headers={["Service", "Status", "Image", "Ports", "Uptime", "CPU", ""]}
-          selected={rows.findIndex((c) => c.id === selected)}
-          onRowClick={(i) => onSelect(rows[i].id)}
-          rows={rows.map((c) => [
-            <span key="n">
-              <strong>{c.service || c.name}</strong>
-              <span className="meta"> {c.name}</span>
-            </span>,
-            <StatusBadge key="s" status={healthTone(c.health)} label={c.status_label} />,
-            c.image || "Not reported",
-            portText(c),
-            c.uptime || "n/a",
-            c.cpu_percent != null ? `${c.cpu_percent.toFixed(1)}%` : "n/a",
-            mutate ? (
-              <ActionMenu
-                key="a"
-                items={[
-                  { label: "Start", onClick: () => onAction(c, "start") },
-                  { label: "Stop", onClick: () => onAction(c, "stop") },
-                  { label: "Restart", onClick: () => onAction(c, "restart") },
-                  { label: "Logs", onClick: () => onLogs(c) },
-                  { label: "Terminal", onClick: () => onTerm(c) },
-                  { label: "Pull image", onClick: () => onAction(c, "pull") },
-                  { label: "Recreate", onClick: () => onAction(c, "recreate") },
-                ]}
-              />
-            ) : (
-              ""
-            ),
-          ])}
-          empty={<p>No services match.</p>}
-        />
-      ) : null}
-      {busy ? <p className="meta">Working {busy}</p> : null}
-    </div>
+    <Fragment>
+      <tr className="docker-project-row">
+        <td colSpan={7}>
+          <header className="docker-project-head">
+            <button className="linkish docker-head-name" type="button" onClick={onToggle} aria-expanded={open} title={project.name}>
+              {open ? "▾" : "▸"} {project.name}
+            </button>
+            <span className="docker-head-status">
+              <StatusBadge status={healthTone(project.health)} label={project.status_label} />
+            </span>
+            <span className="meta docker-head-meta">
+              {project.working_dir || "No working directory"}
+              {` · ${project.running ?? 0} running`}
+            </span>
+          </header>
+        </td>
+      </tr>
+      {open
+        ? rows.map((c) => (
+            <tr
+              key={c.id}
+              className={[selected === c.id ? "is-selected" : "", "is-clickable"].join(" ")}
+              onClick={() => onSelect(c.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(c.id);
+                }
+              }}
+              tabIndex={0}
+              role="button"
+            >
+              <td>
+                <ServiceCell c={c} />
+              </td>
+              <td>
+                <StatusBadge status={healthTone(c.health)} label={c.status_label} />
+              </td>
+              <td>
+                <span className="docker-clip" title={c.image || "Not reported"}>
+                  {c.image || "Not reported"}
+                </span>
+              </td>
+              <td>
+                <span className="docker-clip" title={portText(c)}>
+                  {portText(c)}
+                </span>
+              </td>
+              <td className="num">{c.uptime || "n/a"}</td>
+              <td className="num">{c.cpu_percent != null ? `${c.cpu_percent.toFixed(1)}%` : "n/a"}</td>
+              <td className="docker-col-menu">{containerMenu(c, mutate, onAction, onLogs, onTerm)}</td>
+            </tr>
+          ))
+        : null}
+    </Fragment>
   );
 }
 

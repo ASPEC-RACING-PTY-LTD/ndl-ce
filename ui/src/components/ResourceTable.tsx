@@ -7,6 +7,7 @@ export function ResourceTable({
   numeric = [],
   selected,
   onRowClick,
+  className,
 }: {
   headers: ReactNode[];
   rows: ReactNode[][];
@@ -14,12 +15,13 @@ export function ResourceTable({
   numeric?: number[];
   selected?: number;
   onRowClick?: (index: number) => void;
+  className?: string;
 }) {
   if (rows.length === 0) {
     return empty ? <>{empty}</> : <p>None yet.</p>;
   }
   return (
-    <div className="table-wrap">
+    <div className={["table-wrap", className].filter(Boolean).join(" ")}>
       <table>
         <thead>
           <tr>
