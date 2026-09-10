@@ -246,15 +246,15 @@ func (e *Engine) Restart(ctx context.Context, id string) error {
 }
 
 func (e *Engine) writeAppliedConfig(id string) error {
+	if err := e.RewriteRuntimeConfig(id); err != nil {
+		return err
+	}
 	applied, err := e.readApplied(id)
 	if err != nil {
 		return nil
 	}
 	spec, err := normalizeSpec(applied.Spec)
 	if err != nil {
-		return err
-	}
-	if err := e.writeConfig(spec); err != nil {
 		return err
 	}
 	if e.SkipHostCmds || e.FakeUnpack {

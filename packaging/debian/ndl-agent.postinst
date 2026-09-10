@@ -74,15 +74,15 @@ reload_qemu_apparmor() {
 }
 
 reload_lxc_apparmor() {
+  # Drop the obsolete static nesting profile file. Do not unload an
+  # in-kernel copy: running containers may still wear that label until
+  # their next start, which loads LXC's generated nesting profile.
+  rm -f /etc/apparmor.d/lxc/lxc-ndl-nesting
   if ! command -v apparmor_parser >/dev/null 2>&1; then
     return
   fi
   if [ -f /etc/apparmor.d/lxc-containers ]; then
     apparmor_parser -r /etc/apparmor.d/lxc-containers >/dev/null 2>&1 || true
-    return
-  fi
-  if [ -f /etc/apparmor.d/lxc/lxc-ndl-nesting ]; then
-    apparmor_parser -r /etc/apparmor.d/lxc/lxc-ndl-nesting >/dev/null 2>&1 || true
   fi
 }
 

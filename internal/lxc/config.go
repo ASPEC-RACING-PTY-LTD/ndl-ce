@@ -34,7 +34,10 @@ func hostLXCOverrides() string {
 	if _, err := os.Stat("/sys/kernel/security/apparmor"); err != nil {
 		return "lxc.apparmor.profile = unconfined\n"
 	}
-	return "lxc.apparmor.profile = " + ApparmorNestingProfile + "\n"
+	// LXC generates a confined profile at start. allow_nesting asks that
+	// generator for nested-container rules so Docker, containerd, and BuildKit
+	// can mount without a No-DAL static allowlist. Do not unconfine.
+	return "lxc.apparmor.profile = " + ApparmorGeneratedProfile + "\nlxc.apparmor.allow_nesting = 1\n"
 }
 
 // RenderConfig writes an LXC 5.x config. Privileged containers omit idmap.

@@ -19,11 +19,19 @@ When enabled, No-DAL looks for Docker Engine API sockets:
 Virtual machines are not probed. Nested Docker in a VM needs a guest
 agent path that this feature does not add.
 
-Unprivileged system containers use the `lxc-container-ndl-nesting`
-AppArmor profile. That profile allows Docker Engine, containerd, and
-BuildKit bind mounts, including read-only rbind of containerd overlay
-snapshots onto `/var/lib/docker/tmp/buildkit-mount*`. Containers are
-not unconfined.
+Unprivileged system containers stay confined. No-DAL asks LXC to
+generate the AppArmor profile with nesting enabled:
+
+```
+lxc.apparmor.profile = generated
+lxc.apparmor.allow_nesting = 1
+```
+
+Docker Engine, containerd, and BuildKit bind mounts (including
+read-only rbind of overlay snapshots onto
+`/var/lib/docker/tmp/buildkit-mount*`) use that generated nesting
+policy. Containers are not unconfined. No-DAL does not maintain a
+static mount allowlist for nested engines.
 
 ## Hierarchy
 

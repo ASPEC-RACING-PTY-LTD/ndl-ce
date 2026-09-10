@@ -40,7 +40,8 @@ const (
 	BinGPGV       = "/usr/bin/gpgv"
 )
 
-const ApparmorNestingProfile = "lxc-container-ndl-nesting"
+// ApparmorGeneratedProfile asks LXC to generate a confined profile at start.
+const ApparmorGeneratedProfile = "generated"
 
 const (
 	defaultDataDir    = "/var/lib/ndl"

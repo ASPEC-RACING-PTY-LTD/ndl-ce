@@ -345,6 +345,107 @@ func TestDryCreateWritesLastApplied(t *testing.T) {
 	if !res.ImageVerified {
 		t.Fatal("image must be sha256 verified")
 	}
+	cfg, err := os.ReadFile(e.configPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHostApparmor(t, string(cfg))
+}
+
+func TestReconcileRuntimeConfigsRewritesObsoleteApparmor(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	root := filepath.Join(e.DataDir, "rootfs", id)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec := Spec{
+		WorkloadID: id, Name: "legacy", ImagePin: "imported",
+		VolumeID: uuid.NewString(), RootfsPath: root, SkipImage: true,
+		Privileged: false, UIDMap: DefaultUIDMap, GIDMap: DefaultGIDMap,
+	}
+	if err := e.writeApplied(spec, true, "abc"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(e.configPath(id)), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	legacy := "lxc.uts.name = legacy\nlxc.apparmor.profile = lxc-container-ndl-nesting\n"
+	if err := os.WriteFile(e.configPath(id), []byte(legacy), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	e.ReconcileRuntimeConfigs()
+	cfg, err := os.ReadFile(e.configPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHostApparmor(t, string(cfg))
+	if !strings.Contains(string(cfg), "lxc.idmap = "+DefaultUIDMap) {
+		t.Fatal("reconcile must keep unprivileged idmap")
+	}
+	again, err := os.ReadFile(e.configPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.ReconcileRuntimeConfigs()
+	second, err := os.ReadFile(e.configPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(second) {
+		t.Fatal("reconcile must be idempotent")
+	}
+}
+
+func TestRewriteRuntimeConfigDoesNotStopMissingLastApplied(t *testing.T) {
+	e := testEngine(t)
+	if err := e.RewriteRuntimeConfig(uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteAppliedConfigRewritesObsoleteApparmor(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	root := filepath.Join(e.DataDir, "rootfs", id)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	spec := Spec{
+		WorkloadID: id, Name: "start-rewrite", ImagePin: "imported",
+		VolumeID: uuid.NewString(), RootfsPath: root, SkipImage: true,
+	}
+	if err := e.writeApplied(spec, true, "abc"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(e.configPath(id)), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.configPath(id), []byte("lxc.apparmor.profile = lxc-container-ndl-nesting\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.writeAppliedConfig(id); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := os.ReadFile(e.configPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHostApparmor(t, string(cfg))
+}
+
+func assertHostApparmor(t *testing.T, cfg string) {
+	t.Helper()
+	if _, err := os.Stat("/sys/kernel/security/apparmor"); err != nil {
+		if !strings.Contains(cfg, "unconfined") {
+			t.Fatalf("want unconfined without securityfs, got %q", cfg)
+		}
+		return
+	}
+	assertGeneratedNesting(t, cfg)
+	if strings.Contains(cfg, "unconfined") {
+		t.Fatal(cfg)
+	}
 }
 
 func TestCreatePersistsExplicitMACInConfigAndReplay(t *testing.T) {

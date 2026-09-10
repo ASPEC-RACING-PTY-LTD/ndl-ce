@@ -36,6 +36,7 @@ func main() {
 	}
 	recoverStaleNetwork(dir)
 	restoreDirectoryRoots(dir)
+	reconcileRuntimeLXC(h.Workloads)
 	go scrapeMetrics(ms, dir)
 	go h.RefreshLoop(30 * time.Second)
 	go h.SessionLoop(dir, 30*time.Second)
@@ -61,6 +62,13 @@ func recoverStaleNetwork(dataDir string) {
 func restoreDirectoryRoots(dataDir string) {
 	d := storage.Directory{Run: storage.LiveRun}
 	_ = d.RestoreLoopMounts(context.Background(), filepath.Join(dataDir, "storage"))
+}
+
+func reconcileRuntimeLXC(eng *lxc.Engine) {
+	if eng == nil {
+		return
+	}
+	eng.ReconcileRuntimeConfigs()
 }
 
 func scrapeMetrics(ms *metrics.Store, dataDir string) {

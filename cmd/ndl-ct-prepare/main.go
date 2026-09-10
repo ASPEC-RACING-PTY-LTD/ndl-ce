@@ -17,10 +17,16 @@ func main() {
 }
 
 func run(args []string) error {
+	return prepareCT(&lxc.Engine{}, args)
+}
+
+func prepareCT(e *lxc.Engine, args []string) error {
 	if len(args) != 1 || args[0] == "" {
 		return fmt.Errorf("usage: ndl-ct-prepare WORKLOAD-UUID")
 	}
-	e := &lxc.Engine{}
+	if err := e.RewriteRuntimeConfig(args[0]); err != nil {
+		return err
+	}
 	applied, err := e.LastApplied(args[0])
 	if err != nil {
 		return nil

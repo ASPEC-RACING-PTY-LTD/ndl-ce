@@ -88,6 +88,13 @@ func TestCTUnitPreparesDirectoryRootMount(t *testing.T) {
 	if !strings.Contains(text, "ExecStartPre=/usr/lib/ndl/ndl-ct-prepare %i") {
 		t.Fatal("nodal-ct@.service must remount a sized directory root before lxc-start")
 	}
+	prep, err := os.ReadFile(filepath.Join(root, "cmd", "ndl-ct-prepare", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(prep), "RewriteRuntimeConfig") {
+		t.Fatal("ndl-ct-prepare must rewrite LXC config from last-applied before lxc-start")
+	}
 	if strings.Contains(text, "BindsTo=ndl-agent") || strings.Contains(text, "Requires=ndl-agent") {
 		t.Fatal("container units must not bind to ndl-agent")
 	}

@@ -24,6 +24,7 @@ const required = [
   "packaging/debian/ndl-control.postrm",
   "packaging/debian/ndl-agent.postinst",
   "packaging/debian/ndl-agent.postrm",
+  "packaging/debian/ndl-agent.maintscript",
   "packaging/debian/ndl-ui.postinst",
   "packaging/e2e/check-maintainer-scripts.sh",
   "packaging/e2e/check-control-upgrade.sh",
@@ -446,20 +447,27 @@ if (!agentInstall.includes("nodal-oci@.service")) {
 if (!agentInstall.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
   errors.push("ndl-agent.install must install the QEMU AppArmor local profile");
 }
-if (!agentInstall.includes("etc/apparmor.d/lxc/lxc-ndl-nesting")) {
-  errors.push("ndl-agent.install must install the LXC nesting AppArmor profile");
+if (agentInstall.includes("lxc-ndl-nesting") || agentInstall.includes("lxc-container-ndl-nesting")) {
+  errors.push("ndl-agent.install must not ship a static LXC nesting AppArmor profile");
 }
-const nestingProfile = existsSync("packaging/apparmor/lxc/lxc-ndl-nesting")
-  ? readFileSync("packaging/apparmor/lxc/lxc-ndl-nesting", "utf8")
+const lxcConfigGo = existsSync("internal/lxc/config.go")
+  ? readFileSync("internal/lxc/config.go", "utf8")
   : "";
-if (!nestingProfile.includes("profile lxc-container-ndl-nesting")) {
-  errors.push("LXC nesting profile must be named lxc-container-ndl-nesting");
+if (!lxcConfigGo.includes("lxc.apparmor.profile = ") || !lxcConfigGo.includes("ApparmorGeneratedProfile") || !lxcConfigGo.includes("lxc.apparmor.allow_nesting = 1")) {
+  errors.push("system containers must use LXC generated AppArmor with nesting enabled");
 }
-if (!nestingProfile.includes("mount options=(ro,rbind)") || !nestingProfile.includes("mount options in (")) {
-  errors.push("LXC nesting profile must allow BuildKit rbind ro snapshot binds");
+if (lxcConfigGo.includes("lxc-container-ndl-nesting") || lxcConfigGo.includes("lxc-ndl-nesting")) {
+  errors.push("host LXC overrides must not name the obsolete static nesting profile");
 }
-if (nestingProfile.includes("unconfined") || /(^|\n)\s*mount,\s*(\n|$)/.test(nestingProfile)) {
-  errors.push("LXC nesting profile must not unconfine containers or allow every mount");
+if (existsSync("packaging/apparmor/lxc/lxc-ndl-nesting")) {
+  errors.push("must not ship packaging/apparmor/lxc/lxc-ndl-nesting");
+}
+const dockerDocs = existsSync("docs/docker.md") ? readFileSync("docs/docker.md", "utf8") : "";
+if (!dockerDocs.includes("lxc.apparmor.profile = generated") || !dockerDocs.includes("lxc.apparmor.allow_nesting = 1")) {
+  errors.push("docs/docker.md must document LXC generated AppArmor with nesting");
+}
+if (/use the `lxc-container-ndl-nesting`/.test(dockerDocs)) {
+  errors.push("docs/docker.md must not prescribe the obsolete static nesting profile");
 }
 const rules = existsSync("packaging/debian/rules")
   ? readFileSync("packaging/debian/rules", "utf8")
@@ -513,8 +521,8 @@ if (!rules.includes("nodal-vm@.service")) {
 if (!rules.includes("etc/apparmor.d/local/usr.bin.qemu-system-x86_64")) {
   errors.push("debian/rules must install the QEMU AppArmor local profile");
 }
-if (!rules.includes("lxc-ndl-nesting")) {
-  errors.push("debian/rules must install the LXC nesting AppArmor profile");
+if (rules.includes("lxc-ndl-nesting") || rules.includes("lxc-container-ndl-nesting")) {
+  errors.push("debian/rules must not install a static LXC nesting AppArmor profile");
 }
 if (/libvirt/i.test(rules) || /libvirt/i.test(agentInstall)) {
   errors.push("packaging must not use libvirt");
@@ -575,6 +583,30 @@ if (/systemctl\s+enable --now[^\n]*nodal-vm@|systemctl\s+start[^\n]*nodal-vm@/.t
 }
 if (/libvirt/i.test(postinst)) {
   errors.push("ndl-agent.postinst must not use libvirt");
+}
+if (!postinst.includes("rm -f /etc/apparmor.d/lxc/lxc-ndl-nesting")) {
+  errors.push("ndl-agent.postinst must remove the obsolete static nesting profile file");
+}
+if (/apparmor_parser\s+-R[^\n]*lxc-ndl-nesting/.test(postinst)) {
+  errors.push("ndl-agent.postinst must not unload the in-kernel obsolete nesting profile");
+}
+const agentMain = existsSync("cmd/ndl-agent/main.go")
+  ? readFileSync("cmd/ndl-agent/main.go", "utf8")
+  : "";
+if (!agentMain.includes("ReconcileRuntimeConfigs")) {
+  errors.push("ndl-agent must reconcile system-container LXC configs at start");
+}
+const ctPrepare = existsSync("cmd/ndl-ct-prepare/main.go")
+  ? readFileSync("cmd/ndl-ct-prepare/main.go", "utf8")
+  : "";
+if (!ctPrepare.includes("RewriteRuntimeConfig")) {
+  errors.push("ndl-ct-prepare must rewrite LXC config from last-applied before lxc-start");
+}
+const maintscript = existsSync("packaging/debian/ndl-agent.maintscript")
+  ? readFileSync("packaging/debian/ndl-agent.maintscript", "utf8")
+  : "";
+if (!maintscript.includes("rm_conffile /etc/apparmor.d/lxc/lxc-ndl-nesting")) {
+  errors.push("ndl-agent.maintscript must drop the obsolete nesting profile conffile");
 }
 if (/^RuntimeDirectory=ndl\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl");

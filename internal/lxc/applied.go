@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func (e *Engine) lastAppliedPath(id string) string {
@@ -67,4 +69,50 @@ func (e *Engine) now() time.Time {
 		return e.Now()
 	}
 	return time.Now().UTC()
+}
+
+// ListAppliedIDs returns workload UUIDs that have a last-applied artifact.
+func (e *Engine) ListAppliedIDs() []string {
+	entries, err := os.ReadDir(e.workloadsDir())
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			continue
+		}
+		id := ent.Name()
+		if _, err := uuid.Parse(id); err != nil {
+			continue
+		}
+		if _, err := e.readApplied(id); err != nil {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+// RewriteRuntimeConfig rewrites the on-disk LXC config from last-applied.
+// It does not start, stop, or recreate the container.
+func (e *Engine) RewriteRuntimeConfig(id string) error {
+	applied, err := e.readApplied(id)
+	if err != nil {
+		return nil
+	}
+	spec, err := normalizeSpec(applied.Spec)
+	if err != nil {
+		return err
+	}
+	return e.writeConfig(spec)
+}
+
+// ReconcileRuntimeConfigs rewrites every applied system-container config
+// from last-applied plus current host overrides. Idempotent. Running guests
+// are not stopped; the next start loads the rewritten keys.
+func (e *Engine) ReconcileRuntimeConfigs() {
+	for _, id := range e.ListAppliedIDs() {
+		_ = e.RewriteRuntimeConfig(id)
+	}
 }
