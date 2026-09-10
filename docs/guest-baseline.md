@@ -78,7 +78,8 @@ makes installers easier and weakens package-manager isolation. Set
 `ndl-ct-prepare`, start, and agent reconcile apply missing files idempotently.
 They do not overwrite application config, secrets, repositories, databases,
 Docker volumes, SSH keys, or user networking. Existing guests are not
-OS-upgraded during reconcile.
+OS-upgraded during reconcile. Deleting a system container removes its exclusive
+container-root volume. Disks still attached to another workload are left alone.
 
 ## Storage accounting
 

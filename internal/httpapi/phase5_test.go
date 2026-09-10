@@ -1156,6 +1156,65 @@ func TestCTStartAllowsThinOvercommitWarningPool(t *testing.T) {
 	}
 }
 
+func TestCTDeleteDestroysExclusiveRootVolume(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	destroyed := []string{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{
+		vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+			BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+			Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+		}},
+		destroyed: &destroyed,
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"alpine-del","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, raw)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := created["id"].(string)
+	disks, _ := mem.ListWorkloadDisks(context.Background(), cluster.ID, id)
+	if len(disks) != 1 {
+		t.Fatalf("disks %+v", disks)
+	}
+	volID := disks[0].VolumeID
+	del, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads/"+id+"/delete", strings.NewReader("{}"))
+	del.Header.Set("Content-Type", "application/json")
+	del.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(del)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete %d %s", res.StatusCode, raw)
+	}
+	if len(destroyed) != 1 || destroyed[0] != volID {
+		t.Fatalf("delete must destroy exclusive container-root: %v want %s", destroyed, volID)
+	}
+	if got, _ := mem.GetVolume(context.Background(), cluster.ID, volID); got != nil {
+		t.Fatal("volume row must be removed")
+	}
+	if got, _ := mem.GetWorkload(context.Background(), cluster.ID, id); got != nil {
+		t.Fatal("workload row must be removed")
+	}
+}
+
 func TestCTStartFailsClosedForUnavailableNetwork(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())

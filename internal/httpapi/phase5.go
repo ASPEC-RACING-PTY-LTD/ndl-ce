@@ -583,6 +583,7 @@ func (s *Server) deleteSystemContainer(ctx context.Context, p *principal, row ap
 		s.finishOp(ctx, op, "failed", err.Error(), 0)
 		return err
 	}
+	s.destroyExclusiveCTRoots(ctx, p.User.ClusterID, row.ID)
 	if err := s.Store.DeleteWorkload(ctx, p.User.ClusterID, row.ID); err != nil {
 		s.finishOp(ctx, op, "failed", err.Error(), 0)
 		return errInternal("could not record container delete")
@@ -1294,7 +1295,40 @@ func resolveRootDiskBytes(req createWorkloadRequest, pool *appdb.StoragePool) (i
 	return size, nil
 }
 
+func (s *Server) destroyExclusiveCTRoots(ctx context.Context, clusterID, workloadID string) {
+	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, workloadID)
+	if err != nil {
+		return
+	}
+	all, _ := s.Store.ListWorkloadDisks(ctx, clusterID, "")
+	for _, d := range disks {
+		if d.VolumeID == "" {
+			continue
+		}
+		vol, err := s.Store.GetVolume(ctx, clusterID, d.VolumeID)
+		if err != nil || vol == nil || vol.Class != storage.ClassContainerRoot {
+			continue
+		}
+		shared := false
+		for _, other := range all {
+			if other.VolumeID == vol.ID && other.WorkloadID != workloadID {
+				shared = true
+				break
+			}
+		}
+		if shared {
+			continue
+		}
+		s.destroyOwnedVolume(ctx, clusterID, vol)
+	}
+}
+
 func (s *Server) rollbackFailedCT(ctx context.Context, clusterID string, vol *appdb.Volume, rootfs string) {
+	s.destroyOwnedVolume(ctx, clusterID, vol)
+	_ = rootfs
+}
+
+func (s *Server) destroyOwnedVolume(ctx context.Context, clusterID string, vol *appdb.Volume) {
 	if vol == nil {
 		return
 	}
@@ -1313,7 +1347,6 @@ func (s *Server) rollbackFailedCT(ctx context.Context, clusterID string, vol *ap
 		}, storage.PoolHint{PoolID: vol.PoolID, BackendType: vol.BackendType, RootPath: root})
 	}
 	_ = s.Store.DeleteVolume(ctx, clusterID, vol.ID)
-	_ = rootfs
 }
 
 func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Workload, size int64) error {
