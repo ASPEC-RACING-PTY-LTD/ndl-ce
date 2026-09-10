@@ -20,6 +20,9 @@ function tone(status?: string): "ok" | "warn" | "bad" | "info" | "neutral" {
       return "warn";
     case "failed":
     case "unavailable":
+    case "critical":
+    case "dead":
+    case "unhealthy":
       return "bad";
     case "canceled":
     case "cancelled":

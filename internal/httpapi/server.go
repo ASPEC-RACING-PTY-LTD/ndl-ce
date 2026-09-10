@@ -71,6 +71,7 @@ type Server struct {
 	QEMU         QemuRPC
 	VM           VMRPC
 	OCI          OCIRPC
+	Docker       DockerRPC
 	Backup       BackupRPC
 	Object       ObjectRPC
 	Verify       VerifyRPC
@@ -103,6 +104,7 @@ type Server struct {
 	backupMu     sync.Mutex
 	nightlyBusy  atomic.Bool
 	alertBusy    atomic.Bool
+	docker       *dockerCache
 }
 
 type principal struct {
@@ -191,6 +193,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/features", s.listFeatures)
 	mux.HandleFunc("POST /api/v1/features/{id}/enable", s.enableFeature)
 	mux.HandleFunc("POST /api/v1/features/{id}/disable", s.disableFeature)
+	mux.HandleFunc("GET /api/v1/docker", s.getDocker)
+	mux.HandleFunc("GET /api/v1/docker/machines/{machine_id}/containers/{container_id}", s.getDockerContainer)
+	mux.HandleFunc("GET /api/v1/docker/machines/{machine_id}/containers/{container_id}/logs", s.dockerContainerLogs)
+	mux.HandleFunc("POST /api/v1/docker/machines/{machine_id}/containers/{container_id}/actions", s.dockerContainerAction)
+	mux.HandleFunc("POST /api/v1/docker/machines/{machine_id}/containers/{container_id}/terminal/sessions", s.createDockerTerminal)
 	mux.HandleFunc("GET /api/v1/kubernetes", s.getKubernetes)
 	mux.HandleFunc("POST /api/v1/kubernetes/start", s.startKubernetes)
 	mux.HandleFunc("POST /api/v1/kubernetes/stop", s.stopKubernetes)

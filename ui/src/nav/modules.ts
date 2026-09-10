@@ -57,6 +57,15 @@ export const NAV_MODULES: NavModule[] = [
     simple: false,
     capability: "oci",
   },
+  {
+    id: "docker",
+    href: "/docker",
+    label: "Docker",
+    group: "Compute",
+    match: (p) => p === "/docker" || p.startsWith("/docker/"),
+    simple: false,
+    capability: "docker",
+  },
   { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates", simple: false },
   {
     id: "node",
@@ -241,6 +250,14 @@ export const CAPABILITIES: Capability[] = [
     summary: "Application stacks and OCI extras. Compose import stays available after enable.",
     featureId: "oci",
     modules: ["stacks"],
+  },
+  {
+    id: "docker",
+    title: "Docker Management",
+    summary: "Discover Docker engines on this node and in system containers. Start, stop, logs, and health without wrapping docker ps.",
+    featureId: "docker",
+    href: "/docker",
+    modules: ["docker"],
   },
   {
     id: "gpu",

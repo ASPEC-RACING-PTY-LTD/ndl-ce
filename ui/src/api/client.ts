@@ -243,6 +243,35 @@ export async function listFeatures(): Promise<import("../generated/openapi").Fea
   return readJson(await request("/features"));
 }
 
+export async function getDocker(refresh = false): Promise<import("../generated/openapi").DockerInventory> {
+  return readJson(await request(refresh ? "/docker?refresh=1" : "/docker"));
+}
+
+export async function dockerContainerAction(
+  machineId: string,
+  containerId: string,
+  action: "start" | "stop" | "restart" | "pull" | "recreate" | "update",
+): Promise<import("../generated/openapi").DockerActionResult> {
+  return readJson(
+    await request(`/docker/machines/${encodeURIComponent(machineId)}/containers/${encodeURIComponent(containerId)}/actions`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    }),
+  );
+}
+
+export async function dockerContainerLogs(
+  machineId: string,
+  containerId: string,
+  tail = 200,
+): Promise<import("../generated/openapi").DockerLogs> {
+  return readJson(
+    await request(
+      `/docker/machines/${encodeURIComponent(machineId)}/containers/${encodeURIComponent(containerId)}/logs?tail=${tail}`,
+    ),
+  );
+}
+
 export async function getKubernetes(): Promise<import("../generated/openapi").KubernetesStatus> {
   return readJson(await request("/kubernetes"));
 }
@@ -1044,10 +1073,21 @@ export async function patchWorkload(
 }
 
 export async function createTerminalSession(
-  kind: "node" | "workload",
+  kind: "node" | "workload" | "docker",
   id: string,
   cwd = "/",
 ): Promise<import("./phase6").IOSession> {
+  if (kind === "docker") {
+    const slash = id.indexOf("/");
+    const machine = slash >= 0 ? id.slice(0, slash) : id;
+    const container = slash >= 0 ? id.slice(slash + 1) : "";
+    return readJson(
+      await request(`/docker/machines/${encodeURIComponent(machine)}/containers/${encodeURIComponent(container)}/terminal/sessions`, {
+        method: "POST",
+        body: JSON.stringify({ cwd }),
+      }),
+    );
+  }
   const prefix = kind === "node" ? "nodes" : "workloads";
   return readJson(
     await request(`/${prefix}/${id}/terminal/sessions`, {

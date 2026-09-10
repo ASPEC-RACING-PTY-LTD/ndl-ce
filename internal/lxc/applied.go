@@ -1,6 +1,7 @@
 package lxc
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -37,6 +38,11 @@ func (e *Engine) writeApplied(spec Spec, verified bool, sha string) error {
 // RuntimeLXC is the liblxc path used with typed lxc-attach/lxc-console argv.
 func (e *Engine) RuntimeLXC() string {
 	return e.lxcPath()
+}
+
+// InfoPID returns the guest init PID and IPv4 from lxc-info.
+func (e *Engine) InfoPID(ctx context.Context, id string) (int, string, error) {
+	return e.lxcInfo(ctx, id)
 }
 
 // LastApplied returns the on-disk last-applied spec for a workload UUID.

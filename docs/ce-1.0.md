@@ -20,6 +20,7 @@ That definition is the milestone. This tree has not reached it.
 - [cluster.md](cluster.md)
 - [store.md](store.md)
 - [ai.md](ai.md)
+- [docker.md](docker.md)
 - [api-compatibility.md](api-compatibility.md)
 - [checklists/ce-1.0-virt.md](checklists/ce-1.0-virt.md)
 - [checklists/ce-1.0-physical.md](checklists/ce-1.0-physical.md)

@@ -440,7 +440,7 @@ export interface RollingUpdatePreview {
 }
 
 export interface Feature {
-  id: "vm" | "ct" | "oci" | "gpu" | "k8s" | "distributed_storage" | "ai";
+  id: "vm" | "ct" | "oci" | "docker" | "gpu" | "k8s" | "distributed_storage" | "ai";
   title: string;
   enabled: boolean;
   core: boolean;
@@ -460,6 +460,152 @@ export interface FeatureList {
   base_install: "light";
   gpu_optional: boolean;
   reason?: string;
+}
+
+export interface DockerInventory {
+  observed_at?: string;
+  summary: DockerSummary;
+  machines: DockerMachine[];
+  projects: DockerProject[];
+  containers: DockerContainer[];
+}
+
+export interface DockerSummary {
+  machines: number;
+  projects: number;
+  containers: number;
+  running: number;
+  stopped: number;
+  healthy: number;
+  degraded: number;
+  critical: number;
+  daemons_down: number;
+  update_failed: number;
+}
+
+export interface DockerMachine {
+  id: string;
+  name: string;
+  kind: string;
+  ipv4?: string;
+  socket?: string;
+  daemon_ok: boolean;
+  daemon_error?: string;
+  docker_version?: string;
+  health: string;
+  health_reason?: string;
+  project_count?: number;
+  container_count?: number;
+  projects?: DockerProject[];
+}
+
+export interface DockerProject {
+  id: string;
+  machine_id: string;
+  machine_name?: string;
+  name: string;
+  working_dir?: string;
+  config_files?: string;
+  standalone?: boolean;
+  health: string;
+  health_reason?: string;
+  status_label: string;
+  service_count?: number;
+  running?: number;
+  stopped?: number;
+  update_failed?: boolean;
+  containers?: DockerContainer[];
+}
+
+export interface DockerContainer {
+  id: string;
+  machine_id: string;
+  machine_name?: string;
+  machine_kind?: string;
+  machine_ip?: string;
+  container_id: string;
+  name: string;
+  project_id?: string;
+  project?: string;
+  service?: string;
+  working_dir?: string;
+  config_files?: string;
+  image?: string;
+  image_id?: string;
+  state: string;
+  status?: string;
+  health: string;
+  health_reason?: string;
+  healthcheck?: string;
+  status_label: string;
+  exit_code?: number;
+  oom_killed?: boolean;
+  restarting?: boolean;
+  dead?: boolean;
+  restart_count?: number;
+  restart_loop?: boolean;
+  update_failed?: boolean;
+  update_error?: string;
+  error?: string;
+  created_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  uptime?: string;
+  ports?: DockerPort[];
+  mounts?: DockerMount[];
+  networks?: string[];
+  cpu_percent?: number;
+  memory_bytes?: number;
+  memory_limit?: number;
+  pids?: number;
+  recent_events?: DockerEvent[];
+  problems?: DockerProblem[];
+}
+
+export interface DockerPort {
+  ip?: string;
+  private_port: number;
+  public_port?: number;
+  type?: string;
+}
+
+export interface DockerMount {
+  type: string;
+  name?: string;
+  source?: string;
+  destination: string;
+  rw: boolean;
+  mode?: string;
+}
+
+export interface DockerEvent {
+  time: string;
+  type: string;
+  action: string;
+  status?: string;
+  actor?: string;
+  message: string;
+  severe?: boolean;
+}
+
+export interface DockerProblem {
+  kind: string;
+  level: string;
+  message: string;
+}
+
+export interface DockerLogs {
+  logs: string;
+}
+
+export interface DockerActionRequest {
+  action: "start" | "stop" | "restart" | "pull" | "recreate" | "update";
+}
+
+export interface DockerActionResult {
+  ok: boolean;
+  message?: string;
+  logs?: string;
 }
 
 export interface KubernetesStatus {
@@ -2178,6 +2324,16 @@ export type ListFeaturesPath = "/api/v1/features";
 export type EnableFeaturePath = "/api/v1/features/{id}/enable";
 
 export type DisableFeaturePath = "/api/v1/features/{id}/disable";
+
+export type GetDockerPath = "/api/v1/docker";
+
+export type GetDockerContainerPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}";
+
+export type GetDockerContainerLogsPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}/logs";
+
+export type DockerContainerActionPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}/actions";
+
+export type CreateDockerTerminalSessionPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}/terminal/sessions";
 
 export type GetKubernetesPath = "/api/v1/kubernetes";
 

@@ -596,6 +596,9 @@ func (s *Server) sessionJail(ctx context.Context, clusterID string, row appdb.IO
 	if row.TargetKind == appdb.IOTargetHost {
 		return "/", nil
 	}
+	if row.TargetKind == appdb.IOTargetDocker {
+		return "/", nil
+	}
 	if row.TargetKind == appdb.IOTargetVM {
 		if row.Kind == appdb.IOKindConsole {
 			return (&qemu.Engine{}).ConsoleSocket(row.TargetID, row.CWD)

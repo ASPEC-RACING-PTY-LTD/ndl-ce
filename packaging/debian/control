@@ -10,11 +10,11 @@ Rules-Requires-Root: no
 Package: nodal
 Architecture: amd64
 Depends: ndl-control, ndl-agent, ndl-ui, nodalctl
-Suggests: nodal-feature-oci, nodal-feature-gpu, nodal-feature-k8s, nodal-feature-distributed-storage, nodal-feature-ai
+Suggests: nodal-feature-oci, nodal-feature-docker, nodal-feature-gpu, nodal-feature-k8s, nodal-feature-distributed-storage, nodal-feature-ai
 Description: No-dal Community Edition metapackage
  Pulls in the control plane, node agent, web UI, and CLI.
  Phase 1 first-boot install. Core packages only.
- GPU, Kubernetes, distributed storage, and AI stay optional feature packages.
+ GPU, Kubernetes, distributed storage, AI, and Docker Management stay optional feature packages.
 
 Package: ndl-control
 Architecture: amd64
@@ -90,4 +90,13 @@ Depends: ndl-agent, ${misc:Depends}
 Description: Optional AI services package set for No-dal
  Not a Phase 1 dependency. Enable with nodalctl feature enable ai.
  Does not start model runtimes.
+
+Package: nodal-feature-docker
+Architecture: all
+Depends: ndl-agent, ${misc:Depends}
+Suggests: docker.io
+Description: Optional Docker Management for No-dal
+ Not a Phase 1 dependency. Enable with nodalctl feature enable docker.
+ Discovers Docker engines on the node and in system containers.
+ Does not install or start Docker Engine.
 

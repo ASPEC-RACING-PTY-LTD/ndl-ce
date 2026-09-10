@@ -10,6 +10,7 @@ const (
 	IDK8s          = "k8s"
 	IDDistStorage  = "distributed_storage"
 	IDAI           = "ai"
+	IDDocker       = "docker"
 	EnableK8s      = "enable-k8s"
 	DisableConfirm = "disable-feature"
 	// TinyK8sMemoryBytes is the RAM floor for Kubernetes without confirm.
@@ -20,8 +21,9 @@ const (
 	DistStorageReason          = "Distributed storage is an optional package set. Ceph is not started here."
 	AIReason                   = "AI services are an optional package set. Models are not started here."
 	OCIReason                  = "OCI extras are optional. Application workloads from Phase 21 stay available."
+	DockerReason               = "Docker Management is optional. Enabling it discovers Docker engines on this node and in system containers. It does not install Docker Engine."
 	CoreInstalledReason        = "Installed with the nodal metapackage."
-	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, and AI stay opt-in."
+	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, AI, and Docker Management stay opt-in."
 )
 
 // Module is one Settings Features row.
@@ -41,6 +43,7 @@ func Catalog() []Module {
 		{ID: IDVM, Title: "Virtual Machines", Core: true, StartsRuntime: true, DefaultReason: CoreInstalledReason},
 		{ID: IDCT, Title: "System Containers", Core: true, StartsRuntime: true, DefaultReason: CoreInstalledReason},
 		{ID: IDOCI, Title: "OCI Containers", Package: "nodal-feature-oci", DefaultReason: OCIReason},
+		{ID: IDDocker, Title: "Docker Management", Package: "nodal-feature-docker", DefaultReason: DockerReason},
 		{ID: IDGPU, Title: "GPU Services", Package: "nodal-feature-gpu", DefaultReason: GPUOptionalReason},
 		{ID: IDK8s, Title: "Kubernetes", Package: "nodal-feature-k8s", RequiresK8sAck: true, DefaultReason: K8sNotStartedReason},
 		{ID: IDDistStorage, Title: "Distributed Storage", Package: "nodal-feature-distributed-storage", DefaultReason: DistStorageReason},

@@ -43,6 +43,7 @@ import { GroupsPage } from "./pages/GroupsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { StacksPage, StackDetailPage } from "./pages/StacksPage";
+import { DockerPage } from "./pages/DockerPage";
 import { TasksPage } from "./pages/TasksPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
@@ -142,6 +143,9 @@ function matchPage(path: string) {
   }
   if (path.startsWith("/stacks/")) {
     return <StackDetailPage />;
+  }
+  if (path === "/docker" || path.startsWith("/docker/")) {
+    return <DockerPage />;
   }
   if (path === "/node" || path.startsWith("/node/")) {
     return <NodePage />;

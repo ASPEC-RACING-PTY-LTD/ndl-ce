@@ -31,6 +31,8 @@ type termSession interface {
 
 func startTermSession(ctx context.Context, h *Handler, req termRequest) (termSession, error) {
 	switch strings.TrimSpace(req.TargetKind) {
+	case "docker":
+		return startDockerExec(ctx, h, req)
 	case "vm-guest":
 		return startGuestPTY(ctx, h, req)
 	case "vm":

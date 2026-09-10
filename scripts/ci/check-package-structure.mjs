@@ -15,6 +15,7 @@ const required = [
   "packaging/debian/nodalctl.install",
   "packaging/debian/ndl-guest.install",
   "packaging/debian/nodal-feature-oci.install",
+  "packaging/debian/nodal-feature-docker.install",
   "packaging/debian/nodal-feature-gpu.install",
   "packaging/debian/nodal-feature-k8s.install",
   "packaging/debian/nodal-feature-distributed-storage.install",
@@ -52,6 +53,7 @@ const required = [
   "docs/cluster.md",
   "docs/store.md",
   "docs/ai.md",
+  "docs/docker.md",
   "docs/api-compatibility.md",
   "docs/checklists/ce-1.0-virt.md",
   "docs/checklists/ce-1.0-physical.md",
@@ -299,6 +301,7 @@ if (!control.includes("Package: ndl-guest")) {
 }
 for (const feat of [
   "Package: nodal-feature-oci",
+  "Package: nodal-feature-docker",
   "Package: nodal-feature-gpu",
   "Package: nodal-feature-k8s",
   "Package: nodal-feature-distributed-storage",

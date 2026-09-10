@@ -1,4 +1,4 @@
-export type TermKind = "node" | "workload";
+export type TermKind = "node" | "workload" | "docker";
 
 export type TermGroup = "host" | "system-container" | "vm" | "application";
 

@@ -14,6 +14,7 @@ const DOCS = [
   { id: "cluster", title: "Cluster", summary: "Join tokens, placement, migrate, single-writer HA." },
   { id: "store", title: "Store", summary: "Declarative manifests. No helper scripts." },
   { id: "ai", title: "AI", summary: "Ask, Plan, Operate, Automate. Not a shell." },
+  { id: "docker", title: "Docker", summary: "Optional Docker Management. Discover engines in system containers. Disabled by default." },
   {
     id: "checklists",
     title: "Checklists",

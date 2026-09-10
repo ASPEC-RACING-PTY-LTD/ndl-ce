@@ -66,6 +66,14 @@ export function honestStatus(value?: string): string {
       return "Healthy";
     case "degraded":
       return "Degraded";
+    case "critical":
+      return "Critical";
+    case "restarting":
+      return "Restarting";
+    case "dead":
+      return "Dead";
+    case "unhealthy":
+      return "Unhealthy";
     case "ready":
     case "Ready":
       return "Ready";

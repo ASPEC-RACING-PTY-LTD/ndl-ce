@@ -21,6 +21,7 @@ type observer struct {
 	Nightly    func(context.Context)
 	Alerts     func(context.Context)
 	lastHealth map[string]time.Time
+	dockerFP   map[string]string
 }
 
 func (o observer) run(ctx context.Context) {
@@ -85,6 +86,7 @@ func (o observer) run(ctx context.Context) {
 		o.reconcileNetworks(cctx, cluster.ID, node.ID)
 		o.reconcileWorkloads(cctx, cluster.ID, node.ID)
 		o.reconcilePlatform(cctx, cluster.ID, node.ID)
+		o.reconcileDocker(cctx, cluster.ID, node.ID)
 		if o.Nightly != nil {
 			go o.Nightly(context.Background())
 		}

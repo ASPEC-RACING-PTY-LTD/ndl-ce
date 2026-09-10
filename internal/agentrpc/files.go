@@ -41,6 +41,8 @@ func (h *Handler) resolveJail(targetKind, targetID, requested string) (string, e
 			return "/", nil
 		}
 		return filepath.Clean(requested), nil
+	case "docker":
+		return "/", nil
 	case iojail.TargetCT, "workload":
 		if h.Workloads != nil {
 			id := strings.TrimSpace(targetID)

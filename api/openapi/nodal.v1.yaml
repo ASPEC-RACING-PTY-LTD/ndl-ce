@@ -999,6 +999,113 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Feature"
+  /docker:
+    get:
+      operationId: getDocker
+      summary: Docker Management inventory. Disabled unless the docker feature is enabled.
+      responses:
+        "200":
+          description: Inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerInventory"
+        "404":
+          description: Feature is not enabled
+  /docker/machines/{machine_id}/containers/{container_id}:
+    get:
+      operationId: getDockerContainer
+      summary: One discovered container
+      parameters:
+        - name: machine_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: container_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Container
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerContainer"
+  /docker/machines/{machine_id}/containers/{container_id}/logs:
+    get:
+      operationId: getDockerContainerLogs
+      summary: Recent container logs
+      parameters:
+        - name: machine_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: container_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tail
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerLogs"
+  /docker/machines/{machine_id}/containers/{container_id}/actions:
+    post:
+      operationId: dockerContainerAction
+      summary: Start, stop, restart, pull, or recreate a container
+      parameters:
+        - name: machine_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: container_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DockerActionRequest"
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerActionResult"
+  /docker/machines/{machine_id}/containers/{container_id}/terminal/sessions:
+    post:
+      operationId: createDockerTerminalSession
+      summary: Open a docker exec terminal
+      parameters:
+        - name: machine_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: container_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Session
   /kubernetes:
     get:
       operationId: getKubernetes
@@ -5306,6 +5413,7 @@ components:
             - vm
             - ct
             - oci
+            - docker
             - gpu
             - k8s
             - distributed_storage
@@ -5362,6 +5470,358 @@ components:
         gpu_optional:
           type: boolean
         reason:
+          type: string
+    DockerInventory:
+      type: object
+      additionalProperties: false
+      required:
+        - summary
+        - machines
+        - projects
+        - containers
+      properties:
+        observed_at:
+          type: string
+        summary:
+          $ref: "#/components/schemas/DockerSummary"
+        machines:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerMachine"
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerProject"
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerContainer"
+    DockerSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - machines
+        - projects
+        - containers
+        - running
+        - stopped
+        - healthy
+        - degraded
+        - critical
+        - daemons_down
+        - update_failed
+      properties:
+        machines:
+          type: integer
+        projects:
+          type: integer
+        containers:
+          type: integer
+        running:
+          type: integer
+        stopped:
+          type: integer
+        healthy:
+          type: integer
+        degraded:
+          type: integer
+        critical:
+          type: integer
+        daemons_down:
+          type: integer
+        update_failed:
+          type: integer
+    DockerMachine:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+        - daemon_ok
+        - health
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        ipv4:
+          type: string
+        socket:
+          type: string
+        daemon_ok:
+          type: boolean
+        daemon_error:
+          type: string
+        docker_version:
+          type: string
+        health:
+          type: string
+        health_reason:
+          type: string
+        project_count:
+          type: integer
+        container_count:
+          type: integer
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerProject"
+    DockerProject:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - machine_id
+        - name
+        - health
+        - status_label
+      properties:
+        id:
+          type: string
+        machine_id:
+          type: string
+        machine_name:
+          type: string
+        name:
+          type: string
+        working_dir:
+          type: string
+        config_files:
+          type: string
+        standalone:
+          type: boolean
+        health:
+          type: string
+        health_reason:
+          type: string
+        status_label:
+          type: string
+        service_count:
+          type: integer
+        running:
+          type: integer
+        stopped:
+          type: integer
+        update_failed:
+          type: boolean
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerContainer"
+    DockerContainer:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - machine_id
+        - container_id
+        - name
+        - state
+        - health
+        - status_label
+      properties:
+        id:
+          type: string
+        machine_id:
+          type: string
+        machine_name:
+          type: string
+        machine_kind:
+          type: string
+        machine_ip:
+          type: string
+        container_id:
+          type: string
+        name:
+          type: string
+        project_id:
+          type: string
+        project:
+          type: string
+        service:
+          type: string
+        working_dir:
+          type: string
+        config_files:
+          type: string
+        image:
+          type: string
+        image_id:
+          type: string
+        state:
+          type: string
+        status:
+          type: string
+        health:
+          type: string
+        health_reason:
+          type: string
+        healthcheck:
+          type: string
+        status_label:
+          type: string
+        exit_code:
+          type: integer
+        oom_killed:
+          type: boolean
+        restarting:
+          type: boolean
+        dead:
+          type: boolean
+        restart_count:
+          type: integer
+        restart_loop:
+          type: boolean
+        update_failed:
+          type: boolean
+        update_error:
+          type: string
+        error:
+          type: string
+        created_at:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        uptime:
+          type: string
+        ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerPort"
+        mounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerMount"
+        networks:
+          type: array
+          items:
+            type: string
+        cpu_percent:
+          type: number
+        memory_bytes:
+          type: integer
+        memory_limit:
+          type: integer
+        pids:
+          type: integer
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerEvent"
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerProblem"
+    DockerPort:
+      type: object
+      additionalProperties: false
+      required:
+        - private_port
+      properties:
+        ip:
+          type: string
+        private_port:
+          type: integer
+        public_port:
+          type: integer
+        type:
+          type: string
+    DockerMount:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - destination
+        - rw
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        source:
+          type: string
+        destination:
+          type: string
+        rw:
+          type: boolean
+        mode:
+          type: string
+    DockerEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - time
+        - type
+        - action
+        - message
+      properties:
+        time:
+          type: string
+        type:
+          type: string
+        action:
+          type: string
+        status:
+          type: string
+        actor:
+          type: string
+        message:
+          type: string
+        severe:
+          type: boolean
+    DockerProblem:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - level
+        - message
+      properties:
+        kind:
+          type: string
+        level:
+          type: string
+        message:
+          type: string
+    DockerLogs:
+      type: object
+      additionalProperties: false
+      required:
+        - logs
+      properties:
+        logs:
+          type: string
+    DockerActionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - start
+            - stop
+            - restart
+            - pull
+            - recreate
+            - update
+    DockerActionResult:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+        logs:
           type: string
     KubernetesStatus:
       type: object

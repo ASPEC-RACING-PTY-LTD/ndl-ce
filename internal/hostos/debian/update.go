@@ -28,6 +28,7 @@ var PackageNames = []string{"ndl-control", "ndl-agent", "ndl-ui", "nodal", "noda
 // FeaturePackageNames are optional Phase 35 modules. They are not Depends of nodal.
 var FeaturePackageNames = []string{
 	"nodal-feature-oci",
+	"nodal-feature-docker",
 	"nodal-feature-gpu",
 	"nodal-feature-k8s",
 	"nodal-feature-distributed-storage",

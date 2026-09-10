@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
+	"github.com/no-dal/ndl-ce/internal/docker"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/lxc"
@@ -457,6 +458,62 @@ func (c Client) UploadLibrary(ctx context.Context, begin storage.BeginUploadRequ
 		return storage.UploadResult{}, err
 	}
 	return out, nil
+}
+
+type dockerSpec struct {
+	Hints []docker.MachineHint `json:"hints,omitempty"`
+	Tail  int                  `json:"tail,omitempty"`
+}
+
+// DockerSnapshot discovers Docker engines across the host and hinted workloads.
+func (c Client) DockerSnapshot(ctx context.Context, hints []docker.MachineHint) (docker.Inventory, error) {
+	raw, err := json.Marshal(dockerSpec{Hints: hints})
+	if err != nil {
+		return docker.Inventory{}, err
+	}
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "snapshot", SpecJson: raw}},
+	}))
+	if err != nil {
+		return docker.Inventory{}, err
+	}
+	var out docker.Inventory
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return docker.Inventory{}, err
+	}
+	return out, nil
+}
+
+// DockerAction is a typed start/stop/restart/pull/recreate/logs call.
+func (c Client) DockerAction(ctx context.Context, req docker.ActionRequest) (docker.ActionResult, error) {
+	raw, _ := json.Marshal(dockerSpec{Tail: req.Tail})
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{
+			Action: req.Action, MachineId: req.MachineID, ContainerId: req.ContainerID, SpecJson: raw,
+		}},
+	}))
+	if err != nil {
+		return docker.ActionResult{}, err
+	}
+	var out docker.ActionResult
+	if len(res.Msg.GetResultJson()) > 0 {
+		_ = json.Unmarshal(res.Msg.GetResultJson(), &out)
+	}
+	if !out.OK {
+		out.OK = res.Msg.GetOk()
+		if out.Message == "" {
+			out.Message = res.Msg.GetMessage()
+		}
+	}
+	return out, nil
+}
+
+// DockerIdle stops Docker discovery caches on the agent.
+func (c Client) DockerIdle(ctx context.Context) error {
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "idle"}},
+	}))
+	return err
 }
 
 func decodeInventory(raw []byte) (inventory.Inventory, error) {

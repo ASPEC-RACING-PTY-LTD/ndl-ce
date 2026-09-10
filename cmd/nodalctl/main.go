@@ -49,6 +49,13 @@ func run(args []string) error {
   feature list
   feature enable NAME [--confirm enable-k8s]
   feature disable NAME [--confirm disable-feature]
+  docker show
+  docker logs MACHINE CONTAINER
+  docker start MACHINE CONTAINER
+  docker stop MACHINE CONTAINER
+  docker restart MACHINE CONTAINER
+  docker pull MACHINE CONTAINER
+  docker recreate MACHINE CONTAINER
   kubernetes show
   kubernetes start --confirm start-kubelet
   kubernetes stop
@@ -218,6 +225,8 @@ func run(args []string) error {
 		return cmdCluster(args[1:])
 	case "feature":
 		return cmdFeature(args[1:])
+	case "docker":
+		return cmdDocker(args[1:])
 	case "kubernetes":
 		return cmdKubernetes(args[1:])
 	case "policy":
@@ -827,7 +836,7 @@ func cmdFeature(args []string) error {
 		return cmdGet("/api/v1/features")
 	case "enable":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: nodalctl feature enable oci|gpu|k8s|kubernetes|distributed_storage|ai [--confirm enable-k8s]")
+			return fmt.Errorf("usage: nodalctl feature enable oci|docker|gpu|k8s|kubernetes|distributed_storage|ai [--confirm enable-k8s]")
 		}
 		f := parseFlags(args[2:])
 		if f["confirm"] != "" {
@@ -845,6 +854,28 @@ func cmdFeature(args []string) error {
 		return postJSON("/api/v1/features/"+args[1]+"/disable", map[string]any{}, true)
 	default:
 		return fmt.Errorf("usage: nodalctl feature list|enable NAME|disable NAME")
+	}
+}
+
+func cmdDocker(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: nodalctl docker show|logs MACHINE CONTAINER|start|stop|restart|pull|recreate MACHINE CONTAINER")
+	}
+	switch args[0] {
+	case "show":
+		return cmdGet("/api/v1/docker")
+	case "logs":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: nodalctl docker logs MACHINE CONTAINER")
+		}
+		return cmdGet("/api/v1/docker/machines/" + args[1] + "/containers/" + args[2] + "/logs")
+	case "start", "stop", "restart", "pull", "recreate":
+		if len(args) < 3 {
+			return fmt.Errorf("usage: nodalctl docker %s MACHINE CONTAINER", args[0])
+		}
+		return postJSON("/api/v1/docker/machines/"+args[1]+"/containers/"+args[2]+"/actions", map[string]any{"action": args[0]}, true)
+	default:
+		return fmt.Errorf("usage: nodalctl docker show|logs MACHINE CONTAINER|start|stop|restart|pull|recreate MACHINE CONTAINER")
 	}
 }
 

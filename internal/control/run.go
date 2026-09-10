@@ -148,6 +148,7 @@ func Run(cfg Config) error {
 		VM:          httpapi.AdaptVM(agent),
 		Migrate:     httpapi.AdaptMigrate(agent),
 		OCI:         httpapi.AdaptOCI(agent),
+		Docker:      httpapi.AdaptDocker(agent),
 		Backup:      httpapi.AdaptBackup(agent),
 		Object:      httpapi.AdaptObject(agent),
 		Verify:      httpapi.AdaptVerify(agent),
@@ -173,7 +174,7 @@ func Run(cfg Config) error {
 	if enabled {
 		srv.TLSRequired = true
 	}
-	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups, Alerts: srv.TickAlerts, lastHealth: map[string]time.Time{}}.run(runCtx)
+	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups, Alerts: srv.TickAlerts, lastHealth: map[string]time.Time{}, dockerFP: map[string]string{}}.run(runCtx)
 	handler := srv.Handler()
 	instances, err := controlHTTPInstances(cfg, srv, handler, challenges)
 	if err != nil {

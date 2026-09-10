@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
+	"github.com/no-dal/ndl-ce/internal/docker"
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/inventory"
@@ -42,6 +43,7 @@ type Handler struct {
 	Workloads     *lxc.Engine
 	QEMU          *qemu.Engine
 	OCI           *oci.Engine
+	Docker        *docker.Engine
 	ZFS           *storage.ZFSEngine
 	LVM           *storage.LVMEngine
 	Datastore     *storage.DatastoreEngine
@@ -54,6 +56,7 @@ type Handler struct {
 	mu         sync.Mutex
 	last       inventory.Inventory
 	uploadOnce sync.Once
+	dockerOnce sync.Once
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)
@@ -233,6 +236,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execDiskConvert(ctx, req.Msg.GetDiskConvert())
 	case req.Msg.GetArchiveExtract() != nil:
 		return h.execArchiveExtract(ctx, req.Msg.GetArchiveExtract())
+	case req.Msg.GetDockerMgmt() != nil:
+		return h.execDockerMgmt(ctx, req.Msg.GetDockerMgmt())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

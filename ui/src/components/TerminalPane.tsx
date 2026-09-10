@@ -192,6 +192,10 @@ export function TerminalPane({
       setTabError(tab.tabId, "Connect the terminal before dropping files.");
       return;
     }
+    if (tab.target.kind === "docker") {
+      setTabError(tab.tabId, "File drop is not available for Docker exec sessions.");
+      return;
+    }
     const located = uploadDirFromCwd(tab.cwd, tab.jailRoot);
     const destDir = located.path;
     const abort = dropAbort(tab.tabId);

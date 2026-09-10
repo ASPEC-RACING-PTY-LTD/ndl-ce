@@ -81,6 +81,7 @@ override_dh_auto_install:
 	install -m 0644 $(MODROOT)/packaging/modules-load.d/ndl-agent.conf debian/tmp/usr/lib/modules-load.d/ndl-agent.conf
 	mkdir -p debian/tmp/usr/share/ndl/features
 	install -m 0644 $(MODROOT)/packaging/share/ndl/features/oci debian/tmp/usr/share/ndl/features/oci
+	install -m 0644 $(MODROOT)/packaging/share/ndl/features/docker debian/tmp/usr/share/ndl/features/docker
 	install -m 0644 $(MODROOT)/packaging/share/ndl/features/gpu debian/tmp/usr/share/ndl/features/gpu
 	install -m 0644 $(MODROOT)/packaging/share/ndl/features/k8s debian/tmp/usr/share/ndl/features/k8s
 	install -m 0644 $(MODROOT)/packaging/share/ndl/features/distributed-storage debian/tmp/usr/share/ndl/features/distributed-storage

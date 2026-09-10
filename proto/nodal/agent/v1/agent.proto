@@ -185,7 +185,15 @@ message ExecuteRequest {
     Distributed distributed = 39;
     DiskConvert disk_convert = 40;
     ArchiveExtract archive_extract = 41;
+    DockerMgmt docker_mgmt = 42;
   }
+}
+
+message DockerMgmt {
+  string action = 1;
+  string machine_id = 2;
+  string container_id = 3;
+  bytes spec_json = 4;
 }
 
 message OCIRuntime {

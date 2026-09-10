@@ -82,7 +82,7 @@ export function FeaturesPage() {
     setError(null);
     try {
       let confirm: string | undefined;
-      if (item.workload_count > 0) {
+      if (item.workload_count > 0 || ["k8s", "distributed_storage", "ai", "docker"].includes(item.id)) {
         if (
           !window.confirm(
             "Disable does not delete workloads. Turn the module off and leave existing workloads running?",

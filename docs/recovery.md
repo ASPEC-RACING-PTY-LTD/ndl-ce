@@ -243,8 +243,8 @@ apply stays unavailable until the dest agent is connected.
 ## Feature modules (Phase 35)
 
 The `nodal` metapackage stays light. GPU, Kubernetes, distributed
-storage, and AI are extra packages. `GET /api/v1/features` lists core
-VM/CT as installed and optional modules as off.
+storage, AI, and Docker Management are extra packages. `GET /api/v1/features`
+lists core VM/CT as installed and optional modules as off.
 
 `nodalctl feature enable oci` installs `nodal-feature-oci` through the
 typed HostUpdate path. Enabling Kubernetes on a node at or below 8 GiB
@@ -253,9 +253,11 @@ Disable needs confirm when workloads exist and does not delete them.
 
 ### Recovery matrix (features)
 
-1. Fresh `apt-get install nodal` does not pull GPU, Kubernetes, Ceph, or AI.
+1. Fresh `apt-get install nodal` does not pull GPU, Kubernetes, Ceph, AI, or Docker Management.
 2. Tiny-node Kubernetes enable without confirm is refused. Kubelet stays down.
 3. Disable with confirm leaves OCI workloads running.
+4. Docker Management stays off until `nodalctl feature enable docker`. Discovery
+   does not run while the module is disabled.
 
 ## No-dal Store (Phase 36)
 

@@ -15,7 +15,13 @@ describe("nav disclosure", () => {
     expect(labels).not.toContain("Cluster");
     expect(labels).not.toContain("Automation");
     expect(labels).not.toContain("Ask");
-    expect(labels).not.toContain("Kubernetes");
+    expect(labels).not.toContain("Docker");
+  });
+
+  it("shows Docker on Simple when the docker feature is enabled", () => {
+    const prefs = parseDisclosurePrefs(null);
+    const items = visibleModules(prefs, { docker: true }, admin);
+    expect(items.map((item) => item.label)).toContain("Docker");
   });
 
   it("adds enabled optional modules on Simple without showing the rest of Advanced", () => {

@@ -203,7 +203,7 @@ func TestPhase35DisableK8sDistributedAIRequiresConfirm(t *testing.T) {
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 
-	ids := []string{features.IDK8s, features.IDDistStorage, features.IDAI}
+	ids := []string{features.IDK8s, features.IDDistStorage, features.IDAI, features.IDDocker}
 	for _, id := range ids {
 		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/features/"+id+"/enable", strings.NewReader(`{}`))
 		req.Header.Set("Content-Type", "application/json")

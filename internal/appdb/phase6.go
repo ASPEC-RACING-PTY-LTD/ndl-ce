@@ -6,6 +6,7 @@ const (
 	IOTargetHost            = "host"
 	IOTargetSystemContainer = "system-container"
 	IOTargetVM              = "vm"
+	IOTargetDocker          = "docker"
 	IOKindTerminal          = "terminal"
 	IOKindConsole           = "console"
 	IOStatePending          = "pending"

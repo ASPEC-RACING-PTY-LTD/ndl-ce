@@ -19,8 +19,12 @@ func TestCatalogDefaultSmall(t *testing.T) {
 			t.Fatalf("%s must not start a runtime from Phase 35", m.ID)
 		}
 	}
-	if optional != 5 {
+	if optional != 6 {
 		t.Fatalf("optional=%d", optional)
+	}
+	docker, ok := Lookup(IDDocker)
+	if !ok || docker.Package != "nodal-feature-docker" || docker.StartsRuntime || docker.Core {
+		t.Fatalf("%+v", docker)
 	}
 	k8s, ok := Lookup(IDK8s)
 	if !ok || !k8s.RequiresK8sAck || k8s.StartsRuntime {

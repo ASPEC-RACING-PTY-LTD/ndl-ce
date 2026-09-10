@@ -119,6 +119,9 @@ func (s *Server) disableFeature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "feature.disable", "ok", mod.ID)
+	if mod.ID == features.IDDocker {
+		s.dockerIdle(r.Context())
+	}
 	writeJSON(w, http.StatusOK, s.featureJSON(r, p.User.ClusterID, mod))
 }
 
@@ -203,6 +206,14 @@ func (s *Server) featureWorkloadCount(r *http.Request, clusterID, id string) int
 	case features.IDGPU:
 		as, _ := s.Store.ListGPUAssignments(r.Context(), clusterID)
 		return len(as)
+	case features.IDDocker:
+		if s.docker == nil {
+			return 0
+		}
+		s.docker.mu.Lock()
+		n := len(s.docker.inv.Containers)
+		s.docker.mu.Unlock()
+		return n
 	default:
 		return 0
 	}
@@ -231,7 +242,7 @@ func featureDisableRequiresConfirm(mod features.Module, enabled bool, workloadCo
 		return false
 	}
 	switch mod.ID {
-	case features.IDK8s, features.IDDistStorage, features.IDAI:
+	case features.IDK8s, features.IDDistStorage, features.IDAI, features.IDDocker:
 		return true
 	default:
 		return false

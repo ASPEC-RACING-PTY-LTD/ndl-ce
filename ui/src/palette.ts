@@ -34,6 +34,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "workloads", label: "Workloads", href: "/workloads", keywords: ["vm", "container"] },
   { id: "terminal", label: "Jump to Terminal", href: "/terminal", keywords: ["shell", "pty", "console", "quick switch"] },
   { id: "stacks", label: "Stacks", href: "/stacks", keywords: ["compose", "multi-container", "oci"] },
+  { id: "docker", label: "Docker", href: "/docker", keywords: ["docker", "compose", "container", "engine"] },
   {
     id: "import-stack",
     label: "Import Compose stack",
@@ -67,7 +68,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "network", label: "Network", href: "/network", keywords: ["bridge", "nic"] },
   { id: "node", label: "Node", href: "/node", keywords: ["host", "hardware"] },
   { id: "cluster", label: "Cluster", href: "/settings/cluster", keywords: ["join", "worker", "node"] },
-  { id: "features", label: "Add Features", href: "/settings/features", keywords: ["modules", "kubernetes", "gpu", "oci", "integrations", "features"] },
+  { id: "features", label: "Add Features", href: "/settings/features", keywords: ["modules", "kubernetes", "gpu", "oci", "docker", "integrations", "features"] },
   { id: "kubernetes", label: "Kubernetes", href: "/settings/kubernetes", keywords: ["kubelet", "k8s"] },
   { id: "store", label: "Store", href: "/store", keywords: ["apps", "manifest", "jellyfin"] },
   { id: "automation", label: "Automation", href: "/automation", keywords: ["policy", "storage", "pressure", "migrate"] },

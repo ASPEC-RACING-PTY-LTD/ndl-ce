@@ -75,6 +75,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"Distributed distributed =",
 		"DiskConvert disk_convert =",
 		"ArchiveExtract archive_extract =",
+		"DockerMgmt docker_mgmt =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {
