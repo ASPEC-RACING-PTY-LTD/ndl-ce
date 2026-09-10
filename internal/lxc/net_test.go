@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -299,4 +300,18 @@ func TestChownGuestNetFilesDanglingResolvSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGuestResolvedResolv(t, root)
+	if _, err := os.Lstat("/usr/bin/nano"); err != nil {
+		return
+	}
+	st, err := os.Lstat(filepath.Join(root, "usr", "bin", "nano"))
+	if err != nil {
+		t.Fatal("provision must install nano before chown")
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatal("stat")
+	}
+	if sys.Uid != 100000 || sys.Gid != 100000 {
+		t.Fatalf("unprivileged nano owner %d:%d", sys.Uid, sys.Gid)
+	}
 }

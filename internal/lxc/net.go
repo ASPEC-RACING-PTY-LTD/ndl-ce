@@ -246,7 +246,10 @@ func provisionGuest(rootfs, hostname string, cfg IPConfig) error {
 	if err := ensureGuestIdentity(rootfs, hostname); err != nil {
 		return err
 	}
-	return ensureGuestLocale(rootfs)
+	if err := ensureGuestLocale(rootfs); err != nil {
+		return err
+	}
+	return ensureGuestNano(rootfs)
 }
 
 func ensureGuestIdentity(rootfs, hostname string) error {
@@ -460,13 +463,47 @@ func chownGuestNetFiles(rootfs string, uid, gid int) error {
 		"etc/resolv.conf",
 		"etc/default/locale",
 		"etc/locale.conf",
+		"usr/bin/nano",
+		"usr/bin/rnano",
+		"etc/nanorc",
+		"usr/share/nano",
+		"lib/x86_64-linux-gnu/libncursesw.so.6",
+		"lib/x86_64-linux-gnu/libtinfo.so.6",
+		"usr/lib/x86_64-linux-gnu/libncursesw.so.6",
+		"usr/lib/x86_64-linux-gnu/libtinfo.so.6",
 	}
 	for _, rel := range rels {
-		p := filepath.Join(rootfs, rel)
-		if _, err := os.Lstat(p); err != nil {
-			continue
+		if err := chownGuestPath(filepath.Join(rootfs, rel), uid, gid); err != nil {
+			return err
 		}
-		if err := os.Lchown(p, uid, gid); err != nil {
+	}
+	return nil
+}
+
+func chownGuestPath(p string, uid, gid int) error {
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return nil
+	}
+	if err := os.Lchown(p, uid, gid); err != nil {
+		return err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(p)
+		if err != nil || target == "" || filepath.IsAbs(target) {
+			return nil
+		}
+		return chownGuestPath(filepath.Join(filepath.Dir(p), target), uid, gid)
+	}
+	if !fi.IsDir() {
+		return nil
+	}
+	entries, err := os.ReadDir(p)
+	if err != nil {
+		return err
+	}
+	for _, ent := range entries {
+		if err := chownGuestPath(filepath.Join(p, ent.Name()), uid, gid); err != nil {
 			return err
 		}
 	}

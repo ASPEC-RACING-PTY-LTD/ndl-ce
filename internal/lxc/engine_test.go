@@ -390,6 +390,9 @@ func TestReconcileRuntimeConfigsRewritesObsoleteApparmor(t *testing.T) {
 	if !strings.Contains(string(cfg), "lxc.idmap = "+DefaultUIDMap) {
 		t.Fatal("reconcile must keep unprivileged idmap")
 	}
+	if _, err := os.Stat(filepath.Join(root, "usr", "bin", "nano")); err == nil {
+		t.Fatal("SkipHostCmds reconcile must not copy host nano")
+	}
 	applied, err := e.readApplied(id)
 	if err != nil {
 		t.Fatal(err)

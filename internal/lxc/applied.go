@@ -115,10 +115,12 @@ func (e *Engine) RewriteRuntimeConfig(id string) error {
 }
 
 // ReconcileRuntimeConfigs rewrites every applied system-container config
-// from last-applied plus current host overrides. Idempotent. Running guests
-// are not stopped; the next start loads the rewritten keys.
+// from last-applied plus current host overrides, and reapplies guest files
+// (network, locale, nano) into the mounted rootfs. Idempotent. Running
+// guests are not stopped; rewritten LXC keys load on the next start, and
+// guest files appear immediately in a mounted rootfs.
 func (e *Engine) ReconcileRuntimeConfigs() {
 	for _, id := range e.ListAppliedIDs() {
-		_ = e.RewriteRuntimeConfig(id)
+		_ = e.writeAppliedConfig(id)
 	}
 }

@@ -32,9 +32,11 @@ func prepareCT(e *lxc.Engine, args []string) error {
 		return nil
 	}
 	rootfs := applied.Spec.RootfsPath
-	if rootfs == "" {
-		return nil
+	if rootfs != "" {
+		d := storage.Directory{Run: storage.LiveRun}
+		if err := d.EnsureDirectoryRootMounted(context.Background(), rootfs); err != nil {
+			return err
+		}
 	}
-	d := storage.Directory{Run: storage.LiveRun}
-	return d.EnsureDirectoryRootMounted(context.Background(), rootfs)
+	return e.ApplyGuestFiles(args[0])
 }

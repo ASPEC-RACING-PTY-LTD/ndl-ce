@@ -55,6 +55,34 @@ func TestPrepareCTRewritesObsoleteApparmor(t *testing.T) {
 			t.Fatal(body)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(root, "usr", "bin", "nano")); err == nil {
+		t.Fatal("SkipHostCmds prepare must not copy host nano")
+	}
+}
+
+func TestPrepareCTAppliesGuestNano(t *testing.T) {
+	if _, err := os.Lstat("/usr/bin/nano"); err != nil {
+		t.Skip("host nano is required")
+	}
+	dir := t.TempDir()
+	e := &lxc.Engine{DataDir: dir, SkipHostCmds: true, FakeUnpack: true}
+	id := uuid.NewString()
+	root := filepath.Join(dir, "rootfs", id)
+	_, err := e.Create(context.Background(), lxc.Spec{
+		WorkloadID: id, Name: "prep-nano", ImagePin: "imported",
+		VolumeID: uuid.NewString(), RootfsPath: root, SkipImage: true, NoStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SkipHostCmds = false
+	e.FakeUnpack = false
+	if err := prepareCT(e, []string{id}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "usr", "bin", "nano")); err != nil {
+		t.Fatal("prepare must install nano after remount")
+	}
 }
 
 func TestPrepareCTUsage(t *testing.T) {

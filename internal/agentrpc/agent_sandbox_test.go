@@ -95,6 +95,9 @@ func TestCTUnitPreparesDirectoryRootMount(t *testing.T) {
 	if !strings.Contains(string(prep), "RewriteRuntimeConfig") {
 		t.Fatal("ndl-ct-prepare must rewrite LXC config from last-applied before lxc-start")
 	}
+	if !strings.Contains(string(prep), "ApplyGuestFiles") {
+		t.Fatal("ndl-ct-prepare must apply guest files after remount so nano lands without ndl-agent")
+	}
 	if strings.Contains(text, "BindsTo=ndl-agent") || strings.Contains(text, "Requires=ndl-agent") {
 		t.Fatal("container units must not bind to ndl-agent")
 	}

@@ -253,6 +253,15 @@ func (e *Engine) writeAppliedConfig(id string) error {
 	if err := e.RewriteRuntimeConfig(id); err != nil {
 		return err
 	}
+	return e.ApplyGuestFiles(id)
+}
+
+// ApplyGuestFiles writes network, locale, hostname, and nano into the guest
+// rootfs from last-applied. SkipHostCmds and FakeUnpack skip host copies.
+func (e *Engine) ApplyGuestFiles(id string) error {
+	if e.SkipHostCmds || e.FakeUnpack {
+		return nil
+	}
 	applied, err := e.readApplied(id)
 	if err != nil {
 		return nil
@@ -261,7 +270,7 @@ func (e *Engine) writeAppliedConfig(id string) error {
 	if err != nil {
 		return err
 	}
-	if e.SkipHostCmds || e.FakeUnpack {
+	if strings.TrimSpace(spec.RootfsPath) == "" {
 		return nil
 	}
 	if err := provisionGuest(spec.RootfsPath, hostnameOf(spec.Name, spec.WorkloadID), spec.IP); err != nil {
