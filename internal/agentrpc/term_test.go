@@ -22,6 +22,11 @@ func TestTermArgvSystemContainerUsesTypedLXCAttach(t *testing.T) {
 		"/usr/bin/lxc-attach",
 		"-P", "/var/lib/ndl/runtime/lxc",
 		"-n", id,
+		"--clear-env",
+		"-v", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"-v", "TERM=xterm-256color",
+		"-v", "HOME=/root",
+		"-v", "LANG=C.UTF-8",
 		"--", "/bin/sh", "-l",
 	}
 	if strings.Join(argv, " ") != strings.Join(want, " ") {
@@ -34,6 +39,9 @@ func TestTermArgvSystemContainerUsesTypedLXCAttach(t *testing.T) {
 		t.Fatalf("attach binary %q", argv[0])
 	}
 	joined := strings.Join(argv, " ")
+	if !strings.Contains(joined, "--clear-env") || !strings.Contains(joined, "LANG=C.UTF-8") {
+		t.Fatal("attach must not leak host LANG")
+	}
 	if strings.Contains(joined, "sh -c") || strings.Contains(joined, "Host.Exec") {
 		t.Fatal("typed attach must not become a shell command")
 	}

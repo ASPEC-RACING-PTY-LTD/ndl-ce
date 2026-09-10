@@ -172,6 +172,7 @@ inspect_control_postinst() {
   inspect_script ndl-control postinst "$path"
   grep -q 'deb-systemd-invoke' "$path" || fail "generated ndl-control.postinst missing deb-systemd-invoke"
   grep -q 'ndl-control.service' "$path" || fail "generated ndl-control.postinst missing ndl-control.service"
+  grep -q 'ndl-control.socket' "$path" || fail "generated ndl-control.postinst missing ndl-control.socket"
   grep -q '_dh_action=restart' "$path" || fail "generated ndl-control.postinst missing upgrade restart action"
   if grep -E '^[[:space:]]*systemctl[[:space:]]+start.*ndl-control' "$path" >/dev/null; then
     fail "generated ndl-control.postinst must not systemctl start ndl-control"

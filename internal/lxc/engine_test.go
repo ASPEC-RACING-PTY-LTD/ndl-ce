@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -496,5 +497,65 @@ func TestCloneRejectsUncleanRootfsPath(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("unclean clone rootfs_path must fail before mkdir")
+	}
+}
+
+func TestStartWaitsForInitPID(t *testing.T) {
+	id := uuid.NewString()
+	var infoCalls int
+	e := &Engine{
+		DataDir:   t.TempDir(),
+		ReadyWait: 2 * time.Second,
+		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			switch name {
+			case BinSystemctl:
+				if len(args) > 0 && args[0] == "is-active" {
+					return []byte("active\n"), nil
+				}
+				return []byte{}, nil
+			case BinLXCInfo:
+				infoCalls++
+				if infoCalls < 3 {
+					return []byte("State: RUNNING\nPid: 0\n"), nil
+				}
+				return []byte("State: RUNNING\nPid: 4242\n"), nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	if err := e.Start(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if infoCalls < 3 {
+		t.Fatalf("must poll lxc-info until pid is set, got %d", infoCalls)
+	}
+}
+
+func TestStartFailsIfInitPIDNeverAppears(t *testing.T) {
+	id := uuid.NewString()
+	e := &Engine{
+		DataDir:   t.TempDir(),
+		ReadyWait: 250 * time.Millisecond,
+		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			switch name {
+			case BinSystemctl:
+				if len(args) > 0 && args[0] == "is-active" {
+					return []byte("active\n"), nil
+				}
+				return []byte{}, nil
+			case BinLXCInfo:
+				return []byte("State: RUNNING\nPid: 0\n"), nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	err := e.Start(context.Background(), id)
+	if err == nil {
+		t.Fatal("Start must fail when init pid never appears")
+	}
+	if !strings.Contains(err.Error(), "attachable") {
+		t.Fatal(err)
 	}
 }

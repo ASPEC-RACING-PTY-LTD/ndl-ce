@@ -127,3 +127,117 @@ func TestEnsureGuestNetworkDHCPWritesClientUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEnsureGuestNetworkReplacesStubResolv(t *testing.T) {
+	root := t.TempDir()
+	etc := filepath.Join(root, "etc")
+	if err := os.MkdirAll(etc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/run/systemd/resolve/stub-resolv.conf", filepath.Join(etc, "resolv.conf")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureGuestNetwork(root, IPConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(filepath.Join(etc, "resolv.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("dangling stub resolv.conf must become a regular file")
+	}
+	body, err := os.ReadFile(filepath.Join(etc, "resolv.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "192.168.2.1") {
+		t.Fatal("must not hardcode this LAN DNS")
+	}
+	drop, err := os.ReadFile(filepath.Join(root, "etc", "systemd", "system", "systemd-resolved.service.d", "zzzz-ndl-lxc.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(drop), "RestrictNamespaces=no") {
+		t.Fatal(string(drop))
+	}
+	conf, err := os.ReadFile(filepath.Join(root, "etc", "systemd", "resolved.conf.d", "ndl-lxc.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(conf), "DNSStubListener=no") {
+		t.Fatal(string(conf))
+	}
+}
+
+func TestEnsureGuestNetworkStaticDNSUnlinksStub(t *testing.T) {
+	root := t.TempDir()
+	etc := filepath.Join(root, "etc")
+	if err := os.MkdirAll(etc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../run/systemd/resolve/stub-resolv.conf", filepath.Join(etc, "resolv.conf")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureGuestNetwork(root, IPConfig{DNS: []string{"1.1.1.1"}}); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(filepath.Join(etc, "resolv.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("must unlink stub before writing nameservers")
+	}
+	body, err := os.ReadFile(filepath.Join(etc, "resolv.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "nameserver 1.1.1.1") {
+		t.Fatal(string(body))
+	}
+}
+
+func TestProvisionGuestHostnameLocale(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "etc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "etc", "hosts"), []byte("127.0.0.1 localhost\n127.0.1.1\tLXCNAME\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := provisionGuest(root, "aspecracing", IPConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	hn, err := os.ReadFile(filepath.Join(root, "etc", "hostname"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(hn)) != "aspecracing" {
+		t.Fatal(string(hn))
+	}
+	hosts, err := os.ReadFile(filepath.Join(root, "etc", "hosts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(hosts), "LXCNAME") {
+		t.Fatal(string(hosts))
+	}
+	if !strings.Contains(string(hosts), "aspecracing") {
+		t.Fatal(string(hosts))
+	}
+	loc, err := os.ReadFile(filepath.Join(root, "etc", "default", "locale"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(loc) != "LANG=C.UTF-8\n" {
+		t.Fatal(string(loc))
+	}
+	conf, err := os.ReadFile(filepath.Join(root, "etc", "locale.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(conf) != "LANG=C.UTF-8\n" {
+		t.Fatal(string(conf))
+	}
+}

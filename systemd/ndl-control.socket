@@ -1,0 +1,13 @@
+[Unit]
+Description=No-dal local control socket
+Documentation=https://no-dal.com
+
+[Socket]
+ListenStream=/run/ndl/control.sock
+SocketMode=0600
+SocketUser=root
+SocketGroup=root
+Service=ndl-control.service
+
+[Install]
+WantedBy=sockets.target

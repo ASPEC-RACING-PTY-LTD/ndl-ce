@@ -67,7 +67,15 @@ func termArgv(req termRequest) ([]string, error) {
 		if kind == "system-container-console" || mode == "console" {
 			return []string{"/usr/bin/lxc-console", "-P", lxcPath, "-n", req.TargetID}, nil
 		}
-		return []string{"/usr/bin/lxc-attach", "-P", lxcPath, "-n", req.TargetID, "--", "/bin/sh", "-l"}, nil
+		return []string{
+			"/usr/bin/lxc-attach", "-P", lxcPath, "-n", req.TargetID,
+			"--clear-env",
+			"-v", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			"-v", "TERM=xterm-256color",
+			"-v", "HOME=/root",
+			"-v", "LANG=C.UTF-8",
+			"--", "/bin/sh", "-l",
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported terminal target %q", kind)
 	}

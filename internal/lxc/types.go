@@ -34,11 +34,13 @@ const (
 	BinLXCAttach  = "/usr/bin/lxc-attach"
 	BinLXCConsole = "/usr/bin/lxc-console"
 	BinSystemctl  = "/usr/bin/systemctl"
-	BinTar         = "/usr/bin/tar"
-	BinUsernsExec  = "/usr/bin/lxc-usernsexec"
-	BinCP          = "/usr/bin/cp"
-	BinGPGV        = "/usr/bin/gpgv"
+	BinTar        = "/usr/bin/tar"
+	BinUsernsExec = "/usr/bin/lxc-usernsexec"
+	BinCP         = "/usr/bin/cp"
+	BinGPGV       = "/usr/bin/gpgv"
 )
+
+const ApparmorNestingProfile = "lxc-container-ndl-nesting"
 
 const (
 	defaultDataDir    = "/var/lib/ndl"

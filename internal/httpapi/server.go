@@ -773,6 +773,9 @@ func (s *Server) require(w http.ResponseWriter, r *http.Request, perm string) (*
 }
 
 func (s *Server) principal(r *http.Request) (*principal, error) {
+	if p, ok, err := s.unixRootPrincipal(r); ok || err != nil {
+		return p, err
+	}
 	if tok := bearer(r); tok != "" {
 		row, err := s.Store.GetTokenByHash(r.Context(), secutil.HashSHA256(tok))
 		if err != nil || row == nil || row.RevokedAt != nil {
@@ -860,6 +863,9 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User, aal int) {
 	roles, _ := s.Store.UserRoles(r.Context(), user.ID)
+	if user.ID == LocalRootUserID && len(roles) == 0 {
+		roles = []string{rbac.Admin}
+	}
 	mfaEnabled := false
 	if method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID); err == nil && method != nil && method.Enabled {
 		mfaEnabled = true

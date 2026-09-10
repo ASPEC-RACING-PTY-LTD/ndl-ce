@@ -34,7 +34,7 @@ func hostLXCOverrides() string {
 	if _, err := os.Stat("/sys/kernel/security/apparmor"); err != nil {
 		return "lxc.apparmor.profile = unconfined\n"
 	}
-	return ""
+	return "lxc.apparmor.profile = " + ApparmorNestingProfile + "\n"
 }
 
 // RenderConfig writes an LXC 5.x config. Privileged containers omit idmap.

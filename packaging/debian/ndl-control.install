@@ -1,3 +1,4 @@
 usr/sbin/ndl-control
 usr/lib/ndl/postinst-control.sh
 lib/systemd/system/ndl-control.service
+lib/systemd/system/ndl-control.socket

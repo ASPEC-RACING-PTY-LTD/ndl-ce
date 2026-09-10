@@ -24,35 +24,38 @@ import (
 	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/store"
+	"github.com/no-dal/ndl-ce/internal/transport"
 	"github.com/no-dal/ndl-ce/migrations"
 )
 
 // Config is process configuration.
 type Config struct {
-	Listen     string
-	TLSListen  string
-	HTTPListen string
-	CertDir    string
-	DSN        string
-	UIDir      string
-	SetupHash  string
-	AgentSock  string
-	CADir      string
-	HolderID   string
+	Listen      string
+	TLSListen   string
+	HTTPListen  string
+	CertDir     string
+	DSN         string
+	UIDir       string
+	SetupHash   string
+	AgentSock   string
+	ControlSock string
+	CADir       string
+	HolderID    string
 }
 
 // LoadConfig reads environment.
 func LoadConfig() Config {
 	c := Config{
-		Listen:     getenv("NODAL_LISTEN", ":8080"),
-		TLSListen:  getenv("NODAL_TLS_LISTEN", ":443"),
-		HTTPListen: getenv("NODAL_HTTP_LISTEN", ":80"),
-		CertDir:    getenv("NODAL_CERT_DIR", "/var/lib/ndl/certs"),
-		DSN:        first(os.Getenv("NODAL_DSN"), os.Getenv("NODAL_DATABASE_URL")),
-		UIDir:      getenv("NODAL_UI_DIR", "/usr/share/ndl/ui"),
-		SetupHash:  os.Getenv("NODAL_SETUP_HASH"),
-		AgentSock:  os.Getenv("NODAL_AGENT_SOCKET"),
-		CADir:      getenv("NODAL_CLUSTER_CA_DIR", "/var/lib/ndl/secrets/cluster-ca"),
+		Listen:      getenv("NODAL_LISTEN", ":8080"),
+		TLSListen:   getenv("NODAL_TLS_LISTEN", ":443"),
+		HTTPListen:  getenv("NODAL_HTTP_LISTEN", ":80"),
+		CertDir:     getenv("NODAL_CERT_DIR", "/var/lib/ndl/certs"),
+		DSN:         first(os.Getenv("NODAL_DSN"), os.Getenv("NODAL_DATABASE_URL")),
+		UIDir:       getenv("NODAL_UI_DIR", "/usr/share/ndl/ui"),
+		SetupHash:   os.Getenv("NODAL_SETUP_HASH"),
+		AgentSock:   os.Getenv("NODAL_AGENT_SOCKET"),
+		ControlSock: getenv("NODAL_CONTROL_SOCKET", transport.ControlSocket),
+		CADir:       getenv("NODAL_CLUSTER_CA_DIR", "/var/lib/ndl/secrets/cluster-ca"),
 	}
 	if c.DSN == "" {
 		c.DSN = "postgresql:///nodal?host=/var/run/postgresql"
@@ -181,7 +184,7 @@ func Run(cfg Config) error {
 
 func controlHTTPInstances(cfg Config, srv *httpapi.Server, handler http.Handler, challenges *ndltls.ChallengeMem) ([]*httpInstance, error) {
 	if !srv.TLSRequired {
-		return []*httpInstance{newHTTPInstance("http", cfg.Listen, handler)}, nil
+		return appendLocalControlSocket(cfg.ControlSock, handler, []*httpInstance{newHTTPInstance("http", cfg.Listen, handler)}), nil
 	}
 	mat, err := loadEnabledMaterial(cfg.CertDir)
 	if err != nil {
@@ -200,7 +203,7 @@ func controlHTTPInstances(cfg Config, srv *httpapi.Server, handler http.Handler,
 	if cfg.HTTPListen != "" && cfg.HTTPListen != cfg.Listen {
 		instances = append(instances, newHTTPInstance("http-redirect", cfg.HTTPListen, redir))
 	}
-	return instances, nil
+	return appendLocalControlSocket(cfg.ControlSock, handler, instances), nil
 }
 
 func certificateEnabled(ctx context.Context, st appdb.Store) (bool, error) {

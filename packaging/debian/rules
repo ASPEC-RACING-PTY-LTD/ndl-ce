@@ -29,7 +29,7 @@ HELPER := $(MODROOT)/packaging/lib/ndl/postinst-control.sh
 override_dh_auto_clean:
 	rm -rf debian/tmp build
 	rm -rf $(MODROOT)/ui/dist
-	rm -f debian/ndl-control.service debian/ndl-agent.service debian/ndl-agent.socket
+	rm -f debian/ndl-control.service debian/ndl-control.socket debian/ndl-agent.service debian/ndl-agent.socket
 
 override_dh_auto_build:
 	mkdir -p build
@@ -49,7 +49,7 @@ override_dh_auto_test:
 override_dh_auto_install:
 	mkdir -p debian/tmp/usr/sbin debian/tmp/usr/bin debian/tmp/usr/lib/ndl
 	mkdir -p debian/tmp/lib/systemd/system
-	mkdir -p debian/tmp/etc/apparmor.d/local
+	mkdir -p debian/tmp/etc/apparmor.d/local debian/tmp/etc/apparmor.d/lxc
 	mkdir -p debian/tmp/usr/lib/modules-load.d
 	install -m 0755 build/ndl-control debian/tmp/usr/sbin/ndl-control
 	install -m 0755 build/ndl-agent debian/tmp/usr/sbin/ndl-agent
@@ -65,6 +65,7 @@ override_dh_auto_install:
 	cp -a $(MODROOT)/ui/dist/. debian/tmp/usr/share/ndl/ui/
 	install -m 0755 $(HELPER) debian/tmp/usr/lib/ndl/postinst-control.sh
 	install -m 0644 $(MODROOT)/systemd/ndl-control.service debian/tmp/lib/systemd/system/ndl-control.service
+	install -m 0644 $(MODROOT)/systemd/ndl-control.socket debian/tmp/lib/systemd/system/ndl-control.socket
 	install -m 0644 $(MODROOT)/systemd/ndl-agent.service debian/tmp/lib/systemd/system/ndl-agent.service
 	install -m 0644 $(MODROOT)/systemd/ndl-agent.socket debian/tmp/lib/systemd/system/ndl-agent.socket
 	install -m 0644 $(MODROOT)/systemd/nodal-workloads.target debian/tmp/lib/systemd/system/nodal-workloads.target
@@ -76,6 +77,7 @@ override_dh_auto_install:
 	install -m 0644 $(MODROOT)/systemd/nodal-oci@.service debian/tmp/lib/systemd/system/nodal-oci@.service
 	install -m 0644 $(MODROOT)/systemd/ndl-guest.service debian/tmp/lib/systemd/system/ndl-guest.service
 	install -m 0644 $(MODROOT)/packaging/apparmor/usr.bin.qemu-system-x86_64.local debian/tmp/etc/apparmor.d/local/usr.bin.qemu-system-x86_64
+	install -m 0644 $(MODROOT)/packaging/apparmor/lxc/lxc-ndl-nesting debian/tmp/etc/apparmor.d/lxc/lxc-ndl-nesting
 	install -m 0644 $(MODROOT)/packaging/modules-load.d/ndl-agent.conf debian/tmp/usr/lib/modules-load.d/ndl-agent.conf
 	mkdir -p debian/tmp/usr/share/ndl/features
 	install -m 0644 $(MODROOT)/packaging/share/ndl/features/oci debian/tmp/usr/share/ndl/features/oci
@@ -97,6 +99,7 @@ override_dh_strip:
 
 override_dh_installsystemd:
 	cp -f $(MODROOT)/systemd/ndl-control.service debian/ndl-control.service
+	cp -f $(MODROOT)/systemd/ndl-control.socket debian/ndl-control.socket
 	cp -f $(MODROOT)/systemd/ndl-agent.service debian/ndl-agent.service
 	cp -f $(MODROOT)/systemd/ndl-agent.socket debian/ndl-agent.socket
 	dh_installsystemd -pndl-control --name=ndl-control

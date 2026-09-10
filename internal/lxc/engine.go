@@ -27,6 +27,7 @@ type Engine struct {
 	Now          func() time.Time
 	SkipHostCmds bool
 	FakeUnpack   bool
+	ReadyWait    time.Duration
 }
 
 func (e *Engine) dataDir() string {
@@ -216,7 +217,10 @@ func (e *Engine) Start(ctx context.Context, id string) error {
 	if _, err := e.run(ctx, BinSystemctl, "start", unitName(id)); err != nil {
 		return err
 	}
-	return e.waitUnitActive(ctx, id)
+	if err := e.waitUnitActive(ctx, id); err != nil {
+		return err
+	}
+	return e.waitContainerReady(ctx, id)
 }
 
 // Stop stops the CT unit. The process is not held by the agent.
@@ -235,7 +239,10 @@ func (e *Engine) Restart(ctx context.Context, id string) error {
 	if _, err := e.run(ctx, BinSystemctl, "restart", unitName(id)); err != nil {
 		return err
 	}
-	return e.waitUnitActive(ctx, id)
+	if err := e.waitUnitActive(ctx, id); err != nil {
+		return err
+	}
+	return e.waitContainerReady(ctx, id)
 }
 
 func (e *Engine) writeAppliedConfig(id string) error {
@@ -253,7 +260,7 @@ func (e *Engine) writeAppliedConfig(id string) error {
 	if e.SkipHostCmds || e.FakeUnpack {
 		return nil
 	}
-	if err := ensureGuestNetwork(spec.RootfsPath, spec.IP); err != nil {
+	if err := provisionGuest(spec.RootfsPath, hostnameOf(spec.Name, spec.WorkloadID), spec.IP); err != nil {
 		return err
 	}
 	if spec.Privileged {
@@ -282,6 +289,40 @@ func (e *Engine) waitUnitActive(ctx context.Context, id string) error {
 				last = "unknown"
 			}
 			return fmt.Errorf("container unit did not become active (%s)", last)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (e *Engine) containerReadyWait() time.Duration {
+	if e.ReadyWait > 0 {
+		return e.ReadyWait
+	}
+	return 120 * time.Second
+}
+
+func (e *Engine) waitContainerReady(ctx context.Context, id string) error {
+	if e.SkipHostCmds && e.Run == nil {
+		return nil
+	}
+	deadline := time.Now().Add(e.containerReadyWait())
+	var last string
+	for {
+		pid, _, err := e.lxcInfo(ctx, id)
+		if err == nil && pid > 0 {
+			return nil
+		}
+		if err != nil {
+			last = err.Error()
+		} else {
+			last = "init pid is not reported"
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("container %s did not become attachable (%s)", id, last)
 		}
 		select {
 		case <-ctx.Done():
@@ -381,7 +422,7 @@ func (e *Engine) prepareRootfs(spec Spec) error {
 	if err := validateRootfsPath(spec.RootfsPath); err != nil {
 		return err
 	}
-	if err := ensureGuestNetwork(spec.RootfsPath, spec.IP); err != nil {
+	if err := provisionGuest(spec.RootfsPath, hostnameOf(spec.Name, spec.WorkloadID), spec.IP); err != nil {
 		return err
 	}
 	if spec.Privileged {

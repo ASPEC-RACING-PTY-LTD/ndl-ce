@@ -73,6 +73,19 @@ reload_qemu_apparmor() {
   fi
 }
 
+reload_lxc_apparmor() {
+  if ! command -v apparmor_parser >/dev/null 2>&1; then
+    return
+  fi
+  if [ -f /etc/apparmor.d/lxc-containers ]; then
+    apparmor_parser -r /etc/apparmor.d/lxc-containers >/dev/null 2>&1 || true
+    return
+  fi
+  if [ -f /etc/apparmor.d/lxc/lxc-ndl-nesting ]; then
+    apparmor_parser -r /etc/apparmor.d/lxc/lxc-ndl-nesting >/dev/null 2>&1 || true
+  fi
+}
+
 ensure_root_idmap() {
   if [ ! -f /etc/subuid ] || ! grep -q '^root:' /etc/subuid; then
     echo 'root:100000:65536' >> /etc/subuid
@@ -104,6 +117,7 @@ case "$1" in
     ensure_qemu_user
     ensure_root_idmap
     reload_qemu_apparmor
+    reload_lxc_apparmor
     start_units
     ;;
 esac

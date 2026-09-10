@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/install"
+	"github.com/no-dal/ndl-ce/internal/transport"
 )
 
 func main() {
@@ -286,6 +289,9 @@ func run(args []string) error {
 }
 
 func baseURL() string {
+	if localControlSocket() != "" {
+		return "http://localhost"
+	}
 	if u := os.Getenv("NODAL_URL"); u != "" {
 		return strings.TrimRight(u, "/")
 	}
@@ -293,6 +299,22 @@ func baseURL() string {
 		return "https://127.0.0.1"
 	}
 	return "http://127.0.0.1:8080"
+}
+
+func localControlSocket() string {
+	if p := strings.TrimSpace(os.Getenv("NODAL_CONTROL_SOCKET")); p != "" {
+		return p
+	}
+	if strings.TrimSpace(os.Getenv("NODAL_URL")) != "" {
+		return ""
+	}
+	if os.Geteuid() != 0 {
+		return ""
+	}
+	if _, err := os.Stat(transport.ControlSocket); err != nil {
+		return ""
+	}
+	return transport.ControlSocket
 }
 
 func cmdSetup(args []string) error {
@@ -1594,6 +1616,13 @@ func nodalTransport() http.RoundTripper {
 		return http.DefaultTransport
 	}
 	clone := tr.Clone()
+	if sock := localControlSocket(); sock != "" {
+		clone.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", sock)
+		}
+		return clone
+	}
 	dir := os.Getenv("NODAL_DATA_DIR")
 	if dir == "" {
 		dir = "/var/lib/ndl"

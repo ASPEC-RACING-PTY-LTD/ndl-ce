@@ -228,23 +228,87 @@ func ensureGuestNetwork(rootfs string, cfg IPConfig) error {
 	if err := writeGuestNetworkdDropin(rootfs); err != nil {
 		return err
 	}
+	if err := writeGuestResolvedDropin(rootfs); err != nil {
+		return err
+	}
 	if n.IPv4Mode == IPModeDHCP {
 		if err := writeGuestDHCPUnit(rootfs); err != nil {
 			return err
 		}
 	}
-	if len(n.DNS) == 0 {
-		return nil
-	}
-	resolv := filepath.Join(rootfs, "etc", "resolv.conf")
-	if err := os.MkdirAll(filepath.Dir(resolv), 0o755); err != nil {
+	return replaceGuestResolvConf(rootfs, n.DNS)
+}
+
+func provisionGuest(rootfs, hostname string, cfg IPConfig) error {
+	if err := ensureGuestNetwork(rootfs, cfg); err != nil {
 		return err
 	}
+	if err := ensureGuestIdentity(rootfs, hostname); err != nil {
+		return err
+	}
+	return ensureGuestLocale(rootfs)
+}
+
+func ensureGuestIdentity(rootfs, hostname string) error {
+	hostname = strings.TrimSpace(hostname)
+	if hostname == "" {
+		hostname = "ndl"
+	}
+	if err := os.MkdirAll(filepath.Join(rootfs, "etc"), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(rootfs, "etc", "hostname"), []byte(hostname+"\n"), 0o644); err != nil {
+		return err
+	}
+	hostsPath := filepath.Join(rootfs, "etc", "hosts")
+	b, err := os.ReadFile(hostsPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	text := string(b)
+	if text == "" {
+		text = "127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n"
+	}
+	text = strings.ReplaceAll(text, "LXCNAME", hostname)
+	if !strings.Contains(text, hostname) {
+		text = strings.TrimRight(text, "\n") + "\n127.0.1.1\t" + hostname + "\n"
+	}
+	return os.WriteFile(hostsPath, []byte(text), 0o644)
+}
+
+func ensureGuestLocale(rootfs string) error {
+	body := []byte("LANG=C.UTF-8\n")
+	if err := os.MkdirAll(filepath.Join(rootfs, "etc", "default"), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(rootfs, "etc", "default", "locale"), body, 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(rootfs, "etc", "locale.conf"), body, 0o644)
+}
+
+func replaceGuestResolvConf(rootfs string, dns []string) error {
+	path := filepath.Join(rootfs, "etc", "resolv.conf")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	}
+	if len(dns) == 0 {
+		if _, err := os.Lstat(path); err == nil {
+			return nil
+		}
+		return os.WriteFile(path, []byte("# nameservers are provided by DHCP\n"), 0o644)
+	}
+	_ = os.Remove(path)
 	var b strings.Builder
-	for _, d := range n.DNS {
+	for _, d := range dns {
 		fmt.Fprintf(&b, "nameserver %s\n", d)
 	}
-	return os.WriteFile(resolv, []byte(b.String()), 0o644)
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
 func guestIfupdown(n IPConfig) string {
@@ -341,6 +405,21 @@ func writeGuestNetworkdDropin(rootfs string) error {
 	return os.WriteFile(filepath.Join(dir, "zzzz-ndl-lxc.conf"), []byte(guestNetworkdDropin), 0o644)
 }
 
+func writeGuestResolvedDropin(rootfs string) error {
+	dir := filepath.Join(rootfs, "etc", "systemd", "system", "systemd-resolved.service.d")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "zzzz-ndl-lxc.conf"), []byte(guestNetworkdDropin), 0o644); err != nil {
+		return err
+	}
+	confd := filepath.Join(rootfs, "etc", "systemd", "resolved.conf.d")
+	if err := os.MkdirAll(confd, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(confd, "ndl-lxc.conf"), []byte(guestResolvedConf), 0o644)
+}
+
 func writeGuestDHCPUnit(rootfs string) error {
 	if err := os.MkdirAll(filepath.Join(rootfs, "usr", "local", "sbin"), 0o755); err != nil {
 		return err
@@ -370,10 +449,19 @@ func chownGuestNetFiles(rootfs string, uid, gid int) error {
 	rels := []string{
 		"etc/systemd/system/systemd-networkd.service.d",
 		"etc/systemd/system/systemd-networkd.service.d/zzzz-ndl-lxc.conf",
+		"etc/systemd/system/systemd-resolved.service.d",
+		"etc/systemd/system/systemd-resolved.service.d/zzzz-ndl-lxc.conf",
+		"etc/systemd/resolved.conf.d",
+		"etc/systemd/resolved.conf.d/ndl-lxc.conf",
 		"usr/local/sbin/ndl-guest-ipv4",
 		"etc/systemd/system/ndl-dhclient.service",
 		"etc/systemd/network/10-eth0.network",
 		"etc/network/interfaces",
+		"etc/hostname",
+		"etc/hosts",
+		"etc/resolv.conf",
+		"etc/default/locale",
+		"etc/locale.conf",
 	}
 	for _, rel := range rels {
 		p := filepath.Join(rootfs, rel)
@@ -396,6 +484,10 @@ ProtectKernelLogs=no
 ProtectKernelModules=no
 ProtectClock=no
 BindReadOnlyPaths=
+`
+
+const guestResolvedConf = `[Resolve]
+DNSStubListener=no
 `
 
 const guestDHCPScript = `#!/bin/sh

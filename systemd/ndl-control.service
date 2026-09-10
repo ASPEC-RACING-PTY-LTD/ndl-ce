@@ -1,6 +1,7 @@
 [Unit]
 Description=No-dal control plane
-After=network.target postgresql.service
+After=network.target postgresql.service ndl-control.socket
+Requires=ndl-control.socket
 Documentation=https://no-dal.com
 # Workloads must not use BindsTo, PartOf, or Requires against this unit.
 
