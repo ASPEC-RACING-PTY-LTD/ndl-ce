@@ -104,6 +104,156 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Users
+        "403":
+          description: Forbidden
+    post:
+      operationId: createUser
+      summary: Create a person user
+      responses:
+        "201":
+          description: Created
+        "403":
+          description: Forbidden
+  /users/{id}:
+    get:
+      operationId: getUser
+      summary: Get one user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User
+        "403":
+          description: Forbidden
+    patch:
+      operationId: patchUser
+      summary: Update a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User
+        "403":
+          description: Forbidden
+    delete:
+      operationId: deleteUser
+      summary: Delete a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Forbidden
+  /users/{id}/password:
+    post:
+      operationId: resetUserPassword
+      summary: Set a new password without reading the old one
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Reset
+  /users/{id}/sessions/revoke:
+    post:
+      operationId: revokeUserSessions
+      summary: Revoke all sessions for a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Revoked
+  /users/{id}/tokens/revoke:
+    post:
+      operationId: revokeUserTokens
+      summary: Revoke all API tokens for a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Revoked
+  /roles:
+    get:
+      operationId: listRoles
+      summary: List built-in roles and effective permissions
+      responses:
+        "200":
+          description: Roles
+        "403":
+          description: Forbidden
+  /settings/security:
+    get:
+      operationId: getSecuritySettings
+      summary: Authentication policy
+      responses:
+        "200":
+          description: Policy
+        "403":
+          description: Forbidden
+    patch:
+      operationId: patchSecuritySettings
+      summary: Update MFA requirement policy
+      responses:
+        "200":
+          description: Policy
+        "403":
+          description: Forbidden
   /tokens:
     get:
       operationId: listTokens
@@ -4449,9 +4599,19 @@ components:
           type: string
         cluster_id:
           type: string
+        grants:
+          type: array
+          items:
+            type: string
+        display_name:
+          type: string
         aal:
           type: integer
         mfa_enabled:
+          type: boolean
+        mfa_enforced:
+          type: boolean
+        mfa_enrollment_required:
           type: boolean
         kind:
           type: string
@@ -4585,6 +4745,8 @@ components:
         expired:
           type: boolean
         revoked_at:
+          type: string
+        last_used_at:
           type: string
         disabled:
           type: boolean
@@ -8293,6 +8455,8 @@ components:
         created_at:
           type: string
         actor_user_id:
+          type: string
+        actor_username:
           type: string
     GroupListResponse:
       type: object

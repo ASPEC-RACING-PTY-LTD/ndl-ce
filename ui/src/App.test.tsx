@@ -1260,7 +1260,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^authenticator$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^mfa$/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^mfa$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^groups$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^audit$/i })).not.toBeInTheDocument();
     expect(screen.getByText(/webauthn is not implemented yet/i)).toBeVisible();
@@ -1305,8 +1305,8 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /^audit$/i })).toBeVisible();
-    expect(screen.getByText(/viewers cannot read this log/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^audit log$/i })).toBeVisible();
+    expect(screen.getByText(/passwords, token values, and mfa secrets are never stored here/i)).toBeVisible();
     expect(await screen.findByText("auth.login")).toBeVisible();
     expect(screen.queryByText(/activate license/i)).not.toBeInTheDocument();
   });

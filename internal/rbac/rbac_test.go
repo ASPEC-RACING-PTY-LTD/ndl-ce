@@ -148,6 +148,18 @@ func TestAuthorizeMatrix(t *testing.T) {
 	if !Authorize(op, MigrationRead) || !Authorize(op, MigrationImport) || !Authorize(op, MigrationExport) || !Authorize(op, MigrationManage) {
 		t.Fatal("operator may import and export")
 	}
+	if Authorize(view, UsersRead) || Authorize(view, UsersCreate) || Authorize(view, RolesManage) || Authorize(view, SettingsSecurityManage) || Authorize(view, APIAccessManage) || Authorize(view, UpdatesManage) {
+		t.Fatal("viewer must not have management grants")
+	}
+	if Authorize(op, UsersRead) || Authorize(op, UsersCreate) || Authorize(op, UsersDelete) || Authorize(op, UsersRolesManage) || Authorize(op, RolesManage) || Authorize(op, SettingsSecurityManage) || Authorize(op, AuditRead) {
+		t.Fatal("operator must not manage users, roles, audit, or security policy")
+	}
+	if !Authorize(op, APIAccessManage) || !Authorize(op, UpdatesManage) || !Authorize(op, FeatureManage) {
+		t.Fatal("operator may manage API access, updates, and features")
+	}
+	if !Authorize(admin, UsersRead) || !Authorize(admin, UsersDelete) || !Authorize(admin, RolesManage) || !Authorize(admin, SettingsSecurityManage) {
+		t.Fatal("owner has user management")
+	}
 }
 
 func TestPermissionsForAutomationIsNarrowerThanOperator(t *testing.T) {

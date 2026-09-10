@@ -133,6 +133,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/v1/me", s.me)
 	mux.HandleFunc("PATCH /api/v1/me", s.patchMe)
+	mux.HandleFunc("GET /api/v1/users", s.listUsers)
+	mux.HandleFunc("POST /api/v1/users", s.createUser)
+	mux.HandleFunc("GET /api/v1/users/{id}", s.getUser)
+	mux.HandleFunc("PATCH /api/v1/users/{id}", s.patchUser)
+	mux.HandleFunc("DELETE /api/v1/users/{id}", s.deleteUser)
+	mux.HandleFunc("POST /api/v1/users/{id}/password", s.resetUserPassword)
+	mux.HandleFunc("POST /api/v1/users/{id}/sessions/revoke", s.revokeUserSessions)
+	mux.HandleFunc("POST /api/v1/users/{id}/tokens/revoke", s.revokeUserTokens)
+	mux.HandleFunc("GET /api/v1/roles", s.listRoles)
+	mux.HandleFunc("GET /api/v1/settings/security", s.getSecuritySettings)
+	mux.HandleFunc("PATCH /api/v1/settings/security", s.patchSecuritySettings)
 	mux.HandleFunc("GET /api/v1/tokens", s.listTokens)
 	mux.HandleFunc("POST /api/v1/tokens", s.createToken)
 	mux.HandleFunc("POST /api/v1/tokens/revoke", s.revokeToken)
@@ -597,7 +608,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.Store.GetUserByName(r.Context(), cluster.ID, strings.TrimSpace(req.Username))
-	if err != nil || user == nil || !auth.VerifyPassword(req.Password, user.PasswordHash) {
+	if user == nil || !auth.VerifyPassword(req.Password, user.PasswordHash) || userDisabled(*user) {
 		s.lock().Fail(key, s.now())
 		s.audit(r, cluster.ID, "", "auth.login", "denied", "invalid credentials")
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
@@ -620,6 +631,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.lock().Success(key)
+	_ = s.Store.TouchLastLogin(r.Context(), user.ID, s.now())
 	if err := s.issueSession(w, r, *user, 1); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -669,7 +681,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.IdentityTokenCreate)
+	p, err := s.require(w, r, rbac.APIAccessManage)
 	if err != nil {
 		return
 	}
@@ -735,7 +747,7 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "token not found")
 		return
 	}
-	clusterWide := hasRole(p, rbac.Admin) || hasRole(p, rbac.Operator)
+	clusterWide := rbac.Authorize(p.Grants, rbac.APIAccessManage)
 	if existing.UserID == p.User.ID {
 		if err := s.Store.RevokeToken(r.Context(), req.ID, p.User.ID); err != nil {
 			writeErr(w, http.StatusNotFound, "token not found")
@@ -792,9 +804,10 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 			return nil, errors.New("invalid token")
 		}
 		u, err := s.Store.GetUser(r.Context(), row.UserID)
-		if err != nil || u == nil {
+		if err != nil || u == nil || userDisabled(*u) {
 			return nil, errors.New("invalid token")
 		}
+		_ = s.Store.TouchTokenLastUsed(r.Context(), row.ID, s.now())
 		return s.asPrincipal(r.Context(), *u, "", 1, row.ID, row.Permissions)
 	}
 	c, err := r.Cookie(sessionCookie)
@@ -806,7 +819,7 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 		return nil, errors.New("invalid session")
 	}
 	u, err := s.Store.GetUser(r.Context(), sess.UserID)
-	if err != nil || u == nil {
+	if err != nil || u == nil || userDisabled(*u) {
 		return nil, errors.New("invalid session")
 	}
 	return s.asPrincipal(r.Context(), *u, sess.ID, sess.AAL, "", nil)
@@ -817,11 +830,7 @@ func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string, a
 	if err != nil {
 		return nil, err
 	}
-	var grants []string
-	cat := rbac.New()
-	for _, role := range roles {
-		grants = append(grants, cat.PermissionsForRole(role)...)
-	}
+	grants := rbac.GrantsForRoles(roles)
 	if len(tokenPerms) > 0 {
 		filtered := make([]string, 0, len(tokenPerms))
 		for _, perm := range tokenPerms {
@@ -882,17 +891,26 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	}
 	prefs, _ := s.Store.GetUserPrefs(r.Context(), user.ID)
 	level, ack, ackAt := prefsJSON(prefs)
+	grants := rbac.GrantsForRoles(roles)
+	clusterMFA := false
+	if c, err := s.Store.GetCluster(r.Context()); err == nil && c != nil {
+		clusterMFA = c.MFARequired
+	}
 	out := map[string]any{
-		"user_id":     user.ID,
-		"username":    user.Username,
-		"roles":       roles,
-		"edition":     edition,
-		"cluster_id":  user.ClusterID,
-		"aal":         aal,
-		"mfa_enabled": mfaEnabled,
-		"kind":        firstNonEmpty(user.Kind, appdb.UserKindPerson),
-		"ux_level":    level,
-		"expert_ack":  ack,
+		"user_id":                 user.ID,
+		"username":                user.Username,
+		"display_name":            user.DisplayName,
+		"roles":                   roles,
+		"grants":                  grants,
+		"edition":                 edition,
+		"cluster_id":              user.ClusterID,
+		"aal":                     aal,
+		"mfa_enabled":             mfaEnabled,
+		"mfa_enforced":            user.MFARequired || clusterMFA,
+		"mfa_enrollment_required": (user.MFARequired || clusterMFA) && !mfaEnabled,
+		"kind":                    firstNonEmpty(user.Kind, appdb.UserKindPerson),
+		"ux_level":                level,
+		"expert_ack":              ack,
 	}
 	if ackAt != "" {
 		out["expert_ack_at"] = ackAt

@@ -22,14 +22,15 @@ That definition is the milestone. This tree has not reached it.
 - [ai.md](ai.md)
 - [docker.md](docker.md)
 - [guest-baseline.md](guest-baseline.md)
+- [management.md](management.md)
 - [api-compatibility.md](api-compatibility.md)
 - [checklists/ce-1.0-virt.md](checklists/ce-1.0-virt.md)
 - [checklists/ce-1.0-physical.md](checklists/ce-1.0-physical.md)
 
 ## License surface
 
-Settings, License can store an EE key for a later upgrade without
-reinstall. Activation talks to a licensing API only when a key is
+Management, License can store an EE key for a later upgrade without
+reinstall. The License page lives under Management. Activation talks to a licensing API only when a key is
 present. If that API is unreachable, grace applies and workloads keep
 running. CE does not ship EE blobs or private repo credentials.
 

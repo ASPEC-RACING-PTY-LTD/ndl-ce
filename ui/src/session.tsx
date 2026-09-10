@@ -54,7 +54,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (body: LoginRequest) => {
     const result = await login(body);
-    if ("mfa_required" in result && result.mfa_required) {
+    if ("mfa_challenge_id" in result && result.mfa_challenge_id) {
       throw new ApiError(401, "MFA required");
     }
     const user = result as MeResponse;

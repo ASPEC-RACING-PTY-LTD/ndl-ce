@@ -205,6 +205,20 @@ export function navIcon(label: string): IconName {
       return "settings";
     case "API Access":
       return "settings";
+    case "Users":
+      return "account";
+    case "Roles & Permissions":
+      return "settings";
+    case "Updates":
+      return "settings";
+    case "License":
+      return "settings";
+    case "Security":
+      return "settings";
+    case "Audit Log":
+      return "events";
+    case "Groups":
+      return "settings";
     default:
       return "info";
   }

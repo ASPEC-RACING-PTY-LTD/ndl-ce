@@ -12,6 +12,8 @@ describe("nav disclosure", () => {
     expect(labels).toContain("Workloads");
     expect(labels).toContain("Storage");
     expect(labels).toContain("Add Features");
+    expect(labels).toContain("Users");
+    expect(labels).toContain("Audit Log");
     expect(labels).not.toContain("Cluster");
     expect(labels).not.toContain("Automation");
     expect(labels).not.toContain("Ask");
@@ -63,7 +65,26 @@ describe("nav disclosure", () => {
     const viewer = visibleModules(prefs, {}, ["viewer"]).map((item) => item.id);
     const adminItems = visibleModules(prefs, {}, admin).map((item) => item.id);
     expect(viewer).not.toContain("audit");
+    expect(viewer).not.toContain("users");
+    expect(viewer).not.toContain("add-features");
+    expect(viewer).not.toContain("api-access");
     expect(adminItems).toContain("audit");
+    expect(adminItems).toContain("users");
+    expect(groupedModules(visibleModules(prefs, {}, admin)).some((g) => g.label === "Management")).toBe(true);
+    expect(groupedModules(visibleModules(prefs, {}, ["viewer"])).some((g) => g.label === "Management")).toBe(false);
+    expect(groupedModules(visibleModules(prefs, {}, admin)).some((g) => g.label === "Settings")).toBe(false);
+  });
+
+  it("lets an operator see Management without Users", () => {
+    const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "advanced" }));
+    const items = visibleModules(prefs, {}, ["operator"]).map((item) => item.id);
+    expect(items).toContain("api-access");
+    expect(items).toContain("add-features");
+    expect(items).toContain("updates");
+    expect(items).not.toContain("users");
+    expect(items).not.toContain("roles");
+    expect(items).not.toContain("audit");
+    expect(items).not.toContain("license");
   });
 
   it("pins the current page so deep links stay reachable", () => {

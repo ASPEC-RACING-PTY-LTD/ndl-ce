@@ -91,7 +91,7 @@ func packageJSON(p hostos.PackageStatus) map[string]any {
 }
 
 func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.NodeRead)
+	p, err := s.require(w, r, rbac.UpdatesManage)
 	if err != nil {
 		return
 	}
@@ -127,7 +127,7 @@ func packageListJSON(pkgs []hostos.PackageStatus) []map[string]any {
 }
 
 func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.NodeUpdate)
+	p, err := s.require(w, r, rbac.UpdatesManage)
 	if err != nil {
 		return
 	}
@@ -156,7 +156,7 @@ func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.NodeUpdate)
+	p, err := s.require(w, r, rbac.UpdatesManage)
 	if err != nil {
 		return
 	}
@@ -191,7 +191,7 @@ func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) checkpointUpdates(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.NodeUpdate)
+	p, err := s.require(w, r, rbac.UpdatesManage)
 	if err != nil {
 		return
 	}
@@ -217,7 +217,7 @@ func (s *Server) checkpointUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) applyUpdates(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.NodeUpdate)
+	p, err := s.require(w, r, rbac.UpdatesManage)
 	if err != nil {
 		return
 	}
@@ -235,7 +235,7 @@ func (s *Server) applyUpdates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) rollbackUpdates(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.NodeUpdate)
+	p, err := s.require(w, r, rbac.UpdatesManage)
 	if err != nil {
 		return
 	}

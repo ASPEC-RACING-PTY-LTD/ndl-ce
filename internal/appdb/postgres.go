@@ -16,10 +16,10 @@ type Postgres struct {
 }
 
 func (p *Postgres) GetCluster(ctx context.Context) (*Cluster, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, name, setup_completed_at FROM clusters LIMIT 1`)
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, name, setup_completed_at, COALESCE(mfa_required, false) FROM clusters LIMIT 1`)
 	var c Cluster
 	var completed sql.NullTime
-	if err := row.Scan(&c.ID, &c.Name, &completed); err != nil {
+	if err := row.Scan(&c.ID, &c.Name, &completed, &c.MFARequired); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -80,28 +80,29 @@ WHERE cluster_id = $1 AND consumed_at IS NULL`, clusterID)
 	return nil
 }
 
+const userSelect = `SELECT id::text, cluster_id::text, username, password_hash, COALESCE(kind, 'person'), COALESCE(display_name, ''), created_at, disabled_at, COALESCE(mfa_required, false), last_login_at FROM users`
+
 func (p *Postgres) CreateUser(ctx context.Context, u User) error {
 	if u.Kind == "" {
 		u.Kind = UserKindPerson
 	}
-	_, err := p.DB.ExecContext(ctx, `INSERT INTO users (id, cluster_id, username, password_hash, kind) VALUES ($1,$2,$3,$4,$5)`,
-		u.ID, u.ClusterID, u.Username, u.PasswordHash, u.Kind)
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO users (id, cluster_id, username, password_hash, kind, display_name, mfa_required) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		u.ID, u.ClusterID, u.Username, u.PasswordHash, u.Kind, u.DisplayName, u.MFARequired)
 	return err
 }
 
 func (p *Postgres) GetUserByName(ctx context.Context, clusterID, username string) (*User, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, username, password_hash, COALESCE(kind, 'person') FROM users WHERE cluster_id=$1 AND username=$2`, clusterID, username)
-	return scanUser(row)
+	return scanUser(p.DB.QueryRowContext(ctx, userSelect+` WHERE cluster_id=$1 AND username=$2`, clusterID, username))
 }
 
 func (p *Postgres) GetUser(ctx context.Context, id string) (*User, error) {
-	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, username, password_hash, COALESCE(kind, 'person') FROM users WHERE id=$1`, id)
-	return scanUser(row)
+	return scanUser(p.DB.QueryRowContext(ctx, userSelect+` WHERE id=$1`, id))
 }
 
 func scanUser(row *sql.Row) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.ClusterID, &u.Username, &u.PasswordHash, &u.Kind); err != nil {
+	var disabled, lastLogin sql.NullTime
+	if err := row.Scan(&u.ID, &u.ClusterID, &u.Username, &u.PasswordHash, &u.Kind, &u.DisplayName, &u.CreatedAt, &disabled, &u.MFARequired, &lastLogin); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -109,6 +110,12 @@ func scanUser(row *sql.Row) (*User, error) {
 	}
 	if u.Kind == "" {
 		u.Kind = UserKindPerson
+	}
+	if disabled.Valid {
+		u.DisabledAt = &disabled.Time
+	}
+	if lastLogin.Valid {
+		u.LastLoginAt = &lastLogin.Time
 	}
 	return &u, nil
 }
@@ -124,6 +131,20 @@ SELECT count(*)
 FROM role_bindings b
 JOIN roles r ON r.id = b.role_id
 WHERE b.cluster_id = $1 AND r.name = 'admin'`, clusterID)
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (p *Postgres) CountEnabledAdmins(ctx context.Context, clusterID string) (int, error) {
+	row := p.DB.QueryRowContext(ctx, `
+SELECT count(*)
+FROM role_bindings b
+JOIN roles r ON r.id = b.role_id
+JOIN users u ON u.id = b.user_id
+WHERE b.cluster_id = $1 AND r.name = 'admin' AND u.disabled_at IS NULL`, clusterID)
 	var n int
 	if err := row.Scan(&n); err != nil {
 		return 0, err
@@ -238,9 +259,9 @@ func scanAPIToken(row interface {
 	Scan(dest ...any) error
 }) (*APIToken, error) {
 	var t APIToken
-	var revoked, expires sql.NullTime
+	var revoked, expires, lastUsed sql.NullTime
 	var permCSV string
-	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &t.CreatedAt, &revoked, &expires, &permCSV); err != nil {
+	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &t.CreatedAt, &revoked, &expires, &permCSV, &lastUsed); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -252,13 +273,16 @@ func scanAPIToken(row interface {
 	if expires.Valid {
 		t.ExpiresAt = &expires.Time
 	}
+	if lastUsed.Valid {
+		t.LastUsedAt = &lastUsed.Time
+	}
 	if permCSV != "" {
 		t.Permissions = strings.Split(permCSV, ",")
 	}
 	return &t, nil
 }
 
-const apiTokenSelect = `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, created_at, revoked_at, expires_at, COALESCE(array_to_string(permissions, ','), '') FROM api_tokens`
+const apiTokenSelect = `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, created_at, revoked_at, expires_at, COALESCE(array_to_string(permissions, ','), ''), last_used_at FROM api_tokens`
 
 func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, error) {
 	return scanAPIToken(p.DB.QueryRowContext(ctx, apiTokenSelect+` WHERE token_hash=$1`, hash))

@@ -8,9 +8,7 @@ import { useNavDisclosure } from "../nav/NavDisclosure";
 import { CAPABILITIES, NAV_MODULES, TEMPLATES, moduleById } from "../nav/modules";
 import { useSession } from "../session";
 
-function canManage(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
+import { hasGrant } from "../rbac";
 
 function statusLabel(item: Feature): string {
   if (item.core) {
@@ -36,8 +34,8 @@ function capabilityHref(id: string): string | undefined {
 
 export function FeaturesPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canManage(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = hasGrant(user, "feature.manage");
   const { prefs, featureEnabled, setTemplate, setUiEnabled, setCustomModule, reorderCustom, reloadFeatures } =
     useNavDisclosure();
   const [list, setList] = useState<FeatureList | null>(null);
@@ -52,6 +50,7 @@ export function FeaturesPage() {
 
   useEffect(() => {
     void reload().catch((err) => setError(err instanceof Error ? err.message : "Unavailable"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadFeatures]);
 
   async function onEnablePackage(item: Feature) {
@@ -105,7 +104,7 @@ export function FeaturesPage() {
   const catalogIds = new Set(CAPABILITIES.map((cap) => cap.featureId).filter((id): id is string => Boolean(id)));
   const coreItems = items.filter((item) => !catalogIds.has(item.id));
   const customIds = prefs.customOrder.length > 0 ? prefs.customOrder : prefs.customVisible;
-  const customModules = NAV_MODULES.filter((mod) => allowedByRbac(mod, roles));
+  const customModules = NAV_MODULES.filter((mod) => allowedByRbac(mod, user?.roles, user?.grants));
 
   return (
     <section className="page page-wide">

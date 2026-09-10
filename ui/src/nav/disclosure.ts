@@ -1,4 +1,5 @@
 import { paletteAllowed, type PaletteRequire } from "../palette";
+import { hasGrant } from "../rbac";
 import { CAPABILITIES, NAV_MODULES, moduleForPath, type NavModule, type NavTemplate } from "./modules";
 
 export type DisclosurePrefs = {
@@ -51,7 +52,10 @@ export function isCapabilityEnabled(
   return prefs.enabled.includes(id);
 }
 
-export function allowedByRbac(mod: NavModule, roles: string[] | undefined): boolean {
+export function allowedByRbac(mod: NavModule, roles: string[] | undefined, grants?: string[]): boolean {
+  if (mod.permission) {
+    return hasGrant({ roles, grants }, mod.permission);
+  }
   if (!mod.require) {
     return true;
   }
@@ -70,8 +74,9 @@ export function visibleModules(
   featureEnabled: Record<string, boolean>,
   roles: string[] | undefined,
   path?: string,
+  grants?: string[],
 ): NavModule[] {
-  const allowed = NAV_MODULES.filter((mod) => allowedByRbac(mod, roles));
+  const allowed = NAV_MODULES.filter((mod) => allowedByRbac(mod, roles, grants));
   let chosen: NavModule[];
   if (prefs.template === "advanced") {
     chosen = allowed;
@@ -86,7 +91,7 @@ export function visibleModules(
     chosen = allowed.filter((mod) => mod.simple || (mod.capability && capabilityOn(mod, prefs, featureEnabled)));
   }
   const current = path ? moduleForPath(path) : undefined;
-  if (current && allowedByRbac(current, roles) && !chosen.some((mod) => mod.id === current.id)) {
+  if (current && allowedByRbac(current, roles, grants) && !chosen.some((mod) => mod.id === current.id)) {
     chosen = [...chosen, current];
   }
   return chosen;

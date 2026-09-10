@@ -25,11 +25,15 @@ export interface LoginRequest {
 export interface MeResponse {
   user_id: string;
   username: string;
+  display_name?: string;
   roles: string[];
+  grants?: string[];
   edition: string;
   cluster_id?: string;
   aal?: number;
   mfa_enabled?: boolean;
+  mfa_enforced?: boolean;
+  mfa_enrollment_required?: boolean;
   kind?: "person" | "service";
   ux_level: "guided" | "advanced" | "expert";
   expert_ack: boolean;
@@ -80,6 +84,7 @@ export interface TokenListItem {
   expires_at?: string;
   expired?: boolean;
   revoked_at?: string;
+  last_used_at?: string;
   disabled: boolean;
 }
 
@@ -1624,6 +1629,7 @@ export interface AuditEvent {
   result: string;
   created_at: string;
   actor_user_id?: string;
+  actor_username?: string;
 }
 
 export interface GroupListResponse {

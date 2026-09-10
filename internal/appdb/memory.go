@@ -198,6 +198,9 @@ func (m *Memory) CreateUser(_ context.Context, u User) error {
 	if u.Kind == "" {
 		u.Kind = UserKindPerson
 	}
+	if u.CreatedAt.IsZero() {
+		u.CreatedAt = time.Now().UTC()
+	}
 	m.users[u.ID] = u
 	return nil
 }

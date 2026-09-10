@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiError, patchMe } from "../api/client";
+import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { useSession } from "../session";
 import { uxLevel, type UXLevel } from "../ux";
@@ -66,6 +67,13 @@ export function MePage() {
           <div>
             <dt>Roles</dt>
             <dd>{user.roles.length > 0 ? user.roles.join(", ") : "None"}</dd>
+          </div>
+          <div>
+            <dt>MFA</dt>
+            <dd>
+              {user.mfa_enabled ? "Enrolled" : user.mfa_enrollment_required ? "Enrollment required" : "Not enrolled"}{" "}
+              <Link href="/settings/mfa">Manage authenticator</Link>
+            </dd>
           </div>
           <div>
             <dt>Edition</dt>

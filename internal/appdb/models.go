@@ -19,9 +19,17 @@ type Store interface {
 	CreateUser(ctx context.Context, u User) error
 	GetUserByName(ctx context.Context, clusterID, username string) (*User, error)
 	GetUser(ctx context.Context, id string) (*User, error)
+	ListUsers(ctx context.Context, clusterID string) ([]User, error)
+	UpdateUser(ctx context.Context, u User) error
+	DeleteUser(ctx context.Context, clusterID, userID string) error
 	UpdatePassword(ctx context.Context, userID, passwordHash string) error
+	TouchLastLogin(ctx context.Context, userID string, at time.Time) error
 	CountAdmins(ctx context.Context, clusterID string) (int, error)
+	CountEnabledAdmins(ctx context.Context, clusterID string) (int, error)
 	DeleteUserMFA(ctx context.Context, userID string) error
+	RevokeUserTokens(ctx context.Context, userID string) error
+	TouchTokenLastUsed(ctx context.Context, tokenID string, at time.Time) error
+	SetClusterMFARequired(ctx context.Context, clusterID string, required bool) error
 
 	EnsureRoles(ctx context.Context, clusterID string, roles map[string][]string) error
 	BindRole(ctx context.Context, clusterID, userID, roleName string) error
@@ -390,6 +398,7 @@ type Cluster struct {
 	ID               string
 	Name             string
 	SetupCompletedAt *time.Time
+	MFARequired      bool
 }
 
 // SetupToken is the hashed one-time claim secret.
@@ -406,6 +415,11 @@ type User struct {
 	Username     string
 	PasswordHash string
 	Kind         string
+	DisplayName  string
+	CreatedAt    time.Time
+	DisabledAt   *time.Time
+	MFARequired  bool
+	LastLoginAt  *time.Time
 }
 
 // Session is a cookie session.
@@ -431,6 +445,7 @@ type APIToken struct {
 	CreatedAt   time.Time
 	ExpiresAt   *time.Time
 	RevokedAt   *time.Time
+	LastUsedAt  *time.Time
 }
 
 // Node is a cluster member. ID is identity. Hostname is a locator only.

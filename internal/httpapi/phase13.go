@@ -64,7 +64,7 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.Store.GetUser(r.Context(), ch.UserID)
-	if err != nil || user == nil {
+	if err != nil || user == nil || userDisabled(*user) {
 		writeErr(w, http.StatusUnauthorized, "mfa challenge is invalid")
 		return
 	}
@@ -89,6 +89,7 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.lock().Success(lockKey)
+	_ = s.Store.TouchLastLogin(r.Context(), user.ID, s.now())
 	if err := s.issueSession(w, r, *user, 2); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -220,6 +221,9 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		}
 		if e.ActorUserID != "" {
 			row["actor_user_id"] = e.ActorUserID
+			if u, err := s.Store.GetUser(r.Context(), e.ActorUserID); err == nil && u != nil {
+				row["actor_username"] = u.Username
+			}
 		}
 		out = append(out, row)
 	}

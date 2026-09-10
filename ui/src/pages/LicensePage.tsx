@@ -5,14 +5,12 @@ import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { useSession } from "../session";
 
-function canManage(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin"));
-}
+import { hasGrant } from "../rbac";
 
 export function LicensePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const manage = canManage(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const manage = hasGrant(user, "settings.license.manage");
   const [status, setStatus] = useState<LicenseStatus | null>(null);
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);

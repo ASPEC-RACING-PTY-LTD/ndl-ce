@@ -41,7 +41,7 @@ export function LoginPage() {
         return;
       }
       const result = await login({ username: username.trim(), password });
-      if ("mfa_required" in result && result.mfa_required) {
+      if ("mfa_challenge_id" in result && result.mfa_challenge_id) {
         setChallenge(result);
         return;
       }

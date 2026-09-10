@@ -1,7 +1,11 @@
 import { useEffect } from "react";
 import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
+import { RequireGrant } from "./components/RequireGrant";
 import { APIAccessPage } from "./pages/APIAccessPage";
+import { RolesPage } from "./pages/RolesPage";
+import { SecurityPage } from "./pages/SecurityPage";
+import { UsersPage } from "./pages/UsersPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -154,10 +158,18 @@ function matchPage(path: string) {
     return <ClusterPage />;
   }
   if (path === "/settings/features") {
-    return <FeaturesPage />;
+    return (
+      <RequireGrant permission="feature.manage">
+        <FeaturesPage />
+      </RequireGrant>
+    );
   }
   if (path === "/settings/kubernetes") {
-    return <KubernetesPage />;
+    return (
+      <RequireGrant permission="feature.manage">
+        <KubernetesPage />
+      </RequireGrant>
+    );
   }
   if (path === "/store") {
     return <StorePage />;
@@ -172,31 +184,76 @@ function matchPage(path: string) {
     return <PlansPage />;
   }
   if (path === "/settings/license") {
-    return <LicensePage />;
+    return (
+      <RequireGrant permission="settings.license.manage">
+        <LicensePage />
+      </RequireGrant>
+    );
   }
   if (path === "/docs") {
     return <DocsPage />;
   }
   if (path === "/settings/certificates") {
-    return <CertificatePage />;
+    return (
+      <RequireGrant permission="settings.tls.manage">
+        <CertificatePage />
+      </RequireGrant>
+    );
   }
   if (path === "/settings/updates") {
-    return <UpdatesPage />;
+    return (
+      <RequireGrant permission="updates.manage">
+        <UpdatesPage />
+      </RequireGrant>
+    );
+  }
+  if (path === "/settings/security") {
+    return (
+      <RequireGrant permission="settings.security.manage">
+        <SecurityPage />
+      </RequireGrant>
+    );
   }
   if (path === "/settings/mfa") {
     return <MFAPage />;
   }
   if (path === "/groups") {
-    return <GroupsPage />;
+    return (
+      <RequireGrant permission="identity.group.manage">
+        <GroupsPage />
+      </RequireGrant>
+    );
   }
   if (path === "/audit") {
-    return <AuditPage />;
+    return (
+      <RequireGrant permission="audit.read">
+        <AuditPage />
+      </RequireGrant>
+    );
+  }
+  if (path === "/users") {
+    return (
+      <RequireGrant permission="users.read">
+        <UsersPage />
+      </RequireGrant>
+    );
+  }
+  if (path === "/roles") {
+    return (
+      <RequireGrant permission="roles.manage">
+        <RolesPage />
+      </RequireGrant>
+    );
   }
   if (path === "/backups") {
     return <BackupsPage />;
   }
   if (path === "/api-access") {
-    return <APIAccessPage />;
+    return (
+      <RequireGrant permission="api_access.manage">
+        <APIAccessPage />
+      </RequireGrant>
+    );
   }
   if (path === "/") {
     return <DashboardPage />;

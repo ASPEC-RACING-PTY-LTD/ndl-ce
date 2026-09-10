@@ -1605,6 +1605,7 @@ export type APITokenItem = {
   expires_at?: string;
   expired?: boolean;
   revoked_at?: string;
+  last_used_at?: string;
   disabled?: boolean;
 };
 
@@ -1836,4 +1837,114 @@ export async function attachWorkloadUSB(id: string, address: string) {
 
 export async function attachWorkloadPCI(id: string, pci: string) {
   return readJson(await request(`/workloads/${id}/pci`, { method: "POST", body: JSON.stringify({ pci }) }));
+}
+
+export type ManagedUser = {
+  id: string;
+  username: string;
+  display_name?: string;
+  kind?: string;
+  roles?: string[];
+  status?: string;
+  mfa_enabled?: boolean;
+  mfa_required?: boolean;
+  mfa_status?: string;
+  api_token_count?: number;
+  created_at?: string;
+  last_login_at?: string;
+  disabled_at?: string;
+  protected?: boolean;
+};
+
+export type RoleInfo = {
+  name: string;
+  title: string;
+  summary: string;
+  login: boolean;
+  immutable: boolean;
+  permissions: string[];
+  user_count: number;
+};
+
+export type SecuritySettings = {
+  mfa_required: boolean;
+  session_ttl_hours: number;
+  lockout_max_failures: number;
+  lockout_window_minutes: number;
+  lockout_minutes: number;
+  recover_admin: string;
+};
+
+export async function listManagedUsers(opts: { q?: string; role?: string; status?: string; sort?: string } = {}) {
+  const params = new URLSearchParams();
+  if (opts.q) params.set("q", opts.q);
+  if (opts.role) params.set("role", opts.role);
+  if (opts.status) params.set("status", opts.status);
+  if (opts.sort) params.set("sort", opts.sort);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return readJson<{ items: ManagedUser[]; total: number; page: number; per_page: number }>(await request(`/users${suffix}`));
+}
+
+export async function createManagedUser(body: { username: string; password: string; display_name?: string; role?: string }) {
+  return readJson<ManagedUser>(await request("/users", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function patchManagedUser(
+  id: string,
+  body: { display_name?: string; disabled?: boolean; mfa_required?: boolean; role?: string },
+  confirm?: string,
+) {
+  const headers: Record<string, string> = {};
+  if (confirm) {
+    headers["X-Nodal-Confirm"] = confirm;
+  }
+  return readJson<ManagedUser>(await request(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body), headers }));
+}
+
+export async function deleteManagedUser(id: string) {
+  const res = await request(`/users/${id}`, { method: "DELETE", headers: { "X-Nodal-Confirm": "delete-user" } });
+  if (res.status === 204) {
+    return;
+  }
+  throw new ApiError(res.status, await readErrorMessage(res));
+}
+
+export async function resetManagedUserPassword(id: string, password: string) {
+  const res = await request(`/users/${id}/password`, {
+    method: "POST",
+    headers: { "X-Nodal-Confirm": "reset-password" },
+    body: JSON.stringify({ password }),
+  });
+  if (res.status === 204) {
+    return;
+  }
+  throw new ApiError(res.status, await readErrorMessage(res));
+}
+
+export async function revokeManagedUserSessions(id: string) {
+  const res = await request(`/users/${id}/sessions/revoke`, { method: "POST" });
+  if (res.status === 204) {
+    return;
+  }
+  throw new ApiError(res.status, await readErrorMessage(res));
+}
+
+export async function revokeManagedUserTokens(id: string) {
+  const res = await request(`/users/${id}/tokens/revoke`, { method: "POST" });
+  if (res.status === 204) {
+    return;
+  }
+  throw new ApiError(res.status, await readErrorMessage(res));
+}
+
+export async function listRoles() {
+  return readJson<{ items: RoleInfo[]; custom_roles: boolean }>(await request("/roles"));
+}
+
+export async function getSecuritySettings() {
+  return readJson<SecuritySettings>(await request("/settings/security"));
+}
+
+export async function patchSecuritySettings(body: { mfa_required: boolean }) {
+  return readJson<SecuritySettings>(await request("/settings/security", { method: "PATCH", body: JSON.stringify(body) }));
 }

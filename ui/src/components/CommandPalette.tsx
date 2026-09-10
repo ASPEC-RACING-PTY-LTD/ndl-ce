@@ -13,11 +13,12 @@ type CommandPaletteProps = {
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const grants = session.status === "ready" ? session.user?.grants : undefined;
   const { prefs, featureEnabled } = useNavDisclosure();
   const actions = useMemo(() => {
-    const visibleIds = new Set(visibleModules(prefs, featureEnabled, roles).map((item) => item.id));
+    const visibleIds = new Set(visibleModules(prefs, featureEnabled, roles, undefined, grants).map((item) => item.id));
     return visiblePaletteActions(roles).filter((action) => paletteMatchesVisible(action, visibleIds));
-  }, [featureEnabled, prefs, roles]);
+  }, [featureEnabled, grants, prefs, roles]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const filtered = filterPaletteActions(actions, query);

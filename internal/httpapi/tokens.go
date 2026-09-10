@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.IdentityTokenCreate)
+	p, err := s.require(w, r, rbac.APIAccessManage)
 	if err != nil {
 		return
 	}
@@ -23,7 +23,7 @@ func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	includeRevoked := r.URL.Query().Get("include_revoked") == "1" || r.URL.Query().Get("include_revoked") == "true"
-	clusterWide := hasRole(p, rbac.Admin) || hasRole(p, rbac.Operator)
+	clusterWide := rbac.Authorize(p.Grants, rbac.APIAccessManage)
 	out := make([]map[string]any, 0, len(items))
 	now := s.now()
 	for _, tok := range items {
@@ -60,6 +60,9 @@ func tokenPublicJSON(r *http.Request, s *Server, tok appdb.APIToken, now time.Ti
 	}
 	if tok.RevokedAt != nil {
 		item["revoked_at"] = tok.RevokedAt.UTC().Format(time.RFC3339)
+	}
+	if tok.LastUsedAt != nil {
+		item["last_used_at"] = tok.LastUsedAt.UTC().Format(time.RFC3339)
 	}
 	if u, err := s.Store.GetUser(r.Context(), tok.UserID); err == nil && u != nil {
 		item["username"] = u.Username

@@ -13,77 +13,87 @@ const (
 
 // Permissions used in Phase 1. Later phases add more names.
 const (
-	IdentityRead          = "identity.read"
-	IdentityTokenCreate   = "identity.token.create"
-	IdentityTokenRevoke   = "identity.token.revoke"
-	IdentityRecover       = "identity.recover"
-	IdentityMFA           = "identity.mfa"
-	IdentityGroupManage   = "identity.group.manage"
-	IdentityService       = "identity.service"
-	SecretReveal          = "secret.reveal"
-	SecretUse             = "secret.use"
-	ClusterDestroy        = "cluster.destroy"
-	AuditRead             = "audit.read"
-	AlertRead             = "alert.read"
-	AlertManage           = "alert.manage"
-	ClusterRead           = "cluster.read"
-	NodeRead              = "node.read"
-	EventsRead            = "events.read"
-	MetricsRead           = "metrics.read"
-	StorageRead           = "storage.read"
-	StoragePoolCreate     = "storage.pool.create"
-	StorageVolumeCreate   = "storage.volume.create"
-	StorageImageUpload    = "storage.image.upload"
-	NetworkRead           = "network.read"
-	NetworkCreate         = "network.create"
-	NetworkApply          = "network.apply"
-	ComputeRead           = "compute.read"
-	ComputeCreate         = "compute.create"
-	ComputeLifecycle      = "compute.lifecycle"
-	ComputeModify         = "compute.modify"
-	ComputeGPUAssign      = "compute.gpu.assign"
-	ComputeStart          = "compute.start"
-	ComputeStop           = "compute.stop"
-	ComputeDelete         = "compute.delete"
-	ComputeConsole        = "compute.console"
-	ComputeSnapshot       = "compute.snapshot"
-	ComputeMigrate        = "compute.migrate"
-	StorageSnapshot       = "storage.snapshot"
-	BackupRead            = "backup.read"
-	BackupCreate          = "backup.create"
-	BackupRestore         = "backup.restore"
-	NodeUpdate            = "node.update"
-	NodeRevoke            = "node.revoke"
-	ClusterJoin           = "cluster.join"
-	ClusterPromote        = "cluster.promote"
-	TerminalOpen          = "terminal.open"
-	FilesRead             = "files.read"
-	FilesDownload         = "files.download"
-	FilesUpload           = "files.upload"
-	FilesCreate           = "files.create"
-	FilesModify           = "files.modify"
-	FilesDelete           = "files.delete"
-	FilesPermissions      = "files.permissions"
-	FilesOwnership        = "files.ownership"
-	SettingsTLSRead       = "settings.tls.read"
-	SettingsTLSManage     = "settings.tls.manage"
-	FeatureRead           = "feature.read"
-	FeatureManage         = "feature.manage"
-	StoreRead             = "store.read"
-	StoreInstall          = "store.install"
-	StoreVerify           = "store.verify"
-	PolicyRead            = "policy.read"
-	PolicyApply           = "policy.apply"
-	PolicyRun             = "policy.run"
-	AIAsk                 = "ai.ask"
-	AIManage              = "ai.manage"
-	SettingsLicenseRead   = "settings.license.read"
-	SettingsLicenseManage = "settings.license.manage"
-	MigrationRead         = "migration.read"
-	MigrationImport       = "migration.import"
-	MigrationExport       = "migration.export"
-	MigrationManage       = "migration.manage"
-	All                   = "*"
+	IdentityRead           = "identity.read"
+	IdentityTokenCreate    = "identity.token.create"
+	IdentityTokenRevoke    = "identity.token.revoke"
+	IdentityRecover        = "identity.recover"
+	IdentityMFA            = "identity.mfa"
+	IdentityGroupManage    = "identity.group.manage"
+	IdentityService        = "identity.service"
+	SecretReveal           = "secret.reveal"
+	SecretUse              = "secret.use"
+	ClusterDestroy         = "cluster.destroy"
+	AuditRead              = "audit.read"
+	AlertRead              = "alert.read"
+	AlertManage            = "alert.manage"
+	ClusterRead            = "cluster.read"
+	NodeRead               = "node.read"
+	EventsRead             = "events.read"
+	MetricsRead            = "metrics.read"
+	StorageRead            = "storage.read"
+	StoragePoolCreate      = "storage.pool.create"
+	StorageVolumeCreate    = "storage.volume.create"
+	StorageImageUpload     = "storage.image.upload"
+	NetworkRead            = "network.read"
+	NetworkCreate          = "network.create"
+	NetworkApply           = "network.apply"
+	ComputeRead            = "compute.read"
+	ComputeCreate          = "compute.create"
+	ComputeLifecycle       = "compute.lifecycle"
+	ComputeModify          = "compute.modify"
+	ComputeGPUAssign       = "compute.gpu.assign"
+	ComputeStart           = "compute.start"
+	ComputeStop            = "compute.stop"
+	ComputeDelete          = "compute.delete"
+	ComputeConsole         = "compute.console"
+	ComputeSnapshot        = "compute.snapshot"
+	ComputeMigrate         = "compute.migrate"
+	StorageSnapshot        = "storage.snapshot"
+	BackupRead             = "backup.read"
+	BackupCreate           = "backup.create"
+	BackupRestore          = "backup.restore"
+	NodeUpdate             = "node.update"
+	NodeRevoke             = "node.revoke"
+	ClusterJoin            = "cluster.join"
+	ClusterPromote         = "cluster.promote"
+	TerminalOpen           = "terminal.open"
+	FilesRead              = "files.read"
+	FilesDownload          = "files.download"
+	FilesUpload            = "files.upload"
+	FilesCreate            = "files.create"
+	FilesModify            = "files.modify"
+	FilesDelete            = "files.delete"
+	FilesPermissions       = "files.permissions"
+	FilesOwnership         = "files.ownership"
+	SettingsTLSRead        = "settings.tls.read"
+	SettingsTLSManage      = "settings.tls.manage"
+	FeatureRead            = "feature.read"
+	FeatureManage          = "feature.manage"
+	StoreRead              = "store.read"
+	StoreInstall           = "store.install"
+	StoreVerify            = "store.verify"
+	PolicyRead             = "policy.read"
+	PolicyApply            = "policy.apply"
+	PolicyRun              = "policy.run"
+	AIAsk                  = "ai.ask"
+	AIManage               = "ai.manage"
+	SettingsLicenseRead    = "settings.license.read"
+	SettingsLicenseManage  = "settings.license.manage"
+	MigrationRead          = "migration.read"
+	MigrationImport        = "migration.import"
+	MigrationExport        = "migration.export"
+	MigrationManage        = "migration.manage"
+	UsersRead              = "users.read"
+	UsersCreate            = "users.create"
+	UsersUpdate            = "users.update"
+	UsersDelete            = "users.delete"
+	UsersRolesManage       = "users.roles.manage"
+	UsersSessionsRevoke    = "users.sessions.revoke"
+	APIAccessManage        = "api_access.manage"
+	UpdatesManage          = "updates.manage"
+	RolesManage            = "roles.manage"
+	SettingsSecurityManage = "settings.security.manage"
+	All                    = "*"
 
 	TokenPresetReadonlyDebug = "readonly-debug"
 	TokenPresetFullAudit     = "full-audit"
@@ -114,6 +124,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			SettingsTLSRead, FeatureRead, FeatureManage, StoreRead, StoreInstall, StoreVerify, PolicyRead, PolicyApply, PolicyRun, AIAsk, AIManage,
 			SettingsLicenseRead,
 			MigrationRead, MigrationImport, MigrationExport, MigrationManage,
+			APIAccessManage, UpdatesManage,
 		}
 	case Viewer:
 		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead}
@@ -171,4 +182,81 @@ func SeedRoles() map[string][]string {
 		Viewer:     c.PermissionsForRole(Viewer),
 		Automation: c.PermissionsForRole(Automation),
 	}
+}
+
+// RoleMeta describes a built-in role for Management. Custom roles are not
+// assigned at request time; authz uses this catalog, not roles.permissions.
+type RoleMeta struct {
+	Name      string
+	Title     string
+	Summary   string
+	Login     bool
+	Immutable bool
+}
+
+// BuiltInRoles is the immutable role catalog. Viewer is a standard user,
+// operator is an admin, and admin is the owner / super-admin.
+func BuiltInRoles() []RoleMeta {
+	return []RoleMeta{
+		{
+			Name:      Viewer,
+			Title:     "User",
+			Summary:   "Read the appliance. Personal account and MFA stay available. Management is hidden.",
+			Login:     true,
+			Immutable: true,
+		},
+		{
+			Name:      Operator,
+			Title:     "Admin",
+			Summary:   "Operate workloads, features, updates, groups, and API tokens. Cannot manage users, roles, license, audit, or security policy.",
+			Login:     true,
+			Immutable: true,
+		},
+		{
+			Name:      Admin,
+			Title:     "Owner",
+			Summary:   "Super-admin. Full control including users, roles, license, audit, and security policy. The last Owner cannot be removed, disabled, or demoted.",
+			Login:     true,
+			Immutable: true,
+		},
+		{
+			Name:      Automation,
+			Title:     "Automation",
+			Summary:   "Service identity for policy automation. Not a sign-in role and cannot be assigned to a person.",
+			Login:     false,
+			Immutable: true,
+		},
+	}
+}
+
+// LoginRoles are the roles a person account may be assigned.
+func LoginRoles() []string {
+	return []string{Viewer, Operator, Admin}
+}
+
+// IsLoginRole reports whether name is a person sign-in role.
+func IsLoginRole(name string) bool {
+	switch name {
+	case Viewer, Operator, Admin:
+		return true
+	default:
+		return false
+	}
+}
+
+// GrantsForRoles unions catalog grants for the named roles.
+func GrantsForRoles(roles []string) []string {
+	c := New()
+	seen := map[string]struct{}{}
+	var out []string
+	for _, role := range roles {
+		for _, perm := range c.PermissionsForRole(role) {
+			if _, ok := seen[perm]; ok {
+				continue
+			}
+			seen[perm] = struct{}{}
+			out = append(out, perm)
+		}
+	}
+	return out
 }

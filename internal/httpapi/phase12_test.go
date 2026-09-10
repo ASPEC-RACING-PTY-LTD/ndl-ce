@@ -201,7 +201,7 @@ func TestUpdatesViewerForbidden(t *testing.T) {
 	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: viewCookie})
 	res, _ := ts.Client().Do(req)
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer GET %d", res.StatusCode)
 	}
 	_ = res.Body.Close()

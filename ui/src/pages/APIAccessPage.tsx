@@ -13,15 +13,15 @@ import {
 import { PageHeader } from "../components/PageHeader";
 import { formatWhen } from "../format";
 import { useSession } from "../session";
-import { canMutate } from "../ux";
+import { hasGrant } from "../rbac";
 
 type Reveal = { label: string; token: string };
 
 export function APIAccessPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
-  const admin = Boolean(roles?.includes("admin"));
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = hasGrant(user, "api_access.manage") || hasGrant(user, "identity.token.create");
+  const admin = hasGrant(user, "identity.service");
   const [tokens, setTokens] = useState<APITokenItem[]>([]);
   const [principals, setPrincipals] = useState<ServicePrincipalItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +44,7 @@ export function APIAccessPage() {
 
   useEffect(() => {
     void reload().catch((err) => setError(err instanceof Error ? err.message : "Unavailable"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
 
   function created(label: string, body: CreatedAPIToken | { token: string }) {
@@ -135,6 +136,7 @@ export function APIAccessPage() {
                   <th>Owner</th>
                   <th>Scope</th>
                   <th>Expires</th>
+                  <th>Last used</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -152,6 +154,7 @@ export function APIAccessPage() {
                     </td>
                     <td>{(tok.permissions ?? []).length ? (tok.permissions ?? []).join(", ") : "Role grants"}</td>
                     <td>{tok.expires_at ? formatWhen(tok.expires_at) : "None"}</td>
+                    <td>{tok.last_used_at ? formatWhen(tok.last_used_at) : "Never"}</td>
                     <td>{tok.disabled ? "Revoked" : tok.expired ? "Expired" : "Active"}</td>
                     <td>
                       {mutate && !tok.disabled ? (

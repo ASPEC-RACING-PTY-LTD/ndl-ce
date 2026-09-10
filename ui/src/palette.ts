@@ -82,7 +82,10 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "backups", label: "Backups", href: "/backups", keywords: ["restore"] },
   { id: "account", label: "Account", href: "/me", keywords: ["profile", "ux", "expert"] },
   { id: "certificates", label: "Certificates", href: "/settings/certificates", keywords: ["tls", "https"] },
-  { id: "mfa", label: "MFA", href: "/settings/mfa", keywords: ["totp"] },
+  { id: "mfa", label: "Authenticator", href: "/settings/mfa", keywords: ["totp", "mfa"] },
+  { id: "users", label: "Users", href: "/users", keywords: ["accounts", "rbac", "people"] },
+  { id: "roles", label: "Roles & Permissions", href: "/roles", keywords: ["rbac", "owner", "admin"] },
+  { id: "security", label: "Security", href: "/settings/security", keywords: ["mfa", "lockout", "session"] },
   {
     id: "updates",
     label: "Updates",
@@ -99,7 +102,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   },
   {
     id: "audit",
-    label: "Audit",
+    label: "Audit Log",
     href: "/audit",
     keywords: ["log", "security"],
     require: "audit",

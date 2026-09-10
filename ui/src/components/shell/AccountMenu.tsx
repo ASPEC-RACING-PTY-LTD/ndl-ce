@@ -64,6 +64,10 @@ export function AccountMenu({ user }: { user: MeResponse }) {
             <Icon name="account" size={14} />
             Account
           </Link>
+          <Link href="/settings/mfa" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="account" size={14} />
+            Authenticator
+          </Link>
           <button type="button" role="menuitem" onClick={() => void onLogout()}>
             Log out
           </button>

@@ -18,9 +18,7 @@ import type {
 import { formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
 
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
-}
+import { hasGrant } from "../rbac";
 
 function packageStatusLabel(status: string): string {
   switch (status) {
@@ -97,8 +95,8 @@ function checkpointStatusLabel(status: UpdateCheckpoint["status"]): string {
 
 export function UpdatesPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = hasGrant(user, "updates.manage");
 
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [preview, setPreview] = useState<UpdatePreview | null>(null);

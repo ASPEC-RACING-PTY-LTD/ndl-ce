@@ -32,6 +32,12 @@ restarting packages does not mint new identities. Uninstall does
 not delete those paths. A later destroy command is required to wipe
 them.
 
+Package upgrades, `ndl-control` restarts, overlay reinstalls, and
+`EnsureRoles` refresh the built-in role permission catalog only.
+They do not reset users, passwords, role bindings, sessions, or MFA
+configuration. Setup claim stays single-use: it creates the first
+owner only when no admin exists. See [management.md](management.md).
+
 ## Product VMs (Phase 8)
 
 Product VMs use `nodal-vm@<uuid>.service` and `/usr/sbin/ndl-qemu-launch`.
@@ -371,7 +377,7 @@ Local webhook URLs are secrets. Optional SMTP stays not_configured until a host 
 
 ## License (Phase 43)
 
-CE does not require a key. Settings, License stores a key only when the
+CE does not require a key. Management, License stores a key only when the
 operator enters one. The licensing API is contacted only then. If that
 API is unreachable, status is grace or unreachable. Workloads are not
 stopped. Clearing the key returns the surface to absent CE.
