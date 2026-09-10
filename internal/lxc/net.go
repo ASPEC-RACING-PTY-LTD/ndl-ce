@@ -287,28 +287,26 @@ func ensureGuestLocale(rootfs string) error {
 	return os.WriteFile(filepath.Join(rootfs, "etc", "locale.conf"), body, 0o644)
 }
 
+// guestResolvedResolv is systemd-resolved's real nameserver file, not the
+// 127.0.0.53 stub. DHCP guests must point /etc/resolv.conf here.
+const guestResolvedResolv = "/run/systemd/resolve/resolv.conf"
+
 func replaceGuestResolvConf(rootfs string, dns []string) error {
 	path := filepath.Join(rootfs, "etc", "resolv.conf")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		if err := os.Remove(path); err != nil {
-			return err
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if len(dns) > 0 {
+		var b strings.Builder
+		for _, d := range dns {
+			fmt.Fprintf(&b, "nameserver %s\n", d)
 		}
+		return os.WriteFile(path, []byte(b.String()), 0o644)
 	}
-	if len(dns) == 0 {
-		if _, err := os.Lstat(path); err == nil {
-			return nil
-		}
-		return os.WriteFile(path, []byte("# nameservers are provided by DHCP\n"), 0o644)
-	}
-	_ = os.Remove(path)
-	var b strings.Builder
-	for _, d := range dns {
-		fmt.Fprintf(&b, "nameserver %s\n", d)
-	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return os.Symlink(guestResolvedResolv, path)
 }
 
 func guestIfupdown(n IPConfig) string {
@@ -465,10 +463,10 @@ func chownGuestNetFiles(rootfs string, uid, gid int) error {
 	}
 	for _, rel := range rels {
 		p := filepath.Join(rootfs, rel)
-		if _, err := os.Stat(p); err != nil {
+		if _, err := os.Lstat(p); err != nil {
 			continue
 		}
-		if err := os.Chown(p, uid, gid); err != nil {
+		if err := os.Lchown(p, uid, gid); err != nil {
 			return err
 		}
 	}

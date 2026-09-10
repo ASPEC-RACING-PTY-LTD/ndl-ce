@@ -91,6 +91,13 @@ func TestEnsureGuestNetworkStaticAndDNS(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "etc", "systemd", "system", "ndl-dhclient.service")); err == nil {
 		t.Fatal("static IPv4 must not enable the DHCP unit")
 	}
+	fi, err := os.Lstat(filepath.Join(root, "etc", "resolv.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("static DNS must be a regular resolv.conf")
+	}
 	resolv, err := os.ReadFile(filepath.Join(root, "etc", "resolv.conf"))
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +133,7 @@ func TestEnsureGuestNetworkDHCPWritesClientUnit(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(root, "etc", "systemd", "system", "multi-user.target.wants", "ndl-dhclient.service")); err != nil {
 		t.Fatal(err)
 	}
+	assertGuestResolvedResolv(t, root)
 }
 
 func TestEnsureGuestNetworkReplacesStubResolv(t *testing.T) {
@@ -140,20 +148,7 @@ func TestEnsureGuestNetworkReplacesStubResolv(t *testing.T) {
 	if err := ensureGuestNetwork(root, IPConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	fi, err := os.Lstat(filepath.Join(etc, "resolv.conf"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode()&os.ModeSymlink != 0 {
-		t.Fatal("dangling stub resolv.conf must become a regular file")
-	}
-	body, err := os.ReadFile(filepath.Join(etc, "resolv.conf"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(body), "192.168.2.1") {
-		t.Fatal("must not hardcode this LAN DNS")
-	}
+	assertGuestResolvedResolv(t, root)
 	drop, err := os.ReadFile(filepath.Join(root, "etc", "systemd", "system", "systemd-resolved.service.d", "zzzz-ndl-lxc.conf"))
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +162,55 @@ func TestEnsureGuestNetworkReplacesStubResolv(t *testing.T) {
 	}
 	if !strings.Contains(string(conf), "DNSStubListener=no") {
 		t.Fatal(string(conf))
+	}
+}
+
+func TestEnsureGuestNetworkReconcilesCommentResolvToResolved(t *testing.T) {
+	root := t.TempDir()
+	etc := filepath.Join(root, "etc")
+	if err := os.MkdirAll(etc, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(etc, "resolv.conf"), []byte("# nameservers are provided by DHCP\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureGuestNetwork(root, IPConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	assertGuestResolvedResolv(t, root)
+	if err := ensureGuestNetwork(root, IPConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	assertGuestResolvedResolv(t, root)
+}
+
+func TestProvisionGuestDHCPResolvUsesResolved(t *testing.T) {
+	root := t.TempDir()
+	if err := provisionGuest(root, "aspecracing", IPConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	assertGuestResolvedResolv(t, root)
+}
+
+func assertGuestResolvedResolv(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "etc", "resolv.conf")
+	fi, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("DHCP resolv.conf must be a symlink to systemd-resolved")
+	}
+	got, err := os.Readlink(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != guestResolvedResolv {
+		t.Fatalf("resolv.conf -> %s, want %s", got, guestResolvedResolv)
+	}
+	if strings.Contains(got, "stub-resolv.conf") {
+		t.Fatal(got)
 	}
 }
 
@@ -240,4 +284,19 @@ func TestProvisionGuestHostnameLocale(t *testing.T) {
 	if string(conf) != "LANG=C.UTF-8\n" {
 		t.Fatal(string(conf))
 	}
+	assertGuestResolvedResolv(t, root)
+}
+
+func TestChownGuestNetFilesDanglingResolvSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Lchown is a Unix mapped-root path")
+	}
+	root := t.TempDir()
+	if err := provisionGuest(root, "aspecracing", IPConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := chownGuestNetFiles(root, 100000, 100000); err != nil {
+		t.Fatal(err)
+	}
+	assertGuestResolvedResolv(t, root)
 }

@@ -70,11 +70,9 @@ func termArgv(req termRequest) ([]string, error) {
 		return []string{
 			"/usr/bin/lxc-attach", "-P", lxcPath, "-n", req.TargetID,
 			"--clear-env",
-			"-v", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 			"-v", "TERM=xterm-256color",
-			"-v", "HOME=/root",
 			"-v", "LANG=C.UTF-8",
-			"--", "/bin/sh", "-l",
+			"--", "/bin/login", "-f", "root",
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported terminal target %q", kind)
