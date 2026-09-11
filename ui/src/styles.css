@@ -1087,6 +1087,8 @@ fieldset.field legend.field-label {
 
 .section-block {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
   gap: var(--space-2);
   min-width: 0;
 }
