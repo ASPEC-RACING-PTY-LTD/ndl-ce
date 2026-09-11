@@ -356,7 +356,9 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 		meta.ImagePin = "imported"
 	}
 	if meta.DesiredPower == "" {
-		meta.DesiredPower = "running"
+		// Stay stopped unless the archive recorded a running desired power.
+		// Missing metadata must not start a restored guest onto the LAN.
+		meta.DesiredPower = "stopped"
 	}
 	size := meta.RootSize
 	if src != nil {

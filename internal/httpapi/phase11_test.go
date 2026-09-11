@@ -1687,7 +1687,7 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
-	ctBody := `{"name":"ndl-backup-ct-test","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	ctBody := `{"name":"ndl-backup-ct-test","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(ctBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
@@ -1747,5 +1747,8 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	}
 	if !fw.lastSpec.SkipImage {
 		t.Fatalf("restore must extract the archive, not reinstall the image: %+v", fw.lastSpec)
+	}
+	if !fw.lastSpec.NoStart {
+		t.Fatalf("restore of a stopped container must not start: %+v", fw.lastSpec)
 	}
 }
