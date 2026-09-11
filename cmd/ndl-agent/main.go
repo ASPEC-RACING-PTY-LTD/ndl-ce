@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
+	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
@@ -36,6 +37,8 @@ func main() {
 	}
 	recoverStaleNetwork(dir)
 	restoreDirectoryRoots(dir)
+	ctbackup.RecoverOwnedFreezes()
+	go ctbackup.WatchOwnedFreezes(nil)
 	lxc.EnsureHostKeyringQuota()
 	reconcileRuntimeLXC(h.Workloads)
 	go scrapeMetrics(ms, dir)

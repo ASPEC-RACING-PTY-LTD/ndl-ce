@@ -144,11 +144,15 @@ func freezeUnitIfPresent(unit string, required bool) (func(), error) {
 		}
 		return nop, nil
 	}
+	if err := writeFreezeLease(unit); err != nil {
+		return nop, fmt.Errorf("cgroup freeze lease: %w", err)
+	}
 	var frozen []string
 	unfreeze := func() {
 		for i := len(frozen) - 1; i >= 0; i-- {
 			_ = os.WriteFile(frozen[i], []byte("0\n"), 0o644)
 		}
+		removeFreezeLease(unit)
 	}
 	for _, path := range paths {
 		if err := os.WriteFile(path, []byte("1\n"), 0o644); err != nil {

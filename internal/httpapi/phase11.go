@@ -604,7 +604,7 @@ func (s *Server) writePolicyRuns(w http.ResponseWriter, r *http.Request, cluster
 		return
 	}
 	out := make([]map[string]any, 0, len(items))
-	summary := map[string]int{"succeeded": 0, "succeeded_with_warnings": 0, "failed": 0, "running": 0}
+	summary := map[string]int{"succeeded": 0, "succeeded_with_warnings": 0, "failed": 0, "running": 0, "interrupted": 0}
 	for _, run := range items {
 		out = append(out, backupRunJSON(run))
 		s.audit(r, clusterID, userID, "backup.run", run.Status, run.ID)
@@ -615,6 +615,8 @@ func (s *Server) writePolicyRuns(w http.ResponseWriter, r *http.Request, cluster
 			summary["succeeded_with_warnings"]++
 		case appdb.BackupFailed:
 			summary["failed"]++
+		case appdb.BackupInterrupted:
+			summary["interrupted"]++
 		case appdb.BackupRunning:
 			summary["running"]++
 		}
@@ -636,11 +638,72 @@ func refuseBackupExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appd
 	return nil
 }
 
+func (s *Server) beginPolicy(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return true
+	}
+	s.policyMu.Lock()
+	defer s.policyMu.Unlock()
+	if s.policyActive != "" {
+		return false
+	}
+	s.policyActive = id
+	return true
+}
+
+func (s *Server) endPolicy(id string) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return
+	}
+	s.policyMu.Lock()
+	defer s.policyMu.Unlock()
+	if s.policyActive == id {
+		s.policyActive = ""
+	}
+}
+
+const backupInterruptedError = "backup was interrupted when control restarted"
+
+// ReconcileInterruptedBackupRuns marks leftover running rows interrupted so a
+// control restart cannot block nightly scheduling forever.
+func (s *Server) ReconcileInterruptedBackupRuns(ctx context.Context) int {
+	cluster, err := s.Store.GetCluster(ctx)
+	if err != nil || cluster == nil {
+		return 0
+	}
+	runs, err := s.Store.ListBackupRuns(ctx, cluster.ID)
+	if err != nil {
+		return 0
+	}
+	now := s.now()
+	n := 0
+	for _, run := range runs {
+		if run.Status != appdb.BackupRunning {
+			continue
+		}
+		run.Status = appdb.BackupInterrupted
+		run.Error = backupInterruptedError
+		run.FinishedAt = &now
+		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID string) ([]appdb.BackupRun, error) {
 	pol, err := s.Store.GetBackupPolicy(ctx, clusterID, policyID)
 	if err != nil || pol == nil {
 		return nil, errNotFound("backup policy not found")
 	}
+	if !s.beginPolicy(pol.ID) {
+		return nil, errConflict("backup policy is already running")
+	}
+	defer s.endPolicy(pol.ID)
+	_ = s.Store.UpdateBackupPolicyLastRun(ctx, clusterID, pol.ID, s.now())
 	ids, err := s.policyWorkloadIDs(ctx, clusterID, *pol)
 	if err != nil {
 		return nil, err
@@ -826,7 +889,6 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 			return run, errInternal("could not record backup run")
 		}
 		if policyID != "" {
-			_ = s.Store.UpdateBackupPolicyLastRun(ctx, clusterID, policyID, now)
 			if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
 				s.pruneBackupArtifacts(ctx, clusterID, workloadID, targetID, *pol)
 			}
@@ -948,7 +1010,6 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		return run, errInternal("could not record backup run")
 	}
 	if policyID != "" {
-		_ = s.Store.UpdateBackupPolicyLastRun(ctx, clusterID, policyID, now)
 		if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
 			s.pruneBackupArtifacts(ctx, clusterID, workloadID, targetID, *pol)
 		}

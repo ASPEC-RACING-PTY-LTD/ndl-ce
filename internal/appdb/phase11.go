@@ -13,6 +13,7 @@ const (
 	BackupSucceeded             = "succeeded"
 	BackupSucceededWithWarnings = "succeeded_with_warnings"
 	BackupFailed                = "failed"
+	BackupInterrupted           = "interrupted"
 	BackupLocal                 = "local"
 	BackupNFS                   = "nfs"
 	BackupSMB                   = "smb"

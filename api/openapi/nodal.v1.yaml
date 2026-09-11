@@ -8029,6 +8029,7 @@ components:
             - succeeded
             - succeeded_with_warnings
             - failed
+            - interrupted
         error:
           type: string
         restored_workload_id:

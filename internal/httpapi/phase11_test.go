@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1813,5 +1814,221 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	}
 	if !fw.lastSpec.NoStart {
 		t.Fatalf("restore of a stopped container must not start: %+v", fw.lastSpec)
+	}
+}
+
+type gateBackup struct {
+	fakeBackup
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (g *gateBackup) CopyBackup(ctx context.Context, action, src, dest string) (storage.CopyResult, error) {
+	if action == qemu.BackupCopy {
+		g.once.Do(func() { close(g.started) })
+		select {
+		case <-g.release:
+		case <-ctx.Done():
+			return storage.CopyResult{}, ctx.Err()
+		}
+	}
+	return g.fakeBackup.CopyBackup(ctx, action, src, dest)
+}
+
+type clockBackup struct {
+	fakeBackup
+	advance func()
+}
+
+func (c *clockBackup) CopyBackup(ctx context.Context, action, src, dest string) (storage.CopyResult, error) {
+	res, err := c.fakeBackup.CopyBackup(ctx, action, src, dest)
+	if action == qemu.BackupCopy && c.advance != nil {
+		c.advance()
+	}
+	return res, err
+}
+
+func TestBackupPolicyRunRejectsSecondExecution(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	gate := &gateBackup{started: make(chan struct{}), release: make(chan struct{})}
+	s.Backup = gate
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"name":"lock","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var vm map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&vm)
+	_ = res.Body.Close()
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var tgt map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&tgt)
+	_ = res.Body.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"lock","scope":"selected","workload_ids":["`+vm["id"].(string)+`"],"target_id":"`+tgt["id"].(string)+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var pol map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&pol)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy %d", res.StatusCode)
+	}
+
+	first := make(chan int, 1)
+	go func() {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+pol["id"].(string)+"/run", strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			first <- 0
+			return
+		}
+		_ = res.Body.Close()
+		first <- res.StatusCode
+	}()
+	select {
+	case <-gate.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first run did not start")
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+pol["id"].(string)+"/run", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("second run %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "already running") {
+		t.Fatalf("second run body %s", raw)
+	}
+	close(gate.release)
+	if code := <-first; code != http.StatusAccepted {
+		t.Fatalf("first run %d", code)
+	}
+}
+
+func TestBackupPolicyLastRunAtIsPolicyStart(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	start := time.Date(2026, 9, 12, 1, 0, 0, 0, time.UTC)
+	now := start
+	s.Now = func() time.Time { return now }
+	s.Backup = &clockBackup{advance: func() { now = now.Add(2 * time.Hour) }}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	createVM := func(name string) string {
+		t.Helper()
+		body := `{"name":"` + name + `","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		var vm map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&vm)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("vm %s %d", name, res.StatusCode)
+		}
+		return vm["id"].(string)
+	}
+	a := createVM("sched-a")
+	b := createVM("sched-b")
+	dir := t.TempDir()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var tgt map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&tgt)
+	_ = res.Body.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"sched","scope":"selected","workload_ids":["`+a+`","`+b+`"],"target_id":"`+tgt["id"].(string)+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var pol map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&pol)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy %d", res.StatusCode)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+pol["id"].(string)+"/run", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("run %d %s", res.StatusCode, raw)
+	}
+	got, _ := mem.GetBackupPolicy(context.Background(), cluster.ID, pol["id"].(string))
+	if got == nil || got.LastRunAt == nil || !got.LastRunAt.Equal(start) {
+		t.Fatalf("last_run_at must stay at policy start %s, got %+v", start, got)
+	}
+	if !now.After(start.Add(3 * time.Hour)) {
+		t.Fatalf("clock must have advanced across workloads, now=%s", now)
+	}
+}
+
+func TestReconcileInterruptedBackupRuns(t *testing.T) {
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	now := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	run := appdb.BackupRun{
+		ID: uuid.NewString(), ClusterID: cluster.ID, PolicyID: uuid.NewString(),
+		TargetID: uuid.NewString(), WorkloadID: uuid.NewString(),
+		Status: appdb.BackupRunning, StartedAt: now.Add(-time.Hour),
+	}
+	if err := mem.CreateBackupRun(context.Background(), run); err != nil {
+		t.Fatal(err)
+	}
+	done := appdb.BackupRun{
+		ID: uuid.NewString(), ClusterID: cluster.ID,
+		TargetID: run.TargetID, WorkloadID: uuid.NewString(),
+		Status: appdb.BackupSucceeded, StartedAt: now.Add(-2 * time.Hour),
+	}
+	if err := mem.CreateBackupRun(context.Background(), done); err != nil {
+		t.Fatal(err)
+	}
+	if n := s.ReconcileInterruptedBackupRuns(context.Background()); n != 1 {
+		t.Fatalf("reconciled %d", n)
+	}
+	got, _ := mem.GetBackupRun(context.Background(), cluster.ID, run.ID)
+	if got == nil || got.Status != appdb.BackupInterrupted || got.Error != backupInterruptedError || got.FinishedAt == nil {
+		t.Fatalf("run %+v", got)
+	}
+	kept, _ := mem.GetBackupRun(context.Background(), cluster.ID, done.ID)
+	if kept == nil || kept.Status != appdb.BackupSucceeded {
+		t.Fatalf("succeeded run must stay %+v", kept)
 	}
 }

@@ -29,20 +29,41 @@ func (s *S3Transport) client() *http.Client {
 	return defaultS3HTTP()
 }
 
+var sharedS3HTTP = newS3HTTP()
+
 func defaultS3HTTP() *http.Client {
+	return sharedS3HTTP
+}
+
+func newS3HTTP() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
 			TLSHandshakeTimeout:   15 * time.Second,
 			ResponseHeaderTimeout: 60 * time.Second,
-			IdleConnTimeout:       90 * time.Second,
+			IdleConnTimeout:       30 * time.Second,
 			ExpectContinueTimeout: 5 * time.Second,
+			MaxIdleConns:          16,
+			MaxIdleConnsPerHost:   8,
+			MaxConnsPerHost:       8,
 		},
 	}
 }
 
+func (s *S3Transport) CloseIdle() {
+	if s == nil {
+		return
+	}
+	if ht, ok := s.client().Transport.(interface{ CloseIdleConnections() }); ok {
+		ht.CloseIdleConnections()
+	}
+}
+
 func (s *S3Transport) Put(ctx context.Context, bucket, object string, body []byte) error {
-	return s.PutStream(ctx, bucket, object, bytes.NewReader(body), int64(len(body)))
+	if len(body) <= PartSize {
+		return s.putSingle(ctx, bucket, object, body)
+	}
+	return s.putMultipart(ctx, bucket, object, bytes.NewReader(body))
 }
 
 func (s *S3Transport) PutStream(ctx context.Context, bucket, object string, r io.Reader, size int64) error {

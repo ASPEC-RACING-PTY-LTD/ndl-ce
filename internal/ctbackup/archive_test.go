@@ -149,8 +149,10 @@ func TestArchivePreservesModeAndOptionalXattr(t *testing.T) {
 
 func TestFreezeMissingFileIsSkipped(t *testing.T) {
 	prev := cgroupRoot
-	t.Cleanup(func() { cgroupRoot = prev })
+	prevLease := freezeLeaseDir
+	t.Cleanup(func() { cgroupRoot = prev; freezeLeaseDir = prevLease })
 	cgroupRoot = t.TempDir()
+	freezeLeaseDir = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
 	unfreeze, err := freezeUnitIfPresent(unit, false)
 	if err != nil {
@@ -161,8 +163,10 @@ func TestFreezeMissingFileIsSkipped(t *testing.T) {
 
 func TestFreezeWritesAndClears(t *testing.T) {
 	prev := cgroupRoot
-	t.Cleanup(func() { cgroupRoot = prev })
+	prevLease := freezeLeaseDir
+	t.Cleanup(func() { cgroupRoot = prev; freezeLeaseDir = prevLease })
 	cgroupRoot = t.TempDir()
+	freezeLeaseDir = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
 	dir := filepath.Join(cgroupRoot, "system.slice", unit)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -189,8 +193,10 @@ func TestFreezeWritesAndClears(t *testing.T) {
 
 func TestFreezeUsesLXCPayload(t *testing.T) {
 	prev := cgroupRoot
-	t.Cleanup(func() { cgroupRoot = prev })
+	prevLease := freezeLeaseDir
+	t.Cleanup(func() { cgroupRoot = prev; freezeLeaseDir = prevLease })
 	cgroupRoot = t.TempDir()
+	freezeLeaseDir = t.TempDir()
 	id := "11111111-1111-4111-8111-111111111111"
 	unit := "nodal-ct@" + id + ".service"
 	dir := filepath.Join(cgroupRoot, "lxc.payload."+id)
@@ -218,8 +224,10 @@ func TestFreezeUsesLXCPayload(t *testing.T) {
 
 func TestFreezeUsesSystemdTemplateSlice(t *testing.T) {
 	prev := cgroupRoot
-	t.Cleanup(func() { cgroupRoot = prev })
+	prevLease := freezeLeaseDir
+	t.Cleanup(func() { cgroupRoot = prev; freezeLeaseDir = prevLease })
 	cgroupRoot = t.TempDir()
+	freezeLeaseDir = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
 	dir := filepath.Join(cgroupRoot, "system.slice", systemdCTSlice, unit)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -242,8 +250,10 @@ func TestFreezeUsesSystemdTemplateSlice(t *testing.T) {
 
 func TestFreezeRequiredFailsWhenMissing(t *testing.T) {
 	prev := cgroupRoot
-	t.Cleanup(func() { cgroupRoot = prev })
+	prevLease := freezeLeaseDir
+	t.Cleanup(func() { cgroupRoot = prev; freezeLeaseDir = prevLease })
 	cgroupRoot = t.TempDir()
+	freezeLeaseDir = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
 	if _, err := freezeUnitIfPresent(unit, true); err == nil {
 		t.Fatal("required freeze must fail when no cgroup.freeze exists")
@@ -278,12 +288,15 @@ func TestParseFreezeUnit(t *testing.T) {
 
 func TestArchiveUnfreezesWhenTarFails(t *testing.T) {
 	prev := cgroupRoot
+	prevLease := freezeLeaseDir
 	prevTar := runTarCmd
 	t.Cleanup(func() {
 		cgroupRoot = prev
+		freezeLeaseDir = prevLease
 		runTarCmd = prevTar
 	})
 	cgroupRoot = t.TempDir()
+	freezeLeaseDir = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
 	dir := filepath.Join(cgroupRoot, "system.slice", unit)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

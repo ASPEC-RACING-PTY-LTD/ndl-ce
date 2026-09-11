@@ -8,7 +8,10 @@ same pool. A backup copies data to a destination.
 A policy is the operational object. Scope is `all` (the current eligible
 fleet, including workloads created later) or `selected` (an explicit
 workload list). All is the default. One policy can cover many workloads.
-Run now executes the policy against its current scope. Eligible means
+Run now executes the policy against its current scope. One policy
+execution runs at a time. A second Run now (or a nightly tick) against
+any policy returns 409 while another execution is in progress. Fleet
+workload concurrency stays at 1. Eligible means
 the root disk can be copied with any supported method: ZFS send when the
 pool is ZFS, qcow2 flatten for Directory VMs, or a filesystem archive
 for Directory system containers. A running Directory container is frozen
@@ -17,6 +20,24 @@ file exists) only while the rootfs tree is copied. Encoding and upload continue
 after resume. Extra disks, iSCSI, and distributed
 volumes are skipped as resources. They do not make a backupable root
 ineligible. A run with nothing eligible returns 422.
+
+`last_run_at` is stamped once when a policy execution starts, not after
+each workload finishes. Nightly due-ness is therefore "about a day after
+the policy began", not "a day after the last guest completed".
+
+On control restart, leftover `running` rows become `interrupted` so a
+crashed execution cannot block nightly forever.
+
+Directory freeze leases live under `/run/ndl/backup-freeze`. Agent
+startup thaws only cgroups that still have a No-DAL `directory-backup`
+lease. Freezes without a lease are left alone. A watchdog thaws owned
+leases older than 30 minutes so an agent crash cannot leave a guest
+frozen indefinitely.
+
+Object packs reuse one HTTP client per agent socket and one S3
+transport per pack. Chunk PUT and HEAD overlap with a bound of 4
+in-flight object RPCs inside a single backup. That does not start a
+second guest.
 
 ## Snapshots
 

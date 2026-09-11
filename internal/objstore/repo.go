@@ -38,3 +38,9 @@ func (r Repo) Delete(ctx context.Context, key string) error {
 	}
 	return r.T.Delete(ctx, r.Bucket, key)
 }
+
+func (r Repo) CloseIdle() {
+	if c, ok := r.T.(interface{ CloseIdle() }); ok {
+		c.CloseIdle()
+	}
+}

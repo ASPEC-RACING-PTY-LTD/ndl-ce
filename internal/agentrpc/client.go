@@ -21,8 +21,15 @@ import (
 	"github.com/no-dal/ndl-ce/internal/transport"
 	"golang.org/x/net/http2"
 	"io"
+	"sync"
 	"time"
 )
+
+type rpcCacheEntry struct {
+	cli agentv1connect.AgentServiceClient
+}
+
+var rpcClients sync.Map
 
 // Client is the control-plane southbound client.
 type Client struct {
@@ -547,29 +554,33 @@ func decodeInventory(raw []byte) (inventory.Inventory, error) {
 }
 
 func (c Client) rpc() agentv1connect.AgentServiceClient {
+	key, network, addr, base := c.rpcDial()
+	if v, ok := rpcClients.Load(key); ok {
+		return v.(*rpcCacheEntry).cli
+	}
+	httpClient := &http.Client{Transport: &http2.Transport{
+		AllowHTTP:       true,
+		ReadIdleTimeout: 30 * time.Second,
+		PingTimeout:     15 * time.Second,
+		DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, addr)
+		},
+	}}
+	cli := agentv1connect.NewAgentServiceClient(httpClient, base)
+	actual, _ := rpcClients.LoadOrStore(key, &rpcCacheEntry{cli: cli})
+	return actual.(*rpcCacheEntry).cli
+}
+
+func (c Client) rpcDial() (key, network, addr, base string) {
 	if c.TCPAddr != "" {
-		addr := c.TCPAddr
-		httpClient := &http.Client{Transport: &http2.Transport{
-			AllowHTTP: true,
-			DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
-				var d net.Dialer
-				return d.DialContext(ctx, "tcp", addr)
-			},
-		}}
-		return agentv1connect.NewAgentServiceClient(httpClient, "http://remote")
+		return "tcp:" + c.TCPAddr, "tcp", c.TCPAddr, "http://remote"
 	}
 	path := c.Socket
 	if path == "" {
 		path = transport.AgentSocket
 	}
-	httpClient := &http.Client{Transport: &http2.Transport{
-		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, "unix", path)
-		},
-	}}
-	return agentv1connect.NewAgentServiceClient(httpClient, "http://local")
+	return "unix:" + path, "unix", path, "http://local"
 }
 
 // OpenSession binds a remote worker session on the agent.

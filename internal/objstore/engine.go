@@ -202,7 +202,9 @@ func (e *Engine) putPack(ctx context.Context, req Request) (Result, error) {
 	wrap := func(plain []byte) ([]byte, error) {
 		return Encrypt(plain, req.EncryptionKey)
 	}
-	meta, err := backuppack.Write(ctx, Repo{T: tr, Bucket: req.Bucket}, req.Key, payload, config, wrap, backuppack.Manifest{
+	repo := Repo{T: tr, Bucket: req.Bucket}
+	defer repo.CloseIdle()
+	meta, err := backuppack.Write(ctx, repo, req.Key, payload, config, wrap, backuppack.Manifest{
 		PayloadKind: payloadKind(req.SourcePath), ObjectPrefix: req.Key,
 	})
 	if err != nil {

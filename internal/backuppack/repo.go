@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Repository stores pack objects. Puts are bounded: callers never pass a
@@ -84,11 +86,32 @@ func (d DirRepo) Delete(_ context.Context, key string) error {
 
 // MemRepo is an in-process pack store for tests. Each object is one chunk.
 type MemRepo struct {
-	Objects map[string][]byte
-	MaxPut  int
+	mu       sync.Mutex
+	Objects  map[string][]byte
+	MaxPut   int
+	InFlight int
+	PeakPuts int
+	Delay    time.Duration
 }
 
 func (m *MemRepo) Put(_ context.Context, key string, body []byte) error {
+	m.mu.Lock()
+	m.InFlight++
+	if m.InFlight > m.PeakPuts {
+		m.PeakPuts = m.InFlight
+	}
+	delay := m.Delay
+	m.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	defer func() {
+		m.mu.Lock()
+		m.InFlight--
+		m.mu.Unlock()
+	}()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.Objects == nil {
 		m.Objects = map[string][]byte{}
 	}
@@ -101,6 +124,8 @@ func (m *MemRepo) Put(_ context.Context, key string, body []byte) error {
 }
 
 func (m *MemRepo) Get(_ context.Context, key string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	body, ok := m.Objects[key]
 	if !ok {
 		return nil, fmt.Errorf("object not found")
@@ -109,6 +134,8 @@ func (m *MemRepo) Get(_ context.Context, key string) ([]byte, error) {
 }
 
 func (m *MemRepo) Head(_ context.Context, key string) (bool, int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	body, ok := m.Objects[key]
 	if !ok {
 		return false, 0, nil
@@ -117,6 +144,8 @@ func (m *MemRepo) Head(_ context.Context, key string) (bool, int64, error) {
 }
 
 func (m *MemRepo) Delete(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.Objects, key)
 	return nil
 }

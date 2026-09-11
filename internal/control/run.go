@@ -167,6 +167,9 @@ func Run(cfg Config) error {
 		LeaseHolder: holder,
 		Challenges:  challenges,
 	}
+	if n := srv.ReconcileInterruptedBackupRuns(ctx); n > 0 {
+		log.Printf("backup: marked %d interrupted run(s) after control restart", n)
+	}
 	enabled, err := certificateEnabled(ctx, st)
 	if err != nil {
 		return fmt.Errorf("tls state is unreadable; refusing to start: %w", err)

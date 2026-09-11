@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSanitizeAndUniqueNames(t *testing.T) {
@@ -164,4 +165,32 @@ func (n neverEnding) Read(p []byte) (int, error) {
 func TestPayloadChecksum(t *testing.T) {
 	sum := sha256.Sum256([]byte("x"))
 	_ = sum
+}
+
+func TestWriteUploadsChunksInParallel(t *testing.T) {
+	prevChunk := ChunkSize
+	prevConc := UploadConcurrency
+	ChunkSize = 32
+	UploadConcurrency = 4
+	t.Cleanup(func() {
+		ChunkSize = prevChunk
+		UploadConcurrency = prevConc
+	})
+	repo := &MemRepo{MaxPut: MaxLiveBytes(), Delay: 20 * time.Millisecond}
+	payload := bytes.Repeat([]byte("n"), 32*8)
+	meta, err := Write(context.Background(), repo, "backups/parallel/stamp", bytes.NewReader(payload), nil, GzipWrap, Manifest{
+		WorkloadID: "wl", PayloadKind: PayloadTar,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Chunks) != 8 {
+		t.Fatalf("chunks %d", len(meta.Chunks))
+	}
+	if repo.PeakPuts < 2 {
+		t.Fatalf("expected overlapping PUTs, peak %d", repo.PeakPuts)
+	}
+	if repo.PeakPuts > UploadConcurrency {
+		t.Fatalf("peak PUTs %d exceeds bound %d", repo.PeakPuts, UploadConcurrency)
+	}
 }

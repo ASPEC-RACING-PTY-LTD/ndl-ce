@@ -102,6 +102,8 @@ type Server struct {
 	LeaseHolder  string
 	Challenges   *ndltls.ChallengeMem
 	backupMu     sync.Mutex
+	policyMu     sync.Mutex
+	policyActive string
 	nightlyBusy  atomic.Bool
 	alertBusy    atomic.Bool
 	docker       *dockerCache

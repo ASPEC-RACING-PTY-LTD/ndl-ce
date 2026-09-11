@@ -86,6 +86,8 @@ function runStatusLabel(status: BackupRun["status"]): string {
       return "Succeeded with warnings";
     case "failed":
       return "Failed";
+    case "interrupted":
+      return "Interrupted";
     default:
       return honestStatus(status);
   }

@@ -109,3 +109,44 @@ func TestPutStreamMultipartQuotesETagsAndAborts(t *testing.T) {
 		t.Fatal("failed multipart must abort")
 	}
 }
+
+func TestPutSmallUsesSingleRequest(t *testing.T) {
+	puts := 0
+	multipart := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.RawQuery == "uploads=":
+			multipart++
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodPut:
+			puts++
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	tr := NewS3Transport(srv.URL, "auto", "ak", "sk", KindMinIO, srv.Client())
+	if err := tr.Put(context.Background(), "ndl-ce", "backups/small", []byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if puts != 1 || multipart != 0 {
+		t.Fatalf("small put must be one PUT, puts=%d multipart=%d", puts, multipart)
+	}
+}
+
+func TestDefaultS3HTTPBoundsConnections(t *testing.T) {
+	a := defaultS3HTTP()
+	b := defaultS3HTTP()
+	if a != b {
+		t.Fatal("default S3 client must be shared")
+	}
+	ht, ok := a.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("default S3 transport")
+	}
+	if ht.MaxConnsPerHost != 8 || ht.MaxIdleConnsPerHost != 8 || ht.MaxIdleConns != 16 {
+		t.Fatalf("conn bounds %+v", ht)
+	}
+}

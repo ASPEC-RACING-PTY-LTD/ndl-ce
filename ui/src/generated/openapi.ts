@@ -1435,7 +1435,7 @@ export interface BackupRun {
   target_id: string;
   workload_id: string;
   snapshot_id?: string;
-  status: "running" | "succeeded" | "succeeded_with_warnings" | "failed";
+  status: "running" | "succeeded" | "succeeded_with_warnings" | "failed" | "interrupted";
   error?: string;
   restored_workload_id?: string;
   started_at: string;
@@ -2581,6 +2581,8 @@ export type FlattenWorkloadSnapshotsPath = "/api/v1/workloads/{id}/snapshots/fla
 export type RollbackSnapshotPath = "/api/v1/snapshots/{id}/rollback";
 
 export type ListBackupTargetsPath = "/api/v1/backups/targets";
+
+export type TestBackupTargetPath = "/api/v1/backups/targets/{id}/test";
 
 export type ListBackupPoliciesPath = "/api/v1/backups/policies";
 
