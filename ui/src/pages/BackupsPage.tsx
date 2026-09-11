@@ -73,7 +73,7 @@ function targetAllowsRun(t: BackupTarget): boolean {
   if (t.status === "available" || t.status === "untested" || t.status === "degraded") {
     return true;
   }
-  return isObjectKind(t.kind) && Boolean(t.no_check_bucket) && (t.status === "not_configured" || t.status === "untested");
+  return isObjectKind(t.kind) && Boolean(t.no_check_bucket) && t.status === "not_configured";
 }
 
 function runStatusLabel(status: BackupRun["status"]): string {
