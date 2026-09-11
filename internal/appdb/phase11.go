@@ -9,25 +9,36 @@ import (
 )
 
 const (
-	BackupRunning          = "running"
-	BackupSucceeded        = "succeeded"
-	BackupFailed           = "failed"
-	BackupLocal            = "local"
-	BackupNFS              = "nfs"
-	BackupSMB              = "smb"
-	BackupS3               = "s3"
-	BackupR2               = "r2"
-	BackupAWS              = "aws"
-	BackupB2               = "b2"
-	BackupMinIO            = "minio"
-	BackupAvailable        = "available"
-	BackupUnavailable      = "unavailable"
-	BackupNotConfigured    = "not_configured"
-	BackupNightly          = "nightly"
-	BackupUnverified       = "unverified"
-	BackupVerified         = "verified"
-	BackupScopeAll         = "all"
-	BackupScopeSelected    = "selected"
+	BackupRunning       = "running"
+	BackupSucceeded     = "succeeded"
+	BackupFailed        = "failed"
+	BackupLocal         = "local"
+	BackupNFS           = "nfs"
+	BackupSMB           = "smb"
+	BackupS3            = "s3"
+	BackupR2            = "r2"
+	BackupAWS           = "aws"
+	BackupB2            = "b2"
+	BackupMinIO         = "minio"
+	BackupAvailable     = "available"
+	BackupUnavailable   = "unavailable"
+	BackupNotConfigured = "not_configured"
+	BackupNightly       = "nightly"
+	BackupUnverified    = "unverified"
+	BackupVerified      = "verified"
+	BackupScopeAll      = "all"
+	BackupScopeSelected = "selected"
+
+	BackupMethodDirectoryArchive = "directory-archive"
+	BackupMethodZFSSend          = "zfs-send"
+	BackupMethodQCOW2Copy        = "qcow2-copy"
+
+	BackupConsistencyFreezer     = "cgroup-freezer"
+	BackupConsistencyStopped     = "stopped"
+	BackupConsistencyZFSSnapshot = "zfs-snapshot"
+	BackupConsistencyLVMSnapshot = "lvm-snapshot"
+	BackupConsistencyOverlay     = "qcow2-overlay"
+
 	ArtifactLocalityLocal  = "local"
 	ArtifactLocalityObject = "object"
 	ArtifactLocalityPull   = "pull"
@@ -106,8 +117,26 @@ type BackupRun struct {
 	RestoredWorkloadID string
 	TransferredBytes   int64
 	Incremental        bool
+	PlanJSON           string
 	StartedAt          time.Time
 	FinishedAt         *time.Time
+}
+
+// BackupPlan is the included vs skipped disk report for a run.
+type BackupPlan struct {
+	Method      string           `json:"method"`
+	Consistency string           `json:"consistency"`
+	Included    []BackupPlanItem `json:"included,omitempty"`
+	Skipped     []BackupPlanItem `json:"skipped,omitempty"`
+}
+
+// BackupPlanItem is one disk or resource in a backup plan.
+type BackupPlanItem struct {
+	Kind     string `json:"kind"`
+	ID       string `json:"id,omitempty"`
+	Role     string `json:"role,omitempty"`
+	VolumeID string `json:"volume_id,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // BackupArtifact is a catalogued independent copy.

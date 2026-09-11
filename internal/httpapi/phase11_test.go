@@ -51,6 +51,16 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 	if action == qemu.BackupDelete {
 		return storage.CopyResult{Dest: dest, Format: "qcow2"}, nil
 	}
+	format := "qcow2"
+	if action == qemu.BackupExtractRoot {
+		if dest != "" {
+			_ = os.MkdirAll(dest, 0o755)
+		}
+		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	}
+	if strings.HasPrefix(action, qemu.BackupArchive) {
+		format = "tar.zst"
+	}
 	if dest != "" {
 		if err := os.MkdirAll(filepath.Dir(dest), 0o750); err == nil {
 			_ = os.WriteFile(dest, []byte("qcow"), 0o640)
@@ -58,7 +68,7 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 	}
 	res := f.res
 	if res.SHA256 == "" {
-		res = storage.CopyResult{Dest: dest, SHA256: "abc123", Size: 4, Format: "qcow2"}
+		res = storage.CopyResult{Dest: dest, SHA256: "abc123", Size: 4, Format: format}
 	}
 	if res.Dest == "" {
 		res.Dest = dest
@@ -317,8 +327,11 @@ func TestBackupCTRefusedAndNFSUnavailable(t *testing.T) {
 	}
 	b, _ := io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if !strings.Contains(strings.ToLower(string(b)), "zfs") {
-		t.Fatalf("honest CT reason: %s", b)
+	if !strings.Contains(strings.ToLower(string(b)), "unavailable") {
+		t.Fatalf("unavailable NFS target: %s", b)
+	}
+	if strings.Contains(strings.ToLower(string(b)), "zfs") {
+		t.Fatalf("directory CT must not require ZFS: %s", b)
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"bad","kind":"nfs","locator":"/etc"}`))
@@ -730,37 +743,40 @@ func TestBackupRunFailsClosedForExtraDataDisk(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusUnprocessableEntity {
+	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("extra data disk backup %d %s", res.StatusCode, raw)
 	}
-	if !strings.Contains(string(raw), "backup of additional data disks is not implemented") {
-		t.Fatalf("extra data disk backup body %s", raw)
+	var runOut map[string]any
+	if err := json.Unmarshal(raw, &runOut); err != nil {
+		t.Fatal(err)
 	}
+	plan, _ := runOut["plan"].(map[string]any)
+	skipped, _ := plan["skipped"].([]any)
+	if len(skipped) < 1 {
+		t.Fatalf("extra disk must be skipped in plan %+v", runOut)
+	}
+	copied := false
 	for _, c := range bk.copies {
 		if c[0] == qemu.BackupCopy {
-			t.Fatalf("CopyBackup must not write a boot-only artifact: %+v", bk.copies)
+			copied = true
 		}
 	}
+	if !copied {
+		t.Fatalf("boot disk must still be copied: %+v", bk.copies)
+	}
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
-	if len(runs) != 0 {
-		t.Fatalf("backup must not persist a run restore cannot apply: %+v", runs)
+	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
+		t.Fatalf("backup must persist a run: %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
-	if len(arts) != 0 {
-		t.Fatalf("backup must not persist a boot-only artifact: %+v", arts)
-	}
-	snaps, _ := mem.ListSnapshots(context.Background(), cluster.ID, vmID)
-	if len(snaps) != 0 {
-		t.Fatalf("backup must not snapshot the boot disk and drop extra disks: %+v", snaps)
+	if len(arts) != 1 {
+		t.Fatalf("backup must persist the boot artifact: %+v", arts)
 	}
 	gotWL, _ := mem.GetWorkload(context.Background(), cluster.ID, vmID)
 	gotBoot, _ := mem.GetVolume(context.Background(), cluster.ID, bootVol)
 	gotExtra, _ := mem.GetVolume(context.Background(), cluster.ID, extraVol)
 	if gotWL == nil || gotWL.Status != beforeWL.Status || gotWL.NodeID != beforeWL.NodeID || string(gotWL.SpecJSON) != string(beforeWL.SpecJSON) {
 		t.Fatalf("GET must keep the extra-disk VM untouched: before=%+v after=%+v", beforeWL, gotWL)
-	}
-	if gotBoot == nil || gotBoot.BackendRef != beforeBoot.BackendRef {
-		t.Fatalf("boot volume locator must stay %s, got %+v", beforeBoot.BackendRef, gotBoot)
 	}
 	if gotExtra == nil || gotExtra.BackendRef != extraRef || gotExtra.Status != storage.StatusAvailable {
 		t.Fatalf("extra volume must stay available at %s: %+v", extraRef, gotExtra)
@@ -769,9 +785,10 @@ func TestBackupRunFailsClosedForExtraDataDisk(t *testing.T) {
 	if len(gotDisks) != len(disks) {
 		t.Fatalf("disk catalog must stay %+v, got %+v", disks, gotDisks)
 	}
-	_, err := s.restoreNewVM(context.Background(), cluster.ID, *gotWL, appdb.BackupArtifact{ID: uuid.NewString()}, false, &appdb.Node{ID: nodeID, ClusterID: cluster.ID})
-	if err == nil || !strings.Contains(err.Error(), "restore of additional data disks is not implemented") {
-		t.Fatalf("restore of extra data disks must stay refused: %v", err)
+	_ = gotBoot
+	err := s.restoreReplaceVM(context.Background(), cluster.ID, *gotWL, appdb.BackupArtifact{ID: uuid.NewString()})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "disk") {
+		t.Fatalf("restore replace of extra data disks must stay refused: %v", err)
 	}
 }
 
@@ -839,17 +856,16 @@ func TestNightlyPolicyTickFailsClosedForExtraDataDisk(t *testing.T) {
 	}
 	s.TickNightlyBackups(context.Background())
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
-	if len(runs) != 0 {
-		t.Fatalf("nightly extra-disk backup must not persist a run: %+v", runs)
+	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
+		t.Fatalf("nightly extra-disk backup %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
-	if len(arts) != 0 {
-		t.Fatalf("nightly extra-disk backup must not persist an artifact: %+v", arts)
+	if len(arts) != 1 {
+		t.Fatalf("nightly extra-disk backup must persist the boot artifact: %+v", arts)
 	}
-	for _, c := range bk.copies {
-		if c[0] == qemu.BackupCopy {
-			t.Fatalf("nightly CopyBackup must not write a boot-only artifact: %+v", bk.copies)
-		}
+	plan := parseBackupPlan(runs[0].PlanJSON)
+	if plan == nil || len(plan.Skipped) < 1 {
+		t.Fatalf("nightly plan must skip extra disks: %+v", runs[0])
 	}
 }
 
@@ -926,25 +942,24 @@ func TestBackupRunFailsClosedForCatalogExtraDataDisk(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(raw), "backup of additional data disks is not implemented") {
+	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("catalog extra data disk backup %d %s", res.StatusCode, raw)
 	}
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
-	if len(runs) != 0 {
-		t.Fatalf("catalog extra disk must not persist a run: %+v", runs)
+	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
+		t.Fatalf("catalog extra disk must persist a run: %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
-	if len(arts) != 0 {
-		t.Fatalf("catalog extra disk must not persist an artifact: %+v", arts)
+	if len(arts) != 1 {
+		t.Fatalf("catalog extra disk must persist an artifact: %+v", arts)
 	}
-	for _, c := range bk.copies {
-		if c[0] == qemu.BackupCopy {
-			t.Fatalf("CopyBackup must not write a boot-only artifact: %+v", bk.copies)
-		}
+	plan := parseBackupPlan(runs[0].PlanJSON)
+	if plan == nil || len(plan.Skipped) < 1 {
+		t.Fatalf("catalog extra disk must be skipped in plan: %+v", runs[0])
 	}
 }
 
-func TestRestoreNewVMExtraDataDiskIsUnprocessable(t *testing.T) {
+func TestRestoreNewVMSkipsExtraDataDisks(t *testing.T) {
 	s, mem, _ := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
 	nodeID := uuid.NewString()
@@ -983,9 +998,22 @@ func TestRestoreNewVMExtraDataDiskIsUnprocessable(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "other", Role: "worker"}
-	_, err := s.restoreNewVM(context.Background(), cluster.ID, src, appdb.BackupArtifact{ID: uuid.NewString()}, false, &dest)
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "disk") {
-		t.Fatalf("extra data disk restore must fail closed: %v", err)
+	newID, err := s.restoreNewVM(context.Background(), cluster.ID, src, appdb.BackupArtifact{ID: uuid.NewString()}, false, &dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := mem.GetWorkload(context.Background(), cluster.ID, newID)
+	if got == nil {
+		t.Fatal("restored workload missing")
+	}
+	out, err := vmspec.Parse(got.SpecJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range out.Disks {
+		if d.Role == vmspec.DiskRoleData {
+			t.Fatalf("restore-as-new must not attach skipped extra disks: %+v", out.Disks)
+		}
 	}
 }
 
@@ -1550,7 +1578,7 @@ func TestBackupPolicyAllScopeDefaultAndSelectedMulti(t *testing.T) {
 	}
 }
 
-func TestBackupPolicyAllScopeSkipsDirectoryContainers(t *testing.T) {
+func TestBackupPolicyAllScopeBacksUpDirectoryContainers(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
 	nodeID := uuid.NewString()
@@ -1603,10 +1631,95 @@ func TestBackupPolicyAllScopeSkipsDirectoryContainers(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	body, _ := io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusUnprocessableEntity {
+	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("run %d %s", res.StatusCode, body)
 	}
-	if !strings.Contains(string(body), "1 skipped") || !strings.Contains(strings.ToLower(string(body)), "zfs") {
-		t.Fatalf("honest skip reason: %s", body)
+	var runOut map[string]any
+	if err := json.Unmarshal(body, &runOut); err != nil {
+		t.Fatal(err)
+	}
+	items, _ := runOut["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("all scope must backup directory CT %+v", runOut)
+	}
+	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
+	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
+		t.Fatalf("directory CT run %+v", runs)
+	}
+	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
+	if len(arts) != 1 || arts[0].Format != "tar.zst" {
+		t.Fatalf("directory CT artifact %+v", arts)
+	}
+	plan := parseBackupPlan(runs[0].PlanJSON)
+	if plan == nil || plan.Method != appdb.BackupMethodDirectoryArchive {
+		t.Fatalf("directory archive plan %+v", runs[0].PlanJSON)
+	}
+}
+
+func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	ctBody := `{"name":"ndl-backup-ct-test","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(ctBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("ct %d %s", res.StatusCode, b)
+	}
+	var ct map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&ct)
+	_ = res.Body.Close()
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var tgt map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&tgt)
+	_ = res.Body.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+ct["id"].(string)+`","target_id":"`+tgt["id"].(string)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("backup %d %s", res.StatusCode, raw)
+	}
+	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
+	if len(arts) != 1 {
+		t.Fatalf("artifact %+v", arts)
+	}
+	createsBefore := fw.creates
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+arts[0].ID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("restore %d %s", res.StatusCode, raw)
+	}
+	if fw.creates <= createsBefore {
+		t.Fatal("restore-as-new must CreateCT")
+	}
+	if !fw.lastSpec.SkipImage {
+		t.Fatalf("restore must extract the archive, not reinstall the image: %+v", fw.lastSpec)
 	}
 }

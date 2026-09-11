@@ -140,7 +140,7 @@ func (s *Server) materializeArtifact(ctx context.Context, clusterID string, art 
 	if err != nil {
 		return "", nil, err
 	}
-	dest := filepath.Join(dir, art.ID+".qcow2")
+	dest := filepath.Join(dir, art.ID+"."+firstNonEmpty(art.Format, "qcow2"))
 	objectKey := art.ObjectKey
 	if objectKey == "" {
 		objectKey = strings.TrimPrefix(art.Locator, "s3://"+tgt.Bucket+"/")

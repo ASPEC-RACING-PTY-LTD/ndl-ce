@@ -22,6 +22,14 @@ func TestCopyOfflineSkipHostCmdsErrors(t *testing.T) {
 	if st.Size == 1 {
 		t.Fatalf("must not invent size: %+v", st)
 	}
+	_, err = e.CopyOffline(context.Background(), BackupArchive, t.TempDir(), "/tmp/ndl-backup/a.tar.zst")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("archive SkipHostCmds: %v", err)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupExtractRoot, "/tmp/ndl-backup/a.tar.zst", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("extract SkipHostCmds: %v", err)
+	}
 }
 
 func TestConvertOfflineSkipHostCmdsErrors(t *testing.T) {

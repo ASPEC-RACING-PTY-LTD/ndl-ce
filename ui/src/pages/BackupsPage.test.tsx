@@ -196,7 +196,7 @@ describe("Backups page", () => {
     });
   });
 
-  it("shows why Run now failed when the all-scope fleet is ineligible", async () => {
+  it("shows why Run now failed when no workload can be copied", async () => {
     mockApi({
       ...baseRoutes,
       "/api/v1/backups/policies": {
@@ -221,7 +221,7 @@ describe("Backups page", () => {
         status: 422,
         body: {
           error:
-            "no eligible workloads in policy scope (2 skipped). Directory system containers need a ZFS dataset for backup send. Extra disks, iSCSI, and distributed volumes are skipped.",
+            "no eligible workloads in policy scope (1 skipped). Workloads whose root disk is iSCSI or a distributed volume cannot be backed up.",
         },
       },
     });
@@ -229,6 +229,6 @@ describe("Backups page", () => {
     render(<App />);
     expect(await screen.findByText("Backup")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^run now$/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/directory system containers need a zfs dataset/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/root disk is iscsi or a distributed volume/i);
   });
 });

@@ -11,16 +11,28 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
 const (
-	BackupCopy    = "copy"
-	BackupReplace = "replace"
-	BackupDelete  = "delete"
-	BackupMkdir   = "mkdir"
-	BackupStat    = "stat"
+	BackupCopy        = "copy"
+	BackupReplace     = "replace"
+	BackupDelete      = "delete"
+	BackupMkdir       = "mkdir"
+	BackupStat        = "stat"
+	BackupArchive     = "archive"
+	BackupExtractRoot = "extract-root"
 )
+
+// ArchiveAction encodes an optional cgroup freeze unit as archive:<unit>.
+func ArchiveAction(unit string) string {
+	unit = strings.TrimSpace(unit)
+	if unit == "" {
+		return BackupArchive
+	}
+	return BackupArchive + ":" + unit
+}
 
 // CopyOffline materializes a standalone qcow2 backup artifact, or mutates a
 // typed backup locator. qemu-img convert is used so overlay backing files are
@@ -117,9 +129,28 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			return storage.CopyResult{}, err
 		}
 		return storage.CopyResult{Dest: dest, SHA256: sum, Size: size, Format: "qcow2"}, nil
-	default:
-		return storage.CopyResult{}, fmt.Errorf("unsupported backup action")
 	}
+	if unit, err := ctbackup.ParseFreezeUnit(act); err == nil && (act == BackupArchive || strings.HasPrefix(act, BackupArchive+":")) {
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; container archive was not run")
+		}
+		d := storage.Directory{Run: storage.LiveRun}
+		if err := d.EnsureDirectoryRootMounted(ctx, src); err != nil {
+			return storage.CopyResult{}, err
+		}
+		meta, _ := os.ReadFile(ctbackup.MetaSidecar(dest))
+		return ctbackup.Archive(ctx, src, dest, unit, meta)
+	}
+	if act == BackupExtractRoot {
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; container extract was not run")
+		}
+		if err := ctbackup.Extract(ctx, src, dest); err != nil {
+			return storage.CopyResult{}, err
+		}
+		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	}
+	return storage.CopyResult{}, fmt.Errorf("unsupported backup action")
 }
 
 // convertToBackupArtifact writes a flattened qcow2 under an allowed backup

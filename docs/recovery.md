@@ -149,11 +149,16 @@ only. NFS/SMB stay unavailable until the locator is an existing local
 directory. The API never returns target passwords.
 Target create and directory probes go through the typed agent.
 
+Directory system containers use a GNU tar archive (`tar.zst`) of the
+mounted rootfs when ZFS send is not available. Running containers are
+frozen via cgroup2 `cgroup.freeze` for the archive, then unfrozen.
+Stopped containers are archived without freeze. ZFS pools still use
+snapshot plus send. Extra attached disks are skipped in the plan.
+
 Restore `new` mints a new workload UUID. Restore `replace` requires
 `X-Nodal-Confirm: restore` and overwrites the existing boot disk after stop.
 Retention prunes backup artifacts, not live overlay files needed for the
-snapshot chain. Directory system containers refuse backup until a later
-storage backend.
+snapshot chain.
 
 `nodalctl backup run` and `nodalctl backup restore` are the CLI paths.
 

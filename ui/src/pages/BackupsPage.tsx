@@ -112,6 +112,19 @@ function policyScopeLabel(policy: BackupPolicy, workloads: Workload[]): string {
   return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
 }
 
+function planLabel(plan: BackupRun["plan"]): string {
+  if (!plan) {
+    return "None";
+  }
+  const included = plan.included?.length ?? 0;
+  const skipped = plan.skipped?.length ?? 0;
+  const method = plan.method ?? "copy";
+  if (skipped > 0) {
+    return `${method}: ${included} included, ${skipped} skipped`;
+  }
+  return method;
+}
+
 function latestPolicyRun(runs: BackupRun[], policyId: string): BackupRun | undefined {
   return runs.find((r) => r.policy_id === policyId);
 }
@@ -599,8 +612,9 @@ export function BackupsPage() {
                       </dl>
                       {p.scope === "all" ? (
                         <p className="muted">
-                          Directory system containers are skipped until they use ZFS. Extra disks, iSCSI, and
-                          distributed volumes are skipped.
+                          All workloads covers every guest that can be copied with a supported method, including
+                          Directory system containers. Extra disks, iSCSI, and distributed volumes are skipped
+                          when the root disk can still be backed up.
                         </p>
                       ) : null}
                       {mutate ? (
@@ -715,6 +729,7 @@ export function BackupsPage() {
                           <th>Workload</th>
                           <th>Target</th>
                           <th>Status</th>
+                          <th>Plan</th>
                           <th>Transferred</th>
                           <th>Incremental</th>
                           <th>Started</th>
@@ -726,6 +741,7 @@ export function BackupsPage() {
                             <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
                             <td>{targetById.get(r.target_id)?.name ?? r.target_id}</td>
                             <td>{runStatusLabel(r.status)}</td>
+                            <td>{planLabel(r.plan)}</td>
                             <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
                             <td>{r.incremental ? "Yes" : "No"}</td>
                             <td>{formatWhen(r.started_at)}</td>
@@ -975,8 +991,9 @@ export function BackupsPage() {
             </label>
           </div>
           <p className="field-hint">
-            All workloads is the default. It covers the eligible fleet, including workloads created later. Directory
-            system containers need ZFS. Extra disks, iSCSI, and distributed volumes are skipped.
+            All workloads is the default. It covers every guest that can be safely copied with a supported method,
+            including Directory system containers and workloads created later. Extra disks, iSCSI, and distributed
+            volumes are skipped when the root disk can still be backed up.
           </p>
         </fieldset>
         {policyScope === "selected" ? (
@@ -1118,6 +1135,7 @@ export function BackupsPage() {
                 <tr>
                   <th>Workload</th>
                   <th>Status</th>
+                  <th>Plan</th>
                   <th>Transferred</th>
                   <th>Started</th>
                   <th>Finished</th>
@@ -1131,6 +1149,7 @@ export function BackupsPage() {
                     <tr key={r.id}>
                       <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
                       <td>{runStatusLabel(r.status)}</td>
+                      <td>{planLabel(r.plan)}</td>
                       <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
                       <td>{formatWhen(r.started_at)}</td>
                       <td>{formatWhen(r.finished_at)}</td>

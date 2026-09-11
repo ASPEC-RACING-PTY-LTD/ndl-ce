@@ -245,16 +245,16 @@ func (p *Postgres) CreateBackupRun(ctx context.Context, r BackupRun) error {
 		snap = r.SnapshotID
 	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_runs (id, cluster_id, policy_id, target_id, workload_id, snapshot_id, status, error, restored_workload_id, transferred_bytes, incremental, started_at, finished_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		r.ID, r.ClusterID, policy, r.TargetID, r.WorkloadID, snap, r.Status, r.Error, r.RestoredWorkloadID, r.TransferredBytes, r.Incremental, r.StartedAt, r.FinishedAt)
+INSERT INTO backup_runs (id, cluster_id, policy_id, target_id, workload_id, snapshot_id, status, error, restored_workload_id, transferred_bytes, incremental, plan_json, started_at, finished_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		r.ID, r.ClusterID, policy, r.TargetID, r.WorkloadID, snap, r.Status, r.Error, r.RestoredWorkloadID, r.TransferredBytes, r.Incremental, r.PlanJSON, r.StartedAt, r.FinishedAt)
 	return err
 }
 
 func (p *Postgres) ListBackupRuns(ctx context.Context, clusterID string) ([]BackupRun, error) {
 	rows, err := p.DB.QueryContext(ctx, `
 SELECT id::text, cluster_id::text, COALESCE(policy_id::text, ''), target_id::text, workload_id::text,
-       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, COALESCE(transferred_bytes, 0), COALESCE(incremental, false), started_at, finished_at
+       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, COALESCE(transferred_bytes, 0), COALESCE(incremental, false), COALESCE(plan_json, ''), started_at, finished_at
 FROM backup_runs WHERE cluster_id=$1 ORDER BY started_at DESC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -274,7 +274,7 @@ FROM backup_runs WHERE cluster_id=$1 ORDER BY started_at DESC`, clusterID)
 func (p *Postgres) GetBackupRun(ctx context.Context, clusterID, id string) (*BackupRun, error) {
 	row := p.DB.QueryRowContext(ctx, `
 SELECT id::text, cluster_id::text, COALESCE(policy_id::text, ''), target_id::text, workload_id::text,
-       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, COALESCE(transferred_bytes, 0), COALESCE(incremental, false), started_at, finished_at
+       COALESCE(snapshot_id::text, ''), status, error, restored_workload_id, COALESCE(transferred_bytes, 0), COALESCE(incremental, false), COALESCE(plan_json, ''), started_at, finished_at
 FROM backup_runs WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	r, err := scanBackupRun(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -296,9 +296,9 @@ func (p *Postgres) UpdateBackupRun(ctx context.Context, r BackupRun) error {
 		snap = r.SnapshotID
 	}
 	res, err := p.DB.ExecContext(ctx, `
-UPDATE backup_runs SET policy_id=$3, snapshot_id=$4, status=$5, error=$6, restored_workload_id=$7, transferred_bytes=$8, incremental=$9, finished_at=$10
+UPDATE backup_runs SET policy_id=$3, snapshot_id=$4, status=$5, error=$6, restored_workload_id=$7, transferred_bytes=$8, incremental=$9, plan_json=$10, finished_at=$11
 WHERE cluster_id=$1 AND id=$2`,
-		r.ClusterID, r.ID, policy, snap, r.Status, r.Error, r.RestoredWorkloadID, r.TransferredBytes, r.Incremental, r.FinishedAt)
+		r.ClusterID, r.ID, policy, snap, r.Status, r.Error, r.RestoredWorkloadID, r.TransferredBytes, r.Incremental, r.PlanJSON, r.FinishedAt)
 	if err != nil {
 		return err
 	}
@@ -483,7 +483,7 @@ func replaceBackupPolicyWorkloadsTx(ctx context.Context, tx *sql.Tx, policyID st
 func scanBackupRun(row rowScanner) (BackupRun, error) {
 	var r BackupRun
 	var finished sql.NullTime
-	err := row.Scan(&r.ID, &r.ClusterID, &r.PolicyID, &r.TargetID, &r.WorkloadID, &r.SnapshotID, &r.Status, &r.Error, &r.RestoredWorkloadID, &r.TransferredBytes, &r.Incremental, &r.StartedAt, &finished)
+	err := row.Scan(&r.ID, &r.ClusterID, &r.PolicyID, &r.TargetID, &r.WorkloadID, &r.SnapshotID, &r.Status, &r.Error, &r.RestoredWorkloadID, &r.TransferredBytes, &r.Incremental, &r.PlanJSON, &r.StartedAt, &finished)
 	if finished.Valid {
 		t := finished.Time
 		r.FinishedAt = &t

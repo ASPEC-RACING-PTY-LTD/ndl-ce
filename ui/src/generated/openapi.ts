@@ -1442,6 +1442,22 @@ export interface BackupRun {
   finished_at?: string;
   transferred_bytes?: number;
   incremental?: boolean;
+  plan?: BackupPlan;
+}
+
+export interface BackupPlan {
+  method?: "directory-archive" | "zfs-send" | "qcow2-copy";
+  consistency?: "cgroup-freezer" | "stopped" | "zfs-snapshot" | "lvm-snapshot" | "qcow2-overlay";
+  included?: BackupPlanItem[];
+  skipped?: BackupPlanItem[];
+}
+
+export interface BackupPlanItem {
+  kind?: string;
+  id?: string;
+  role?: string;
+  volume_id?: string;
+  reason?: string;
 }
 
 export interface BackupRunListResponse {

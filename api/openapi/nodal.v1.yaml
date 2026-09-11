@@ -8014,6 +8014,49 @@ components:
         incremental:
           type: boolean
           description: True when this run used ZFS send -i (or a smaller stream) against a prior artifact.
+        plan:
+          $ref: "#/components/schemas/BackupPlan"
+          description: Included vs skipped disks and the copy method used for this run.
+    BackupPlan:
+      type: object
+      additionalProperties: false
+      properties:
+        method:
+          type: string
+          enum:
+            - directory-archive
+            - zfs-send
+            - qcow2-copy
+        consistency:
+          type: string
+          enum:
+            - cgroup-freezer
+            - stopped
+            - zfs-snapshot
+            - lvm-snapshot
+            - qcow2-overlay
+        included:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupPlanItem"
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupPlanItem"
+    BackupPlanItem:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        id:
+          type: string
+        role:
+          type: string
+        volume_id:
+          type: string
+        reason:
+          type: string
     BackupRunListResponse:
       type: object
       additionalProperties: false
