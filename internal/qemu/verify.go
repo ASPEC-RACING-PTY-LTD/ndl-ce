@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
@@ -60,6 +61,12 @@ func (e *Engine) CheckOffline(ctx context.Context, src, expectedSHA string) (Ver
 		out.Reason = "checksum mismatch"
 		return out, nil
 	}
+	if looksLikeTar(src) {
+		out.QEMUImgOK = false
+		out.Status = VerifyVerified
+		out.Reason = "filesystem archive checksum matched"
+		return out, nil
+	}
 	if e != nil && e.SkipHostCmds {
 		out.Reason = "qemu-img check was not executed"
 		return out, nil
@@ -90,6 +97,9 @@ func (e *Engine) ExtractOffline(ctx context.Context, src, guestPath, dest string
 	if e != nil && e.SkipHostCmds {
 		return ExtractResult{GuestPath: gp, Status: VerifyUnavailable, Reason: "libguestfs extract is not configured"}, nil
 	}
+	if looksLikeTar(src) {
+		return extractTarMember(ctx, src, gp, dest)
+	}
 	if _, err := exec.LookPath("guestfish"); err != nil {
 		return ExtractResult{GuestPath: gp, Status: VerifyUnavailable, Reason: "libguestfs is not installed"}, nil
 	}
@@ -117,6 +127,39 @@ func (e *Engine) ExtractOffline(ctx context.Context, src, guestPath, dest string
 		return ExtractResult{GuestPath: gp, Status: VerifyFailed, Reason: "extracted file exceeds 1MiB restore-file cap"}, nil
 	}
 	return ExtractResult{GuestPath: gp, DestPath: dest, Size: size, SHA256: sum, Status: VerifyVerified}, nil
+}
+
+func looksLikeTar(path string) bool {
+	switch {
+	case strings.HasSuffix(path, ".tar"), strings.HasSuffix(path, ".tar.gz"), strings.HasSuffix(path, ".tgz"), strings.HasSuffix(path, ".tar.zst"):
+		return true
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	return n >= 262 && string(buf[257:262]) == "ustar"
+}
+
+func extractTarMember(ctx context.Context, src, guestPath, dest string) (ExtractResult, error) {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return ExtractResult{}, err
+	}
+	if err := ctbackup.ExtractFile(ctx, src, guestPath, dest); err != nil {
+		return ExtractResult{GuestPath: guestPath, Status: VerifyFailed, Reason: firstNonEmpty(err.Error(), "tar extract failed")}, nil
+	}
+	sum, size, err := checksumFile(dest)
+	if err != nil {
+		return ExtractResult{GuestPath: guestPath, Status: VerifyFailed, Reason: "extracted file is unreadable"}, nil
+	}
+	if size > extractSizeCap {
+		_ = os.Remove(dest)
+		return ExtractResult{GuestPath: guestPath, Status: VerifyFailed, Reason: "extracted file exceeds 1MiB restore-file cap"}, nil
+	}
+	return ExtractResult{GuestPath: guestPath, DestPath: dest, Size: size, SHA256: sum, Status: VerifyVerified}, nil
 }
 
 func jailGuestFile(p string) (string, error) {

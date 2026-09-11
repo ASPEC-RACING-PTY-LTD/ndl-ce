@@ -13,6 +13,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/backuppack"
+	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/objstore"
 	"github.com/no-dal/ndl-ce/internal/qemu"
@@ -22,7 +24,6 @@ import (
 )
 
 const (
-	ctBackupReason   = "Directory system container backups are not available. They are not ZFS. Use a ZFS dataset for system container backup send."
 	zfsRestoreReason = "ZFS send artifacts restore with zfs recv in a later backup phase. qemu-img is not used on a ZFS stream."
 	restoreConfirm   = "restore"
 	backupPurpose    = "ndl-backup"
@@ -127,6 +128,9 @@ func backupRunJSON(r appdb.BackupRun) map[string]any {
 	}
 	if r.Incremental {
 		out["incremental"] = true
+	}
+	if plan := parseBackupPlan(r.PlanJSON); plan != nil {
+		out["plan"] = plan
 	}
 	return out
 }
@@ -275,21 +279,13 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		prefix := strings.Trim(strings.TrimSpace(req.Prefix), "/")
 		row := appdb.BackupTarget{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name),
-			Kind: kind, Locator: objstore.Locator(req.Bucket, prefix), Status: appdb.BackupNotConfigured,
+			Kind: kind, Locator: objstore.Locator(req.Bucket, prefix), Status: appdb.BackupUntested,
 			Username: strings.TrimSpace(req.Username), Endpoint: strings.TrimSpace(req.Endpoint),
 			Region: region, Bucket: strings.TrimSpace(req.Bucket), Prefix: prefix, NoCheckBucket: req.NoCheckBucket,
 		}
 		if err := s.Store.CreateBackupTarget(r.Context(), row, req.Password, encHex); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-		status := s.probeObjectTarget(r.Context(), row)
-		if status != row.Status {
-			if err := s.Store.UpdateBackupTargetStatus(r.Context(), p.User.ClusterID, row.ID, status); err != nil {
-				writeErr(w, http.StatusInternalServerError, "could not record backup target")
-				return
-			}
-			row.Status = status
 		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "backup.target.create", "ok", row.ID)
 		writeJSON(w, http.StatusCreated, backupTargetJSON(row))
@@ -608,11 +604,22 @@ func (s *Server) writePolicyRuns(w http.ResponseWriter, r *http.Request, cluster
 		return
 	}
 	out := make([]map[string]any, 0, len(items))
+	summary := map[string]int{"succeeded": 0, "succeeded_with_warnings": 0, "failed": 0, "running": 0}
 	for _, run := range items {
 		out = append(out, backupRunJSON(run))
 		s.audit(r, clusterID, userID, "backup.run", run.Status, run.ID)
+		switch run.Status {
+		case appdb.BackupSucceeded:
+			summary["succeeded"]++
+		case appdb.BackupSucceededWithWarnings:
+			summary["succeeded_with_warnings"]++
+		case appdb.BackupFailed:
+			summary["failed"]++
+		case appdb.BackupRunning:
+			summary["running"]++
+		}
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"items": out})
+	writeJSON(w, http.StatusAccepted, map[string]any{"items": out, "summary": summary})
 }
 
 func refuseBackupExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appdb.WorkloadDisk) error {
@@ -640,20 +647,19 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 	}
 	var runs []appdb.BackupRun
 	var lastErr error
-	skipped := 0
 	for _, workloadID := range ids {
 		wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
 		if err != nil || wl == nil {
 			lastErr = errNotFound("workload not found")
-			continue
-		}
-		if pol.Scope == appdb.BackupScopeAll && !s.backupEligible(ctx, clusterID, *wl) {
-			skipped++
+			run := s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, lastErr.Error())
+			runs = append(runs, run)
 			continue
 		}
 		run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID)
 		if err != nil {
 			lastErr = err
+			run = s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, err.Error())
+			runs = append(runs, run)
 			continue
 		}
 		runs = append(runs, run)
@@ -662,15 +668,19 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 		if lastErr != nil {
 			return nil, lastErr
 		}
-		if skipped > 0 {
-			return nil, errUnprocessable(fmt.Sprintf(
-				"no eligible workloads in policy scope (%d skipped). Directory system containers need a ZFS dataset for backup send. Extra disks, iSCSI, and distributed volumes are skipped.",
-				skipped,
-			))
-		}
 		return nil, errUnprocessable("no eligible workloads in policy scope")
 	}
 	return runs, nil
+}
+
+func (s *Server) recordIndependentFailure(ctx context.Context, clusterID, policyID, targetID, workloadID, msg string) appdb.BackupRun {
+	now := s.now()
+	run := appdb.BackupRun{
+		ID: uuid.NewString(), ClusterID: clusterID, PolicyID: policyID, TargetID: targetID,
+		WorkloadID: workloadID, Status: appdb.BackupFailed, Error: msg, StartedAt: now, FinishedAt: &now,
+	}
+	_ = s.Store.CreateBackupRun(ctx, run)
+	return run
 }
 
 func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol appdb.BackupPolicy) ([]string, error) {
@@ -694,24 +704,8 @@ func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol ap
 }
 
 func (s *Server) backupEligible(ctx context.Context, clusterID string, wl appdb.Workload) bool {
-	vol, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, wl)
-	spec, _ := vmspec.Parse(wl.SpecJSON)
-	disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, wl.ID)
-	bootID := migrateBootVolumeID(spec, disks)
-	if locErr == nil && vol != nil {
-		bootID = vol.ID
-	}
-	if refuseBackupExtraDataDisks(spec, bootID, disks) != nil {
-		return false
-	}
-	native := locErr == nil && pool != nil && (pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM)
-	if locErr == nil && pool != nil && (pool.BackendType == storage.BackendISCSI || pool.BackendType == storage.BackendDistributed) {
-		return false
-	}
-	if !native && (wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM) {
-		return false
-	}
-	return true
+	plan, err := s.planBackup(ctx, clusterID, wl)
+	return err == nil && len(plan.Included) > 0
 }
 
 // TickNightlyBackups runs due nightly policies. It does not fake NFS or SMB success.
@@ -733,7 +727,13 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 		if pol.Schedule != appdb.BackupNightly {
 			continue
 		}
-		if pol.LastRunAt != nil && now.Sub(*pol.LastRunAt) < 23*time.Hour {
+		if pol.LastRunAt == nil {
+			// A brand-new or never-run policy is armed, not executed, so a
+			// control restart does not immediately copy the current fleet.
+			_ = s.Store.UpdateBackupPolicyLastRun(ctx, cluster.ID, pol.ID, now)
+			continue
+		}
+		if now.Sub(*pol.LastRunAt) < 23*time.Hour {
 			continue
 		}
 		runs, _ := s.Store.ListBackupRuns(ctx, cluster.ID)
@@ -758,25 +758,20 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if err != nil || wl == nil {
 		return appdb.BackupRun{}, errNotFound("workload not found")
 	}
-	vol, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
-	spec, _ := vmspec.Parse(wl.SpecJSON)
-	disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, wl.ID)
-	bootID := migrateBootVolumeID(spec, disks)
-	if locErr == nil && vol != nil {
-		bootID = vol.ID
-	}
-	if err := refuseBackupExtraDataDisks(spec, bootID, disks); err != nil {
+	plan, err := s.planBackup(ctx, clusterID, *wl)
+	if err != nil {
 		return appdb.BackupRun{}, err
 	}
-	native := locErr == nil && pool != nil && (pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM)
-	if locErr == nil && pool != nil && pool.BackendType == storage.BackendISCSI {
+	vol, pool, rootfs, locErr := s.bootVolumeLocator(ctx, clusterID, *wl)
+	if locErr != nil {
+		return appdb.BackupRun{}, locErr
+	}
+	native := pool != nil && (pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM)
+	if pool != nil && pool.BackendType == storage.BackendISCSI {
 		return appdb.BackupRun{}, errUnprocessable(iscsiSnapReason)
 	}
-	if locErr == nil && pool != nil && pool.BackendType == storage.BackendDistributed {
+	if pool != nil && pool.BackendType == storage.BackendDistributed {
 		return appdb.BackupRun{}, errUnprocessable(distSnapReason)
-	}
-	if !native && (wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM) {
-		return appdb.BackupRun{}, errUnprocessable(ctBackupReason)
 	}
 	tgt, err := s.Store.GetBackupTarget(ctx, clusterID, targetID)
 	if err != nil || tgt == nil {
@@ -794,12 +789,13 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if s.Backup == nil {
 		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
 	}
-	if !native && s.VM == nil {
+	if plan.Method != appdb.BackupMethodDirectoryArchive && !native && s.VM == nil {
 		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
 	}
 	run := appdb.BackupRun{
 		ID: uuid.NewString(), ClusterID: clusterID, PolicyID: policyID, TargetID: targetID,
 		WorkloadID: workloadID, Status: appdb.BackupRunning, StartedAt: s.now(),
+		PlanJSON: encodeBackupPlan(plan),
 	}
 	if err := s.Store.CreateBackupRun(ctx, run); err != nil {
 		return appdb.BackupRun{}, err
@@ -814,13 +810,29 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		}
 		return run, nil
 	}
-	snap, frozen, err := s.snapshotForBackup(ctx, clusterID, *wl, run.ID)
-	if err != nil {
-		return fail(err.Error())
-	}
-	run.SnapshotID = snap.ID
 	artifactID := uuid.NewString()
 	objectKind := isObjectBackupKind(tgt.Kind)
+	if plan.Method == appdb.BackupMethodDirectoryArchive {
+		if err := s.executeDirectoryCTBackup(ctx, clusterID, *wl, vol, rootfs, objectKind, *tgt, &run, artifactID); err != nil {
+			return fail(err.Error())
+		}
+		now := s.now()
+		run.Status = appdb.BackupSucceeded
+		if plan.Skipped != nil && len(plan.Skipped) > 0 {
+			run.Status = appdb.BackupSucceededWithWarnings
+		}
+		run.FinishedAt = &now
+		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
+			return run, errInternal("could not record backup run")
+		}
+		if policyID != "" {
+			_ = s.Store.UpdateBackupPolicyLastRun(ctx, clusterID, policyID, now)
+			if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
+				s.pruneBackupArtifacts(ctx, clusterID, workloadID, targetID, *pol)
+			}
+		}
+		return run, nil
+	}
 	stageDir := tgt.Locator
 	if objectKind {
 		tmp, err := os.MkdirTemp("", "ndl-backup-")
@@ -830,13 +842,16 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		defer func() { _ = os.RemoveAll(tmp) }()
 		stageDir = tmp
 	}
-	format := "qcow2"
+	snap, frozen, err := s.snapshotForBackup(ctx, clusterID, *wl, run.ID)
+	if err != nil {
+		return fail(err.Error())
+	}
+	run.SnapshotID = snap.ID
 	dest := filepath.Join(stageDir, artifactID+".qcow2")
 	var parentID string
 	incremental := false
 	fromSnap := ""
 	if snap.Mechanism == appdb.MechanismZFS {
-		format = "zfs"
 		dest = filepath.Join(stageDir, artifactID+".zfs")
 		if objectKind {
 			prev, _ := s.Store.ListBackupArtifactsForWorkload(ctx, clusterID, workloadID, targetID)
@@ -869,7 +884,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 			Locator: dest, Format: "zfs", ParentArtifactID: parentID,
 		}
 		if objectKind {
-			put, err := s.putObjectArtifact(ctx, *tgt, artifactID, dest, format)
+			prefix := backuppack.ObjectPrefix(tgt.Prefix, s.backupWorkloadName(ctx, clusterID, *wl), backuppack.BackupStamp(run.StartedAt, artifactID))
+			cfgPath := writePackIdentity(dest, wl.ID, wl.Name)
+			put, err := s.putPackArtifact(ctx, *tgt, dest, prefix, cfgPath)
 			if err != nil {
 				return fail(err.Error())
 			}
@@ -899,7 +916,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 			ChecksumSHA256: res.SHA256, SizeBytes: res.Size, Locator: dest, Format: firstNonEmpty(res.Format, "qcow2"),
 		}
 		if objectKind {
-			put, err := s.putObjectArtifact(ctx, *tgt, artifactID, dest, firstNonEmpty(res.Format, "qcow2"))
+			prefix := backuppack.ObjectPrefix(tgt.Prefix, s.backupWorkloadName(ctx, clusterID, *wl), backuppack.BackupStamp(run.StartedAt, artifactID))
+			cfgPath := writePackIdentity(dest, wl.ID, wl.Name)
+			put, err := s.putPackArtifact(ctx, *tgt, dest, prefix, cfgPath)
 			if err != nil {
 				return fail(err.Error())
 			}
@@ -921,6 +940,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	}
 	now := s.now()
 	run.Status = appdb.BackupSucceeded
+	if plan.Skipped != nil && len(plan.Skipped) > 0 {
+		run.Status = appdb.BackupSucceededWithWarnings
+	}
 	run.FinishedAt = &now
 	if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
 		return run, errInternal("could not record backup run")
@@ -932,6 +954,18 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		}
 	}
 	return run, nil
+}
+
+func writePackIdentity(dest, workloadID, name string) string {
+	path := dest + ".ndl-meta.json"
+	body, err := json.Marshal(map[string]string{"workload_id": workloadID, "name": name})
+	if err != nil {
+		return ""
+	}
+	if os.WriteFile(path, body, 0o600) != nil {
+		return ""
+	}
+	return path
 }
 
 func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row appdb.Workload, runID string) (appdb.Snapshot, string, error) {
@@ -1044,14 +1078,22 @@ func (s *Server) pruneBackupArtifacts(ctx context.Context, clusterID, workloadID
 			continue
 		}
 		if s.Backup != nil && !strings.HasPrefix(a.Locator, "s3://") && a.ObjectKey == "" {
-			_, _ = s.Backup.CopyBackup(ctx, qemu.BackupDelete, "", a.Locator)
+			if a.Format == backuppack.FormatNDLB {
+				_, _ = s.Backup.CopyBackup(ctx, qemu.BackupRmTree, "", a.Locator)
+			} else {
+				_, _ = s.Backup.CopyBackup(ctx, qemu.BackupDelete, "", a.Locator)
+			}
 		}
 		if a.ObjectKey != "" {
 			if tgt, _ := s.Store.GetBackupTarget(ctx, clusterID, targetID); tgt != nil {
 				pass, enc, _ := s.Store.BackupCredentials(ctx, clusterID, tgt.ID)
 				if key, err := objstore.ParseKey(enc); err == nil {
+					action := objstore.ActionDel
+					if isPackArtifact(a) {
+						action = objstore.ActionDelPack
+					}
 					_, _ = s.objectRPC().ObjectBackup(ctx, objstore.Request{
-						Action: objstore.ActionDel, Provider: tgt.Kind, Endpoint: tgt.Endpoint, Region: tgt.Region,
+						Action: action, Provider: tgt.Kind, Endpoint: tgt.Endpoint, Region: tgt.Region,
 						Bucket: tgt.Bucket, Key: a.ObjectKey, AccessKeyID: tgt.Username, SecretAccessKey: pass, EncryptionKey: key,
 					})
 				}
@@ -1155,8 +1197,13 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "replace requires the original workload to still exist")
 		return
 	}
-	if src != nil && src.Kind != vmspec.KindVM {
-		writeErr(w, http.StatusUnprocessableEntity, "restore of system containers is not implemented")
+	ctArchive := ctbackup.IsArchiveFormat(art.Format)
+	if src != nil && src.Kind == lxc.KindSystemContainer && !ctArchive {
+		writeErr(w, http.StatusUnprocessableEntity, ctQcow2RestoreReason)
+		return
+	}
+	if src != nil && src.Kind != vmspec.KindVM && src.Kind != lxc.KindSystemContainer {
+		writeErr(w, http.StatusUnprocessableEntity, "restore of this workload kind is not implemented")
 		return
 	}
 	dest, err := s.resolveRestoreDest(r.Context(), p.User.ClusterID, strings.TrimSpace(req.TargetNodeID))
@@ -1186,7 +1233,9 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var restoredID string
-	if req.Mode == "new" {
+	if (src != nil && src.Kind == lxc.KindSystemContainer) || (src == nil && ctbackup.IsArchiveFormat(art.Format)) {
+		restoredID, err = s.restoreSystemContainer(r.Context(), p.User.ClusterID, src, *art, req.Mode, dest)
+	} else if req.Mode == "new" {
 		if src == nil {
 			restoredID, err = s.restoreOrphanVM(r.Context(), p.User.ClusterID, *art, dest)
 		} else {
@@ -1241,11 +1290,14 @@ func (s *Server) restoreNewVM(ctx context.Context, clusterID string, src appdb.W
 	if specErr != nil {
 		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}
 	}
+	kept := spec.Disks[:0]
 	for _, d := range spec.Disks {
 		if d.Role == vmspec.DiskRoleData && d.VolumeID != "" && d.VolumeID != vol.ID {
-			return "", errUnprocessable("restore of additional data disks is not implemented")
+			continue
 		}
+		kept = append(kept, d)
 	}
+	spec.Disks = kept
 	newID := uuid.NewString()
 	newVolID := uuid.NewString()
 	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]

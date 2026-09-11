@@ -186,3 +186,8 @@ type ApplyClass struct {
 func unitName(id string) string {
 	return CTUnitPrefix + id + ".service"
 }
+
+// UnitName is the systemd unit for a system container, nodal-ct@<uuid>.service.
+func UnitName(id string) string {
+	return unitName(id)
+}

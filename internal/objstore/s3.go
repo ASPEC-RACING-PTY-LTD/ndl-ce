@@ -26,30 +26,85 @@ func (s *S3Transport) client() *http.Client {
 	if s != nil && s.HTTP != nil {
 		return s.HTTP
 	}
-	return http.DefaultClient
+	return defaultS3HTTP()
+}
+
+func defaultS3HTTP() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+			ExpectContinueTimeout: 5 * time.Second,
+		},
+	}
 }
 
 func (s *S3Transport) Put(ctx context.Context, bucket, object string, body []byte) error {
-	if int64(len(body)) > PartSize {
-		return s.putMultipart(ctx, bucket, object, body)
+	return s.PutStream(ctx, bucket, object, bytes.NewReader(body), int64(len(body)))
+}
+
+func (s *S3Transport) PutStream(ctx context.Context, bucket, object string, r io.Reader, size int64) error {
+	if r == nil {
+		return fmt.Errorf("s3 put body is required")
 	}
-	req, err := s.newRequest(ctx, http.MethodPut, bucket, object, "", body)
-	if err != nil {
-		return err
+	if size >= 0 && size <= int64(PartSize) {
+		body, err := io.ReadAll(io.LimitReader(r, int64(PartSize)+1))
+		if err != nil {
+			return err
+		}
+		if int64(len(body)) > int64(PartSize) {
+			return s.putMultipart(ctx, bucket, object, io.MultiReader(bytes.NewReader(body), r))
+		}
+		return s.putSingle(ctx, bucket, object, body)
 	}
-	res, err := s.client().Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode/100 != 2 {
+	return s.putMultipart(ctx, bucket, object, r)
+}
+
+func (s *S3Transport) putSingle(ctx context.Context, bucket, object string, body []byte) error {
+	var last error
+	for attempt := 0; attempt < 4; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		req, err := s.newRequest(ctx, http.MethodPut, bucket, object, "", body)
+		if err != nil {
+			return err
+		}
+		res, err := s.client().Do(req)
+		if err != nil {
+			last = err
+			if !retryableNet(err) || attempt == 3 {
+				return err
+			}
+			sleepBackoff(ctx, attempt)
+			continue
+		}
 		slurp, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return fmt.Errorf("s3 put: %s %s", res.Status, strings.TrimSpace(string(slurp)))
+		_ = res.Body.Close()
+		if res.StatusCode/100 == 2 {
+			return nil
+		}
+		last = fmt.Errorf("s3 put: %s %s", res.Status, strings.TrimSpace(string(slurp)))
+		if !retryableStatus(res.StatusCode) || attempt == 3 {
+			return last
+		}
+		sleepBackoff(ctx, attempt)
 	}
-	return nil
+	return last
 }
 
 func (s *S3Transport) Get(ctx context.Context, bucket, object string) ([]byte, error) {
+	rc, err := s.GetStream(ctx, bucket, object)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(io.LimitReader(rc, int64(PartSize)*4+1))
+}
+
+func (s *S3Transport) GetStream(ctx context.Context, bucket, object string) (io.ReadCloser, error) {
 	req, err := s.newRequest(ctx, http.MethodGet, bucket, object, "", nil)
 	if err != nil {
 		return nil, err
@@ -58,11 +113,12 @@ func (s *S3Transport) Get(ctx context.Context, bucket, object string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("s3 get: %s", res.Status)
+		slurp, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		_ = res.Body.Close()
+		return nil, fmt.Errorf("s3 get: %s %s", res.Status, strings.TrimSpace(string(slurp)))
 	}
-	return io.ReadAll(res.Body)
+	return res.Body, nil
 }
 
 func (s *S3Transport) Head(ctx context.Context, bucket, object string) (bool, int64, error) {
@@ -79,7 +135,8 @@ func (s *S3Transport) Head(ctx context.Context, bucket, object string) (bool, in
 		return false, 0, nil
 	}
 	if res.StatusCode/100 != 2 {
-		return false, 0, fmt.Errorf("s3 head: %s", res.Status)
+		slurp, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return false, 0, fmt.Errorf("s3 head: %s %s", res.Status, strings.TrimSpace(string(slurp)))
 	}
 	return true, res.ContentLength, nil
 }
@@ -104,17 +161,12 @@ type initiateResult struct {
 	UploadID string `xml:"UploadId"`
 }
 
-type completeMultipart struct {
-	XMLName xml.Name     `xml:"CompleteMultipartUpload"`
-	Parts   []partMarker `xml:"Part"`
-}
-
 type partMarker struct {
-	PartNumber int    `xml:"PartNumber"`
-	ETag       string `xml:"ETag"`
+	PartNumber int
+	ETag       string
 }
 
-func (s *S3Transport) putMultipart(ctx context.Context, bucket, object string, body []byte) error {
+func (s *S3Transport) putMultipart(ctx context.Context, bucket, object string, r io.Reader) error {
 	initReq, err := s.newRequest(ctx, http.MethodPost, bucket, object, "uploads=", nil)
 	if err != nil {
 		return err
@@ -132,50 +184,113 @@ func (s *S3Transport) putMultipart(ctx context.Context, bucket, object string, b
 	if err := xml.Unmarshal(raw, &initiated); err != nil || initiated.UploadID == "" {
 		return fmt.Errorf("s3 multipart init: missing upload id")
 	}
+	uploadID := initiated.UploadID
+	abort := func() { _ = s.abortMultipart(context.Background(), bucket, object, uploadID) }
+
+	buf := make([]byte, PartSize)
 	var parts []partMarker
 	part := 1
-	for off := 0; off < len(body); off += PartSize {
-		end := off + PartSize
-		if end > len(body) {
-			end = len(body)
+	for {
+		n, readErr := io.ReadFull(r, buf)
+		if n == 0 && (readErr == io.EOF || readErr == io.ErrUnexpectedEOF) {
+			break
 		}
-		chunk := body[off:end]
-		q := fmt.Sprintf("partNumber=%d&uploadId=%s", part, url.QueryEscape(initiated.UploadID))
-		preq, err := s.newRequest(ctx, http.MethodPut, bucket, object, q, chunk)
+		if n == 0 && readErr != nil {
+			abort()
+			return readErr
+		}
+		etag, err := s.uploadPart(ctx, bucket, object, uploadID, part, buf[:n])
 		if err != nil {
+			abort()
 			return err
 		}
-		pres, err := s.client().Do(preq)
-		if err != nil {
-			return err
-		}
-		_, _ = io.Copy(io.Discard, pres.Body)
-		_ = pres.Body.Close()
-		if pres.StatusCode/100 != 2 {
-			return fmt.Errorf("s3 multipart part %d: %s", part, pres.Status)
-		}
-		etag := strings.Trim(pres.Header.Get("ETag"), `"`)
 		parts = append(parts, partMarker{PartNumber: part, ETag: etag})
 		part++
+		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+			break
+		}
+		if readErr != nil {
+			abort()
+			return readErr
+		}
 	}
-	complete, err := xml.Marshal(completeMultipart{Parts: parts})
-	if err != nil {
-		return err
+	if len(parts) == 0 {
+		abort()
+		return fmt.Errorf("s3 multipart: empty body")
 	}
-	cq := "uploadId=" + url.QueryEscape(initiated.UploadID)
+	complete := completeMultipartXML(parts)
+	cq := "uploadId=" + url.QueryEscape(uploadID)
 	creq, err := s.newRequest(ctx, http.MethodPost, bucket, object, cq, complete)
 	if err != nil {
+		abort()
 		return err
 	}
 	creq.Header.Set("Content-Type", "application/xml")
 	cres, err := s.client().Do(creq)
 	if err != nil {
+		abort()
 		return err
 	}
-	defer cres.Body.Close()
+	slurp, _ := io.ReadAll(io.LimitReader(cres.Body, 2048))
+	_ = cres.Body.Close()
 	if cres.StatusCode/100 != 2 {
-		slurp, _ := io.ReadAll(io.LimitReader(cres.Body, 2048))
+		abort()
 		return fmt.Errorf("s3 multipart complete: %s %s", cres.Status, strings.TrimSpace(string(slurp)))
+	}
+	return nil
+}
+
+func (s *S3Transport) uploadPart(ctx context.Context, bucket, object, uploadID string, part int, chunk []byte) (string, error) {
+	var last error
+	for attempt := 0; attempt < 4; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		q := fmt.Sprintf("partNumber=%d&uploadId=%s", part, url.QueryEscape(uploadID))
+		preq, err := s.newRequest(ctx, http.MethodPut, bucket, object, q, chunk)
+		if err != nil {
+			return "", err
+		}
+		pres, err := s.client().Do(preq)
+		if err != nil {
+			last = err
+			if !retryableNet(err) || attempt == 3 {
+				return "", err
+			}
+			sleepBackoff(ctx, attempt)
+			continue
+		}
+		etag := pres.Header.Get("ETag")
+		_, _ = io.Copy(io.Discard, pres.Body)
+		_ = pres.Body.Close()
+		if pres.StatusCode/100 == 2 {
+			if strings.TrimSpace(etag) == "" {
+				return "", fmt.Errorf("s3 multipart part %d: missing etag", part)
+			}
+			return etag, nil
+		}
+		last = fmt.Errorf("s3 multipart part %d: %s", part, pres.Status)
+		if !retryableStatus(pres.StatusCode) || attempt == 3 {
+			return "", last
+		}
+		sleepBackoff(ctx, attempt)
+	}
+	return "", last
+}
+
+func (s *S3Transport) abortMultipart(ctx context.Context, bucket, object, uploadID string) error {
+	q := "uploadId=" + url.QueryEscape(uploadID)
+	req, err := s.newRequest(ctx, http.MethodDelete, bucket, object, q, nil)
+	if err != nil {
+		return err
+	}
+	res, err := s.client().Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 && res.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("s3 multipart abort: %s", res.Status)
 	}
 	return nil
 }
@@ -218,6 +333,9 @@ func NewS3Transport(endpoint, region, access, secret, provider string, httpClien
 	switch strings.ToLower(provider) {
 	case KindAWS:
 		pathStyle = false
+	}
+	if httpClient == nil {
+		httpClient = defaultS3HTTP()
 	}
 	return &S3Transport{
 		HTTP: httpClient, Endpoint: endpoint, Region: region,

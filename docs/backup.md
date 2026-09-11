@@ -8,10 +8,12 @@ same pool. A backup copies data to a destination.
 A policy is the operational object. Scope is `all` (the current eligible
 fleet, including workloads created later) or `selected` (an explicit
 workload list). All is the default. One policy can cover many workloads.
-Run now executes the policy against its current scope. Directory system
-containers are skipped until they use ZFS. Extra disks, iSCSI, and
-distributed volumes are skipped. A run with nothing eligible returns 422
-instead of copying production guests.
+Run now executes the policy against its current scope. Eligible means
+the root disk can be copied with any supported method: ZFS send when the
+pool is ZFS, qcow2 flatten for Directory VMs, or a filesystem archive
+for Directory system containers. Extra disks, iSCSI, and distributed
+volumes are skipped as resources. They do not make a backupable root
+ineligible. A run with nothing eligible returns 422.
 
 ## Snapshots
 
@@ -29,13 +31,17 @@ is a backup-engine option, not a promise that the destination is empty.
 ## Restore
 
 Restore as new creates a new workload UUID. Restore replace overwrites
-the existing workload and requires confirm. Cross-node restore uses the
-dest node chosen at restore time. Restore onto a worker whose dest
+the existing workload and requires confirm. System container archives
+restore the rootfs tree plus recorded config (cpus, memory, idmap,
+privileged, image pin, NICs). Cross-node restore uses the dest node
+chosen at restore time. Restore onto a worker whose dest
 agent is not connected stays unavailable and does not copy disks onto
 the control node. Failed restore does not delete the source backup.
 
-Backup and restore of additional VM data disks are not implemented. A
-workload with extra attached disks is refused before a run or artifact
-is recorded. The boot disk is not copied on its own.
+Backup of additional VM data disks is not implemented. Those disks are
+skipped and listed on the run plan. The supported root disk is still
+copied. Restore replace of a workload that still has extra disks is
+refused so generations are not mixed. Restore as new restores the
+included root only.
 
 See also [recovery.md](recovery.md).

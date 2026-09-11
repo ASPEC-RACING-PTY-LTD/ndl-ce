@@ -33,9 +33,11 @@ func newFakeObject() *fakeObject {
 }
 
 func (f *fakeObject) ObjectBackup(ctx context.Context, req objstore.Request) (objstore.Result, error) {
-	if req.Action == objstore.ActionPut && req.SourcePath != "" {
-		if _, err := os.Stat(req.SourcePath); err != nil {
-			_ = os.WriteFile(req.SourcePath, []byte("qcow-fixture-bytes"), 0o600)
+	if req.Action == objstore.ActionPut || req.Action == objstore.ActionPutPack {
+		if req.SourcePath != "" {
+			if _, err := os.Stat(req.SourcePath); err != nil {
+				_ = os.WriteFile(req.SourcePath, []byte("qcow-fixture-bytes"), 0o600)
+			}
 		}
 	}
 	return f.eng.Do(ctx, req)
@@ -99,7 +101,7 @@ func TestPhase23ObjectTargetEncryptsAndRestores(t *testing.T) {
 	var tgt map[string]any
 	_ = json.Unmarshal(raw, &tgt)
 	if tgt["status"] == "available" {
-		t.Fatal("no_check_bucket must not invent available")
+		t.Fatal("untested targets must not invent available")
 	}
 	if tgt["has_encryption_key"] != true {
 		t.Fatalf("encryption flag %s", raw)
@@ -139,12 +141,21 @@ func TestPhase23ObjectTargetEncryptsAndRestores(t *testing.T) {
 	if len(arts) != 1 || !arts[0].Encrypted || !strings.HasPrefix(arts[0].Locator, "s3://") {
 		t.Fatalf("artifact %+v", arts)
 	}
-	cipher := fo.mem.Ciphertext("ndl-backups", arts[0].ObjectKey)
+	cipher := fo.mem.Ciphertext("ndl-backups", arts[0].ObjectKey+"/chunks/000000")
+	if len(cipher) == 0 {
+		cipher = fo.mem.Ciphertext("ndl-backups", arts[0].ObjectKey)
+	}
 	if !bytes.HasPrefix(cipher, []byte(objstore.Magic)) {
 		t.Fatal("bucket object must be NDLE ciphertext")
 	}
 	if bytes.Contains(cipher, []byte("qcow")) {
 		t.Fatal("plaintext must not appear in the bucket")
+	}
+	if !strings.Contains(arts[0].ObjectKey, "backups/web/") {
+		t.Fatalf("object key must be human-readable: %s", arts[0].ObjectKey)
+	}
+	if strings.Contains(arts[0].ObjectKey, arts[0].WorkloadID) {
+		t.Fatalf("object key must not include the workload UUID: %s", arts[0].ObjectKey)
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+arts[0].ID+"/restore", strings.NewReader(`{"mode":"new"}`))
@@ -405,7 +416,6 @@ func TestPhase23ObjectTargetFailsClosedWhenStatusPersistFails(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
-	s.Store = failUpdateBackupTargetStatusStore{Store: mem}
 
 	body := `{"name":"r2","kind":"r2","endpoint":"https://account.r2.cloudflarestorage.com","bucket":"ndl","username":"akid","password":"secret"}`
 	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(body))
@@ -413,6 +423,22 @@ func TestPhase23ObjectTargetFailsClosedWhenStatusPersistFails(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ := ts.Client().Do(req)
 	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("target create %d %s", res.StatusCode, raw)
+	}
+	var tgt map[string]any
+	if err := json.Unmarshal(raw, &tgt); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpdateBackupTargetStatusStore{Store: mem}
+	s.Object = newFakeObject()
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets/"+tgt["id"].(string)+"/test", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("target persist %d %s", res.StatusCode, raw)

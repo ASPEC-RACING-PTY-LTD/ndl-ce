@@ -15,6 +15,7 @@ import {
   restoreBackupFile,
   runBackup,
   runBackupPolicy,
+  testBackupTarget,
   updateBackupPolicy,
   verifyBackupArtifact,
 } from "../api/client";
@@ -53,16 +54,26 @@ function targetStatusLabel(status: BackupTarget["status"]): string {
       return "Unavailable";
     case "not_configured":
       return "Not configured";
+    case "untested":
+      return "Untested";
+    case "authentication_failed":
+      return "Authentication failed";
+    case "permission_denied":
+      return "Permission denied";
+    case "bucket_unavailable":
+      return "Bucket unavailable";
+    case "degraded":
+      return "Degraded";
     default:
       return honestStatus(status);
   }
 }
 
 function targetAllowsRun(t: BackupTarget): boolean {
-  if (t.status === "available") {
+  if (t.status === "available" || t.status === "untested" || t.status === "degraded") {
     return true;
   }
-  return isObjectKind(t.kind) && Boolean(t.no_check_bucket) && t.status === "not_configured";
+  return isObjectKind(t.kind) && Boolean(t.no_check_bucket) && (t.status === "not_configured" || t.status === "untested");
 }
 
 function runStatusLabel(status: BackupRun["status"]): string {
@@ -71,6 +82,8 @@ function runStatusLabel(status: BackupRun["status"]): string {
       return "Running";
     case "succeeded":
       return "Succeeded";
+    case "succeeded_with_warnings":
+      return "Succeeded with warnings";
     case "failed":
       return "Failed";
     default:
@@ -110,6 +123,20 @@ function policyScopeLabel(policy: BackupPolicy, workloads: Workload[]): string {
     return names.join(", ");
   }
   return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+}
+
+function planLabel(plan: BackupRun["plan"]): string {
+  if (!plan) {
+    return "None";
+  }
+  const included = plan.included?.length ?? 0;
+  const skipped = plan.skipped?.length ?? 0;
+  const method = plan.method ?? "copy";
+  const warning = plan.warning ? `; ${plan.warning}` : "";
+  if (skipped > 0) {
+    return `${method}: ${included} included, ${skipped} skipped${warning}`;
+  }
+  return `${method}${warning}`;
 }
 
 function latestPolicyRun(runs: BackupRun[], policyId: string): BackupRun | undefined {
@@ -291,6 +318,19 @@ export function BackupsPage() {
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Create target failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onTestTarget(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await testBackupTarget(id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Test connection failed");
     } finally {
       setBusy(false);
     }
@@ -599,8 +639,9 @@ export function BackupsPage() {
                       </dl>
                       {p.scope === "all" ? (
                         <p className="muted">
-                          Directory system containers are skipped until they use ZFS. Extra disks, iSCSI, and
-                          distributed volumes are skipped.
+                          All workloads covers every guest that can be copied with a supported method, including
+                          Directory system containers. Extra disks, iSCSI, and distributed volumes are skipped
+                          when the root disk can still be backed up.
                         </p>
                       ) : null}
                       {mutate ? (
@@ -681,6 +722,18 @@ export function BackupsPage() {
                         </div>
                       ) : null}
                     </dl>
+                    {mutate && isObjectKind(t.kind) ? (
+                      <div className="btn-row">
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void onTestTarget(t.id)}
+                        >
+                          Test connection
+                        </button>
+                      </div>
+                    ) : null}
                   </article>
                 ))
               )}
@@ -715,6 +768,7 @@ export function BackupsPage() {
                           <th>Workload</th>
                           <th>Target</th>
                           <th>Status</th>
+                          <th>Plan</th>
                           <th>Transferred</th>
                           <th>Incremental</th>
                           <th>Started</th>
@@ -726,6 +780,7 @@ export function BackupsPage() {
                             <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
                             <td>{targetById.get(r.target_id)?.name ?? r.target_id}</td>
                             <td>{runStatusLabel(r.status)}</td>
+                            <td>{planLabel(r.plan)}</td>
                             <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
                             <td>{r.incremental ? "Yes" : "No"}</td>
                             <td>{formatWhen(r.started_at)}</td>
@@ -975,8 +1030,9 @@ export function BackupsPage() {
             </label>
           </div>
           <p className="field-hint">
-            All workloads is the default. It covers the eligible fleet, including workloads created later. Directory
-            system containers need ZFS. Extra disks, iSCSI, and distributed volumes are skipped.
+            All workloads is the default. It covers every guest that can be safely copied with a supported method,
+            including Directory system containers and workloads created later. Extra disks, iSCSI, and distributed
+            volumes are skipped when the root disk can still be backed up.
           </p>
         </fieldset>
         {policyScope === "selected" ? (
@@ -1118,6 +1174,7 @@ export function BackupsPage() {
                 <tr>
                   <th>Workload</th>
                   <th>Status</th>
+                  <th>Plan</th>
                   <th>Transferred</th>
                   <th>Started</th>
                   <th>Finished</th>
@@ -1131,6 +1188,7 @@ export function BackupsPage() {
                     <tr key={r.id}>
                       <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
                       <td>{runStatusLabel(r.status)}</td>
+                      <td>{planLabel(r.plan)}</td>
                       <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
                       <td>{formatWhen(r.started_at)}</td>
                       <td>{formatWhen(r.finished_at)}</td>

@@ -2,6 +2,8 @@ package qemu
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -21,6 +23,50 @@ func TestCopyOfflineSkipHostCmdsErrors(t *testing.T) {
 	}
 	if st.Size == 1 {
 		t.Fatalf("must not invent size: %+v", st)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupArchive, t.TempDir(), "/tmp/ndl-backup/a.tar.zst")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("archive SkipHostCmds: %v", err)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupExtractRoot, "/tmp/ndl-backup/a.tar.zst", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("extract SkipHostCmds: %v", err)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupWrite, "/tmp/ndl-ct-meta.json", "/tmp/ndl-backup/a.ndl-meta.json")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("write SkipHostCmds: %v", err)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupPack, t.TempDir(), "/tmp/ndl-backup/pack")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("pack SkipHostCmds: %v", err)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupSyncTree, t.TempDir(), "/tmp/ndl-backup/tree")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("sync-tree SkipHostCmds: %v", err)
+	}
+}
+
+func TestCopyOfflineWriteCopiesSidecar(t *testing.T) {
+	e := &Engine{DataDir: t.TempDir()}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "meta.json")
+	dest := filepath.Join(dir, "out.ndl-meta.json")
+	if err := os.WriteFile(src, []byte(`{"kind":"system-container"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.CopyOffline(context.Background(), BackupWrite, src, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"kind":"system-container"}` || res.Dest != dest {
+		t.Fatalf("sidecar %+v %q", res, got)
+	}
+	if _, err := e.CopyOffline(context.Background(), BackupWrite, src, "/etc/ndl-ct-meta.json"); err == nil {
+		t.Fatal("write must not land in /etc")
 	}
 }
 

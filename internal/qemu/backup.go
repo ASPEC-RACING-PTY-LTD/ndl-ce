@@ -11,16 +11,44 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/backuppack"
+	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
 const (
-	BackupCopy    = "copy"
-	BackupReplace = "replace"
-	BackupDelete  = "delete"
-	BackupMkdir   = "mkdir"
-	BackupStat    = "stat"
+	BackupCopy        = "copy"
+	BackupReplace     = "replace"
+	BackupDelete      = "delete"
+	BackupMkdir       = "mkdir"
+	BackupStat        = "stat"
+	BackupArchive     = "archive"
+	BackupExtractRoot = "extract-root"
+	BackupWrite       = "write"
+	BackupSyncTree    = "sync-tree"
+	BackupPack        = "pack"
+	BackupUnpack      = "unpack"
+	BackupStatFS      = "statfs"
+	BackupRmTree      = "rm-tree"
 )
+
+// ArchiveAction encodes an optional cgroup freeze unit as archive:<unit>.
+func ArchiveAction(unit string) string {
+	unit = strings.TrimSpace(unit)
+	if unit == "" {
+		return BackupArchive
+	}
+	return BackupArchive + ":" + unit
+}
+
+// SyncTreeAction encodes an optional cgroup freeze unit as sync-tree:<unit>.
+func SyncTreeAction(unit string) string {
+	unit = strings.TrimSpace(unit)
+	if unit == "" {
+		return BackupSyncTree
+	}
+	return BackupSyncTree + ":" + unit
+}
 
 // CopyOffline materializes a standalone qcow2 backup artifact, or mutates a
 // typed backup locator. qemu-img convert is used so overlay backing files are
@@ -42,6 +70,55 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			return storage.CopyResult{}, fmt.Errorf("backup mkdir: %w", err)
 		}
 		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	case BackupWrite:
+		if err := storage.AllowedArtifactPath(src); err != nil {
+			return storage.CopyResult{}, err
+		}
+		if err := storage.AllowedArtifactPath(dest); err != nil {
+			return storage.CopyResult{}, err
+		}
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup write was not run")
+		}
+		return writeArtifactFile(src, dest)
+	case BackupStatFS:
+		if dest == "" || strings.Contains(dest, "..") {
+			return storage.CopyResult{}, storage.ErrForbiddenPath
+		}
+		if err := storage.AllowedArtifactPath(dest); err != nil {
+			if !strings.HasPrefix(dest, ctbackup.StagingRoot) {
+				return storage.CopyResult{}, err
+			}
+		}
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup statfs was not run")
+		}
+		n, err := ctbackup.AvailableBytes(dest)
+		if err != nil {
+			return storage.CopyResult{}, err
+		}
+		return storage.CopyResult{Dest: dest, Size: n, Format: "statfs"}, nil
+	case BackupRmTree:
+		if err := storage.AllowedArtifactPath(dest); err != nil {
+			return storage.CopyResult{}, err
+		}
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup rmtree was not run")
+		}
+		if err := os.RemoveAll(dest); err != nil {
+			return storage.CopyResult{}, fmt.Errorf("backup rmtree: %w", err)
+		}
+		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	case BackupPack:
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; pack was not run")
+		}
+		return packLocal(ctx, src, dest)
+	case BackupUnpack:
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; unpack was not run")
+		}
+		return unpackLocal(ctx, src, dest)
 	case BackupStat:
 		if dest == "" || strings.Contains(dest, "..") {
 			return storage.CopyResult{}, storage.ErrForbiddenPath
@@ -117,9 +194,43 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			return storage.CopyResult{}, err
 		}
 		return storage.CopyResult{Dest: dest, SHA256: sum, Size: size, Format: "qcow2"}, nil
-	default:
-		return storage.CopyResult{}, fmt.Errorf("unsupported backup action")
 	}
+	if unit, err := ctbackup.ParseFreezeUnit(act); err == nil && (act == BackupArchive || strings.HasPrefix(act, BackupArchive+":")) {
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; container archive was not run")
+		}
+		d := storage.Directory{Run: storage.LiveRun}
+		if err := d.EnsureDirectoryRootMounted(ctx, src); err != nil {
+			return storage.CopyResult{}, err
+		}
+		sidecar := ctbackup.MetaSidecar(dest)
+		meta, _ := os.ReadFile(sidecar)
+		defer func() { _ = os.Remove(sidecar) }()
+		return ctbackup.Archive(ctx, src, dest, unit, meta)
+	}
+	if unit, err := ctbackup.ParseSyncTree(act); err == nil && (act == BackupSyncTree || strings.HasPrefix(act, BackupSyncTree+":")) {
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; container sync-tree was not run")
+		}
+		d := storage.Directory{Run: storage.LiveRun}
+		if err := d.EnsureDirectoryRootMounted(ctx, src); err != nil {
+			return storage.CopyResult{}, err
+		}
+		if err := ctbackup.CopyTree(ctx, src, dest, unit, unit != ""); err != nil {
+			return storage.CopyResult{}, err
+		}
+		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	}
+	if act == BackupExtractRoot {
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; container extract was not run")
+		}
+		if err := ctbackup.Extract(ctx, src, dest); err != nil {
+			return storage.CopyResult{}, err
+		}
+		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	}
+	return storage.CopyResult{}, fmt.Errorf("unsupported backup action")
 }
 
 // convertToBackupArtifact writes a flattened qcow2 under an allowed backup
@@ -152,6 +263,39 @@ func (e *Engine) convertToBackupArtifact(ctx context.Context, src, dest, srcFmt 
 	return nil
 }
 
+func writeArtifactFile(src, dest string) (storage.CopyResult, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	defer in.Close()
+	st, err := in.Stat()
+	if err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	if !st.Mode().IsRegular() {
+		return storage.CopyResult{}, fmt.Errorf("backup write source must be a regular file")
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	n, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(dest)
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", copyErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(dest)
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", closeErr)
+	}
+	return storage.CopyResult{Dest: dest, Size: n, Format: "json"}, nil
+}
+
 func checksumFile(path string) (string, int64, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -164,4 +308,71 @@ func checksumFile(path string) (string, int64, error) {
 		return "", 0, err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), n, nil
+}
+
+func packLocal(ctx context.Context, src, dest string) (storage.CopyResult, error) {
+	if err := storage.AllowedArtifactPath(dest); err != nil {
+		return storage.CopyResult{}, err
+	}
+	payload, err := openLocalPayload(ctx, src)
+	if err != nil {
+		return storage.CopyResult{}, err
+	}
+	defer payload.Close()
+	config, _ := os.ReadFile(filepath.Join(src, "config.json"))
+	if err := os.MkdirAll(dest, 0o750); err != nil {
+		return storage.CopyResult{}, err
+	}
+	meta, err := backuppack.Write(ctx, backuppack.DirRepo{Root: dest}, "", payload, config, backuppack.GzipWrap, backuppack.Manifest{
+		PayloadKind: backuppack.PayloadTar,
+	})
+	if err != nil {
+		return storage.CopyResult{}, err
+	}
+	return storage.CopyResult{Dest: dest, SHA256: meta.PayloadSHA256, Size: meta.PayloadSize, Format: backuppack.FormatNDLB}, nil
+}
+
+func unpackLocal(ctx context.Context, src, dest string) (storage.CopyResult, error) {
+	if err := storage.AllowedArtifactPath(src); err != nil {
+		return storage.CopyResult{}, err
+	}
+	if err := storage.AllowedArtifactPath(dest); err != nil {
+		return storage.CopyResult{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return storage.CopyResult{}, err
+	}
+	f, err := os.Create(dest)
+	if err != nil {
+		return storage.CopyResult{}, err
+	}
+	meta, err := backuppack.Reconstruct(ctx, backuppack.DirRepo{Root: src}, "", f, backuppack.GzipUnwrap)
+	closeErr := f.Close()
+	if err != nil {
+		_ = os.Remove(dest)
+		return storage.CopyResult{}, err
+	}
+	if closeErr != nil {
+		_ = os.Remove(dest)
+		return storage.CopyResult{}, closeErr
+	}
+	if cfg, err := backuppack.ReadConfig(ctx, backuppack.DirRepo{Root: src}, "", backuppack.GzipUnwrap); err == nil && len(cfg) > 0 {
+		_ = os.WriteFile(dest+".ndl-meta.json", cfg, 0o600)
+	}
+	return storage.CopyResult{Dest: dest, SHA256: meta.PayloadSHA256, Size: meta.PayloadSize, Format: backuppack.PayloadTar}, nil
+}
+
+func openLocalPayload(ctx context.Context, src string) (io.ReadCloser, error) {
+	info, err := os.Stat(src)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return os.Open(src)
+	}
+	tree := src
+	if st, err := os.Stat(filepath.Join(src, "tree")); err == nil && st.IsDir() {
+		tree = filepath.Join(src, "tree")
+	}
+	return ctbackup.StreamTar(ctx, tree)
 }
