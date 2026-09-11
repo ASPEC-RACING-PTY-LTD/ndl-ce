@@ -680,40 +680,51 @@ export function BackupsPage() {
             <div className="page-header-row">
               <h2 id="backup-runs-heading">Recent runs</h2>
             </div>
-            <article className="panel dashboard-card table-card">
-              {runs == null ? (
-                <p>Collecting</p>
-              ) : runs.length === 0 ? (
-                <p className="empty-title">No backup runs yet</p>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Workload</th>
-                        <th>Target</th>
-                        <th>Status</th>
-                        <th>Transferred</th>
-                        <th>Incremental</th>
-                        <th>Started</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentRuns.map((r) => (
-                        <tr key={r.id}>
-                          <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
-                          <td>{targetById.get(r.target_id)?.name ?? r.target_id}</td>
-                          <td>{runStatusLabel(r.status)}</td>
-                          <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
-                          <td>{r.incremental ? "Yes" : "No"}</td>
-                          <td>{formatWhen(r.started_at)}</td>
+            {runs == null || runs.length === 0 ? (
+              <div className="card-grid">
+                <article className="panel dashboard-card empty-card">
+                  {runs == null ? (
+                    <p>Collecting</p>
+                  ) : (
+                    <>
+                      <p className="empty-title">No backup runs yet</p>
+                      <p className="muted">Run now on a policy to see fleet-wide history here.</p>
+                    </>
+                  )}
+                </article>
+              </div>
+            ) : (
+              <div className="card-grid card-grid-table">
+                <article className="panel dashboard-card table-card">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Workload</th>
+                          <th>Target</th>
+                          <th>Status</th>
+                          <th>Transferred</th>
+                          <th>Incremental</th>
+                          <th>Started</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </article>
+                      </thead>
+                      <tbody>
+                        {recentRuns.map((r) => (
+                          <tr key={r.id}>
+                            <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
+                            <td>{targetById.get(r.target_id)?.name ?? r.target_id}</td>
+                            <td>{runStatusLabel(r.status)}</td>
+                            <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
+                            <td>{r.incremental ? "Yes" : "No"}</td>
+                            <td>{formatWhen(r.started_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              </div>
+            )}
           </section>
 
           <section className="section-block" aria-labelledby="backup-artifacts-heading">
@@ -725,48 +736,59 @@ export function BackupsPage() {
                 </button>
               ) : null}
             </div>
-            <article className="panel dashboard-card table-card">
-              {artifacts == null ? (
-                <p>Collecting</p>
-              ) : artifacts.length === 0 ? (
-                <p className="empty-title">No backup artifacts yet</p>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Workload</th>
-                        <th>Size</th>
-                        <th>Encrypted</th>
-                        <th>Verify</th>
-                        <th>Created</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentArtifacts.map((art) => (
-                        <tr key={art.id}>
-                          <td>{workloads.find((w) => w.id === art.workload_id)?.name ?? art.workload_id}</td>
-                          <td>{formatBytes(art.size_bytes)}</td>
-                          <td>{art.encrypted ? "Client-side" : "No"}</td>
-                          <td>{verifyStatusLabel(art.verify_status)}</td>
-                          <td>{formatWhen(art.created_at)}</td>
-                          <td>
-                            {mutate ? (
-                              <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "artifact", artifact: art })}>
-                                Restore or verify
-                              </button>
-                            ) : (
-                              <span className="muted">None</span>
-                            )}
-                          </td>
+            {artifacts == null || artifacts.length === 0 ? (
+              <div className="card-grid">
+                <article className="panel dashboard-card empty-card">
+                  {artifacts == null ? (
+                    <p>Collecting</p>
+                  ) : (
+                    <>
+                      <p className="empty-title">No backup artifacts yet</p>
+                      <p className="muted">Completed backups appear here for restore and verification.</p>
+                    </>
+                  )}
+                </article>
+              </div>
+            ) : (
+              <div className="card-grid card-grid-table">
+                <article className="panel dashboard-card table-card">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Workload</th>
+                          <th>Size</th>
+                          <th>Encrypted</th>
+                          <th>Verify</th>
+                          <th>Created</th>
+                          <th>Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </article>
+                      </thead>
+                      <tbody>
+                        {recentArtifacts.map((art) => (
+                          <tr key={art.id}>
+                            <td>{workloads.find((w) => w.id === art.workload_id)?.name ?? art.workload_id}</td>
+                            <td>{formatBytes(art.size_bytes)}</td>
+                            <td>{art.encrypted ? "Client-side" : "No"}</td>
+                            <td>{verifyStatusLabel(art.verify_status)}</td>
+                            <td>{formatWhen(art.created_at)}</td>
+                            <td>
+                              {mutate ? (
+                                <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "artifact", artifact: art })}>
+                                  Restore or verify
+                                </button>
+                              ) : (
+                                <span className="muted">None</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              </div>
+            )}
           </section>
         </>
       ) : null}

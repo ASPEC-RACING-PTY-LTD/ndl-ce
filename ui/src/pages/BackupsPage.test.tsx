@@ -126,6 +126,9 @@ describe("Backups page", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^policies$/i })).toBeVisible();
+    expect(screen.getByText(/no backup policies yet/i)).toBeVisible();
+    expect(screen.getByText(/no backup runs yet/i)).toBeVisible();
+    expect(screen.getByText(/no backup artifacts yet/i)).toBeVisible();
     fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     const radios = within(dialog).getAllByRole("radio");
