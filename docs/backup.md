@@ -14,10 +14,13 @@ any policy returns 409 while another execution is in progress. Fleet
 workload concurrency stays at 1. Eligible means
 the root disk can be copied with any supported method: ZFS send when the
 pool is ZFS, qcow2 flatten for Directory VMs, or a filesystem archive
-for Directory system containers. A running Directory container is frozen
-via its LXC payload cgroup.freeze (and the systemd unit cgroup when that
-file exists) only while the rootfs tree is copied. Encoding and upload continue
-after resume. Extra disks, iSCSI, and distributed
+for Directory system containers. A running Directory container is copied
+live and stays running. No-DAL never freezes, pauses, suspends, or stops
+a guest for backup. Directory copies are crash-consistent. Stronger
+consistency is optional and application-aware: if
+`/etc/ndl/hooks/backup-pre` or `/etc/ndl/hooks/backup-post` exist and
+are executable in the guest, they run via `lxc-attach` around the live
+copy. Extra disks, iSCSI, and distributed
 volumes are skipped as resources. They do not make a backupable root
 ineligible. A run with nothing eligible returns 422.
 
@@ -28,11 +31,10 @@ the policy began", not "a day after the last guest completed".
 On control restart, leftover `running` rows become `interrupted` so a
 crashed execution cannot block nightly forever.
 
-Directory freeze leases live under `/run/ndl/backup-freeze`. Agent
-startup thaws only cgroups that still have a No-DAL `directory-backup`
-lease. Freezes without a lease are left alone. A watchdog thaws owned
-leases older than 30 minutes so an agent crash cannot leave a guest
-frozen indefinitely.
+Current Directory backups never write cgroup freeze leases. Agent
+startup still thaws leftover `/run/ndl/backup-freeze` leases from older
+agents that froze guests. Freezes without a lease are left alone. A
+watchdog thaws owned leftover leases older than 30 minutes.
 
 Object packs reuse one HTTP client per agent socket and one S3
 transport per pack. Chunk PUT and HEAD overlap with a bound of 4

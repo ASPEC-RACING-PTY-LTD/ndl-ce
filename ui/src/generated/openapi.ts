@@ -1447,7 +1447,7 @@ export interface BackupRun {
 
 export interface BackupPlan {
   method?: "directory-archive" | "zfs-send" | "qcow2-copy";
-  consistency?: "cgroup-freezer" | "stopped" | "zfs-snapshot" | "lvm-snapshot" | "qcow2-overlay";
+  consistency?: "live-copy" | "application" | "cgroup-freezer" | "stopped" | "zfs-snapshot" | "lvm-snapshot" | "qcow2-overlay";
   included?: BackupPlanItem[];
   skipped?: BackupPlanItem[];
   warning?: string;

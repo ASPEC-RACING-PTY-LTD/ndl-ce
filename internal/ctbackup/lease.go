@@ -10,8 +10,9 @@ import (
 
 const (
 	FreezeReasonBackup = "directory-backup"
-	// MaxFreeze is the longest a No-DAL backup may hold a guest freezer.
-	// A crash watchdog and agent startup recovery thaw owned leases past this.
+	// DefaultMaxFreeze is how long a leftover lease from an older freezing
+	// agent may remain before the watchdog thaws it. Current backups never
+	// write leases or freeze guests.
 	DefaultMaxFreeze = 30 * time.Minute
 )
 
@@ -80,7 +81,8 @@ func thawOwnedLease(lease freezeLease) {
 	removeFreezeLease(lease.Unit)
 }
 
-// RecoverOwnedFreezes thaws cgroups that still have a No-DAL backup lease.
+// RecoverOwnedFreezes thaws cgroups that still have a leftover No-DAL backup
+// lease from an older freezing agent. Current backups never freeze.
 // Freezes without a lease are left alone.
 func RecoverOwnedFreezes() int {
 	entries, err := os.ReadDir(freezeLeaseDir)
@@ -128,7 +130,7 @@ func recoverExpiredFreezes(now time.Time) int {
 	return n
 }
 
-// WatchOwnedFreezes thaws backup leases that outlive maxFreeze.
+// WatchOwnedFreezes thaws leftover backup leases that outlive maxFreeze.
 func WatchOwnedFreezes(stop <-chan struct{}) {
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()

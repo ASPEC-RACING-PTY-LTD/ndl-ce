@@ -40,7 +40,9 @@ const (
 	BackupMethodZFSSend          = "zfs-send"
 	BackupMethodQCOW2Copy        = "qcow2-copy"
 
-	BackupConsistencyFreezer     = "cgroup-freezer"
+	BackupConsistencyFreezer     = "cgroup-freezer" // historical Directory runs only
+	BackupConsistencyLiveCopy    = "live-copy"
+	BackupConsistencyApplication = "application"
 	BackupConsistencyStopped     = "stopped"
 	BackupConsistencyZFSSnapshot = "zfs-snapshot"
 	BackupConsistencyLVMSnapshot = "lvm-snapshot"

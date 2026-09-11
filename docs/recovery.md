@@ -149,11 +149,13 @@ only. NFS/SMB stay unavailable until the locator is an existing local
 directory. The API never returns target passwords.
 Target create and directory probes go through the typed agent.
 
-Directory system containers use a GNU tar archive (`tar.zst`) of the
-mounted rootfs when ZFS send is not available. Running containers are
-frozen via cgroup2 `cgroup.freeze` for the archive, then unfrozen.
-Stopped containers are archived without freeze. ZFS pools still use
-snapshot plus send. Extra attached disks are skipped in the plan.
+Directory system containers copy the mounted rootfs live when ZFS send
+is not available. Running containers stay running. The copy is
+crash-consistent. Optional guest hooks
+`/etc/ndl/hooks/backup-pre` and `/etc/ndl/hooks/backup-post` can flush
+application state. Stopped containers are copied without hooks. ZFS
+pools still use snapshot plus send. Extra attached disks are skipped
+in the plan.
 
 Restore `new` mints a new workload UUID. Restore `replace` requires
 `X-Nodal-Confirm: restore` and overwrites the existing boot disk after stop.

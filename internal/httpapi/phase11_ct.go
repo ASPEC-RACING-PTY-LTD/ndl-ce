@@ -145,8 +145,8 @@ func (s *Server) planBackup(ctx context.Context, clusterID string, wl appdb.Work
 	case wl.Kind == lxc.KindSystemContainer:
 		plan.Method = appdb.BackupMethodDirectoryArchive
 		if wl.Status == lxc.StatusRunning || wl.UnitActive {
-			plan.Consistency = appdb.BackupConsistencyFreezer
-			plan.Warning = "Directory storage has no snapshot. The container is frozen only while a consistent tree is copied; encoding and upload continue after resume."
+			plan.Consistency = appdb.BackupConsistencyLiveCopy
+			plan.Warning = "Directory storage has no snapshot. The copy is crash-consistent and does not freeze, pause, or stop the container. Optional guest hooks /etc/ndl/hooks/backup-pre and /etc/ndl/hooks/backup-post can flush application state."
 		} else {
 			plan.Consistency = appdb.BackupConsistencyStopped
 		}
@@ -205,6 +205,7 @@ func (s *Server) executeDirectoryCTBackup(ctx context.Context, clusterID string,
 	}
 	unit := ""
 	if wl.Status == lxc.StatusRunning || wl.UnitActive {
+		// Identity for optional in-guest hooks only. Never a freeze target.
 		unit = lxc.UnitName(wl.ID)
 	}
 	if _, err := s.Backup.CopyBackup(ctx, qemu.SyncTreeAction(unit), rootfs, tree); err != nil {

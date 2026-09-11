@@ -286,7 +286,7 @@ func TestParseFreezeUnit(t *testing.T) {
 	}
 }
 
-func TestArchiveUnfreezesWhenTarFails(t *testing.T) {
+func TestArchiveDoesNotFreezeWhenTarRuns(t *testing.T) {
 	prev := cgroupRoot
 	prevLease := freezeLeaseDir
 	prevTar := runTarCmd
@@ -297,8 +297,9 @@ func TestArchiveUnfreezesWhenTarFails(t *testing.T) {
 	})
 	cgroupRoot = t.TempDir()
 	freezeLeaseDir = t.TempDir()
-	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
-	dir := filepath.Join(cgroupRoot, "system.slice", unit)
+	id := "11111111-1111-4111-8111-111111111111"
+	unit := "nodal-ct@" + id + ".service"
+	dir := filepath.Join(cgroupRoot, "lxc.payload."+id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -308,8 +309,8 @@ func TestArchiveUnfreezesWhenTarFails(t *testing.T) {
 	}
 	runTarCmd = func(context.Context, ...string) error {
 		body, _ := os.ReadFile(path)
-		if strings.TrimSpace(string(body)) != "1" {
-			t.Fatalf("must freeze before tar: %s", body)
+		if strings.TrimSpace(string(body)) != "0" {
+			t.Fatalf("archive must not freeze the guest: %s", body)
 		}
 		return os.ErrPermission
 	}
@@ -323,7 +324,7 @@ func TestArchiveUnfreezesWhenTarFails(t *testing.T) {
 	}
 	body, _ := os.ReadFile(path)
 	if strings.TrimSpace(string(body)) != "0" {
-		t.Fatalf("must unfreeze after failure: %s", body)
+		t.Fatalf("guest must stay thawed after archive failure: %s", body)
 	}
 }
 

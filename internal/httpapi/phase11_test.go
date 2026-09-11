@@ -1728,6 +1728,12 @@ func TestBackupPolicyAllScopeBacksUpDirectoryContainers(t *testing.T) {
 	if plan == nil || plan.Method != appdb.BackupMethodDirectoryArchive {
 		t.Fatalf("directory archive plan %+v", runs[0].PlanJSON)
 	}
+	if plan.Consistency != appdb.BackupConsistencyLiveCopy && plan.Consistency != appdb.BackupConsistencyStopped {
+		t.Fatalf("directory plan must not use the freezer: %+v", plan)
+	}
+	if strings.Contains(strings.ToLower(plan.Warning), "frozen") {
+		t.Fatalf("directory plan must not describe a freeze: %+v", plan)
+	}
 }
 
 func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
@@ -1790,7 +1796,7 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 		}
 	}
 	if !wrote || !synced || !packed {
-		t.Fatalf("Directory CT backup must freeze-copy then pack, with metadata written through the agent: %+v", fb.copies)
+		t.Fatalf("Directory CT backup must live-copy then pack, with metadata written through the agent: %+v", fb.copies)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
 	if len(arts) != 1 {

@@ -32,7 +32,7 @@ const (
 	BackupRmTree      = "rm-tree"
 )
 
-// ArchiveAction encodes an optional cgroup freeze unit as archive:<unit>.
+// ArchiveAction encodes an optional guest hook identity as archive:<unit>.
 func ArchiveAction(unit string) string {
 	unit = strings.TrimSpace(unit)
 	if unit == "" {
@@ -41,7 +41,7 @@ func ArchiveAction(unit string) string {
 	return BackupArchive + ":" + unit
 }
 
-// SyncTreeAction encodes an optional cgroup freeze unit as sync-tree:<unit>.
+// SyncTreeAction encodes an optional guest hook identity as sync-tree:<unit>.
 func SyncTreeAction(unit string) string {
 	unit = strings.TrimSpace(unit)
 	if unit == "" {
@@ -216,7 +216,7 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 		if err := d.EnsureDirectoryRootMounted(ctx, src); err != nil {
 			return storage.CopyResult{}, err
 		}
-		if err := ctbackup.CopyTree(ctx, src, dest, unit, unit != ""); err != nil {
+		if err := ctbackup.CopyTree(ctx, src, dest, unit); err != nil {
 			return storage.CopyResult{}, err
 		}
 		return storage.CopyResult{Dest: dest, Format: "directory"}, nil

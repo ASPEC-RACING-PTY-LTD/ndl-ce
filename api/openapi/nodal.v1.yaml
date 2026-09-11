@@ -8060,6 +8060,8 @@ components:
         consistency:
           type: string
           enum:
+            - live-copy
+            - application
             - cgroup-freezer
             - stopped
             - zfs-snapshot

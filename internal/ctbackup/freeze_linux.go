@@ -7,7 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func syncFrozenRoot(path string) {
+func syncRootfs(path string) {
 	if strings.TrimSpace(path) == "" {
 		return
 	}

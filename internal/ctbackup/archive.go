@@ -53,10 +53,10 @@ func IsArchiveFormat(format string) bool {
 
 const StagingRoot = "/var/lib/ndl/backup-staging"
 
-// Archive writes a GNU tar of srcRootfs to dest. Running containers should pass a
-// validated nodal-ct@<uuid>.service unit so the cgroup freezer is used. Metadata
-// is stored as an archive member and is never written into the live rootfs.
-func Archive(ctx context.Context, srcRootfs, dest, freezeUnit string, meta []byte) (storage.CopyResult, error) {
+// Archive writes a GNU tar of srcRootfs to dest. The guest is never frozen,
+// paused, or stopped. guestUnit, when set, runs optional in-guest hooks.
+// Metadata is stored as an archive member and is never written into the live rootfs.
+func Archive(ctx context.Context, srcRootfs, dest, guestUnit string, meta []byte) (storage.CopyResult, error) {
 	if err := validateRootfs(srcRootfs); err != nil {
 		return storage.CopyResult{}, err
 	}
@@ -70,12 +70,12 @@ func Archive(ctx context.Context, srcRootfs, dest, freezeUnit string, meta []byt
 	if !info.IsDir() {
 		return storage.CopyResult{}, fmt.Errorf("container rootfs must be a directory")
 	}
-	unfreeze, err := freezeUnitIfPresent(freezeUnit, false)
-	if err != nil {
+	if err := runGuestHook(ctx, guestUnit, srcRootfs, GuestHookPre); err != nil {
+		_ = runGuestHook(ctx, guestUnit, srcRootfs, GuestHookPost)
 		return storage.CopyResult{}, err
 	}
-	defer unfreeze()
-	syncFrozenRoot(srcRootfs)
+	defer func() { _ = runGuestHook(ctx, guestUnit, srcRootfs, GuestHookPost) }()
+	syncRootfs(srcRootfs)
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return storage.CopyResult{}, err

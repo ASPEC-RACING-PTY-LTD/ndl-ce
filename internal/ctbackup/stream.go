@@ -73,10 +73,9 @@ func tarPackArgs(srcRootfs string) []string {
 	return args
 }
 
-// CopyTree copies srcRootfs to dest while optionally freezing a container
-// cgroup. The freeze is released before this function returns so compression
-// and upload never run against a frozen production workload.
-func CopyTree(ctx context.Context, srcRootfs, dest, freezeUnit string, requireFreeze bool) error {
+// CopyTree copies a live rootfs to dest. It never freezes, pauses, or stops
+// the guest. guestUnit, when set, runs optional in-guest backup hooks.
+func CopyTree(ctx context.Context, srcRootfs, dest, guestUnit string) error {
 	if err := validateRootfs(srcRootfs); err != nil {
 		return err
 	}
@@ -90,12 +89,12 @@ func CopyTree(ctx context.Context, srcRootfs, dest, freezeUnit string, requireFr
 	if !info.IsDir() {
 		return fmt.Errorf("container rootfs must be a directory")
 	}
-	unfreeze, err := freezeUnitIfPresent(freezeUnit, requireFreeze)
-	if err != nil {
+	if err := runGuestHook(ctx, guestUnit, srcRootfs, GuestHookPre); err != nil {
+		_ = runGuestHook(ctx, guestUnit, srcRootfs, GuestHookPost)
 		return err
 	}
-	defer unfreeze()
-	syncFrozenRoot(srcRootfs)
+	defer func() { _ = runGuestHook(ctx, guestUnit, srcRootfs, GuestHookPost) }()
+	syncRootfs(srcRootfs)
 	if err := os.MkdirAll(dest, 0o750); err != nil {
 		return err
 	}

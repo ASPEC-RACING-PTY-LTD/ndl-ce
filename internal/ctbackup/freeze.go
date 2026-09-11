@@ -128,6 +128,9 @@ func waitFrozen(dir string) {
 	}
 }
 
+// freezeUnitIfPresent writes cgroup.freeze. The backup path must not call it.
+// It remains so leftover leases from older agents can be reproduced in tests
+// and thawed by RecoverOwnedFreezes.
 func freezeUnitIfPresent(unit string, required bool) (func(), error) {
 	nop := func() {}
 	unit = strings.TrimSpace(unit)
