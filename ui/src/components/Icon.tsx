@@ -15,6 +15,7 @@ export type IconName =
   | "files"
   | "snapshots"
   | "settings"
+  | "edit"
   | "create"
   | "delete"
   | "search"
@@ -100,6 +101,12 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <circle cx="8" cy="8" r="2" />
       <path d="M8 2.6v1.6M8 11.8v1.6M2.6 8h1.6M11.8 8h1.6M4.1 4.1l1.1 1.1M10.8 10.8l1.1 1.1M11.9 4.1l-1.1 1.1M5.2 10.8l-1.1 1.1" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M10.6 3.2 12.8 5.4 6.1 12.1H4v-2.1z" />
+      <path d="M9.4 4.6 11.4 6.6" />
     </>
   ),
   create: <path d="M8 3.2v9.6M3.2 8h9.6" />,

@@ -3,6 +3,7 @@ import { getNode, getWorkload } from "../api/client";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { TerminalPane } from "../components/TerminalPane";
+import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { workloadGuestIOReason } from "../guestIO";
 import { currentPath } from "../router";
 import { canMutate, isAdmin } from "../rbac";
@@ -131,14 +132,23 @@ export function TerminalPage() {
           {error}
         </p>
       ) : null}
-      <nav className="subnav" aria-label="IO">
-        <Link href={host ? `/nodes/${id}` : `/workloads/${id}`}>Summary</Link>
-        <Link href={host ? `/nodes/${id}/terminal` : `/workloads/${id}/terminal`} aria-current="page">
-          Terminal
-        </Link>
-        <Link href={host ? `/nodes/${id}/files` : `/workloads/${id}/files`}>Files</Link>
-        <Link href="/terminal">Open in Terminal workspace</Link>
-      </nav>
+      {host ? (
+        <nav className="subnav" aria-label="IO">
+          <Link href={`/nodes/${id}`}>Summary</Link>
+          <Link href={`/nodes/${id}/terminal`} aria-current="page">
+            Terminal
+          </Link>
+          <Link href={`/nodes/${id}/files`}>Files</Link>
+          <Link href="/terminal">Open in Terminal workspace</Link>
+        </nav>
+      ) : (
+        <>
+          <WorkloadSubnav id={id} />
+          <p className="page-kicker">
+            <Link href="/terminal">Open in Terminal workspace</Link>
+          </p>
+        </>
+      )}
       <TerminalPane workspaceLink />
     </section>
   );

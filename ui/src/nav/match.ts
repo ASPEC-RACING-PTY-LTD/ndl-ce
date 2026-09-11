@@ -19,6 +19,10 @@ export function viewFromPath(path: string): OpView {
       return "console";
     case "gpus":
       return "gpus";
+    case "operations":
+      return "operations";
+    case "machine":
+      return "machine";
     default:
       return "summary";
   }
@@ -56,6 +60,12 @@ export function resolveView(target: NavTarget, requested: OpView): OpView {
   }
   if (requested === "gpus") {
     return "gpus";
+  }
+  if (requested === "operations") {
+    return "operations";
+  }
+  if (requested === "machine") {
+    return target.group === "vm" ? "machine" : "summary";
   }
   return "summary";
 }

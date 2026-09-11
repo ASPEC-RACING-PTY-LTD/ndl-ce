@@ -210,6 +210,13 @@ export function UpdatesPage() {
         </p>
       </header>
 
+      {busy || lastOp?.status === "running" || status?.last_operation?.status === "running" ? (
+        <p className="banner" role="status">
+          Management is temporarily unavailable while the control plane updates. Guests keep
+          running. This is not an infrastructure restart.
+        </p>
+      ) : null}
+
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

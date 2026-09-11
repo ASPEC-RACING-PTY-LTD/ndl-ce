@@ -71,6 +71,14 @@ function mockApi(me: MeResponse, extra: Record<string, { status: number; body?: 
     "/api/v1/storage/pools": { status: 200, body: { items: [] } },
     "/api/v1/networks": { status: 200, body: { items: [], nics: [] } },
     "/api/v1/cluster": { status: 200, body: { id: "cluster-1", name: "local", nodes: [] } },
+    "/api/v1/features": { status: 200, body: { items: [] } },
+    "/api/v1/docker": { status: 404, body: { error: "not enabled" } },
+    "/api/v1/workloads/wl-a/metrics": { status: 200, body: { status: "collecting", series: [] } },
+    "/api/v1/workloads/wl-s/metrics": { status: 200, body: { status: "collecting", series: [] } },
+    "/api/v1/workloads/wl-u/metrics": { status: 200, body: { status: "collecting", series: [] } },
+    "/api/v1/workloads/wl-stop/metrics": { status: 200, body: { status: "collecting", series: [] } },
+    "/api/v1/workloads/wl-pg/metrics": { status: 200, body: { status: "collecting", series: [] } },
+    "/api/v1/workloads/wl-long/metrics": { status: 200, body: { status: "collecting", series: [] } },
     ...extra,
   };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -261,6 +269,19 @@ describe("contextual navigation", () => {
     fireEvent.click(screen.getByRole("link", { name: /^manage$/i }));
     expect(await screen.findByRole("heading", { name: /^workloads$/i })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: /^name$/i })).toBeVisible();
+  });
+
+  it("keeps spec clone and migrate off Summary and behind Edit plus Operations", async () => {
+    window.history.replaceState({}, "", "/workloads/wl-a");
+    mockApi(admin);
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: /^spec$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^migrate$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: /clone \/ migrate/i }));
+    expect(await screen.findByRole("heading", { name: /^clone$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^migrate$/i })).toBeVisible();
   });
 
   it("hides unauthorized rows and still enforces action permissions", async () => {

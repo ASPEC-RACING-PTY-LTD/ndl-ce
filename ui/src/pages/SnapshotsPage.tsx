@@ -10,7 +10,7 @@ import {
 import type { Snapshot, SnapshotCapability, SnapshotListResponse } from "../generated/openapi";
 import type { Workload } from "../api/phase5";
 import { Field } from "../components/Field";
-import { Link } from "../components/Link";
+import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { formatWhen, honestStatus } from "../format";
 import { currentPath } from "../router";
 import { useSession } from "../session";
@@ -150,15 +150,7 @@ export function SnapshotsPage() {
         <p className="page-kicker">Point-in-time restore on the same pool. This is not a backup.</p>
       </header>
 
-      <nav className="subnav" aria-label="Workload">
-        <Link href={`/workloads/${id}`}>Summary</Link>
-        <Link href={`/workloads/${id}/terminal`}>Terminal</Link>
-        <Link href={`/workloads/${id}/files`}>Files</Link>
-        <Link href={`/workloads/${id}/snapshots`} aria-current="page">
-          Snapshots
-        </Link>
-        {workload ? <span className="muted">{workload.name}</span> : null}
-      </nav>
+      <WorkloadSubnav id={id} kind={workload?.kind} />
 
       {error ? (
         <p className="banner banner-error" role="alert">

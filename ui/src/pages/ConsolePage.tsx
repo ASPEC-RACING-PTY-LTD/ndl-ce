@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { createConsoleSession, getWorkload } from "../api/client";
-import { Link } from "../components/Link";
+import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { currentPath } from "../router";
 
 function workloadIDFromPath(): string {
@@ -158,11 +158,8 @@ export function ConsolePage() {
           {error}
         </p>
       ) : null}
+      <WorkloadSubnav id={id} kind="vm" />
       <nav className="subnav" aria-label="Console mode">
-        <Link href={`/workloads/${id}`}>Summary</Link>
-        <Link href={`/workloads/${id}/console`} aria-current="page">
-          Console
-        </Link>
         <button className="btn" type="button" onClick={() => setMode("serial")}>
           Serial
         </button>

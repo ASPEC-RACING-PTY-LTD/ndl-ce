@@ -1160,6 +1160,53 @@ tr.is-clickable {
   font-weight: 650;
 }
 
+.workload-subnav {
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.subnav-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.subnav-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-secondary);
+  padding: 0 0.35rem 0 0.15rem;
+}
+
+.overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+}
+
+.metric-tile .metric-value {
+  font-size: 1.25rem;
+  font-weight: 650;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.field-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.apply-classes {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.dialog-wide {
+  width: min(42rem, calc(100vw - 2rem));
+}
+
 .plain-list {
   margin: 0;
   padding: 0;

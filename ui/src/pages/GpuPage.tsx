@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, assignGpu, listGpus, unassignGpu } from "../api/client";
 import type { GPUListResponse } from "../generated/openapi";
-import { Link } from "../components/Link";
+import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { currentPath } from "../router";
 
 function workloadIDFromPath(): string {
@@ -46,14 +46,7 @@ export function GpuPage() {
   const inner = (
     <>
       {heading}
-      {!nested && workloadID ? (
-        <nav className="subnav" aria-label="Workload operations">
-          <Link href={`/workloads/${workloadID}`}>Summary</Link>
-          <Link href={`/workloads/${workloadID}/gpus`} aria-current="page">
-            GPUs
-          </Link>
-        </nav>
-      ) : null}
+      {!nested && workloadID ? <WorkloadSubnav id={workloadID} /> : null}
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

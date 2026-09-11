@@ -6,6 +6,9 @@ export function ConfirmDialog({
   children,
   confirmLabel = "Confirm",
   danger = false,
+  wide = false,
+  hideFooter = false,
+  confirmDisabled = false,
   onConfirm,
   onClose,
 }: {
@@ -14,6 +17,9 @@ export function ConfirmDialog({
   children: ReactNode;
   confirmLabel?: string;
   danger?: boolean;
+  wide?: boolean;
+  hideFooter?: boolean;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -53,7 +59,7 @@ export function ConfirmDialog({
       }}
     >
       <form
-        className="dialog-panel stack"
+        className={wide ? "dialog-panel dialog-wide stack" : "dialog-panel stack"}
         method="dialog"
         onSubmit={(event) => {
           event.preventDefault();
@@ -62,14 +68,20 @@ export function ConfirmDialog({
       >
         <h2 id="confirm-title">{title}</h2>
         {children}
-        <div className="btn-row">
-          <button className="btn btn-ghost" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button className={danger ? "btn btn-danger" : "btn btn-primary"} type="submit">
-            {confirmLabel}
-          </button>
-        </div>
+        {hideFooter ? null : (
+          <div className="btn-row">
+            <button className="btn btn-ghost" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              className={danger ? "btn btn-danger" : "btn btn-primary"}
+              type="submit"
+              disabled={confirmDisabled}
+            >
+              {confirmLabel}
+            </button>
+          </div>
+        )}
       </form>
     </dialog>
   );

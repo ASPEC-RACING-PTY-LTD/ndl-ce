@@ -7,6 +7,12 @@ Workloads are not bound to the control plane or the agent
 (`BindsTo` / `PartOf` / `Requires` are forbidden on workload units).
 `systemctl stop ndl-control` does not stop guests.
 
+A second `systemctl start` of an already-running `nodal-ct@` /
+`nodal-vm@` unit is a no-op. See [workload-lifecycle.md](workload-lifecycle.md)
+for live CPU/memory apply versus Pending Restart.
+
+## Replay setup
+
 The agent socket and process can also stop without tearing down
 workloads that have already been started by systemd.
 

@@ -493,6 +493,18 @@ export async function getNodeMetrics(id: string, params?: { from?: string; to?: 
   return readJson(await request(`/nodes/${id}/metrics${suffix}`));
 }
 
+export async function getWorkloadMetrics(
+  id: string,
+  params?: { from?: string; to?: string; minutes?: number },
+): Promise<import("./phase2").MetricsResponse> {
+  const q = new URLSearchParams();
+  if (params?.from) q.set("from", params.from);
+  if (params?.to) q.set("to", params.to);
+  if (params?.minutes) q.set("minutes", String(params.minutes));
+  const suffix = q.size ? `?${q.toString()}` : "";
+  return readJson(await request(`/workloads/${id}/metrics${suffix}`));
+}
+
 export async function getNodeLogs(id: string, unit = "ndl-agent.service"): Promise<{
   status: string;
   unit?: string;
@@ -1062,6 +1074,8 @@ export async function patchWorkload(
     ipv6_gateway?: string;
     dns?: string[];
     mac?: string;
+    restart_after_save?: boolean;
+    expand_filesystem?: boolean;
   },
 ): Promise<import("./phase5").Workload> {
   return readJson(

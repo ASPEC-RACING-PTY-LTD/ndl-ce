@@ -2,7 +2,15 @@ export type NavKind = "node" | "workload";
 
 export type NavGroup = "host" | "system-container" | "vm" | "application";
 
-export type OpView = "summary" | "terminal" | "files" | "snapshots" | "console" | "gpus";
+export type OpView =
+  | "summary"
+  | "terminal"
+  | "files"
+  | "snapshots"
+  | "console"
+  | "gpus"
+  | "operations"
+  | "machine";
 
 export type NavTarget = {
   kind: NavKind;

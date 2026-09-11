@@ -15,6 +15,7 @@ That definition is the milestone. This tree has not reached it.
 - [install.md](install.md) one-line, manual repo, ISO
 - [uninstall.md](uninstall.md) remove does not delete workload data
 - [recovery.md](recovery.md) control plane and agent stop leave guests
+- [workload-lifecycle.md](workload-lifecycle.md) live vs pending restart, Edit, disk growth
 - [backup.md](backup.md)
 - [migration.md](migration.md)
 - [cluster.md](cluster.md)

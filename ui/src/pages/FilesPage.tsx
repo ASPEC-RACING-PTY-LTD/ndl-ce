@@ -21,6 +21,7 @@ import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
+import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { breadcrumbs, displayPath, destRel, joinPath, parentPath, relName } from "../files/paths";
 import { formatBytes } from "../format";
 import { workloadGuestIOReason } from "../guestIO";
@@ -373,13 +374,17 @@ export function FilesPage() {
           Drop files to upload into this directory
         </p>
       ) : null}
-      <nav className="subnav" aria-label="IO">
-        <Link href={summaryHref}>Summary</Link>
-        <Link href={termHref}>Terminal</Link>
-        <Link href={host ? `/nodes/${id}/files` : `/workloads/${id}/files`} aria-current="page">
-          Files
-        </Link>
-      </nav>
+      {host ? (
+        <nav className="subnav" aria-label="IO">
+          <Link href={summaryHref}>Summary</Link>
+          <Link href={termHref}>Terminal</Link>
+          <Link href={`/nodes/${id}/files`} aria-current="page">
+            Files
+          </Link>
+        </nav>
+      ) : (
+        <WorkloadSubnav id={id} />
+      )}
       <nav className="files-crumbs" aria-label="Path">
         {crumbs.map((c) => (
           <button key={c.path} className="btn btn-ghost btn-sm" type="button" onClick={() => void reload(c.path)}>

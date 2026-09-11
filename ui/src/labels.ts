@@ -76,6 +76,15 @@ export function metricLabel(name?: string): string {
     case "memory.used_bytes":
       return "Memory used";
     default:
+      if (name?.endsWith(".cpu.busy_ratio")) {
+        return "CPU busy";
+      }
+      if (name?.endsWith(".memory.current_bytes")) {
+        return "Memory used";
+      }
+      if (name?.endsWith(".memory.max_bytes")) {
+        return "Memory limit";
+      }
       return name || "Metric";
   }
 }

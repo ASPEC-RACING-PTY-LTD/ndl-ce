@@ -9,6 +9,7 @@ const DOCS = [
   { id: "install", title: "Install", summary: "One-line bootstrap, manual repo, and installer ISO." },
   { id: "uninstall", title: "Uninstall", summary: "apt remove does not delete workload data." },
   { id: "recovery", title: "Recovery", summary: "Stopping ndl-control or ndl-agent does not stop guests." },
+  { id: "lifecycle", title: "Workload lifecycle", summary: "Live CPU/RAM/disk grow versus Pending Restart. Save never restarts unless you opt in." },
   { id: "backup", title: "Backup", summary: "Snapshots are not backups. Restore as new versus replace." },
   { id: "migration", title: "Import / Export", summary: "Copy-first migration. Source remains unchanged. No lock-in." },
   { id: "cluster", title: "Cluster", summary: "Join tokens, placement, migrate, single-writer HA." },
