@@ -769,6 +769,7 @@ export function BackupsPage() {
                           <th>Target</th>
                           <th>Status</th>
                           <th>Plan</th>
+                          <th>Error</th>
                           <th>Transferred</th>
                           <th>Incremental</th>
                           <th>Started</th>
@@ -781,6 +782,7 @@ export function BackupsPage() {
                             <td>{targetById.get(r.target_id)?.name ?? r.target_id}</td>
                             <td>{runStatusLabel(r.status)}</td>
                             <td>{planLabel(r.plan)}</td>
+                            <td>{r.error || "None"}</td>
                             <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
                             <td>{r.incremental ? "Yes" : "No"}</td>
                             <td>{formatWhen(r.started_at)}</td>

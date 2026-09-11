@@ -11,7 +11,10 @@ workload list). All is the default. One policy can cover many workloads.
 Run now executes the policy against its current scope. Eligible means
 the root disk can be copied with any supported method: ZFS send when the
 pool is ZFS, qcow2 flatten for Directory VMs, or a filesystem archive
-for Directory system containers. Extra disks, iSCSI, and distributed
+for Directory system containers. A running Directory container is frozen
+via its LXC payload cgroup.freeze (and the systemd unit cgroup when that
+file exists) only while the rootfs tree is copied. Encoding and upload continue
+after resume. Extra disks, iSCSI, and distributed
 volumes are skipped as resources. They do not make a backupable root
 ineligible. A run with nothing eligible returns 422.
 

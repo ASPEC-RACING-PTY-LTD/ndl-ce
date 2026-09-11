@@ -6,10 +6,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
+const systemdCTSlice = `system-nodal\x2dct.slice`
+
 var (
-	cgroupSlice  = "/sys/fs/cgroup/system.slice"
+	cgroupRoot   = "/sys/fs/cgroup"
 	freezeUnitRe = regexp.MustCompile(`^nodal-ct@[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.service$`)
 )
 
@@ -59,6 +62,72 @@ func ValidateFreezeUnit(unit string) error {
 	return nil
 }
 
+func freezeUnitID(unit string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(unit), "nodal-ct@"), ".service")
+}
+
+func underCgroupRoot(path string) bool {
+	clean := filepath.Clean(path)
+	root := filepath.Clean(cgroupRoot)
+	if clean == root {
+		return false
+	}
+	sep := string(os.PathSeparator)
+	return strings.HasPrefix(clean, root+sep)
+}
+
+func freezePathCandidates(unit string) []string {
+	id := freezeUnitID(unit)
+	var out []string
+	seen := map[string]struct{}{}
+	add := func(p string) {
+		p = filepath.Clean(p)
+		if !underCgroupRoot(p) {
+			return
+		}
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	// Guest tasks live in the LXC payload cgroup, not the systemd unit cgroup.
+	add(filepath.Join(cgroupRoot, "lxc.payload."+id, "cgroup.freeze"))
+	add(filepath.Join(cgroupRoot, "system.slice", unit, "cgroup.freeze"))
+	add(filepath.Join(cgroupRoot, "system.slice", systemdCTSlice, unit, "cgroup.freeze"))
+	matches, _ := filepath.Glob(filepath.Join(cgroupRoot, "system.slice", "*", unit, "cgroup.freeze"))
+	for _, m := range matches {
+		add(m)
+	}
+	return out
+}
+
+func existingFreezePaths(unit string) []string {
+	var out []string
+	for _, path := range freezePathCandidates(unit) {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		out = append(out, path)
+	}
+	return out
+}
+
+func waitFrozen(dir string) {
+	events := filepath.Join(dir, "cgroup.events")
+	if _, err := os.Stat(events); err != nil {
+		return
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		body, err := os.ReadFile(events)
+		if err == nil && strings.Contains(string(body), "frozen 1") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func freezeUnitIfPresent(unit string, required bool) (func(), error) {
 	nop := func() {}
 	unit = strings.TrimSpace(unit)
@@ -68,23 +137,26 @@ func freezeUnitIfPresent(unit string, required bool) (func(), error) {
 	if err := ValidateFreezeUnit(unit); err != nil {
 		return nop, err
 	}
-	path := filepath.Join(cgroupSlice, unit, "cgroup.freeze")
-	if !strings.HasPrefix(path, cgroupSlice+"/") {
-		return nop, fmt.Errorf("freeze unit is not a nodal-ct service")
-	}
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			if required {
-				return nop, fmt.Errorf("cgroup freezer is not available; Directory backup will not copy a live rootfs without a short freeze")
-			}
-			return nop, nil
+	paths := existingFreezePaths(unit)
+	if len(paths) == 0 {
+		if required {
+			return nop, fmt.Errorf("cgroup freezer is not available; Directory backup will not copy a live rootfs without a short freeze")
 		}
-		return nop, fmt.Errorf("cgroup freeze: %w", err)
+		return nop, nil
 	}
-	if err := os.WriteFile(path, []byte("1\n"), 0o644); err != nil {
-		return nop, fmt.Errorf("cgroup freeze: %w", err)
+	var frozen []string
+	unfreeze := func() {
+		for i := len(frozen) - 1; i >= 0; i-- {
+			_ = os.WriteFile(frozen[i], []byte("0\n"), 0o644)
+		}
 	}
-	return func() {
-		_ = os.WriteFile(path, []byte("0\n"), 0o644)
-	}, nil
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte("1\n"), 0o644); err != nil {
+			unfreeze()
+			return nop, fmt.Errorf("cgroup freeze: %w", err)
+		}
+		frozen = append(frozen, path)
+		waitFrozen(filepath.Dir(path))
+	}
+	return unfreeze, nil
 }

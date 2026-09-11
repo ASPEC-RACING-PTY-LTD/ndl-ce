@@ -95,6 +95,7 @@ func CopyTree(ctx context.Context, srcRootfs, dest, freezeUnit string, requireFr
 		return err
 	}
 	defer unfreeze()
+	syncFrozenRoot(srcRootfs)
 	if err := os.MkdirAll(dest, 0o750); err != nil {
 		return err
 	}

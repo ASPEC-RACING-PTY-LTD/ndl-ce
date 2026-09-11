@@ -75,6 +75,7 @@ func Archive(ctx context.Context, srcRootfs, dest, freezeUnit string, meta []byt
 		return storage.CopyResult{}, err
 	}
 	defer unfreeze()
+	syncFrozenRoot(srcRootfs)
 
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return storage.CopyResult{}, err

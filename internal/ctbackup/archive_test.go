@@ -148,9 +148,9 @@ func TestArchivePreservesModeAndOptionalXattr(t *testing.T) {
 }
 
 func TestFreezeMissingFileIsSkipped(t *testing.T) {
-	prev := cgroupSlice
-	t.Cleanup(func() { cgroupSlice = prev })
-	cgroupSlice = filepath.Join(t.TempDir(), "system.slice")
+	prev := cgroupRoot
+	t.Cleanup(func() { cgroupRoot = prev })
+	cgroupRoot = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
 	unfreeze, err := freezeUnitIfPresent(unit, false)
 	if err != nil {
@@ -160,11 +160,11 @@ func TestFreezeMissingFileIsSkipped(t *testing.T) {
 }
 
 func TestFreezeWritesAndClears(t *testing.T) {
-	prev := cgroupSlice
-	t.Cleanup(func() { cgroupSlice = prev })
-	cgroupSlice = filepath.Join(t.TempDir(), "system.slice")
+	prev := cgroupRoot
+	t.Cleanup(func() { cgroupRoot = prev })
+	cgroupRoot = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
-	dir := filepath.Join(cgroupSlice, unit)
+	dir := filepath.Join(cgroupRoot, "system.slice", unit)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -184,6 +184,69 @@ func TestFreezeWritesAndClears(t *testing.T) {
 	body, _ = os.ReadFile(path)
 	if strings.TrimSpace(string(body)) != "0" {
 		t.Fatalf("unfrozen %s", body)
+	}
+}
+
+func TestFreezeUsesLXCPayload(t *testing.T) {
+	prev := cgroupRoot
+	t.Cleanup(func() { cgroupRoot = prev })
+	cgroupRoot = t.TempDir()
+	id := "11111111-1111-4111-8111-111111111111"
+	unit := "nodal-ct@" + id + ".service"
+	dir := filepath.Join(cgroupRoot, "lxc.payload."+id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "cgroup.freeze")
+	if err := os.WriteFile(path, []byte("0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unfreeze, err := freezeUnitIfPresent(unit, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(path)
+	if strings.TrimSpace(string(body)) != "1" {
+		t.Fatalf("payload frozen %s", body)
+	}
+	unfreeze()
+	body, _ = os.ReadFile(path)
+	if strings.TrimSpace(string(body)) != "0" {
+		t.Fatalf("payload unfrozen %s", body)
+	}
+}
+
+func TestFreezeUsesSystemdTemplateSlice(t *testing.T) {
+	prev := cgroupRoot
+	t.Cleanup(func() { cgroupRoot = prev })
+	cgroupRoot = t.TempDir()
+	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
+	dir := filepath.Join(cgroupRoot, "system.slice", systemdCTSlice, unit)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "cgroup.freeze")
+	if err := os.WriteFile(path, []byte("0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unfreeze, err := freezeUnitIfPresent(unit, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(path)
+	if strings.TrimSpace(string(body)) != "1" {
+		t.Fatalf("slice frozen %s", body)
+	}
+	unfreeze()
+}
+
+func TestFreezeRequiredFailsWhenMissing(t *testing.T) {
+	prev := cgroupRoot
+	t.Cleanup(func() { cgroupRoot = prev })
+	cgroupRoot = t.TempDir()
+	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
+	if _, err := freezeUnitIfPresent(unit, true); err == nil {
+		t.Fatal("required freeze must fail when no cgroup.freeze exists")
 	}
 }
 
@@ -214,15 +277,15 @@ func TestParseFreezeUnit(t *testing.T) {
 }
 
 func TestArchiveUnfreezesWhenTarFails(t *testing.T) {
-	prev := cgroupSlice
+	prev := cgroupRoot
 	prevTar := runTarCmd
 	t.Cleanup(func() {
-		cgroupSlice = prev
+		cgroupRoot = prev
 		runTarCmd = prevTar
 	})
-	cgroupSlice = filepath.Join(t.TempDir(), "system.slice")
+	cgroupRoot = t.TempDir()
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
-	dir := filepath.Join(cgroupSlice, unit)
+	dir := filepath.Join(cgroupRoot, "system.slice", unit)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
