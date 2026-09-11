@@ -697,6 +697,7 @@ export function StoragePage() {
                   <th>Physical used</th>
                   <th>Physical available</th>
                   <th>Logical provisioned</th>
+                  <th>Usage</th>
                 </tr>
               </thead>
               <tbody>
@@ -713,6 +714,9 @@ export function StoragePage() {
                     <td>{capacityLabel(physicalUsedBytes(p), p.status)}</td>
                     <td>{capacityLabel(p.usable_bytes, p.status)}</td>
                     <td>{capacityLabel(p.provisioned_bytes, p.status)}</td>
+                    <td>
+                      <CapacityBar used={physicalUsedBytes(p)} total={p.total_bytes} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -750,7 +754,14 @@ export function StoragePage() {
             </div>
             <div>
               <dt>Physical used</dt>
-              <dd>{capacityLabel(physicalUsedBytes(pool), pool.status)}</dd>
+              <dd>
+                {capacityLabel(physicalUsedBytes(pool), pool.status)}
+                <CapacityBar
+                  used={physicalUsedBytes(pool)}
+                  total={pool.total_bytes}
+                  label="Physical consumption, not logical provisioned size"
+                />
+              </dd>
             </div>
             <div>
               <dt>Physical available</dt>
