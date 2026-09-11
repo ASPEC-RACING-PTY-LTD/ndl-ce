@@ -517,12 +517,26 @@ export function ImportExportPage() {
       <p>
         Library qcow2 import remains at <Link href="/workloads/import">Import VM</Link>. CE does not require Cloud.
       </p>
-      <div className="inline-actions">
-        <button type="button" className={tab === "import" ? "btn" : "btn btn-secondary"} onClick={() => setTab("import")}>
-          Import
+      <div className="content-grid">
+        <button
+          type="button"
+          aria-label="Import"
+          aria-pressed={tab === "import"}
+          className={"selection-card" + (tab === "import" ? " is-selected" : "")}
+          onClick={() => setTab("import")}
+        >
+          <span className="title">Import</span>
+          <span className="desc">Copy workloads onto this host. The source stays unchanged.</span>
         </button>
-        <button type="button" className={tab === "export" ? "btn" : "btn btn-secondary"} onClick={() => setTab("export")}>
-          Export
+        <button
+          type="button"
+          aria-label="Export"
+          aria-pressed={tab === "export"}
+          className={"selection-card" + (tab === "export" ? " is-selected" : "")}
+          onClick={() => setTab("export")}
+        >
+          <span className="title">Export</span>
+          <span className="desc">Create a portable package so you can leave.</span>
         </button>
       </div>
       {error ? (

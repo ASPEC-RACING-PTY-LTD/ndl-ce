@@ -21,6 +21,9 @@ import { formatWhen } from "../format";
 import { roleLabel } from "../labels";
 import { hasGrant } from "../rbac";
 import { useSession } from "../session";
+import { Field } from "../components/Field";
+import { SelectField } from "../components/form/SelectField";
+import { Dialog } from "../ui/Dialog";
 
 type ConfirmKind = "delete" | "disable" | "reset" | "sessions" | "tokens" | "mfa" | null;
 
@@ -183,90 +186,82 @@ export function UsersPage() {
               onClick={() => {
                 setEditing(null);
                 setDisplayName("");
-                setCreating((v) => !v);
+                setCreating(true);
               }}
             >
-              {creating ? "Close" : "Create user"}
+              Create user
             </button>
           ) : null
         }
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
-      {creating && canCreate ? (
+      <Dialog
+        open={creating && canCreate}
+        title="Create user"
+        unsaved={Boolean(username || password || displayName)}
+        onClose={() => setCreating(false)}
+        footer={
+          <div className="btn-row">
+            <button className="btn btn-primary" type="submit" form="create-user-form" disabled={busy}>
+              Create
+            </button>
+          </div>
+        }
+      >
         <form
-          className="panel form"
+          id="create-user-form"
+          className="form"
           onSubmit={(event) => {
             event.preventDefault();
             void onCreate();
           }}
         >
-          <h2>Create user</h2>
-          <label className="field-label" htmlFor="new-username">
-            Username
-          </label>
-          <input id="new-username" className="field-input" value={username} onChange={(e) => setUsername(e.target.value)} required />
-          <label className="field-label" htmlFor="new-display">
-            Display name
-          </label>
-          <input id="new-display" className="field-input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-          <label className="field-label" htmlFor="new-password">
-            Password
-          </label>
-          <input
+          <Field id="new-username" label="Username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+          <Field id="new-display" label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+          <Field
             id="new-password"
-            className="field-input"
+            label="Password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={8}
           />
-          <label className="field-label" htmlFor="new-role">
-            Role
-          </label>
-          <select id="new-role" className="field-input" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
+          <SelectField id="new-role" label="Role" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
             <option value="viewer">User</option>
             <option value="operator">Admin</option>
             {canRoles ? <option value="admin">Owner</option> : null}
-          </select>
+          </SelectField>
+        </form>
+      </Dialog>
+      <Dialog
+        open={Boolean(editing) && canUpdate}
+        title={editing ? `Edit ${editing.username}` : "Edit user"}
+        unsaved={Boolean(editing && displayName !== (editing.display_name || ""))}
+        onClose={() => {
+          setEditing(null);
+          setDisplayName("");
+        }}
+        footer={
           <div className="btn-row">
-            <button className="btn btn-primary" type="submit" disabled={busy}>
-              Create
+            <button className="btn btn-primary" type="submit" form="edit-user-form" disabled={busy}>
+              Save
             </button>
           </div>
-        </form>
-      ) : null}
-      {editing && canUpdate ? (
+        }
+      >
         <form
-          className="panel form"
+          id="edit-user-form"
+          className="form"
           onSubmit={(event) => {
             event.preventDefault();
             void onSaveDisplayName();
           }}
         >
-          <h2>Edit {editing.username}</h2>
           <p className="field-hint">Username and password hashes stay unchanged. Use reset password for a new credential.</p>
-          <label className="field-label" htmlFor="edit-display">
-            Display name
-          </label>
-          <input id="edit-display" className="field-input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-          <div className="btn-row">
-            <button className="btn btn-primary" type="submit" disabled={busy}>
-              Save
-            </button>
-            <button
-              className="btn btn-ghost"
-              type="button"
-              onClick={() => {
-                setEditing(null);
-                setDisplayName("");
-              }}
-            >
-              Cancel
-            </button>
-          </div>
+          <Field id="edit-display" label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </form>
-      ) : null}
+      </Dialog>
       <div className="stack">
         <div className="toolbar">
           <label className="search-field">

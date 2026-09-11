@@ -7,18 +7,10 @@ import { allowedByRbac, isCapabilityEnabled } from "../nav/disclosure";
 import { useNavDisclosure } from "../nav/NavDisclosure";
 import { CAPABILITIES, NAV_MODULES, TEMPLATES, moduleById } from "../nav/modules";
 import { useSession } from "../session";
-
 import { hasGrant } from "../rbac";
-
-function statusLabel(item: Feature): string {
-  if (item.core) {
-    return "Installed";
-  }
-  if (item.enabled) {
-    return "Enabled";
-  }
-  return "Not installed";
-}
+import { Checkbox } from "../ui/Checkbox";
+import { SelectionCard } from "../ui/SelectionCard";
+import { featureRuntimeLabel } from "../labels";
 
 function capabilityHref(id: string): string | undefined {
   const cap = CAPABILITIES.find((item) => item.id === id);
@@ -32,6 +24,19 @@ function capabilityHref(id: string): string | undefined {
   return first ? moduleById(first)?.href : undefined;
 }
 
+function installState(item?: Feature): { label: string; installed: boolean; enabled: boolean } {
+  if (!item) {
+    return { label: "Not installed", installed: false, enabled: false };
+  }
+  if (item.core) {
+    return { label: "Installed", installed: true, enabled: true };
+  }
+  if (item.enabled) {
+    return { label: "Enabled", installed: true, enabled: true };
+  }
+  return { label: "Not installed", installed: false, enabled: false };
+}
+
 export function FeaturesPage() {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
@@ -41,6 +46,7 @@ export function FeaturesPage() {
   const [list, setList] = useState<FeatureList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   async function reload() {
     const next = await listFeatures();
@@ -50,7 +56,6 @@ export function FeaturesPage() {
 
   useEffect(() => {
     void reload().catch((err) => setError(err instanceof Error ? err.message : "Unavailable"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadFeatures]);
 
   async function onEnablePackage(item: Feature) {
@@ -119,34 +124,25 @@ export function FeaturesPage() {
         </p>
       ) : null}
 
-      <article className="panel">
+      <article className="stack">
         <h2>Navigation template</h2>
-        <p className="lede">
-          Simple is the default for homelab and SMB virtualization. Switching templates does not disable packages or
-          lose a Custom layout.
-        </p>
-        <fieldset className="stack">
-          <legend className="field-label">Template</legend>
+        {list?.base_install ? <p className="field-hint">Base install {list.base_install}.</p> : null}
+        <div className="content-grid" role="radiogroup" aria-label="Navigation template">
           {TEMPLATES.map((item) => (
-            <div key={item.id}>
-              <label className="field-label">
-                <input
-                  type="radio"
-                  name="nav-template"
-                  value={item.id}
-                  checked={prefs.template === item.id}
-                  onChange={() => setTemplate(item.id)}
-                />{" "}
-                {item.label}
-              </label>
-              <p className="field-hint">{item.summary}</p>
-            </div>
+            <SelectionCard
+              key={item.id}
+              role="radio"
+              title={item.label}
+              description={item.summary}
+              selected={prefs.template === item.id}
+              onSelect={() => setTemplate(item.id)}
+            />
           ))}
-        </fieldset>
+        </div>
       </article>
 
       {prefs.template === "custom" ? (
-        <article className="panel">
+        <article className="stack">
           <h2>Custom modules</h2>
           <p className="lede">Hide or show sidebar entries. This does not enable or disable the capability itself.</p>
           <ul className="plain-list">
@@ -155,14 +151,12 @@ export function FeaturesPage() {
               const idx = customIds.indexOf(mod.id);
               return (
                 <li key={mod.id} className="inline-actions">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => setCustomModule(mod.id, e.target.checked)}
-                    />{" "}
-                    {mod.label}
-                  </label>
+                  <Checkbox
+                    id={`mod-${mod.id}`}
+                    label={mod.label}
+                    checked={checked}
+                    onChange={(e) => setCustomModule(mod.id, e.target.checked)}
+                  />
                   {checked && idx >= 0 ? (
                     <>
                       <button type="button" className="btn btn-secondary" onClick={() => reorderCustom(mod.id, -1)}>
@@ -180,32 +174,38 @@ export function FeaturesPage() {
         </article>
       ) : null}
 
-      <article className="panel">
-        <h2>Integrations and optional capabilities</h2>
-        <p className="lede">
-          Enablement is cluster or package state. It is not the same as pinning a link in the sidebar.
-        </p>
-        <ul className="plain-list feature-catalog">
+      <article className="stack">
+        <h2>Optional capabilities</h2>
+        <ul className="feature-card-grid">
           {CAPABILITIES.map((cap) => {
             const pack = cap.featureId ? items.find((item) => item.id === cap.featureId) : undefined;
             const on = isCapabilityEnabled(cap.id, prefs, featureEnabled);
             const dest = capabilityHref(cap.id);
             const title = pack?.title ?? cap.title;
+            const state = installState(pack);
             return (
               <li key={cap.id}>
-                <article className="panel">
-                  <h2>{title}</h2>
-                  <p>{cap.summary}</p>
-                  <p>{on ? "Enabled" : "Not enabled"}.</p>
-                  {pack ? (
-                    <p>
-                      {statusLabel(pack)}. Package {pack.package_status}. Runtime {pack.runtime_status}. Kubelet
-                      started {pack.kubelet_started ? "yes" : "no"}.
+                <article className="compact-card">
+                  <h3>{title}</h3>
+                  <p className="lede">{cap.summary}</p>
+                  <p>
+                    {pack
+                      ? `${state.installed ? "Installed" : "Not installed"}${
+                          pack.core ? "" : ` · ${state.enabled ? "Enabled" : "Disabled"}`
+                        }`
+                      : on
+                        ? "Enabled."
+                        : "Not enabled."}
+                  </p>
+                  {openId === cap.id && pack ? (
+                    <p className="field-hint">
+                      Package {featureRuntimeLabel(pack.package_status)}. Runtime {featureRuntimeLabel(pack.runtime_status)}.
+                      {pack.kubelet_started ? " Kubelet running." : ""}
                       {pack.workload_count ? ` Workloads ${pack.workload_count}.` : ""}
+                      {pack.reason ? ` ${pack.reason}` : ""}
                     </p>
                   ) : null}
-                  {pack?.reason ? <p>{pack.reason}</p> : null}
-                  <div className="inline-actions">
+                  <div className="btn-row">
                     {mutate && pack && !pack.core && !pack.enabled ? (
                       <button
                         className="btn btn-primary"
@@ -236,6 +236,11 @@ export function FeaturesPage() {
                         Configure
                       </Link>
                     ) : null}
+                    {pack ? (
+                      <button className="btn btn-ghost" type="button" onClick={() => setOpenId(openId === cap.id ? null : cap.id)}>
+                        Details
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               </li>
@@ -244,29 +249,17 @@ export function FeaturesPage() {
         </ul>
       </article>
 
-      {list ? (
-        <p>
-          Base install {list.base_install}. GPU services optional {list.gpu_optional ? "yes" : "no"}.
-        </p>
-      ) : (
-        <p>Collecting</p>
-      )}
-
       {coreItems.length > 0 ? (
-        <article className="panel">
+        <article className="stack">
           <h2>Included with the appliance</h2>
-          <ul className="plain-list">
+          <div className="content-grid">
             {coreItems.map((item) => (
-              <li key={item.id}>
-                <p>
-                  <strong>{item.title}</strong>
-                </p>
-                <p>
-                  {statusLabel(item)}. Package {item.package_status}. Runtime {item.runtime_status}.
-                </p>
-              </li>
+              <article key={item.id} className="compact-card">
+                <h3>{item.title}</h3>
+                <p>Installed</p>
+              </article>
             ))}
-          </ul>
+          </div>
         </article>
       ) : null}
     </section>

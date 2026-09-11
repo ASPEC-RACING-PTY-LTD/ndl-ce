@@ -233,6 +233,9 @@ describe("Docker page", () => {
     window.history.replaceState({}, "", "/docker");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^docker$/i })).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: /machine aspecracing/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /project shop/i }));
+    fireEvent.click(screen.getByRole("button", { name: /project aspecracing/i }));
     expect(await screen.findByText(/shop-web-1/i)).toBeVisible();
     expect(screen.getByText(/aspecracing-admin-1/i)).toBeVisible();
     expect(screen.getAllByRole("columnheader", { name: /^service$/i })).toHaveLength(1);

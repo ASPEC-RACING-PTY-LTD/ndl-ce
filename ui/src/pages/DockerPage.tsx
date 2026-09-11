@@ -127,8 +127,20 @@ export function DockerPage() {
   const [healthFilter, setHealthFilter] = useState("all");
   const [machineFilter, setMachineFilter] = useState("all");
   const [view, setView] = useState<ViewMode>("hierarchy");
-  const [openMachines, setOpenMachines] = useState<Record<string, boolean>>({});
-  const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({});
+  const [openMachines, setOpenMachines] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("ndl-docker-machines") || "{}") as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
+  const [openProjects, setOpenProjects] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("ndl-docker-projects") || "{}") as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
   const [idleOpen, setIdleOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [logs, setLogs] = useState<string>("");
@@ -144,7 +156,7 @@ export function DockerPage() {
         const copy = { ...cur };
         for (const m of next.machines ?? []) {
           if (copy[m.id] === undefined) {
-            copy[m.id] = (m.container_count ?? 0) > 0;
+            copy[m.id] = false;
           }
         }
         return copy;
@@ -378,10 +390,22 @@ export function DockerPage() {
             <MachineBlock
               key={m.id}
               machine={m}
-              open={openMachines[m.id] !== false}
-              onToggle={() => setOpenMachines((cur) => ({ ...cur, [m.id]: !(cur[m.id] !== false) }))}
+              open={Boolean(openMachines[m.id])}
+              onToggle={() =>
+                setOpenMachines((cur) => {
+                  const next = { ...cur, [m.id]: !cur[m.id] };
+                  sessionStorage.setItem("ndl-docker-machines", JSON.stringify(next));
+                  return next;
+                })
+              }
               openProjects={openProjects}
-              onToggleProject={(id) => setOpenProjects((cur) => ({ ...cur, [id]: !cur[id] }))}
+              onToggleProject={(id) =>
+                setOpenProjects((cur) => {
+                  const next = { ...cur, [id]: !cur[id] };
+                  sessionStorage.setItem("ndl-docker-projects", JSON.stringify(next));
+                  return next;
+                })
+              }
               query={q}
               healthFilter={healthFilter}
               selected={selected}
@@ -495,7 +519,14 @@ function MachineBlock({
   return (
     <article className="panel docker-machine">
       <header className="docker-machine-head">
-        <button className="linkish docker-head-name" type="button" onClick={onToggle} aria-expanded={open} title={machine.name}>
+        <button
+          className="linkish docker-head-name"
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-label={`Machine ${machine.name}`}
+          title={machine.name}
+        >
           {open ? "▾" : "▸"} {machine.name}
         </button>
         <span className="docker-head-status">
@@ -548,7 +579,7 @@ function MachineBlock({
                   <ProjectBlock
                     key={p.id}
                     project={p}
-                    open={openProjects[p.id] !== false}
+                    open={Boolean(openProjects[p.id])}
                     onToggle={() => onToggleProject(p.id)}
                     query={query}
                     healthFilter={healthFilter}
@@ -601,7 +632,14 @@ function ProjectBlock({
       <tr className="docker-project-row">
         <td colSpan={7}>
           <header className="docker-project-head">
-            <button className="linkish docker-head-name" type="button" onClick={onToggle} aria-expanded={open} title={project.name}>
+            <button
+              className="linkish docker-head-name"
+              type="button"
+              onClick={onToggle}
+              aria-expanded={open}
+              aria-label={`Project ${project.name}`}
+              title={project.name}
+            >
               {open ? "▾" : "▸"} {project.name}
             </button>
             <span className="docker-head-status">

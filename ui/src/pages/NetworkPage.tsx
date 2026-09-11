@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { applyNetwork, applyPolicy, createBond, createNetwork, createPolicy, createVLAN, listNetworks } from "../api/client";
 import type { ConfirmRequired, Network, NetworkBond, NetworkNIC, NetworkPolicy, NetworkVLAN } from "../api/phase4";
+import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
+import { StatusBadge } from "../components/StatusBadge";
 import { useSession } from "../session";
+import { Dialog } from "../ui/Dialog";
+import { SelectionCard } from "../ui/SelectionCard";
+import { kindLabel } from "../labels";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -12,6 +17,8 @@ function canMutate(roles: string[] | undefined): boolean {
 function isConfirm(value: unknown): value is ConfirmRequired {
   return Boolean(value && typeof value === "object" && "code" in value && (value as ConfirmRequired).code === "confirmation_required");
 }
+
+type CreateKind = "network" | "vlan" | "bond" | "policy" | null;
 
 export function NetworkPage() {
   const session = useSession();
@@ -38,6 +45,7 @@ export function NetworkPage() {
   const [polName, setPolName] = useState("deny-pair");
   const [polSrc, setPolSrc] = useState("");
   const [polDst, setPolDst] = useState("");
+  const [create, setCreate] = useState<CreateKind>(null);
 
   async function reload() {
     const listed = await listNetworks();
@@ -102,6 +110,7 @@ export function NetworkPage() {
         return;
       }
       setConfirmToken("");
+      setCreate(null);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
@@ -139,6 +148,7 @@ export function NetworkPage() {
         access_ifname: vlanAccess || undefined,
         confirm_ifname: typed || undefined,
       });
+      setCreate(null);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "VLAN add failed");
@@ -157,6 +167,7 @@ export function NetworkPage() {
         members: bondMembers.split(",").map((m) => m.trim()).filter(Boolean),
         confirm_ifname: typed || undefined,
       });
+      setCreate(null);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Bond add failed");
@@ -176,6 +187,7 @@ export function NetworkPage() {
         dst_workload_id: polDst,
       });
       await applyPolicy(created.id);
+      setCreate(null);
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Policy apply failed");
@@ -184,12 +196,81 @@ export function NetworkPage() {
     }
   }
 
+  const networkForm = (
+    <div className="stack">
+      <Field id="net-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="content-grid" role="radiogroup" aria-label="Kind">
+        {[
+          { id: "isolated", title: "Isolated", desc: "DHCP on a No-DAL bridge" },
+          { id: "isolated-nat", title: "Isolated NAT", desc: "Isolated plus masquerade" },
+          { id: "lan-bridge", title: "LAN bridge", desc: "Enslave a NIC, no DHCP" },
+        ].map((item) => (
+          <SelectionCard
+            key={item.id}
+            role="radio"
+            title={item.title}
+            description={item.desc}
+            selected={kind === item.id}
+            onSelect={() => setKind(item.id)}
+          />
+        ))}
+      </div>
+      {kind !== "lan-bridge" ? (
+        <Field id="net-cidr" label="IPv4 CIDR" value={cidr} onChange={(e) => setCidr(e.target.value)} />
+      ) : (
+        <>
+          <Field
+            id="net-uplink"
+            label="Uplink interface"
+            value={uplink}
+            onChange={(e) => setUplink(e.target.value)}
+            hint="LAN-bridge never starts a second DHCP server."
+          />
+          <Field
+            id="net-typed"
+            label="Type the interface name to confirm"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            hint="Required when the uplink is the management NIC or the only physical NIC."
+          />
+        </>
+      )}
+      <div className="btn-row">
+        <button className="btn" type="button" disabled={busy} onClick={() => void onDryRun()}>
+          Dry-run
+        </button>
+        <button className="btn btn-primary" type="button" disabled={busy || !mutate} onClick={() => void onCreate()}>
+          Create network
+        </button>
+      </div>
+      {preview ? <pre className="code-block">{preview}</pre> : null}
+    </div>
+  );
+
   return (
     <section className="page page-wide" aria-labelledby="network-heading">
       <PageHeader
         id="network-heading"
         title="Network"
-        kicker="Isolated, isolated-NAT, and LAN-bridge networks. VLAN access ports, bonds, and guest policies are optional. Isolated is the safe default. Policies cannot drop management INPUT."
+        kicker="Guest networks first. Isolated is the safe default. Dangerous uplink changes still require typed confirmation."
+        actions={
+          mutate && !firstRun ? (
+            <div className="btn-row is-flush">
+              <button className="btn btn-primary" type="button" onClick={() => setCreate("network")}>
+                Create network
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => setCreate("vlan")}>
+                VLAN
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => setCreate("bond")}>
+                Bond
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => setCreate("policy")}>
+                Policy
+              </button>
+            </div>
+          ) : null
+        }
       />
       {error ? (
         <p className="banner banner-error" role="alert">
@@ -197,168 +278,147 @@ export function NetworkPage() {
         </p>
       ) : null}
       {firstRun ? (
-        <p className="banner banner-warn" role="status">
-          No guest network yet. Create an isolated network so later workloads have L2 without touching the management NIC.
-        </p>
-      ) : null}
-      {firstRun || mutate ? (
-        <article className="panel">
-          <h2>{firstRun ? "First-run guest network" : "Create network"}</h2>
-          <Field id="net-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <div className="field">
-            <label className="field-label" htmlFor="net-kind">
-              Kind
-            </label>
-            <select id="net-kind" className="field-input" value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="isolated">isolated (DHCP on a No-dal bridge)</option>
-              <option value="isolated-nat">isolated-nat (isolated plus masquerade)</option>
-              <option value="lan-bridge">lan-bridge (enslave a NIC, no DHCP)</option>
-            </select>
-          </div>
-          {kind !== "lan-bridge" ? (
-            <Field id="net-cidr" label="IPv4 CIDR" value={cidr} onChange={(e) => setCidr(e.target.value)} />
-          ) : (
-            <>
-              <Field
-                id="net-uplink"
-                label="Uplink interface"
-                value={uplink}
-                onChange={(e) => setUplink(e.target.value)}
-                hint="LAN-bridge never starts a second DHCP server."
-              />
-              <Field
-                id="net-typed"
-                label="Type the interface name to confirm"
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                hint="Required when the uplink is the management NIC or the only physical NIC."
-              />
-            </>
-          )}
-          <div className="btn-row">
-            <button className="btn" type="button" disabled={busy} onClick={() => void onDryRun()}>
-              Dry-run
-            </button>
-            <button className="btn btn-primary" type="button" disabled={busy || !mutate} onClick={() => void onCreate()}>
-              Create network
-            </button>
-          </div>
-          {preview ? <pre className="code-block">{preview}</pre> : null}
+        <article className="compact-card stack">
+          <h2>First-run guest network</h2>
+          <p className="lede">Create an isolated network so later workloads have L2 without touching the management NIC.</p>
+          {networkForm}
         </article>
+      ) : items.length === 0 ? (
+        <EmptyState title="No networks">Create an isolated network to get started.</EmptyState>
+      ) : (
+        <div className="content-grid">
+          {items.map((net) => (
+            <article key={net.id} className="compact-card">
+              <h3>{net.name}</h3>
+              <p>
+                {kindLabel(net.kind)} · {net.bridge_name || "no locator"}
+              </p>
+              <p className="field-hint">
+                {net.ipv4_cidr || "No subnet"} · {net.dhcp ? "DHCP on" : "DHCP off"}
+              </p>
+              <StatusBadge status={net.status} />
+              {net.danger === "dangerous" ? <p className="field-hint">Dangerous change</p> : null}
+              {mutate ? (
+                <button className="btn btn-ghost" type="button" onClick={() => void onApply(net.id)}>
+                  {net.status === "available" ? "Re-apply" : "Apply"}
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
+      {vlans.length + bonds.length + policies.length > 0 ? (
+        <div className="content-grid">
+          {vlans.map((v) => (
+            <article key={v.id} className="compact-card">
+              <h3>VLAN {v.vlan_id}</h3>
+              <p className="field-hint">{v.locator}</p>
+              <StatusBadge status={v.status} />
+            </article>
+          ))}
+          {bonds.map((b) => (
+            <article key={b.id} className="compact-card">
+              <h3>Bond {b.name}</h3>
+              <p className="field-hint">
+                {b.mode} · {b.locator}
+              </p>
+              <StatusBadge status={b.status} />
+            </article>
+          ))}
+          {policies.map((p) => (
+            <article key={p.id} className="compact-card">
+              <h3>{p.name}</h3>
+              <p className="field-hint">{p.action}</p>
+              <StatusBadge status={p.status} />
+            </article>
+          ))}
+        </div>
       ) : null}
-      <article className="panel">
-        <h2>Networks</h2>
-        {items.length === 0 ? (
-          <p>Collecting. No network objects are recorded yet.</p>
+      <article className="stack">
+        <h2>Host NICs</h2>
+        {nics.length === 0 ? (
+          <p>NIC inventory is still collecting.</p>
         ) : (
-          <ul className="plain-list">
-            {items.map((net) => (
-              <li key={net.id}>
-                <strong>{net.name}</strong> {net.kind} {net.status}
-                {net.bridge_name ? ` locator ${net.bridge_name}` : ""}
-                {net.dhcp ? " DHCP on" : " DHCP off"}
-                {net.danger === "dangerous" ? " dangerous" : ""}
-                {mutate ? (
-                  <button className="btn btn-ghost" type="button" onClick={() => void onApply(net.id)}>
-                    {net.status === "available" ? "Re-apply" : "Apply"}
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <div className="data-list">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>State</th>
+                  <th>Index</th>
+                  <th>Addresses</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nics.map((nic) => (
+                  <tr key={nic.name}>
+                    <td>{nic.name}</td>
+                    <td>{nic.state || "Not reported"}</td>
+                    <td>{nic.ifindex != null ? `ifindex ${nic.ifindex}` : "Not reported"}</td>
+                    <td>{nic.addresses?.join(", ") || "None"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </article>
-      {mutate ? (
-        <article className="panel">
-          <h2>VLANs, bonds, and policies</h2>
-          <p className="lede">
-            Stacked VLAN access ports use a VID such as 20. Bonds default to active-backup. Guest
-            policies use the nftables bridge family and cannot drop management INPUT. The 120s
-            rollback watchdog still wins on dangerous uplink changes.
-          </p>
-          <form
-            className="form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void onCreateVLAN();
-            }}
-          >
-            <Field id="vlan-vid" label="VLAN ID" value={vlanVid} onChange={(e) => setVlanVid(e.target.value)} hint="Access port PVID. 20 is the homelab example." />
-            <Field id="vlan-access" label="Access interface" value={vlanAccess} onChange={(e) => setVlanAccess(e.target.value)} hint="Optional extra NIC. Management requires typed confirm." />
+
+      <Dialog open={!firstRun && create === "network"} title="Create network" wide onClose={() => setCreate(null)}>
+        {networkForm}
+      </Dialog>
+      <Dialog open={create === "vlan"} title="Add VLAN" onClose={() => setCreate(null)}>
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onCreateVLAN();
+          }}
+        >
+          <Field id="vlan-vid" label="VLAN ID" value={vlanVid} onChange={(e) => setVlanVid(e.target.value)} hint="Access port PVID." />
+          <Field id="vlan-access" label="Access interface" value={vlanAccess} onChange={(e) => setVlanAccess(e.target.value)} hint="Optional extra NIC. Management requires typed confirm." />
+          <div className="btn-row">
             <button className="btn btn-primary" type="submit" disabled={busy}>
               Add VLAN
             </button>
-          </form>
-          <form
-            className="form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void onCreateBond();
-            }}
-          >
-            <Field id="bond-name" label="Bond name" value={bondName} onChange={(e) => setBondName(e.target.value)} />
-            <Field id="bond-members" label="Members" value={bondMembers} onChange={(e) => setBondMembers(e.target.value)} hint="Comma-separated extra NICs, for example eth1,eth2." />
-            <button className="btn" type="submit" disabled={busy || !bondMembers}>
+          </div>
+        </form>
+      </Dialog>
+      <Dialog open={create === "bond"} title="Add bond" onClose={() => setCreate(null)}>
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onCreateBond();
+          }}
+        >
+          <Field id="bond-name" label="Bond name" value={bondName} onChange={(e) => setBondName(e.target.value)} />
+          <Field id="bond-members" label="Members" value={bondMembers} onChange={(e) => setBondMembers(e.target.value)} hint="Comma-separated extra NICs, for example eth1,eth2." />
+          <div className="btn-row">
+            <button className="btn btn-primary" type="submit" disabled={busy || !bondMembers}>
               Add bond
             </button>
-          </form>
-          <form
-            className="form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void onCreatePolicy();
-            }}
-          >
-            <Field id="pol-name" label="Policy name" value={polName} onChange={(e) => setPolName(e.target.value)} />
-            <Field id="pol-src" label="Source workload UUID" value={polSrc} onChange={(e) => setPolSrc(e.target.value)} />
-            <Field id="pol-dst" label="Destination workload UUID" value={polDst} onChange={(e) => setPolDst(e.target.value)} />
-            <button className="btn" type="submit" disabled={busy || !polSrc || !polDst}>
+          </div>
+        </form>
+      </Dialog>
+      <Dialog open={create === "policy"} title="Add policy" onClose={() => setCreate(null)}>
+        <form
+          className="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onCreatePolicy();
+          }}
+        >
+          <Field id="pol-name" label="Policy name" value={polName} onChange={(e) => setPolName(e.target.value)} />
+          <Field id="pol-src" label="Source workload" value={polSrc} onChange={(e) => setPolSrc(e.target.value)} />
+          <Field id="pol-dst" label="Destination workload" value={polDst} onChange={(e) => setPolDst(e.target.value)} />
+          <div className="btn-row">
+            <button className="btn btn-primary" type="submit" disabled={busy || !polSrc || !polDst}>
               Deny pair
             </button>
-          </form>
-          {vlans.length > 0 ? (
-            <ul className="plain-list">
-              {vlans.map((v) => (
-                <li key={v.id}>
-                  VLAN {v.vlan_id} {v.locator} {v.status}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {bonds.length > 0 ? (
-            <ul className="plain-list">
-              {bonds.map((b) => (
-                <li key={b.id}>
-                  Bond {b.name} {b.mode} {b.locator} {b.status}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {policies.length > 0 ? (
-            <ul className="plain-list">
-              {policies.map((p) => (
-                <li key={p.id}>
-                  Policy {p.name} {p.action} {p.status}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </article>
-      ) : null}
-      <article className="panel">
-        <h2>Host NICs</h2>
-        {nics.length === 0 ? (
-          <p>NIC inventory is Collecting or unavailable.</p>
-        ) : (
-          <ul className="plain-list">
-            {nics.map((nic) => (
-              <li key={nic.name}>
-                {nic.name} ifindex {nic.ifindex ?? "not reported"} {nic.state ?? ""} {nic.addresses?.join(", ") ?? ""}
-              </li>
-            ))}
-          </ul>
-        )}
-      </article>
+          </div>
+        </form>
+      </Dialog>
     </section>
   );
 }

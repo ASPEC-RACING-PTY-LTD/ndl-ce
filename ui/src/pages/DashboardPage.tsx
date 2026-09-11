@@ -20,8 +20,9 @@ import { MetricChart, lastPoint } from "../components/MetricChart";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes, formatPercent, formatWhen } from "../format";
-import { eventHeadline, humanTaskMessage } from "../humanize";
-import { metricLabel, taskKindLabel } from "../labels";
+import { eventHeadline, humanTaskMessage, taskIntentTitle } from "../humanize";
+import { metricLabel } from "../labels";
+import { SummaryCard } from "../ui/SummaryCard";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
 
@@ -125,45 +126,48 @@ export function DashboardPage() {
     <section className="page" aria-labelledby="dashboard-heading">
       <PageHeader id="dashboard-heading" title="Dashboard" kicker="Appliance health and capacity" />
       {error ? <ErrorState>{error}</ErrorState> : null}
-      <div className="status-strip">
-        <div className="status-tile">
-          <span className="label">Node</span>
-          <span className="value">
-            {node ? <StatusBadge status={node.status} /> : loaded ? "Not enrolled" : "Loading"}
-            {node?.stale ? " (stale)" : ""}
-          </span>
-          <span className="meta">{node?.name || "No local node"}</span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Workloads</span>
-          <span className="value">
-            {workloadCounts.running} running, {workloadCounts.stopped} stopped
-            {workloadCounts.other ? `, ${workloadCounts.other} other` : ""}
-          </span>
-          <span className="meta">
-            {healthOk == null ? "Control plane loading" : healthOk ? "Control plane available" : "Control plane unavailable"}
-          </span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Memory</span>
-          <span className="value">
-            {memNow != null && node?.memory_bytes
+      <div className="summary-grid">
+        <SummaryCard
+          label="Node"
+          value={node ? <StatusBadge status={node.status} /> : loaded ? "Not enrolled" : "Loading"}
+          meta={`${node?.name || "No local node"}${node?.stale ? " · stale" : ""}`}
+        />
+        <SummaryCard
+          label="Workloads"
+          value={`${workloadCounts.running} running`}
+          meta={`${workloadCounts.stopped} stopped${workloadCounts.other ? ` · ${workloadCounts.other} other` : ""}`}
+        />
+        <SummaryCard
+          label="CPU"
+          value={cpuNow != null ? formatPercent(cpuNow) : "Collecting"}
+          meta={node?.cpu_cores ? `${node.cpu_cores} cores` : "Host CPU"}
+        />
+        <SummaryCard
+          label="Memory"
+          value={
+            memNow != null && node?.memory_bytes
               ? `${formatBytes(memNow)} / ${formatBytes(node.memory_bytes)}`
               : node
                 ? formatBytes(node.memory_bytes)
-                : "Not reported"}
-          </span>
-          <span className="meta">{cpuNow != null ? `CPU ${formatPercent(cpuNow)}` : "CPU collecting"}</span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Storage</span>
-          <span className="value">{pools.length ? formatBytes(usableBytes) : "Not reported"}</span>
-          <span className="meta">
-            {pools.length
+                : "Not reported"
+          }
+          meta={healthOk == null ? "Control plane loading" : healthOk ? "Control plane available" : "Control plane unavailable"}
+        />
+        <SummaryCard
+          label="Storage"
+          value={pools.length ? formatBytes(usableBytes) : "Not reported"}
+          meta={
+            pools.length
               ? `${formatBytes(physicalUsedBytes)} used · ${formatBytes(provisionedBytes)} logical`
-              : "No pool yet"}
-          </span>
-        </div>
+              : "No pool yet"
+          }
+        />
+        <SummaryCard
+          label="Tasks"
+          value={`${tasks.filter((t) => t.state === "running").length} running`}
+          meta={failedTasks.length ? `${failedTasks.length} failed` : "No recent failures"}
+          tone={failedTasks.length ? "danger" : undefined}
+        />
       </div>
       <div className="meter-grid">
         <div className="meter">
@@ -204,7 +208,7 @@ export function DashboardPage() {
             {failedTasks.map((task) => (
               <p key={task.id} className="banner banner-error" role="alert">
                 <button type="button" className="linkish" onClick={() => setOpenTask(task.id)}>
-                  {taskKindLabel(task.kind)} failed{task.message ? `: ${humanTaskMessage(task.message)}` : ""}
+                  {taskIntentTitle(task)} failed{task.message ? `: ${humanTaskMessage(task.message)}` : ""}
                 </button>
               </p>
             ))}
@@ -316,14 +320,14 @@ export function DashboardPage() {
                   <button type="button" className="activity-toggle" onClick={() => setOpenTask(openTask === t.id ? null : t.id)}>
                     <StatusBadge status={t.state} />
                     <span>
-                      {taskKindLabel(t.kind)}
+                      {taskIntentTitle(t)}
                       {humanTaskMessage(t.message) ? ` ${humanTaskMessage(t.message)}` : ""}
                     </span>
                     <span className="muted">{formatWhen(t.updated_at)}</span>
                   </button>
                   {openTask === t.id ? (
                     <ActivityDetail
-                      title={taskKindLabel(t.kind)}
+                      title={taskIntentTitle(t)}
                       fields={fieldsFromRecord(t as unknown as Record<string, unknown>, [
                         { label: "job id", value: t.id },
                         { label: "stage", value: t.stage || "Not reported" },

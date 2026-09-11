@@ -930,6 +930,7 @@ export async function createWorkload(
     volume_ids?: string[];
     health?: { http_path?: string; port?: number };
     privileged?: boolean;
+    extras?: string[];
     firmware?: string;
     autostart?: boolean;
     cloud_image_id?: string;
@@ -953,6 +954,31 @@ export async function createWorkload(
       method: "POST",
       headers,
       body: JSON.stringify(body),
+    }),
+  );
+}
+
+export type WorkloadExtra = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  requires?: string[];
+  needs_nesting?: boolean;
+  available: boolean;
+  unavailable_reason?: string;
+};
+
+export async function listWorkloadExtras(imagePin?: string) {
+  const suffix = imagePin ? `?image_pin=${encodeURIComponent(imagePin)}` : "";
+  return readJson<{ items: WorkloadExtra[] }>(await request(`/workload-extras${suffix}`));
+}
+
+export async function setupWorkloadExtras(id: string, extras: string[]) {
+  return readJson<import("./phase5").Workload>(
+    await request(`/workloads/${id}/setup-extras`, {
+      method: "POST",
+      body: JSON.stringify({ extras }),
     }),
   );
 }
@@ -1659,6 +1685,7 @@ export type APITokenItem = {
   revoked_at?: string;
   last_used_at?: string;
   disabled?: boolean;
+  preset?: string;
 };
 
 export type CreatedAPIToken = {

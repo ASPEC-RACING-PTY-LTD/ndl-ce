@@ -154,6 +154,153 @@ export function eventTypeLabel(type?: string): string {
   return taskKindLabel(type);
 }
 
+export function permissionLabel(id: string): string {
+  switch (id) {
+    case "identity.read":
+      return "View identity";
+    case "identity.token.create":
+      return "Create API tokens";
+    case "identity.token.revoke":
+      return "Revoke API tokens";
+    case "identity.mfa":
+      return "Manage personal MFA";
+    case "identity.group.manage":
+      return "Manage groups";
+    case "identity.service":
+      return "Manage service accounts";
+    case "users.read":
+      return "View users";
+    case "users.create":
+      return "Create users";
+    case "users.update":
+      return "Edit users";
+    case "users.delete":
+      return "Delete users";
+    case "users.roles.manage":
+      return "Assign roles";
+    case "users.sessions.revoke":
+      return "Revoke sessions";
+    case "roles.manage":
+      return "Manage roles";
+    case "compute.read":
+      return "View workloads";
+    case "compute.create":
+      return "Create workloads";
+    case "compute.lifecycle":
+    case "compute.start":
+    case "compute.stop":
+      return "Start and stop workloads";
+    case "compute.modify":
+      return "Edit workloads";
+    case "compute.delete":
+      return "Delete workloads";
+    case "compute.console":
+      return "Open consoles";
+    case "compute.snapshot":
+      return "Snapshot workloads";
+    case "compute.migrate":
+      return "Migrate workloads";
+    case "storage.read":
+      return "View storage";
+    case "storage.pool.create":
+      return "Create storage pools";
+    case "storage.volume.create":
+      return "Create volumes";
+    case "storage.image.upload":
+      return "Upload images";
+    case "network.read":
+      return "View networks";
+    case "network.create":
+      return "Create networks";
+    case "network.apply":
+      return "Apply network changes";
+    case "backup.read":
+      return "View backups";
+    case "backup.create":
+      return "Create backups";
+    case "backup.restore":
+      return "Restore backups";
+    case "feature.read":
+      return "View features";
+    case "feature.manage":
+      return "Install features";
+    case "audit.read":
+      return "Read the audit log";
+    case "api_access.manage":
+      return "Manage API access";
+    case "settings.security.manage":
+      return "Change security policy";
+    case "*":
+      return "Full access";
+    default:
+      return id
+        .split(".")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+  }
+}
+
+export function permissionGroup(id: string): string {
+  const prefix = id.split(".")[0];
+  switch (prefix) {
+    case "identity":
+    case "users":
+    case "roles":
+      return "Identity";
+    case "compute":
+      return "Workloads";
+    case "storage":
+      return "Storage";
+    case "network":
+      return "Network";
+    case "backup":
+      return "Backups";
+    case "feature":
+    case "store":
+      return "Features";
+    case "settings":
+    case "secret":
+      return "Security";
+    case "audit":
+    case "events":
+    case "alert":
+      return "Audit";
+    case "api_access":
+    case "identity.token":
+      return "API";
+    case "cluster":
+    case "node":
+    case "metrics":
+      return "Host";
+    case "migration":
+      return "Migration";
+    case "files":
+    case "terminal":
+      return "Access";
+    default:
+      return prefix === "*" ? "All" : prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  }
+}
+
+export function featureRuntimeLabel(status?: string): string {
+  switch (status) {
+    case "not_configured":
+      return "Not configured";
+    case "not_started":
+    case "stopped":
+      return "Stopped";
+    case "running":
+      return "Running";
+    default:
+      return status ? honestStatusSafe(status) : "Not reported";
+  }
+}
+
+function honestStatusSafe(status: string): string {
+  return status.replaceAll("_", " ");
+}
+
 export function fileTypeLabel(type?: string): string {
   switch (type) {
     case "dir":

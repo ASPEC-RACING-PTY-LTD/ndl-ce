@@ -305,18 +305,27 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^storage$/i })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: /create directory pool/i })).toBeVisible();
     expect(
       await screen.findByText(/filling it can fill the host and destabilize no-dal/i),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "local" })).toBeVisible();
     expect(screen.getByText(/^no$/i)).toBeVisible();
+    expect(screen.getByText(/directory remains the default/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /add storage/i }));
+    expect(await screen.findByRole("heading", { name: /^add storage$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^directory$/i }));
+    expect(await screen.findByRole("heading", { name: /create directory pool/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /create directory pool/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^zfs$/i }));
     expect(await screen.findByRole("heading", { name: /^zfs$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /import zfs pool/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /lvm-thin/i }));
     expect(await screen.findByRole("heading", { name: /lvm-thin/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /create lvm-thin pool/i })).toBeVisible();
-    expect(screen.getByText(/directory remains the default/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /distributed \/ ceph/i }));
     expect(await screen.findByRole("heading", { name: /^distributed storage$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /attach distributed pool/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /bring up osd/i })).toBeVisible();
@@ -414,7 +423,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /first-run guest network/i })).toBeVisible();
-    fireEvent.change(screen.getByLabelText(/^kind$/i), { target: { value: "lan-bridge" } });
+    fireEvent.click(screen.getByRole("radio", { name: /^lan bridge$/i }));
     fireEvent.change(screen.getByLabelText(/uplink interface/i), { target: { value: "enp6s0" } });
     fireEvent.change(screen.getByLabelText(/type the interface name to confirm/i), { target: { value: "enp6s0" } });
     fireEvent.click(screen.getByRole("button", { name: /dry-run/i }));

@@ -17,6 +17,7 @@ import type {
 } from "../generated/openapi";
 import { formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
+import { SummaryCard } from "../ui/SummaryCard";
 
 import { hasGrant } from "../rbac";
 
@@ -237,6 +238,15 @@ export function UpdatesPage() {
 
       {loadState === "ready" && status ? (
         <>
+          <div className="summary-grid">
+            <SummaryCard label="Channel" value={status.channel || "Not reported"} />
+            <SummaryCard label="Host" value={hostSupported ? "Supported" : "Unsupported"} meta={hostSupported ? status.host_reason || undefined : undefined} />
+            <SummaryCard
+              label="Last operation"
+              value={status.last_operation ? operationStatusLabel(status.last_operation.status) : "None"}
+              meta={status.last_operation?.id}
+            />
+          </div>
           <article className="panel">
             <h2>Host support</h2>
             {hostSupported ? (

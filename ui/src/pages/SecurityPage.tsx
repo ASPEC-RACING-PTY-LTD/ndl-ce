@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, getSecuritySettings, patchSecuritySettings, type SecuritySettings } from "../api/client";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
+import { Switch } from "../ui/Switch";
 
 export function SecurityPage() {
   const [settings, setSettings] = useState<SecuritySettings | null>(null);
@@ -47,15 +48,13 @@ export function SecurityPage() {
               When required, accounts without an enrolled authenticator are marked as needing enrollment. Existing
               passwords, roles, and secrets are not changed by this switch.
             </p>
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={Boolean(settings.mfa_required)}
-                disabled={busy}
-                onChange={(event) => void onToggle(event.target.checked)}
-              />{" "}
-              Require MFA enrollment for person accounts
-            </label>
+            <Switch
+              id="mfa-required"
+              label="Require MFA enrollment for person accounts"
+              checked={Boolean(settings.mfa_required)}
+              disabled={busy}
+              onChange={(event) => void onToggle(event.target.checked)}
+            />
           </section>
           <section className="panel">
             <h2>Session and lockout</h2>

@@ -22,6 +22,9 @@ export function TerminalWorkspacePage() {
     newHere,
     rename,
     closeTab,
+    closeAll,
+    closeOthers,
+    closeDisconnected,
     reconnect,
     replaceCurrent,
     nextTab,
@@ -143,6 +146,23 @@ export function TerminalWorkspacePage() {
             +
           </button>
         </div>
+        {tabs.length > 6 ? (
+          <label className="field-hint term-tab-overflow">
+            Sessions
+            <select
+              className="field-input"
+              value={activeId ?? ""}
+              onChange={(event) => setActive(event.target.value)}
+              aria-label="All terminal sessions"
+            >
+              {tabs.map((tab) => (
+                <option key={tab.tabId} value={tab.tabId}>
+                  {tab.title} ({statusLabel(tab.state)})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {active ? (
           <ActionMenu
             label="Session actions"
@@ -152,7 +172,20 @@ export function TerminalWorkspacePage() {
               ...(active.state === "disconnected" || active.state === "closed"
                 ? [{ label: "Reconnect", onClick: () => reconnect(active.tabId) }]
                 : []),
+              { label: "Close others", onClick: () => closeOthers(active.tabId) },
+              { label: "Close disconnected", onClick: () => closeDisconnected() },
               { label: "Close Session", onClick: () => closeTab(active.tabId), danger: true },
+              {
+                label: "Close all",
+                danger: true,
+                onClick: () => {
+                  const live = tabs.some((tab) => tab.state === "active" || tab.state === "connecting");
+                  if (live && !window.confirm("Close all terminal sessions? Connected sessions will disconnect.")) {
+                    return;
+                  }
+                  closeAll();
+                },
+              },
             ]}
           />
         ) : null}

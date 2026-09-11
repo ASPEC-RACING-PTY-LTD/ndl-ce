@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventHeadline, humanTaskMessage, payloadFacts, taskStageLabel } from "./humanize";
+import { auditActionLabel, eventHeadline, humanTaskMessage, payloadFacts, taskIntentTitle, taskStageLabel } from "./humanize";
 
 describe("humanize", () => {
   it("hides raw identifiers and JSON-shaped values", () => {
@@ -23,9 +23,26 @@ describe("humanize", () => {
     expect(eventHeadline("node.stale")).toBe("Node Stale");
   });
 
+  it("maps task kinds to operator intent with real names", () => {
+    expect(
+      taskIntentTitle({ kind: "workload.create", state: "running", message: '{"name":"SoundDock","workload_id":"w1"}' }),
+    ).toBe("Creating SoundDock");
+    expect(taskIntentTitle({ kind: "workload.delete", state: "succeeded", resource_name: "test-container" })).toBe(
+      "Deleted test-container",
+    );
+    expect(taskIntentTitle({ kind: "inventory.refresh", state: "succeeded" })).toBe("Refreshed host inventory");
+    expect(taskIntentTitle({ kind: "backup.run", state: "running", resource_name: "SoundDock" })).toBe("Backing up SoundDock");
+  });
+
   it("title-cases task stages", () => {
     expect(taskStageLabel("pull_image")).toBe("Pull Image");
     expect(taskStageLabel()).toBe("Not reported");
+  });
+
+  it("maps audit actions without hiding the technical identifier in callers", () => {
+    expect(auditActionLabel("auth.login")).toBe("Signed in");
+    expect(auditActionLabel("backup.policy.update")).toBe("Changed backup policy");
+    expect(auditActionLabel("identity.token.create")).toBe("Created API token");
   });
 
   it("keeps operator task messages and hides raw JSON payloads", () => {

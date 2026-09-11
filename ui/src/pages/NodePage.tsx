@@ -20,6 +20,7 @@ import { GpuPage } from "./GpuPage";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { usePath } from "../router";
 import { useSession } from "../session";
+import { SummaryCard } from "../ui/SummaryCard";
 
 type Inventory = {
   host?: Record<string, unknown>;
@@ -153,7 +154,14 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
   }, [id]);
 
   return (
-    <div className="card-grid">
+    <div className="stack">
+      <div className="summary-grid">
+        <SummaryCard label="Name" value={node.name} meta={node.host_os || "Host OS not reported"} />
+        <SummaryCard label="CPU" value={node.cpu_model || "Not reported"} meta={`${node.cpu_sockets ?? "?"} sockets, ${node.cpu_cores ?? "?"} cores, ${node.cpu_threads ?? "?"} threads`} />
+        <SummaryCard label="Memory" value={formatBytes(node.memory_bytes)} meta={`Observed ${formatWhen(node.observed_at)}`} />
+        <SummaryCard label="Support" value={node.support_tier || "Not reported"} meta={honestStatus(node.status)} />
+      </div>
+      <div className="card-grid">
       <article className="panel">
         <h2>Summary</h2>
         <dl className="definition-list">
@@ -206,6 +214,7 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
         )}
       </article>
       <RemoteNodeHelper />
+      </div>
     </div>
   );
 }

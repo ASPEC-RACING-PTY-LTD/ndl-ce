@@ -3,7 +3,11 @@ import { ApiError, activateLicense, clearLicense, getLicense } from "../api/clie
 import type { LicenseStatus } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
+import { PageHeader } from "../components/PageHeader";
 import { useSession } from "../session";
+import { editionLabel } from "../labels";
+import { SummaryCard } from "../ui/SummaryCard";
+import { Dialog } from "../ui/Dialog";
 
 import { hasGrant } from "../rbac";
 
@@ -15,6 +19,7 @@ export function LicensePage() {
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +48,7 @@ export function LicensePage() {
     try {
       setStatus(await activateLicense(key));
       setKey("");
+      setActivateOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Activate failed");
     } finally {
@@ -66,61 +72,76 @@ export function LicensePage() {
   }
 
   return (
-    <section className="page">
-      <header className="page-header">
-        <h1>License</h1>
-        <p className="lede">
-          Community Edition does not require a key. CE 1.0 hardware gates are not proven on this host. This page does
-          not download EE blobs. Entering a key contacts a licensing API only then. If that API is unreachable, grace
-          applies and workloads are not stopped.
-        </p>
-      </header>
+    <section className="page page-wide" aria-labelledby="license-heading">
+      <PageHeader
+        id="license-heading"
+        title="License"
+        kicker="Community Edition does not require a key. CE 1.0 hardware gates are not proven on this host. This page does not download EE blobs. Entering a key contacts a licensing API only then. If that API is unreachable, grace applies and workloads are not stopped."
+        actions={
+          manage ? (
+            <div className="btn-row is-flush">
+              <button className="btn btn-primary" type="button" onClick={() => setActivateOpen(true)}>
+                Activate license
+              </button>
+              <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => void onClear()}>
+                Clear license
+              </button>
+            </div>
+          ) : null
+        }
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
         </p>
       ) : null}
       {status ? (
-        <article className="panel">
-          <p>Edition {status.edition}.</p>
-          <p>Status {status.status}.</p>
-          <p>{status.reason}</p>
-          <p>Has key {status.has_key ? "yes" : "no"}{status.key_suffix ? ` suffix ${status.key_suffix}` : ""}.</p>
-          <p>EE blobs {status.ee_blobs ? "yes" : "no"}.</p>
-          <p>Workloads stopped {status.workloads_stopped ? "yes" : "no"}.</p>
+        <>
+          <div className="summary-grid">
+            <SummaryCard label="Edition" value={editionLabel(status.edition)} meta={`Edition ${status.edition}.`} />
+            <SummaryCard label="Status" value={status.status} meta={status.reason} />
+            <SummaryCard
+              label="Key"
+              value={status.has_key ? "Present" : "None"}
+              meta={`Has key ${status.has_key ? "yes" : "no"}${status.key_suffix ? ` suffix ${status.key_suffix}` : ""}.`}
+            />
+            <SummaryCard label="EE blobs" value={status.ee_blobs ? "Yes" : "No"} meta={`EE blobs ${status.ee_blobs ? "yes" : "no"}.`} />
+            <SummaryCard
+              label="Workloads"
+              value={status.workloads_stopped ? "Stopped" : "Running"}
+              meta={`Workloads stopped ${status.workloads_stopped ? "yes" : "no"}.`}
+            />
+          </div>
           <p>
             See <Link href="/docs">Docs</Link> for CE 1.0.
           </p>
-        </article>
+        </>
       ) : (
         <p>Collecting</p>
       )}
-      {manage ? (
-        <article className="panel">
-          <form
-            className="stack"
-            onSubmit={(ev) => {
-              ev.preventDefault();
-              void onActivate();
-            }}
-          >
-            <Field
-              id="license-key"
-              label="License key"
-              type="password"
-              autoComplete="off"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-            />
+      <Dialog open={activateOpen} title="Activate license" onClose={() => setActivateOpen(false)}>
+        <form
+          className="form"
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            void onActivate();
+          }}
+        >
+          <Field
+            id="license-key"
+            label="License key"
+            type="password"
+            autoComplete="off"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <div className="btn-row">
             <button className="btn btn-primary" type="submit" disabled={busy}>
-              Activate license
+              Store key
             </button>
-          </form>
-          <button className="btn" type="button" disabled={busy} onClick={() => void onClear()}>
-            Clear license
-          </button>
-        </article>
-      ) : null}
+          </div>
+        </form>
+      </Dialog>
     </section>
   );
 }

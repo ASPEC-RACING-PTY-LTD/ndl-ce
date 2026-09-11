@@ -51,6 +51,8 @@ export type Workload = {
   ownership_epoch?: number;
   health?: { status?: string; message?: string };
   unit?: string;
+  setup_warnings?: { extra: string; message: string }[];
+  setup_status?: string;
 };
 
 export type WorkloadListResponse = {

@@ -24,6 +24,9 @@ import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes } from "../format";
 import { useSession } from "../session";
+import { CapacityBar } from "../ui/CapacityBar";
+import { Dialog } from "../ui/Dialog";
+import { SelectionCard } from "../ui/SelectionCard";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -99,6 +102,7 @@ export function StoragePage() {
   const [distUser, setDistUser] = useState("admin");
   const [distKey, setDistKey] = useState("");
   const [osdDisk, setOsdDisk] = useState("");
+  const [addKind, setAddKind] = useState<string | null>(null);
 
   async function reload() {
     const listed = await listPools();
@@ -334,15 +338,49 @@ export function StoragePage() {
       <PageHeader
         id="storage-heading"
         title="Storage"
-        kicker="Directory remains the default. ZFS, LVM-thin, NFS/SMB/iSCSI, and distributed RBD are optional. Hosts without those tools keep Directory. zpool import -f and vgexport are refused. Passwords are stored in secrets, not unit files."
+        kicker="Existing pools first. Directory remains the default. The host root disk is never used accidentally."
+        actions={
+          mutate && !firstRun ? (
+            <button className="btn btn-primary" type="button" onClick={() => setAddKind("pick")}>
+              Add storage
+            </button>
+          ) : null
+        }
       />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
         </p>
       ) : null}
+      {firstRun || addKind ? (
+      <Dialog
+        open={firstRun || Boolean(addKind)}
+        title={firstRun ? "First storage pool" : "Add storage"}
+        wide
+        onClose={() => setAddKind(null)}
+      >
+      {addKind === "pick" ? (
+        <div className="content-grid">
+          {[
+            { id: "directory", title: "Directory", desc: "Local filesystem pool" },
+            { id: "zfs", title: "ZFS", desc: "Import or create on extra disks" },
+            { id: "lvm", title: "LVM-thin", desc: "Thin pool on extra disks" },
+            { id: "network", title: "NFS / SMB / iSCSI", desc: "Network storage" },
+            { id: "distributed", title: "Distributed / Ceph", desc: "RBD and OSDs" },
+          ].map((item) => (
+            <SelectionCard key={item.id} title={item.title} description={item.desc} onSelect={() => setAddKind(item.id)} />
+          ))}
+        </div>
+      ) : null}
+      {!firstRun && addKind && addKind !== "pick" ? (
+        <div className="btn-row">
+          <button className="btn btn-ghost" type="button" onClick={() => setAddKind("pick")}>
+            Back
+          </button>
+        </div>
+      ) : null}
       <div className="card-grid">
-      {firstRun || mutate ? (
+      {firstRun || addKind === "directory" ? (
         <article className="panel dashboard-card">
           <h2>{firstRun ? "First-run storage pool" : "Create Directory pool"}</h2>
           {firstRun ? (
@@ -381,7 +419,7 @@ export function StoragePage() {
           )}
         </article>
       ) : null}
-      {mutate ? (
+      {addKind === "zfs" ? (
         <article className="panel dashboard-card">
           <h2>ZFS</h2>
           <p className="lede">
@@ -438,7 +476,7 @@ export function StoragePage() {
           </form>
         </article>
       ) : null}
-      {mutate ? (
+      {addKind === "lvm" ? (
         <article className="panel dashboard-card">
           <h2>LVM-thin</h2>
           <p className="lede">
@@ -477,7 +515,7 @@ export function StoragePage() {
           </form>
         </article>
       ) : null}
-      {mutate ? (
+      {addKind === "network" ? (
         <article className="panel dashboard-card">
           <h2>Network storage</h2>
           <p className="lede">
@@ -571,7 +609,7 @@ export function StoragePage() {
           </form>
         </article>
       ) : null}
-      {mutate ? (
+      {addKind === "distributed" ? (
         <article className="panel dashboard-card">
           <h2>Distributed storage</h2>
           <p className="lede">
@@ -641,6 +679,8 @@ export function StoragePage() {
         </article>
       ) : null}
       </div>
+      </Dialog>
+      ) : null}
       <article className="panel table-card">
         <h2>Pools</h2>
         {pools.length === 0 ? (

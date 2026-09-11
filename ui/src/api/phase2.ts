@@ -69,6 +69,7 @@ export type TaskItem = {
   progress?: number;
   created_at?: string;
   updated_at?: string;
+  resource_name?: string;
 };
 
 export type EventItem = {

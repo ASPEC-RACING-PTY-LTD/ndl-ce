@@ -138,3 +138,29 @@ export function formatWhen(value?: string): string {
   }
   return d.toISOString().replace("T", " ").replace("Z", " UTC");
 }
+
+export function formatRelative(value?: string, now = Date.now()): string {
+  if (!value) {
+    return "Not reported";
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    return value;
+  }
+  const delta = Math.round((d.getTime() - now) / 1000);
+  const abs = Math.abs(delta);
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  if (abs < 60) {
+    return rtf.format(Math.round(delta), "second");
+  }
+  if (abs < 3600) {
+    return rtf.format(Math.round(delta / 60), "minute");
+  }
+  if (abs < 86400) {
+    return rtf.format(Math.round(delta / 3600), "hour");
+  }
+  if (abs < 86400 * 7) {
+    return rtf.format(Math.round(delta / 86400), "day");
+  }
+  return formatWhen(value);
+}

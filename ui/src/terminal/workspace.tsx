@@ -58,6 +58,9 @@ type WorkspaceValue = {
   newHere: (tabId: string) => string;
   rename: (tabId: string, title: string) => void;
   closeTab: (tabId: string) => void;
+  closeAll: () => void;
+  closeOthers: (tabId: string) => void;
+  closeDisconnected: () => void;
   reconnect: (tabId: string) => void;
   replaceCurrent: (target: TermTarget) => string;
   setActive: (tabId: string) => void;
@@ -433,6 +436,39 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     [disposeRuntime],
   );
 
+  const closeAll = useCallback(() => {
+    for (const tab of tabsRef.current) {
+      disposeRuntime(tab.tabId);
+    }
+    setTabs([]);
+    setActiveId(null);
+  }, [disposeRuntime]);
+
+  const closeOthers = useCallback(
+    (tabId: string) => {
+      for (const tab of tabsRef.current) {
+        if (tab.tabId !== tabId) {
+          disposeRuntime(tab.tabId);
+        }
+      }
+      setTabs((cur) => cur.filter((t) => t.tabId === tabId));
+      setActiveId(tabId);
+    },
+    [disposeRuntime],
+  );
+
+  const closeDisconnected = useCallback(() => {
+    const gone = tabsRef.current.filter((t) => t.state === "disconnected" || t.state === "closed");
+    for (const tab of gone) {
+      disposeRuntime(tab.tabId);
+    }
+    setTabs((cur) => {
+      const next = cur.filter((t) => t.state !== "disconnected" && t.state !== "closed");
+      setActiveId((id) => (next.some((t) => t.tabId === id) ? id : next[0]?.tabId ?? null));
+      return next;
+    });
+  }, [disposeRuntime]);
+
   const reconnect = useCallback(
     (tabId: string) => {
       const tab = tabsRef.current.find((t) => t.tabId === tabId);
@@ -573,6 +609,9 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       newHere,
       rename,
       closeTab,
+      closeAll,
+      closeOthers,
+      closeDisconnected,
       reconnect,
       replaceCurrent,
       setActive: setActiveId,
@@ -594,6 +633,9 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       newHere,
       rename,
       closeTab,
+      closeAll,
+      closeOthers,
+      closeDisconnected,
       reconnect,
       replaceCurrent,
       nextTab,

@@ -584,6 +584,23 @@ export function BackupsPage() {
 
       {loadState === "ready" ? (
         <>
+          <div className="summary-grid">
+            <article className="summary-card">
+              <span className="label">Policies</span>
+              <span className="value">{policies?.length ?? 0}</span>
+              <span className="meta">{(runs ?? []).some((r) => r.status === "running") ? "Backup running" : "Idle"}</span>
+            </article>
+            <article className="summary-card">
+              <span className="label">Targets</span>
+              <span className="value">{targets?.length ?? 0}</span>
+              <span className="meta">{(targets ?? []).filter((t) => t.status === "available").length} healthy</span>
+            </article>
+            <article className="summary-card">
+              <span className="label">Recent failures</span>
+              <span className="value">{(runs ?? []).filter((r) => r.status === "failed").length}</span>
+              <span className="meta">Last {recentRuns.length} runs</span>
+            </article>
+          </div>
           <div className="card-grid">
           <section className="section-block" aria-labelledby="backup-policies-heading">
             <div className="page-header-row">

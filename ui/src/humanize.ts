@@ -62,6 +62,103 @@ export function taskStageLabel(stage?: string): string {
   return taskKindLabel(stage);
 }
 
+export function taskResourceName(task: {
+  resource_name?: string;
+  message?: string;
+}): string {
+  if (task.resource_name?.trim()) {
+    return task.resource_name.trim();
+  }
+  const message = task.message?.trim() ?? "";
+  if (!message.startsWith("{")) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(message) as { name?: unknown };
+    return typeof parsed.name === "string" ? parsed.name.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+export function taskIntentTitle(task: { kind?: string; state?: string; resource_name?: string; message?: string }): string {
+  const name = taskResourceName(task);
+  const kind = (task.kind || "").toLowerCase();
+  const done = task.state === "succeeded" || task.state === "completed";
+  const map: Record<string, [string, string]> = {
+    "workload.create": ["Creating", "Created"],
+    "workload.delete": ["Deleting", "Deleted"],
+    "workload.start": ["Starting", "Started"],
+    "workload.stop": ["Stopping", "Stopped"],
+    "workload.restart": ["Restarting", "Restarted"],
+    "workload.clone": ["Cloning", "Cloned"],
+    "workload.setup-extras": ["Installing extras on", "Installed extras on"],
+    "inventory.refresh": ["Refreshing host inventory", "Refreshed host inventory"],
+    "backup.run": ["Backing up", "Backed up"],
+    "backup.policy": ["Running backup policy", "Ran backup policy"],
+    "backup.restore": ["Restoring", "Restored"],
+  };
+  const pair = map[kind] ?? [taskKindLabel(task.kind), taskKindLabel(task.kind)];
+  const verb = done ? pair[1] : pair[0];
+  if (kind === "inventory.refresh") {
+    return verb;
+  }
+  if (name) {
+    return `${verb} ${name}`;
+  }
+  if (kind.startsWith("backup")) {
+    return verb;
+  }
+  return verb;
+}
+
+export function taskStageFriendly(stage?: string): string {
+  switch ((stage || "").toLowerCase()) {
+    case "creating":
+      return "Creating";
+    case "planning":
+      return "Planning";
+    case "collected":
+      return "Finished collecting";
+    case "installing":
+      return "Installing extras";
+    case "start":
+      return "Starting";
+    case "stop":
+      return "Stopping";
+    default:
+      return taskStageLabel(stage);
+  }
+}
+
+export function auditActionLabel(action?: string): string {
+  switch (action) {
+    case "workload.create":
+      return "Created workload";
+    case "workload.setup-extras":
+      return "Installed guest extras";
+    case "inventory.refresh":
+      return "Refreshed host inventory";
+    case "backup.policy":
+    case "backup.policy.update":
+      return "Changed backup policy";
+    case "security.mfa_policy":
+      return "Changed MFA policy";
+    case "identity.token.create":
+    case "token.create":
+      return "Created API token";
+    case "identity.token.revoke":
+    case "token.revoke":
+      return "Revoked API token";
+    case "auth.login":
+      return "Signed in";
+    case "auth.logout":
+      return "Signed out";
+    default:
+      return taskKindLabel(action);
+  }
+}
+
 export function humanTaskMessage(message?: string): string {
   if (!message) {
     return "";

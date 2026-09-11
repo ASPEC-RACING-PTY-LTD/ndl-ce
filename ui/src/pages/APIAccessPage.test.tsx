@@ -78,10 +78,12 @@ describe("APIAccessPage", () => {
     window.history.replaceState({}, "", "/api-access");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /api access/i })).toBeVisible();
-    expect(screen.getByText(/not MCP/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /api usage/i }));
+    expect(await screen.findByText(/not MCP/i)).toBeVisible();
     expect(screen.getByText(/Authorization: Bearer/i)).toBeVisible();
-    fireEvent.change(screen.getByLabelText(/token name/i), { target: { value: "agent" } });
     fireEvent.click(screen.getByRole("button", { name: /create token/i }));
+    fireEvent.change(await screen.findByLabelText(/token name/i), { target: { value: "agent" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /create token/i }).at(-1) as HTMLElement);
     expect(await screen.findByText(/ndl_secret_once/)).toBeVisible();
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/v1/tokens") && (call[1] as RequestInit | undefined)?.method === "POST")).toBe(true);
   });
