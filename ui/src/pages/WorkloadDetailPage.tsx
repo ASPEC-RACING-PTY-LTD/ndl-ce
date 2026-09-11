@@ -32,8 +32,8 @@ import { Link } from "../components/Link";
 import { MetricChart, lastPoint } from "../components/MetricChart";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
-import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { formatBytes, formatMetricValue, honestStatus } from "../format";
+import { isOperationsLeaf } from "../nav/workloadNav";
 import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
 import { kindLabel } from "../labels";
 import { canMutate } from "../rbac";
@@ -61,7 +61,7 @@ export function WorkloadDetailPage() {
   const path = usePath();
   const id = workloadIDFromPath();
   const leaf = leafFromPath(path);
-  const view = leaf === "operations" ? "operations" : leaf === "machine" ? "machine" : "overview";
+  const view = isOperationsLeaf(leaf) ? "operations" : leaf === "machine" ? "machine" : "overview";
   const [item, setItem] = useState<Workload | null>(null);
   const [name, setName] = useState("");
   const [cpus, setCpus] = useState("1");
@@ -301,7 +301,6 @@ export function WorkloadDetailPage() {
           ) : null
         }
       />
-      <WorkloadSubnav id={item.id} kind={item.kind} guestOk={guestOk} />
       {item.kind === "vm" && !guestOk ? (
         <p className="banner banner-warn" role="status">
           {guest?.nodal_ga?.reason ||

@@ -684,6 +684,19 @@ code {
   font-size: 0.75rem;
 }
 
+.ctx-selected-meta {
+  margin: 0 0.5rem 0.35rem;
+  padding: 0 0.15rem 0.15rem;
+  color: var(--fg-tertiary);
+  font-size: 0.7rem;
+}
+
+.wl-ctx-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .host-operate-banner strong {
   margin-right: 0.35rem;
   letter-spacing: 0.06em;
@@ -1158,26 +1171,6 @@ tr.is-clickable {
   color: var(--fg-primary);
   background: var(--accent-soft);
   font-weight: 650;
-}
-
-.workload-subnav {
-  align-items: flex-end;
-  gap: 0.75rem;
-}
-
-.subnav-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-.subnav-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fg-secondary);
-  padding: 0 0.35rem 0 0.15rem;
 }
 
 .overview-metrics {
@@ -1912,6 +1905,7 @@ body > .term-hold[aria-hidden="true"] {
 .is-collapsed .ctx-host-mark,
 .is-collapsed .ctx-node,
 .is-collapsed .ctx-area-title,
+.is-collapsed .ctx-selected-meta,
 .is-collapsed .ctx-search,
 .is-collapsed .ctx-empty,
 .is-collapsed .ctx-group-toggle,
@@ -1950,6 +1944,7 @@ body > .term-hold[aria-hidden="true"] {
   .ctx-host-mark,
   .ctx-node,
   .ctx-area-title,
+  .ctx-selected-meta,
   .ctx-search,
   .ctx-empty,
   .ctx-group-toggle,
@@ -1973,9 +1968,11 @@ body > .term-hold[aria-hidden="true"] {
   .shell:not(.is-collapsed) .sidebar-brand .wordmark,
   .shell:not(.is-collapsed) .sidebar-brand .edition-badge,
   .shell:not(.is-collapsed) .ctx-back-label,
+  .shell:not(.is-collapsed) .ctx-item-label,
   .shell:not(.is-collapsed) .ctx-host-mark,
   .shell:not(.is-collapsed) .ctx-node,
   .shell:not(.is-collapsed) .ctx-area-title,
+  .shell:not(.is-collapsed) .ctx-selected-meta,
   .shell:not(.is-collapsed) .ctx-empty,
   .shell:not(.is-collapsed) .ctx-group-toggle,
   .shell:not(.is-collapsed) .ctx-create .nav-link-label {

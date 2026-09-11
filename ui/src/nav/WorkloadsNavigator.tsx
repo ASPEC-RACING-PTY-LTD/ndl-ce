@@ -8,6 +8,7 @@ import { navigate, usePath } from "../router";
 import { useSession } from "../session";
 import { useQuery } from "../query";
 import { ContextSidebar } from "./ContextSidebar";
+import { WorkloadContextNav } from "./WorkloadContextNav";
 import { hrefForTarget, isCreatePath, isManagePath, selectedTargetFromPath, viewFromPath } from "./match";
 import { loadGroupState, loadLastView, saveGroupState } from "./prefs";
 import { buildNavTargets, filterNavTargets, groupedTargets } from "./targets";
@@ -64,6 +65,11 @@ export function WorkloadsNavigator() {
       saveGroupState(next);
       return next;
     });
+  }
+
+  if (selected?.kind === "workload") {
+    const current = catalog.find((t) => t.kind === "workload" && t.id === selected.id);
+    return <WorkloadContextNav id={selected.id} target={current} />;
   }
 
   function onTreeKey(event: KeyboardEvent) {

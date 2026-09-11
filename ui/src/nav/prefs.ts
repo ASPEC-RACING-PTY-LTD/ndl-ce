@@ -4,7 +4,18 @@ import type { OpView } from "./types";
 const VIEW_KEY = "ndl-ops-view";
 const GROUPS_KEY = "ndl-ctx-groups";
 
-const VIEWS: OpView[] = ["summary", "terminal", "files", "snapshots", "console", "gpus", "operations", "machine"];
+const VIEWS: OpView[] = [
+  "summary",
+  "terminal",
+  "files",
+  "snapshots",
+  "console",
+  "gpus",
+  "operations",
+  "clone",
+  "migrate",
+  "machine",
+];
 
 export function loadLastView(): OpView {
   const raw = storageGet(VIEW_KEY);

@@ -77,6 +77,8 @@ describe("view and href", () => {
     expect(hrefForTarget(host, "terminal")).toBe("/nodes/node-1/terminal");
     expect(hrefForTarget(host, "snapshots")).toBe("/nodes/node-1");
     expect(hrefForTarget(alpine, "operations")).toBe("/workloads/wl-a/operations");
+    expect(hrefForTarget(alpine, "clone")).toBe("/workloads/wl-a/clone");
+    expect(hrefForTarget(alpine, "migrate")).toBe("/workloads/wl-a/migrate");
     expect(hrefForTarget(stopped, "machine")).toBe("/workloads/wl-stop/machine");
     expect(hrefForTarget(alpine, "machine")).toBe("/workloads/wl-a");
     expect(resolveView(stopped, "files")).toBe("summary");

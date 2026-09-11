@@ -190,17 +190,30 @@ describe("contextual navigation", () => {
     expect(screen.getByRole("heading", { name: /^workloads$/i })).toBeVisible();
   });
 
-  it("opens a direct workload URL in Workloads context and restores main nav from Back to Main Menu", async () => {
+  it("opens a direct workload URL in machine navigation and restores the list from Back to Workloads", async () => {
     window.history.replaceState({}, "", "/workloads/wl-a");
     mockApi(admin);
     render(<App />);
-    expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
+    expect(await screen.findByRole("button", { name: /back to workloads/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /back to main menu/i })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^summary$/i })).toHaveAttribute("aria-current", "page");
+    expect(document.querySelector(".workload-subnav")).toBeNull();
+    expect(screen.getByRole("heading", { name: /^cpu$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^memory$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^storage$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^network$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^runtime$/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^status$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^start$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /back to workloads/i }));
+    expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
+    expect(await findNavTarget("workload", "wl-a")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^workloads$/i })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /back to main menu/i }));
     expect(await screen.findByRole("navigation", { name: /appliance/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^storage$/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^alpine$/i })).toBeVisible();
     fireEvent.click(within(screen.getByRole("navigation", { name: /appliance/i })).getByRole("link", { name: /^workloads$/i }));
     expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
   });
@@ -209,7 +222,7 @@ describe("contextual navigation", () => {
     window.history.replaceState({ ndlNav: "main" }, "", "/workloads/wl-a/terminal");
     mockApi(admin);
     render(<App />);
-    expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
+    expect(await screen.findByRole("button", { name: /back to workloads/i })).toBeVisible();
     expect(screen.queryByRole("navigation", { name: /appliance/i })).not.toBeInTheDocument();
   });
 
@@ -220,27 +233,32 @@ describe("contextual navigation", () => {
     expect(await screen.findByRole("button", { name: /back to main menu/i })).toBeVisible();
     fireEvent.click(await screen.findByRole("treeitem", { name: /alpine/i }));
     expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /back to workloads/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /back to workloads/i }));
+    expect(await screen.findByRole("treeitem", { name: /sounddock/i })).toBeVisible();
     fireEvent.click(screen.getByRole("treeitem", { name: /sounddock/i }));
     expect(await screen.findByRole("heading", { name: /^sounddock$/i })).toBeVisible();
     window.history.back();
-    await waitFor(() => expect(window.location.pathname).toBe("/workloads/wl-a"));
-    expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /back to main menu/i })).toBeVisible();
+    await waitFor(() => expect(window.location.pathname).toBe("/workloads"));
+    expect(await screen.findByRole("treeitem", { name: /alpine/i })).toBeVisible();
     window.history.forward();
     await waitFor(() => expect(window.location.pathname).toBe("/workloads/wl-s"));
     expect(await screen.findByRole("heading", { name: /^sounddock$/i })).toBeVisible();
   });
 
-  it("switches operational surfaces immediately and remembers terminal when the next target allows it", async () => {
+  it("switches operational surfaces from machine navigation and remembers terminal when the next target allows it", async () => {
     window.history.replaceState({}, "", "/workloads/wl-a");
     mockApi(admin);
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
     fireEvent.click(screen.getByRole("link", { name: /^terminal$/i }));
     await waitFor(() => expect(window.location.pathname).toBe("/workloads/wl-a/terminal"));
+    expect(document.querySelector(".workload-subnav")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /back to workloads/i }));
     fireEvent.click(await findNavTarget("workload", "wl-s"));
     await waitFor(() => expect(window.location.pathname).toBe("/workloads/wl-s/terminal"));
-    fireEvent.click(navTarget("node", "node-1"));
+    fireEvent.click(screen.getByRole("button", { name: /back to workloads/i }));
+    fireEvent.click(await findNavTarget("node", "node-1"));
     await waitFor(() => expect(window.location.pathname).toBe("/nodes/node-1/terminal"));
     fireEvent.click(navTarget("workload", "wl-stop"));
     await waitFor(() => expect(window.location.pathname).toBe("/workloads/wl-stop"));
@@ -279,9 +297,12 @@ describe("contextual navigation", () => {
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeVisible();
     expect(screen.queryByRole("heading", { name: /^spec$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /^migrate$/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("link", { name: /clone \/ migrate/i }));
+    fireEvent.click(screen.getByRole("link", { name: /^clone$/i }));
     expect(await screen.findByRole("heading", { name: /^clone$/i })).toBeVisible();
     expect(screen.getByRole("heading", { name: /^migrate$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("link", { name: /^migrate$/i }));
+    expect(await screen.findByRole("heading", { name: /^migrate$/i })).toBeVisible();
+    expect(window.location.pathname).toBe("/workloads/wl-a/migrate");
   });
 
   it("hides unauthorized rows and still enforces action permissions", async () => {
@@ -350,5 +371,44 @@ describe("contextual navigation", () => {
     expect(await screen.findByRole("treeitem", { name: /alpine/i })).toBeVisible();
     fireEvent.keyDown(search, { key: "Enter" });
     expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /back to workloads/i })).toBeVisible();
+    expect(document.querySelectorAll("nav.sidebar-nav")).toHaveLength(1);
+    expect(document.querySelectorAll("aside.sidebar")).toHaveLength(1);
+  });
+
+  it("shows VM console and guest IO only when the guest agent is connected", async () => {
+    window.history.replaceState({}, "", "/workloads/wl-u");
+    mockApi(admin);
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^ubuntu$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^console$/i })).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /^terminal$/i })).toBeVisible();
+    });
+    expect(screen.getByRole("link", { name: /^files$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^usb$/i })).toBeVisible();
+    expect(screen.queryByText(/terminal \(unavailable\)/i)).not.toBeInTheDocument();
+  });
+
+  it("omits container access pages for OCI workloads", async () => {
+    window.history.replaceState({}, "", "/workloads/wl-pg");
+    mockApi(admin);
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^postgresql$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^summary$/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^terminal$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^files$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^snapshots$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^console$/i })).not.toBeInTheDocument();
+  });
+
+  it("shows Docker in machine navigation only when the integration is enabled", async () => {
+    window.history.replaceState({}, "", "/workloads/wl-a");
+    mockApi(admin, {
+      "/api/v1/features": { status: 200, body: { items: [{ id: "docker", enabled: true }] } },
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^alpine$/i })).toBeVisible();
+    expect(await screen.findByRole("link", { name: /^docker$/i })).toHaveAttribute("href", "/docker");
   });
 });

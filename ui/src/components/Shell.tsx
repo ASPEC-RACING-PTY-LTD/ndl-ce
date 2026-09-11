@@ -28,6 +28,10 @@ const TAB_LABELS: Record<string, string> = {
   gpus: "GPUs",
   gpu: "GPU",
   logs: "Logs",
+  clone: "Clone",
+  migrate: "Migrate",
+  operations: "Operations",
+  machine: "USB",
 };
 
 function crumbs(path: string): { href: string; label: string }[] {

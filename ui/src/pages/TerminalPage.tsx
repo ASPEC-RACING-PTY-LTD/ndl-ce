@@ -3,7 +3,6 @@ import { getNode, getWorkload } from "../api/client";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { TerminalPane } from "../components/TerminalPane";
-import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { workloadGuestIOReason } from "../guestIO";
 import { currentPath } from "../router";
 import { canMutate, isAdmin } from "../rbac";
@@ -142,12 +141,9 @@ export function TerminalPage() {
           <Link href="/terminal">Open in Terminal workspace</Link>
         </nav>
       ) : (
-        <>
-          <WorkloadSubnav id={id} />
-          <p className="page-kicker">
-            <Link href="/terminal">Open in Terminal workspace</Link>
-          </p>
-        </>
+        <p className="page-kicker">
+          <Link href="/terminal">Open in Terminal workspace</Link>
+        </p>
       )}
       <TerminalPane workspaceLink />
     </section>

@@ -10,6 +10,8 @@ export type OpView =
   | "console"
   | "gpus"
   | "operations"
+  | "clone"
+  | "migrate"
   | "machine";
 
 export type NavTarget = {

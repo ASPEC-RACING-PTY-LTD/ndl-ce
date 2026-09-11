@@ -85,6 +85,8 @@ const defaultRoutes = {
   },
   "/api/v1/cluster/update": { status: 200, body: { preview: [], note: "Rolling drains one node" } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
+  "/api/v1/stacks": { status: 200, body: { items: [] } },
+  "/api/v1/features": { status: 200, body: { items: [] } },
   "/api/v1/storage/images": { status: 200, body: { items: [] } },
   "/api/v1/policies": { status: 200, body: { items: [] } },
   "/api/v1/policy-runs": { status: 200, body: { items: [] } },
@@ -581,9 +583,10 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: /guest agent/i })).toBeVisible();
     expect(screen.getByText(/not_installed/i)).toBeVisible();
     expect(screen.getAllByText(/nodal guest is not connected/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/terminal \(unavailable\)/i)).toBeVisible();
+    expect(screen.queryByText(/terminal \(unavailable\)/i)).not.toBeInTheDocument();
     const io = screen.getByRole("navigation", { name: /vm io/i });
     expect(io.querySelector('a[href$="/terminal"]')).toBeNull();
+    expect(io.querySelector('a[href$="/files"]')).toBeNull();
   });
 
   it("enables VM Terminal and Files when the guest agent is ok", async () => {
@@ -609,7 +612,9 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^web$/i })).toBeVisible();
     const io = screen.getByRole("navigation", { name: /vm io/i });
-    expect(io.querySelector('a[href$="/terminal"]')).toBeTruthy();
+    await waitFor(() => {
+      expect(io.querySelector('a[href$="/terminal"]')).toBeTruthy();
+    });
     expect(screen.getByRole("link", { name: /^files$/i })).toBeVisible();
   });
 

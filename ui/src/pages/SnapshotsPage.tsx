@@ -8,9 +8,7 @@ import {
   rollbackSnapshot,
 } from "../api/client";
 import type { Snapshot, SnapshotCapability, SnapshotListResponse } from "../generated/openapi";
-import type { Workload } from "../api/phase5";
 import { Field } from "../components/Field";
-import { WorkloadSubnav } from "../components/WorkloadSubnav";
 import { formatWhen, honestStatus } from "../format";
 import { currentPath } from "../router";
 import { useSession } from "../session";
@@ -44,7 +42,6 @@ export function SnapshotsPage() {
   const mutate = canMutate(roles);
   const id = workloadIDFromPath();
 
-  const [workload, setWorkload] = useState<Workload | null>(null);
   const [items, setItems] = useState<Snapshot[] | null>(null);
   const [capability, setCapability] = useState<SnapshotCapability | null>(null);
   const [name, setName] = useState("");
@@ -58,11 +55,10 @@ export function SnapshotsPage() {
     setError(null);
     void (async () => {
       try {
-        const [w, listed] = await Promise.all([getWorkload(id), listWorkloadSnapshots(id)]);
+        const [, listed] = await Promise.all([getWorkload(id), listWorkloadSnapshots(id)]);
         if (cancelled) {
           return;
         }
-        setWorkload(w);
         applyList(listed);
         setLoadState("ready");
       } catch (err) {
@@ -78,8 +74,7 @@ export function SnapshotsPage() {
   }, [id]);
 
   async function reload() {
-    const [w, listed] = await Promise.all([getWorkload(id), listWorkloadSnapshots(id)]);
-    setWorkload(w);
+    const [, listed] = await Promise.all([getWorkload(id), listWorkloadSnapshots(id)]);
     applyList(listed);
     setLoadState("ready");
   }
@@ -149,8 +144,6 @@ export function SnapshotsPage() {
         <h1 id="snapshots-heading">Snapshots</h1>
         <p className="page-kicker">Point-in-time restore on the same pool. This is not a backup.</p>
       </header>
-
-      <WorkloadSubnav id={id} kind={workload?.kind} />
 
       {error ? (
         <p className="banner banner-error" role="alert">

@@ -21,6 +21,10 @@ export function viewFromPath(path: string): OpView {
       return "gpus";
     case "operations":
       return "operations";
+    case "clone":
+      return "clone";
+    case "migrate":
+      return "migrate";
     case "machine":
       return "machine";
     default:
@@ -61,8 +65,8 @@ export function resolveView(target: NavTarget, requested: OpView): OpView {
   if (requested === "gpus") {
     return "gpus";
   }
-  if (requested === "operations") {
-    return "operations";
+  if (requested === "operations" || requested === "clone" || requested === "migrate") {
+    return requested;
   }
   if (requested === "machine") {
     return target.group === "vm" ? "machine" : "summary";
