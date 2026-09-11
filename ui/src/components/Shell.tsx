@@ -9,6 +9,7 @@ import { isMainNavPreferred, saveLastView } from "../nav/prefs";
 import { useHistoryState, usePath } from "../router";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
+import { BrandMark } from "./BrandMark";
 import { CommandPalette } from "./CommandPalette";
 import { Icon, navIcon } from "./Icon";
 import { Link } from "./Link";
@@ -187,7 +188,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <Link href="/" className="brand-mark" aria-label="No-dal">
-            N
+            <BrandMark size="sidebar" decorative />
           </Link>
           <Link href="/" className="wordmark">
             No-dal

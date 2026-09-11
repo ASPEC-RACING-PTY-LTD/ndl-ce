@@ -146,6 +146,10 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^sign in$/i })).toBeVisible();
+    const mark = screen.getByRole("img", { name: /^no-dal$/i }) as HTMLImageElement;
+    expect(mark).toBeVisible();
+    expect(mark.getAttribute("src")).toBe("/logo.png");
+    expect(mark.getAttribute("width")).toBe("72");
     expect(screen.getByLabelText(/^username$/i)).toBeVisible();
     expect(screen.getByLabelText(/^password$/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^sign in$/i })).toBeVisible();
@@ -189,6 +193,9 @@ describe("App", () => {
     const { container } = render(<App />);
 
     expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeVisible();
+    const home = screen.getAllByRole("link", { name: /^no-dal$/i }).find((el) => el.querySelector("img.brand-logo-sidebar"));
+    expect(home).toBeTruthy();
+    expect(home?.querySelector("img.brand-logo-sidebar")).toHaveAttribute("src", "/logo.png");
     expect(await screen.findByText(/debian gnu\/linux 13/i)).toBeVisible();
     expect(screen.getByText(/none detected/i)).toBeVisible();
     expect(screen.getAllByText(/collecting data/i).length).toBeGreaterThan(0);

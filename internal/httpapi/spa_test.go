@@ -118,6 +118,31 @@ func TestSPAMissingAssetIsNotHTML(t *testing.T) {
 	}
 }
 
+func TestSPAServesFavicon(t *testing.T) {
+	dir := t.TempDir()
+	writeUITree(t, dir, "<!doctype html><link rel=\"icon\" href=\"/favicon.ico\">", "app-aaa.js", "js")
+	if err := os.WriteFile(filepath.Join(dir, "favicon.ico"), []byte("ico"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ts := spaTestServer(t, dir)
+
+	res, err := ts.Client().Get(ts.URL + "/favicon.ico")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	if string(body) != "ico" {
+		t.Fatalf("body=%s", body)
+	}
+	if res.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("Cache-Control=%q", res.Header.Get("Cache-Control"))
+	}
+}
+
 func TestSPAClientRouteServesFreshIndex(t *testing.T) {
 	dir := t.TempDir()
 	writeUITree(t, dir, "<!doctype html>shell", "app-aaa.js", "js")
