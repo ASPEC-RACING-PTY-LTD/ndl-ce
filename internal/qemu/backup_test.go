@@ -36,6 +36,14 @@ func TestCopyOfflineSkipHostCmdsErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
 		t.Fatalf("write SkipHostCmds: %v", err)
 	}
+	_, err = e.CopyOffline(context.Background(), BackupPack, t.TempDir(), "/tmp/ndl-backup/pack")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("pack SkipHostCmds: %v", err)
+	}
+	_, err = e.CopyOffline(context.Background(), BackupSyncTree, t.TempDir(), "/tmp/ndl-backup/tree")
+	if err == nil || !strings.Contains(err.Error(), "host commands skipped") {
+		t.Fatalf("sync-tree SkipHostCmds: %v", err)
+	}
 }
 
 func TestCopyOfflineWriteCopiesSidecar(t *testing.T) {

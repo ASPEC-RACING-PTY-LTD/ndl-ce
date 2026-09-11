@@ -231,4 +231,52 @@ describe("Backups page", () => {
     fireEvent.click(screen.getByRole("button", { name: /^run now$/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/root disk is iscsi or a distributed volume/i);
   });
+
+  it("tests an object target without inventing available on create", async () => {
+    const fetchMock = mockApi({
+      ...baseRoutes,
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "/api/v1/backups/targets": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "tgt-r2",
+              name: "R2",
+              kind: "r2",
+              locator: "s3://ndl-ce/",
+              status: "untested",
+              bucket: "ndl-ce",
+              no_check_bucket: true,
+              has_encryption_key: true,
+            },
+          ],
+        },
+      },
+      "POST /api/v1/backups/targets/tgt-r2/test": {
+        status: 200,
+        body: {
+          id: "tgt-r2",
+          name: "R2",
+          kind: "r2",
+          locator: "s3://ndl-ce/",
+          status: "available",
+          bucket: "ndl-ce",
+          no_check_bucket: true,
+          has_encryption_key: true,
+        },
+      },
+    });
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+    expect(await screen.findByText("R2")).toBeVisible();
+    expect(screen.getByText("Untested")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^test connection$/i }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/v1\/backups\/targets\/tgt-r2\/test$/),
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+  });
 });

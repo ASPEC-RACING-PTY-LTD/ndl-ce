@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/backuppack"
 	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/objstore"
@@ -278,21 +279,13 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		prefix := strings.Trim(strings.TrimSpace(req.Prefix), "/")
 		row := appdb.BackupTarget{
 			ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name),
-			Kind: kind, Locator: objstore.Locator(req.Bucket, prefix), Status: appdb.BackupNotConfigured,
+			Kind: kind, Locator: objstore.Locator(req.Bucket, prefix), Status: appdb.BackupUntested,
 			Username: strings.TrimSpace(req.Username), Endpoint: strings.TrimSpace(req.Endpoint),
 			Region: region, Bucket: strings.TrimSpace(req.Bucket), Prefix: prefix, NoCheckBucket: req.NoCheckBucket,
 		}
 		if err := s.Store.CreateBackupTarget(r.Context(), row, req.Password, encHex); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
-		}
-		status := s.probeObjectTarget(r.Context(), row)
-		if status != row.Status {
-			if err := s.Store.UpdateBackupTargetStatus(r.Context(), p.User.ClusterID, row.ID, status); err != nil {
-				writeErr(w, http.StatusInternalServerError, "could not record backup target")
-				return
-			}
-			row.Status = status
 		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "backup.target.create", "ok", row.ID)
 		writeJSON(w, http.StatusCreated, backupTargetJSON(row))
@@ -611,11 +604,22 @@ func (s *Server) writePolicyRuns(w http.ResponseWriter, r *http.Request, cluster
 		return
 	}
 	out := make([]map[string]any, 0, len(items))
+	summary := map[string]int{"succeeded": 0, "succeeded_with_warnings": 0, "failed": 0, "running": 0}
 	for _, run := range items {
 		out = append(out, backupRunJSON(run))
 		s.audit(r, clusterID, userID, "backup.run", run.Status, run.ID)
+		switch run.Status {
+		case appdb.BackupSucceeded:
+			summary["succeeded"]++
+		case appdb.BackupSucceededWithWarnings:
+			summary["succeeded_with_warnings"]++
+		case appdb.BackupFailed:
+			summary["failed"]++
+		case appdb.BackupRunning:
+			summary["running"]++
+		}
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"items": out})
+	writeJSON(w, http.StatusAccepted, map[string]any{"items": out, "summary": summary})
 }
 
 func refuseBackupExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appdb.WorkloadDisk) error {
@@ -643,20 +647,19 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 	}
 	var runs []appdb.BackupRun
 	var lastErr error
-	skipped := 0
 	for _, workloadID := range ids {
 		wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
 		if err != nil || wl == nil {
 			lastErr = errNotFound("workload not found")
-			continue
-		}
-		if pol.Scope == appdb.BackupScopeAll && !s.backupEligible(ctx, clusterID, *wl) {
-			skipped++
+			run := s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, lastErr.Error())
+			runs = append(runs, run)
 			continue
 		}
 		run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID)
 		if err != nil {
 			lastErr = err
+			run = s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, err.Error())
+			runs = append(runs, run)
 			continue
 		}
 		runs = append(runs, run)
@@ -665,15 +668,19 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 		if lastErr != nil {
 			return nil, lastErr
 		}
-		if skipped > 0 {
-			return nil, errUnprocessable(fmt.Sprintf(
-				"no eligible workloads in policy scope (%d skipped). Workloads whose root disk is iSCSI or a distributed volume cannot be backed up.",
-				skipped,
-			))
-		}
 		return nil, errUnprocessable("no eligible workloads in policy scope")
 	}
 	return runs, nil
+}
+
+func (s *Server) recordIndependentFailure(ctx context.Context, clusterID, policyID, targetID, workloadID, msg string) appdb.BackupRun {
+	now := s.now()
+	run := appdb.BackupRun{
+		ID: uuid.NewString(), ClusterID: clusterID, PolicyID: policyID, TargetID: targetID,
+		WorkloadID: workloadID, Status: appdb.BackupFailed, Error: msg, StartedAt: now, FinishedAt: &now,
+	}
+	_ = s.Store.CreateBackupRun(ctx, run)
+	return run
 }
 
 func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol appdb.BackupPolicy) ([]string, error) {
@@ -805,21 +812,15 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	}
 	artifactID := uuid.NewString()
 	objectKind := isObjectBackupKind(tgt.Kind)
-	stageDir := tgt.Locator
-	if objectKind {
-		tmp, err := os.MkdirTemp("", "ndl-backup-")
-		if err != nil {
-			return fail(err.Error())
-		}
-		defer func() { _ = os.RemoveAll(tmp) }()
-		stageDir = tmp
-	}
 	if plan.Method == appdb.BackupMethodDirectoryArchive {
-		if err := s.executeDirectoryCTBackup(ctx, clusterID, *wl, vol, rootfs, stageDir, artifactID, objectKind, *tgt, &run); err != nil {
+		if err := s.executeDirectoryCTBackup(ctx, clusterID, *wl, vol, rootfs, objectKind, *tgt, &run, artifactID); err != nil {
 			return fail(err.Error())
 		}
 		now := s.now()
 		run.Status = appdb.BackupSucceeded
+		if plan.Skipped != nil && len(plan.Skipped) > 0 {
+			run.Status = appdb.BackupSucceededWithWarnings
+		}
 		run.FinishedAt = &now
 		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
 			return run, errInternal("could not record backup run")
@@ -832,18 +833,25 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		}
 		return run, nil
 	}
+	stageDir := tgt.Locator
+	if objectKind {
+		tmp, err := os.MkdirTemp("", "ndl-backup-")
+		if err != nil {
+			return fail(err.Error())
+		}
+		defer func() { _ = os.RemoveAll(tmp) }()
+		stageDir = tmp
+	}
 	snap, frozen, err := s.snapshotForBackup(ctx, clusterID, *wl, run.ID)
 	if err != nil {
 		return fail(err.Error())
 	}
 	run.SnapshotID = snap.ID
-	format := "qcow2"
 	dest := filepath.Join(stageDir, artifactID+".qcow2")
 	var parentID string
 	incremental := false
 	fromSnap := ""
 	if snap.Mechanism == appdb.MechanismZFS {
-		format = "zfs"
 		dest = filepath.Join(stageDir, artifactID+".zfs")
 		if objectKind {
 			prev, _ := s.Store.ListBackupArtifactsForWorkload(ctx, clusterID, workloadID, targetID)
@@ -876,7 +884,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 			Locator: dest, Format: "zfs", ParentArtifactID: parentID,
 		}
 		if objectKind {
-			put, err := s.putObjectArtifact(ctx, *tgt, artifactID, dest, format)
+			prefix := backuppack.ObjectPrefix(tgt.Prefix, s.backupWorkloadName(ctx, clusterID, *wl), backuppack.BackupStamp(run.StartedAt, artifactID))
+			cfgPath := writePackIdentity(dest, wl.ID, wl.Name)
+			put, err := s.putPackArtifact(ctx, *tgt, dest, prefix, cfgPath)
 			if err != nil {
 				return fail(err.Error())
 			}
@@ -906,7 +916,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 			ChecksumSHA256: res.SHA256, SizeBytes: res.Size, Locator: dest, Format: firstNonEmpty(res.Format, "qcow2"),
 		}
 		if objectKind {
-			put, err := s.putObjectArtifact(ctx, *tgt, artifactID, dest, firstNonEmpty(res.Format, "qcow2"))
+			prefix := backuppack.ObjectPrefix(tgt.Prefix, s.backupWorkloadName(ctx, clusterID, *wl), backuppack.BackupStamp(run.StartedAt, artifactID))
+			cfgPath := writePackIdentity(dest, wl.ID, wl.Name)
+			put, err := s.putPackArtifact(ctx, *tgt, dest, prefix, cfgPath)
 			if err != nil {
 				return fail(err.Error())
 			}
@@ -928,6 +940,9 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	}
 	now := s.now()
 	run.Status = appdb.BackupSucceeded
+	if plan.Skipped != nil && len(plan.Skipped) > 0 {
+		run.Status = appdb.BackupSucceededWithWarnings
+	}
 	run.FinishedAt = &now
 	if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
 		return run, errInternal("could not record backup run")
@@ -939,6 +954,18 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		}
 	}
 	return run, nil
+}
+
+func writePackIdentity(dest, workloadID, name string) string {
+	path := dest + ".ndl-meta.json"
+	body, err := json.Marshal(map[string]string{"workload_id": workloadID, "name": name})
+	if err != nil {
+		return ""
+	}
+	if os.WriteFile(path, body, 0o600) != nil {
+		return ""
+	}
+	return path
 }
 
 func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row appdb.Workload, runID string) (appdb.Snapshot, string, error) {
@@ -1051,14 +1078,22 @@ func (s *Server) pruneBackupArtifacts(ctx context.Context, clusterID, workloadID
 			continue
 		}
 		if s.Backup != nil && !strings.HasPrefix(a.Locator, "s3://") && a.ObjectKey == "" {
-			_, _ = s.Backup.CopyBackup(ctx, qemu.BackupDelete, "", a.Locator)
+			if a.Format == backuppack.FormatNDLB {
+				_, _ = s.Backup.CopyBackup(ctx, qemu.BackupRmTree, "", a.Locator)
+			} else {
+				_, _ = s.Backup.CopyBackup(ctx, qemu.BackupDelete, "", a.Locator)
+			}
 		}
 		if a.ObjectKey != "" {
 			if tgt, _ := s.Store.GetBackupTarget(ctx, clusterID, targetID); tgt != nil {
 				pass, enc, _ := s.Store.BackupCredentials(ctx, clusterID, tgt.ID)
 				if key, err := objstore.ParseKey(enc); err == nil {
+					action := objstore.ActionDel
+					if isPackArtifact(a) {
+						action = objstore.ActionDelPack
+					}
 					_, _ = s.objectRPC().ObjectBackup(ctx, objstore.Request{
-						Action: objstore.ActionDel, Provider: tgt.Kind, Endpoint: tgt.Endpoint, Region: tgt.Region,
+						Action: action, Provider: tgt.Kind, Endpoint: tgt.Endpoint, Region: tgt.Region,
 						Bucket: tgt.Bucket, Key: a.ObjectKey, AccessKeyID: tgt.Username, SecretAccessKey: pass, EncryptionKey: key,
 					})
 				}

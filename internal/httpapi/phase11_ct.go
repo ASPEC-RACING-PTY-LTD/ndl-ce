@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/backuppack"
 	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/objstore"
@@ -24,19 +26,26 @@ const (
 )
 
 type ctBackupMeta struct {
-	Kind         string          `json:"kind"`
-	Name         string          `json:"name"`
-	ImagePin     string          `json:"image_pin"`
-	CPUs         int             `json:"cpus"`
-	MemoryBytes  int64           `json:"memory_bytes"`
-	Privileged   bool            `json:"privileged"`
-	UIDMap       string          `json:"uid_map"`
-	GIDMap       string          `json:"gid_map"`
-	DesiredPower string          `json:"desired_power"`
-	Autostart    bool            `json:"autostart"`
-	SpecJSON     json.RawMessage `json:"spec_json,omitempty"`
-	RootSize     int64           `json:"root_size_bytes,omitempty"`
-	NICs         []ctBackupNIC   `json:"nics,omitempty"`
+	Kind           string          `json:"kind"`
+	Name           string          `json:"name"`
+	Hostname       string          `json:"hostname,omitempty"`
+	ImagePin       string          `json:"image_pin"`
+	CPUs           int             `json:"cpus"`
+	MemoryBytes    int64           `json:"memory_bytes"`
+	Privileged     bool            `json:"privileged"`
+	UIDMap         string          `json:"uid_map"`
+	GIDMap         string          `json:"gid_map"`
+	DesiredPower   string          `json:"desired_power"`
+	Autostart      bool            `json:"autostart"`
+	Nesting        *bool           `json:"nesting,omitempty"`
+	TUN            bool            `json:"tun,omitempty"`
+	AllowMknod     bool            `json:"allow_mknod,omitempty"`
+	SpecJSON       json.RawMessage `json:"spec_json,omitempty"`
+	AppliedJSON    json.RawMessage `json:"applied_json,omitempty"`
+	StorageBackend string          `json:"storage_backend,omitempty"`
+	RootSize       int64           `json:"root_size_bytes,omitempty"`
+	WorkloadID     string          `json:"workload_id,omitempty"`
+	NICs           []ctBackupNIC   `json:"nics,omitempty"`
 }
 
 type ctBackupNIC struct {
@@ -137,6 +146,7 @@ func (s *Server) planBackup(ctx context.Context, clusterID string, wl appdb.Work
 		plan.Method = appdb.BackupMethodDirectoryArchive
 		if wl.Status == lxc.StatusRunning || wl.UnitActive {
 			plan.Consistency = appdb.BackupConsistencyFreezer
+			plan.Warning = "Directory storage has no snapshot. The container is frozen only while a consistent tree is copied; encoding and upload continue after resume."
 		} else {
 			plan.Consistency = appdb.BackupConsistencyStopped
 		}
@@ -153,12 +163,13 @@ func (s *Server) planBackup(ctx context.Context, clusterID string, wl appdb.Work
 	return plan, nil
 }
 
-func (s *Server) ctBackupMeta(ctx context.Context, clusterID string, wl appdb.Workload, rootSize int64) []byte {
+func (s *Server) ctBackupMeta(ctx context.Context, clusterID string, wl appdb.Workload, rootSize int64, backend string) []byte {
 	meta := ctBackupMeta{
-		Kind: lxc.KindSystemContainer, Name: wl.Name, ImagePin: wl.ImagePin,
+		Kind: lxc.KindSystemContainer, Name: wl.Name, Hostname: wl.Name, ImagePin: wl.ImagePin,
 		CPUs: wl.CPUs, MemoryBytes: wl.MemoryBytes, Privileged: wl.Privileged,
 		UIDMap: wl.UIDMap, GIDMap: wl.GIDMap, DesiredPower: wl.DesiredPower,
-		Autostart: wl.Autostart, SpecJSON: wl.SpecJSON, RootSize: rootSize,
+		Autostart: wl.Autostart, SpecJSON: wl.SpecJSON, AppliedJSON: wl.AppliedJSON,
+		StorageBackend: backend, RootSize: rootSize, WorkloadID: wl.ID,
 	}
 	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, wl.ID)
 	for _, n := range nics {
@@ -172,9 +183,39 @@ func (s *Server) ctBackupMeta(ctx context.Context, clusterID string, wl appdb.Wo
 	return b
 }
 
-func (s *Server) executeDirectoryCTBackup(ctx context.Context, clusterID string, wl appdb.Workload, vol *appdb.Volume, rootfs, stageDir, artifactID string, objectKind bool, tgt appdb.BackupTarget, run *appdb.BackupRun) error {
-	dest := filepath.Join(stageDir, artifactID+".tar.zst")
-	meta := s.ctBackupMeta(ctx, clusterID, wl, vol.SizeBytes)
+func (s *Server) executeDirectoryCTBackup(ctx context.Context, clusterID string, wl appdb.Workload, vol *appdb.Volume, rootfs string, objectKind bool, tgt appdb.BackupTarget, run *appdb.BackupRun, artifactID string) error {
+	staging := filepath.Join(ctbackup.StagingRoot, run.ID)
+	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupMkdir, "", staging); err != nil {
+		return err
+	}
+	defer func() { _, _ = s.Backup.CopyBackup(ctx, qemu.BackupRmTree, "", staging) }()
+
+	need := vol.SizeBytes + 32<<20
+	if need < 64<<20 {
+		need = 64 << 20
+	}
+	st, err := s.Backup.CopyBackup(ctx, qemu.BackupStatFS, "", staging)
+	if err == nil && st.Size > 0 && st.Size < need {
+		return fmt.Errorf("backup staging needs %d bytes free; %d available", need, st.Size)
+	}
+
+	tree := filepath.Join(staging, "tree")
+	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupMkdir, "", tree); err != nil {
+		return err
+	}
+	unit := ""
+	if wl.Status == lxc.StatusRunning || wl.UnitActive {
+		unit = lxc.UnitName(wl.ID)
+	}
+	if _, err := s.Backup.CopyBackup(ctx, qemu.SyncTreeAction(unit), rootfs, tree); err != nil {
+		return err
+	}
+
+	backend := ""
+	if vol != nil {
+		backend = vol.BackendType
+	}
+	meta := s.ctBackupMeta(ctx, clusterID, wl, vol.SizeBytes, backend)
 	tmp, err := os.CreateTemp("", "ndl-ct-meta-*.json")
 	if err != nil {
 		return err
@@ -189,24 +230,19 @@ func (s *Server) executeDirectoryCTBackup(ctx context.Context, clusterID string,
 	if closeErr != nil {
 		return closeErr
 	}
-	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupWrite, tmpName, ctbackup.MetaSidecar(dest)); err != nil {
+	cfgPath := filepath.Join(staging, "config.json")
+	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupWrite, tmpName, cfgPath); err != nil {
 		return err
 	}
-	action := qemu.ArchiveAction(lxc.UnitName(wl.ID))
-	res, err := s.Backup.CopyBackup(ctx, action, rootfs, dest)
-	if err != nil {
-		return err
-	}
-	format := firstNonEmpty(res.Format, ctbackup.FormatZstd)
-	if res.Dest != "" {
-		dest = res.Dest
-	}
+
+	name := s.backupWorkloadName(ctx, clusterID, wl)
+	stamp := backuppack.BackupStamp(run.StartedAt, artifactID)
 	art := appdb.BackupArtifact{
-		ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: wl.ID,
-		ChecksumSHA256: res.SHA256, SizeBytes: res.Size, Locator: dest, Format: format,
+		ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: wl.ID, Format: backuppack.FormatNDLB,
 	}
 	if objectKind {
-		put, err := s.putObjectArtifact(ctx, tgt, artifactID, dest, format)
+		prefix := backuppack.ObjectPrefix(tgt.Prefix, name, stamp)
+		put, err := s.putPackArtifact(ctx, tgt, staging, prefix, cfgPath)
 		if err != nil {
 			return err
 		}
@@ -221,8 +257,29 @@ func (s *Server) executeDirectoryCTBackup(ctx context.Context, clusterID string,
 		art.TransferredBytes = put.TransferredBytes
 		run.TransferredBytes = put.TransferredBytes
 		_ = s.Store.UpdateBackupTargetStatus(ctx, clusterID, tgt.ID, appdb.BackupAvailable)
+	} else {
+		dest := filepath.Join(tgt.Locator, filepath.FromSlash(backuppack.ObjectPrefix("", name, stamp)))
+		res, err := s.Backup.CopyBackup(ctx, qemu.BackupPack, staging, dest)
+		if err != nil {
+			return err
+		}
+		art.Locator = firstNonEmpty(res.Dest, dest)
+		art.ChecksumSHA256 = res.SHA256
+		art.SizeBytes = res.Size
+		art.Format = firstNonEmpty(res.Format, backuppack.FormatNDLB)
 	}
 	return s.Store.CreateBackupArtifact(ctx, art)
+}
+
+func (s *Server) backupWorkloadName(ctx context.Context, clusterID string, wl appdb.Workload) string {
+	items, _ := s.Store.ListWorkloads(ctx, clusterID)
+	others := make([]string, 0, len(items))
+	for _, o := range items {
+		if o.ID != wl.ID {
+			others = append(others, o.Name)
+		}
+	}
+	return backuppack.UniqueName(wl.Name, wl.ID, others)
 }
 
 func (s *Server) restoreSystemContainer(ctx context.Context, clusterID string, src *appdb.Workload, art appdb.BackupArtifact, mode string, dest *appdb.Node) (string, error) {
@@ -297,8 +354,27 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 	}
 	defer cleanup()
 	meta := ctBackupMeta{}
-	if raw, err := ctbackup.ReadMeta(ctx, srcPath); err == nil && len(raw) > 0 {
+	if raw, err := os.ReadFile(srcPath + ".ndl-meta.json"); err == nil && len(raw) > 0 {
 		_ = json.Unmarshal(raw, &meta)
+	}
+	if meta.Kind == "" {
+		if raw, err := ctbackup.ReadMeta(ctx, srcPath); err == nil && len(raw) > 0 {
+			_ = json.Unmarshal(raw, &meta)
+		}
+	}
+	if meta.Nesting == nil && len(meta.AppliedJSON) > 0 {
+		var applied lxc.Applied
+		if json.Unmarshal(meta.AppliedJSON, &applied) == nil {
+			if meta.Nesting == nil {
+				meta.Nesting = applied.Spec.Nesting
+			}
+			if !meta.TUN {
+				meta.TUN = applied.Spec.TUN
+			}
+			if !meta.AllowMknod {
+				meta.AllowMknod = applied.Spec.AllowMknod
+			}
+		}
 	}
 	if src != nil {
 		if meta.Kind == "" {
@@ -469,6 +545,7 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 			RootfsPath: rootfs, NetworkID: netID, BridgeName: bridge,
 			Privileged: meta.Privileged, UIDMap: meta.UIDMap, GIDMap: meta.GIDMap,
 			IP: ip, SkipImage: true, NoStart: meta.DesiredPower != "running",
+			Nesting: meta.Nesting, TUN: meta.TUN, AllowMknod: meta.AllowMknod,
 		}); err != nil {
 			return "", err
 		}

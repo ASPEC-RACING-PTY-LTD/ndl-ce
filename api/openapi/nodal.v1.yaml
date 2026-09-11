@@ -3405,6 +3405,29 @@ paths:
           description: Unauthenticated
         "403":
           description: Forbidden
+  /backups/targets/{id}/test:
+    post:
+      operationId: testBackupTarget
+      summary: Test an object-storage backup destination with a No-DAL probe object
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Target status after the probe. Passwords are never returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTarget"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Backup target not found
   /backups/policies:
     get:
       operationId: listBackupPolicies
@@ -7812,6 +7835,11 @@ components:
             - available
             - unavailable
             - not_configured
+            - untested
+            - authentication_failed
+            - permission_denied
+            - bucket_unavailable
+            - degraded
         username:
           type: string
           description: Optional. Password is write-only and never returned. For object targets this is the access key id.
@@ -7825,7 +7853,7 @@ components:
           type: string
         no_check_bucket:
           type: boolean
-          description: Skip HeadBucket/ListBuckets. Status stays not_configured until a successful upload.
+          description: Skip HeadBucket/ListBuckets. Status stays untested until Test connection or a successful upload.
         has_encryption_key:
           type: boolean
           description: Client-side encryption key is stored in secrets. Never returned.
@@ -7999,6 +8027,7 @@ components:
           enum:
             - running
             - succeeded
+            - succeeded_with_warnings
             - failed
         error:
           type: string
@@ -8043,6 +8072,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BackupPlanItem"
+        warning:
+          type: string
+          description: Directory freeze-copy note or other non-fatal plan text.
     BackupPlanItem:
       type: object
       additionalProperties: false

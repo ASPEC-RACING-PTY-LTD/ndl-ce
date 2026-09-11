@@ -12,10 +12,24 @@ const (
 )
 
 const (
-	ActionPut  = "put"
-	ActionGet  = "get"
-	ActionHead = "head"
-	ActionDel  = "del"
+	ActionPut     = "put"
+	ActionGet     = "get"
+	ActionHead    = "head"
+	ActionDel     = "del"
+	ActionPutPack = "put-pack"
+	ActionGetPack = "get-pack"
+	ActionDelPack = "delete-pack"
+	ActionTest    = "test"
+)
+
+const (
+	StatusAvailable   = "available"
+	StatusUnavailable = "unavailable"
+	StatusUntested    = "untested"
+	StatusAuthFailed  = "authentication_failed"
+	StatusPermission  = "permission_denied"
+	StatusBucket      = "bucket_unavailable"
+	StatusDegraded    = "degraded"
 )
 
 const (

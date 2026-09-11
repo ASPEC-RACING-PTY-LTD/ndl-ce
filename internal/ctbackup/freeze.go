@@ -32,6 +32,25 @@ func ParseFreezeUnit(action string) (string, error) {
 	return unit, nil
 }
 
+// ParseSyncTree returns the systemd unit encoded in sync-tree:<unit>, or empty.
+func ParseSyncTree(action string) (string, error) {
+	act := strings.TrimSpace(action)
+	if act == "" || act == "sync-tree" {
+		return "", nil
+	}
+	if !strings.HasPrefix(act, "sync-tree:") {
+		return "", fmt.Errorf("unsupported backup action")
+	}
+	unit := strings.TrimSpace(strings.TrimPrefix(act, "sync-tree:"))
+	if unit == "" {
+		return "", nil
+	}
+	if err := ValidateFreezeUnit(unit); err != nil {
+		return "", err
+	}
+	return unit, nil
+}
+
 // ValidateFreezeUnit allows only nodal-ct@<uuid>.service names.
 func ValidateFreezeUnit(unit string) error {
 	if !freezeUnitRe.MatchString(strings.TrimSpace(unit)) {
@@ -40,7 +59,7 @@ func ValidateFreezeUnit(unit string) error {
 	return nil
 }
 
-func freezeUnitIfPresent(unit string) (func(), error) {
+func freezeUnitIfPresent(unit string, required bool) (func(), error) {
 	nop := func() {}
 	unit = strings.TrimSpace(unit)
 	if unit == "" {
@@ -55,6 +74,9 @@ func freezeUnitIfPresent(unit string) (func(), error) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
+			if required {
+				return nop, fmt.Errorf("cgroup freezer is not available; Directory backup will not copy a live rootfs without a short freeze")
+			}
 			return nop, nil
 		}
 		return nop, fmt.Errorf("cgroup freeze: %w", err)

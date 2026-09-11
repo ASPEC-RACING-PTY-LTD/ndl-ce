@@ -152,7 +152,7 @@ func TestFreezeMissingFileIsSkipped(t *testing.T) {
 	t.Cleanup(func() { cgroupSlice = prev })
 	cgroupSlice = filepath.Join(t.TempDir(), "system.slice")
 	unit := "nodal-ct@11111111-1111-4111-8111-111111111111.service"
-	unfreeze, err := freezeUnitIfPresent(unit)
+	unfreeze, err := freezeUnitIfPresent(unit, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestFreezeWritesAndClears(t *testing.T) {
 	if err := os.WriteFile(path, []byte("0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	unfreeze, err := freezeUnitIfPresent(unit)
+	unfreeze, err := freezeUnitIfPresent(unit, true)
 	if err != nil {
 		t.Fatal(err)
 	}

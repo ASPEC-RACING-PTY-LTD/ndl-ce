@@ -1371,7 +1371,7 @@ export interface BackupTarget {
   name: string;
   kind: "local" | "nfs" | "smb" | "s3" | "r2" | "aws" | "b2" | "minio";
   locator: string;
-  status: "available" | "unavailable" | "not_configured";
+  status: "available" | "unavailable" | "not_configured" | "untested" | "authentication_failed" | "permission_denied" | "bucket_unavailable" | "degraded";
   username?: string;
   endpoint?: string;
   region?: string;
@@ -1435,7 +1435,7 @@ export interface BackupRun {
   target_id: string;
   workload_id: string;
   snapshot_id?: string;
-  status: "running" | "succeeded" | "failed";
+  status: "running" | "succeeded" | "succeeded_with_warnings" | "failed";
   error?: string;
   restored_workload_id?: string;
   started_at: string;
@@ -1450,6 +1450,7 @@ export interface BackupPlan {
   consistency?: "cgroup-freezer" | "stopped" | "zfs-snapshot" | "lvm-snapshot" | "qcow2-overlay";
   included?: BackupPlanItem[];
   skipped?: BackupPlanItem[];
+  warning?: string;
 }
 
 export interface BackupPlanItem {

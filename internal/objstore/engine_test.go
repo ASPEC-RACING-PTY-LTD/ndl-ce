@@ -2,6 +2,7 @@ package objstore
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +116,65 @@ func TestNoCheckBucketDoesNotFakeAvailable(t *testing.T) {
 	}
 	if res.Status == "available" {
 		t.Fatal("no_check_bucket must not invent available")
+	}
+}
+
+func TestEncryptRefusesOversizedPlaintext(t *testing.T) {
+	_, key, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Encrypt(bytes.Repeat([]byte("x"), PartSize+1), key); err == nil {
+		t.Fatal("encrypt must refuse plaintext larger than PartSize")
+	}
+}
+
+func TestEnginePutPackStaysInsideEnvelope(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "payload.bin")
+	const payloadSize = 32 << 20
+	f, err := os.Create(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(f, bytes.NewReader(bytes.Repeat([]byte("A"), payloadSize)), payloadSize); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, key, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := NewMemoryTransport()
+	eng := &Engine{Transport: mem}
+	put, err := eng.Do(t.Context(), Request{
+		Action: ActionPutPack, Provider: KindR2, Bucket: "backups",
+		Key: "backups/SoundDock/2026-09-12T05-40-00Z", SourcePath: src, EncryptionKey: key,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if put.PlaintextSize != payloadSize {
+		t.Fatalf("size %+v", put)
+	}
+	if !strings.Contains(put.Key, "backups/SoundDock/") {
+		t.Fatalf("key %s", put.Key)
+	}
+	if mem.MaxObjectSize() > PartSize+HeaderSize+4096 {
+		t.Fatalf("stored object %d exceeds part envelope", mem.MaxObjectSize())
+	}
+	got := filepath.Join(dir, "restored.bin")
+	if _, err := eng.Do(t.Context(), Request{
+		Action: ActionGetPack, Provider: KindR2, Bucket: "backups",
+		Key: put.Key, DestPath: got, EncryptionKey: key,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(got)
+	if err != nil || st.Size() != payloadSize {
+		t.Fatalf("restored %+v %v", st, err)
 	}
 }
 

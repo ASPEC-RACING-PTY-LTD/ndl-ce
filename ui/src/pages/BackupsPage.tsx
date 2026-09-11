@@ -15,6 +15,7 @@ import {
   restoreBackupFile,
   runBackup,
   runBackupPolicy,
+  testBackupTarget,
   updateBackupPolicy,
   verifyBackupArtifact,
 } from "../api/client";
@@ -53,16 +54,26 @@ function targetStatusLabel(status: BackupTarget["status"]): string {
       return "Unavailable";
     case "not_configured":
       return "Not configured";
+    case "untested":
+      return "Untested";
+    case "authentication_failed":
+      return "Authentication failed";
+    case "permission_denied":
+      return "Permission denied";
+    case "bucket_unavailable":
+      return "Bucket unavailable";
+    case "degraded":
+      return "Degraded";
     default:
       return honestStatus(status);
   }
 }
 
 function targetAllowsRun(t: BackupTarget): boolean {
-  if (t.status === "available") {
+  if (t.status === "available" || t.status === "untested" || t.status === "degraded") {
     return true;
   }
-  return isObjectKind(t.kind) && Boolean(t.no_check_bucket) && t.status === "not_configured";
+  return isObjectKind(t.kind) && Boolean(t.no_check_bucket) && (t.status === "not_configured" || t.status === "untested");
 }
 
 function runStatusLabel(status: BackupRun["status"]): string {
@@ -71,6 +82,8 @@ function runStatusLabel(status: BackupRun["status"]): string {
       return "Running";
     case "succeeded":
       return "Succeeded";
+    case "succeeded_with_warnings":
+      return "Succeeded with warnings";
     case "failed":
       return "Failed";
     default:
@@ -119,10 +132,11 @@ function planLabel(plan: BackupRun["plan"]): string {
   const included = plan.included?.length ?? 0;
   const skipped = plan.skipped?.length ?? 0;
   const method = plan.method ?? "copy";
+  const warning = plan.warning ? `; ${plan.warning}` : "";
   if (skipped > 0) {
-    return `${method}: ${included} included, ${skipped} skipped`;
+    return `${method}: ${included} included, ${skipped} skipped${warning}`;
   }
-  return method;
+  return `${method}${warning}`;
 }
 
 function latestPolicyRun(runs: BackupRun[], policyId: string): BackupRun | undefined {
@@ -304,6 +318,19 @@ export function BackupsPage() {
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Create target failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onTestTarget(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await testBackupTarget(id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Test connection failed");
     } finally {
       setBusy(false);
     }
@@ -695,6 +722,18 @@ export function BackupsPage() {
                         </div>
                       ) : null}
                     </dl>
+                    {mutate && isObjectKind(t.kind) ? (
+                      <div className="btn-row">
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void onTestTarget(t.id)}
+                        >
+                          Test connection
+                        </button>
+                      </div>
+                    ) : null}
                   </article>
                 ))
               )}

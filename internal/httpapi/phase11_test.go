@@ -42,6 +42,15 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		}
 		return storage.CopyResult{Dest: dest, Size: 1, Format: "directory"}, nil
 	}
+	if action == qemu.BackupStatFS {
+		return storage.CopyResult{Dest: dest, Size: 1 << 40, Format: "statfs"}, nil
+	}
+	if action == qemu.BackupRmTree {
+		if dest != "" {
+			_ = os.RemoveAll(dest)
+		}
+		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	}
 	if action == qemu.BackupStat {
 		info, err := os.Stat(dest)
 		if err != nil || !info.IsDir() {
@@ -52,7 +61,6 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 	if action == qemu.BackupDelete {
 		return storage.CopyResult{Dest: dest, Format: "qcow2"}, nil
 	}
-	format := "qcow2"
 	if action == qemu.BackupExtractRoot {
 		if dest != "" {
 			_ = os.MkdirAll(dest, 0o755)
@@ -72,6 +80,39 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		}
 		return storage.CopyResult{Dest: dest, Format: "json"}, nil
 	}
+	if strings.HasPrefix(action, qemu.BackupSyncTree) {
+		if dest != "" {
+			_ = os.MkdirAll(dest, 0o750)
+		}
+		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	}
+	if action == qemu.BackupPack {
+		if dest != "" {
+			_ = os.MkdirAll(dest, 0o750)
+			_ = os.WriteFile(filepath.Join(dest, "manifest.json"), []byte(`{"version":1,"format":"ndlb"}`), 0o640)
+			if src != "" {
+				if b, err := os.ReadFile(filepath.Join(src, "config.json")); err == nil {
+					_ = os.WriteFile(filepath.Join(dest, "config.json"), b, 0o600)
+				}
+			}
+			_ = os.MkdirAll(filepath.Join(dest, "chunks"), 0o750)
+			_ = os.WriteFile(filepath.Join(dest, "chunks", "000000"), []byte("qcow"), 0o640)
+		}
+		return storage.CopyResult{Dest: dest, SHA256: "abc123", Size: 4, Format: "ndlb"}, nil
+	}
+	if action == qemu.BackupUnpack {
+		if dest != "" {
+			_ = os.MkdirAll(filepath.Dir(dest), 0o750)
+			_ = os.WriteFile(dest, []byte("qcow"), 0o640)
+			if src != "" {
+				if b, err := os.ReadFile(filepath.Join(src, "config.json")); err == nil {
+					_ = os.WriteFile(dest+".ndl-meta.json", b, 0o600)
+				}
+			}
+		}
+		return storage.CopyResult{Dest: dest, SHA256: "abc123", Size: 4, Format: "tar"}, nil
+	}
+	format := "qcow2"
 	if strings.HasPrefix(action, qemu.BackupArchive) {
 		format = "tar.zst"
 	}
@@ -789,7 +830,7 @@ func TestBackupRunFailsClosedForExtraDataDisk(t *testing.T) {
 		t.Fatalf("boot disk must still be copied: %+v", bk.copies)
 	}
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
-	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
+	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceededWithWarnings {
 		t.Fatalf("backup must persist a run: %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
@@ -885,7 +926,7 @@ func TestNightlyPolicyTickFailsClosedForExtraDataDisk(t *testing.T) {
 	_ = mem.UpdateBackupPolicyLastRun(context.Background(), cluster.ID, pols[0].ID, time.Now().Add(-24*time.Hour))
 	s.TickNightlyBackups(context.Background())
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
-	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
+	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceededWithWarnings {
 		t.Fatalf("nightly extra-disk backup %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
@@ -975,7 +1016,7 @@ func TestBackupRunFailsClosedForCatalogExtraDataDisk(t *testing.T) {
 		t.Fatalf("catalog extra data disk backup %d %s", res.StatusCode, raw)
 	}
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
-	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
+	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceededWithWarnings {
 		t.Fatalf("catalog extra disk must persist a run: %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
@@ -1676,8 +1717,11 @@ func TestBackupPolicyAllScopeBacksUpDirectoryContainers(t *testing.T) {
 		t.Fatalf("directory CT run %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
-	if len(arts) != 1 || arts[0].Format != "tar.zst" {
+	if len(arts) != 1 || arts[0].Format != "ndlb" {
 		t.Fatalf("directory CT artifact %+v", arts)
+	}
+	if !strings.Contains(arts[0].Locator, "/backups/alpine-a/") {
+		t.Fatalf("directory locator must be human-readable: %s", arts[0].Locator)
 	}
 	plan := parseBackupPlan(runs[0].PlanJSON)
 	if plan == nil || plan.Method != appdb.BackupMethodDirectoryArchive {
@@ -1732,17 +1776,20 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("backup %d %s", res.StatusCode, raw)
 	}
-	wrote, archived := false, false
+	wrote, synced, packed := false, false, false
 	for _, c := range fb.copies {
 		if c[0] == qemu.BackupWrite {
 			wrote = true
 		}
-		if strings.HasPrefix(c[0], qemu.BackupArchive) {
-			archived = true
+		if strings.HasPrefix(c[0], qemu.BackupSyncTree) {
+			synced = true
+		}
+		if c[0] == qemu.BackupPack {
+			packed = true
 		}
 	}
-	if !wrote || !archived {
-		t.Fatalf("Directory CT backup must write metadata through the agent then archive: %+v", fb.copies)
+	if !wrote || !synced || !packed {
+		t.Fatalf("Directory CT backup must freeze-copy then pack, with metadata written through the agent: %+v", fb.copies)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
 	if len(arts) != 1 {

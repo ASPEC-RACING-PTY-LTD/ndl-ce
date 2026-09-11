@@ -17,6 +17,9 @@ func Encrypt(plaintext, key []byte) ([]byte, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("encryption key must be %d bytes", KeySize)
 	}
+	if len(plaintext) > PartSize {
+		return nil, fmt.Errorf("plaintext exceeds %d byte encryption envelope", PartSize)
+	}
 	var compressed bytes.Buffer
 	gz, err := gzip.NewWriterLevel(&compressed, gzip.BestSpeed)
 	if err != nil {
@@ -82,7 +85,14 @@ func Decrypt(blob, key []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer gz.Close()
-	return io.ReadAll(gz)
+	plain, err := io.ReadAll(io.LimitReader(gz, int64(PartSize)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(plain) > PartSize {
+		return nil, fmt.Errorf("plaintext exceeds %d byte encryption envelope", PartSize)
+	}
+	return plain, nil
 }
 
 // SHA256Hex checksums plaintext for the backup catalog.

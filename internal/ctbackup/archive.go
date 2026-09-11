@@ -48,8 +48,10 @@ func isCTArchiveFormat(format string) bool {
 
 // IsArchiveFormat reports whether a catalogued artifact is a container rootfs archive.
 func IsArchiveFormat(format string) bool {
-	return isCTArchiveFormat(format)
+	return isCTArchiveFormat(format) || strings.TrimSpace(strings.ToLower(format)) == "ndlb"
 }
+
+const StagingRoot = "/var/lib/ndl/backup-staging"
 
 // Archive writes a GNU tar of srcRootfs to dest. Running containers should pass a
 // validated nodal-ct@<uuid>.service unit so the cgroup freezer is used. Metadata
@@ -68,7 +70,7 @@ func Archive(ctx context.Context, srcRootfs, dest, freezeUnit string, meta []byt
 	if !info.IsDir() {
 		return storage.CopyResult{}, fmt.Errorf("container rootfs must be a directory")
 	}
-	unfreeze, err := freezeUnitIfPresent(freezeUnit)
+	unfreeze, err := freezeUnitIfPresent(freezeUnit, false)
 	if err != nil {
 		return storage.CopyResult{}, err
 	}
@@ -80,20 +82,13 @@ func Archive(ctx context.Context, srcRootfs, dest, freezeUnit string, meta []byt
 
 	format := FormatGzip
 	destOut := dest
-	compress := []string{"-z"}
-	if zstdAvailable() {
-		format = FormatZstd
-		compress = []string{"--zstd"}
-		if strings.HasSuffix(dest, ".tar.gz") || strings.HasSuffix(dest, ".tgz") {
-			destOut = strings.TrimSuffix(strings.TrimSuffix(dest, ".tgz"), ".tar.gz") + ".tar.zst"
-		}
-	} else if strings.HasSuffix(dest, ".tar.zst") {
+	if strings.HasSuffix(dest, ".tar.zst") {
 		destOut = strings.TrimSuffix(dest, ".tar.zst") + ".tar.gz"
 	}
-
-	args := []string{"--acls", "--xattrs", "--xattrs-include=*", "--numeric-owner", "--sparse", "--one-file-system"}
-	args = append(args, compress...)
-	args = append(args, "-cf", destOut)
+	args := []string{
+		"--format=pax", "--acls", "--xattrs", "--xattrs-include=*",
+		"--numeric-owner", "--sparse", "--one-file-system", "-z", "-cf", destOut,
+	}
 
 	if len(bytes.TrimSpace(meta)) > 0 {
 		dir, err := os.MkdirTemp(filepath.Dir(destOut), "ndl-ct-meta-")
@@ -158,6 +153,34 @@ func ReadMeta(ctx context.Context, srcArchive string) ([]byte, error) {
 		}
 	}
 	return nil, nil
+}
+
+// ExtractFile copies one archived path to dest. Numeric owners are not
+// required for this host-side file restore.
+func ExtractFile(ctx context.Context, srcArchive, guestPath, dest string) error {
+	if err := validateArchive(srcArchive); err != nil {
+		return err
+	}
+	guestPath = strings.TrimSpace(guestPath)
+	if guestPath == "" || strings.Contains(guestPath, "..") || strings.ContainsAny(guestPath, "\n\x00") {
+		return fmt.Errorf("guest path is invalid")
+	}
+	guestPath = strings.TrimPrefix(guestPath, "/")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return err
+	}
+	for _, name := range []string{guestPath, "./" + guestPath} {
+		cmd := exec.CommandContext(ctx, BinTar, append(extractFlags(srcArchive), "-xO", "-f", srcArchive, name)...)
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		if int64(len(out)) > 1<<20 {
+			return fmt.Errorf("extracted file exceeds 1MiB restore-file cap")
+		}
+		return os.WriteFile(dest, out, 0o640)
+	}
+	return fmt.Errorf("guest path is not in the archive")
 }
 
 func extractFlags(archive string) []string {

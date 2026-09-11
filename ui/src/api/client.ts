@@ -1443,6 +1443,15 @@ export async function createBackupTarget(
   );
 }
 
+export async function testBackupTarget(id: string): Promise<import("../generated/openapi").BackupTarget> {
+  return readJson(
+    await request(`/backups/targets/${id}/test`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function listBackupPolicies(): Promise<import("../generated/openapi").BackupPolicyListResponse> {
   return readJson(await request("/backups/policies"));
 }

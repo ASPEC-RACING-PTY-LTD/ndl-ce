@@ -67,3 +67,15 @@ func (m *MemoryTransport) Ciphertext(bucket, object string) []byte {
 	defer m.mu.Unlock()
 	return append([]byte(nil), m.objects[m.key(bucket, object)]...)
 }
+
+func (m *MemoryTransport) MaxObjectSize() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	peak := 0
+	for _, body := range m.objects {
+		if len(body) > peak {
+			peak = len(body)
+		}
+	}
+	return peak
+}

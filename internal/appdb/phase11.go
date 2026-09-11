@@ -9,25 +9,31 @@ import (
 )
 
 const (
-	BackupRunning       = "running"
-	BackupSucceeded     = "succeeded"
-	BackupFailed        = "failed"
-	BackupLocal         = "local"
-	BackupNFS           = "nfs"
-	BackupSMB           = "smb"
-	BackupS3            = "s3"
-	BackupR2            = "r2"
-	BackupAWS           = "aws"
-	BackupB2            = "b2"
-	BackupMinIO         = "minio"
-	BackupAvailable     = "available"
-	BackupUnavailable   = "unavailable"
-	BackupNotConfigured = "not_configured"
-	BackupNightly       = "nightly"
-	BackupUnverified    = "unverified"
-	BackupVerified      = "verified"
-	BackupScopeAll      = "all"
-	BackupScopeSelected = "selected"
+	BackupRunning               = "running"
+	BackupSucceeded             = "succeeded"
+	BackupSucceededWithWarnings = "succeeded_with_warnings"
+	BackupFailed                = "failed"
+	BackupLocal                 = "local"
+	BackupNFS                   = "nfs"
+	BackupSMB                   = "smb"
+	BackupS3                    = "s3"
+	BackupR2                    = "r2"
+	BackupAWS                   = "aws"
+	BackupB2                    = "b2"
+	BackupMinIO                 = "minio"
+	BackupAvailable             = "available"
+	BackupUnavailable           = "unavailable"
+	BackupNotConfigured         = "not_configured"
+	BackupUntested              = "untested"
+	BackupAuthFailed            = "authentication_failed"
+	BackupPermissionDenied      = "permission_denied"
+	BackupBucketUnavailable     = "bucket_unavailable"
+	BackupDegraded              = "degraded"
+	BackupNightly               = "nightly"
+	BackupUnverified            = "unverified"
+	BackupVerified              = "verified"
+	BackupScopeAll              = "all"
+	BackupScopeSelected         = "selected"
 
 	BackupMethodDirectoryArchive = "directory-archive"
 	BackupMethodZFSSend          = "zfs-send"
@@ -128,6 +134,7 @@ type BackupPlan struct {
 	Consistency string           `json:"consistency"`
 	Included    []BackupPlanItem `json:"included,omitempty"`
 	Skipped     []BackupPlanItem `json:"skipped,omitempty"`
+	Warning     string           `json:"warning,omitempty"`
 }
 
 // BackupPlanItem is one disk or resource in a backup plan.
