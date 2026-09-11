@@ -8,7 +8,10 @@ same pool. A backup copies data to a destination.
 A policy is the operational object. Scope is `all` (the current eligible
 fleet, including workloads created later) or `selected` (an explicit
 workload list). All is the default. One policy can cover many workloads.
-Run now executes the policy against its current scope.
+Run now executes the policy against its current scope. Directory system
+containers are skipped until they use ZFS. Extra disks, iSCSI, and
+distributed volumes are skipped. A run with nothing eligible returns 422
+instead of copying production guests.
 
 ## Snapshots
 

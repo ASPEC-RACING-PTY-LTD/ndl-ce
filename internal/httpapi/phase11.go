@@ -640,6 +640,7 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 	}
 	var runs []appdb.BackupRun
 	var lastErr error
+	skipped := 0
 	for _, workloadID := range ids {
 		wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
 		if err != nil || wl == nil {
@@ -647,6 +648,7 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 			continue
 		}
 		if pol.Scope == appdb.BackupScopeAll && !s.backupEligible(ctx, clusterID, *wl) {
+			skipped++
 			continue
 		}
 		run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID)
@@ -659,6 +661,12 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 	if len(runs) == 0 {
 		if lastErr != nil {
 			return nil, lastErr
+		}
+		if skipped > 0 {
+			return nil, errUnprocessable(fmt.Sprintf(
+				"no eligible workloads in policy scope (%d skipped). Directory system containers need a ZFS dataset for backup send. Extra disks, iSCSI, and distributed volumes are skipped.",
+				skipped,
+			))
 		}
 		return nil, errUnprocessable("no eligible workloads in policy scope")
 	}

@@ -1549,3 +1549,64 @@ func TestBackupPolicyAllScopeDefaultAndSelectedMulti(t *testing.T) {
 		t.Fatalf("deleted policy still present")
 	}
 }
+
+func TestBackupPolicyAllScopeSkipsDirectoryContainers(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	s.Workloads = &fakeWorkloads{}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	ctBody := `{"name":"alpine-a","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(ctBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(res.Body)
+		t.Fatalf("ct %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var tgt map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&tgt)
+	_ = res.Body.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"fleet","target_id":"`+tgt["id"].(string)+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var pol map[string]any
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy %d %s", res.StatusCode, raw)
+	}
+	if err := json.Unmarshal(raw, &pol); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+pol["id"].(string)+"/run", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("run %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "1 skipped") || !strings.Contains(strings.ToLower(string(body)), "zfs") {
+		t.Fatalf("honest skip reason: %s", body)
+	}
+}
