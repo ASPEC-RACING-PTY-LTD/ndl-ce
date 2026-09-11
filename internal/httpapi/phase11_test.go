@@ -58,6 +58,19 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		}
 		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
 	}
+	if action == qemu.BackupWrite {
+		if dest != "" {
+			_ = os.MkdirAll(filepath.Dir(dest), 0o750)
+			body := []byte("{}")
+			if src != "" {
+				if b, err := os.ReadFile(src); err == nil {
+					body = b
+				}
+			}
+			_ = os.WriteFile(dest, body, 0o600)
+		}
+		return storage.CopyResult{Dest: dest, Format: "json"}, nil
+	}
 	if strings.HasPrefix(action, qemu.BackupArchive) {
 		format = "tar.zst"
 	}
@@ -1669,7 +1682,8 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	fw := &fakeWorkloads{}
 	s.Workloads = fw
 	s.VM = &fakeVM{}
-	s.Backup = &fakeBackup{}
+	fb := &fakeBackup{}
+	s.Backup = fb
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
@@ -1701,6 +1715,18 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("backup %d %s", res.StatusCode, raw)
+	}
+	wrote, archived := false, false
+	for _, c := range fb.copies {
+		if c[0] == qemu.BackupWrite {
+			wrote = true
+		}
+		if strings.HasPrefix(c[0], qemu.BackupArchive) {
+			archived = true
+		}
+	}
+	if !wrote || !archived {
+		t.Fatalf("Directory CT backup must write metadata through the agent then archive: %+v", fb.copies)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
 	if len(arts) != 1 {

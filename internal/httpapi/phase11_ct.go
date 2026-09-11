@@ -175,10 +175,23 @@ func (s *Server) ctBackupMeta(ctx context.Context, clusterID string, wl appdb.Wo
 func (s *Server) executeDirectoryCTBackup(ctx context.Context, clusterID string, wl appdb.Workload, vol *appdb.Volume, rootfs, stageDir, artifactID string, objectKind bool, tgt appdb.BackupTarget, run *appdb.BackupRun) error {
 	dest := filepath.Join(stageDir, artifactID+".tar.zst")
 	meta := s.ctBackupMeta(ctx, clusterID, wl, vol.SizeBytes)
-	if err := os.WriteFile(ctbackup.MetaSidecar(dest), meta, 0o600); err != nil {
+	tmp, err := os.CreateTemp("", "ndl-ct-meta-*.json")
+	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(ctbackup.MetaSidecar(dest)) }()
+	tmpName := tmp.Name()
+	_, writeErr := tmp.Write(meta)
+	closeErr := tmp.Close()
+	defer func() { _ = os.Remove(tmpName) }()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupWrite, tmpName, ctbackup.MetaSidecar(dest)); err != nil {
+		return err
+	}
 	action := qemu.ArchiveAction(lxc.UnitName(wl.ID))
 	res, err := s.Backup.CopyBackup(ctx, action, rootfs, dest)
 	if err != nil {

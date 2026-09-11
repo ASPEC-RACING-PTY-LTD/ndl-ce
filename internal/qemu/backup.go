@@ -23,6 +23,7 @@ const (
 	BackupStat        = "stat"
 	BackupArchive     = "archive"
 	BackupExtractRoot = "extract-root"
+	BackupWrite       = "write"
 )
 
 // ArchiveAction encodes an optional cgroup freeze unit as archive:<unit>.
@@ -54,6 +55,17 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 			return storage.CopyResult{}, fmt.Errorf("backup mkdir: %w", err)
 		}
 		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
+	case BackupWrite:
+		if err := storage.AllowedArtifactPath(src); err != nil {
+			return storage.CopyResult{}, err
+		}
+		if err := storage.AllowedArtifactPath(dest); err != nil {
+			return storage.CopyResult{}, err
+		}
+		if e.SkipHostCmds {
+			return storage.CopyResult{}, fmt.Errorf("host commands skipped; backup write was not run")
+		}
+		return writeArtifactFile(src, dest)
 	case BackupStat:
 		if dest == "" || strings.Contains(dest, "..") {
 			return storage.CopyResult{}, storage.ErrForbiddenPath
@@ -138,7 +150,9 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 		if err := d.EnsureDirectoryRootMounted(ctx, src); err != nil {
 			return storage.CopyResult{}, err
 		}
-		meta, _ := os.ReadFile(ctbackup.MetaSidecar(dest))
+		sidecar := ctbackup.MetaSidecar(dest)
+		meta, _ := os.ReadFile(sidecar)
+		defer func() { _ = os.Remove(sidecar) }()
 		return ctbackup.Archive(ctx, src, dest, unit, meta)
 	}
 	if act == BackupExtractRoot {
@@ -181,6 +195,39 @@ func (e *Engine) convertToBackupArtifact(ctx context.Context, src, dest, srcFmt 
 		return fmt.Errorf("qemu-img convert: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func writeArtifactFile(src, dest string) (storage.CopyResult, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	defer in.Close()
+	st, err := in.Stat()
+	if err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	if !st.Mode().IsRegular() {
+		return storage.CopyResult{}, fmt.Errorf("backup write source must be a regular file")
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", err)
+	}
+	n, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(dest)
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", copyErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(dest)
+		return storage.CopyResult{}, fmt.Errorf("backup write: %w", closeErr)
+	}
+	return storage.CopyResult{Dest: dest, Size: n, Format: "json"}, nil
 }
 
 func checksumFile(path string) (string, int64, error) {
