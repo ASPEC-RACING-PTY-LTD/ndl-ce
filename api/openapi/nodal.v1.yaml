@@ -3438,6 +3438,82 @@ paths:
           description: Unauthenticated
         "403":
           description: Forbidden
+  /backups/policies/{id}:
+    patch:
+      operationId: updateBackupPolicy
+      summary: Update a backup policy name, target, retention, or workload scope
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBackupPolicyRequest"
+      responses:
+        "200":
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupPolicy"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Policy not found
+    delete:
+      operationId: deleteBackupPolicy
+      summary: Delete a backup policy. Catalogued artifacts are kept.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Policy deleted
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Policy not found
+  /backups/policies/{id}/run:
+    post:
+      operationId: runBackupPolicy
+      summary: Run a backup policy against its current scope
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Backup runs accepted for each in-scope workload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRunListResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Policy not found
+        "422":
+          description: No eligible workloads in policy scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /backups/runs:
     get:
       operationId: listBackupRuns
@@ -7810,8 +7886,9 @@ components:
       required:
         - id
         - name
-        - workload_id
         - target_id
+        - scope
+        - workload_ids
         - schedule
         - keep_daily
         - keep_weekly
@@ -7821,8 +7898,20 @@ components:
           type: string
         name:
           type: string
+        scope:
+          type: string
+          enum:
+            - all
+            - selected
+          description: all covers the current eligible fleet, including future workloads. selected uses workload_ids.
         workload_id:
           type: string
+          description: Legacy single-workload id. Omitted for All workloads. For selected, the first workload_ids entry.
+        workload_ids:
+          type: array
+          items:
+            type: string
+          description: Selected workload ids. Empty when scope is all.
         target_id:
           type: string
         schedule:
@@ -7852,7 +7941,6 @@ components:
       additionalProperties: false
       required:
         - name
-        - workload_id
         - target_id
         - schedule
         - keep_daily
@@ -7861,8 +7949,19 @@ components:
       properties:
         name:
           type: string
+        scope:
+          type: string
+          enum:
+            - all
+            - selected
+          description: Defaults to all when omitted and no workload_id or workload_ids are sent. Legacy clients that send workload_id stay selected.
         workload_id:
           type: string
+          description: Legacy single-workload selector. Treated as selected scope.
+        workload_ids:
+          type: array
+          items:
+            type: string
         target_id:
           type: string
         schedule:

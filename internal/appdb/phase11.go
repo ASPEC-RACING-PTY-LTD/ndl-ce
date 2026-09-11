@@ -26,6 +26,8 @@ const (
 	BackupNightly          = "nightly"
 	BackupUnverified       = "unverified"
 	BackupVerified         = "verified"
+	BackupScopeAll         = "all"
+	BackupScopeSelected    = "selected"
 	ArtifactLocalityLocal  = "local"
 	ArtifactLocalityObject = "object"
 	ArtifactLocalityPull   = "pull"
@@ -49,12 +51,14 @@ type BackupTarget struct {
 	UpdatedAt     time.Time
 }
 
-// BackupPolicy is a scheduled backup of one workload to one target.
+// BackupPolicy is a scheduled backup of a workload scope to one target.
 type BackupPolicy struct {
 	ID          string
 	ClusterID   string
 	Name        string
+	Scope       string
 	WorkloadID  string
+	WorkloadIDs []string
 	TargetID    string
 	Schedule    string
 	KeepDaily   int
@@ -62,6 +66,31 @@ type BackupPolicy struct {
 	KeepMonthly int
 	LastRunAt   *time.Time
 	CreatedAt   time.Time
+}
+
+// NormalizeBackupPolicy fills scope from legacy single-workload rows.
+func NormalizeBackupPolicy(p *BackupPolicy) {
+	if p == nil {
+		return
+	}
+	if p.Scope != BackupScopeAll && p.Scope != BackupScopeSelected {
+		if p.WorkloadID != "" || len(p.WorkloadIDs) > 0 {
+			p.Scope = BackupScopeSelected
+		} else {
+			p.Scope = BackupScopeAll
+		}
+	}
+	if p.Scope == BackupScopeAll {
+		p.WorkloadID = ""
+		p.WorkloadIDs = nil
+		return
+	}
+	if len(p.WorkloadIDs) == 0 && p.WorkloadID != "" {
+		p.WorkloadIDs = []string{p.WorkloadID}
+	}
+	if p.WorkloadID == "" && len(p.WorkloadIDs) > 0 {
+		p.WorkloadID = p.WorkloadIDs[0]
+	}
 }
 
 // BackupRun is an honest backup or restore job.
@@ -191,6 +220,14 @@ func (m *Memory) BackupCredentials(_ context.Context, clusterID, id string) (str
 	return pair[0], pair[1], nil
 }
 
+func copyBackupPolicy(p BackupPolicy) BackupPolicy {
+	NormalizeBackupPolicy(&p)
+	if len(p.WorkloadIDs) > 0 {
+		p.WorkloadIDs = append([]string(nil), p.WorkloadIDs...)
+	}
+	return p
+}
+
 func (m *Memory) CreateBackupPolicy(_ context.Context, p BackupPolicy) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -200,7 +237,7 @@ func (m *Memory) CreateBackupPolicy(_ context.Context, p BackupPolicy) error {
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = time.Now().UTC()
 	}
-	m.backupPolicies[p.ID] = p
+	m.backupPolicies[p.ID] = copyBackupPolicy(p)
 	return nil
 }
 
@@ -210,7 +247,7 @@ func (m *Memory) ListBackupPolicies(_ context.Context, clusterID string) ([]Back
 	var out []BackupPolicy
 	for _, p := range m.backupPolicies {
 		if p.ClusterID == clusterID {
-			out = append(out, p)
+			out = append(out, copyBackupPolicy(p))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
@@ -224,8 +261,32 @@ func (m *Memory) GetBackupPolicy(_ context.Context, clusterID, id string) (*Back
 	if !ok || p.ClusterID != clusterID {
 		return nil, nil
 	}
-	cp := p
+	cp := copyBackupPolicy(p)
 	return &cp, nil
+}
+
+func (m *Memory) UpdateBackupPolicy(_ context.Context, p BackupPolicy) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	existing, ok := m.backupPolicies[p.ID]
+	if !ok || existing.ClusterID != p.ClusterID {
+		return fmt.Errorf("backup policy not found")
+	}
+	p.CreatedAt = existing.CreatedAt
+	p.LastRunAt = existing.LastRunAt
+	m.backupPolicies[p.ID] = copyBackupPolicy(p)
+	return nil
+}
+
+func (m *Memory) DeleteBackupPolicy(_ context.Context, clusterID, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.backupPolicies[id]
+	if !ok || p.ClusterID != clusterID {
+		return fmt.Errorf("backup policy not found")
+	}
+	delete(m.backupPolicies, id)
+	return nil
 }
 
 func (m *Memory) UpdateBackupPolicyLastRun(_ context.Context, clusterID, id string, at time.Time) error {

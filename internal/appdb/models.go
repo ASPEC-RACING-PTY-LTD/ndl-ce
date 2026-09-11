@@ -178,6 +178,8 @@ type Store interface {
 	CreateBackupPolicy(ctx context.Context, p BackupPolicy) error
 	ListBackupPolicies(ctx context.Context, clusterID string) ([]BackupPolicy, error)
 	GetBackupPolicy(ctx context.Context, clusterID, id string) (*BackupPolicy, error)
+	UpdateBackupPolicy(ctx context.Context, p BackupPolicy) error
+	DeleteBackupPolicy(ctx context.Context, clusterID, id string) error
 	UpdateBackupPolicyLastRun(ctx context.Context, clusterID, id string, at time.Time) error
 
 	CreateBackupRun(ctx context.Context, r BackupRun) error

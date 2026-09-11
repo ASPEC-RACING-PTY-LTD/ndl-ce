@@ -3,6 +3,13 @@
 Snapshots are not backups. A snapshot is a point-in-time restore on the
 same pool. A backup copies data to a destination.
 
+## Policies
+
+A policy is the operational object. Scope is `all` (the current eligible
+fleet, including workloads created later) or `selected` (an explicit
+workload list). All is the default. One policy can cover many workloads.
+Run now executes the policy against its current scope.
+
 ## Snapshots
 
 Create snapshots from a workload Snapshots tab or `nodalctl`. Rollback

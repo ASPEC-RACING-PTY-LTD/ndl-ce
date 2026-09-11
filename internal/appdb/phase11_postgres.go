@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -103,16 +104,32 @@ func (p *Postgres) CreateBackupPolicy(ctx context.Context, pol BackupPolicy) err
 	if pol.CreatedAt.IsZero() {
 		pol.CreatedAt = time.Now().UTC()
 	}
-	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_policies (id, cluster_id, name, workload_id, target_id, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		pol.ID, pol.ClusterID, pol.Name, pol.WorkloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt)
-	return err
+	NormalizeBackupPolicy(&pol)
+	tx, err := p.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var workloadID any
+	if pol.WorkloadID != "" {
+		workloadID = pol.WorkloadID
+	}
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO backup_policies (id, cluster_id, name, workload_id, target_id, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, scope)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		pol.ID, pol.ClusterID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt, pol.Scope)
+	if err != nil {
+		return err
+	}
+	if err := replaceBackupPolicyWorkloadsTx(ctx, tx, pol.ID, pol.WorkloadIDs); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (p *Postgres) ListBackupPolicies(ctx context.Context, clusterID string) ([]BackupPolicy, error) {
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, name, workload_id::text, target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected')
 FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -126,12 +143,23 @@ FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 		}
 		out = append(out, pol)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		ids, err := p.listBackupPolicyWorkloads(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].WorkloadIDs = ids
+		NormalizeBackupPolicy(&out[i])
+	}
+	return out, nil
 }
 
 func (p *Postgres) GetBackupPolicy(ctx context.Context, clusterID, id string) (*BackupPolicy, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, name, workload_id::text, target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected')
 FROM backup_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	pol, err := scanBackupPolicy(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -140,7 +168,53 @@ FROM backup_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	if err != nil {
 		return nil, err
 	}
+	ids, err := p.listBackupPolicyWorkloads(ctx, pol.ID)
+	if err != nil {
+		return nil, err
+	}
+	pol.WorkloadIDs = ids
+	NormalizeBackupPolicy(&pol)
 	return &pol, nil
+}
+
+func (p *Postgres) UpdateBackupPolicy(ctx context.Context, pol BackupPolicy) error {
+	NormalizeBackupPolicy(&pol)
+	tx, err := p.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var workloadID any
+	if pol.WorkloadID != "" {
+		workloadID = pol.WorkloadID
+	}
+	res, err := tx.ExecContext(ctx, `
+UPDATE backup_policies SET name=$3, workload_id=$4, target_id=$5, schedule=$6, keep_daily=$7, keep_weekly=$8, keep_monthly=$9, scope=$10
+WHERE cluster_id=$1 AND id=$2`,
+		pol.ClusterID, pol.ID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.Scope)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	if err := replaceBackupPolicyWorkloadsTx(ctx, tx, pol.ID, pol.WorkloadIDs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (p *Postgres) DeleteBackupPolicy(ctx context.Context, clusterID, id string) error {
+	res, err := p.DB.ExecContext(ctx, `DELETE FROM backup_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (p *Postgres) UpdateBackupPolicyLastRun(ctx context.Context, clusterID, id string, at time.Time) error {
@@ -365,12 +439,45 @@ func scanBackupTarget(row rowScanner) (BackupTarget, error) {
 func scanBackupPolicy(row rowScanner) (BackupPolicy, error) {
 	var pol BackupPolicy
 	var last sql.NullTime
-	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt)
+	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt, &pol.Scope)
 	if last.Valid {
 		t := last.Time
 		pol.LastRunAt = &t
 	}
 	return pol, err
+}
+
+func (p *Postgres) listBackupPolicyWorkloads(ctx context.Context, policyID string) ([]string, error) {
+	rows, err := p.DB.QueryContext(ctx, `SELECT workload_id::text FROM backup_policy_workloads WHERE policy_id=$1 ORDER BY workload_id`, policyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func replaceBackupPolicyWorkloadsTx(ctx context.Context, tx *sql.Tx, policyID string, ids []string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM backup_policy_workloads WHERE policy_id=$1`, policyID); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO backup_policy_workloads (policy_id, workload_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, policyID, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func scanBackupRun(row rowScanner) (BackupRun, error) {

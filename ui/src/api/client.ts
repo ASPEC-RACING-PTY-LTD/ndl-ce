@@ -1458,6 +1458,35 @@ export async function createBackupPolicy(
   );
 }
 
+export async function updateBackupPolicy(
+  id: string,
+  body: import("../generated/openapi").CreateBackupPolicyRequest,
+): Promise<import("../generated/openapi").BackupPolicy> {
+  return readJson(
+    await request(`/backups/policies/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function deleteBackupPolicy(id: string): Promise<void> {
+  const res = await request(`/backups/policies/${id}`, { method: "DELETE" });
+  if (res.status === 204) {
+    return;
+  }
+  throw new ApiError(res.status, await readErrorMessage(res));
+}
+
+export async function runBackupPolicy(id: string): Promise<import("../generated/openapi").BackupRunListResponse> {
+  return readJson(
+    await request(`/backups/policies/${id}/run`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function listBackupRuns(): Promise<import("../generated/openapi").BackupRunListResponse> {
   return readJson(await request("/backups/runs"));
 }

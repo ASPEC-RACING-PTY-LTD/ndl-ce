@@ -83,9 +83,18 @@ func backupTargetJSON(t appdb.BackupTarget) map[string]any {
 }
 
 func backupPolicyJSON(p appdb.BackupPolicy) map[string]any {
+	appdb.NormalizeBackupPolicy(&p)
+	ids := p.WorkloadIDs
+	if ids == nil {
+		ids = []string{}
+	}
 	out := map[string]any{
-		"id": p.ID, "name": p.Name, "workload_id": p.WorkloadID, "target_id": p.TargetID,
+		"id": p.ID, "name": p.Name, "target_id": p.TargetID,
+		"scope": p.Scope, "workload_ids": ids,
 		"schedule": p.Schedule, "keep_daily": p.KeepDaily, "keep_weekly": p.KeepWeekly, "keep_monthly": p.KeepMonthly,
+	}
+	if p.WorkloadID != "" {
+		out["workload_id"] = p.WorkloadID
 	}
 	if p.LastRunAt != nil {
 		out["last_run_at"] = p.LastRunAt.UTC().Format("2006-01-02T15:04:05Z")
@@ -370,49 +379,10 @@ func (s *Server) createBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	var req struct {
-		Name        string `json:"name"`
-		WorkloadID  string `json:"workload_id"`
-		TargetID    string `json:"target_id"`
-		Schedule    string `json:"schedule"`
-		KeepDaily   int    `json:"keep_daily"`
-		KeepWeekly  int    `json:"keep_weekly"`
-		KeepMonthly int    `json:"keep_monthly"`
-	}
-	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" || req.WorkloadID == "" || req.TargetID == "" {
-		writeErr(w, http.StatusBadRequest, "name, workload_id, and target_id are required")
+	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, "")
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
 		return
-	}
-	if req.Schedule == "" {
-		req.Schedule = appdb.BackupNightly
-	}
-	if req.Schedule != appdb.BackupNightly {
-		writeErr(w, http.StatusBadRequest, "schedule must be nightly")
-		return
-	}
-	wl, err := s.Store.GetWorkload(r.Context(), p.User.ClusterID, req.WorkloadID)
-	if err != nil || wl == nil {
-		writeErr(w, http.StatusNotFound, "workload not found")
-		return
-	}
-	tgt, err := s.Store.GetBackupTarget(r.Context(), p.User.ClusterID, req.TargetID)
-	if err != nil || tgt == nil {
-		writeErr(w, http.StatusNotFound, "backup target not found")
-		return
-	}
-	_ = wl
-	_ = tgt
-	if req.KeepDaily < 0 || req.KeepWeekly < 0 || req.KeepMonthly < 0 {
-		writeErr(w, http.StatusBadRequest, "retention counts cannot be negative")
-		return
-	}
-	if req.KeepDaily == 0 && req.KeepWeekly == 0 && req.KeepMonthly == 0 {
-		req.KeepDaily, req.KeepWeekly, req.KeepMonthly = 7, 4, 3
-	}
-	row := appdb.BackupPolicy{
-		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: strings.TrimSpace(req.Name),
-		WorkloadID: req.WorkloadID, TargetID: req.TargetID, Schedule: req.Schedule,
-		KeepDaily: req.KeepDaily, KeepWeekly: req.KeepWeekly, KeepMonthly: req.KeepMonthly,
 	}
 	if err := s.Store.CreateBackupPolicy(r.Context(), row); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -420,6 +390,142 @@ func (s *Server) createBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "backup.policy.create", "ok", row.ID)
 	writeJSON(w, http.StatusCreated, backupPolicyJSON(row))
+}
+
+func (s *Server) updateBackupPolicy(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.BackupCreate)
+	if err != nil {
+		return
+	}
+	existing, err := s.Store.GetBackupPolicy(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil || existing == nil {
+		writeErr(w, http.StatusNotFound, "backup policy not found")
+		return
+	}
+	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, existing.ID)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	row.CreatedAt = existing.CreatedAt
+	row.LastRunAt = existing.LastRunAt
+	if err := s.Store.UpdateBackupPolicy(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "backup.policy.update", "ok", row.ID)
+	writeJSON(w, http.StatusOK, backupPolicyJSON(row))
+}
+
+func (s *Server) deleteBackupPolicy(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.BackupCreate)
+	if err != nil {
+		return
+	}
+	id := r.PathValue("id")
+	existing, err := s.Store.GetBackupPolicy(r.Context(), p.User.ClusterID, id)
+	if err != nil || existing == nil {
+		writeErr(w, http.StatusNotFound, "backup policy not found")
+		return
+	}
+	if err := s.Store.DeleteBackupPolicy(r.Context(), p.User.ClusterID, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "backup.policy.delete", "ok", id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type backupPolicyBody struct {
+	Name        string   `json:"name"`
+	Scope       string   `json:"scope"`
+	WorkloadID  string   `json:"workload_id"`
+	WorkloadIDs []string `json:"workload_ids"`
+	TargetID    string   `json:"target_id"`
+	Schedule    string   `json:"schedule"`
+	KeepDaily   int      `json:"keep_daily"`
+	KeepWeekly  int      `json:"keep_weekly"`
+	KeepMonthly int      `json:"keep_monthly"`
+}
+
+func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID string) (appdb.BackupPolicy, error) {
+	var req backupPolicyBody
+	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" || req.TargetID == "" {
+		return appdb.BackupPolicy{}, errBadRequest("name and target_id are required")
+	}
+	scope := strings.ToLower(strings.TrimSpace(req.Scope))
+	ids := uniqueTrimmed(req.WorkloadIDs)
+	if req.WorkloadID != "" {
+		ids = uniqueTrimmed(append(ids, req.WorkloadID))
+	}
+	switch scope {
+	case "":
+		if len(ids) > 0 {
+			scope = appdb.BackupScopeSelected
+		} else {
+			scope = appdb.BackupScopeAll
+		}
+	case appdb.BackupScopeAll, appdb.BackupScopeSelected:
+	default:
+		return appdb.BackupPolicy{}, errBadRequest("scope must be all or selected")
+	}
+	if req.Schedule == "" {
+		req.Schedule = appdb.BackupNightly
+	}
+	if req.Schedule != appdb.BackupNightly {
+		return appdb.BackupPolicy{}, errBadRequest("schedule must be nightly")
+	}
+	tgt, err := s.Store.GetBackupTarget(r.Context(), clusterID, req.TargetID)
+	if err != nil || tgt == nil {
+		return appdb.BackupPolicy{}, errNotFound("backup target not found")
+	}
+	_ = tgt
+	if req.KeepDaily < 0 || req.KeepWeekly < 0 || req.KeepMonthly < 0 {
+		return appdb.BackupPolicy{}, errBadRequest("retention counts cannot be negative")
+	}
+	if req.KeepDaily == 0 && req.KeepWeekly == 0 && req.KeepMonthly == 0 {
+		req.KeepDaily, req.KeepWeekly, req.KeepMonthly = 7, 4, 3
+	}
+	row := appdb.BackupPolicy{
+		ID: existingID, ClusterID: clusterID, Name: strings.TrimSpace(req.Name),
+		Scope: scope, TargetID: req.TargetID, Schedule: req.Schedule,
+		KeepDaily: req.KeepDaily, KeepWeekly: req.KeepWeekly, KeepMonthly: req.KeepMonthly,
+	}
+	if existingID == "" {
+		row.ID = uuid.NewString()
+	}
+	if scope == appdb.BackupScopeSelected {
+		if len(ids) == 0 {
+			return appdb.BackupPolicy{}, errBadRequest("selected scope requires at least one workload")
+		}
+		for _, id := range ids {
+			wl, err := s.Store.GetWorkload(r.Context(), clusterID, id)
+			if err != nil || wl == nil {
+				return appdb.BackupPolicy{}, errNotFound("workload not found")
+			}
+		}
+		row.WorkloadIDs = ids
+		row.WorkloadID = ids[0]
+	}
+	appdb.NormalizeBackupPolicy(&row)
+	return row, nil
+}
+
+func uniqueTrimmed(in []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 func (s *Server) listBackupRuns(w http.ResponseWriter, r *http.Request) {
@@ -466,7 +572,15 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 		TargetID   string `json:"target_id"`
 		PolicyID   string `json:"policy_id"`
 	}
-	if err := readJSON(r, &req); err != nil || req.WorkloadID == "" || req.TargetID == "" {
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "workload_id and target_id are required")
+		return
+	}
+	if req.PolicyID != "" && req.WorkloadID == "" && req.TargetID == "" {
+		s.writePolicyRuns(w, r, p.User.ClusterID, p.User.ID, req.PolicyID)
+		return
+	}
+	if req.WorkloadID == "" || req.TargetID == "" {
 		writeErr(w, http.StatusBadRequest, "workload_id and target_id are required")
 		return
 	}
@@ -477,6 +591,28 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "backup.run", run.Status, run.ID)
 	writeJSON(w, http.StatusAccepted, backupRunJSON(run))
+}
+
+func (s *Server) runBackupPolicy(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.BackupCreate)
+	if err != nil {
+		return
+	}
+	s.writePolicyRuns(w, r, p.User.ClusterID, p.User.ID, r.PathValue("id"))
+}
+
+func (s *Server) writePolicyRuns(w http.ResponseWriter, r *http.Request, clusterID, userID, policyID string) {
+	items, err := s.executePolicyBackups(r.Context(), clusterID, policyID)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, run := range items {
+		out = append(out, backupRunJSON(run))
+		s.audit(r, clusterID, userID, "backup.run", run.Status, run.ID)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"items": out})
 }
 
 func refuseBackupExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appdb.WorkloadDisk) error {
@@ -491,6 +627,83 @@ func refuseBackupExtraDataDisks(spec vmspec.Spec, bootVolID string, disks []appd
 		}
 	}
 	return nil
+}
+
+func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID string) ([]appdb.BackupRun, error) {
+	pol, err := s.Store.GetBackupPolicy(ctx, clusterID, policyID)
+	if err != nil || pol == nil {
+		return nil, errNotFound("backup policy not found")
+	}
+	ids, err := s.policyWorkloadIDs(ctx, clusterID, *pol)
+	if err != nil {
+		return nil, err
+	}
+	var runs []appdb.BackupRun
+	var lastErr error
+	for _, workloadID := range ids {
+		wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
+		if err != nil || wl == nil {
+			lastErr = errNotFound("workload not found")
+			continue
+		}
+		if pol.Scope == appdb.BackupScopeAll && !s.backupEligible(ctx, clusterID, *wl) {
+			continue
+		}
+		run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		runs = append(runs, run)
+	}
+	if len(runs) == 0 {
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, errUnprocessable("no eligible workloads in policy scope")
+	}
+	return runs, nil
+}
+
+func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol appdb.BackupPolicy) ([]string, error) {
+	appdb.NormalizeBackupPolicy(&pol)
+	if pol.Scope == appdb.BackupScopeAll {
+		items, err := s.Store.ListWorkloads(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]string, 0, len(items))
+		for _, wl := range items {
+			ids = append(ids, wl.ID)
+		}
+		return ids, nil
+	}
+	ids := uniqueTrimmed(pol.WorkloadIDs)
+	if len(ids) == 0 && pol.WorkloadID != "" {
+		ids = []string{pol.WorkloadID}
+	}
+	return ids, nil
+}
+
+func (s *Server) backupEligible(ctx context.Context, clusterID string, wl appdb.Workload) bool {
+	vol, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, wl)
+	spec, _ := vmspec.Parse(wl.SpecJSON)
+	disks, _ := s.Store.ListWorkloadDisks(ctx, clusterID, wl.ID)
+	bootID := migrateBootVolumeID(spec, disks)
+	if locErr == nil && vol != nil {
+		bootID = vol.ID
+	}
+	if refuseBackupExtraDataDisks(spec, bootID, disks) != nil {
+		return false
+	}
+	native := locErr == nil && pool != nil && (pool.BackendType == storage.BackendZFS || pool.BackendType == storage.BackendLVM)
+	if locErr == nil && pool != nil && (pool.BackendType == storage.BackendISCSI || pool.BackendType == storage.BackendDistributed) {
+		return false
+	}
+	if !native && (wl.Kind == lxc.KindSystemContainer || wl.Kind != vmspec.KindVM) {
+		return false
+	}
+	return true
 }
 
 // TickNightlyBackups runs due nightly policies. It does not fake NFS or SMB success.
@@ -526,7 +739,7 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 		if busy {
 			continue
 		}
-		_, _ = s.executeBackup(ctx, cluster.ID, pol.WorkloadID, pol.TargetID, pol.ID)
+		_, _ = s.executePolicyBackups(ctx, cluster.ID, pol.ID)
 	}
 }
 

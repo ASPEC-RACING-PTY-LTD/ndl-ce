@@ -271,6 +271,17 @@ code {
   font-size: 0.75rem;
 }
 
+fieldset.field {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+fieldset.field legend.field-label {
+  padding: 0;
+}
+
 .field-input {
   width: 100%;
   min-height: var(--control-h);
@@ -1014,8 +1025,109 @@ code {
 
 .card-grid {
   display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 26rem));
+  align-items: stretch;
+  justify-content: start;
+}
+
+.card-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.card-grid-wide {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 34rem));
+}
+
+.dashboard-card {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-card h2,
+.dashboard-card h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.card-meta {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.card-meta > div {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.card-meta dt {
+  color: var(--fg-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.card-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.empty-card {
+  padding: var(--space-3);
+}
+
+.section-block {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.section-block h2 {
+  margin: 0;
+}
+
+.table-card .table-wrap {
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.picker-list {
+  max-height: 14rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  display: grid;
+  gap: 0.2rem;
+  background: var(--bg-canvas);
+}
+
+.scope-options {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.kind-chip {
+  color: var(--fg-secondary);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.status-pill {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
 }
 
 .meter-grid {
@@ -1881,6 +1993,8 @@ body > .term-hold[aria-hidden="true"] {
 
 .dialog-panel {
   width: min(28rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
   margin: auto;
   padding: var(--space-4);
   background: var(--bg-surface);

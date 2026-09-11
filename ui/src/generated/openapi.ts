@@ -25,11 +25,11 @@ export interface LoginRequest {
 export interface MeResponse {
   user_id: string;
   username: string;
-  display_name?: string;
   roles: string[];
-  grants?: string[];
   edition: string;
   cluster_id?: string;
+  grants?: string[];
+  display_name?: string;
   aal?: number;
   mfa_enabled?: boolean;
   mfa_enforced?: boolean;
@@ -1402,7 +1402,9 @@ export interface CreateBackupTargetRequest {
 export interface BackupPolicy {
   id: string;
   name: string;
-  workload_id: string;
+  scope: "all" | "selected";
+  workload_id?: string;
+  workload_ids: string[];
   target_id: string;
   schedule: "nightly";
   keep_daily: number;
@@ -1417,7 +1419,9 @@ export interface BackupPolicyListResponse {
 
 export interface CreateBackupPolicyRequest {
   name: string;
-  workload_id: string;
+  scope?: "all" | "selected";
+  workload_id?: string;
+  workload_ids?: string[];
   target_id: string;
   schedule: "nightly";
   keep_daily: number;
@@ -2239,6 +2243,20 @@ export type LogoutPath = "/api/v1/auth/logout";
 
 export type GetMePath = "/api/v1/me";
 
+export type ListUsersPath = "/api/v1/users";
+
+export type GetUserPath = "/api/v1/users/{id}";
+
+export type ResetUserPasswordPath = "/api/v1/users/{id}/password";
+
+export type RevokeUserSessionsPath = "/api/v1/users/{id}/sessions/revoke";
+
+export type RevokeUserTokensPath = "/api/v1/users/{id}/tokens/revoke";
+
+export type ListRolesPath = "/api/v1/roles";
+
+export type GetSecuritySettingsPath = "/api/v1/settings/security";
+
 export type ListTokensPath = "/api/v1/tokens";
 
 export type RevokeTokenPath = "/api/v1/tokens/revoke";
@@ -2548,6 +2566,10 @@ export type RollbackSnapshotPath = "/api/v1/snapshots/{id}/rollback";
 export type ListBackupTargetsPath = "/api/v1/backups/targets";
 
 export type ListBackupPoliciesPath = "/api/v1/backups/policies";
+
+export type UpdateBackupPolicyPath = "/api/v1/backups/policies/{id}";
+
+export type RunBackupPolicyPath = "/api/v1/backups/policies/{id}/run";
 
 export type ListBackupRunsPath = "/api/v1/backups/runs";
 

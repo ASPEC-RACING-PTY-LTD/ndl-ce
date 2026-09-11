@@ -1161,9 +1161,12 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /^backups$/i })).toBeVisible();
     expect(screen.getByText(/backups are independent copies\. snapshots are not backups\./i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^run backup$/i })).not.toBeInTheDocument();
     expect(await screen.findByText(/^Running$/)).toBeVisible();
+    expect(screen.getByText(/no backup policies yet/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^restore or verify$/i }));
     expect(
-      screen.getByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
+      await screen.findByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
     ).toBeVisible();
     expect(screen.getByLabelText(/^restore dest node$/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^export dr metadata$/i })).toBeVisible();
@@ -1173,6 +1176,12 @@ describe("App", () => {
     expect(screen.getByText(/^Unverified$/)).toBeVisible();
     expect(screen.getAllByText("local-disk").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
+    const policyDialog = await screen.findByRole("dialog", { name: /create backup policy/i });
+    expect(within(policyDialog).getByLabelText(/^all workloads$/i)).toBeChecked();
+    const scopeRadios = within(policyDialog).getAllByRole("radio");
+    expect(scopeRadios[0]).toHaveAccessibleName(/all workloads/i);
+    expect(within(policyDialog).queryByLabelText(/^search workloads$/i)).not.toBeInTheDocument();
   });
 
   it("renders R2 object target fields and last-run transferred bytes", async () => {
@@ -1240,18 +1249,20 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^backups$/i })).toBeVisible();
-    expect(await screen.findByText("r2-offsite")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "r2-offsite" })).toBeVisible();
     expect(screen.getByText("ndl-backups")).toBeVisible();
     expect(screen.getByText("Client-side")).toBeVisible();
     expect(screen.getByText("Yes")).toBeVisible();
-    fireEvent.change(screen.getByLabelText(/^kind$/i), { target: { value: "r2" } });
-    expect(screen.getByLabelText(/^endpoint$/i)).toBeVisible();
-    expect(screen.getByLabelText(/^bucket$/i)).toBeVisible();
-    expect(screen.getByLabelText(/^access key id$/i)).toBeVisible();
-    expect(screen.getByLabelText(/^secret access key$/i)).toBeVisible();
-    expect(screen.getByLabelText(/skip bucket probe/i)).toBeVisible();
-    expect(screen.queryByLabelText(/^locator$/i)).not.toBeInTheDocument();
-    expect(screen.getAllByRole("option", { name: /r2-offsite \(not configured\)/i }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: /^add target$/i })[0]);
+    const targetDialog = await screen.findByRole("dialog", { name: /add backup target/i });
+    fireEvent.change(within(targetDialog).getByLabelText(/^kind$/i), { target: { value: "r2" } });
+    expect(within(targetDialog).getByLabelText(/^endpoint$/i)).toBeVisible();
+    expect(within(targetDialog).getByLabelText(/^bucket$/i)).toBeVisible();
+    expect(within(targetDialog).getByLabelText(/^access key id$/i)).toBeVisible();
+    expect(within(targetDialog).getByLabelText(/^secret access key$/i)).toBeVisible();
+    expect(within(targetDialog).getByLabelText(/skip bucket probe/i)).toBeVisible();
+    expect(within(targetDialog).queryByLabelText(/^locator$/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/not configured/i).length).toBeGreaterThan(0);
   });
 
   it("renders MFA, groups, and audit pages from the shell", async () => {

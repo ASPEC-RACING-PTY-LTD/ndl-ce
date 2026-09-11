@@ -1404,3 +1404,148 @@ func TestRestoreNewFailsClosedWhenNICPersistFails(t *testing.T) {
 		t.Fatalf("nic persist body %s", raw)
 	}
 }
+
+func TestBackupPolicyAllScopeDefaultAndSelectedMulti(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/vm-disk/boot.qcow2",
+		Kind: storage.KindBlock, Class: storage.ClassVMDisk, Format: storage.FormatQCOW2,
+	}}}
+	s.VM = &fakeVM{}
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	createVM := func(name string) string {
+		t.Helper()
+		body := `{"name":"` + name + `","kind":"vm","pool_id":"` + poolID + `","network_id":"` + netID + `"}`
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var vm map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&vm)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("vm %s %d", name, res.StatusCode)
+		}
+		return vm["id"].(string)
+	}
+	a := createVM("policy-a")
+	b := createVM("policy-b")
+	dir := t.TempDir()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var tgt map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&tgt)
+	_ = res.Body.Close()
+	targetID := tgt["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"fleet","target_id":"`+targetID+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var allPol map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&allPol)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("all policy %d", res.StatusCode)
+	}
+	if allPol["scope"] != "all" {
+		t.Fatalf("default scope %+v", allPol["scope"])
+	}
+	if _, ok := allPol["workload_id"]; ok {
+		t.Fatalf("all policy must not encode a fake workload id %+v", allPol)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"subset","scope":"selected","workload_ids":["`+a+`","`+b+`"],"target_id":"`+targetID+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("selected policy %d %s", res.StatusCode, raw)
+	}
+	var sel map[string]any
+	if err := json.Unmarshal(raw, &sel); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := sel["workload_ids"].([]any)
+	if sel["scope"] != "selected" || len(ids) != 2 {
+		t.Fatalf("selected %+v", sel)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+sel["id"].(string)+"/run", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var runOut map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&runOut)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("run selected %d", res.StatusCode)
+	}
+	items, _ := runOut["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("selected run items %+v", runOut)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+allPol["id"].(string)+"/run", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = json.NewDecoder(res.Body).Decode(&runOut)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("run all %d", res.StatusCode)
+	}
+	items, _ = runOut["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("all run should cover both VMs %+v", runOut)
+	}
+
+	c := createVM("policy-c")
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+allPol["id"].(string)+"/run", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = json.NewDecoder(res.Body).Decode(&runOut)
+	_ = res.Body.Close()
+	items, _ = runOut["items"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("all scope must include future workload %s items=%d", c, len(items))
+	}
+
+	req, _ = http.NewRequest("PATCH", ts.URL+"/api/v1/backups/policies/"+sel["id"].(string), strings.NewReader(`{"name":"subset-renamed","scope":"selected","workload_ids":["`+a+`"],"target_id":"`+targetID+`","schedule":"nightly","keep_daily":2,"keep_weekly":0,"keep_monthly":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var patched map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&patched)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || patched["name"] != "subset-renamed" {
+		t.Fatalf("patch %+v %d", patched, res.StatusCode)
+	}
+
+	req, _ = http.NewRequest("DELETE", ts.URL+"/api/v1/backups/policies/"+sel["id"].(string), nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %d", res.StatusCode)
+	}
+	got, _ := mem.GetBackupPolicy(context.Background(), cluster.ID, sel["id"].(string))
+	if got != nil {
+		t.Fatalf("deleted policy still present")
+	}
+}

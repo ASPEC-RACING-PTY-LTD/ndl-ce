@@ -341,8 +341,9 @@ export function StoragePage() {
           {error}
         </p>
       ) : null}
+      <div className="card-grid">
       {firstRun || mutate ? (
-        <article className="panel">
+        <article className="panel dashboard-card">
           <h2>{firstRun ? "First-run storage pool" : "Create Directory pool"}</h2>
           {firstRun ? (
             <p className="lede">
@@ -381,7 +382,7 @@ export function StoragePage() {
         </article>
       ) : null}
       {mutate ? (
-        <article className="panel">
+        <article className="panel dashboard-card">
           <h2>ZFS</h2>
           <p className="lede">
             Import by pool GUID or create on extra disks. The host root disk is refused. Incremental
@@ -438,7 +439,7 @@ export function StoragePage() {
         </article>
       ) : null}
       {mutate ? (
-        <article className="panel">
+        <article className="panel dashboard-card">
           <h2>LVM-thin</h2>
           <p className="lede">
             Create a volume group and thin pool on extra disks. The host root disk is refused.
@@ -477,7 +478,7 @@ export function StoragePage() {
         </article>
       ) : null}
       {mutate ? (
-        <article className="panel">
+        <article className="panel dashboard-card">
           <h2>Network storage</h2>
           <p className="lede">
             NFS and SMB are compute and library mounts. iSCSI is a raw LUN for one VM disk. If the
@@ -571,7 +572,7 @@ export function StoragePage() {
         </article>
       ) : null}
       {mutate ? (
-        <article className="panel">
+        <article className="panel dashboard-card">
           <h2>Distributed storage</h2>
           <p className="lede">
             Attach an external Ceph cluster and use an RBD as a VM disk. Enabling the feature does not start
@@ -639,7 +640,8 @@ export function StoragePage() {
           </form>
         </article>
       ) : null}
-      <article className="panel">
+      </div>
+      <article className="panel table-card">
         <h2>Pools</h2>
         {pools.length === 0 ? (
           <p>No storage pools.</p>

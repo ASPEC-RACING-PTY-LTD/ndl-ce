@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 
 export function ConfirmDialog({
   open,
@@ -24,6 +24,7 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     const node = ref.current;
@@ -50,7 +51,7 @@ export function ConfirmDialog({
     <dialog
       ref={ref}
       className="dialog-backdrop"
-      aria-labelledby="confirm-title"
+      aria-labelledby={titleId}
       onClose={onClose}
       onClick={(event) => {
         if (event.target === ref.current) {
@@ -66,7 +67,7 @@ export function ConfirmDialog({
           onConfirm();
         }}
       >
-        <h2 id="confirm-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         {children}
         {hideFooter ? null : (
           <div className="btn-row">
