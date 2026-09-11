@@ -125,6 +125,9 @@ func (e *Engine) ReconcileRuntimeConfigs() {
 		pid, _, err := e.lxcInfo(context.Background(), id)
 		if err == nil && pid > 0 {
 			_ = e.bootstrapGuest(context.Background(), id, true)
+			if applied, aerr := e.readApplied(id); aerr == nil {
+				_ = e.applyLiveCgroups(context.Background(), id, applied.Spec)
+			}
 		}
 	}
 }

@@ -238,6 +238,8 @@ type CreateVolumeRequest struct {
 	OwnerKind  string `json:"owner_kind,omitempty"`
 	JobID      string `json:"job_id,omitempty"`
 	BackendRef string `json:"backend_ref,omitempty"`
+	Live       bool   `json:"live,omitempty"`
+	ExpandFS   *bool  `json:"expand_filesystem,omitempty"`
 }
 
 // CreateVolumeResult is returned after a successful volume create.

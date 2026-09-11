@@ -476,6 +476,13 @@ message CTLifecycle {
   string clone_rootfs_path = 5;
   string clone_mac = 6;
   string clone_name = 7;
+  int32 cpus = 8;
+  int64 memory_bytes = 9;
+  string name = 10;
+  string ip_config_json = 11;
+  bool autostart = 12;
+  bool autostart_set = 13;
+  string mac = 14;
 }
 
 message WorkloadHint {

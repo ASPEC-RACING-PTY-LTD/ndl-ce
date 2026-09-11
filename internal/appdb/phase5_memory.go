@@ -173,6 +173,9 @@ func (m *Memory) UpdateWorkloadSpec(_ context.Context, w Workload) error {
 	if w.Firmware != "" {
 		cur.Firmware = w.Firmware
 	}
+	if w.Name != "" {
+		cur.Name = w.Name
+	}
 	cur.UpdatedAt = time.Now().UTC()
 	m.workloads[w.ID] = cur
 	return nil

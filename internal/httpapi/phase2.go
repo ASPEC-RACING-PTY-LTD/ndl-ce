@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -176,7 +177,7 @@ func (s *Server) nodeMetrics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, metrics.QueryResult{Status: metrics.StatusUnavailable, Series: []metrics.Series{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, filterHostMetrics(res))
 }
 
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
@@ -432,4 +433,33 @@ func parseWindow(r *http.Request) (time.Time, time.Time) {
 		}
 	}
 	return from, to
+}
+
+func filterHostMetrics(res metrics.QueryResult) metrics.QueryResult {
+	out := metrics.QueryResult{Status: res.Status, Series: make([]metrics.Series, 0, len(res.Series))}
+	for _, ser := range res.Series {
+		if strings.HasPrefix(ser.Name, metrics.WorkloadMetricPrefix) {
+			continue
+		}
+		out.Series = append(out.Series, ser)
+	}
+	return out
+}
+
+func filterWorkloadMetrics(res metrics.QueryResult, id string) metrics.QueryResult {
+	prefix := metrics.WorkloadMetricPrefix + strings.TrimSpace(id) + "."
+	out := metrics.QueryResult{Status: metrics.StatusCollecting, Series: make([]metrics.Series, 0, 3)}
+	for _, ser := range res.Series {
+		if strings.HasPrefix(ser.Name, prefix) {
+			out.Series = append(out.Series, ser)
+		}
+	}
+	if len(out.Series) == 0 {
+		for _, name := range metrics.WorkloadMetricNames(id) {
+			out.Series = append(out.Series, metrics.Series{Name: name, Status: metrics.StatusCollecting, Unit: "", Points: nil})
+		}
+		return out
+	}
+	out.Status = res.Status
+	return out
 }

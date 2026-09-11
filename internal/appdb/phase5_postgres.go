@@ -166,8 +166,9 @@ UPDATE workloads SET cpus=COALESCE(NULLIF($2,0), cpus),
   autostart=$7,
   pending_restart=$8,
   firmware=COALESCE(NULLIF($9,''), firmware),
+  name=COALESCE(NULLIF($10,''), name),
   updated_at=now()
-WHERE id=$1`, w.ID, w.CPUs, w.MemoryBytes, w.DesiredPower, spec, applied, w.Autostart, w.PendingRestart, w.Firmware)
+WHERE id=$1`, w.ID, w.CPUs, w.MemoryBytes, w.DesiredPower, spec, applied, w.Autostart, w.PendingRestart, w.Firmware, w.Name)
 	return err
 }
 

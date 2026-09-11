@@ -15,6 +15,7 @@ const (
 	BinUmount     = "/usr/bin/umount"
 	BinE2fsck     = "/usr/sbin/e2fsck"
 	BinResize2fs  = "/usr/sbin/resize2fs"
+	BinLosetup    = "/usr/sbin/losetup"
 	VolumeSizeExt = ".img"
 )
 
@@ -23,7 +24,7 @@ type CommandRunner func(ctx context.Context, name string, args ...string) error
 
 func allowedLimitBin(name string) bool {
 	switch name {
-	case BinMkfsExt4, BinMount, BinUmount, BinE2fsck, BinResize2fs:
+	case BinMkfsExt4, BinMount, BinUmount, BinE2fsck, BinResize2fs, BinLosetup:
 		return true
 	default:
 		return false
@@ -203,6 +204,9 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 	if req.Size < st.Size() {
 		return fmt.Errorf("shrinking a container disk is not supported")
 	}
+	if req.Live {
+		return d.growVolumeLive(ctx, abs, img, st.Size(), req)
+	}
 	d.unmountContainerRoot(ctx, abs)
 	if req.Size > st.Size() {
 		f, err := os.OpenFile(img, os.O_RDWR, 0o640)
@@ -241,6 +245,75 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 		}
 	}
 	return nil
+}
+
+func expandFilesystem(req CreateVolumeRequest) bool {
+	if req.ExpandFS == nil {
+		return true
+	}
+	return *req.ExpandFS
+}
+
+func loopDevFromMounts(target string) string {
+	target = path.Clean(target)
+	raw, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if path.Clean(fields[1]) == target && strings.HasPrefix(fields[0], "/dev/loop") {
+			return fields[0]
+		}
+	}
+	return ""
+}
+
+func LosetupRefreshArgv(dev string) ([]string, error) {
+	dev = path.Clean(dev)
+	if !strings.HasPrefix(dev, "/dev/loop") || strings.Contains(dev, "..") {
+		return nil, fmt.Errorf("loop device is invalid")
+	}
+	return []string{BinLosetup, "-c", dev}, nil
+}
+
+func (d Directory) growVolumeLive(ctx context.Context, abs, img string, current int64, req CreateVolumeRequest) error {
+	if req.Size > current {
+		f, err := os.OpenFile(img, os.O_RDWR, 0o640)
+		if err != nil {
+			return err
+		}
+		if err := f.Truncate(req.Size); err != nil {
+			_ = f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+	}
+	if d.Run == nil {
+		return nil
+	}
+	if loop := loopDevFromMounts(abs); loop != "" {
+		argv, err := LosetupRefreshArgv(loop)
+		if err != nil {
+			return err
+		}
+		if err := d.runLimit(ctx, argv[0], argv[1:]...); err != nil {
+			return err
+		}
+	}
+	if !expandFilesystem(req) {
+		return nil
+	}
+	resize, err := Resize2fsArgv(abs)
+	if err != nil {
+		return err
+	}
+	return d.runLimit(ctx, resize[0], resize[1:]...)
 }
 
 func (d Directory) restoreContainerRoots(root string) {

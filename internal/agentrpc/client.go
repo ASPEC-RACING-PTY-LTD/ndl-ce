@@ -198,7 +198,11 @@ func (c Client) DestroyDirectoryVolume(ctx context.Context, req storage.CreateVo
 }
 
 func (c Client) ResizeDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error {
-	backing, _ := json.Marshal(volumeRPCPayload(hint, req, "resize"))
+	action := "resize"
+	if req.Live {
+		action = "resize-live"
+	}
+	backing, _ := json.Marshal(volumeRPCPayload(hint, req, action))
 	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_CreateDirectoryVolume{CreateDirectoryVolume: &agentv1.CreateDirectoryVolume{
 			VolumeId: req.VolumeID, PoolId: req.PoolID, RootPath: req.RootPath, Class: req.Class,
@@ -233,6 +237,9 @@ func volumeRPCPayload(hint storage.PoolHint, req storage.CreateVolumeRequest, ac
 	}
 	if req.BackendRef != "" {
 		out["ndl_backend_ref"] = req.BackendRef
+	}
+	if req.ExpandFS != nil {
+		out["ndl_expand_fs"] = *req.ExpandFS
 	}
 	return out
 }
@@ -360,12 +367,24 @@ func (c Client) CreateCT(ctx context.Context, spec lxc.Spec) (lxc.Result, error)
 
 // LifecycleCT is a typed Execute method.
 func (c Client) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
+	msg := &agentv1.CTLifecycle{
+		WorkloadId: req.WorkloadID, Action: req.Action, CloneId: req.CloneID,
+		CloneVolumeId: req.CloneVolumeID, CloneRootfsPath: req.CloneRootfsPath,
+		CloneMac: req.CloneMAC, CloneName: req.CloneName,
+		Cpus: int32(req.CPUs), MemoryBytes: req.MemoryBytes, Name: req.Name,
+		IpConfigJson: mustIPJSON(req.IP), Mac: req.MAC,
+	}
+	if req.Autostart != nil {
+		msg.Autostart = *req.Autostart
+		msg.AutostartSet = true
+	}
+	if req.IPSet {
+		msg.IpConfigJson = mustIPJSON(req.IP)
+	} else {
+		msg.IpConfigJson = ""
+	}
 	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
-		Method: &agentv1.ExecuteRequest_CtLifecycle{CtLifecycle: &agentv1.CTLifecycle{
-			WorkloadId: req.WorkloadID, Action: req.Action, CloneId: req.CloneID,
-			CloneVolumeId: req.CloneVolumeID, CloneRootfsPath: req.CloneRootfsPath,
-			CloneMac: req.CloneMAC, CloneName: req.CloneName,
-		}},
+		Method: &agentv1.ExecuteRequest_CtLifecycle{CtLifecycle: msg},
 	}))
 	if err != nil {
 		return lxc.Result{}, err

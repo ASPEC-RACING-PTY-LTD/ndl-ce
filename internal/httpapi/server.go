@@ -162,6 +162,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/nodes/{id}/logs", s.nodeLogs)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/smart", s.nodeSMART)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/capacity", s.nodeCapacity)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/metrics", s.workloadMetrics)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/logs", s.workloadLogs)
 	mux.HandleFunc("GET /api/v1/timeline", s.timeline)
 	mux.HandleFunc("GET /api/v1/alerts", s.listAlerts)

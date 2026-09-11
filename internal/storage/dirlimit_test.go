@@ -273,3 +273,41 @@ func TestMountLoopExt4AcceptsLoopAndRejectsNouuid(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDirectoryLiveGrowDoesNotUnmount(t *testing.T) {
+	d, base := fixtureDir(t, "", false, 20<<30)
+	var ran []string
+	d.Run = func(_ context.Context, name string, args ...string) error {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		return nil
+	}
+	poolID := uuid.NewString()
+	root := base + "/pool"
+	if _, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: poolID, RootPath: root, Create: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	volID := uuid.NewString()
+	req := CreateVolumeRequest{
+		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
+		Size: 8 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindOperator,
+	}
+	if _, err := d.CreateVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	ran = nil
+	req.Size = 10 << 30
+	req.Live = true
+	if err := d.ResizeVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(ran, "\n")
+	if strings.Contains(joined, BinUmount) {
+		t.Fatalf("live grow must not unmount: %v", ran)
+	}
+	if strings.Contains(joined, BinE2fsck) {
+		t.Fatalf("live grow must not fsck: %v", ran)
+	}
+	if !strings.Contains(joined, BinResize2fs) {
+		t.Fatalf("live grow should expand the mounted filesystem: %v", ran)
+	}
+}

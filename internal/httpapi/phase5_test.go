@@ -238,8 +238,8 @@ func TestWorkloadCreateStaticIP(t *testing.T) {
 		t.Fatalf("patch %d %s", pres.StatusCode, b)
 	}
 	_ = pres.Body.Close()
-	if fw.lastSpec.IP.IPv6Mode != lxc.IPModeDHCP || fw.lastSpec.IP.IPv4Mode != lxc.IPModeStatic {
-		t.Fatalf("patched spec %+v", fw.lastSpec.IP)
+	if fw.lastLife.Action != lxc.ActionApplySpec || !fw.lastLife.IPSet || fw.lastLife.IP.IPv6Mode != lxc.IPModeDHCP || fw.lastLife.IP.IPv4Mode != lxc.IPModeStatic {
+		t.Fatalf("patched spec action=%s ipset=%v ip=%+v", fw.lastLife.Action, fw.lastLife.IPSet, fw.lastLife.IP)
 	}
 }
 
@@ -795,6 +795,139 @@ func TestCTPatchFailsClosedWhenAgentUnavailable(t *testing.T) {
 	got, err := mem.GetWorkload(context.Background(), cluster.ID, id)
 	if err != nil || got == nil || got.CPUs != 1 {
 		t.Fatalf("unavailable patch must not rewrite CPUs %+v %v", got, err)
+	}
+}
+
+func TestCTPatchRunningCPUDoesNotCreateOrStart(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-cpu")
+	_ = mem.UpdateWorkloadObserved(context.Background(), appdb.Workload{ID: id, Status: lxc.StatusRunning, UnitActive: true})
+	createsAfterCreate := fw.creates
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":4}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("patch %d %s", res.StatusCode, raw)
+	}
+	if fw.creates != createsAfterCreate {
+		t.Fatalf("running CPU patch must not CreateCT: %d -> %d", createsAfterCreate, fw.creates)
+	}
+	if fw.lastLife.Action != lxc.ActionApplySpec {
+		t.Fatalf("want apply-spec, got %+v", fw.lastLife)
+	}
+	if fw.lastLife.CPUs != 4 {
+		t.Fatalf("apply cpus %+v", fw.lastLife)
+	}
+	got, err := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if err != nil || got == nil || got.CPUs != 4 {
+		t.Fatalf("cpus %+v %v", got, err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	apply, _ := body["apply"].([]any)
+	if len(apply) == 0 {
+		t.Fatalf("apply classes missing: %s", raw)
+	}
+}
+
+func TestCTPatchDoesNotStartWhenAlreadyRunning(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-run")
+	_ = mem.UpdateWorkloadObserved(context.Background(), appdb.Workload{ID: id, Status: lxc.StatusRunning, UnitActive: true, DesiredPower: "running"})
+	fw.lastLife = lxc.LifecycleRequest{}
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"cpus":2,"desired_power":"running"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("patch %d %s", res.StatusCode, raw)
+	}
+	if fw.lastLife.Action == "start" {
+		t.Fatal("already-running patch must not start")
+	}
+	if fw.lastLife.Action != lxc.ActionApplySpec {
+		t.Fatalf("last action %q", fw.lastLife.Action)
+	}
+}
+
+func TestCTPatchNameSetsPendingRestart(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "alpine-host")
+	_ = mem.UpdateWorkloadObserved(context.Background(), appdb.Workload{ID: id, Status: lxc.StatusRunning, UnitActive: true, DesiredPower: "running"})
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/workloads/"+id, strings.NewReader(`{"name":"alpine-renamed"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("patch %d %s", res.StatusCode, raw)
+	}
+	if fw.lastLife.Action != lxc.ActionApplySpec {
+		t.Fatalf("want apply-spec, got %q", fw.lastLife.Action)
+	}
+	got, err := mem.GetWorkload(context.Background(), cluster.ID, id)
+	if err != nil || got == nil || got.Name != "alpine-renamed" {
+		t.Fatalf("name %+v %v", got, err)
+	}
+	if !got.PendingRestart {
+		t.Fatal("hostname change while running must set pending_restart")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["pending_restart"] != true {
+		t.Fatalf("pending_restart missing: %s", raw)
 	}
 }
 
@@ -2011,8 +2144,8 @@ func TestWorkloadPatchMACRequiresStopAndPersists(t *testing.T) {
 		t.Fatalf("stopped patch %d %s", pres2.StatusCode, b)
 	}
 	_ = pres2.Body.Close()
-	if fw.lastSpec.MAC != "bc:24:11:00:00:22" {
-		t.Fatalf("applied mac %s", fw.lastSpec.MAC)
+	if fw.lastLife.MAC != "bc:24:11:00:00:22" {
+		t.Fatalf("applied mac action=%s mac=%s", fw.lastLife.Action, fw.lastLife.MAC)
 	}
 	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, id)
 	if len(nics) != 1 || nics[0].MAC != "bc:24:11:00:00:22" {

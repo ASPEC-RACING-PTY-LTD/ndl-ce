@@ -880,6 +880,33 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 	if req.Autostart != nil && s.VM != nil {
 		_, _ = s.VM.LifecycleVM(r.Context(), row.ID, "autostart", next.Autostart)
 	}
+	if req.RestartAfterSave && pending && s.VM != nil {
+		spec, _ := vmspec.Parse(vmspec.MustJSON(next))
+		if _, err := s.VM.LifecycleVM(r.Context(), row.ID, "stop", spec.Autostart); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		updated := row
+		updated.SpecJSON = vmspec.MustJSON(next)
+		updated.CPUs = next.CPUs
+		updated.MemoryBytes = next.MemoryBytes
+		updated.Autostart = next.Autostart
+		updated.Firmware = next.Firmware
+		updated.DesiredPower = desired
+		if _, err := s.reprepareVM(r.Context(), p.User.ClusterID, updated); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		if _, err := s.VM.LifecycleVM(r.Context(), row.ID, "start", spec.Autostart); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		pending = false
+		_ = s.Store.UpdateWorkloadSpec(r.Context(), appdb.Workload{
+			ID: row.ID, CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, DesiredPower: desired,
+			SpecJSON: vmspec.MustJSON(next), Autostart: next.Autostart, PendingRestart: false, Firmware: next.Firmware,
+		})
+	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "vm.update", "ok", row.ID)
 	s.emitEvent(r.Context(), p.User.ClusterID, row.NodeID, "vm.updated", map[string]string{"workload_id": row.ID})
 	updated, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, row.ID)

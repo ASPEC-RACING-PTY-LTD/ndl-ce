@@ -621,14 +621,22 @@ func TestCloneRejectsUncleanRootfsPath(t *testing.T) {
 func TestStartWaitsForInitPID(t *testing.T) {
 	id := uuid.NewString()
 	var infoCalls int
+	started := false
 	e := &Engine{
 		DataDir:   t.TempDir(),
 		ReadyWait: 2 * time.Second,
 		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			switch name {
 			case BinSystemctl:
+				if len(args) > 0 && args[0] == "start" {
+					started = true
+					return []byte{}, nil
+				}
 				if len(args) > 0 && args[0] == "is-active" {
-					return []byte("active\n"), nil
+					if started {
+						return []byte("active\n"), nil
+					}
+					return []byte("inactive\n"), nil
 				}
 				return []byte{}, nil
 			case BinLXCInfo:
@@ -655,14 +663,22 @@ func TestStartWaitsForInitPID(t *testing.T) {
 
 func TestStartFailsIfInitPIDNeverAppears(t *testing.T) {
 	id := uuid.NewString()
+	started := false
 	e := &Engine{
 		DataDir:   t.TempDir(),
 		ReadyWait: 250 * time.Millisecond,
 		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			switch name {
 			case BinSystemctl:
+				if len(args) > 0 && args[0] == "start" {
+					started = true
+					return []byte{}, nil
+				}
 				if len(args) > 0 && args[0] == "is-active" {
-					return []byte("active\n"), nil
+					if started {
+						return []byte("active\n"), nil
+					}
+					return []byte("inactive\n"), nil
 				}
 				return []byte{}, nil
 			case BinLXCInfo:
@@ -683,14 +699,22 @@ func TestStartFailsIfInitPIDNeverAppears(t *testing.T) {
 
 func TestStartFailsIfIPv4NeverAppears(t *testing.T) {
 	id := uuid.NewString()
+	started := false
 	e := &Engine{
 		DataDir:   t.TempDir(),
 		ReadyWait: 250 * time.Millisecond,
 		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			switch name {
 			case BinSystemctl:
+				if len(args) > 0 && args[0] == "start" {
+					started = true
+					return []byte{}, nil
+				}
 				if len(args) > 0 && args[0] == "is-active" {
-					return []byte("active\n"), nil
+					if started {
+						return []byte("active\n"), nil
+					}
+					return []byte("inactive\n"), nil
 				}
 				return []byte{}, nil
 			case BinLXCInfo:

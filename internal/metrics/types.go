@@ -49,6 +49,7 @@ const (
 )
 
 const netIfacePrefix = "net.iface."
+const WorkloadMetricPrefix = "workload."
 
 // Point is one real sample. Queries never synthesize extra points.
 type Point struct {
@@ -99,6 +100,12 @@ func unitFor(name string) string {
 		if strings.HasPrefix(name, netIfacePrefix) {
 			return "bytes"
 		}
+		if strings.HasPrefix(name, WorkloadMetricPrefix) {
+			if strings.HasSuffix(name, ".cpu.busy_ratio") {
+				return "ratio"
+			}
+			return "bytes"
+		}
 		return ""
 	}
 }
@@ -120,6 +127,6 @@ func knownName(name string) bool {
 		MetricDiskWriteLatencyMS, MetricStorageAvailBytes:
 		return true
 	default:
-		return strings.HasPrefix(name, netIfacePrefix)
+		return strings.HasPrefix(name, netIfacePrefix) || strings.HasPrefix(name, WorkloadMetricPrefix)
 	}
 }

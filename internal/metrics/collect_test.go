@@ -211,3 +211,48 @@ func assertPoint(t *testing.T, res QueryResult, name string, want float64) {
 		t.Fatalf("%s value %v want %v", name, ser.Points[0].Value, want)
 	}
 }
+
+func TestGuestCgroupScrape(t *testing.T) {
+	root := t.TempDir()
+	writeProc(t, root, "proc/stat", "cpu  100 0 100 800 0 0 0 0\n")
+	id := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	unit := "system.slice/nodal-ct@" + id + ".service"
+	writeProc(t, root, "sys/fs/cgroup/"+unit+"/memory.current", "4096\n")
+	writeProc(t, root, "sys/fs/cgroup/"+unit+"/memory.max", "1073741824\n")
+	writeProc(t, root, "sys/fs/cgroup/"+unit+"/cpu.stat", "usage_usec 1000000\n")
+	s := openTestStore(t)
+	c := &Collector{FSRoot: root, Store: s}
+	t1 := time.Now().UTC().Truncate(time.Second)
+	if err := c.Scrape(t1); err != nil {
+		t.Fatal(err)
+	}
+	writeProc(t, root, "sys/fs/cgroup/"+unit+"/cpu.stat", "usage_usec 2500000\n")
+	t2 := t1.Add(15 * time.Second)
+	if err := c.Scrape(t2); err != nil {
+		t.Fatal(err)
+	}
+	names := WorkloadMetricNames(id)
+	res, err := s.Query(names, t1.Add(-time.Minute), t2.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := seriesByName(res, names[1])
+	if mem.Status != StatusAvailable || len(mem.Points) < 1 {
+		t.Fatalf("memory current: %+v", mem)
+	}
+	cpu := seriesByName(res, names[0])
+	if cpu.Status != StatusAvailable || len(cpu.Points) != 1 {
+		t.Fatalf("cpu: %+v", cpu)
+	}
+	// 1.5e6 usec / 15s = 0.1
+	if cpu.Points[0].Value < 0.099 || cpu.Points[0].Value > 0.101 {
+		t.Fatalf("busy %v", cpu.Points[0].Value)
+	}
+	win, err := s.QueryWindow(t1.Add(-time.Minute), t2.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(win.Series) == 0 {
+		t.Fatal("QueryWindow empty")
+	}
+}

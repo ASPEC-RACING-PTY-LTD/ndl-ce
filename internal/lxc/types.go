@@ -15,6 +15,14 @@ const (
 )
 
 const (
+	ApplyLive        = "live"
+	ApplyRestart     = "restart"
+	ApplyStop        = "stop"
+	ApplyUnsupported = "unsupported"
+	ActionApplySpec  = "apply-spec"
+)
+
+const (
 	DefaultUIDMap      = "u 0 100000 65536"
 	DefaultGIDMap      = "g 0 100000 65536"
 	DefaultCPUs        = 1
@@ -32,6 +40,7 @@ const (
 	BinLXCInfo         = "/usr/bin/lxc-info"
 	BinLXCCopy         = "/usr/bin/lxc-copy"
 	BinLXCAttach       = "/usr/bin/lxc-attach"
+	BinLXCCgroup       = "/usr/bin/lxc-cgroup"
 	BinLXCConsole      = "/usr/bin/lxc-console"
 	BinSystemctl       = "/usr/bin/systemctl"
 	BinTar             = "/usr/bin/tar"
@@ -151,13 +160,27 @@ type Observation struct {
 
 // LifecycleRequest is a typed start/stop/restart/delete/clone.
 type LifecycleRequest struct {
-	WorkloadID      string `json:"workload_id"`
-	Action          string `json:"action"`
-	CloneID         string `json:"clone_id,omitempty"`
-	CloneVolumeID   string `json:"clone_volume_id,omitempty"`
-	CloneRootfsPath string `json:"clone_rootfs_path,omitempty"`
-	CloneMAC        string `json:"clone_mac,omitempty"`
-	CloneName       string `json:"clone_name,omitempty"`
+	WorkloadID      string   `json:"workload_id"`
+	Action          string   `json:"action"`
+	CloneID         string   `json:"clone_id,omitempty"`
+	CloneVolumeID   string   `json:"clone_volume_id,omitempty"`
+	CloneRootfsPath string   `json:"clone_rootfs_path,omitempty"`
+	CloneMAC        string   `json:"clone_mac,omitempty"`
+	CloneName       string   `json:"clone_name,omitempty"`
+	CPUs            int      `json:"cpus,omitempty"`
+	MemoryBytes     int64    `json:"memory_bytes,omitempty"`
+	Name            string   `json:"name,omitempty"`
+	IP              IPConfig `json:"ip,omitempty"`
+	IPSet           bool     `json:"ip_set,omitempty"`
+	MAC             string   `json:"mac,omitempty"`
+	Autostart       *bool    `json:"autostart,omitempty"`
+}
+
+// ApplyClass describes whether a spec change can happen live.
+type ApplyClass struct {
+	Field  string `json:"field"`
+	Apply  string `json:"apply"`
+	Reason string `json:"reason"`
 }
 
 func unitName(id string) string {

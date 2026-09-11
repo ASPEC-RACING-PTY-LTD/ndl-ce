@@ -15,10 +15,12 @@ type Collector struct {
 	FSRoot      string // fixture or "/"
 	Store       *Store
 	StorageRoot string // Statfs target; empty skips storage.avail_bytes
+	CgroupRoot  string // fixture or empty for FSRoot/sys/fs/cgroup
 
-	mu      sync.Mutex
-	prevCPU *cpuSnap
-	prevIO  *ioSnap
+	mu           sync.Mutex
+	prevCPU      *cpuSnap
+	prevIO       *ioSnap
+	prevGuestCPU map[string]guestCPU
 }
 
 type cpuSnap struct {
@@ -33,6 +35,11 @@ type ioSnap struct {
 	writeTicks   uint64
 	reads        uint64
 	writes       uint64
+}
+
+type guestCPU struct {
+	usage uint64
+	at    time.Time
 }
 
 // Scrape reads proc files and records only values that were observed.
@@ -125,6 +132,7 @@ func (c *Collector) Scrape(now time.Time) error {
 			record(MetricStorageAvailBytes, float64(avail))
 		}
 	}
+	c.scrapeGuestCgroups(now, record)
 	return first
 }
 
@@ -323,4 +331,108 @@ func skipDisk(name string) bool {
 
 func parseUint(s string) (uint64, error) {
 	return strconv.ParseUint(s, 10, 64)
+}
+
+func (c *Collector) cgroupPath(rel string) string {
+	if strings.TrimSpace(c.CgroupRoot) != "" {
+		return filepath.Join(c.CgroupRoot, filepath.FromSlash(strings.TrimPrefix(rel, "/")))
+	}
+	return c.procPath("sys/fs/cgroup/" + strings.TrimPrefix(rel, "/"))
+}
+
+func WorkloadMetricNames(id string) []string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	return []string{
+		WorkloadMetricPrefix + id + ".cpu.busy_ratio",
+		WorkloadMetricPrefix + id + ".memory.current_bytes",
+		WorkloadMetricPrefix + id + ".memory.max_bytes",
+	}
+}
+
+func (c *Collector) scrapeGuestCgroups(now time.Time, record func(string, float64)) {
+	slice := c.cgroupPath("system.slice")
+	ents, err := os.ReadDir(slice)
+	if err != nil {
+		return
+	}
+	c.mu.Lock()
+	if c.prevGuestCPU == nil {
+		c.prevGuestCPU = map[string]guestCPU{}
+	}
+	c.mu.Unlock()
+	for _, ent := range ents {
+		name := ent.Name()
+		id, ok := workloadIDFromUnitDir(name)
+		if !ok {
+			continue
+		}
+		dir := filepath.Join(slice, name)
+		if raw, err := os.ReadFile(filepath.Join(dir, "memory.current")); err == nil {
+			if n, perr := parseUint(strings.TrimSpace(string(raw))); perr == nil {
+				record(WorkloadMetricPrefix+id+".memory.current_bytes", float64(n))
+			}
+		}
+		if raw, err := os.ReadFile(filepath.Join(dir, "memory.max")); err == nil {
+			txt := strings.TrimSpace(string(raw))
+			if txt != "" && txt != "max" {
+				if n, perr := parseUint(txt); perr == nil {
+					record(WorkloadMetricPrefix+id+".memory.max_bytes", float64(n))
+				}
+			}
+		}
+		usage, ok := parseCPUStatUsage(readFileString(filepath.Join(dir, "cpu.stat")))
+		if !ok {
+			continue
+		}
+		c.mu.Lock()
+		prev, have := c.prevGuestCPU[id]
+		c.prevGuestCPU[id] = guestCPU{usage: usage, at: now}
+		c.mu.Unlock()
+		if !have || !now.After(prev.at) {
+			continue
+		}
+		dt := now.Sub(prev.at).Seconds()
+		if dt <= 0 {
+			continue
+		}
+		busy := float64(usage-prev.usage) / (dt * 1e6)
+		if busy < 0 {
+			busy = 0
+		}
+		record(WorkloadMetricPrefix+id+".cpu.busy_ratio", busy)
+	}
+}
+
+func workloadIDFromUnitDir(name string) (string, bool) {
+	for _, prefix := range []string{"nodal-ct@", "nodal-vm@", "nodal-oci@"} {
+		if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".service") {
+			id := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".service")
+			if id != "" {
+				return id, true
+			}
+		}
+	}
+	return "", false
+}
+
+func parseCPUStatUsage(raw string) (uint64, bool) {
+	for _, line := range strings.Split(raw, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) >= 2 && fields[0] == "usage_usec" {
+			n, err := parseUint(fields[1])
+			return n, err == nil
+		}
+	}
+	return 0, false
+}
+
+func readFileString(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

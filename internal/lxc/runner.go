@@ -18,7 +18,7 @@ type StdinRunner func(ctx context.Context, name string, stdin *os.File, args ...
 
 func allowedBin(name string) bool {
 	switch name {
-	case BinLXCStart, BinLXCStop, BinLXCInfo, BinLXCCopy, BinLXCAttach, BinSystemctl, BinTar, BinUsernsExec, BinCP, BinGPGV:
+	case BinLXCStart, BinLXCStop, BinLXCInfo, BinLXCCopy, BinLXCAttach, BinLXCCgroup, BinSystemctl, BinTar, BinUsernsExec, BinCP, BinGPGV:
 		return true
 	default:
 		return false

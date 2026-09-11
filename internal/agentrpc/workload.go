@@ -132,11 +132,22 @@ func (h *Handler) execCTCreate(ctx context.Context, m *agentv1.CTCreate) (*conne
 }
 
 func (h *Handler) execCTLifecycle(ctx context.Context, m *agentv1.CTLifecycle) (*connect.Response[agentv1.ExecuteResponse], error) {
-	res, err := h.workloads().Lifecycle(ctx, lxc.LifecycleRequest{
+	req := lxc.LifecycleRequest{
 		WorkloadID: m.GetWorkloadId(), Action: m.GetAction(), CloneID: m.GetCloneId(),
 		CloneVolumeID: m.GetCloneVolumeId(), CloneRootfsPath: m.GetCloneRootfsPath(),
 		CloneMAC: m.GetCloneMac(), CloneName: m.GetCloneName(),
-	})
+		CPUs: int(m.GetCpus()), MemoryBytes: m.GetMemoryBytes(), Name: m.GetName(),
+		MAC: m.GetMac(),
+	}
+	if m.GetIpConfigJson() != "" {
+		req.IP = ipConfigFromJSON(m.GetIpConfigJson())
+		req.IPSet = true
+	}
+	if m.GetAutostartSet() {
+		on := m.GetAutostart()
+		req.Autostart = &on
+	}
+	res, err := h.workloads().Lifecycle(ctx, req)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}

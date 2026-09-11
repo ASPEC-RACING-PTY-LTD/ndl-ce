@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -78,23 +79,25 @@ type createWorkloadRequest struct {
 }
 
 type patchWorkloadRequest struct {
-	Name         string          `json:"name"`
-	CPUs         int             `json:"cpus"`
-	MemoryBytes  int64           `json:"memory_bytes"`
-	DiskBytes    int64           `json:"disk_bytes"`
-	DesiredPower string          `json:"desired_power"`
-	Firmware     string          `json:"firmware"`
-	Autostart    *bool           `json:"autostart"`
-	ISOLibraryID *string         `json:"iso_library_id"`
-	NoCloud      *vmspec.NoCloud `json:"nocloud"`
-	IPv4Mode     string          `json:"ipv4_mode"`
-	IPv4Address  string          `json:"ipv4_address"`
-	IPv4Gateway  string          `json:"ipv4_gateway"`
-	IPv6Mode     string          `json:"ipv6_mode"`
-	IPv6Address  string          `json:"ipv6_address"`
-	IPv6Gateway  string          `json:"ipv6_gateway"`
-	DNS          []string        `json:"dns"`
-	MAC          string          `json:"mac"`
+	Name             string          `json:"name"`
+	CPUs             int             `json:"cpus"`
+	MemoryBytes      int64           `json:"memory_bytes"`
+	DiskBytes        int64           `json:"disk_bytes"`
+	DesiredPower     string          `json:"desired_power"`
+	Firmware         string          `json:"firmware"`
+	Autostart        *bool           `json:"autostart"`
+	ISOLibraryID     *string         `json:"iso_library_id"`
+	NoCloud          *vmspec.NoCloud `json:"nocloud"`
+	IPv4Mode         string          `json:"ipv4_mode"`
+	IPv4Address      string          `json:"ipv4_address"`
+	IPv4Gateway      string          `json:"ipv4_gateway"`
+	IPv6Mode         string          `json:"ipv6_mode"`
+	IPv6Address      string          `json:"ipv6_address"`
+	IPv6Gateway      string          `json:"ipv6_gateway"`
+	DNS              []string        `json:"dns"`
+	MAC              string          `json:"mac"`
+	RestartAfterSave bool            `json:"restart_after_save"`
+	ExpandFilesystem *bool           `json:"expand_filesystem"`
 }
 
 type cloneWorkloadRequest struct {
@@ -136,6 +139,29 @@ func (s *Server) getWorkload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *row))
+}
+
+func (s *Server) workloadMetrics(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.ComputeRead)
+	if err != nil {
+		return
+	}
+	row, err := s.Store.GetWorkload(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil || row == nil {
+		writeErr(w, http.StatusNotFound, "workload not found")
+		return
+	}
+	if s.Observer == nil {
+		writeJSON(w, http.StatusOK, metrics.QueryResult{Status: metrics.StatusUnavailable, Series: []metrics.Series{}})
+		return
+	}
+	from, to := parseWindow(r)
+	res, err := s.Observer.GetMetrics(r.Context(), from, to)
+	if err != nil {
+		writeJSON(w, http.StatusOK, metrics.QueryResult{Status: metrics.StatusUnavailable, Series: []metrics.Series{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, filterWorkloadMetrics(res, row.ID))
 }
 
 func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
@@ -678,7 +704,7 @@ func (s *Server) authorizeWorkloadPatch(w http.ResponseWriter, r *http.Request, 
 		return nil, err
 	}
 	spec := patchSpecChange(req)
-	power := req.DesiredPower != ""
+	power := req.DesiredPower != "" || req.RestartAfterSave
 	if spec && !rbac.Authorize(p.Grants, rbac.ComputeModify) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return nil, errors.New("forbidden")
@@ -730,6 +756,10 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
+		_ = ctRoot
+		_ = ctVolID
+		_ = ctBridge
+		_ = ctNetID
 		ctIP, err = s.mergeCTIP(r.Context(), p.User.ClusterID, row.ID, req)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
@@ -755,52 +785,113 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	next := *row
+	if strings.TrimSpace(req.Name) != "" {
+		next.Name = strings.TrimSpace(req.Name)
+	}
 	if req.CPUs > 0 {
 		next.CPUs = req.CPUs
 	}
 	if req.MemoryBytes > 0 {
 		next.MemoryBytes = req.MemoryBytes
 	}
+	if req.DesiredPower != "" {
+		next.DesiredPower = req.DesiredPower
+	}
+	if req.Autostart != nil {
+		next.Autostart = *req.Autostart
+	}
+	diskGrow := false
 	if req.DiskBytes > 0 && row.Kind == lxc.KindSystemContainer {
-		if err := s.growCTDisk(r.Context(), p.User.ClusterID, *row, req.DiskBytes); err != nil {
+		if disks, derr := s.Store.ListWorkloadDisks(r.Context(), p.User.ClusterID, row.ID); derr == nil && len(disks) > 0 {
+			if vol, verr := s.Store.GetVolume(r.Context(), p.User.ClusterID, disks[0].VolumeID); verr == nil && vol != nil {
+				diskGrow = req.DiskBytes > vol.SizeBytes
+			}
+		}
+		if err := s.growCTDisk(r.Context(), p.User.ClusterID, *row, req.DiskBytes, req.ExpandFilesystem); err != nil {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
 	}
-	if req.DesiredPower != "" {
-		next.DesiredPower = req.DesiredPower
-	}
-	if err := s.Store.UpdateWorkloadSpec(r.Context(), next); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	if row.Kind == oci.KindOCI {
+		if err := s.Store.UpdateWorkloadSpec(r.Context(), next); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		if err := s.applyOCIDesiredPower(r.Context(), next); err != nil {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
 	} else if row.Kind == lxc.KindSystemContainer {
-		if _, err := s.Workloads.CreateCT(r.Context(), lxc.Spec{
-			WorkloadID: row.ID, Name: next.Name, ImagePin: next.ImagePin, CPUs: next.CPUs,
-			MemoryBytes: next.MemoryBytes, VolumeID: ctVolID, RootfsPath: ctRoot, NetworkID: ctNetID,
-			BridgeName: ctBridge, MAC: ctMAC, Privileged: next.Privileged, UIDMap: next.UIDMap, GIDMap: next.GIDMap,
-			GPUDevices: s.gpuDeviceNodes(r.Context(), p.User.ClusterID, row.ID),
-			IP:         ctIP, NoStart: next.DesiredPower == "stopped",
-		}); err != nil {
-			writeErr(w, statusFor(err), err.Error())
+		running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
+		prevSpec := lxc.Spec{Name: row.Name, CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, MAC: ctMAC, IP: lxc.IPConfig{}}
+		nextSpec := lxc.Spec{Name: next.Name, CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, MAC: ctMAC, IP: ctIP}
+		if nics, nerr := s.Store.ListWorkloadNICs(r.Context(), p.User.ClusterID, row.ID); nerr == nil && len(nics) > 0 {
+			prevSpec.IP = lxc.IPConfig{
+				IPv4Mode: nics[0].IPv4Mode, IPv4Address: nics[0].IPv4Address, IPv4Gateway: nics[0].IPv4Gateway,
+				IPv6Mode: nics[0].IPv6Mode, IPv6Address: nics[0].IPv6Address, IPv6Gateway: nics[0].IPv6Gateway,
+				DNS: lxc.SplitDNS(nics[0].DNS),
+			}
+			if !patchHasIP(req) {
+				nextSpec.IP = prevSpec.IP
+			}
+		}
+		classes := lxc.ClassifyEdit(prevSpec, nextSpec, diskGrow, false)
+		if running && lxc.RequiresStop(classes) {
+			writeErr(w, http.StatusConflict, "this spec change requires the container to be stopped")
 			return
 		}
-		if next.DesiredPower == "stopped" {
+		needApply := req.CPUs > 0 || req.MemoryBytes > 0 || strings.TrimSpace(req.Name) != "" || patchHasIP(req) || req.Autostart != nil || strings.TrimSpace(req.MAC) != ""
+		if needApply {
+			applyReq := lxc.LifecycleRequest{
+				WorkloadID: row.ID, Action: lxc.ActionApplySpec,
+				CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, Name: next.Name,
+				Autostart: req.Autostart, MAC: ctMAC,
+			}
+			if patchHasIP(req) {
+				applyReq.IP = ctIP
+				applyReq.IPSet = true
+			}
+			if _, err := s.Workloads.LifecycleCT(r.Context(), applyReq); err != nil {
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
+		}
+		next.PendingRestart = running && lxc.RequiresRestart(classes)
+		if err := s.Store.UpdateWorkloadSpec(r.Context(), next); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		powerChanged := req.DesiredPower != "" && req.DesiredPower != row.DesiredPower
+		if powerChanged && next.DesiredPower == "stopped" {
 			if _, err := s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "stop"}); err != nil {
 				writeErr(w, statusFor(err), err.Error())
 				return
 			}
-		} else if next.DesiredPower == "running" {
+			next.PendingRestart = false
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), next)
+		} else if powerChanged && next.DesiredPower == "running" {
 			if _, err := s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "start"}); err != nil {
 				writeErr(w, statusFor(err), err.Error())
 				return
 			}
+		} else if req.RestartAfterSave && running {
+			if _, err := s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "restart"}); err != nil {
+				writeErr(w, statusFor(err), err.Error())
+				return
+			}
+			next.PendingRestart = false
+			_ = s.Store.UpdateWorkloadSpec(r.Context(), next)
 		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "workload.update", "ok", row.ID)
+		s.refreshWorkloads(r.Context(), p.User.ClusterID)
+		updated, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, row.ID)
+		if updated == nil {
+			updated = &next
+		}
+		out := s.workloadJSON(r.Context(), *updated)
+		out["apply"] = classes
+		writeJSON(w, http.StatusOK, out)
+		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "workload.update", "ok", row.ID)
 	s.refreshWorkloads(r.Context(), p.User.ClusterID)
@@ -1349,7 +1440,7 @@ func (s *Server) destroyOwnedVolume(ctx context.Context, clusterID string, vol *
 	_ = s.Store.DeleteVolume(ctx, clusterID, vol.ID)
 }
 
-func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Workload, size int64) error {
+func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Workload, size int64, expandFS *bool) error {
 	if size < lxc.MinRootSize {
 		return errBadRequest("disk size must be at least 1 GB")
 	}
@@ -1367,9 +1458,7 @@ func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Wor
 	if size == vol.SizeBytes {
 		return nil
 	}
-	if !strings.EqualFold(row.Status, lxc.StatusStopped) && !strings.EqualFold(row.DesiredPower, "stopped") {
-		return errConflict("stop the container before growing its disk")
-	}
+	running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
 	pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
 	if err != nil || pool == nil {
 		return errConflict("storage pool is not found")
@@ -1386,6 +1475,7 @@ func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Wor
 			VolumeID: vol.ID, PoolID: pool.ID, RootPath: pool.RootPath, Class: vol.Class,
 			Size: size, Format: vol.Format, BackendRef: vol.BackendRef,
 			Owner: storage.VolumeOwnerName, OwnerKind: storage.VolumeKindOperator,
+			Live: running, ExpandFS: expandFS,
 		}, appdb.PoolHints([]appdb.StoragePool{*pool})[0]); err != nil {
 			return err
 		}

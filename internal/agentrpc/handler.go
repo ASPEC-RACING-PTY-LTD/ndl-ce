@@ -151,6 +151,7 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 			OwnerKind  string `json:"ndl_owner_kind"`
 			JobID      string `json:"ndl_job_id"`
 			BackendRef string `json:"ndl_backend_ref"`
+			ExpandFS   *bool  `json:"ndl_expand_fs"`
 		}
 		if len(m.GetBackingJson()) > 0 {
 			_ = json.Unmarshal(m.GetBackingJson(), &hint.Backing)
@@ -160,6 +161,7 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 			VolumeID: m.GetVolumeId(), PoolID: m.GetPoolId(), RootPath: m.GetRootPath(),
 			Class: m.GetClass(), Size: m.GetSizeBytes(), Format: m.GetFormat(),
 			Owner: extra.Owner, OwnerKind: extra.OwnerKind, JobID: extra.JobID, BackendRef: extra.BackendRef,
+			ExpandFS: extra.ExpandFS,
 		}
 		if extra.Action == "destroy" {
 			if err := h.driver().DestroyVolume(ctx, volReq, hint); err != nil {
@@ -167,8 +169,9 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 			}
 			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "destroyed"}), nil
 		}
-		if extra.Action == "resize" {
-			if err := h.driver().ResizeVolume(ctx, volReq, hint); err != nil {
+	if extra.Action == "resize" || extra.Action == "resize-live" {
+		volReq.Live = extra.Action == "resize-live"
+		if err := h.driver().ResizeVolume(ctx, volReq, hint); err != nil {
 				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 			}
 			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "resized"}), nil

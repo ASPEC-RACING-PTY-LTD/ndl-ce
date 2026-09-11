@@ -28,6 +28,7 @@ type Engine struct {
 	SkipHostCmds bool
 	FakeUnpack   bool
 	ReadyWait    time.Duration
+	LiveUnits    map[string]bool
 }
 
 func (e *Engine) dataDir() string {
@@ -211,8 +212,31 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	}, nil
 }
 
+// AlreadyRunning is true when systemd reports the unit as live.
+// A second start must not rewrite guest files or launch a duplicate.
+func (e *Engine) AlreadyRunning(ctx context.Context, id string) bool {
+	if e.LiveUnits != nil {
+		return e.LiveUnits[id]
+	}
+	if e.SkipHostCmds {
+		return false
+	}
+	state, err := e.unitState(ctx, id)
+	if err != nil {
+		return false
+	}
+	switch strings.TrimSpace(state) {
+	case "activating", "active", "reloading":
+		return true
+	}
+	return false
+}
+
 // Start starts nodal-ct@<uuid> via systemd.
 func (e *Engine) Start(ctx context.Context, id string) error {
+	if e.AlreadyRunning(ctx, id) {
+		return nil
+	}
 	e.ensureAppliedTraverse(id)
 	e.ensureRootfsMounted(ctx, id)
 	if err := e.writeAppliedConfig(id); err != nil {
@@ -573,6 +597,8 @@ func (e *Engine) Lifecycle(ctx context.Context, req LifecycleRequest) (Result, e
 		return Result{WorkloadID: req.WorkloadID, Status: StatusUnavailable}, nil
 	case "clone":
 		return e.Clone(ctx, req)
+	case ActionApplySpec:
+		return e.ApplySpec(ctx, req)
 	default:
 		return Result{}, fmt.Errorf("unknown lifecycle action %q", req.Action)
 	}

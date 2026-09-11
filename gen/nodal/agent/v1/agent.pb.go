@@ -4252,6 +4252,13 @@ type CTLifecycle struct {
 	CloneRootfsPath string                 `protobuf:"bytes,5,opt,name=clone_rootfs_path,json=cloneRootfsPath,proto3" json:"clone_rootfs_path,omitempty"`
 	CloneMac        string                 `protobuf:"bytes,6,opt,name=clone_mac,json=cloneMac,proto3" json:"clone_mac,omitempty"`
 	CloneName       string                 `protobuf:"bytes,7,opt,name=clone_name,json=cloneName,proto3" json:"clone_name,omitempty"`
+	Cpus            int32                  `protobuf:"varint,8,opt,name=cpus,proto3" json:"cpus,omitempty"`
+	MemoryBytes     int64                  `protobuf:"varint,9,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
+	Name            string                 `protobuf:"bytes,10,opt,name=name,proto3" json:"name,omitempty"`
+	IpConfigJson    string                 `protobuf:"bytes,11,opt,name=ip_config_json,json=ipConfigJson,proto3" json:"ip_config_json,omitempty"`
+	Autostart       bool                   `protobuf:"varint,12,opt,name=autostart,proto3" json:"autostart,omitempty"`
+	AutostartSet    bool                   `protobuf:"varint,13,opt,name=autostart_set,json=autostartSet,proto3" json:"autostart_set,omitempty"`
+	Mac             string                 `protobuf:"bytes,14,opt,name=mac,proto3" json:"mac,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -4331,6 +4338,55 @@ func (x *CTLifecycle) GetCloneMac() string {
 func (x *CTLifecycle) GetCloneName() string {
 	if x != nil {
 		return x.CloneName
+	}
+	return ""
+}
+
+func (x *CTLifecycle) GetCpus() int32 {
+	if x != nil {
+		return x.Cpus
+	}
+	return 0
+}
+
+func (x *CTLifecycle) GetMemoryBytes() int64 {
+	if x != nil {
+		return x.MemoryBytes
+	}
+	return 0
+}
+
+func (x *CTLifecycle) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CTLifecycle) GetIpConfigJson() string {
+	if x != nil {
+		return x.IpConfigJson
+	}
+	return ""
+}
+
+func (x *CTLifecycle) GetAutostart() bool {
+	if x != nil {
+		return x.Autostart
+	}
+	return false
+}
+
+func (x *CTLifecycle) GetAutostartSet() bool {
+	if x != nil {
+		return x.AutostartSet
+	}
+	return false
+}
+
+func (x *CTLifecycle) GetMac() string {
+	if x != nil {
+		return x.Mac
 	}
 	return ""
 }
@@ -6438,7 +6494,7 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"skip_image\x18\x0e \x01(\bR\tskipImage\x12\x19\n" +
 	"\bno_start\x18\x0f \x01(\bR\anoStart\x12$\n" +
-	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xf1\x01\n" +
+	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xb7\x03\n" +
 	"\vCTLifecycle\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x16\n" +
@@ -6448,7 +6504,15 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\x11clone_rootfs_path\x18\x05 \x01(\tR\x0fcloneRootfsPath\x12\x1b\n" +
 	"\tclone_mac\x18\x06 \x01(\tR\bcloneMac\x12\x1d\n" +
 	"\n" +
-	"clone_name\x18\a \x01(\tR\tcloneName\"\x7f\n" +
+	"clone_name\x18\a \x01(\tR\tcloneName\x12\x12\n" +
+	"\x04cpus\x18\b \x01(\x05R\x04cpus\x12!\n" +
+	"\fmemory_bytes\x18\t \x01(\x03R\vmemoryBytes\x12\x12\n" +
+	"\x04name\x18\n" +
+	" \x01(\tR\x04name\x12$\n" +
+	"\x0eip_config_json\x18\v \x01(\tR\fipConfigJson\x12\x1c\n" +
+	"\tautostart\x18\f \x01(\bR\tautostart\x12#\n" +
+	"\rautostart_set\x18\r \x01(\bR\fautostartSet\x12\x10\n" +
+	"\x03mac\x18\x0e \x01(\tR\x03mac\"\x7f\n" +
 	"\fWorkloadHint\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x12\n" +
