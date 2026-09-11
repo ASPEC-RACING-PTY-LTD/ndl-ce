@@ -1096,6 +1096,10 @@ fieldset.field legend.field-label {
   margin: 0;
 }
 
+.section-block > .page-header-row {
+  justify-content: flex-start;
+}
+
 .table-card .table-wrap {
   max-height: 18rem;
   overflow: auto;
