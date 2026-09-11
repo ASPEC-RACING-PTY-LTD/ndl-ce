@@ -720,7 +720,13 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 		if pol.Schedule != appdb.BackupNightly {
 			continue
 		}
-		if pol.LastRunAt != nil && now.Sub(*pol.LastRunAt) < 23*time.Hour {
+		if pol.LastRunAt == nil {
+			// A brand-new or never-run policy is armed, not executed, so a
+			// control restart does not immediately copy the current fleet.
+			_ = s.Store.UpdateBackupPolicyLastRun(ctx, cluster.ID, pol.ID, now)
+			continue
+		}
+		if now.Sub(*pol.LastRunAt) < 23*time.Hour {
 			continue
 		}
 		runs, _ := s.Store.ListBackupRuns(ctx, cluster.ID)

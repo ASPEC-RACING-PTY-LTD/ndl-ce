@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -670,6 +671,16 @@ func TestNightlyPolicyTick(t *testing.T) {
 	_ = res.Body.Close()
 	s.TickNightlyBackups(context.Background())
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
+	if len(runs) != 0 {
+		t.Fatalf("first nightly tick must arm the schedule, not copy: %+v", runs)
+	}
+	pols, _ := mem.ListBackupPolicies(context.Background(), cluster.ID)
+	if len(pols) != 1 {
+		t.Fatalf("policy %+v", pols)
+	}
+	_ = mem.UpdateBackupPolicyLastRun(context.Background(), cluster.ID, pols[0].ID, time.Now().Add(-24*time.Hour))
+	s.TickNightlyBackups(context.Background())
+	runs, _ = mem.ListBackupRuns(context.Background(), cluster.ID)
 	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
 		t.Fatalf("nightly %+v", runs)
 	}
@@ -867,6 +878,11 @@ func TestNightlyPolicyTickFailsClosedForExtraDataDisk(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("policy %d %s", res.StatusCode, raw)
 	}
+	pols, _ := mem.ListBackupPolicies(context.Background(), cluster.ID)
+	if len(pols) != 1 {
+		t.Fatalf("policy %+v", pols)
+	}
+	_ = mem.UpdateBackupPolicyLastRun(context.Background(), cluster.ID, pols[0].ID, time.Now().Add(-24*time.Hour))
 	s.TickNightlyBackups(context.Background())
 	runs, _ := mem.ListBackupRuns(context.Background(), cluster.ID)
 	if len(runs) != 1 || runs[0].Status != appdb.BackupSucceeded {
