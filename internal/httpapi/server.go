@@ -268,6 +268,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/cluster/nodes/{id}/revoke", s.revokeClusterNode)
 	mux.HandleFunc("GET /api/v1/workloads", s.listWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
+	mux.HandleFunc("GET /api/v1/workload-extras", s.listWorkloadExtras)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/setup-extras", s.setupWorkloadExtras)
 	mux.HandleFunc("POST /api/v1/workloads/bulk-delete", s.bulkDeleteWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads/import", s.importVM)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/migration-diagnostics", s.getWorkloadMigrationDiagnostics)

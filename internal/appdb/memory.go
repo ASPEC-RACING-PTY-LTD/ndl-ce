@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -218,6 +219,9 @@ func (m *Memory) GetUserByName(_ context.Context, clusterID, username string) (*
 }
 
 func (m *Memory) GetUser(_ context.Context, id string) (*User, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, nil
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u, ok := m.users[id]

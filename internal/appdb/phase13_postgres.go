@@ -20,10 +20,11 @@ func (p *Postgres) ListAuditEvents(ctx context.Context, clusterID string, limit 
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, COALESCE(cluster_id::text, ''), COALESCE(actor_user_id::text, ''), action, result, COALESCE(remote_addr, ''), detail, created_at
-FROM audit_events WHERE cluster_id=$1 OR ($1='' AND cluster_id IS NULL)
-ORDER BY created_at DESC LIMIT $2`, clusterID, limit)
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID != "" && !ValidUUID(clusterID) {
+		return nil, nil
+	}
+	rows, err := p.DB.QueryContext(ctx, listAuditSQL, clusterID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +32,7 @@ ORDER BY created_at DESC LIMIT $2`, clusterID, limit)
 	var out []AuditEvent
 	for rows.Next() {
 		var e AuditEvent
-		if err := rows.Scan(&e.ID, &e.ClusterID, &e.ActorUserID, &e.Action, &e.Result, &e.RemoteAddr, &e.Detail, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.ClusterID, &e.ActorUserID, &e.ActorUsername, &e.Action, &e.Result, &e.RemoteAddr, &e.Detail, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

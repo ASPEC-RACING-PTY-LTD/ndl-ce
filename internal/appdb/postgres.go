@@ -96,6 +96,9 @@ func (p *Postgres) GetUserByName(ctx context.Context, clusterID, username string
 }
 
 func (p *Postgres) GetUser(ctx context.Context, id string) (*User, error) {
+	if !ValidUUID(id) {
+		return nil, nil
+	}
 	return scanUser(p.DB.QueryRowContext(ctx, userSelect+` WHERE id=$1`, id))
 }
 

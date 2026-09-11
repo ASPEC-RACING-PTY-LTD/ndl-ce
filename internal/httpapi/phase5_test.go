@@ -21,16 +21,19 @@ import (
 )
 
 type fakeWorkloads struct {
-	created  lxc.Result
-	life     lxc.Result
-	obs      lxc.Observation
-	err      error
-	failIDs  map[string]error
-	creates  int
-	vols     []string
-	deleted  []string
-	lastSpec lxc.Spec
-	lastLife lxc.LifecycleRequest
+	created       lxc.Result
+	life          lxc.Result
+	obs           lxc.Observation
+	err           error
+	failIDs       map[string]error
+	creates       int
+	setups        int
+	setupErr      error
+	setupWarnings []lxc.SetupWarning
+	vols          []string
+	deleted       []string
+	lastSpec      lxc.Spec
+	lastLife      lxc.LifecycleRequest
 }
 
 func (f *fakeWorkloads) CreateCT(_ context.Context, spec lxc.Spec) (lxc.Result, error) {
@@ -60,6 +63,21 @@ func (f *fakeWorkloads) CreateCT(_ context.Context, spec lxc.Spec) (lxc.Result, 
 
 func (f *fakeWorkloads) LifecycleCT(_ context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
 	f.lastLife = req
+	if req.Action == lxc.ActionGuestSetup {
+		f.setups++
+		if f.setupErr != nil {
+			return lxc.Result{WorkloadID: req.WorkloadID, SetupWarnings: f.setupWarnings}, f.setupErr
+		}
+		res := f.life
+		if res.WorkloadID == "" {
+			res.WorkloadID = req.WorkloadID
+		}
+		if res.Status == "" {
+			res.Status = lxc.StatusRunning
+		}
+		res.SetupWarnings = f.setupWarnings
+		return res, nil
+	}
 	if f.failIDs != nil {
 		if err := f.failIDs[req.WorkloadID]; err != nil {
 			return lxc.Result{}, err

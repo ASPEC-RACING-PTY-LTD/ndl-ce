@@ -526,12 +526,13 @@ type Event struct {
 
 // AuditEvent is a security audit row.
 type AuditEvent struct {
-	ID          string
-	ClusterID   string
-	ActorUserID string
-	Action      string
-	Result      string
-	RemoteAddr  string
-	Detail      json.RawMessage
-	CreatedAt   time.Time
+	ID            string
+	ClusterID     string
+	ActorUserID   string
+	ActorUsername string
+	Action        string
+	Result        string
+	RemoteAddr    string
+	Detail        json.RawMessage
+	CreatedAt     time.Time
 }

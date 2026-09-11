@@ -210,20 +210,42 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := s.Store.ListAuditEvents(r.Context(), p.User.ClusterID, 200)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, http.StatusInternalServerError, "audit log could not be loaded")
 		return
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, e := range items {
-		row := map[string]any{
-			"id": e.ID, "action": e.Action, "result": e.Result,
-			"created_at": e.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		actor, username := s.resolveAuditActor(r.Context(), e.ActorUserID)
+		if username == "" {
+			username = e.ActorUsername
 		}
-		if e.ActorUserID != "" {
+		detail := sanitizeAuditDetail(e.Detail)
+		resKind, resName, resID := auditResourceFromDetail(detail)
+		row := map[string]any{
+			"id":          e.ID,
+			"action":      e.Action,
+			"result":      e.Result,
+			"created_at":  e.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+			"actor_kind":  auditActorKind(actor, e.ActorUserID),
+			"actor_label": auditActorName(actor, e.ActorUserID, username),
+		}
+		if e.ActorUserID != "" && appdb.ValidUUID(e.ActorUserID) {
 			row["actor_user_id"] = e.ActorUserID
-			if u, err := s.Store.GetUser(r.Context(), e.ActorUserID); err == nil && u != nil {
-				row["actor_username"] = u.Username
-			}
+		}
+		if username != "" && auditActorKind(actor, e.ActorUserID) != "system" {
+			row["actor_username"] = username
+		}
+		if resKind != "" {
+			row["resource_kind"] = resKind
+		}
+		if resName != "" {
+			row["resource_name"] = resName
+		}
+		if resID != "" {
+			row["resource_id"] = resID
+		}
+		if detail != nil {
+			row["detail"] = detail
 		}
 		out = append(out, row)
 	}

@@ -20,6 +20,7 @@ const (
 	ApplyStop        = "stop"
 	ApplyUnsupported = "unsupported"
 	ActionApplySpec  = "apply-spec"
+	ActionGuestSetup = "guest-setup"
 )
 
 const (
@@ -117,14 +118,21 @@ type Applied struct {
 }
 
 // Result is returned by create, clone, and lifecycle.
+// SetupWarning is a failed optional guest extra after the workload exists.
+type SetupWarning struct {
+	Extra   string `json:"extra"`
+	Message string `json:"message"`
+}
+
 type Result struct {
-	WorkloadID    string `json:"workload_id"`
-	VolumeID      string `json:"volume_id"`
-	RootfsPath    string `json:"rootfs_path"`
-	MAC           string `json:"mac"`
-	ImageVerified bool   `json:"image_verified"`
-	ImageSHA256   string `json:"image_sha256,omitempty"`
-	Status        string `json:"status"`
+	WorkloadID    string         `json:"workload_id"`
+	VolumeID      string         `json:"volume_id"`
+	RootfsPath    string         `json:"rootfs_path"`
+	MAC           string         `json:"mac"`
+	ImageVerified bool           `json:"image_verified"`
+	ImageSHA256   string         `json:"image_sha256,omitempty"`
+	Status        string         `json:"status"`
+	SetupWarnings []SetupWarning `json:"setup_warnings,omitempty"`
 }
 
 // Hint is what the control plane sends when observing known workloads.
@@ -174,6 +182,7 @@ type LifecycleRequest struct {
 	IPSet           bool     `json:"ip_set,omitempty"`
 	MAC             string   `json:"mac,omitempty"`
 	Autostart       *bool    `json:"autostart,omitempty"`
+	Extras          []string `json:"extras,omitempty"`
 }
 
 // ApplyClass describes whether a spec change can happen live.

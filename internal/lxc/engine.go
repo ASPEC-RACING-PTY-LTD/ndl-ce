@@ -599,6 +599,8 @@ func (e *Engine) Lifecycle(ctx context.Context, req LifecycleRequest) (Result, e
 		return e.Clone(ctx, req)
 	case ActionApplySpec:
 		return e.ApplySpec(ctx, req)
+	case ActionGuestSetup:
+		return e.GuestSetup(ctx, req)
 	default:
 		return Result{}, fmt.Errorf("unknown lifecycle action %q", req.Action)
 	}

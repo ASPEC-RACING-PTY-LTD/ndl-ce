@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/guestextras"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
@@ -74,6 +75,7 @@ type createWorkloadRequest struct {
 	IPv6Gateway            string            `json:"ipv6_gateway"`
 	DNS                    []string          `json:"dns"`
 	MAC                    string            `json:"mac"`
+	Extras                 []string          `json:"extras"`
 	volumeOwnerKind        string            `json:"-"`
 	volumeJobID            string            `json:"-"`
 }
@@ -107,6 +109,7 @@ type cloneWorkloadRequest struct {
 type createIDs struct {
 	WorkloadID string `json:"workload_id"`
 	VolumeID   string `json:"volume_id"`
+	Name       string `json:"name,omitempty"`
 }
 
 func (s *Server) listWorkloads(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +242,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ids := s.planCreateIDs(r.Context(), p.User.ClusterID, node.ID, key, req.VolumeID)
+	ids.Name = req.Name
 	if req.CPUs < 1 {
 		req.CPUs = lxc.DefaultCPUs
 	}
@@ -268,12 +272,17 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	if req.Privileged {
 		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create.privileged", "ok", ids.WorkloadID)
 	}
+	var nesting *bool
+	if guestextras.NeedsNesting(req.Extras) {
+		on := true
+		nesting = &on
+	}
 	res, err := s.Workloads.CreateCT(r.Context(), lxc.Spec{
 		WorkloadID: ids.WorkloadID, Name: req.Name, ImagePin: req.ImagePin,
 		CPUs: req.CPUs, MemoryBytes: req.MemoryBytes, VolumeID: ids.VolumeID,
 		RootfsPath: rootfs, NetworkID: netw.ID, BridgeName: netw.BridgeName,
 		MAC: mac, Privileged: req.Privileged, UIDMap: lxc.DefaultUIDMap, GIDMap: lxc.DefaultGIDMap,
-		IP: ip, NoStart: req.DesiredPower == "stopped",
+		IP: ip, NoStart: req.DesiredPower == "stopped", Nesting: nesting,
 	})
 	if err != nil {
 		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
@@ -326,7 +335,8 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	s.finishOp(r.Context(), op, "succeeded", mustCreateMsg(ids), 100)
 	s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
 	s.emitEvent(r.Context(), p.User.ClusterID, node.ID, "workload.created", map[string]string{"workload_id": row.ID, "kind": row.Kind})
-	writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
+	warnings := s.applyWorkloadExtras(r.Context(), p.User.ClusterID, node.ID, row, req.Extras, req.DesiredPower)
+	writeJSON(w, http.StatusCreated, s.workloadJSONWithSetup(r.Context(), row, warnings))
 }
 
 func (s *Server) planCreateIDs(ctx context.Context, clusterID, nodeID, key, volumeID string) createIDs {

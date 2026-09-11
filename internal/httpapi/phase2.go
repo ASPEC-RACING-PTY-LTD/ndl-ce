@@ -207,6 +207,9 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		if op.Progress != nil {
 			item["progress"] = *op.Progress
 		}
+		if name := operationResourceName(op.Message); name != "" {
+			item["resource_name"] = name
+		}
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -462,4 +465,19 @@ func filterWorkloadMetrics(res metrics.QueryResult, id string) metrics.QueryResu
 	}
 	out.Status = res.Status
 	return out
+}
+
+func operationResourceName(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" || (!strings.HasPrefix(message, "{") && !strings.HasPrefix(message, "[")) {
+		return ""
+	}
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(message), &rec); err != nil {
+		return ""
+	}
+	if name, ok := rec["name"].(string); ok {
+		return strings.TrimSpace(name)
+	}
+	return ""
 }
