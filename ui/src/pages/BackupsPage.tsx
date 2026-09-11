@@ -95,7 +95,11 @@ function retentionLabel(p: BackupPolicy): string {
 
 function policyScopeLabel(policy: BackupPolicy, workloads: Workload[]): string {
   if (policy.scope === "all") {
-    return "All workloads";
+    const n = workloads.length;
+    if (n === 0) {
+      return "All workloads";
+    }
+    return `All workloads (${n} current)`;
   }
   const ids = policy.workload_ids?.length ? policy.workload_ids : policy.workload_id ? [policy.workload_id] : [];
   if (ids.length === 0) {
@@ -538,6 +542,7 @@ export function BackupsPage() {
 
       {loadState === "ready" ? (
         <>
+          <div className="card-grid">
           <section className="section-block" aria-labelledby="backup-policies-heading">
             <div className="page-header-row">
               <h2 id="backup-policies-heading">Policies</h2>
@@ -592,6 +597,12 @@ export function BackupsPage() {
                           <dd>{formatWhen(p.last_run_at ?? latest?.started_at)}</dd>
                         </div>
                       </dl>
+                      {p.scope === "all" ? (
+                        <p className="muted">
+                          Directory system containers are skipped until they use ZFS. Extra disks, iSCSI, and
+                          distributed volumes are skipped.
+                        </p>
+                      ) : null}
                       {mutate ? (
                         <div className="btn-row">
                           <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void onRunPolicy(p)}>
@@ -675,6 +686,7 @@ export function BackupsPage() {
               )}
             </div>
           </section>
+          </div>
 
           <section className="section-block" aria-labelledby="backup-runs-heading">
             <div className="page-header-row">
@@ -963,7 +975,8 @@ export function BackupsPage() {
             </label>
           </div>
           <p className="field-hint">
-            All workloads is the default. It covers the eligible fleet, including workloads created later.
+            All workloads is the default. It covers the eligible fleet, including workloads created later. Directory
+            system containers need ZFS. Extra disks, iSCSI, and distributed volumes are skipped.
           </p>
         </fieldset>
         {policyScope === "selected" ? (

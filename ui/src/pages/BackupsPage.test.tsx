@@ -185,7 +185,7 @@ describe("Backups page", () => {
     render(<App />);
 
     expect(await screen.findByText("fleet-nightly")).toBeVisible();
-    expect(screen.getAllByText(/^all workloads$/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/all workloads \(2 current\)/i)).toBeVisible();
     expect(screen.queryByRole("heading", { name: /^run backup$/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^run now$/i }));
     await waitFor(() => {
@@ -194,5 +194,41 @@ describe("Backups page", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
+  });
+
+  it("shows why Run now failed when the all-scope fleet is ineligible", async () => {
+    mockApi({
+      ...baseRoutes,
+      "/api/v1/backups/policies": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "pol-all",
+              name: "Backup",
+              scope: "all",
+              workload_ids: [],
+              target_id: "tgt-1",
+              schedule: "nightly",
+              keep_daily: 2,
+              keep_weekly: 1,
+              keep_monthly: 1,
+            },
+          ],
+        },
+      },
+      "POST /api/v1/backups/policies/pol-all/run": {
+        status: 422,
+        body: {
+          error:
+            "no eligible workloads in policy scope (2 skipped). Directory system containers need a ZFS dataset for backup send. Extra disks, iSCSI, and distributed volumes are skipped.",
+        },
+      },
+    });
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+    expect(await screen.findByText("Backup")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^run now$/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/directory system containers need a zfs dataset/i);
   });
 });
