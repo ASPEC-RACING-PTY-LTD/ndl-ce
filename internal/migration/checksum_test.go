@@ -25,4 +25,3 @@ func TestRelJailRefusesParentSegment(t *testing.T) {
 		t.Fatal("cleaned parent segment must be refused")
 	}
 }
-

@@ -106,8 +106,8 @@ func (s *Server) previewBackupScope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		WorkloadIDs []string `json:"workload_ids"`
-		CaptureMode string   `json:"capture_mode"`
+		WorkloadIDs []string        `json:"workload_ids"`
+		CaptureMode string          `json:"capture_mode"`
 		ScopeJSON   json.RawMessage `json:"scope_json"`
 	}
 	if err := readJSON(r, &req); err != nil || len(req.WorkloadIDs) == 0 {
@@ -138,7 +138,7 @@ func (s *Server) previewBackupScope(w http.ResponseWriter, r *http.Request) {
 		previews = append(previews, scopePreviewJSON(prev))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": previews,
+		"items":           previews,
 		"protected_bytes": protected, "excluded_bytes": excluded, "full_bytes": full,
 		"capture_mode": mode,
 	})
@@ -370,7 +370,7 @@ func workspaceJSON(s appdb.BackupWorkspaceSettings, st backuphost.Result) map[st
 		"max_local_bytes": s.MaxLocalBytes, "min_host_free_bytes": s.MinHostFreeBytes,
 		"capture_concurrency": s.CaptureConcurrency, "upload_workers": s.UploadWorkers,
 		"bandwidth_limit_bps": s.BandwidthLimitBPS,
-		"repo_bytes": st.RepoBytes, "pending_uploads": st.PendingUploads,
+		"repo_bytes":          st.RepoBytes, "pending_uploads": st.PendingUploads,
 		"protected_workloads": st.Protected, "host_free_bytes": st.Workspace.HostFreeBytes,
 		"capture_busy": st.Workspace.CaptureBusy, "root": firstNonEmpty(st.Workspace.Root, backuphost.DefaultRoot),
 	}

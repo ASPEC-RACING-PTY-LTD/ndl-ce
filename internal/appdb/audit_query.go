@@ -3,8 +3,8 @@ package appdb
 // listAuditSQL is the cluster-scoped audit listing predicate.
 //
 // PostgreSQL types $1 as uuid when it is compared directly to cluster_id.
-// The previous form `cluster_id=$1 OR ($1='' AND cluster_id IS NULL)` then
-// evaluated `$1=''` as a uuid comparison and raised
+// The previous form `cluster_id=$1 OR ($1=” AND cluster_id IS NULL)` then
+// evaluated `$1=”` as a uuid comparison and raised
 // `invalid input syntax for type uuid: ""` (SQLSTATE 22P02) on every list,
 // including when the bound cluster id was itself a valid UUID.
 //

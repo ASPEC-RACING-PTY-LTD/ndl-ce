@@ -110,9 +110,9 @@ func (s *Server) migrationDiagnosticsBundle(ctx context.Context, clusterID strin
 
 func migrationStages(st migration.JobStatus, plan migration.Plan) []map[string]any {
 	out := []map[string]any{{
-		"name":    firstNonEmpty(st.Stage, "unknown"),
-		"state":   firstNonEmpty(st.State, "unknown"),
-		"message": st.Message,
+		"name":     firstNonEmpty(st.Stage, "unknown"),
+		"state":    firstNonEmpty(st.State, "unknown"),
+		"message":  st.Message,
 		"workload": st.Workload,
 	}}
 	seen := map[string]bool{}

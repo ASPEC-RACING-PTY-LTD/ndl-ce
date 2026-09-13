@@ -25,10 +25,10 @@ type Host struct {
 	eng    *backup.Engine
 	docker *docker.Engine
 
-	mu       sync.Mutex
-	settings Settings
-	queues   map[string]*backup.UploadQueue
-	pending  int
+	mu        sync.Mutex
+	settings  Settings
+	queues    map[string]*backup.UploadQueue
+	pending   int
 	capturing bool
 }
 

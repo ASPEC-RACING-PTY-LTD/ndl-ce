@@ -304,7 +304,7 @@ func (s *Server) importContainerItem(ctx context.Context, clusterID, jobID, stag
 		Name: item.Name, Kind: lxc.KindSystemContainer, ImagePin: "imported",
 		CPUs: item.Manifest.Container.CPUs, MemoryBytes: item.Manifest.Container.MemoryBytes,
 		PoolID: poolID, NetworkID: netID, Privileged: item.Manifest.Container.Privileged,
-		DesiredPower: "stopped",
+		DesiredPower:    "stopped",
 		volumeOwnerKind: storage.VolumeKindMigration, volumeJobID: jobID,
 	}
 	if item.StartAfter {

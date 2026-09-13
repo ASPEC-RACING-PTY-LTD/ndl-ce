@@ -14,30 +14,30 @@ const (
 	ActionWorkspace = "v2-workspace"
 	ActionEnqueue   = "v2-enqueue"
 
-	DefaultRoot            = "/var/lib/ndl/backup-repo"
-	DefaultMaxLocalBytes   = 50 << 30
-	DefaultMinHostFree     = 10 << 30
-	DefaultUploadWorkers   = 4
-	DefaultCaptureSlots    = 1
+	DefaultRoot          = "/var/lib/ndl/backup-repo"
+	DefaultMaxLocalBytes = 50 << 30
+	DefaultMinHostFree   = 10 << 30
+	DefaultUploadWorkers = 4
+	DefaultCaptureSlots  = 1
 )
 
 // Request is the JSON body passed as dest_path for V2 backup-copy actions.
 // Credentials are request-scoped and must never be logged.
 type Request struct {
-	Action       string               `json:"action,omitempty"`
-	WorkloadID   string               `json:"workload_id,omitempty"`
-	WorkloadName string               `json:"workload_name,omitempty"`
-	Unit         string               `json:"unit,omitempty"`
-	Consistency  string               `json:"consistency,omitempty"`
-	CaptureMode  string               `json:"capture_mode,omitempty"`
-	Blueprint    backup.Blueprint     `json:"blueprint,omitempty"`
+	Action       string                `json:"action,omitempty"`
+	WorkloadID   string                `json:"workload_id,omitempty"`
+	WorkloadName string                `json:"workload_name,omitempty"`
+	Unit         string                `json:"unit,omitempty"`
+	Consistency  string                `json:"consistency,omitempty"`
+	CaptureMode  string                `json:"capture_mode,omitempty"`
+	Blueprint    backup.Blueprint      `json:"blueprint,omitempty"`
 	Selection    backupscope.Selection `json:"selection,omitempty"`
-	BackupID     string               `json:"backup_id,omitempty"`
-	Namespace    string               `json:"namespace,omitempty"`
-	Dest         string               `json:"dest,omitempty"`
-	Chown        bool                 `json:"chown,omitempty"`
-	Settings     Settings             `json:"settings,omitempty"`
-	Target       TargetSpec           `json:"target,omitempty"`
+	BackupID     string                `json:"backup_id,omitempty"`
+	Namespace    string                `json:"namespace,omitempty"`
+	Dest         string                `json:"dest,omitempty"`
+	Chown        bool                  `json:"chown,omitempty"`
+	Settings     Settings              `json:"settings,omitempty"`
+	Target       TargetSpec            `json:"target,omitempty"`
 }
 
 // TargetSpec describes a destination. Secrets stay on this request only.
@@ -64,35 +64,35 @@ type Settings struct {
 
 // Result is returned in CopyResult.Extra.
 type Result struct {
-	BackupID         string              `json:"backup_id,omitempty"`
-	Namespace        string              `json:"namespace,omitempty"`
-	WorkloadID       string              `json:"workload_id,omitempty"`
-	WorkloadName     string              `json:"workload_name,omitempty"`
-	LocalComplete    bool                `json:"local_complete,omitempty"`
-	Remote           backup.RemoteState  `json:"remote,omitempty"`
-	CaptureMode      string              `json:"capture_mode,omitempty"`
-	Consistency      string              `json:"consistency,omitempty"`
-	LogicalBytes     int64               `json:"logical_bytes,omitempty"`
-	BytesRead        int64               `json:"bytes_read,omitempty"`
-	PhysicalNewData  int64               `json:"physical_new_data,omitempty"`
-	ChunksTotal      int                 `json:"chunks_total,omitempty"`
-	ChunksNew        int                 `json:"chunks_new,omitempty"`
-	ChunksReused     int                 `json:"chunks_reused,omitempty"`
-	FilesScanned     int                 `json:"files_scanned,omitempty"`
-	FilesUnchanged   int                 `json:"files_unchanged,omitempty"`
-	FilesChanged     int                 `json:"files_changed,omitempty"`
-	PacksCommitted   int                 `json:"packs_committed,omitempty"`
-	DurationNanos    int64               `json:"duration_ns,omitempty"`
-	DedupeRatio      float64             `json:"dedupe_ratio,omitempty"`
-	RepoBytes        int64               `json:"repo_bytes,omitempty"`
-	PendingUploads   int                 `json:"pending_uploads,omitempty"`
-	Protected        int                 `json:"protected_count,omitempty"`
-	Locator          string              `json:"locator,omitempty"`
-	Blueprint        backup.Blueprint    `json:"blueprint,omitempty"`
-	Preview          backupscope.Preview `json:"preview,omitempty"`
-	Workspace        WorkspaceStatus     `json:"workspace,omitempty"`
-	Points           []PointView         `json:"points,omitempty"`
-	Error            string              `json:"error,omitempty"`
+	BackupID        string              `json:"backup_id,omitempty"`
+	Namespace       string              `json:"namespace,omitempty"`
+	WorkloadID      string              `json:"workload_id,omitempty"`
+	WorkloadName    string              `json:"workload_name,omitempty"`
+	LocalComplete   bool                `json:"local_complete,omitempty"`
+	Remote          backup.RemoteState  `json:"remote,omitempty"`
+	CaptureMode     string              `json:"capture_mode,omitempty"`
+	Consistency     string              `json:"consistency,omitempty"`
+	LogicalBytes    int64               `json:"logical_bytes,omitempty"`
+	BytesRead       int64               `json:"bytes_read,omitempty"`
+	PhysicalNewData int64               `json:"physical_new_data,omitempty"`
+	ChunksTotal     int                 `json:"chunks_total,omitempty"`
+	ChunksNew       int                 `json:"chunks_new,omitempty"`
+	ChunksReused    int                 `json:"chunks_reused,omitempty"`
+	FilesScanned    int                 `json:"files_scanned,omitempty"`
+	FilesUnchanged  int                 `json:"files_unchanged,omitempty"`
+	FilesChanged    int                 `json:"files_changed,omitempty"`
+	PacksCommitted  int                 `json:"packs_committed,omitempty"`
+	DurationNanos   int64               `json:"duration_ns,omitempty"`
+	DedupeRatio     float64             `json:"dedupe_ratio,omitempty"`
+	RepoBytes       int64               `json:"repo_bytes,omitempty"`
+	PendingUploads  int                 `json:"pending_uploads,omitempty"`
+	Protected       int                 `json:"protected_count,omitempty"`
+	Locator         string              `json:"locator,omitempty"`
+	Blueprint       backup.Blueprint    `json:"blueprint,omitempty"`
+	Preview         backupscope.Preview `json:"preview,omitempty"`
+	Workspace       WorkspaceStatus     `json:"workspace,omitempty"`
+	Points          []PointView         `json:"points,omitempty"`
+	Error           string              `json:"error,omitempty"`
 }
 
 // PointView is a secret-free restore-point summary.

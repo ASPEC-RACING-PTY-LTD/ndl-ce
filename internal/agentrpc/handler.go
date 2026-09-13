@@ -171,9 +171,9 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 			}
 			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "destroyed"}), nil
 		}
-	if extra.Action == "resize" || extra.Action == "resize-live" {
-		volReq.Live = extra.Action == "resize-live"
-		if err := h.driver().ResizeVolume(ctx, volReq, hint); err != nil {
+		if extra.Action == "resize" || extra.Action == "resize-live" {
+			volReq.Live = extra.Action == "resize-live"
+			if err := h.driver().ResizeVolume(ctx, volReq, hint); err != nil {
 				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 			}
 			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "resized"}), nil

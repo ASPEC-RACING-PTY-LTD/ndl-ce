@@ -39,9 +39,9 @@ func TestExtractVzdumpOrRootfsUnwrapsInnerBackup(t *testing.T) {
 	dir := t.TempDir()
 	inner := filepath.Join(dir, "inner.tar")
 	writeTar(t, inner, map[string][]byte{
-		"sbin/init": []byte("#!/bin/sh\n"),
-		"usr/bin/sh": []byte("x"),
-		"bin/ls":     []byte("x"),
+		"sbin/init":      []byte("#!/bin/sh\n"),
+		"usr/bin/sh":     []byte("x"),
+		"bin/ls":         []byte("x"),
 		"etc/os-release": []byte("ID=debian\n"),
 	})
 	innerBody, err := os.ReadFile(inner)

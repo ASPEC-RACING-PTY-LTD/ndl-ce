@@ -34,16 +34,16 @@ const (
 
 // Item is one discovered path category for preview and capture planning.
 type Item struct {
-	ID          string   `json:"id"`
-	Kind        string   `json:"kind"`
-	Label       string   `json:"label"`
-	Paths       []string `json:"paths"`
-	Bytes       int64    `json:"bytes"`
-	Selected    bool     `json:"selected"`
-	DefaultOn   bool     `json:"default_on"`
-	Excluded    bool     `json:"excluded"`
-	Reproducible bool    `json:"reproducible,omitempty"`
-	Warnings    []string `json:"warnings,omitempty"`
+	ID           string   `json:"id"`
+	Kind         string   `json:"kind"`
+	Label        string   `json:"label"`
+	Paths        []string `json:"paths"`
+	Bytes        int64    `json:"bytes"`
+	Selected     bool     `json:"selected"`
+	DefaultOn    bool     `json:"default_on"`
+	Excluded     bool     `json:"excluded"`
+	Reproducible bool     `json:"reproducible,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 // Warning is a user-visible classification concern. It never includes secrets.
@@ -64,16 +64,16 @@ type Selection struct {
 
 // Preview is the per-workload scope report used by the policy editor.
 type Preview struct {
-	WorkloadID    string    `json:"workload_id,omitempty"`
-	WorkloadName  string    `json:"workload_name,omitempty"`
-	Mode          string    `json:"mode"`
-	Items         []Item    `json:"items"`
-	Warnings      []Warning `json:"warnings,omitempty"`
-	ProtectedBytes int64    `json:"protected_bytes"`
-	ExcludedBytes  int64    `json:"excluded_bytes"`
-	FullBytes      int64    `json:"full_bytes"`
-	Includes       []string `json:"includes,omitempty"`
-	Excludes       []string `json:"excludes,omitempty"`
+	WorkloadID     string    `json:"workload_id,omitempty"`
+	WorkloadName   string    `json:"workload_name,omitempty"`
+	Mode           string    `json:"mode"`
+	Items          []Item    `json:"items"`
+	Warnings       []Warning `json:"warnings,omitempty"`
+	ProtectedBytes int64     `json:"protected_bytes"`
+	ExcludedBytes  int64     `json:"excluded_bytes"`
+	FullBytes      int64     `json:"full_bytes"`
+	Includes       []string  `json:"includes,omitempty"`
+	Excludes       []string  `json:"excludes,omitempty"`
 }
 
 // DockerHint is a secret-free persistence hint from Docker inventory.

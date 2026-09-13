@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	VolumeOwnerFile = ".ndl-owned"
-	VolumeOwnerName = "ndl-ce"
+	VolumeOwnerFile     = ".ndl-owned"
+	VolumeOwnerName     = "ndl-ce"
 	VolumeKindMigration = "migration-volume"
 	VolumeKindOperator  = "operator-volume"
 )

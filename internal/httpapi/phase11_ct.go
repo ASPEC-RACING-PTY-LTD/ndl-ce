@@ -781,7 +781,7 @@ func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appd
 			CPUs: meta.CPUs, MemoryBytes: meta.MemoryBytes, VolumeID: newVolID,
 			RootfsPath: rootfs, NetworkID: netID, BridgeName: bridge,
 			Privileged: meta.Privileged, UIDMap: meta.UIDMap, GIDMap: meta.GIDMap,
-			IP: lxc.IPConfig{IPv4Mode: lxc.IPModeDHCP, IPv6Mode: lxc.IPModeDisabled},
+			IP:        lxc.IPConfig{IPv4Mode: lxc.IPModeDHCP, IPv6Mode: lxc.IPModeDisabled},
 			SkipImage: true, NoStart: true, Nesting: meta.Nesting, TUN: meta.TUN, AllowMknod: meta.AllowMknod,
 		}); err != nil {
 			return "", err

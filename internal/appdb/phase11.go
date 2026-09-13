@@ -36,10 +36,10 @@ const (
 	BackupScopeAll              = "all"
 	BackupScopeSelected         = "selected"
 
-	BackupMethodDirectoryArchive   = "directory-archive"
-	BackupMethodContentAddressed   = "content-addressed"
-	BackupMethodZFSSend            = "zfs-send"
-	BackupMethodQCOW2Copy          = "qcow2-copy"
+	BackupMethodDirectoryArchive = "directory-archive"
+	BackupMethodContentAddressed = "content-addressed"
+	BackupMethodZFSSend          = "zfs-send"
+	BackupMethodQCOW2Copy        = "qcow2-copy"
 
 	BackupCaptureSmart  = "smart"
 	BackupCaptureCustom = "custom"
@@ -210,12 +210,12 @@ type BackupWorkspaceSettings struct {
 
 // BackupRepository is the catalogued local V2 store.
 type BackupRepository struct {
-	ID         string
-	ClusterID  string
-	RootPath   string
-	SizeBytes  int64
-	Status     string
-	UpdatedAt  time.Time
+	ID        string
+	ClusterID string
+	RootPath  string
+	SizeBytes int64
+	Status    string
+	UpdatedAt time.Time
 }
 
 // BackupRestorePoint is a V2 restore point distinct from a remote-protected copy.

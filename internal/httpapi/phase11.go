@@ -471,15 +471,15 @@ func (s *Server) deleteBackupPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 type backupPolicyBody struct {
-	Name        string   `json:"name"`
-	Scope       string   `json:"scope"`
-	WorkloadID  string   `json:"workload_id"`
-	WorkloadIDs []string `json:"workload_ids"`
-	TargetID    string   `json:"target_id"`
-	Schedule    string   `json:"schedule"`
-	KeepDaily   int      `json:"keep_daily"`
-	KeepWeekly  int      `json:"keep_weekly"`
-	KeepMonthly int      `json:"keep_monthly"`
+	Name        string          `json:"name"`
+	Scope       string          `json:"scope"`
+	WorkloadID  string          `json:"workload_id"`
+	WorkloadIDs []string        `json:"workload_ids"`
+	TargetID    string          `json:"target_id"`
+	Schedule    string          `json:"schedule"`
+	KeepDaily   int             `json:"keep_daily"`
+	KeepWeekly  int             `json:"keep_weekly"`
+	KeepMonthly int             `json:"keep_monthly"`
 	CaptureMode string          `json:"capture_mode"`
 	ScopeJSON   json.RawMessage `json:"scope_json"`
 }

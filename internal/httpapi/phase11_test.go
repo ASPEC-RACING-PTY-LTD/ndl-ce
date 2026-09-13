@@ -116,7 +116,7 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 				"capture_mode": firstNonEmpty(req.CaptureMode, "smart"),
 				"preview": map[string]any{
 					"workload_id": req.WorkloadID, "workload_name": req.WorkloadName, "mode": firstNonEmpty(req.CaptureMode, "smart"),
-					"items": []map[string]any{{"id": "db:postgresql", "kind": "database", "label": "PostgreSQL", "paths": []string{"/var/lib/postgresql"}, "bytes": 4, "selected": true, "default_on": true}},
+					"items":           []map[string]any{{"id": "db:postgresql", "kind": "database", "label": "PostgreSQL", "paths": []string{"/var/lib/postgresql"}, "bytes": 4, "selected": true, "default_on": true}},
 					"protected_bytes": 4, "excluded_bytes": 0, "full_bytes": 4,
 				},
 				"workspace": map[string]any{"root": "/var/lib/ndl/backup-repo", "repo_bytes": 0, "pending_uploads": 0},
@@ -135,7 +135,7 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 			"namespace": ns, "workload_id": req.WorkloadID, "workload_name": req.WorkloadName,
 			"local_complete": true, "remote": "queued", "capture_mode": firstNonEmpty(req.CaptureMode, "smart"),
 			"logical_bytes": 4, "physical_new_data": 4, "chunks_new": 1, "chunks_reused": 0,
-			"locator": "ndl-cab://backups/" + ns + "/11111111-1111-4111-8111-111111111111",
+			"locator":   "ndl-cab://backups/" + ns + "/11111111-1111-4111-8111-111111111111",
 			"blueprint": map[string]any{"kind": "ndl-backup-blueprint", "name": req.WorkloadName, "capture_mode": firstNonEmpty(req.CaptureMode, "smart")},
 		})
 		return storage.CopyResult{Dest: "ndl-cab://backups/" + ns + "/", SHA256: "11111111-1111-4111-8111-111111111111", Size: 4, Format: "ndl-cab", Extra: string(extra)}, nil
