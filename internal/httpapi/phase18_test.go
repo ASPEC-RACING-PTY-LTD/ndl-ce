@@ -172,14 +172,22 @@ func TestPhase18ImportRollbackAndRBAC(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	uefiRes, _ := ts.Client().Do(req)
-	if uefiRes.StatusCode < 400 {
-		t.Fatalf("uefi import without firmware %d", uefiRes.StatusCode)
-	}
-	_ = uefiRes.Body.Close()
-	volsUEFI, _ := mem.ListVolumes(context.Background(), clusterID, "")
-	wlsUEFI, _ := mem.ListWorkloads(context.Background(), clusterID)
-	if len(volsUEFI) != len(volsBefore) || len(wlsUEFI) != len(wlsBefore) {
-		t.Fatalf("uefi import left adopted state volumes=%d workloads=%d", len(volsUEFI), len(wlsUEFI))
+	if hostHasUEFIFirmware() {
+		if uefiRes.StatusCode != http.StatusCreated {
+			b, _ := io.ReadAll(uefiRes.Body)
+			t.Fatalf("uefi import with host firmware %d %s", uefiRes.StatusCode, b)
+		}
+		_ = uefiRes.Body.Close()
+	} else {
+		if uefiRes.StatusCode < 400 {
+			t.Fatalf("uefi import without firmware %d", uefiRes.StatusCode)
+		}
+		_ = uefiRes.Body.Close()
+		volsUEFI, _ := mem.ListVolumes(context.Background(), clusterID, "")
+		wlsUEFI, _ := mem.ListWorkloads(context.Background(), clusterID)
+		if len(volsUEFI) != len(volsBefore) || len(wlsUEFI) != len(wlsBefore) {
+			t.Fatalf("uefi import left adopted state volumes=%d workloads=%d", len(volsUEFI), len(wlsUEFI))
+		}
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads/import", strings.NewReader(body))
@@ -357,12 +365,21 @@ func TestPhase18TemplatesExportAndSecureBoot(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	out, _ := ts.Client().Do(req)
-	if out.StatusCode != http.StatusConflict {
+	if qemu.DetectSecbootFirmware() == "" {
+		if out.StatusCode != http.StatusConflict {
+			b, _ := io.ReadAll(out.Body)
+			t.Fatalf("secure boot without firmware %d %s", out.StatusCode, b)
+		}
+	} else if out.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(out.Body)
-		t.Fatalf("secure boot without firmware %d %s", out.StatusCode, b)
+		t.Fatalf("secure boot with host firmware %d %s", out.StatusCode, b)
 	}
 	_ = out.Body.Close()
 	_ = s
+}
+
+func hostHasUEFIFirmware() bool {
+	return qemu.DetectFirmware() != "" || qemu.DetectSecbootFirmware() != ""
 }
 
 type missCreateVMTemplateStore struct {

@@ -69,6 +69,15 @@ func (h *Host) dockerInventory(ctx context.Context, workloadID, name string) (*b
 				seenVol[name] = struct{}{}
 				info.NamedVolumes = append(info.NamedVolumes, name)
 				hint.NamedVolumes = append(hint.NamedVolumes, name)
+				hostPath := strings.TrimSpace(m.Source)
+				if !strings.HasPrefix(hostPath, "/") {
+					hostPath = backupscope.ResolveDockerVolumePath("", name)
+				} else if strings.HasPrefix(hostPath, "/var/lib/docker/volumes/") {
+					hostPath = hostPath
+				} else {
+					hostPath = backupscope.ResolveDockerVolumePath("", name)
+				}
+				hint.VolumePaths = append(hint.VolumePaths, hostPath)
 			case "bind":
 				src := firstNonEmpty(m.Source, m.Destination)
 				if src == "" {

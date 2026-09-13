@@ -128,3 +128,30 @@ func TestUploadRetriesTransientFailures(t *testing.T) {
 		return ps != nil && ps.Remote == RemoteProtected
 	})
 }
+
+func TestUploadEnforcesBandwidthLimit(t *testing.T) {
+	e := testEngine(t, smallCfg())
+	target := NewMemTarget()
+	src := t.TempDir()
+	writeFile(t, filepath.Join(src, "f.bin"), randBytes(25, 64<<10), 0o644)
+	_, state, err := e.Capture(context.Background(), CaptureOptions{Source: src, WorkloadID: "wl", WorkloadName: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := NewUploadQueueLimited(e.Repo(), target, 1, 32<<10)
+	if err := q.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer q.Stop()
+	start := time.Now()
+	if err := q.EnqueueBackup(state); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, func() bool {
+		ps, _ := e.Repo().LoadState(state.Namespace, state.BackupID)
+		return ps != nil && ps.Remote == RemoteProtected
+	})
+	if elapsed := time.Since(start); elapsed < 1500*time.Millisecond {
+		t.Fatalf("bandwidth limiter did not slow upload: %s", elapsed)
+	}
+}

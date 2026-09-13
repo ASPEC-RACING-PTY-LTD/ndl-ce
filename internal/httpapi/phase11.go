@@ -609,9 +609,11 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		WorkloadID string `json:"workload_id"`
-		TargetID   string `json:"target_id"`
-		PolicyID   string `json:"policy_id"`
+		WorkloadID  string          `json:"workload_id"`
+		TargetID    string          `json:"target_id"`
+		PolicyID    string          `json:"policy_id"`
+		CaptureMode string          `json:"capture_mode"`
+		ScopeJSON   json.RawMessage `json:"scope_json"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "workload_id and target_id are required")
@@ -625,7 +627,11 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "workload_id and target_id are required")
 		return
 	}
-	run, err := s.executeBackup(r.Context(), p.User.ClusterID, req.WorkloadID, req.TargetID, req.PolicyID)
+	if req.CaptureMode != "" && req.CaptureMode != appdb.BackupCaptureSmart && req.CaptureMode != appdb.BackupCaptureCustom && req.CaptureMode != appdb.BackupCaptureFull {
+		writeErr(w, http.StatusBadRequest, "capture_mode must be smart, custom, or full")
+		return
+	}
+	run, err := s.executeBackup(r.Context(), p.User.ClusterID, req.WorkloadID, req.TargetID, req.PolicyID, req.CaptureMode, req.ScopeJSON)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -764,7 +770,7 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 			runs = append(runs, run)
 			continue
 		}
-		run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID)
+		run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID, "", nil)
 		if err != nil {
 			lastErr = err
 			run = s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, err.Error())
@@ -860,7 +866,7 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 	}
 }
 
-func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID string) (appdb.BackupRun, error) {
+func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID, captureMode string, scopeJSON json.RawMessage) (appdb.BackupRun, error) {
 	s.backupMu.Lock()
 	defer s.backupMu.Unlock()
 	wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
@@ -922,14 +928,18 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	artifactID := uuid.NewString()
 	objectKind := isObjectBackupKind(tgt.Kind)
 	if plan.Method == appdb.BackupMethodDirectoryArchive || plan.Method == appdb.BackupMethodContentAddressed {
-		captureMode := appdb.BackupCaptureSmart
+		mode := firstNonEmpty(captureMode, appdb.BackupCaptureSmart)
 		sel := backupscope.Selection{}
 		if policyID != "" {
 			if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
-				captureMode = firstNonEmpty(pol.CaptureMode, appdb.BackupCaptureSmart)
+				mode = firstNonEmpty(captureMode, pol.CaptureMode, appdb.BackupCaptureSmart)
 				sel = selectionFor(pol.ScopeJSON, workloadID)
 			}
 		}
+		if len(scopeJSON) > 0 {
+			sel = selectionFor(string(scopeJSON), workloadID)
+		}
+		captureMode = mode
 		if err := s.executeDirectoryCTBackupV2(ctx, clusterID, *wl, vol, rootfs, *tgt, &run, artifactID, captureMode, sel); err != nil {
 			return fail(err.Error())
 		}

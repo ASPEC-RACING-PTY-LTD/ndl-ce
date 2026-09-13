@@ -430,6 +430,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CapacityResponse"
+  /workloads/{id}/metrics:
+    get:
+      operationId: getWorkloadMetrics
+      summary: Filtered metrics series for one workload
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsResponse"
   /workloads/{id}/logs:
     get:
       operationId: getWorkloadLogs
@@ -2191,6 +2208,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Workload"
+  /workload-extras:
+    get:
+      operationId: listWorkloadExtras
+      summary: Guest extras the operator can preinstall on a system container
+      parameters:
+        - name: image_pin
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Extra catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadExtraListResponse"
+  /workloads/{id}/setup-extras:
+    post:
+      operationId: setupWorkloadExtras
+      summary: Install selected guest extras inside a system container
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupWorkloadExtrasRequest"
+      responses:
+        "200":
+          description: Workload with setup warnings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+        "422":
+          description: Extras are only supported on system containers
   /workloads/bulk-delete:
     post:
       operationId: bulkDeleteWorkloads
@@ -6798,6 +6857,50 @@ components:
           type: array
           items:
             type: string
+    WorkloadExtraListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkloadExtra"
+    WorkloadExtra:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - available
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        requires:
+          type: array
+          items:
+            type: string
+        needs_nesting:
+          type: boolean
+        available:
+          type: boolean
+        unavailable_reason:
+          type: string
+    SetupWorkloadExtrasRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        extras:
+          type: array
+          items:
+            type: string
     Workload:
       type: object
       additionalProperties: true
@@ -8202,6 +8305,15 @@ components:
           type: string
         policy_id:
           type: string
+        capture_mode:
+          type: string
+          enum:
+            - smart
+            - custom
+            - full
+        scope_json:
+          type: object
+          additionalProperties: true
     BackupArtifact:
       type: object
       additionalProperties: false

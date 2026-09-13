@@ -1947,6 +1947,65 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	}
 }
 
+func TestAdhocBackupHonorsCaptureMode(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	s.Workloads = &fakeWorkloads{}
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	ctBody := `{"name":"adhoc-full","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(ctBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var ct map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&ct)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("ct %d", res.StatusCode)
+	}
+	dir := t.TempDir()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/targets", strings.NewReader(`{"name":"local","kind":"local","locator":"`+dir+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	var tgt map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&tgt)
+	_ = res.Body.Close()
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+ct["id"].(string)+`","target_id":"`+tgt["id"].(string)+`","capture_mode":"full"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("adhoc full %d %s", res.StatusCode, raw)
+	}
+	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
+	if len(arts) != 1 || arts[0].CaptureMode != appdb.BackupCaptureFull {
+		t.Fatalf("adhoc full artifact %+v", arts)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/run", strings.NewReader(`{"workload_id":"`+ct["id"].(string)+`","target_id":"`+tgt["id"].(string)+`","capture_mode":"bogus"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(raw), "capture_mode") {
+		t.Fatalf("bogus capture_mode %d %s", res.StatusCode, raw)
+	}
+}
+
 type gateBackup struct {
 	fakeBackup
 	started chan struct{}

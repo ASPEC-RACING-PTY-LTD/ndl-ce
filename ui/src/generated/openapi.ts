@@ -898,6 +898,25 @@ export interface WorkloadListResponse {
   image_pins?: string[];
 }
 
+export interface WorkloadExtraListResponse {
+  items: WorkloadExtra[];
+}
+
+export interface WorkloadExtra {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  requires?: string[];
+  needs_nesting?: boolean;
+  available: boolean;
+  unavailable_reason?: string;
+}
+
+export interface SetupWorkloadExtrasRequest {
+  extras?: string[];
+}
+
 export interface Workload {
   id: string;
   name: string;
@@ -1473,6 +1492,8 @@ export interface RunBackupRequest {
   workload_id: string;
   target_id: string;
   policy_id?: string;
+  capture_mode?: "smart" | "custom" | "full";
+  scope_json?: Record<string, unknown>;
 }
 
 export interface BackupArtifact {
@@ -2369,6 +2390,8 @@ export type GetNodeSmartPath = "/api/v1/nodes/{id}/smart";
 
 export type GetNodeCapacityPath = "/api/v1/nodes/{id}/capacity";
 
+export type GetWorkloadMetricsPath = "/api/v1/workloads/{id}/metrics";
+
 export type GetWorkloadLogsPath = "/api/v1/workloads/{id}/logs";
 
 export type GetTimelinePath = "/api/v1/timeline";
@@ -2548,6 +2571,10 @@ export type MaintainNodePath = "/api/v1/nodes/{id}/maintain";
 export type ExitNodeMaintenancePath = "/api/v1/nodes/{id}/maintain/exit";
 
 export type ListWorkloadsPath = "/api/v1/workloads";
+
+export type ListWorkloadExtrasPath = "/api/v1/workload-extras";
+
+export type SetupWorkloadExtrasPath = "/api/v1/workloads/{id}/setup-extras";
 
 export type BulkDeleteWorkloadsPath = "/api/v1/workloads/bulk-delete";
 

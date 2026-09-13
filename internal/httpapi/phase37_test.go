@@ -49,8 +49,8 @@ func TestPhase37OfficialVerifyAndScanReport(t *testing.T) {
 		t.Fatalf("%s", raw)
 	}
 	reason, _ := ver["reason"].(string)
-	if !strings.Contains(reason, "cluster-local signing key") || strings.Contains(reason, "Official CA") || strings.Contains(reason, "publisher CA") {
-		t.Fatalf("official verify must name cluster-local signing key %s", raw)
+	if !strings.Contains(reason, "pinned Official publisher public key") || strings.Contains(reason, "cluster-local signing key") {
+		t.Fatalf("official verify must name the pinned Official publisher public key %s", raw)
 	}
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/store/apps/"+id+"/scans", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
@@ -232,6 +232,19 @@ deployment:
 	wls, _ = mem.ListWorkloads(context.Background(), clusterID)
 	if len(wls) != 1 {
 		t.Fatalf("revoke must not delete running workloads %+v", wls)
+	}
+}
+
+func TestPhase37RefusesCreatingOfficialClassKeys(t *testing.T) {
+	_, _, ts, cookie, _, _, _ := phase22Ready(t)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/store/keys", strings.NewReader(`{"name":"forged","class":"official"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(raw), "pinned") {
+		t.Fatalf("official key create %d %s", res.StatusCode, raw)
 	}
 }
 

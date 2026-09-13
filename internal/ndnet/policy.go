@@ -125,6 +125,8 @@ func (e *Engine) applyPolicy(ctx context.Context, op AdvancedOp) (AdvancedResult
 		ManagementIfName: mgmt, ManagementIfIndex: host.ManagementIfIndex,
 	}
 	if e.SkipHostCmds {
+		res.Status = StatusUnavailable
+		res.Reason = "host commands skipped; nft policy was not applied"
 		return res, nil
 	}
 	path, err := e.writeNFTNamed("ndl-policy.nft", rules)

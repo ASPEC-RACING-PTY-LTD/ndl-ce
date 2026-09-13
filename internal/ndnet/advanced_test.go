@@ -166,8 +166,11 @@ func TestPolicyDeniesPairAndRefusesManagementINPUT(t *testing.T) {
 	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
 		Action: ActionPolicyApply, ObjectID: uuid.NewString(), PolicyAction: "deny", SrcMAC: src, DstMAC: dst,
 	})
-	if err != nil || res.Status != StatusAvailable {
+	if err != nil || res.Status != StatusUnavailable {
 		t.Fatalf("%+v %v", res, err)
+	}
+	if !strings.Contains(res.Reason, "host commands skipped") {
+		t.Fatalf("SkipHostCmds must not invent nft success: %+v", res)
 	}
 }
 
@@ -198,7 +201,7 @@ func TestPolicyApplyRendersFullSetInOneTable(t *testing.T) {
 			{ID: idB, Action: "deny", SrcMAC: src, DstMAC: dst},
 		},
 	})
-	if err != nil || res.Status != StatusAvailable {
+	if err != nil || res.Status != StatusUnavailable {
 		t.Fatalf("%+v %v", res, err)
 	}
 	if strings.Count(res.NFT, "table bridge") != 1 {

@@ -383,6 +383,7 @@ export function BackupsPage() {
 
   const [runWorkloadId, setRunWorkloadId] = useState("");
   const [runTargetId, setRunTargetId] = useState("");
+  const [runCaptureMode, setRunCaptureMode] = useState<CaptureMode>("smart");
   const [filePath, setFilePath] = useState("/etc/hostname");
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [restoreNodeId, setRestoreNodeId] = useState("");
@@ -735,6 +736,7 @@ export function BackupsPage() {
       await runBackup({
         workload_id: runWorkloadId,
         target_id: runTargetId,
+        capture_mode: runCaptureMode,
       });
       setDialog(null);
       await reload();
@@ -1618,6 +1620,46 @@ export function BackupsPage() {
         onConfirm={() => void onRunAdhoc()}
       >
         <p className="muted">Starts a one-off copy without changing a policy. Prefer Run now on a policy when you have one.</p>
+        <fieldset className="field">
+          <legend className="field-label">Backup scope</legend>
+          <div className="scope-options">
+            <label className="field-check">
+              <input
+                type="radio"
+                name="backup-adhoc-capture-mode"
+                value="smart"
+                checked={runCaptureMode === "smart"}
+                onChange={() => setRunCaptureMode("smart")}
+              />
+              Smart Application Data
+            </label>
+            <label className="field-check">
+              <input
+                type="radio"
+                name="backup-adhoc-capture-mode"
+                value="custom"
+                checked={runCaptureMode === "custom"}
+                onChange={() => setRunCaptureMode("custom")}
+              />
+              Custom
+            </label>
+            <label className="field-check">
+              <input
+                type="radio"
+                name="backup-adhoc-capture-mode"
+                value="full"
+                checked={runCaptureMode === "full"}
+                onChange={() => setRunCaptureMode("full")}
+              />
+              Full Machine / Full LXC
+            </label>
+          </div>
+          {runCaptureMode === "full" ? (
+            <p className="banner banner-warn" role="status">
+              Full Machine / Full LXC backs up the entire recoverable workload. It is not the ad-hoc default.
+            </p>
+          ) : null}
+        </fieldset>
         <div className="field">
           <label className="field-label" htmlFor="backup-run-workload">
             Workload

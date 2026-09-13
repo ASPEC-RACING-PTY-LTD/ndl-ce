@@ -214,19 +214,24 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	workloads := s.Workloads
 	if !local {
-		id := uuid.NewString()
-		row := remotePlacedWorkload(p.User.ClusterID, node, req, id, lxc.KindSystemContainer)
-		if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
-			writeErr(w, http.StatusConflict, "could not record workload")
+		if destWL, ok := s.destWorkloads(r.Context(), node); ok {
+			workloads = destWL
+		} else {
+			id := uuid.NewString()
+			row := remotePlacedWorkload(p.User.ClusterID, node, req, id, lxc.KindSystemContainer)
+			if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
+				writeErr(w, http.StatusConflict, "could not record workload")
+				return
+			}
+			s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
+			s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
+			writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
 			return
 		}
-		s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
-		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
-		writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
-		return
 	}
-	if s.Workloads == nil {
+	if workloads == nil {
 		writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
 		return
 	}
@@ -277,7 +282,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		on := true
 		nesting = &on
 	}
-	res, err := s.Workloads.CreateCT(r.Context(), lxc.Spec{
+	res, err := workloads.CreateCT(r.Context(), lxc.Spec{
 		WorkloadID: ids.WorkloadID, Name: req.Name, ImagePin: req.ImagePin,
 		CPUs: req.CPUs, MemoryBytes: req.MemoryBytes, VolumeID: ids.VolumeID,
 		RootfsPath: rootfs, NetworkID: netw.ID, BridgeName: netw.BridgeName,

@@ -36,6 +36,19 @@ func (h *Handler) execComputeMigrate(ctx context.Context, m *agentv1.ComputeMigr
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: action, ResultJson: mustJSON(res)}), nil
+	case "pull_volume":
+		src := strings.TrimSpace(m.GetUri())
+		if src == "" {
+			src = m.GetSourcePath()
+		}
+		if !strings.HasPrefix(src, "http://") && !strings.HasPrefix(src, "https://") && !strings.HasPrefix(src, "s3://") {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("pull_volume requires http(s) or s3 source"))
+		}
+		res, err := h.qemu().CopyOffline(ctx, qemu.BackupCopy, src, m.GetDestPath())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: action, ResultJson: mustJSON(res)}), nil
 	case "live_migrate":
 		if err := h.qemu().LiveMigrate(ctx, id, m.GetUri()); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
@@ -102,6 +115,14 @@ func (c Client) CopyVolume(ctx context.Context, vol migrate.VolumeCopy) error {
 	_, err := c.ComputeMigrate(ctx, &agentv1.ComputeMigrate{
 		Action: "copy_volume", VolumeId: vol.VolumeID,
 		SourcePath: vol.SourcePath, DestPath: vol.DestPath,
+	})
+	return err
+}
+
+func (c Client) PullVolume(ctx context.Context, vol migrate.VolumeCopy) error {
+	_, err := c.ComputeMigrate(ctx, &agentv1.ComputeMigrate{
+		Action: "pull_volume", VolumeId: vol.VolumeID,
+		SourcePath: vol.SourcePath, DestPath: vol.DestPath, Uri: vol.SourcePath,
 	})
 	return err
 }

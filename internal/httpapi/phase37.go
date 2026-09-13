@@ -11,6 +11,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/appmanifest"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storetrust"
+	storecatalog "github.com/no-dal/ndl-ce/store"
 )
 
 const (
@@ -53,8 +54,12 @@ func (s *Server) createStoreKey(w http.ResponseWriter, r *http.Request) {
 	if class == "" {
 		class = appmanifest.ClassVerified
 	}
-	if class != appmanifest.ClassVerified && class != appmanifest.ClassOfficial {
-		writeErr(w, http.StatusUnprocessableEntity, "class must be verified or official")
+	if class == appmanifest.ClassOfficial {
+		writeErr(w, http.StatusUnprocessableEntity, "Official class is reserved for the pinned publisher public key")
+		return
+	}
+	if class != appmanifest.ClassVerified {
+		writeErr(w, http.StatusUnprocessableEntity, "class must be verified")
 		return
 	}
 	kp, err := storetrust.Generate()
@@ -219,35 +224,71 @@ func (s *Server) setStorePolicy(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ensureOfficialTrust(ctx context.Context, clusterID string) {
 	s.seedOfficialStore(ctx, clusterID)
-	key, _ := s.Store.GetSigningKeyByName(ctx, clusterID, officialKeyName)
+	key := s.officialPinKey(ctx, clusterID)
 	if key == nil {
-		kp, err := storetrust.Generate()
-		if err != nil {
-			return
-		}
-		row := appdb.SigningKey{
-			ID: uuid.NewString(), ClusterID: clusterID, Name: officialKeyName,
-			Class: appmanifest.ClassOfficial, PublicKey: storetrust.EncodePublic(kp.Public),
-			Status: appdb.StoreKeyActive, CreatedAt: s.now(),
-		}
-		if err := s.Store.CreateSigningKey(ctx, row, storetrust.EncodePrivate(kp.Private)); err != nil {
-			return
-		}
-		key = &row
+		return
 	}
-	pkgs, _ := s.Store.ListStorePackages(ctx, clusterID)
-	for _, pkg := range pkgs {
-		if pkg.Class != appmanifest.ClassOfficial {
-			continue
-		}
-		if existing, _ := s.Store.LatestPackageSignature(ctx, clusterID, pkg.ID); existing != nil && existing.PayloadSHA256 == storetrust.PayloadSHA256([]byte(pkg.ManifestYAML)) && existing.KeyID == key.ID {
-			continue
-		}
-		if key.Status != appdb.StoreKeyActive {
-			continue
-		}
-		_, _ = s.signPackage(ctx, clusterID, pkg, key.ID)
+	official, err := storecatalog.Official()
+	if err != nil {
+		return
 	}
+	pub, err := storetrust.ParsePublic(key.PublicKey)
+	if err != nil {
+		return
+	}
+	for _, f := range official {
+		if f.Signature == "" {
+			continue
+		}
+		pkg, _ := s.Store.GetStorePackageByName(ctx, clusterID, f.Manifest.Name, f.Manifest.Version)
+		if pkg == nil || pkg.Class != appmanifest.ClassOfficial {
+			continue
+		}
+		if err := storetrust.Verify(pub, []byte(pkg.ManifestYAML), f.Signature); err != nil {
+			continue
+		}
+		want := storetrust.PayloadSHA256([]byte(pkg.ManifestYAML))
+		if existing, _ := s.Store.LatestPackageSignature(ctx, clusterID, pkg.ID); existing != nil && existing.PayloadSHA256 == want && existing.KeyID == key.ID {
+			continue
+		}
+		_ = s.Store.CreatePackageSignature(ctx, appdb.PackageSignature{
+			ID: uuid.NewString(), ClusterID: clusterID, PackageID: pkg.ID, KeyID: key.ID,
+			Algorithm: storetrust.AlgorithmEd25519, SignatureB64: f.Signature,
+			PayloadSHA256: want, CreatedAt: s.now(),
+		})
+	}
+}
+
+func (s *Server) officialPinKey(ctx context.Context, clusterID string) *appdb.SigningKey {
+	pin := storecatalog.OfficialPublicKey()
+	if pin == "" {
+		return nil
+	}
+	keys, err := s.Store.ListSigningKeys(ctx, clusterID)
+	if err == nil {
+		for i := range keys {
+			k := keys[i]
+			if k.PublicKey == pin && k.Status == appdb.StoreKeyActive {
+				return &k
+			}
+		}
+	}
+	name := officialKeyName
+	if existing, _ := s.Store.GetSigningKeyByName(ctx, clusterID, officialKeyName); existing != nil {
+		name = officialKeyName + "-publisher"
+	}
+	row := appdb.SigningKey{
+		ID: uuid.NewString(), ClusterID: clusterID, Name: name,
+		Class: appmanifest.ClassOfficial, PublicKey: pin,
+		Status: appdb.StoreKeyActive, CreatedAt: s.now(),
+	}
+	if err := s.Store.CreateSigningKey(ctx, row, ""); err != nil {
+		if existing, _ := s.Store.GetSigningKeyByName(ctx, clusterID, name); existing != nil && existing.PublicKey == pin {
+			return existing
+		}
+		return nil
+	}
+	return &row
 }
 
 func (s *Server) signPackage(ctx context.Context, clusterID string, pkg appdb.StorePackage, keyID string) (*appdb.PackageSignature, error) {
@@ -306,8 +347,10 @@ func (s *Server) runStoreVerify(ctx context.Context, clusterID string, pkg appdb
 				sigCheck = storetrust.Check{Kind: storetrust.CheckSignature, Status: storetrust.StatusFail, Detail: "signature does not match manifest; tamper fails closed"}
 			} else {
 				detail := "Ed25519 signature matches the stored manifest bytes."
-				if key.Name == officialKeyName {
-					detail = "Ed25519 signature matches the stored manifest bytes. Signer is the cluster-local signing key, not an Official publisher CA."
+				if officialPinnedKey(key) {
+					detail = "Ed25519 signature matches the stored manifest bytes. Signer is the pinned Official publisher public key."
+				} else if key.Name == officialKeyName {
+					detail = "Ed25519 signature matches the stored manifest bytes. Signer is a cluster-local key, not the Official publisher pin."
 				}
 				sigCheck = storetrust.Check{Kind: storetrust.CheckSignature, Status: storetrust.StatusPass, Detail: detail}
 			}
@@ -326,9 +369,9 @@ func (s *Server) runStoreVerify(ctx context.Context, clusterID string, pkg appdb
 				break
 			}
 		}
-	} else if key != nil && key.Class == appmanifest.ClassOfficial && pkg.Class == appmanifest.ClassOfficial {
+	} else if key != nil && officialPinnedKey(key) && pkg.Class == appmanifest.ClassOfficial {
 		trust = appmanifest.ClassOfficial
-		reason = "Signed by the cluster-local signing key. Static scans passed. CVE scanner is not installed."
+		reason = "Signed by the pinned Official publisher public key. Static scans passed. CVE scanner is not installed."
 	} else if key != nil {
 		trust = appmanifest.ClassVerified
 		reason = "Verified signature valid. Static scans passed. CVE scanner is not installed."
@@ -399,6 +442,14 @@ func (s *Server) enforceStoreTrust(ctx context.Context, clusterID string, pkg ap
 	return nil
 }
 
+func officialPinnedKey(k *appdb.SigningKey) bool {
+	if k == nil {
+		return false
+	}
+	pin := storecatalog.OfficialPublicKey()
+	return pin != "" && k.PublicKey == pin && k.Class == appmanifest.ClassOfficial && k.Status == appdb.StoreKeyActive
+}
+
 func storeReasonString(v any) string {
 	s, _ := v.(string)
 	if s == "" {
@@ -411,7 +462,10 @@ func (s *Server) signingKeyJSON(k appdb.SigningKey) map[string]any {
 	out := map[string]any{
 		"id": k.ID, "name": k.Name, "class": k.Class, "status": k.Status, "public_key": k.PublicKey,
 	}
-	if k.Name == officialKeyName {
+	if officialPinnedKey(&k) {
+		out["origin"] = "pinned-official"
+		out["note"] = "pinned Official publisher public key; no Official private key is stored on the cluster"
+	} else if k.Name == officialKeyName {
 		out["origin"] = "cluster-local"
 		out["note"] = "cluster-local signing key"
 	}

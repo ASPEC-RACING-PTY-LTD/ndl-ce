@@ -102,7 +102,11 @@ func (s *Server) guardLocalApply(w http.ResponseWriter, r *http.Request, cluster
 	if s.applyLocal(r.Context(), clusterID, nodeID) {
 		return true
 	}
-	writeErr(w, http.StatusConflict, "placement would start a copy on the wrong node; remote apply is not wired")
+	node, err := s.Store.GetNodeByID(r.Context(), clusterID, nodeID)
+	if err == nil && s.destAgentReady(r.Context(), node) {
+		return true
+	}
+	writeErr(w, http.StatusConflict, "placement would start a copy on the wrong node; dest agent is not connected")
 	return false
 }
 
@@ -306,6 +310,6 @@ func remotePlacedWorkload(clusterID string, node *appdb.Node, req createWorkload
 		ID: id, ClusterID: clusterID, NodeID: node.ID, OwnerNodeID: node.ID, DesiredNodeID: node.ID,
 		Name: req.Name, Kind: kind, Status: "unavailable", Reason: remoteApplyReason,
 		DesiredPower: power, ImagePin: req.ImagePin, CPUs: req.CPUs, MemoryBytes: req.MemoryBytes,
-		Privileged: req.Privileged, MigrateBlockers: json.RawMessage(`["remote apply is not wired","dest agent is required"]`),
+		Privileged: req.Privileged, MigrateBlockers: json.RawMessage(`["dest agent is not connected"]`),
 	}
 }

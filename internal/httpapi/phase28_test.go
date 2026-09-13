@@ -104,8 +104,29 @@ func TestPhase28WGPeerAndNotReadyHonesty(t *testing.T) {
 	res, _ = ts.Client().Do(req)
 	body, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"status":"Ready"`) {
-		t.Fatalf("fresh handshake %d %s", res.StatusCode, body)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("reconnect after pairing consume requires cluster client cert %d %s", res.StatusCode, body)
+	}
+
+	certPEM, _, err := s.ClusterCA.IssueNode("worker-1", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hreq := httptest.NewRequest("POST", "/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	hreq.Header.Set("Content-Type", "application/json")
+	hreq.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, hreq)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"Ready"`) {
+		t.Fatalf("mTLS reconnect %d %s", rec.Code, rec.Body.String())
 	}
 
 	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)

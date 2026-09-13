@@ -232,7 +232,7 @@ func (s *Server) requireLocalStoreDest(ctx context.Context, clusterID, nodeID st
 	if err != nil || node == nil {
 		return errNotFound("node not found")
 	}
-	if !s.applyLocal(ctx, clusterID, node.ID) {
+	if !s.applyLocal(ctx, clusterID, node.ID) && !s.destAgentReady(ctx, node) {
 		return errFailedDependency(destAgentNotConnected)
 	}
 	return nil
@@ -318,7 +318,7 @@ func (s *Server) installManifest(ctx context.Context, p *principal, m appmanifes
 		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID)
 		return "", "", applyErr
 	}
-	if !s.applyLocal(ctx, p.User.ClusterID, wl.NodeID) {
+	if dest, _ := s.Store.GetNodeByID(ctx, p.User.ClusterID, wl.NodeID); dest == nil || (!s.applyLocal(ctx, p.User.ClusterID, wl.NodeID) && !s.destAgentReady(ctx, dest)) {
 		s.rollbackStoreStack(ctx, p.User.ClusterID, stack.ID, wl.ID)
 		return "", "", errFailedDependency(destAgentNotConnected)
 	}
@@ -445,7 +445,9 @@ func (s *Server) storePackageJSON(ctx context.Context, p appdb.StorePackage) map
 		out["signed"] = true
 		out["payload_sha256"] = sig.PayloadSHA256
 		out["key_id"] = sig.KeyID
-		if key, _ := s.Store.GetSigningKey(ctx, p.ClusterID, sig.KeyID); key != nil && key.Name == officialKeyName {
+		if key, _ := s.Store.GetSigningKey(ctx, p.ClusterID, sig.KeyID); officialPinnedKey(key) {
+			out["signer"] = "pinned Official publisher public key"
+		} else if key != nil && key.Name == officialKeyName {
 			out["signer"] = "cluster-local signing key"
 		}
 	} else {

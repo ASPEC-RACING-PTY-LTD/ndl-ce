@@ -33,7 +33,7 @@ func (e *Engine) ForceStop(ctx context.Context, id string) error {
 		return err
 	}
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; qemu unit was not force-stopped")
 	}
 	unit := unitName(id)
 	_, killErr := e.run(ctx, BinSystemctl, "kill", "--kill-whom=main", "--signal=SIGKILL", unit)

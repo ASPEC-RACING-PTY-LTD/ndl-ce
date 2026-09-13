@@ -404,7 +404,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	webhookURL := ""
 	switch req.Kind {
 	case appdb.NotifyWebhook:
-		if err := validateWebhookURL(req.URL); err != nil {
+		if err := checkWebhookDestination(req.URL); err != nil {
 			writeErr(w, http.StatusUnprocessableEntity, "webhook url is invalid")
 			return
 		}
@@ -453,10 +453,23 @@ func validateWebhookURL(raw string) error {
 	if host == "" {
 		return errInvalidWebhook
 	}
-	if deniedWebhookHost(host) {
+	if deniedWebhookHostname(host) || deniedWebhookHost(host) {
 		return errInvalidWebhook
 	}
 	return nil
+}
+
+func deniedWebhookHostname(host string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	switch h {
+	case "metadata", "metadata.google.internal", "metadata.google.com",
+		"instance-data", "instance-data.ec2.internal":
+		return true
+	}
+	if strings.HasSuffix(h, ".internal") || strings.HasSuffix(h, ".local") {
+		return true
+	}
+	return false
 }
 
 // lookupWebhookIPs resolves webhook hostnames at delivery. Tests replace it.
@@ -473,6 +486,9 @@ func checkWebhookDestination(raw string) error {
 		return errInvalidWebhook
 	}
 	host := strings.TrimSpace(u.Hostname())
+	if deniedWebhookHostname(host) {
+		return errInvalidWebhook
+	}
 	if net.ParseIP(host) != nil {
 		return nil
 	}

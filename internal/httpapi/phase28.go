@@ -198,8 +198,7 @@ func (s *Server) openClusterSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tlsOK := s.clusterClientCertOK(r, strings.TrimSpace(req.NodeID))
-	established := remote.LastSeenAt != nil && !remote.LastSeenAt.IsZero()
-	if !pairingOK && !tlsOK && !established {
+	if !pairingOK && !tlsOK {
 		writeErr(w, http.StatusUnauthorized, "pairing token is invalid")
 		return
 	}

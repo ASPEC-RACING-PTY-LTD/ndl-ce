@@ -43,9 +43,9 @@ checklist documents are not that gate.
 
 This tree is honest about the following gaps:
 
-- Migrate is unwired until a dest agent is connected (`Migrate` stays
-  nil and returns dest-agent-not-connected). Two-box live migrate is
-  not proven here.
+- Dest agent Execute is wired for a Ready worker listen address.
+  Control does not start dest incoming on the unix agent. Two-box
+  live migrate on two physical machines is not proven here.
 - Operate must use existing APIs. Approve must not Host.Exec. Restart
   and Store install now invoke those handlers. Policy create still
   writes the store and is not the finished engine.
@@ -53,11 +53,13 @@ This tree is honest about the following gaps:
   must stay unavailable or unverified and must not invent success.
 - The installer ISO is not booted in this tree. mkosi config is not a
   spare-PC install.
-- Packages are unsigned here. Signed install remains the documented
-  HTTPS repo and keyring path.
+- Signed install remains the documented HTTPS repo and keyring path.
+  Package signatures produced under `out/` are build artifacts, not
+  the production download repo.
 - Ubuntu is not Tier 1.
 
 This tree also does not claim multi-master HA, live Trivy on this host,
-a production Store CA, live kubelet, or live Ceph/`rbd map` on this
-Cloud agent host. Virt and physical checklists are documents, not
-executed proof.
+live kubelet, or live Ceph/`rbd map` on this Cloud agent host.
+Official Store trust is the pinned publisher public key in
+`store/official.pub`, not a hosted CA. Virt and physical checklists
+are documents, not executed proof.

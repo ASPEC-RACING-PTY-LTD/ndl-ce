@@ -162,9 +162,10 @@ make room, and it does not preallocate huge files to reserve capacity.
 
 Capture reads a live directory tree. There is no freeze, cgroup freezer, pause,
 stop, or restart anywhere in the path. The default consistency is
-crash-consistent. Optional application-aware pre and post hooks may raise a
-backup to application-consistent; those hooks must never invoke host-level
-freezing. Hook wiring is part of the agent integration follow-up.
+crash-consistent. Optional application-aware pre and post hooks
+(`/etc/ndl/hooks/backup-pre` and `/etc/ndl/hooks/backup-post`) may raise a
+backup to application-consistent. Those hooks run inside the guest via
+`ctbackup.RunGuestHook` and must never invoke host-level freezing.
 
 ## Instrumentation
 

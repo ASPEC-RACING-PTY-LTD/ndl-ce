@@ -15,6 +15,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/backuppack"
 	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/lxc"
+	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/objstore"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -370,7 +371,18 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 		dest = node
 	}
 	local := s.applyLocal(ctx, clusterID, dest.ID)
-	if local && (s.Workloads == nil || s.Backup == nil || s.Storage == nil) {
+	workloads := s.Workloads
+	backupRPC := s.Backup
+	if !local {
+		if destWL, ok := s.destWorkloads(ctx, dest); ok {
+			workloads = destWL
+		}
+		if destBK, ok := s.destBackup(ctx, dest); ok {
+			backupRPC = destBK
+		}
+	}
+	apply := local || (workloads != nil && backupRPC != nil && !local && s.destAgentReady(ctx, dest))
+	if apply && local && (s.Workloads == nil || s.Backup == nil || s.Storage == nil) {
 		return "", errUnavailable("backup agent is unavailable")
 	}
 	if art.Format == backup.Format {
@@ -518,25 +530,35 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 	newVolID := uuid.NewString()
 	backend := path.Join("volumes", storage.ClassContainerRoot, newVolID)
 	rootfs := ""
-	if local {
-		hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
-		res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
-			VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
-			Class: storage.ClassContainerRoot, Size: size, Format: storage.FormatDirectory,
-		}, hint)
-		if err != nil && !strings.Contains(err.Error(), "duplicate") {
-			return "", err
-		}
-		if res.Handle.BackendRef != "" {
-			backend = res.Handle.BackendRef
+	if apply {
+		if local && s.Storage != nil {
+			hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
+			res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
+				VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
+				Class: storage.ClassContainerRoot, Size: size, Format: storage.FormatDirectory,
+			}, hint)
+			if err != nil && !strings.Contains(err.Error(), "duplicate") {
+				return "", err
+			}
+			if res.Handle.BackendRef != "" {
+				backend = res.Handle.BackendRef
+			}
 		}
 		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, backend)
 		if err != nil {
 			return "", errConflict("volume locator is invalid")
 		}
 		rootfs = loc
-		if _, err := s.Backup.CopyBackup(ctx, qemu.BackupExtractRoot, srcPath, rootfs); err != nil {
-			return "", err
+		if art.PullURL != "" && !local {
+			if c, ok := s.destAgentClient(ctx, dest); ok {
+				if err := c.PullVolume(ctx, migrate.VolumeCopy{SourcePath: art.PullURL, DestPath: rootfs, VolumeID: newVolID}); err != nil {
+					return "", err
+				}
+			}
+		} else if backupRPC != nil {
+			if _, err := backupRPC.CopyBackup(ctx, qemu.BackupExtractRoot, srcPath, rootfs); err != nil {
+				return "", err
+			}
 		}
 	} else {
 		var locErr error
@@ -551,7 +573,7 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 		SizeBytes: size, Status: storage.StatusAvailable, BackendType: firstNonEmpty(pool.BackendType, storage.BackendDirectory),
 		BackendRef: backend,
 	}
-	if !local {
+	if !apply {
 		newVol.Status = storage.StatusUnavailable
 	}
 	if err := s.Store.CreateVolume(ctx, newVol); err != nil {
@@ -566,8 +588,8 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 			DNS: meta.NICs[0].DNS,
 		})
 	}
-	if local {
-		if _, err := s.Workloads.CreateCT(ctx, lxc.Spec{
+	if apply && workloads != nil {
+		if _, err := workloads.CreateCT(ctx, lxc.Spec{
 			WorkloadID: newID, Name: name, ImagePin: meta.ImagePin,
 			CPUs: meta.CPUs, MemoryBytes: meta.MemoryBytes, VolumeID: newVolID,
 			RootfsPath: rootfs, NetworkID: netID, BridgeName: bridge,
@@ -585,10 +607,10 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 		UIDMap: meta.UIDMap, GIDMap: meta.GIDMap, Autostart: meta.Autostart,
 		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["live migrate of system containers is post-1.0"]`),
 	}
-	if meta.DesiredPower == "running" && local {
+	if meta.DesiredPower == "running" && apply {
 		row.Status = lxc.StatusRunning
 	}
-	if !local {
+	if !apply {
 		row.Status = "unavailable"
 		row.Reason = "cross-node restore recorded; dest agent is not connected"
 	}
@@ -617,7 +639,18 @@ func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appd
 		dest = node
 	}
 	local := s.applyLocal(ctx, clusterID, dest.ID)
-	if local && (s.Workloads == nil || s.Backup == nil || s.Storage == nil) {
+	workloads := s.Workloads
+	backupRPC := s.Backup
+	if !local {
+		if destWL, ok := s.destWorkloads(ctx, dest); ok {
+			workloads = destWL
+		}
+		if destBK, ok := s.destBackup(ctx, dest); ok {
+			backupRPC = destBK
+		}
+	}
+	apply := local || (workloads != nil && backupRPC != nil && !local && s.destAgentReady(ctx, dest))
+	if apply && local && (s.Workloads == nil || s.Backup == nil || s.Storage == nil) {
 		return "", errUnavailable("backup agent is unavailable")
 	}
 	var bp backup.Blueprint
@@ -694,17 +727,19 @@ func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appd
 	newVolID := uuid.NewString()
 	backend := path.Join("volumes", storage.ClassContainerRoot, newVolID)
 	rootfs := ""
-	if local {
-		hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
-		res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
-			VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
-			Class: storage.ClassContainerRoot, Size: size, Format: storage.FormatDirectory,
-		}, hint)
-		if err != nil && !strings.Contains(err.Error(), "duplicate") {
-			return "", err
-		}
-		if res.Handle.BackendRef != "" {
-			backend = res.Handle.BackendRef
+	if apply {
+		if local && s.Storage != nil {
+			hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
+			res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
+				VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
+				Class: storage.ClassContainerRoot, Size: size, Format: storage.FormatDirectory,
+			}, hint)
+			if err != nil && !strings.Contains(err.Error(), "duplicate") {
+				return "", err
+			}
+			if res.Handle.BackendRef != "" {
+				backend = res.Handle.BackendRef
+			}
 		}
 		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, backend)
 		if err != nil {
@@ -715,7 +750,18 @@ func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appd
 		if run, _ := s.Store.GetBackupRun(ctx, clusterID, art.RunID); run != nil {
 			tgt, _ = s.Store.GetBackupTarget(ctx, clusterID, run.TargetID)
 		}
-		if err := s.restoreV2Root(ctx, art, rootfs, tgt); err != nil {
+		if art.PullURL != "" && !local {
+			if c, ok := s.destAgentClient(ctx, dest); ok {
+				if err := c.PullVolume(ctx, migrate.VolumeCopy{SourcePath: art.PullURL, DestPath: rootfs, VolumeID: newVolID}); err != nil {
+					return "", err
+				}
+			}
+		}
+		if backupRPC != nil {
+			if err := s.restoreV2RootOn(ctx, backupRPC, art, rootfs, tgt); err != nil {
+				return "", err
+			}
+		} else if err := s.restoreV2Root(ctx, art, rootfs, tgt); err != nil {
 			return "", err
 		}
 	}
@@ -729,8 +775,8 @@ func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appd
 		return "", err
 	}
 	name := uniqueRestoredName(firstNonEmpty(meta.Name, "restored"), newID)
-	if local {
-		if _, err := s.Workloads.CreateCT(ctx, lxc.Spec{
+	if apply && workloads != nil {
+		if _, err := workloads.CreateCT(ctx, lxc.Spec{
 			WorkloadID: newID, Name: name, ImagePin: meta.ImagePin,
 			CPUs: meta.CPUs, MemoryBytes: meta.MemoryBytes, VolumeID: newVolID,
 			RootfsPath: rootfs, NetworkID: netID, BridgeName: bridge,

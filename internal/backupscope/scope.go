@@ -82,6 +82,7 @@ type DockerHint struct {
 	ComposeVersion string
 	Projects       []string
 	NamedVolumes   []string
+	VolumePaths    []string
 	BindMounts     []string
 	Images         []string
 	LocalImages    []string
@@ -288,14 +289,20 @@ func Discover(opts Options) (Preview, error) {
 	}
 
 	if opts.Docker != nil {
-		for _, vol := range opts.Docker.NamedVolumes {
+		for i, vol := range opts.Docker.NamedVolumes {
 			vol = strings.TrimSpace(vol)
 			if vol == "" {
 				continue
 			}
 			id := "docker:volume:" + vol
 			it := upsert(id, KindDockerVolume, "Docker volume", true, false)
-			addPath(it, vol)
+			path := vol
+			if i < len(opts.Docker.VolumePaths) && strings.TrimSpace(opts.Docker.VolumePaths[i]) != "" {
+				path = strings.TrimSpace(opts.Docker.VolumePaths[i])
+			} else {
+				path = ResolveDockerVolumePath(opts.Root, vol)
+			}
+			addPath(it, path)
 		}
 		for _, bind := range opts.Docker.BindMounts {
 			bind = strings.TrimSpace(bind)
@@ -521,6 +528,26 @@ func addPath(it *Item, p string) {
 		}
 	}
 	it.Paths = append(it.Paths, p)
+}
+
+// ResolveDockerVolumePath maps a Docker named volume to the guest-absolute
+// data directory. Capture remounts guest-absolute includes onto the rootfs.
+func ResolveDockerVolumePath(root, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if strings.HasPrefix(name, "/") {
+		return name
+	}
+	guest := "/var/lib/docker/volumes/" + name + "/_data"
+	if strings.TrimSpace(root) != "" {
+		host := filepath.Join(root, "var/lib/docker/volumes", name, "_data")
+		if st, err := os.Stat(host); err == nil && st.IsDir() {
+			return guest
+		}
+	}
+	return guest
 }
 
 func uniquePaths(in []string) []string {

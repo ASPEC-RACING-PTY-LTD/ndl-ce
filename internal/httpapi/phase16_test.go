@@ -284,6 +284,34 @@ func TestAlertWebhookSecretAndViewerDeny(t *testing.T) {
 	}
 }
 
+func TestAlertWebhookCreateRejectsResolvedPrivateHostname(t *testing.T) {
+	lookupWebhookIPs = func(host string) ([]net.IP, error) {
+		if host != "evil.example" {
+			t.Fatalf("host %s", host)
+		}
+		return []net.IP{net.ParseIP("169.254.169.254")}, nil
+	}
+	t.Cleanup(func() { lookupWebhookIPs = net.LookupIP })
+	s, _, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	admin := claimAdmin(t, ts, token)
+	res := doCookie(t, ts, admin, "POST", "/api/v1/alerts/channels", `{"name":"rebind","kind":"webhook","url":"https://evil.example/hook"}`)
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		b, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		t.Fatalf("create hostname ssrf %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+	res = doCookie(t, ts, admin, "POST", "/api/v1/alerts/channels", `{"name":"meta","kind":"webhook","url":"http://metadata.google.internal/"}`)
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		b, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		t.Fatalf("metadata hostname %d %s", res.StatusCode, b)
+	}
+	_ = res.Body.Close()
+}
+
 func TestCheckWebhookDestinationResolvesHostnames(t *testing.T) {
 	lookupWebhookIPs = func(host string) ([]net.IP, error) {
 		if host != "evil.example" {

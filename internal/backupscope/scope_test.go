@@ -62,10 +62,31 @@ func TestDiscoverSmartDefaults(t *testing.T) {
 	if byID["docker:volume:sounddock_postgres"].Selected != true {
 		t.Fatal("named docker volume must be selected")
 	}
+	volPaths := strings.Join(byID["docker:volume:sounddock_postgres"].Paths, "\n")
+	if !strings.Contains(volPaths, "/var/lib/docker/volumes/sounddock_postgres/_data") {
+		t.Fatalf("named volume must resolve to host data path: %q", volPaths)
+	}
 	incs, _ := PlanCapture(prev)
 	joined := strings.Join(incs, "\n")
 	if !strings.Contains(joined, "postgresql") {
 		t.Fatalf("smart includes must cover postgres: %v", incs)
+	}
+	if !strings.Contains(joined, "/var/lib/docker/volumes/sounddock_postgres/_data") {
+		t.Fatalf("smart includes must cover resolved docker volume: %v", incs)
+	}
+}
+
+func TestResolveDockerVolumePath(t *testing.T) {
+	if got := ResolveDockerVolumePath("", "app_data"); got != "/var/lib/docker/volumes/app_data/_data" {
+		t.Fatalf("got %s", got)
+	}
+	if got := ResolveDockerVolumePath("", "/srv/pg"); got != "/srv/pg" {
+		t.Fatalf("absolute %s", got)
+	}
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "var/lib/docker/volumes/db/_data"))
+	if got := ResolveDockerVolumePath(root, "db"); got != "/var/lib/docker/volumes/db/_data" {
+		t.Fatalf("existing %s", got)
 	}
 }
 

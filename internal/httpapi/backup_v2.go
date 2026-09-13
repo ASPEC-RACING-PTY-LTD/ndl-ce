@@ -327,6 +327,13 @@ func (s *Server) syncV2State(ctx context.Context, clusterID string) {
 }
 
 func (s *Server) restoreV2Root(ctx context.Context, art appdb.BackupArtifact, dest string, tgt *appdb.BackupTarget) error {
+	return s.restoreV2RootOn(ctx, s.Backup, art, dest, tgt)
+}
+
+func (s *Server) restoreV2RootOn(ctx context.Context, rpc BackupRPC, art appdb.BackupArtifact, dest string, tgt *appdb.BackupTarget) error {
+	if rpc == nil {
+		return errUnavailable("backup agent is unavailable")
+	}
 	req := backuphost.Request{
 		Action: backuphost.ActionRestore, Namespace: art.Namespace, BackupID: art.BackupID, Dest: dest, Chown: true,
 	}
@@ -334,7 +341,7 @@ func (s *Server) restoreV2Root(ctx context.Context, art appdb.BackupArtifact, de
 		req.Target = s.v2TargetSpec(ctx, *tgt)
 	}
 	raw, _ := json.Marshal(req)
-	_, err := s.Backup.CopyBackup(ctx, qemu.BackupV2Restore, dest, string(raw))
+	_, err := rpc.CopyBackup(ctx, qemu.BackupV2Restore, dest, string(raw))
 	return err
 }
 

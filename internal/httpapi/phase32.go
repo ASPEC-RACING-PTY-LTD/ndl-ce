@@ -59,7 +59,9 @@ type agentMigrate struct {
 	destArgv map[string][]string
 }
 
-func (a *agentMigrate) LocalAgentOnly() bool { return true }
+func (a *agentMigrate) LocalAgentOnly() bool {
+	return strings.TrimSpace(a.TCPAddr) == ""
+}
 
 func (a *agentMigrate) PrepareDest(ctx context.Context, req migrate.Request) error {
 	msg := &agentv1.ComputeMigrate{
@@ -226,16 +228,8 @@ func (s *Server) destEligibleLocal(ctx context.Context, dest *appdb.Node) bool {
 }
 
 func (s *Server) destAgentReady(ctx context.Context, dest *appdb.Node) bool {
-	if dest == nil || s.Migrate == nil {
-		return false
-	}
-	if _, ok := s.Migrate.(migrateUnavailable); ok {
-		return false
-	}
-	if lo, ok := s.Migrate.(interface{ LocalAgentOnly() bool }); ok && lo.LocalAgentOnly() {
-		return s.destEligibleLocal(ctx, dest)
-	}
-	return true
+	_, ok := s.destRuntime(ctx, dest)
+	return ok
 }
 
 func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.Node, mode string) (map[string]any, int, string) {
@@ -243,7 +237,8 @@ func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.
 	if sourceID == "" {
 		sourceID = wl.OwnerNodeID
 	}
-	if s.Migrate == nil || !s.destAgentReady(ctx, dest) {
+	rt, ok := s.destRuntime(ctx, dest)
+	if !ok {
 		return nil, http.StatusFailedDependency, destAgentMissing
 	}
 	if wl.Kind == oci.KindOCI || wl.Kind == migrate.KindOCI {
@@ -266,7 +261,7 @@ func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.
 	if err := s.Store.CreateMigrateJob(ctx, job); err != nil {
 		return nil, http.StatusInternalServerError, "could not record migrate job"
 	}
-	res, err := migrate.Run(ctx, s.Migrate, migrate.Request{
+	res, err := migrate.Run(ctx, rt, migrate.Request{
 		WorkloadID: wl.ID, Kind: wl.Kind, Mode: mode,
 		SourceNodeID: sourceID, DestNodeID: dest.ID, Epoch: wl.OwnershipEpoch,
 		SharedStorage: shared, CPUHost: cpuHost, Disks: disks,
@@ -296,7 +291,7 @@ func (s *Server) runMigrate(ctx context.Context, wl appdb.Workload, dest *appdb.
 	}
 	newEpoch, terr := s.Store.TransferWorkloadOwnership(ctx, wl.ClusterID, wl.ID, dest.ID, wl.OwnershipEpoch)
 	if terr != nil {
-		_ = s.Migrate.AbortDest(ctx, wl.ID)
+		_ = rt.AbortDest(ctx, wl.ID)
 		job.State = migrate.StateFail
 		job.DestRunning = false
 		job.Reason = terr.Error()

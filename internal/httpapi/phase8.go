@@ -122,19 +122,24 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	vmRPC := s.VM
 	if !local {
-		id := uuid.NewString()
-		row := remotePlacedWorkload(p.User.ClusterID, node, req, id, vmspec.KindVM)
-		if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
-			writeErr(w, http.StatusConflict, "could not record workload")
+		if destVM, ok := s.destVM(r.Context(), node); ok {
+			vmRPC = destVM
+		} else {
+			id := uuid.NewString()
+			row := remotePlacedWorkload(p.User.ClusterID, node, req, id, vmspec.KindVM)
+			if err := s.Store.CreateWorkload(r.Context(), row); err != nil {
+				writeErr(w, http.StatusConflict, "could not record workload")
+				return
+			}
+			s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
+			s.audit(r, p.User.ClusterID, p.User.ID, "vm.create", "ok", row.ID)
+			writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
 			return
 		}
-		s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
-		s.audit(r, p.User.ClusterID, p.User.ID, "vm.create", "ok", row.ID)
-		writeJSON(w, http.StatusCreated, s.workloadJSON(r.Context(), row))
-		return
 	}
-	if s.VM == nil || s.Storage == nil {
+	if vmRPC == nil || s.Storage == nil {
 		writeErr(w, http.StatusBadGateway, "vm agent is unavailable")
 		return
 	}
@@ -185,7 +190,7 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 	}
 	userData, _ := vmspec.RenderUserData(spec.NoCloud)
 	op := s.startOpKeyed(r.Context(), p.User.ClusterID, node.ID, "vm.create", "creating", key, mustCreateMsg(ids), 20)
-	_, err = s.VM.PrepareVM(r.Context(), agentrpc.VMPrepareRequest{
+	_, err = vmRPC.PrepareVM(r.Context(), agentrpc.VMPrepareRequest{
 		Launch: launch, UserData: userData,
 		SourcePath: convert.SourcePath, SourceFormat: convert.SourceFormat,
 		DestPath: convert.DestPath, DestFormat: convert.DestFormat,
@@ -262,7 +267,7 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
-		if _, err := s.VM.LifecycleVM(r.Context(), row.ID, "start", spec.Autostart); err != nil {
+		if _, err := vmRPC.LifecycleVM(r.Context(), row.ID, "start", spec.Autostart); err != nil {
 			s.finishOp(r.Context(), op, "failed", err.Error(), 0)
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return

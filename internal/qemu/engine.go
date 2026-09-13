@@ -219,7 +219,7 @@ func (e *Engine) Stop(ctx context.Context, id string) error {
 
 func (e *Engine) EnableAutostart(ctx context.Context, id string, on bool) error {
 	if e.SkipHostCmds {
-		return nil
+		return fmt.Errorf("host commands skipped; qemu autostart was not changed")
 	}
 	action := "disable"
 	if on {

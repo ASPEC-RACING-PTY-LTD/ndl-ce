@@ -251,40 +251,42 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 These stay HIGH until Debian 13 Homelab and cluster hardware gates pass.
 They are not claimed as CE 1.0 complete.
 
-- HIGH. Fail-closed host engines. SkipHostCmds is still the Cloud-safe
-  default for QEMU, LXC, ZFS, LVM, NFS/SMB/iSCSI, WireGuard, backup
-  convert, object copy, kubelet, and apt. SkipHostCmds must fail closed
-  (unavailable or unverified) and must not invent success. Live QEMU
-  migrate now errors under SkipHostCmds; other engines still need the
-  same rule on the appliance.
-  Why not blocking for license surface: Cloud fixtures stay honest when
-  they report unavailable; appliance execution is the CE 1.0 gate.
-- HIGH. Migrate dest agent is nil. `Server.Migrate` stays unset until
-  dest Execute is wired. Live and offline migrate return
-  dest-agent-not-connected and leave the source running. Two-box
-  migrate is not reached.
-  Why not blocking for license surface: the API refuses instead of
-  starting a second copy on the control unix agent.
+- HIGH. Fail-closed host engines. SkipHostCmds is the Cloud-safe
+  default. QEMU start/stop/force-stop/autostart, live migrate, backup
+  copy/convert, ZFS/LVM apply, nft policy apply, and WireGuard
+  handshake observation fail closed (error or StatusUnavailable) and
+  do not invent success. Cloud fixtures may still write desired files
+  without claiming the host iface is live.
+  Why remaining: appliance execution of those engines is the hardware
+  gate, not a Cloud-invented pass.
+- HIGH. Dest agent Execute is wired for a Ready worker with a valid
+  listen address. Control never falls back to the unix agent for dest
+  PrepareDest/CopyVolume/StartDest. Object `http(s)`/`s3` volumes use
+  dest `pull_volume`. Create/start/clone/restart and restore-as-new
+  use dest CreateCT/PrepareVM/Backup when dest is Ready. Two-box
+  migrate on two physical machines is still the hardware gate.
+  Why remaining: a second physical node is the remaining proof, not
+  dest-agent-nil.
 - LOW. Operate is CompilePlan keyword matching plus existing HTTP APIs,
   not a general planner. Restart, Store install, and policy create
   invoke those handlers. Why not blocking: Ask cannot mutate; Host.Exec
   shaped prompts stay 422.
-- HIGH. Webhook SSRF residual. Literal loopback, link-local, and
-  RFC1918 IPs are denied. Hostnames that are not IPs are still
-  accepted, so DNS rebinding and metadata names remain a risk.
-  Why not blocking for license surface: webhook URLs stay secrets in
-  list JSON; network isolation on the appliance is the remaining gate.
-- HIGH. Pairing reuse residual. Pairing tokens can be marked used on
-  disk. A session that already has `LastSeenAt` can reconnect without
-  the token. Pairing tokens are not join tokens; join tokens are
-  single-use.
-  Why not blocking for license surface: pairing is pre-join; join
-  consume is a different object.
-- HIGH. Official Store keys are self-issued. `ensureOfficialTrust`
-  generates a per-cluster Ed25519 Official key. There is no production
-  No-dal signing CA in this tree. Official is not a public trust root.
-  Why not blocking for license surface: tamper still fails closed on
-  the stored bytes; production CA is a later signing operation.
+- HIGH. Webhook SSRF. Literal loopback, link-local, RFC1918 IPs,
+  metadata hostnames, and `*.internal`/`*.local` names are denied at
+  create. Delivery re-resolves and pin-dials the first allowed IP.
+  Why remaining: network isolation on the appliance is the remaining
+  gate after DNS deny.
+- HIGH. Pairing reuse. After a pairing token is consumed, reconnect
+  requires an unused pairing token or a cluster client certificate.
+  `LastSeenAt` alone does not reopen the session.
+  Why remaining: join-token consume on two physical boxes is the
+  remaining gate.
+- HIGH. Official Store trust is a pinned publisher public key
+  (`store/official.pub`). Official packages ship a bundled signature.
+  Clusters store the public pin only and never generate an
+  Official-class private key. Cluster-created keys are Verified-class.
+  Why remaining: rotating the pin is an operator signing operation,
+  not a per-cluster self-issue.
 
 
 
