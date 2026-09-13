@@ -27,6 +27,7 @@ DeviceAllow=block-device-mapper r
 DeviceAllow=/dev/mapper r
 DeviceAllow=/dev/loop-control rw
 DeviceAllow=block-loop rw
+DeviceAllow=/dev/net/tun rw
 # CAP_NET_ADMIN is required for isolated-nat nftables.
 # CAP_CHOWN remaps unprivileged container rootfs onto the persisted uid map.
 # CAP_FOWNER is required for dest chmod, lchown, and fchownat on UID-mapped
@@ -46,6 +47,8 @@ DeviceAllow=block-loop rw
 # without chmod or chown of the source.
 # loop-control and block-loop size directory container-root images so a
 # directory pool cannot give a container the whole host filesystem.
+# /dev/net/tun is required to create TAP fds for KVM guests. The VM unit
+# already allowlists tun and kvm; the agent opens the TAP before exec.
 # NoNewPrivileges stays yes. Host-root attach writes uid_map directly and does
 # not need the setuid newuidmap helper.
 # There is still no generic host execution RPC.
