@@ -164,7 +164,15 @@ api() {
 # cert_json_get JSON FIELD: print a top-level JSON string/number field.
 cert_json_get() {
   printf '%s' "$1" | python3 -c 'import json,sys
-d=json.load(sys.stdin)
+raw=sys.stdin.read().strip()
+if not raw:
+  print(""); raise SystemExit
+try:
+  d=json.loads(raw)
+except Exception:
+  print(""); raise SystemExit
+if not isinstance(d, dict):
+  print(""); raise SystemExit
 v=d.get(sys.argv[1],"")
 if v is None:
   v=""

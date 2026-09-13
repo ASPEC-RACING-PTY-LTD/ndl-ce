@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -97,6 +98,28 @@ func tokenExpiry(now time.Time, ttlHours int) (*time.Time, error) {
 	}
 	exp := now.Add(time.Duration(ttlHours) * time.Hour).UTC()
 	return &exp, nil
+}
+
+// tokenOwnerUserID maps the synthetic local-root actor onto a real user row so
+// api_tokens.user_id (UUID) can be written. Peer-cred root is admin; the token
+// is owned by the first enabled person in the cluster.
+func (s *Server) tokenOwnerUserID(ctx context.Context, clusterID, userID string) (string, error) {
+	if userID != LocalRootUserID {
+		return userID, nil
+	}
+	users, err := s.Store.ListUsers(ctx, clusterID)
+	if err != nil {
+		return "", err
+	}
+	for _, u := range users {
+		if u.DisabledAt != nil || u.ID == "" || u.ID == LocalRootUserID {
+			continue
+		}
+		if u.Kind == "" || u.Kind == appdb.UserKindPerson {
+			return u.ID, nil
+		}
+	}
+	return "", fmt.Errorf("create a person user before issuing API tokens as local-root")
 }
 
 func issueAPIToken(s *Server, w http.ResponseWriter, r *http.Request, clusterID, userID, name string, permissions []string, expires *time.Time) (appdb.APIToken, string, bool) {

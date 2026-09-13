@@ -60,28 +60,11 @@ fi
 [ -n "$IMAGE_ID" ] || { echo "cloud image upload failed" >&2; exit 1; }
 
 track_resource workload "$NODEB_NAME"
-CREATE="$(python3 - <<PY
-import json
-print(json.dumps({
-  "name": "$NODEB_NAME",
-  "kind": "vm",
-  "network_id": "$LAN_ID",
-  "pool_id": "$POOL_ID",
-  "cloud_image_id": "$IMAGE_ID",
-  "firmware": "bios",
-  "cpus": 2,
-  "memory_bytes": 2147483648,
-  "autostart": True,
-  "nocloud": {
-    "enable": True,
-    "username": "debian",
-    "hostname": "$NODEB_NAME",
-    "ssh_authorized_keys": ["$PUB"]
-  }
-}))
-PY
-)"
-raw="$(api POST /api/v1/workloads "$CREATE")"
+raw="$(nctl workload create --kind vm --name "$NODEB_NAME" --network-id "$LAN_ID" \
+  --pool-id "$POOL_ID" --cloud-image-id "$IMAGE_ID" --firmware bios \
+  --cpus 2 --memory-bytes 2147483648 --autostart \
+  --nocloud-user debian --nocloud-host "$NODEB_NAME" \
+  --ssh-authorized-key "$PUB")"
 NODEB_WL="$(cert_json_get "$raw" id)"
 [ -n "$NODEB_WL" ] || NODEB_WL="$(cert_id_by_name workload "$NODEB_NAME")"
 [ -n "$NODEB_WL" ] || { echo "node B VM create failed: $raw" >&2; exit 1; }

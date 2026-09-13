@@ -259,6 +259,22 @@ func TestViewerCannotCreateToken(t *testing.T) {
 	_ = res.Body.Close()
 }
 
+func TestLocalRootTokenCreateBindsPersonUser(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_ = claimAdmin(t, ts, token)
+	cluster, _ := mem.GetCluster(context.Background())
+	users, err := mem.ListUsers(context.Background(), cluster.ID)
+	if err != nil || len(users) == 0 {
+		t.Fatalf("expected claimed admin user: %v %d", err, len(users))
+	}
+	got, err := s.tokenOwnerUserID(context.Background(), cluster.ID, LocalRootUserID)
+	if err != nil || got != users[0].ID {
+		t.Fatalf("local-root token owner %q %v want %s", got, err, users[0].ID)
+	}
+}
+
 func TestBadLoginLockout(t *testing.T) {
 	s, _, _ := testServer(t)
 	ts := httptest.NewServer(s.Handler())

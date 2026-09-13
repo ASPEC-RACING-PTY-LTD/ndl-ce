@@ -724,7 +724,12 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	tok, plain, ok := issueAPIToken(s, w, r, p.User.ClusterID, p.User.ID, req.Name, perms, expires)
+	ownerID, err := s.tokenOwnerUserID(r.Context(), p.User.ClusterID, p.User.ID)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	tok, plain, ok := issueAPIToken(s, w, r, p.User.ClusterID, ownerID, req.Name, perms, expires)
 	if !ok {
 		return
 	}
