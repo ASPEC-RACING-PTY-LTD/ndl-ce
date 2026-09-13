@@ -288,6 +288,58 @@ They are not claimed as CE 1.0 complete.
   Why remaining: rotating the pin is an operator signing operation,
   not a per-cluster self-issue.
 
+## CE 1.0 release-candidate pass
+
+This pass hardened the software-complete candidate and added the
+executable physical-certification harness. It did not change CE 1.0
+status: the milestone still requires the two-physical-node gates to
+pass on real Debian 13 hardware.
+
+Fixed release-gate defects found by running the full matrix:
+
+- `go vet` failed on a self-assignment (`hostPath = hostPath`) in
+  `internal/backuphost/docker.go`. Rewritten to keep the source path only
+  when it is already under `/var/lib/docker/volumes/`, else resolve the
+  named volume. The `go` CI job (`go vet ./...`) now passes.
+- `gofmt -l` reported unformatted files added by the physical-host pass
+  (backup, migration, and httpapi sources). Formatted so the Policy CI
+  gofmt gate stays green.
+- The UI CI gate (`eslint --max-warnings 0`) failed on three pages.
+  `reload()` is now `useCallback` on APIAccess and Features and the Tasks
+  list is memoized, so the effect and memo dependencies are honest with
+  no behaviour change.
+- `check-ui-copy` flagged operator-facing strings leaking internal
+  roadmap phase numbers (Cluster, GPU) and an awkward license phrase
+  (Docs). Reworded to plain operator language.
+
+Certification harness added under `packaging/cert/`:
+
+- `ce-1.0-certify.sh` runs the 28 CE 1.0 gates on node A, creates only
+  disposable `cert-<run-id>` resources, verifies real outcomes, records
+  PASS / FAIL / BLOCKED-PHYSICAL with evidence, and cleans up. The full
+  backup/DR chain (Smart/Custom/Full, incremental, R2 upload to Protected,
+  destroy then restore-as-new with a seeded canary, retention/GC on the
+  disposable repository, workspace and host-reserve limits with small
+  artificial values, and the zero-freeze invariant sampled from
+  `cgroup.freeze`) is gates 9 to 11.
+- `lib.sh` enforces the absolute production-safety rules: it refuses any
+  name that is not run-prefixed or that matches the production denylist
+  (for example `Skila`), and cleanup only touches tracked disposable
+  resources.
+- `selftest.sh` validates the guards, ledger, and verdict logic in any
+  environment and is safe for CI. On a non-appliance host the full
+  harness correctly reports every hardware gate as BLOCKED-PHYSICAL and
+  never a PASS.
+
+Remaining BLOCKED-PHYSICAL (genuinely need two Debian 13 machines, R2,
+or specific hardware): install/first-run, LXC/KVM/Docker lifecycle,
+snapshots on hardware, remote R2 Protected and DR restore, second-node
+join, mTLS/WireGuard dest agent, offline/live migration and its
+non-duplication and failed-migration-safety gates, host reboot/autostart,
+signed package upgrade, Store signed install, Terminal/Files on a booted
+guest, network rollback, and GPU/IOMMU. Run
+`packaging/cert/ce-1.0-certify.sh` on the two physical nodes to close them.
+
 
 
 

@@ -14,3 +14,10 @@ Ubuntu Cloud VMs. Ticking items here does not mark CE 1.0 reached.
 
 Unsigned or skipped virt cases stay skipped. Do not invent a green
 KVM run.
+
+The full two-physical-node release gate is the automated harness in
+`packaging/cert/` documented in
+[ce-1.0-certification.md](ce-1.0-certification.md). Its self-test
+(`bash packaging/cert/selftest.sh`) runs anywhere and is wired into CI;
+the harness itself only reports PASS for gates it actually executed on
+hardware.
