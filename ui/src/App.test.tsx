@@ -1198,6 +1198,8 @@ describe("App", () => {
     expect(within(policyDialog).getByLabelText(/^smart application data$/i)).toBeChecked();
     expect(within(policyDialog).getByLabelText(/^full machine \/ full lxc$/i)).not.toBeChecked();
     expect(within(policyDialog).getByLabelText(/^search workloads$/i)).toBeVisible();
+    expect(within(policyDialog).getByText(/automatically protects persistent application data/i)).toBeVisible();
+    expect(within(policyDialog).queryByText(/backup scope preview/i)).not.toBeInTheDocument();
   });
 
   it("renders R2 object target fields and last-run transferred bytes", async () => {

@@ -14,9 +14,9 @@ belong to more than one policy.
 Directory system containers also have a capture mode: `smart` (default,
 application data), `custom` (detected categories plus include/exclude),
 or `full` (complete recoverable filesystem). Full Machine is never
-implied. All three modes use Backup Engine V2. The policy editor
-previews detected persistent and reproducible paths from filesystem
-metadata before save.
+implied. All three modes use Backup Engine V2. Smart and Full do not
+walk guest filesystems in the policy editor. Custom discovery loads
+only when the operator configures one selected workload.
 Run now executes the policy against its current scope. One policy
 execution runs at a time. A second Run now (or a nightly tick) against
 any policy returns 409 while another execution is in progress. Fleet

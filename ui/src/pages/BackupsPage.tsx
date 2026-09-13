@@ -228,6 +228,85 @@ function asScopeCategories(items: Record<string, unknown>[] | undefined): ScopeC
   }));
 }
 
+type CategoryGroup = {
+  kind: string;
+  label: string;
+  bytes: number;
+  selected: boolean;
+  ids: string[];
+  warnings: string[];
+};
+
+function kindGroupLabel(kind: string): string {
+  switch (kind) {
+    case "database":
+      return "Databases";
+    case "docker-volume":
+      return "Docker volumes";
+    case "docker-bind":
+      return "Docker bind mounts";
+    case "application":
+      return "Application data";
+    case "configuration":
+      return "Configuration";
+    case "certificate":
+      return "Certificates";
+    case "git":
+      return "Git repositories";
+    case "reproducible":
+      return "Reproducible caches";
+    case "logs":
+      return "Logs";
+    case "os":
+      return "Operating system";
+    case "technical":
+      return "Runtime filesystems";
+    default:
+      return "Other";
+  }
+}
+
+function groupCategories(items: ScopeCategory[]): CategoryGroup[] {
+  const order = [
+    "database",
+    "docker-volume",
+    "docker-bind",
+    "application",
+    "configuration",
+    "certificate",
+    "uncertain",
+    "git",
+    "reproducible",
+    "logs",
+    "os",
+    "technical",
+  ];
+  const map = new Map<string, CategoryGroup>();
+  for (const it of items) {
+    const cur = map.get(it.kind);
+    if (!cur) {
+      map.set(it.kind, {
+        kind: it.kind,
+        label: kindGroupLabel(it.kind),
+        bytes: it.bytes,
+        selected: it.selected,
+        ids: [it.id],
+        warnings: [...(it.warnings ?? [])],
+      });
+      continue;
+    }
+    cur.bytes += it.bytes;
+    cur.selected = cur.selected || it.selected;
+    cur.ids.push(it.id);
+    for (const warning of it.warnings ?? []) {
+      if (!cur.warnings.includes(warning)) {
+        cur.warnings.push(warning);
+      }
+    }
+  }
+  return [...map.values()].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+}
+
 function planLabel(plan: BackupRun["plan"]): string {
   if (!plan) {
     return "None";
@@ -293,9 +372,10 @@ export function BackupsPage() {
   const [keepMonthly, setKeepMonthly] = useState("3");
   const [workloadQuery, setWorkloadQuery] = useState("");
   const [showAdvancedPaths, setShowAdvancedPaths] = useState(false);
-  const [scopePreview, setScopePreview] = useState<BackupScopePreviewResponse | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [customWorkloadId, setCustomWorkloadId] = useState("");
+  const [customPreview, setCustomPreview] = useState<BackupScopePreviewResponse | null>(null);
+  const [customPreviewBusy, setCustomPreviewBusy] = useState(false);
+  const [customPreviewError, setCustomPreviewError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<BackupWorkspace | null>(null);
   const [maxLocalGiB, setMaxLocalGiB] = useState("50");
   const [minFreeGiB, setMinFreeGiB] = useState("10");
@@ -396,8 +476,10 @@ export function BackupsPage() {
     }
     setWorkloadQuery("");
     setShowAdvancedPaths(false);
-    setScopePreview(null);
-    setPreviewError(null);
+    setCustomWorkloadId("");
+    setCustomPreview(null);
+    setCustomPreviewBusy(false);
+    setCustomPreviewError(null);
     setDialog({ kind: "policy", policy });
   }
 
@@ -505,7 +587,7 @@ export function BackupsPage() {
       if (policyScope === "selected") {
         body.workload_ids = policyWorkloadIds;
       }
-      if (Object.keys(policySelections).length > 0) {
+      if (policyCaptureMode === "custom" && Object.keys(policySelections).length > 0) {
         body.scope_json = { workloads: policySelections };
       }
       if (existing) {
@@ -522,63 +604,74 @@ export function BackupsPage() {
     }
   }
 
-  const previewWorkloadIds = policyScope === "all" ? workloads.map((w) => w.id) : policyWorkloadIds;
+  function setCaptureMode(mode: CaptureMode) {
+    setPolicyCaptureMode(mode);
+    if (mode !== "custom") {
+      setCustomWorkloadId("");
+      setCustomPreview(null);
+      setCustomPreviewBusy(false);
+      setCustomPreviewError(null);
+    }
+  }
 
-  useEffect(() => {
-    if (dialog?.kind !== "policy") {
-      return;
-    }
-    if (previewWorkloadIds.length === 0) {
-      setScopePreview(null);
-      setPreviewError(null);
-      setPreviewBusy(false);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      setPreviewBusy(true);
-      setPreviewError(null);
-      void previewBackupScope({
-        workload_ids: previewWorkloadIds,
-        capture_mode: policyCaptureMode,
+  async function loadCustomPreview(workloadId: string) {
+    setCustomWorkloadId(workloadId);
+    setCustomPreviewBusy(true);
+    setCustomPreviewError(null);
+    try {
+      const res = await previewBackupScope({
+        workload_ids: [workloadId],
+        capture_mode: "custom",
         scope_json: { workloads: policySelections },
-      })
-        .then((res) => {
-          if (!cancelled) {
-            setScopePreview(res);
-          }
-        })
-        .catch((err: unknown) => {
-          if (!cancelled) {
-            setScopePreview(null);
-            setPreviewError(err instanceof Error ? err.message : "Scope preview unavailable");
-          }
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setPreviewBusy(false);
-          }
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [dialog?.kind, policyCaptureMode, policySelections, previewWorkloadIds.join(",")]);
+      });
+      setCustomPreview(res);
+    } catch (err) {
+      setCustomPreview(null);
+      setCustomPreviewError(err instanceof Error ? err.message : "Scope preview unavailable");
+    } finally {
+      setCustomPreviewBusy(false);
+    }
+  }
 
-  function togglePreviewItem(workloadId: string, itemId: string, on: boolean) {
+  function togglePreviewItems(workloadId: string, itemIds: string[], on: boolean) {
     setPolicySelections((cur) => {
       const prev = cur[workloadId] ?? {};
       const selected = new Set(prev.selected ?? []);
       const deselected = new Set(prev.deselected ?? []);
-      if (on) {
-        selected.add(itemId);
-        deselected.delete(itemId);
-      } else {
-        deselected.add(itemId);
-        selected.delete(itemId);
+      for (const itemId of itemIds) {
+        if (on) {
+          selected.add(itemId);
+          deselected.delete(itemId);
+        } else {
+          deselected.add(itemId);
+          selected.delete(itemId);
+        }
       }
       return { ...cur, [workloadId]: { ...prev, selected: [...selected], deselected: [...deselected] } };
+    });
+    setCustomPreview((cur) => {
+      if (!cur?.items) {
+        return cur;
+      }
+      const ids = new Set(itemIds);
+      return {
+        ...cur,
+        items: cur.items.map((wl) => {
+          if (String(wl.workload_id ?? "") !== workloadId || !wl.items) {
+            return wl;
+          }
+          return {
+            ...wl,
+            items: wl.items.map((raw) => {
+              const it = raw as { id?: string; selected?: boolean };
+              if (!ids.has(String(it.id ?? ""))) {
+                return raw;
+              }
+              return { ...raw, selected: on };
+            }),
+          };
+        }),
+      };
     });
   }
 
@@ -765,6 +858,8 @@ export function BackupsPage() {
     }
     return w.name.toLowerCase().includes(q) || w.id.toLowerCase().includes(q) || w.kind.toLowerCase().includes(q);
   });
+  const customTargets =
+    policyScope === "all" ? workloads : workloads.filter((w) => policyWorkloadIds.includes(w.id));
   const recentRuns = (runs ?? []).slice(0, 12);
   const recentArtifacts = artifacts ?? [];
 
@@ -1350,7 +1445,7 @@ export function BackupsPage() {
                 name="backup-policy-capture-mode"
                 value="smart"
                 checked={policyCaptureMode === "smart"}
-                onChange={() => setPolicyCaptureMode("smart")}
+                onChange={() => setCaptureMode("smart")}
               />
               Smart Application Data
             </label>
@@ -1360,7 +1455,7 @@ export function BackupsPage() {
                 name="backup-policy-capture-mode"
                 value="custom"
                 checked={policyCaptureMode === "custom"}
-                onChange={() => setPolicyCaptureMode("custom")}
+                onChange={() => setCaptureMode("custom")}
               />
               Custom
             </label>
@@ -1370,145 +1465,105 @@ export function BackupsPage() {
                 name="backup-policy-capture-mode"
                 value="full"
                 checked={policyCaptureMode === "full"}
-                onChange={() => setPolicyCaptureMode("full")}
+                onChange={() => setCaptureMode("full")}
               />
               Full Machine / Full LXC
             </label>
           </div>
           {policyCaptureMode === "smart" ? (
             <p className="field-hint">
-              Recommended. Protects the data required to recover the workload, not every reproducible byte inside it.
+              Automatically protects persistent application data, databases, configuration and Docker volumes while
+              excluding reproducible caches, repositories and temporary data.
             </p>
-          ) : null}
-          {policyCaptureMode === "custom" ? (
-            <p className="field-hint">Choose detected categories, then add raw include or exclude paths if you need them.</p>
           ) : null}
           {policyCaptureMode === "full" ? (
             <p className="banner banner-warn" role="status">
-              Full Machine / Full LXC protects the complete recoverable filesystem. It uses Backup Engine V2 (chunking,
-              deduplication, compression, encryption) and consumes substantially more local storage, remote storage, and
-              backup bandwidth. It is not selected by default.
+              Full Machine / Full LXC backs up the entire recoverable workload with Backup Engine V2. It consumes
+              substantially more storage and bandwidth. It is not selected by default.
             </p>
           ) : null}
         </fieldset>
-        <div className="stack" aria-live="polite">
-          <h3 className="field-label">Backup scope preview</h3>
-          {previewWorkloadIds.length === 0 ? (
-            <p className="muted">Select workloads to preview detected persistent and reproducible data.</p>
-          ) : previewBusy ? (
-            <p className="muted">Collecting scope preview from filesystem metadata.</p>
-          ) : previewError ? (
-            <p className="muted">{previewError}. You can still save the policy; capture will inventory at run time.</p>
-          ) : scopePreview ? (
-            <div className="scope-preview">
-              <p className="muted">
-                Protected data: {formatBytes(scopePreview.protected_bytes ?? 0)}. Excluded or reproducible:{" "}
-                {formatBytes(scopePreview.excluded_bytes ?? 0)}. Full filesystem: {formatBytes(scopePreview.full_bytes ?? 0)}.
-              </p>
-              {(scopePreview.items ?? []).map((wl) => {
-                const categories = asScopeCategories(wl.items);
-                const persistent = categories.filter((it) => !it.reproducible && it.kind !== "technical");
-                const repro = categories.filter((it) => it.reproducible || it.kind === "technical");
-                const workloadId = String(wl.workload_id ?? "");
-                const sel = policySelections[workloadId] ?? {};
-                return (
-                  <article className="scope-preview-card" key={workloadId || wl.workload_name}>
-                    <h4>{wl.workload_name || workloadId}</h4>
-                    <p className="muted">
-                      Protected {formatBytes(wl.protected_bytes ?? 0)} · Excluded {formatBytes(wl.excluded_bytes ?? 0)}
-                    </p>
-                    {persistent.length > 0 ? <p className="field-label">Detected persistent data</p> : null}
-                    <div className="picker-list" role="group" aria-label={`${wl.workload_name || "workload"} persistent data`}>
-                      {persistent.map((it) => (
-                        <label className="field-check" key={it.id}>
-                          <input
-                            type="checkbox"
-                            checked={it.selected}
-                            disabled={policyCaptureMode === "full"}
-                            onChange={(e) => togglePreviewItem(workloadId, it.id, e.target.checked)}
-                          />
-                          <span>
-                            {it.label}
-                            {it.paths[0] ? <span className="muted"> {it.paths[0]}</span> : null}
-                            <span className="muted"> {formatBytes(it.bytes)}</span>
-                            {it.warnings?.map((w) => (
-                              <span className="scope-warning" key={w}>
-                                {" "}
-                                {w}
-                              </span>
-                            ))}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    {repro.length > 0 ? <p className="field-label">Detected reproducible or excluded data</p> : null}
-                    {repro.length > 0 ? (
-                      <div className="picker-list" role="group" aria-label={`${wl.workload_name || "workload"} excluded data`}>
-                        {repro.map((it) => (
-                          <label className="field-check" key={it.id}>
-                            <input
-                              type="checkbox"
-                              checked={it.selected}
-                              disabled={policyCaptureMode === "full"}
-                              onChange={(e) => togglePreviewItem(workloadId, it.id, e.target.checked)}
-                            />
-                            <span>
-                              {it.label}
-                              {it.paths[0] ? <span className="muted"> {it.paths[0]}</span> : null}
-                              <span className="muted"> {formatBytes(it.bytes)}</span>
-                              {it.warnings?.map((w) => (
-                                <span className="scope-warning" key={w}>
-                                  {" "}
-                                  {w}
-                                </span>
-                              ))}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-                    {policyCaptureMode === "custom" || showAdvancedPaths ? (
-                      <div className="stack">
-                        <div className="field">
-                          <label className="field-label" htmlFor={`backup-include-${workloadId}`}>
-                            Additional include paths
-                          </label>
-                          <textarea
-                            id={`backup-include-${workloadId}`}
-                            className="field-input"
-                            rows={3}
-                            value={(sel.includes ?? []).join("\n")}
-                            onChange={(e) => updateAdvancedPaths(workloadId, "includes", e.target.value)}
-                          />
-                          <p className="field-hint">One guest path per line. Advanced users only.</p>
-                        </div>
-                        <div className="field">
-                          <label className="field-label" htmlFor={`backup-exclude-${workloadId}`}>
-                            Additional exclude paths
-                          </label>
-                          <textarea
-                            id={`backup-exclude-${workloadId}`}
-                            className="field-input"
-                            rows={3}
-                            value={(sel.excludes ?? []).join("\n")}
-                            onChange={(e) => updateAdvancedPaths(workloadId, "excludes", e.target.value)}
-                          />
-                          <p className="field-hint">One guest path per line. Overlapping a detected database is warned.</p>
-                        </div>
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              })}
-              {policyCaptureMode !== "custom" ? (
+        {policyCaptureMode === "custom" ? (
+          <div className="stack">
+            <p className="field-hint">
+              Discovery runs only when you configure a workload. Include or exclude category groups, or add raw paths.
+            </p>
+            {customTargets.length === 0 ? (
+              <p className="muted">Select workloads above, or choose All workloads, then configure one machine.</p>
+            ) : (
+              <div className="picker-list" role="group" aria-label="Custom workload configuration">
+                {customTargets.map((w) => (
+                  <button
+                    key={w.id}
+                    className="btn btn-sm"
+                    type="button"
+                    disabled={customPreviewBusy && customWorkloadId === w.id}
+                    onClick={() => void loadCustomPreview(w.id)}
+                  >
+                    {customWorkloadId === w.id ? `Configuring ${w.name}` : `Configure ${w.name}`}
+                  </button>
+                ))}
+              </div>
+            )}
+            {customPreviewBusy ? <p className="muted">Collecting categories for this workload.</p> : null}
+            {customPreviewError ? <p className="muted">{customPreviewError}</p> : null}
+            {customPreview?.items?.[0] ? (
+              <article className="scope-preview-card">
+                <h4>{customPreview.items[0].workload_name || customWorkloadId}</h4>
+                <div className="picker-list" role="group" aria-label="Detected data categories">
+                  {groupCategories(asScopeCategories(customPreview.items[0].items)).map((group) => (
+                    <label className="field-check" key={group.kind}>
+                      <input
+                        type="checkbox"
+                        checked={group.selected}
+                        onChange={(e) => togglePreviewItems(customWorkloadId, group.ids, e.target.checked)}
+                      />
+                      <span>
+                        {group.label}
+                        <span className="muted"> {formatBytes(group.bytes)}</span>
+                        {group.warnings[0] ? <span className="scope-warning"> {group.warnings[0]}</span> : null}
+                      </span>
+                    </label>
+                  ))}
+                </div>
                 <label className="field-check">
                   <input type="checkbox" checked={showAdvancedPaths} onChange={(e) => setShowAdvancedPaths(e.target.checked)} />
                   Show advanced path rules
                 </label>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+                {showAdvancedPaths ? (
+                  <div className="stack">
+                    <div className="field">
+                      <label className="field-label" htmlFor={`backup-include-${customWorkloadId}`}>
+                        Additional include paths
+                      </label>
+                      <textarea
+                        id={`backup-include-${customWorkloadId}`}
+                        className="field-input"
+                        rows={3}
+                        value={(policySelections[customWorkloadId]?.includes ?? []).join("\n")}
+                        onChange={(e) => updateAdvancedPaths(customWorkloadId, "includes", e.target.value)}
+                      />
+                      <p className="field-hint">One guest path per line.</p>
+                    </div>
+                    <div className="field">
+                      <label className="field-label" htmlFor={`backup-exclude-${customWorkloadId}`}>
+                        Additional exclude paths
+                      </label>
+                      <textarea
+                        id={`backup-exclude-${customWorkloadId}`}
+                        className="field-input"
+                        rows={3}
+                        value={(policySelections[customWorkloadId]?.excludes ?? []).join("\n")}
+                        onChange={(e) => updateAdvancedPaths(customWorkloadId, "excludes", e.target.value)}
+                      />
+                      <p className="field-hint">One guest path per line.</p>
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            ) : null}
+          </div>
+        ) : null}
         <div className="field">
           <label className="field-label" htmlFor="backup-policy-target">
             Target

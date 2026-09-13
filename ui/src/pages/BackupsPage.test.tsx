@@ -137,6 +137,9 @@ describe("Backups page", () => {
     expect(within(dialog).getByLabelText(/^smart application data$/i)).toBeChecked();
     expect(within(dialog).getByLabelText(/^full machine \/ full lxc$/i)).not.toBeChecked();
     expect(within(dialog).getByRole("group", { name: /^workloads$/i })).toBeVisible();
+    expect(within(dialog).getByText(/automatically protects persistent application data/i)).toBeVisible();
+    expect(within(dialog).queryByText(/backup scope preview/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("group", { name: /detected data categories/i })).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /alpha/i }));
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /bravo/i }));
     fireEvent.change(within(dialog).getByLabelText(/^name$/i), { target: { value: "nightly-subset" } });
@@ -153,6 +156,56 @@ describe("Backups page", () => {
       expect(body.capture_mode).toBe("smart");
       expect(body.workload_ids).toEqual(["wl-a", "wl-b"]);
     });
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes("/backups/scope-preview")),
+    ).toBe(false);
+  });
+
+  it("does not scan filesystems for Full Machine and loads Custom discovery one workload at a time", async () => {
+    const fetchMock = mockApi({
+      ...baseRoutes,
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "POST /api/v1/backups/scope-preview": {
+        status: 200,
+        body: {
+          capture_mode: "custom",
+          protected_bytes: 4,
+          excluded_bytes: 2,
+          full_bytes: 6,
+          items: [
+            {
+              workload_id: "wl-a",
+              workload_name: "alpha",
+              items: [
+                { id: "db:postgresql", kind: "database", label: "PostgreSQL", paths: ["/var/lib/postgresql"], bytes: 4, selected: true },
+                { id: "repro:apt", kind: "reproducible", label: "Package cache", paths: ["/var/cache/apt"], bytes: 2, selected: false },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^policies$/i })).toBeVisible();
+    fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
+    const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /alpha/i }));
+    fireEvent.click(within(dialog).getByLabelText(/^full machine \/ full lxc$/i));
+    expect(within(dialog).getByText(/backs up the entire recoverable workload/i)).toBeVisible();
+    expect(within(dialog).queryByText(/backup scope preview/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: /configure alpha/i })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByLabelText(/^custom$/i));
+    expect(within(dialog).getByRole("button", { name: /configure alpha/i })).toBeVisible();
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes("/backups/scope-preview")),
+    ).toBe(false);
+    fireEvent.click(within(dialog).getByRole("button", { name: /configure alpha/i }));
+    expect(await within(dialog).findByRole("group", { name: /detected data categories/i })).toBeVisible();
+    expect(within(dialog).getByText(/^databases$/i)).toBeVisible();
+    const preview = fetchMock.mock.calls.find((call) => String(call[0]).includes("/backups/scope-preview"));
+    expect(preview).toBeTruthy();
+    expect(JSON.parse(String(preview?.[1]?.body)).workload_ids).toEqual(["wl-a"]);
   });
 
   it("runs a policy from its card instead of a separate Run backup panel", async () => {

@@ -219,15 +219,18 @@ whole-rootfs tar format.
 - `full`: complete recoverable guest filesystem minus technical mounts
   (`proc`, `sys`, `dev`, `run`). Never the default.
 
-Scope preview uses filesystem metadata (stat) and does not require a backup
-run. It never reads secret file contents to classify a path.
+Scope discovery uses filesystem metadata (stat) and does not require a
+backup run. It never reads secret file contents to classify a path. The
+policy editor does not walk the fleet on open; Smart and Full skip
+preview entirely, and Custom discovers one workload when the operator
+asks.
 
 ## Integration status
 
 Implemented: engine core; agent live capture and restore (`v2-capture`,
 `v2-restore`, `v2-preview`, `v2-status`); control persistence
 (`migrations/0047_backup_engine_v2.sql`); policy capture modes and selected
-workload default; Backups UI (scope radios, per-workload preview, protection
+workload default; Backups UI (scope radios, opt-in Custom discovery, protection
 states, workspace bounds); Docker persistence inventory without secret
 values; Blueprint-aware restore-as-new that stays stopped until started.
 
