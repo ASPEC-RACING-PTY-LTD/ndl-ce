@@ -48,7 +48,8 @@ func isCTArchiveFormat(format string) bool {
 
 // IsArchiveFormat reports whether a catalogued artifact is a container rootfs archive.
 func IsArchiveFormat(format string) bool {
-	return isCTArchiveFormat(format) || strings.TrimSpace(strings.ToLower(format)) == "ndlb"
+	f := strings.TrimSpace(strings.ToLower(format))
+	return isCTArchiveFormat(format) || f == "ndlb" || f == "ndl-cab"
 }
 
 const StagingRoot = "/var/lib/ndl/backup-staging"

@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
+	"github.com/no-dal/ndl-ce/internal/backuphost"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
@@ -99,6 +100,17 @@ func (h *Handler) execVMSnapshot(ctx context.Context, m *agentv1.VMSnapshot) (*c
 }
 
 func (h *Handler) execBackupCopy(ctx context.Context, m *agentv1.BackupCopy) (*connect.Response[agentv1.ExecuteResponse], error) {
+	if backuphost.IsAction(m.GetAction()) {
+		host, err := h.backupHost()
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		res, err := host.Handle(ctx, m.GetAction(), m.GetSourcePath(), m.GetDestPath())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: m.GetAction(), ResultJson: mustJSON(res)}), nil
+	}
 	res, err := h.qemu().CopyOffline(ctx, m.GetAction(), m.GetSourcePath(), m.GetDestPath())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)

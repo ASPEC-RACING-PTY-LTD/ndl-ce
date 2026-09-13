@@ -26,6 +26,12 @@ func runGuestHook(ctx context.Context, unit, rootfs, guestPath string) error {
 	return hookRunner(ctx, unit, rootfs, guestPath)
 }
 
+// RunGuestHook runs an optional in-guest pre/post backup hook. It never
+// freezes, pauses, or stops the guest.
+func RunGuestHook(ctx context.Context, unit, rootfs, guestPath string) error {
+	return runGuestHook(ctx, unit, rootfs, guestPath)
+}
+
 func runGuestHookDefault(ctx context.Context, unit, rootfs, guestPath string) error {
 	unit = strings.TrimSpace(unit)
 	if unit == "" {

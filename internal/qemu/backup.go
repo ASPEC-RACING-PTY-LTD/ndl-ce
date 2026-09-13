@@ -30,6 +30,13 @@ const (
 	BackupUnpack      = "unpack"
 	BackupStatFS      = "statfs"
 	BackupRmTree      = "rm-tree"
+	BackupV2Capture   = "v2-capture"
+	BackupV2Restore   = "v2-restore"
+	BackupV2Status    = "v2-status"
+	BackupV2Preview   = "v2-preview"
+	BackupV2Expire    = "v2-expire"
+	BackupV2Workspace = "v2-workspace"
+	BackupV2Enqueue   = "v2-enqueue"
 )
 
 // ArchiveAction encodes an optional guest hook identity as archive:<unit>.

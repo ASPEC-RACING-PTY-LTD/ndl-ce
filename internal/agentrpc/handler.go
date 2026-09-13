@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
+	"github.com/no-dal/ndl-ce/internal/backuphost"
 	"github.com/no-dal/ndl-ce/internal/docker"
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/identity"
@@ -44,6 +45,7 @@ type Handler struct {
 	QEMU          *qemu.Engine
 	OCI           *oci.Engine
 	Docker        *docker.Engine
+	BackupHost    *backuphost.Host
 	ZFS           *storage.ZFSEngine
 	LVM           *storage.LVMEngine
 	Datastore     *storage.DatastoreEngine
