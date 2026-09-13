@@ -29,7 +29,7 @@ export function DocsPage() {
       <header className="page-header">
         <h1>Docs</h1>
         <p className="lede">
-          Operator runbooks shipped in the tree under docs/. License activation is not required. CE 1.0 hardware gates
+          Operator runbooks shipped in the tree under docs/. No license key is required. CE 1.0 hardware gates
           are not proven on this host. This tree does not ship EE blobs. Ubuntu is not claimed as Tier 1. Signed
           production packages use the HTTPS apt repo documented in install.md.
         </p>

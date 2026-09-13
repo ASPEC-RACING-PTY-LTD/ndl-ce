@@ -118,7 +118,7 @@ export function ClusterPage() {
   async function onRolling() {
     if (
       !window.confirm(
-        "Roll one node at a time: drain, then Phase 12 update on this control node. Guests are not stopped. Worker apply stays unavailable until dest agent is connected.",
+        "Roll one node at a time: drain, then apply the package update on this control node. Guests are not stopped. Worker apply stays unavailable until dest agent is connected.",
       )
     ) {
       return;
@@ -204,7 +204,7 @@ export function ClusterPage() {
       <article className="panel">
         <h2>Rolling update</h2>
         <p className="lede">
-          Drain one node, apply the Phase 12 package update on this control node, then the next. Guests are not stopped.
+          Drain one node, apply the package update on this control node, then the next. Guests are not stopped.
           Worker package apply stays unavailable until the dest agent is connected.
         </p>
         {rolling?.preview && rolling.preview.length > 0 ? (

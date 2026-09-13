@@ -38,7 +38,7 @@ export function GpuPage() {
       <h1 id="gpu-heading">GPUs</h1>
       <p className="page-kicker">
         Workloads receive a GPU only when assigned. gpu=all is refused. ACS override is refused.
-        Store GPU picker is Phase 36.
+        A Store-driven GPU picker is not part of this release.
       </p>
     </header>
   );
