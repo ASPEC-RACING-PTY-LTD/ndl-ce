@@ -115,9 +115,9 @@ func (p *Postgres) CreateBackupPolicy(ctx context.Context, pol BackupPolicy) err
 		workloadID = pol.WorkloadID
 	}
 	_, err = tx.ExecContext(ctx, `
-INSERT INTO backup_policies (id, cluster_id, name, workload_id, target_id, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, scope)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		pol.ID, pol.ClusterID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt, pol.Scope)
+INSERT INTO backup_policies (id, cluster_id, name, workload_id, target_id, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, scope, capture_mode, scope_json)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		pol.ID, pol.ClusterID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureSmart), pol.ScopeJSON)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 
 func (p *Postgres) ListBackupPolicies(ctx context.Context, clusterID string) ([]BackupPolicy, error) {
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected')
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, '')
 FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -159,7 +159,7 @@ FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 
 func (p *Postgres) GetBackupPolicy(ctx context.Context, clusterID, id string) (*BackupPolicy, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected')
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, '')
 FROM backup_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	pol, err := scanBackupPolicy(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -189,9 +189,9 @@ func (p *Postgres) UpdateBackupPolicy(ctx context.Context, pol BackupPolicy) err
 		workloadID = pol.WorkloadID
 	}
 	res, err := tx.ExecContext(ctx, `
-UPDATE backup_policies SET name=$3, workload_id=$4, target_id=$5, schedule=$6, keep_daily=$7, keep_weekly=$8, keep_monthly=$9, scope=$10
+UPDATE backup_policies SET name=$3, workload_id=$4, target_id=$5, schedule=$6, keep_daily=$7, keep_weekly=$8, keep_monthly=$9, scope=$10, capture_mode=$11, scope_json=$12
 WHERE cluster_id=$1 AND id=$2`,
-		pol.ClusterID, pol.ID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.Scope)
+		pol.ClusterID, pol.ID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureSmart), pol.ScopeJSON)
 	if err != nil {
 		return err
 	}
@@ -322,9 +322,9 @@ func (p *Postgres) CreateBackupArtifact(ctx context.Context, a BackupArtifact) e
 	}
 	FillArtifactLocality(&a)
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_artifacts (id, cluster_id, run_id, workload_id, checksum_sha256, size_bytes, locator, format, created_at, encrypted, transferred_bytes, parent_artifact_id, object_key, verify_status, verify_error, last_tested_at, throwaway_workload_id, locality, pull_url)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-		a.ID, a.ClusterID, a.RunID, a.WorkloadID, a.ChecksumSHA256, a.SizeBytes, a.Locator, a.Format, a.CreatedAt, a.Encrypted, a.TransferredBytes, nullIfEmpty(a.ParentArtifactID), a.ObjectKey, status, a.VerifyError, a.LastTestedAt, nullIfEmpty(a.ThrowawayWorkloadID), a.Locality, a.PullURL)
+INSERT INTO backup_artifacts (id, cluster_id, run_id, workload_id, checksum_sha256, size_bytes, locator, format, created_at, encrypted, transferred_bytes, parent_artifact_id, object_key, verify_status, verify_error, last_tested_at, throwaway_workload_id, locality, pull_url, engine_version, backup_id, namespace, local_complete, remote_state, logical_bytes, physical_new_data, chunks_new, chunks_reused, capture_duration_ns, upload_duration_ns, consistency, capture_mode, blueprint_json, stats_json)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)`,
+		a.ID, a.ClusterID, a.RunID, a.WorkloadID, a.ChecksumSHA256, a.SizeBytes, a.Locator, a.Format, a.CreatedAt, a.Encrypted, a.TransferredBytes, nullIfEmpty(a.ParentArtifactID), a.ObjectKey, status, a.VerifyError, a.LastTestedAt, nullIfEmpty(a.ThrowawayWorkloadID), a.Locality, a.PullURL, a.EngineVersion, a.BackupID, a.Namespace, a.LocalComplete, a.RemoteState, a.LogicalBytes, a.PhysicalNewData, a.ChunksNew, a.ChunksReused, a.CaptureDurationNS, a.UploadDurationNS, a.Consistency, a.CaptureMode, a.BlueprintJSON, a.StatsJSON)
 	return err
 }
 
@@ -352,7 +352,11 @@ func (p *Postgres) ListBackupArtifacts(ctx context.Context, clusterID string) ([
 SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at,
        COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, ''),
        COALESCE(verify_status, 'unverified'), COALESCE(verify_error, ''), last_tested_at, COALESCE(throwaway_workload_id::text, ''),
-       COALESCE(locality, ''), COALESCE(pull_url, '')
+       COALESCE(locality, ''), COALESCE(pull_url, ''),
+       COALESCE(engine_version, ''), COALESCE(backup_id, ''), COALESCE(namespace, ''), COALESCE(local_complete, false), COALESCE(remote_state, ''),
+       COALESCE(logical_bytes, 0), COALESCE(physical_new_data, 0), COALESCE(chunks_new, 0), COALESCE(chunks_reused, 0),
+       COALESCE(capture_duration_ns, 0), COALESCE(upload_duration_ns, 0), COALESCE(consistency, ''), COALESCE(capture_mode, ''),
+       COALESCE(blueprint_json, ''), COALESCE(stats_json, '')
 FROM backup_artifacts WHERE cluster_id=$1 ORDER BY created_at DESC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -374,7 +378,11 @@ func (p *Postgres) ListBackupArtifactsForWorkload(ctx context.Context, clusterID
 SELECT a.id::text, a.cluster_id::text, a.run_id::text, a.workload_id::text, a.checksum_sha256, a.size_bytes, a.locator, a.format, a.created_at,
        COALESCE(a.encrypted, false), COALESCE(a.transferred_bytes, 0), COALESCE(a.parent_artifact_id::text, ''), COALESCE(a.object_key, ''),
        COALESCE(a.verify_status, 'unverified'), COALESCE(a.verify_error, ''), a.last_tested_at, COALESCE(a.throwaway_workload_id::text, ''),
-       COALESCE(a.locality, ''), COALESCE(a.pull_url, '')
+       COALESCE(a.locality, ''), COALESCE(a.pull_url, ''),
+       COALESCE(a.engine_version, ''), COALESCE(a.backup_id, ''), COALESCE(a.namespace, ''), COALESCE(a.local_complete, false), COALESCE(a.remote_state, ''),
+       COALESCE(a.logical_bytes, 0), COALESCE(a.physical_new_data, 0), COALESCE(a.chunks_new, 0), COALESCE(a.chunks_reused, 0),
+       COALESCE(a.capture_duration_ns, 0), COALESCE(a.upload_duration_ns, 0), COALESCE(a.consistency, ''), COALESCE(a.capture_mode, ''),
+       COALESCE(a.blueprint_json, ''), COALESCE(a.stats_json, '')
 FROM backup_artifacts a
 JOIN backup_runs r ON r.id = a.run_id
 WHERE a.cluster_id=$1 AND a.workload_id=$2`
@@ -405,7 +413,11 @@ func (p *Postgres) GetBackupArtifact(ctx context.Context, clusterID, id string) 
 SELECT id::text, cluster_id::text, run_id::text, workload_id::text, checksum_sha256, size_bytes, locator, format, created_at,
        COALESCE(encrypted, false), COALESCE(transferred_bytes, 0), COALESCE(parent_artifact_id::text, ''), COALESCE(object_key, ''),
        COALESCE(verify_status, 'unverified'), COALESCE(verify_error, ''), last_tested_at, COALESCE(throwaway_workload_id::text, ''),
-       COALESCE(locality, ''), COALESCE(pull_url, '')
+       COALESCE(locality, ''), COALESCE(pull_url, ''),
+       COALESCE(engine_version, ''), COALESCE(backup_id, ''), COALESCE(namespace, ''), COALESCE(local_complete, false), COALESCE(remote_state, ''),
+       COALESCE(logical_bytes, 0), COALESCE(physical_new_data, 0), COALESCE(chunks_new, 0), COALESCE(chunks_reused, 0),
+       COALESCE(capture_duration_ns, 0), COALESCE(upload_duration_ns, 0), COALESCE(consistency, ''), COALESCE(capture_mode, ''),
+       COALESCE(blueprint_json, ''), COALESCE(stats_json, '')
 FROM backup_artifacts WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	a, err := scanBackupArtifact(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -439,7 +451,7 @@ func scanBackupTarget(row rowScanner) (BackupTarget, error) {
 func scanBackupPolicy(row rowScanner) (BackupPolicy, error) {
 	var pol BackupPolicy
 	var last sql.NullTime
-	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt, &pol.Scope)
+	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt, &pol.Scope, &pol.CaptureMode, &pol.ScopeJSON)
 	if last.Valid {
 		t := last.Time
 		pol.LastRunAt = &t
@@ -496,7 +508,11 @@ func scanBackupArtifact(row rowScanner) (BackupArtifact, error) {
 	var tested sql.NullTime
 	err := row.Scan(&a.ID, &a.ClusterID, &a.RunID, &a.WorkloadID, &a.ChecksumSHA256, &a.SizeBytes, &a.Locator, &a.Format, &a.CreatedAt,
 		&a.Encrypted, &a.TransferredBytes, &a.ParentArtifactID, &a.ObjectKey,
-		&a.VerifyStatus, &a.VerifyError, &tested, &a.ThrowawayWorkloadID, &a.Locality, &a.PullURL)
+		&a.VerifyStatus, &a.VerifyError, &tested, &a.ThrowawayWorkloadID, &a.Locality, &a.PullURL,
+		&a.EngineVersion, &a.BackupID, &a.Namespace, &a.LocalComplete, &a.RemoteState,
+		&a.LogicalBytes, &a.PhysicalNewData, &a.ChunksNew, &a.ChunksReused,
+		&a.CaptureDurationNS, &a.UploadDurationNS, &a.Consistency, &a.CaptureMode,
+		&a.BlueprintJSON, &a.StatsJSON)
 	if tested.Valid {
 		t := tested.Time
 		a.LastTestedAt = &t

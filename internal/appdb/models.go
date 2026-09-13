@@ -192,7 +192,18 @@ type Store interface {
 	ListBackupArtifactsForWorkload(ctx context.Context, clusterID, workloadID, targetID string) ([]BackupArtifact, error)
 	GetBackupArtifact(ctx context.Context, clusterID, id string) (*BackupArtifact, error)
 	UpdateBackupArtifactVerify(ctx context.Context, a BackupArtifact) error
+	UpdateBackupArtifact(ctx context.Context, a BackupArtifact) error
 	DeleteBackupArtifact(ctx context.Context, clusterID, id string) error
+
+	GetBackupWorkspaceSettings(ctx context.Context, clusterID string) (*BackupWorkspaceSettings, error)
+	UpsertBackupWorkspaceSettings(ctx context.Context, s BackupWorkspaceSettings) error
+	UpsertBackupRepository(ctx context.Context, r BackupRepository) error
+	GetBackupRepository(ctx context.Context, clusterID string) (*BackupRepository, error)
+	UpsertBackupRestorePoint(ctx context.Context, p BackupRestorePoint) error
+	ListBackupRestorePoints(ctx context.Context, clusterID string) ([]BackupRestorePoint, error)
+	GetBackupRestorePoint(ctx context.Context, clusterID, id string) (*BackupRestorePoint, error)
+	ReplaceBackupUploadJobs(ctx context.Context, clusterID string, jobs []BackupUploadJob) error
+	ListBackupUploadJobs(ctx context.Context, clusterID string) ([]BackupUploadJob, error)
 
 	CreateUpdateOperation(ctx context.Context, op UpdateOperation) error
 	ListUpdateOperations(ctx context.Context, clusterID string, limit int) ([]UpdateOperation, error)

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/backuppack"
+	"github.com/no-dal/ndl-ce/internal/backupscope"
 	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/objstore"
@@ -93,6 +94,10 @@ func backupPolicyJSON(p appdb.BackupPolicy) map[string]any {
 		"id": p.ID, "name": p.Name, "target_id": p.TargetID,
 		"scope": p.Scope, "workload_ids": ids,
 		"schedule": p.Schedule, "keep_daily": p.KeepDaily, "keep_weekly": p.KeepWeekly, "keep_monthly": p.KeepMonthly,
+		"capture_mode": firstNonEmpty(p.CaptureMode, appdb.BackupCaptureSmart),
+	}
+	if p.ScopeJSON != "" {
+		out["scope_json"] = json.RawMessage(p.ScopeJSON)
 	}
 	if p.WorkloadID != "" {
 		out["workload_id"] = p.WorkloadID
@@ -168,6 +173,39 @@ func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
 	if a.ThrowawayWorkloadID != "" {
 		out["throwaway_workload_id"] = a.ThrowawayWorkloadID
 	}
+	if a.EngineVersion != "" {
+		out["engine_version"] = a.EngineVersion
+	}
+	if a.BackupID != "" {
+		out["backup_id"] = a.BackupID
+	}
+	if a.Namespace != "" {
+		out["namespace"] = a.Namespace
+	}
+	if a.LocalComplete {
+		out["local_complete"] = true
+	}
+	if a.RemoteState != "" {
+		out["remote_state"] = a.RemoteState
+	}
+	if a.LogicalBytes > 0 {
+		out["logical_bytes"] = a.LogicalBytes
+	}
+	if a.PhysicalNewData > 0 {
+		out["physical_new_data"] = a.PhysicalNewData
+	}
+	if a.ChunksNew > 0 || a.ChunksReused > 0 {
+		out["chunks_new"] = a.ChunksNew
+		out["chunks_reused"] = a.ChunksReused
+	}
+	if a.CaptureDurationNS > 0 {
+		out["capture_duration_ns"] = a.CaptureDurationNS
+	}
+	if a.CaptureMode != "" {
+		out["capture_mode"] = a.CaptureMode
+		out["capture_mode_label"] = captureModeLabel(a.CaptureMode)
+	}
+	out["protection"] = protectionLabel(a.RemoteState, a.LocalComplete, a.Format)
 	appdb.FillArtifactLocality(&a)
 	out["locality"] = a.Locality
 	if a.PullURL != "" {
@@ -442,6 +480,8 @@ type backupPolicyBody struct {
 	KeepDaily   int      `json:"keep_daily"`
 	KeepWeekly  int      `json:"keep_weekly"`
 	KeepMonthly int      `json:"keep_monthly"`
+	CaptureMode string          `json:"capture_mode"`
+	ScopeJSON   json.RawMessage `json:"scope_json"`
 }
 
 func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID string) (appdb.BackupPolicy, error) {
@@ -456,14 +496,18 @@ func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID st
 	}
 	switch scope {
 	case "":
-		if len(ids) > 0 {
-			scope = appdb.BackupScopeSelected
-		} else {
-			scope = appdb.BackupScopeAll
-		}
+		scope = appdb.BackupScopeSelected
 	case appdb.BackupScopeAll, appdb.BackupScopeSelected:
 	default:
 		return appdb.BackupPolicy{}, errBadRequest("scope must be all or selected")
+	}
+	captureMode := strings.ToLower(strings.TrimSpace(req.CaptureMode))
+	switch captureMode {
+	case "":
+		captureMode = appdb.BackupCaptureSmart
+	case appdb.BackupCaptureSmart, appdb.BackupCaptureCustom, appdb.BackupCaptureFull:
+	default:
+		return appdb.BackupPolicy{}, errBadRequest("capture_mode must be smart, custom, or full")
 	}
 	if req.Schedule == "" {
 		req.Schedule = appdb.BackupNightly
@@ -486,6 +530,7 @@ func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID st
 		ID: existingID, ClusterID: clusterID, Name: strings.TrimSpace(req.Name),
 		Scope: scope, TargetID: req.TargetID, Schedule: req.Schedule,
 		KeepDaily: req.KeepDaily, KeepWeekly: req.KeepWeekly, KeepMonthly: req.KeepMonthly,
+		CaptureMode: captureMode, ScopeJSON: strings.TrimSpace(string(req.ScopeJSON)),
 	}
 	if existingID == "" {
 		row.ID = uuid.NewString()
@@ -673,6 +718,7 @@ func (s *Server) ReconcileInterruptedBackupRuns(ctx context.Context) int {
 	if err != nil || cluster == nil {
 		return 0
 	}
+	s.syncV2State(ctx, cluster.ID)
 	runs, err := s.Store.ListBackupRuns(ctx, cluster.ID)
 	if err != nil {
 		return 0
@@ -852,7 +898,7 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if s.Backup == nil {
 		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
 	}
-	if plan.Method != appdb.BackupMethodDirectoryArchive && !native && s.VM == nil {
+	if plan.Method != appdb.BackupMethodDirectoryArchive && plan.Method != appdb.BackupMethodContentAddressed && !native && s.VM == nil {
 		return appdb.BackupRun{}, errUnavailable("backup agent is unavailable")
 	}
 	run := appdb.BackupRun{
@@ -875,8 +921,16 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	}
 	artifactID := uuid.NewString()
 	objectKind := isObjectBackupKind(tgt.Kind)
-	if plan.Method == appdb.BackupMethodDirectoryArchive {
-		if err := s.executeDirectoryCTBackup(ctx, clusterID, *wl, vol, rootfs, objectKind, *tgt, &run, artifactID); err != nil {
+	if plan.Method == appdb.BackupMethodDirectoryArchive || plan.Method == appdb.BackupMethodContentAddressed {
+		captureMode := appdb.BackupCaptureSmart
+		sel := backupscope.Selection{}
+		if policyID != "" {
+			if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
+				captureMode = firstNonEmpty(pol.CaptureMode, appdb.BackupCaptureSmart)
+				sel = selectionFor(pol.ScopeJSON, workloadID)
+			}
+		}
+		if err := s.executeDirectoryCTBackupV2(ctx, clusterID, *wl, vol, rootfs, *tgt, &run, artifactID, captureMode, sel); err != nil {
 			return fail(err.Error())
 		}
 		now := s.now()
