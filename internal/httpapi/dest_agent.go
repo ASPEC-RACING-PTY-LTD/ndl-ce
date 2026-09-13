@@ -2,12 +2,15 @@ package httpapi
 
 import (
 	"context"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/migrate"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
+	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
 // destAgentClient returns a TCP southbound client for a worker dest node.
@@ -188,4 +191,69 @@ func (m *splitMigrate) LiveArgv(ctx context.Context, id string) (source, dest []
 		_, dest = ar.LiveArgv(ctx, id)
 	}
 	return source, dest
+}
+
+// setDestListen records a worker southbound listen address so dest-agent
+// migrate/restore can dial TCP. It never binds dest incoming on the control unix agent.
+func (s *Server) setDestListen(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.ClusterJoin)
+	if err != nil {
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	node, err := s.Store.GetNodeByID(r.Context(), p.User.ClusterID, id)
+	if err != nil || node == nil || node.RevokedAt != nil {
+		writeErr(w, http.StatusNotFound, "node not found")
+		return
+	}
+	if s.destEligibleLocal(r.Context(), node) {
+		writeErr(w, http.StatusUnprocessableEntity, "dest listen is for a worker node, not the local control agent")
+		return
+	}
+	var req struct {
+		ListenAddr string `json:"listen_addr"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	listen := strings.TrimSpace(req.ListenAddr)
+	if err := ndnet.ValidListenAddr(listen); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := s.now()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	remote, err := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, node.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if remote == nil {
+		remote = &appdb.RemoteNode{
+			ID: node.ID, ClusterID: p.User.ClusterID, Name: firstNonEmpty(node.Name, node.Hostname),
+		}
+		if err := s.Store.CreateRemoteNode(r.Context(), *remote); err != nil {
+			writeErr(w, http.StatusConflict, "could not record dest listen")
+			return
+		}
+	}
+	remote.ListenAddr = listen
+	remote.Status = ndnet.NodeReady
+	remote.Reason = ""
+	remote.LastSeenAt = &now
+	remote.LastHandshakeUnix = now.Unix()
+	if err := s.Store.UpdateRemoteNodeSession(r.Context(), *remote); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record dest listen")
+		return
+	}
+	got, gerr := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, node.ID)
+	if gerr != nil || got == nil || got.ListenAddr != listen || got.Status != ndnet.NodeReady {
+		writeErr(w, http.StatusInternalServerError, "could not record dest listen")
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.dest.listen", "ok", node.ID)
+	writeJSON(w, http.StatusOK, remoteNodeJSON(*got, now))
 }

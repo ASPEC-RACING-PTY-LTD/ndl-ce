@@ -52,6 +52,7 @@ type Handler struct {
 	Distributed   *storage.DistributedEngine
 	Journal       *journald.Engine
 	SkipHostCmds  bool
+	AllowDestTCP  bool
 	GuestSocketFn func(id string) string
 	QGASocketFn   func(id string) string
 
@@ -341,6 +342,9 @@ func (h *Handler) OpenSession(ctx context.Context, req *connect.Request[agentv1.
 }
 
 func (h *Handler) authorize(ctx context.Context) error {
+	if destTCPAuthorized(ctx) && h.AllowDestTCP {
+		return nil
+	}
 	if h.Peer == nil {
 		if h.AllowedUID == 0 {
 			return nil

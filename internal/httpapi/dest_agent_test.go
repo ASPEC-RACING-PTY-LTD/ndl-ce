@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -130,5 +133,42 @@ func (p pullDest) PullVolume(_ context.Context, vol migrate.VolumeCopy) error {
 func TestDestAgentReadyReason(t *testing.T) {
 	if !strings.Contains(remoteApplyReason, "dest agent") {
 		t.Fatalf("remote apply reason must name dest agent: %s", remoteApplyReason)
+	}
+}
+
+func TestSetDestListenRegistersReadyWorker(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, cluster.ID, debianInv(), false)
+	worker := appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "box-b", Role: "worker", Hostname: "box-b"}
+	if err := mem.UpsertNode(t.Context(), worker); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+control.ID+"/dest-listen", strings.NewReader(`{"listen_addr":"10.64.8.2:9444"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("control dest-listen %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/nodes/"+worker.ID+"/dest-listen", strings.NewReader(`{"listen_addr":"10.64.8.2:9444"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"Ready"`) || !strings.Contains(string(raw), "10.64.8.2:9444") {
+		t.Fatalf("worker dest-listen %d %s", res.StatusCode, raw)
+	}
+	c, ok := s.destAgentClient(context.Background(), &worker)
+	if !ok || c.TCPAddr != "10.64.8.2:9444" {
+		t.Fatalf("advertised dest listen %+v ok=%v", c, ok)
 	}
 }

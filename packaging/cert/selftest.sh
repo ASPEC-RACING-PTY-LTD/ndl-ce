@@ -79,6 +79,27 @@ rm -f "$CERT_REGISTRY"
 ( cert_cleanup ) >/dev/null 2>&1
 check "cleanup with empty registry is a no-op" 0 "$?"
 
+# --- JSON helpers used by the physical gates --------------------------------
+check "json get reads a field" "abc" "$(cert_json_get '{"id":"abc","name":"x"}' id)"
+check "json find id by name" "u1" "$(cert_json_find_id '{"items":[{"id":"u1","name":"cert-x"}]}' cert-x)"
+
+# The physical harness must call the real CLI surface, not the pre-1.0 stubs.
+# shellcheck disable=SC2016
+if grep -E 'nctl workload exec|nctl snapshot create --id |nctl pool create --kind|nctl feature status --id' "${HERE}/ce-1.0-certify.sh" >/dev/null; then
+  printf 'FAIL  harness still calls obsolete CLI verbs\n'
+  fails=$((fails + 1))
+else
+  printf 'ok    harness uses current nodalctl verbs\n'
+fi
+if grep -q 'workload create --kind system-container' "${HERE}/ce-1.0-certify.sh" && \
+   grep -q 'snapshot create --workload' "${HERE}/ce-1.0-certify.sh" && \
+   grep -q 'cluster nodes' "${HERE}/ce-1.0-certify.sh"; then
+  printf 'ok    harness create/snapshot/cluster match shipped CLI\n'
+else
+  printf 'FAIL  harness missing required current CLI calls\n'
+  fails=$((fails + 1))
+fi
+
 rm -rf "$CERT_OUT"
 if [ "$fails" -eq 0 ]; then
   echo "SELFTEST_OK"

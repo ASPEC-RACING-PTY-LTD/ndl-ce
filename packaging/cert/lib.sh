@@ -115,15 +115,31 @@ cert_cleanup() {
   [ -f "$CERT_REGISTRY" ] || return 0
   cert_log "cleaning up disposable certification resources"
   # Reverse order so dependents are removed before their dependencies.
-  local kind name
+  local kind name id
   while IFS=$'\t' read -r kind name; do
     [ -n "${name:-}" ] || continue
     assert_disposable "$name"
     case "$kind" in
-      workload) nctl workload delete --id "$name" >/dev/null 2>&1 || true ;;
-      pool)     nctl pool delete --id "$name" >/dev/null 2>&1 || true ;;
-      network)  nctl network delete --id "$name" >/dev/null 2>&1 || true ;;
-      target)   nctl backup target delete --id "$name" >/dev/null 2>&1 || true ;;
+      workload)
+        id="$(cert_id_by_name workload "$name")"
+        [ -n "$id" ] && nctl workload delete --id "$id" >/dev/null 2>&1 || true
+        ;;
+      pool)
+        id="$(cert_id_by_name pool "$name")"
+        [ -n "$id" ] && nctl storage pool delete --id "$id" >/dev/null 2>&1 || true
+        ;;
+      network)
+        id="$(cert_id_by_name network "$name")"
+        [ -n "$id" ] && nctl network delete --id "$id" >/dev/null 2>&1 || true
+        ;;
+      target)
+        id="$(cert_id_by_name target "$name")"
+        [ -n "$id" ] && nctl backup target delete --id "$id" >/dev/null 2>&1 || true
+        ;;
+      node)
+        id="$(cert_id_by_name node "$name")"
+        [ -n "$id" ] && nctl cluster node revoke --id "$id" >/dev/null 2>&1 || true
+        ;;
       dir)      case "$name" in "${CERT_PREFIX}"*|/var/lib/ndl/cert/*) rm -rf "$name" ;; esac ;;
       *)        cert_log "unknown resource kind on cleanup: $kind $name" ;;
     esac
@@ -143,6 +159,142 @@ api() {
   [ -n "$NODAL_TOKEN" ] && args+=(-H "Authorization: Bearer ${NODAL_TOKEN}")
   [ -n "$body" ] && args+=(--data "$body")
   curl "${args[@]}" "${NODAL_URL}${path}"
+}
+
+# cert_json_get JSON FIELD: print a top-level JSON string/number field.
+cert_json_get() {
+  printf '%s' "$1" | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+v=d.get(sys.argv[1],"")
+if v is None:
+  v=""
+print(v)' "$2"
+}
+
+# cert_json_find_id JSON NAME: find id in items/nodes by name or hostname.
+cert_json_find_id() {
+  printf '%s' "$1" | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+name=sys.argv[1]
+items=d.get("items") or d.get("nodes") or []
+if isinstance(d, list):
+  items=d
+for i in items:
+  if i.get("name")==name or i.get("hostname")==name:
+    print(i.get("id") or "")
+    break
+' "$2"
+}
+
+cert_id_by_name() {
+  local kind="$1" name="$2" raw=""
+  case "$kind" in
+    workload) raw="$(nctl workload list 2>/dev/null || true)" ;;
+    pool)     raw="$(nctl storage pool list 2>/dev/null || true)" ;;
+    network)  raw="$(nctl network list 2>/dev/null || true)" ;;
+    target)   raw="$(nctl backup target list 2>/dev/null || true)" ;;
+    node)     raw="$(nctl cluster nodes 2>/dev/null || true)" ;;
+    *)        return 1 ;;
+  esac
+  cert_json_find_id "$raw" "$name"
+}
+
+cert_wait_workload() {
+  local id="$1" want="${2:-running}" timeout="${3:-240}" waited=0 st=""
+  while [ "$waited" -lt "$timeout" ]; do
+    st="$(nctl workload get --id "$id" 2>/dev/null | python3 -c 'import json,sys
+print(json.load(sys.stdin).get("status",""))' 2>/dev/null || true)"
+    [ "$st" = "$want" ] && return 0
+    sleep 2
+    waited=$((waited + 2))
+  done
+  return 1
+}
+
+cert_default_pool_id() {
+  nctl storage pool list 2>/dev/null | python3 -c 'import json,sys
+items=(json.load(sys.stdin).get("items") or [])
+for p in items:
+  if p.get("status") in ("available","warning") and p.get("name")!="":
+    print(p["id"]); break
+' 2>/dev/null
+}
+
+cert_files_put() {
+  local id="$1" path="$2" body="$3"
+  local tmp
+  tmp="$(mktemp)"
+  printf '%s' "$body" > "$tmp"
+  local args=(-sS -X POST -F "path=${path}" -F "file=@${tmp}")
+  [ -n "$NODAL_TOKEN" ] && args+=(-H "Authorization: Bearer ${NODAL_TOKEN}")
+  curl "${args[@]}" "${NODAL_URL}/api/v1/workloads/${id}/files/upload"
+  local rc=$?
+  rm -f "$tmp"
+  return "$rc"
+}
+
+cert_files_get() {
+  local id="$1" path="$2"
+  local args=(-sS)
+  [ -n "$NODAL_TOKEN" ] && args+=(-H "Authorization: Bearer ${NODAL_TOKEN}")
+  curl "${args[@]}" "${NODAL_URL}/api/v1/workloads/${id}/files/content?path=${path}"
+}
+
+cert_ct_unit() { printf 'nodal-ct@%s.service' "$1"; }
+cert_vm_unit() { printf 'nodal-vm@%s.service' "$1"; }
+
+# cert_ensure_token creates a disposable API token when NODAL_TOKEN is unset.
+# The plaintext is kept in the environment only and is never written to evidence.
+cert_ensure_token() {
+  [ -n "${NODAL_TOKEN:-}" ] && return 0
+  nodal_installed || return 0
+  local raw
+  raw="$(nctl token create --name "${CERT_PREFIX}-token" 2>/dev/null || true)"
+  NODAL_TOKEN="$(cert_json_get "$raw" token)"
+  export NODAL_TOKEN
+}
+
+cert_lan_network_id() {
+  nctl network list 2>/dev/null | python3 -c 'import json,sys
+items=json.load(sys.stdin).get("items") or []
+for n in items:
+  if n.get("kind")=="lan-bridge" and n.get("status") in ("available","warning"):
+    print(n["id"]); break
+' 2>/dev/null
+}
+
+# cert_ensure_isolated_net creates a disposable isolated-nat network (no uplink).
+cert_ensure_isolated_net() {
+  local name="$1" raw id
+  id="$(cert_id_by_name network "$name")"
+  if [ -n "$id" ]; then
+    printf '%s' "$id"
+    return 0
+  fi
+  assert_disposable "$name"
+  track_resource network "$name"
+  raw="$(nctl network create --name "$name" --kind isolated-nat --cidr 10.77.0.0/24 2>/dev/null || true)"
+  id="$(cert_json_get "$raw" id)"
+  [ -n "$id" ] || id="$(cert_id_by_name network "$name")"
+  printf '%s' "$id"
+}
+
+cert_control_node_id() {
+  nctl cluster show 2>/dev/null | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+for n in d.get("nodes") or []:
+  if n.get("role") in ("control","") or n.get("name")=="local":
+    print(n.get("id") or ""); break
+' 2>/dev/null
+}
+
+cert_worker_node_id() {
+  nctl cluster nodes 2>/dev/null | python3 -c 'import json,sys
+items=json.load(sys.stdin).get("items") or []
+for n in items:
+  if n.get("role")=="worker" and not n.get("revoked_at"):
+    print(n.get("id") or ""); break
+' 2>/dev/null
 }
 
 # --- Prerequisite probes (return 0 when available) -------------------------

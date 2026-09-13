@@ -58,6 +58,10 @@ func Serve(h *Handler) error {
 			return context.WithValue(ctx, connKey{}, c)
 		},
 	}
+	if addr := destTCPListenAddr(); addr != "" {
+		h.AllowDestTCP = true
+		go func() { _ = serveDestTCP(h, addr) }()
+	}
 	return srv.Serve(ln)
 }
 

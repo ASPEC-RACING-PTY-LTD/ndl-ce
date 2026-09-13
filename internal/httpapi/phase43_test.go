@@ -50,6 +50,15 @@ func TestPhase43LicenseAbsentDoesNothing(t *testing.T) {
 	if strings.Contains(string(raw), `"workloads_stopped":true`) || strings.Contains(string(raw), `"ee_blobs":true`) {
 		t.Fatalf("%s", raw)
 	}
+	alias, _ := http.NewRequest("GET", ts.URL+"/api/v1/license", nil)
+	alias.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	aliasRes, _ := ts.Client().Do(alias)
+	aliasRaw, _ := io.ReadAll(aliasRes.Body)
+	_ = aliasRes.Body.Close()
+	if aliasRes.StatusCode != http.StatusOK || !strings.Contains(string(aliasRaw), `"edition":"ce"`) {
+		t.Fatalf("license alias %d %s", aliasRes.StatusCode, aliasRaw)
+	}
+
 	if probe.hit != 0 {
 		t.Fatal("must not contact licensing API without a key")
 	}

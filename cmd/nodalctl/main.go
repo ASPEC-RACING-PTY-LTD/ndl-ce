@@ -38,9 +38,11 @@ func run(args []string) error {
   recover-admin --username USER --password PASS
   host-prepare
   node show
+  node dest-listen --id ID --addr HOST:PORT
   node maintain --id ID [--reason TEXT]
   node maintain exit --id ID
   cluster show
+  cluster nodes
   cluster ha
   cluster ha replica --endpoint HOST [--dsn DSN]
   cluster fence --confirm fence
@@ -209,7 +211,7 @@ func run(args []string) error {
 		return install.HostPrepare()
 	case "node":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: nodalctl node show|terminal|maintain")
+			return fmt.Errorf("usage: nodalctl node show|terminal|maintain|dest-listen")
 		}
 		switch args[1] {
 		case "show":
@@ -218,8 +220,14 @@ func run(args []string) error {
 			return cmdNodeTerminal(args[2:])
 		case "maintain":
 			return cmdNodeMaintain(args[2:])
+		case "dest-listen":
+			f := parseFlags(args[2:])
+			if f["id"] == "" || f["addr"] == "" {
+				return fmt.Errorf("usage: nodalctl node dest-listen --id ID --addr HOST:PORT")
+			}
+			return postJSON("/api/v1/nodes/"+f["id"]+"/dest-listen", map[string]any{"listen_addr": f["addr"]}, true)
 		default:
-			return fmt.Errorf("usage: nodalctl node show|terminal|maintain")
+			return fmt.Errorf("usage: nodalctl node show|terminal|maintain|dest-listen")
 		}
 	case "cluster":
 		return cmdCluster(args[1:])
@@ -731,11 +739,13 @@ func cmdNetwork(args []string) error {
 
 func cmdCluster(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl cluster show|ha|fence|promote|update|join-token create|join|node revoke|wg show|peer add")
+		return fmt.Errorf("usage: nodalctl cluster show|nodes|ha|fence|promote|update|join-token create|join|node revoke|wg show|peer add")
 	}
 	switch args[0] {
 	case "show":
 		return cmdGet("/api/v1/cluster")
+	case "nodes":
+		return cmdGet("/api/v1/nodes")
 	case "ha":
 		if len(args) == 1 {
 			return cmdGet("/api/v1/cluster/ha")
@@ -823,7 +833,7 @@ func cmdCluster(args []string) error {
 			return fmt.Errorf("usage: nodalctl cluster wg show|peer add")
 		}
 	default:
-		return fmt.Errorf("usage: nodalctl cluster show|ha|fence|promote|update|join-token create|join|node revoke|wg show|peer add")
+		return fmt.Errorf("usage: nodalctl cluster show|nodes|ha|fence|promote|update|join-token create|join|node revoke|wg show|peer add")
 	}
 }
 
@@ -1299,7 +1309,7 @@ func postJSONHeaders(path string, body any, saveSession bool, headers map[string
 
 func cmdWorkload(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: nodalctl workload list|create|get|start|stop|restart|force-stop|update|delete|clone|migrate|import|export|files|terminal")
+		return fmt.Errorf("usage: nodalctl workload list|create|get|status|start|stop|restart|force-stop|update|delete|clone|migrate|import|export|files|terminal")
 	}
 	switch args[0] {
 	case "list":
@@ -1364,15 +1374,26 @@ func cmdWorkload(args []string) error {
 		if f["mac"] != "" {
 			body["mac"] = f["mac"]
 		}
+		if f["extras"] != "" {
+			body["extras"] = strings.Split(f["extras"], ",")
+		}
+		if kind == "vm" && f["ssh-authorized-key"] != "" {
+			nc, _ := body["nocloud"].(map[string]any)
+			if nc == nil {
+				nc = map[string]any{"enable": true}
+			}
+			nc["ssh_authorized_keys"] = []string{f["ssh-authorized-key"]}
+			body["nocloud"] = nc
+		}
 		headers := map[string]string{}
 		if key := f["idempotency-key"]; key != "" {
 			headers["Idempotency-Key"] = key
 		}
 		return postJSONHeaders("/api/v1/workloads", body, true, headers)
-	case "get":
+	case "get", "status":
 		f := parseFlags(args[1:])
 		if f["id"] == "" {
-			return fmt.Errorf("usage: nodalctl workload get --id ID")
+			return fmt.Errorf("usage: nodalctl workload %s --id ID", args[0])
 		}
 		return cmdGet("/api/v1/workloads/" + f["id"])
 	case "start", "stop", "restart", "delete":
