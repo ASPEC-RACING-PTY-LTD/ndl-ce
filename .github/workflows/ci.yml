@@ -44,7 +44,12 @@ jobs:
           shellcheck packaging/bootstrap/get-nodal.sh \
             packaging/lib/ndl/build-ui.sh \
             packaging/e2e/lib/ensure-node.sh \
-            packaging/e2e/check-ui-build.sh
+            packaging/e2e/check-ui-build.sh \
+            packaging/cert/lib.sh \
+            packaging/cert/ce-1.0-certify.sh \
+            packaging/cert/selftest.sh
+      - name: Certification harness self-test
+        run: bash packaging/cert/selftest.sh
       - name: Go format
         run: test -z "$(gofmt -l .)"
       - name: GitHub Actions YAML
