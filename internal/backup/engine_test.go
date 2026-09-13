@@ -210,6 +210,76 @@ func TestDeletionAndHistoricalRestore(t *testing.T) {
 	}
 }
 
+func TestCaptureIncludesOnlySelectedTrees(t *testing.T) {
+	e := testEngine(t, smallCfg())
+	src := t.TempDir()
+	writeFile(t, filepath.Join(src, "var/lib/app/data.db"), []byte("keep-me"), 0o600)
+	writeFile(t, filepath.Join(src, "usr/bin/reproducible"), []byte("skip-me"), 0o755)
+	writeFile(t, filepath.Join(src, "tmp/scratch"), []byte("scratch"), 0o644)
+
+	man, _, err := e.Capture(context.Background(), CaptureOptions{
+		Source: src, WorkloadID: "wl-inc", WorkloadName: "scoped",
+		Blueprint: Blueprint{CaptureMode: CaptureModeSmart},
+		Includes:  []string{filepath.Join(src, "var/lib/app")},
+		Excludes:  []string{filepath.Join(src, "tmp")},
+	})
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if man.Blueprint.CaptureMode != CaptureModeSmart {
+		t.Fatalf("blueprint mode %q", man.Blueprint.CaptureMode)
+	}
+	seen := map[string]bool{}
+	for _, f := range man.Files {
+		seen[f.Path] = true
+	}
+	if !seen["var/lib/app/data.db"] {
+		t.Fatalf("included file missing: %+v", seen)
+	}
+	if seen["usr/bin/reproducible"] || seen["tmp/scratch"] {
+		t.Fatalf("excluded or unselected path leaked: %+v", seen)
+	}
+
+	dst := t.TempDir()
+	if err := e.Repo().Restore(context.Background(), man, RestoreOptions{Dest: dst}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "var/lib/app/data.db"))
+	if err != nil || string(got) != "keep-me" {
+		t.Fatalf("restore included file: %s %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "usr/bin/reproducible")); !os.IsNotExist(err) {
+		t.Fatal("unselected OS file must not be restored")
+	}
+}
+
+func TestCaptureGuestAbsoluteIncludesMapOntoSource(t *testing.T) {
+	e := testEngine(t, smallCfg())
+	src := t.TempDir()
+	writeFile(t, filepath.Join(src, "var/lib/postgresql/data"), []byte("pg"), 0o600)
+	writeFile(t, filepath.Join(src, "usr/bin/ls"), []byte("os"), 0o755)
+
+	man, _, err := e.Capture(context.Background(), CaptureOptions{
+		Source: src, WorkloadID: "wl-guest", WorkloadName: "guest-paths",
+		Blueprint: Blueprint{CaptureMode: CaptureModeSmart},
+		Includes:  []string{"/var/lib/postgresql"},
+		Excludes:  []string{"/usr"},
+	})
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, f := range man.Files {
+		seen[f.Path] = true
+	}
+	if !seen["var/lib/postgresql/data"] {
+		t.Fatalf("guest-absolute include missed: %+v", seen)
+	}
+	if seen["usr/bin/ls"] {
+		t.Fatalf("guest-absolute exclude leaked: %+v", seen)
+	}
+}
+
 func TestTamperedChunkFailsAuthentication(t *testing.T) {
 	e := testEngine(t, smallCfg())
 	src := t.TempDir()

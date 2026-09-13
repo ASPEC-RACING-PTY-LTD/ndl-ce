@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,8 +59,12 @@ type CaptureOptions struct {
 	WorkloadName string
 	Consistency  string
 	Blueprint    Blueprint
+	// Includes, when non-empty, restrict capture to these paths (absolute or
+	// relative to Source) and their descendants. Parent directories are kept
+	// so restore can rebuild the tree. Empty means the whole tree minus Excludes.
+	Includes []string
 	// Excludes are absolute paths (or path prefixes) under Source that are safe
-	// ephemeral data and must be skipped.
+	// ephemeral data and must be skipped. Exclude wins over Include.
 	Excludes []string
 }
 
@@ -84,10 +89,8 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 	pw := e.repo.newPackWriter(e.cfg.PackTarget)
 	pw.guard = e.checkWorkspace
 
-	excl := make(map[string]struct{}, len(opts.Excludes))
-	for _, p := range opts.Excludes {
-		excl[filepath.Clean(p)] = struct{}{}
-	}
+	excl := normalizeCapturePaths(opts.Source, opts.Excludes)
+	incl := normalizeCapturePaths(opts.Source, opts.Includes)
 
 	var (
 		files []FileEntry
@@ -102,17 +105,18 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if _, skip := excl[filepath.Clean(path)]; skip {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
 		rel, err := filepath.Rel(opts.Source, path)
 		if err != nil {
 			return err
 		}
 		if rel == "." {
+			return nil
+		}
+		clean := filepath.Clean(path)
+		if skip, skipDir := captureSkip(clean, rel, d.IsDir(), incl, excl); skip {
+			if skipDir {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		info, err := d.Info()
@@ -189,7 +193,7 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 		Namespace:      namespace,
 		CreatedAtNS:    time.Now().UnixNano(),
 		Consistency:    firstNonEmpty(opts.Consistency, ConsistencyCrash),
-		Blueprint:      normalizeBlueprint(opts.Blueprint, opts),
+		Blueprint:      normalizeBlueprint(opts.Blueprint, opts, incl, excl),
 		Files:          files,
 		Stats:          stats,
 	}
@@ -273,7 +277,7 @@ func (e *Engine) allPresent(ids []KeyID) bool {
 	return true
 }
 
-func normalizeBlueprint(bp Blueprint, opts CaptureOptions) Blueprint {
+func normalizeBlueprint(bp Blueprint, opts CaptureOptions, incl, excl []string) Blueprint {
 	bp.Kind = BlueprintKind
 	if bp.Version == 0 {
 		bp.Version = 1
@@ -284,7 +288,103 @@ func normalizeBlueprint(bp Blueprint, opts CaptureOptions) Blueprint {
 	if bp.Name == "" {
 		bp.Name = opts.WorkloadName
 	}
+	if bp.CaptureMode == "" {
+		if len(opts.Includes) > 0 {
+			bp.CaptureMode = CaptureModeSmart
+		} else {
+			bp.CaptureMode = CaptureModeFull
+		}
+	}
+	if len(bp.Includes) == 0 && len(incl) > 0 {
+		bp.Includes = append([]string(nil), incl...)
+	}
+	if len(bp.Excludes) == 0 && len(excl) > 0 {
+		bp.Excludes = append([]string(nil), excl...)
+	}
 	return bp
+}
+
+func normalizeCapturePaths(source string, paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	root := filepath.Clean(source)
+	seen := map[string]struct{}{}
+	var out []string
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if filepath.IsAbs(p) {
+			p = filepath.Clean(p)
+			// Guest-absolute paths from scope planning (/var/lib/...) are not
+			// host paths unless they already live under the capture source.
+			if p != root && !strings.HasPrefix(p, root+string(os.PathSeparator)) {
+				p = filepath.Join(root, strings.TrimPrefix(p, string(os.PathSeparator)))
+			}
+		} else {
+			p = filepath.Join(root, filepath.Clean(p))
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
+func captureSkip(abs, rel string, isDir bool, includes, excludes []string) (skip, skipDir bool) {
+	if pathListed(abs, rel, excludes) {
+		return true, isDir
+	}
+	if len(includes) == 0 {
+		return false, false
+	}
+	if pathCovered(abs, rel, includes) {
+		return false, false
+	}
+	if isDir && pathMayContain(abs, rel, includes) {
+		return false, false
+	}
+	return true, isDir
+}
+
+func pathListed(abs, rel string, list []string) bool {
+	for _, p := range list {
+		if abs == p || rel == p || strings.HasPrefix(abs, p+string(os.PathSeparator)) {
+			return true
+		}
+		if rel != "." && strings.HasPrefix(rel, strings.TrimPrefix(p, "/")+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathCovered(abs, rel string, includes []string) bool {
+	for _, p := range includes {
+		if abs == p || rel == p {
+			return true
+		}
+		if strings.HasPrefix(abs, p+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathMayContain(abs, rel string, includes []string) bool {
+	for _, p := range includes {
+		if strings.HasPrefix(p, abs+string(os.PathSeparator)) {
+			return true
+		}
+		if rel != "." && strings.HasPrefix(p, filepath.Join(filepath.Dir(abs), rel)+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func firstNonEmpty(vs ...string) string {
