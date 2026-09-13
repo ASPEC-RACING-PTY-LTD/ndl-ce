@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -58,7 +60,25 @@ func (e *Engine) chownRuntime(id string) error {
 	if err != nil {
 		return err
 	}
-	for _, p := range []string{e.runtimeDir(id), e.workloadDir(id), e.argvPath(id), e.appliedPath(id)} {
+	// QEMU runs as ndl-qemu and must read every file under the per-VM
+	// runtime dir, including cidata.fat / vars.fd written as root during
+	// PrepareLaunch. Chowning only the directory left those files 0640
+	// root:root and QEMU failed with Permission denied.
+	if err := filepath.WalkDir(e.runtimeDir(id), func(path string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if err := os.Chown(path, uid, gid); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, p := range []string{e.workloadDir(id), e.argvPath(id), e.appliedPath(id)} {
 		if err := os.Chown(p, uid, gid); err != nil && !os.IsNotExist(err) {
 			return err
 		}
