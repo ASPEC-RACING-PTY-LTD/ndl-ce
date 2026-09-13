@@ -87,6 +87,59 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		}
 		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
 	}
+	if action == qemu.BackupV2Capture || action == qemu.BackupV2Preview || action == qemu.BackupV2Status || action == qemu.BackupV2Restore || action == qemu.BackupV2Workspace || action == qemu.BackupV2Enqueue || action == qemu.BackupV2Expire {
+		var req struct {
+			WorkloadName string `json:"workload_name"`
+			WorkloadID   string `json:"workload_id"`
+			CaptureMode  string `json:"capture_mode"`
+			Namespace    string `json:"namespace"`
+			BackupID     string `json:"backup_id"`
+			Dest         string `json:"dest"`
+		}
+		_ = json.Unmarshal([]byte(dest), &req)
+		if action == qemu.BackupV2Restore {
+			target := dest
+			if req.Dest != "" {
+				target = req.Dest
+			}
+			if src != "" {
+				target = src
+			}
+			if target != "" && !strings.HasPrefix(strings.TrimSpace(target), "{") {
+				_ = os.MkdirAll(target, 0o755)
+			}
+			extra, _ := json.Marshal(map[string]any{"backup_id": req.BackupID, "namespace": req.Namespace, "locator": target, "capture_mode": firstNonEmpty(req.CaptureMode, "smart")})
+			return storage.CopyResult{Dest: target, Format: "ndl-cab", Extra: string(extra)}, nil
+		}
+		if action == qemu.BackupV2Preview || action == qemu.BackupV2Status || action == qemu.BackupV2Workspace {
+			extra, _ := json.Marshal(map[string]any{
+				"capture_mode": firstNonEmpty(req.CaptureMode, "smart"),
+				"preview": map[string]any{
+					"workload_id": req.WorkloadID, "workload_name": req.WorkloadName, "mode": firstNonEmpty(req.CaptureMode, "smart"),
+					"items": []map[string]any{{"id": "db:postgresql", "kind": "database", "label": "PostgreSQL", "paths": []string{"/var/lib/postgresql"}, "bytes": 4, "selected": true, "default_on": true}},
+					"protected_bytes": 4, "excluded_bytes": 0, "full_bytes": 4,
+				},
+				"workspace": map[string]any{"root": "/var/lib/ndl/backup-repo", "repo_bytes": 0, "pending_uploads": 0},
+			})
+			return storage.CopyResult{Format: "ndl-cab", Extra: string(extra)}, nil
+		}
+		ns := req.WorkloadName
+		if ns == "" {
+			ns = "workload"
+		}
+		if req.WorkloadID != "" {
+			ns = ns + "-" + strings.ReplaceAll(req.WorkloadID, "-", "")[:8]
+		}
+		extra, _ := json.Marshal(map[string]any{
+			"backup_id": "11111111-1111-4111-8111-111111111111",
+			"namespace": ns, "workload_id": req.WorkloadID, "workload_name": req.WorkloadName,
+			"local_complete": true, "remote": "queued", "capture_mode": firstNonEmpty(req.CaptureMode, "smart"),
+			"logical_bytes": 4, "physical_new_data": 4, "chunks_new": 1, "chunks_reused": 0,
+			"locator": "ndl-cab://backups/" + ns + "/11111111-1111-4111-8111-111111111111",
+			"blueprint": map[string]any{"kind": "ndl-backup-blueprint", "name": req.WorkloadName, "capture_mode": firstNonEmpty(req.CaptureMode, "smart")},
+		})
+		return storage.CopyResult{Dest: "ndl-cab://backups/" + ns + "/", SHA256: "11111111-1111-4111-8111-111111111111", Size: 4, Format: "ndl-cab", Extra: string(extra)}, nil
+	}
 	if action == qemu.BackupPack {
 		if dest != "" {
 			_ = os.MkdirAll(dest, 0o750)
@@ -1556,11 +1609,25 @@ func TestBackupPolicyAllScopeDefaultAndSelectedMulti(t *testing.T) {
 	var allPol map[string]any
 	_ = json.NewDecoder(res.Body).Decode(&allPol)
 	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("omitted scope must require selected workloads, got %d %+v", res.StatusCode, allPol)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"fleet","scope":"all","target_id":"`+targetID+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	allPol = map[string]any{}
+	_ = json.NewDecoder(res.Body).Decode(&allPol)
+	_ = res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
-		t.Fatalf("all policy %d", res.StatusCode)
+		t.Fatalf("explicit all policy %d %+v", res.StatusCode, allPol)
 	}
 	if allPol["scope"] != "all" {
-		t.Fatalf("default scope %+v", allPol["scope"])
+		t.Fatalf("explicit all scope %+v", allPol["scope"])
+	}
+	if allPol["capture_mode"] != "smart" {
+		t.Fatalf("default capture mode %+v", allPol["capture_mode"])
 	}
 	if _, ok := allPol["workload_id"]; ok {
 		t.Fatalf("all policy must not encode a fake workload id %+v", allPol)
@@ -1649,6 +1716,66 @@ func TestBackupPolicyAllScopeDefaultAndSelectedMulti(t *testing.T) {
 	}
 }
 
+func TestBackupScopePreviewUsesV2AndDoesNotCapture(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	s.Workloads = &fakeWorkloads{}
+	fb := &fakeBackup{}
+	s.Backup = fb
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	ctBody := `{"name":"preview-ct","kind":"system-container","image_pin":"alpine/3.21/amd64/default","pool_id":"` + poolID + `","network_id":"` + netID + `","desired_power":"stopped"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(ctBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var ct map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&ct)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("ct %d", res.StatusCode)
+	}
+	body := `{"workload_ids":["` + ct["id"].(string) + `"],"capture_mode":"smart"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/scope-preview", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("preview %d %s", res.StatusCode, raw)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["capture_mode"] != "smart" {
+		t.Fatalf("preview mode %+v", out)
+	}
+	for _, c := range fb.copies {
+		if c[0] == qemu.BackupV2Capture || strings.HasPrefix(c[0], qemu.BackupArchive) || c[0] == qemu.BackupPack {
+			t.Fatalf("preview must not capture: %+v", fb.copies)
+		}
+	}
+	saw := false
+	for _, c := range fb.copies {
+		if c[0] == qemu.BackupV2Preview {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("expected v2-preview: %+v", fb.copies)
+	}
+}
+
 func TestBackupPolicyAllScopeBacksUpDirectoryContainers(t *testing.T) {
 	s, mem, token := testServer(t)
 	cluster, _ := mem.GetCluster(context.Background())
@@ -1683,7 +1810,7 @@ func TestBackupPolicyAllScopeBacksUpDirectoryContainers(t *testing.T) {
 	var tgt map[string]any
 	_ = json.NewDecoder(res.Body).Decode(&tgt)
 	_ = res.Body.Close()
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"fleet","target_id":"`+tgt["id"].(string)+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies", strings.NewReader(`{"name":"fleet","scope":"all","target_id":"`+tgt["id"].(string)+`","schedule":"nightly","keep_daily":1,"keep_weekly":0,"keep_monthly":0}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ = ts.Client().Do(req)
@@ -1718,15 +1845,15 @@ func TestBackupPolicyAllScopeBacksUpDirectoryContainers(t *testing.T) {
 		t.Fatalf("directory CT run %+v", runs)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
-	if len(arts) != 1 || arts[0].Format != "ndlb" {
+	if len(arts) != 1 || arts[0].Format != "ndl-cab" {
 		t.Fatalf("directory CT artifact %+v", arts)
 	}
-	if !strings.Contains(arts[0].Locator, "/backups/alpine-a/") {
+	if !strings.Contains(arts[0].Locator, "backups/alpine-a") {
 		t.Fatalf("directory locator must be human-readable: %s", arts[0].Locator)
 	}
 	plan := parseBackupPlan(runs[0].PlanJSON)
-	if plan == nil || plan.Method != appdb.BackupMethodDirectoryArchive {
-		t.Fatalf("directory archive plan %+v", runs[0].PlanJSON)
+	if plan == nil || plan.Method != appdb.BackupMethodContentAddressed {
+		t.Fatalf("content-addressed plan %+v", runs[0].PlanJSON)
 	}
 	if plan.Consistency != appdb.BackupConsistencyLiveCopy && plan.Consistency != appdb.BackupConsistencyStopped {
 		t.Fatalf("directory plan must not use the freezer: %+v", plan)
@@ -1783,20 +1910,17 @@ func TestBackupDirectoryContainerRestoreAsNew(t *testing.T) {
 	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("backup %d %s", res.StatusCode, raw)
 	}
-	wrote, synced, packed := false, false, false
+	captured := false
 	for _, c := range fb.copies {
-		if c[0] == qemu.BackupWrite {
-			wrote = true
+		if c[0] == qemu.BackupV2Capture {
+			captured = true
 		}
-		if strings.HasPrefix(c[0], qemu.BackupSyncTree) {
-			synced = true
-		}
-		if c[0] == qemu.BackupPack {
-			packed = true
+		if c[0] == qemu.BackupPack || strings.HasPrefix(c[0], qemu.BackupSyncTree) || strings.HasPrefix(c[0], qemu.BackupArchive) {
+			t.Fatalf("new Directory CT backups must not use tar/pack: %+v", fb.copies)
 		}
 	}
-	if !wrote || !synced || !packed {
-		t.Fatalf("Directory CT backup must live-copy then pack, with metadata written through the agent: %+v", fb.copies)
+	if !captured {
+		t.Fatalf("Directory CT backup must use Backup Engine V2 capture: %+v", fb.copies)
 	}
 	arts, _ := mem.ListBackupArtifacts(context.Background(), cluster.ID)
 	if len(arts) != 1 {

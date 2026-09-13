@@ -3563,6 +3563,71 @@ paths:
                 $ref: "#/components/schemas/BackupArtifactListResponse"
         "401":
           description: Unauthenticated
+  /backups/workspace:
+    get:
+      operationId: getBackupWorkspace
+      summary: Local Backup Engine V2 workspace bounds and usage
+      responses:
+        "200":
+          description: Workspace settings and live usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupWorkspace"
+        "401":
+          description: Unauthenticated
+    patch:
+      operationId: patchBackupWorkspace
+      summary: Update local Backup Engine V2 workspace bounds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupWorkspace"
+      responses:
+        "200":
+          description: Updated workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupWorkspace"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /backups/restore-points:
+    get:
+      operationId: listBackupRestorePoints
+      summary: List Backup Engine V2 restore points
+      responses:
+        "200":
+          description: Restore points
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRestorePointListResponse"
+        "401":
+          description: Unauthenticated
+  /backups/scope-preview:
+    post:
+      operationId: previewBackupScope
+      summary: Preview Smart/Custom/Full backup scope without running a backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupScopePreviewRequest"
+      responses:
+        "200":
+          description: Detected persistent and reproducible data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupScopePreviewResponse"
+        "401":
+          description: Unauthenticated
   /backups/dr-export:
     get:
       operationId: exportBackupDR
@@ -7954,6 +8019,17 @@ components:
           type: integer
         last_run_at:
           type: string
+        capture_mode:
+          type: string
+          enum:
+            - smart
+            - custom
+            - full
+          description: Smart Application Data is the default. Full Machine is opt-in.
+        scope_json:
+          type: object
+          additionalProperties: true
+          description: Per-workload include/exclude overrides. Never contains secrets.
     BackupPolicyListResponse:
       type: object
       additionalProperties: false
@@ -7982,7 +8058,17 @@ components:
           enum:
             - all
             - selected
-          description: Defaults to all when omitted and no workload_id or workload_ids are sent. Legacy clients that send workload_id stay selected.
+          description: Defaults to selected. All workloads must be chosen explicitly. Selected requires workload_ids.
+        capture_mode:
+          type: string
+          enum:
+            - smart
+            - custom
+            - full
+          description: Defaults to smart. Full Machine is never implied.
+        scope_json:
+          type: object
+          additionalProperties: true
         workload_id:
           type: string
           description: Legacy single-workload selector. Treated as selected scope.
@@ -8055,6 +8141,7 @@ components:
           type: string
           enum:
             - directory-archive
+            - content-addressed
             - zfs-send
             - qcow2-copy
         consistency:
@@ -8176,6 +8263,39 @@ components:
         pull_url:
           type: string
           description: Locator dest can pull. No access keys. Dest agent pull is not wired in this phase.
+        engine_version:
+          type: string
+        backup_id:
+          type: string
+        namespace:
+          type: string
+        local_complete:
+          type: boolean
+        remote_state:
+          type: string
+          enum:
+            - local-only
+            - queued
+            - uploading
+            - verifying
+            - protected
+            - failed
+        logical_bytes:
+          type: integer
+        physical_new_data:
+          type: integer
+        chunks_new:
+          type: integer
+        chunks_reused:
+          type: integer
+        capture_duration_ns:
+          type: integer
+        capture_mode:
+          type: string
+        capture_mode_label:
+          type: string
+        protection:
+          type: string
     BackupArtifactListResponse:
       type: object
       additionalProperties: false
@@ -8186,6 +8306,131 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BackupArtifact"
+    BackupWorkspace:
+      type: object
+      additionalProperties: false
+      properties:
+        max_local_bytes:
+          type: integer
+        min_host_free_bytes:
+          type: integer
+        capture_concurrency:
+          type: integer
+        upload_workers:
+          type: integer
+        bandwidth_limit_bps:
+          type: integer
+        repo_bytes:
+          type: integer
+        pending_uploads:
+          type: integer
+        protected_workloads:
+          type: integer
+        host_free_bytes:
+          type: integer
+        capture_busy:
+          type: boolean
+        root:
+          type: string
+    BackupRestorePoint:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        artifact_id:
+          type: string
+        run_id:
+          type: string
+        workload_id:
+          type: string
+        backup_id:
+          type: string
+        namespace:
+          type: string
+        capture_mode:
+          type: string
+        local_complete:
+          type: boolean
+        remote_state:
+          type: string
+        logical_bytes:
+          type: integer
+        physical_new_data:
+          type: integer
+        created_at:
+          type: string
+    BackupRestorePointListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupRestorePoint"
+    BackupScopePreviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_ids
+      properties:
+        workload_ids:
+          type: array
+          items:
+            type: string
+        capture_mode:
+          type: string
+          enum:
+            - smart
+            - custom
+            - full
+        scope_json:
+          type: object
+          additionalProperties: true
+    BackupScopePreviewItem:
+      type: object
+      additionalProperties: false
+      properties:
+        workload_id:
+          type: string
+        workload_name:
+          type: string
+        mode:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        warnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        protected_bytes:
+          type: integer
+        excluded_bytes:
+          type: integer
+        full_bytes:
+          type: integer
+    BackupScopePreviewResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupScopePreviewItem"
+        protected_bytes:
+          type: integer
+        excluded_bytes:
+          type: integer
+        full_bytes:
+          type: integer
+        capture_mode:
+          type: string
     RestoreBackupRequest:
       type: object
       additionalProperties: false

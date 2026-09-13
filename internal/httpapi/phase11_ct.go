@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/backup"
 	"github.com/no-dal/ndl-ce/internal/backuppack"
 	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/lxc"
@@ -143,10 +144,10 @@ func (s *Server) planBackup(ctx context.Context, clusterID string, wl appdb.Work
 		plan.Method = appdb.BackupMethodZFSSend
 		plan.Consistency = appdb.BackupConsistencyZFSSnapshot
 	case wl.Kind == lxc.KindSystemContainer:
-		plan.Method = appdb.BackupMethodDirectoryArchive
+		plan.Method = appdb.BackupMethodContentAddressed
 		if wl.Status == lxc.StatusRunning || wl.UnitActive {
 			plan.Consistency = appdb.BackupConsistencyLiveCopy
-			plan.Warning = "Directory storage has no snapshot. The copy is crash-consistent and does not freeze, pause, or stop the container. Optional guest hooks /etc/ndl/hooks/backup-pre and /etc/ndl/hooks/backup-post can flush application state."
+			plan.Warning = "Backup Engine V2 live capture. Crash-consistent, no freeze/pause/stop. Default scope is Smart Application Data; Full Machine is opt-in. Optional guest hooks /etc/ndl/hooks/backup-pre and /etc/ndl/hooks/backup-post can flush application state."
 		} else {
 			plan.Consistency = appdb.BackupConsistencyStopped
 		}
@@ -300,6 +301,29 @@ func (s *Server) restoreReplaceCT(ctx context.Context, clusterID string, src app
 	if s.Workloads == nil || s.Backup == nil {
 		return errUnavailable("backup agent is unavailable")
 	}
+	if art.Format == backup.Format {
+		vol, _, tip, err := s.bootVolumeLocator(ctx, clusterID, src)
+		if err != nil {
+			return err
+		}
+		_ = vol
+		if _, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: src.ID, Action: "stop"}); err != nil {
+			return err
+		}
+		var tgt *appdb.BackupTarget
+		if run, _ := s.Store.GetBackupRun(ctx, clusterID, art.RunID); run != nil {
+			tgt, _ = s.Store.GetBackupTarget(ctx, clusterID, run.TargetID)
+		}
+		if err := s.restoreV2Root(ctx, art, tip, tgt); err != nil {
+			return err
+		}
+		if src.DesiredPower == "running" {
+			if _, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: src.ID, Action: "start"}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	vol, _, tip, err := s.bootVolumeLocator(ctx, clusterID, src)
 	if err != nil {
 		return err
@@ -348,6 +372,9 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 	local := s.applyLocal(ctx, clusterID, dest.ID)
 	if local && (s.Workloads == nil || s.Backup == nil || s.Storage == nil) {
 		return "", errUnavailable("backup agent is unavailable")
+	}
+	if art.Format == backup.Format {
+		return s.restoreNewCTV2(ctx, clusterID, src, art, dest)
 	}
 	srcPath, cleanup, err := s.materializeArtifact(ctx, clusterID, art)
 	if err != nil {
@@ -576,6 +603,163 @@ func (s *Server) restoreNewCT(ctx context.Context, clusterID string, src *appdb.
 	if err := s.Store.CreateWorkloadNIC(ctx, nicFromIP(appdb.WorkloadNIC{
 		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, NetworkID: netID,
 	}, ip)); err != nil {
+		return "", errInternal("could not record container NIC")
+	}
+	return newID, nil
+}
+
+func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appdb.Workload, art appdb.BackupArtifact, dest *appdb.Node) (string, error) {
+	if dest == nil {
+		node, err := s.Store.GetNode(ctx, clusterID)
+		if err != nil || node == nil {
+			return "", errUnprocessable("local node is not enrolled")
+		}
+		dest = node
+	}
+	local := s.applyLocal(ctx, clusterID, dest.ID)
+	if local && (s.Workloads == nil || s.Backup == nil || s.Storage == nil) {
+		return "", errUnavailable("backup agent is unavailable")
+	}
+	var bp backup.Blueprint
+	if art.BlueprintJSON != "" {
+		_ = json.Unmarshal([]byte(art.BlueprintJSON), &bp)
+	}
+	meta := ctBackupMeta{
+		Kind: lxc.KindSystemContainer, Name: firstNonEmpty(bp.Name, "restored"), Hostname: bp.Hostname,
+		ImagePin: firstNonEmpty(bp.BaseImage, "imported"), CPUs: bp.CPU, MemoryBytes: bp.MemoryBytes,
+		DesiredPower: "stopped", Autostart: bp.Autostart, RootSize: bp.StorageBytes, WorkloadID: art.WorkloadID,
+	}
+	if src != nil {
+		if meta.Name == "restored" {
+			meta.Name = src.Name
+		}
+		if meta.ImagePin == "imported" {
+			meta.ImagePin = src.ImagePin
+		}
+		if meta.CPUs < 1 {
+			meta.CPUs = src.CPUs
+		}
+		if meta.MemoryBytes < 1 {
+			meta.MemoryBytes = src.MemoryBytes
+		}
+		meta.Privileged = src.Privileged
+		meta.UIDMap = src.UIDMap
+		meta.GIDMap = src.GIDMap
+	}
+	if meta.CPUs < 1 {
+		meta.CPUs = lxc.DefaultCPUs
+	}
+	if meta.MemoryBytes < 1 {
+		meta.MemoryBytes = lxc.DefaultMemoryBytes
+	}
+	if meta.UIDMap == "" {
+		meta.UIDMap = lxc.DefaultUIDMap
+	}
+	if meta.GIDMap == "" {
+		meta.GIDMap = lxc.DefaultGIDMap
+	}
+	size := meta.RootSize
+	if size < lxc.MinRootSize {
+		size = lxc.DefaultRootSize
+	}
+	var pool *appdb.StoragePool
+	if src != nil {
+		if _, p, _, err := s.bootVolumeLocator(ctx, clusterID, *src); err == nil {
+			pool = p
+		}
+	}
+	if pool == nil {
+		pools, err := s.Store.ListStoragePools(ctx, clusterID)
+		if err != nil || len(pools) == 0 {
+			return "", errUnprocessable("no storage pool is available for restore")
+		}
+		cp := pools[0]
+		pool = &cp
+	}
+	nets, err := s.Store.ListNetworks(ctx, clusterID)
+	if err != nil || len(nets) == 0 {
+		return "", errUnprocessable("no network is available for restore")
+	}
+	netID := nets[0].ID
+	bridge := nets[0].BridgeName
+	if len(bp.Interfaces) > 0 && src != nil {
+		if nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, src.ID); len(nics) > 0 {
+			netID = nics[0].NetworkID
+			if netw, err := s.Store.GetNetwork(ctx, clusterID, netID); err == nil && netw != nil {
+				bridge = netw.BridgeName
+			}
+		}
+	}
+	newID := uuid.NewString()
+	newVolID := uuid.NewString()
+	backend := path.Join("volumes", storage.ClassContainerRoot, newVolID)
+	rootfs := ""
+	if local {
+		hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
+		res, err := s.Storage.CreateDirectoryVolume(ctx, storage.CreateVolumeRequest{
+			VolumeID: newVolID, PoolID: pool.ID, RootPath: pool.RootPath,
+			Class: storage.ClassContainerRoot, Size: size, Format: storage.FormatDirectory,
+		}, hint)
+		if err != nil && !strings.Contains(err.Error(), "duplicate") {
+			return "", err
+		}
+		if res.Handle.BackendRef != "" {
+			backend = res.Handle.BackendRef
+		}
+		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, backend)
+		if err != nil {
+			return "", errConflict("volume locator is invalid")
+		}
+		rootfs = loc
+		var tgt *appdb.BackupTarget
+		if run, _ := s.Store.GetBackupRun(ctx, clusterID, art.RunID); run != nil {
+			tgt, _ = s.Store.GetBackupTarget(ctx, clusterID, run.TargetID)
+		}
+		if err := s.restoreV2Root(ctx, art, rootfs, tgt); err != nil {
+			return "", err
+		}
+	}
+	newVol := appdb.Volume{
+		ID: newVolID, ClusterID: clusterID, NodeID: dest.ID, PoolID: pool.ID,
+		Class: storage.ClassContainerRoot, Kind: storage.KindFilesystem, Format: storage.FormatDirectory,
+		SizeBytes: size, Status: storage.StatusAvailable, BackendType: firstNonEmpty(pool.BackendType, storage.BackendDirectory),
+		BackendRef: backend,
+	}
+	if err := s.Store.CreateVolume(ctx, newVol); err != nil {
+		return "", err
+	}
+	name := uniqueRestoredName(firstNonEmpty(meta.Name, "restored"), newID)
+	if local {
+		if _, err := s.Workloads.CreateCT(ctx, lxc.Spec{
+			WorkloadID: newID, Name: name, ImagePin: meta.ImagePin,
+			CPUs: meta.CPUs, MemoryBytes: meta.MemoryBytes, VolumeID: newVolID,
+			RootfsPath: rootfs, NetworkID: netID, BridgeName: bridge,
+			Privileged: meta.Privileged, UIDMap: meta.UIDMap, GIDMap: meta.GIDMap,
+			IP: lxc.IPConfig{IPv4Mode: lxc.IPModeDHCP, IPv6Mode: lxc.IPModeDisabled},
+			SkipImage: true, NoStart: true, Nesting: meta.Nesting, TUN: meta.TUN, AllowMknod: meta.AllowMknod,
+		}); err != nil {
+			return "", err
+		}
+	}
+	row := appdb.Workload{
+		ID: newID, ClusterID: clusterID, NodeID: dest.ID, OwnerNodeID: dest.ID, DesiredNodeID: dest.ID,
+		Name: name, Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped, DesiredPower: "stopped",
+		ImagePin: meta.ImagePin, CPUs: meta.CPUs, MemoryBytes: meta.MemoryBytes, Privileged: meta.Privileged,
+		UIDMap: meta.UIDMap, GIDMap: meta.GIDMap, Autostart: false,
+		Devices: json.RawMessage(`[]`), MigrateBlockers: json.RawMessage(`["live migrate of system containers is post-1.0"]`),
+	}
+	if err := s.Store.CreateWorkload(ctx, row); err != nil {
+		return "", err
+	}
+	if err := s.Store.CreateWorkloadDisk(ctx, appdb.WorkloadDisk{
+		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, VolumeID: newVolID, Role: "root",
+	}); err != nil {
+		return "", errInternal("could not record container disk")
+	}
+	if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
+		ID: uuid.NewString(), ClusterID: clusterID, WorkloadID: newID, NetworkID: netID,
+		IPv4Mode: lxc.IPModeDHCP, IPv6Mode: lxc.IPModeDisabled,
+	}); err != nil {
 		return "", errInternal("could not record container NIC")
 	}
 	return newID, nil

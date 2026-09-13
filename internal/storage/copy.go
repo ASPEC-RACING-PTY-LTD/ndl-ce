@@ -15,6 +15,7 @@ type CopyResult struct {
 	SHA256 string
 	Size   int64
 	Format string
+	Extra  string `json:"Extra,omitempty"`
 }
 
 // CopyFile copies src to dest using typed paths. It does not invoke a shell.

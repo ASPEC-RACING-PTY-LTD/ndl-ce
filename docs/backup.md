@@ -5,15 +5,24 @@ same pool. A backup copies data to a destination.
 
 ## Policies
 
-A policy is the operational object. Scope is `all` (the current eligible
-fleet, including workloads created later) or `selected` (an explicit
-workload list). All is the default. One policy can cover many workloads.
+A policy is the operational object. Workload scope is `selected` (an
+explicit workload list; the default) or `all` (the current eligible
+fleet, including workloads created later). All must be chosen
+deliberately. One policy can cover many workloads, and one workload can
+belong to more than one policy.
+
+Directory system containers also have a capture mode: `smart` (default,
+application data), `custom` (detected categories plus include/exclude),
+or `full` (complete recoverable filesystem). Full Machine is never
+implied. All three modes use Backup Engine V2. The policy editor
+previews detected persistent and reproducible paths from filesystem
+metadata before save.
 Run now executes the policy against its current scope. One policy
 execution runs at a time. A second Run now (or a nightly tick) against
 any policy returns 409 while another execution is in progress. Fleet
 workload concurrency stays at 1. Eligible means
 the root disk can be copied with any supported method: ZFS send when the
-pool is ZFS, qcow2 flatten for Directory VMs, or a filesystem archive
+pool is ZFS, qcow2 flatten for Directory VMs, or Backup Engine V2 content-addressed capture
 for Directory system containers. A running Directory container is copied
 live and stays running. No-DAL never freezes, pauses, suspends, or stops
 a guest for backup. Directory copies are crash-consistent. Stronger

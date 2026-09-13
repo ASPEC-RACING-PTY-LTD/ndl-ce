@@ -36,9 +36,14 @@ const (
 	BackupScopeAll              = "all"
 	BackupScopeSelected         = "selected"
 
-	BackupMethodDirectoryArchive = "directory-archive"
-	BackupMethodZFSSend          = "zfs-send"
-	BackupMethodQCOW2Copy        = "qcow2-copy"
+	BackupMethodDirectoryArchive   = "directory-archive"
+	BackupMethodContentAddressed   = "content-addressed"
+	BackupMethodZFSSend            = "zfs-send"
+	BackupMethodQCOW2Copy          = "qcow2-copy"
+
+	BackupCaptureSmart  = "smart"
+	BackupCaptureCustom = "custom"
+	BackupCaptureFull   = "full"
 
 	BackupConsistencyFreezer     = "cgroup-freezer" // historical Directory runs only
 	BackupConsistencyLiveCopy    = "live-copy"
@@ -84,6 +89,8 @@ type BackupPolicy struct {
 	KeepDaily   int
 	KeepWeekly  int
 	KeepMonthly int
+	CaptureMode string
+	ScopeJSON   string
 	LastRunAt   *time.Time
 	CreatedAt   time.Time
 }
@@ -110,6 +117,9 @@ func NormalizeBackupPolicy(p *BackupPolicy) {
 	}
 	if p.WorkloadID == "" && len(p.WorkloadIDs) > 0 {
 		p.WorkloadID = p.WorkloadIDs[0]
+	}
+	if p.CaptureMode != BackupCaptureSmart && p.CaptureMode != BackupCaptureCustom && p.CaptureMode != BackupCaptureFull {
+		p.CaptureMode = BackupCaptureSmart
 	}
 }
 
@@ -169,7 +179,72 @@ type BackupArtifact struct {
 	VerifyError         string
 	LastTestedAt        *time.Time
 	ThrowawayWorkloadID string
+	EngineVersion       string
+	BackupID            string
+	Namespace           string
+	LocalComplete       bool
+	RemoteState         string
+	LogicalBytes        int64
+	PhysicalNewData     int64
+	ChunksNew           int
+	ChunksReused        int
+	CaptureDurationNS   int64
+	UploadDurationNS    int64
+	Consistency         string
+	CaptureMode         string
+	BlueprintJSON       string
+	StatsJSON           string
 	CreatedAt           time.Time
+}
+
+// BackupWorkspaceSettings bounds the local V2 repository.
+type BackupWorkspaceSettings struct {
+	ClusterID          string
+	MaxLocalBytes      int64
+	MinHostFreeBytes   int64
+	CaptureConcurrency int
+	UploadWorkers      int
+	BandwidthLimitBPS  int64
+	UpdatedAt          time.Time
+}
+
+// BackupRepository is the catalogued local V2 store.
+type BackupRepository struct {
+	ID         string
+	ClusterID  string
+	RootPath   string
+	SizeBytes  int64
+	Status     string
+	UpdatedAt  time.Time
+}
+
+// BackupRestorePoint is a V2 restore point distinct from a remote-protected copy.
+type BackupRestorePoint struct {
+	ID              string
+	ClusterID       string
+	ArtifactID      string
+	RunID           string
+	WorkloadID      string
+	BackupID        string
+	Namespace       string
+	CaptureMode     string
+	LocalComplete   bool
+	RemoteState     string
+	LogicalBytes    int64
+	PhysicalNewData int64
+	CreatedAt       time.Time
+}
+
+// BackupUploadJob is a persisted pack upload tracked by the control plane.
+type BackupUploadJob struct {
+	ID         string
+	ClusterID  string
+	ArtifactID string
+	BackupID   string
+	PackID     string
+	State      string
+	Attempts   int
+	UpdatedAt  time.Time
 }
 
 // FillArtifactLocality sets locality and pull URL from locator or object key.
@@ -403,6 +478,122 @@ func (m *Memory) CreateBackupArtifact(_ context.Context, a BackupArtifact) error
 	FillArtifactLocality(&a)
 	m.backupArtifacts[a.ID] = a
 	return nil
+}
+
+func (m *Memory) UpdateBackupArtifact(ctx context.Context, a BackupArtifact) error {
+	return m.UpdateBackupArtifactVerify(ctx, a)
+}
+
+func (m *Memory) GetBackupWorkspaceSettings(_ context.Context, clusterID string) (*BackupWorkspaceSettings, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupWorkspace != nil {
+		if s, ok := m.backupWorkspace[clusterID]; ok {
+			return &s, nil
+		}
+	}
+	return DefaultBackupWorkspaceSettings(clusterID), nil
+}
+
+func (m *Memory) UpsertBackupWorkspaceSettings(_ context.Context, s BackupWorkspaceSettings) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupWorkspace == nil {
+		m.backupWorkspace = map[string]BackupWorkspaceSettings{}
+	}
+	if s.UpdatedAt.IsZero() {
+		s.UpdatedAt = time.Now().UTC()
+	}
+	m.backupWorkspace[s.ClusterID] = s
+	return nil
+}
+
+func (m *Memory) UpsertBackupRepository(_ context.Context, r BackupRepository) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupRepos == nil {
+		m.backupRepos = map[string]BackupRepository{}
+	}
+	if r.UpdatedAt.IsZero() {
+		r.UpdatedAt = time.Now().UTC()
+	}
+	m.backupRepos[r.ClusterID] = r
+	return nil
+}
+
+func (m *Memory) GetBackupRepository(_ context.Context, clusterID string) (*BackupRepository, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupRepos == nil {
+		return nil, nil
+	}
+	r, ok := m.backupRepos[clusterID]
+	if !ok {
+		return nil, nil
+	}
+	return &r, nil
+}
+
+func (m *Memory) UpsertBackupRestorePoint(_ context.Context, p BackupRestorePoint) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupPoints == nil {
+		m.backupPoints = map[string]BackupRestorePoint{}
+	}
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = time.Now().UTC()
+	}
+	m.backupPoints[p.ID] = p
+	return nil
+}
+
+func (m *Memory) ListBackupRestorePoints(_ context.Context, clusterID string) ([]BackupRestorePoint, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []BackupRestorePoint
+	for _, p := range m.backupPoints {
+		if p.ClusterID == clusterID {
+			out = append(out, p)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (m *Memory) GetBackupRestorePoint(_ context.Context, clusterID, id string) (*BackupRestorePoint, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.backupPoints[id]
+	if !ok || p.ClusterID != clusterID {
+		return nil, nil
+	}
+	return &p, nil
+}
+
+func (m *Memory) ReplaceBackupUploadJobs(_ context.Context, clusterID string, jobs []BackupUploadJob) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupUploadJobs == nil {
+		m.backupUploadJobs = map[string][]BackupUploadJob{}
+	}
+	m.backupUploadJobs[clusterID] = append([]BackupUploadJob(nil), jobs...)
+	return nil
+}
+
+func (m *Memory) ListBackupUploadJobs(_ context.Context, clusterID string) ([]BackupUploadJob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]BackupUploadJob(nil), m.backupUploadJobs[clusterID]...), nil
+}
+
+func DefaultBackupWorkspaceSettings(clusterID string) *BackupWorkspaceSettings {
+	return &BackupWorkspaceSettings{
+		ClusterID:          clusterID,
+		MaxLocalBytes:      50 << 30,
+		MinHostFreeBytes:   10 << 30,
+		CaptureConcurrency: 1,
+		UploadWorkers:      4,
+	}
 }
 
 func (m *Memory) UpdateBackupArtifactVerify(_ context.Context, a BackupArtifact) error {

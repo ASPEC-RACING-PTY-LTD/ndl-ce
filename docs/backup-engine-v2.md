@@ -6,9 +6,10 @@ into fixed-size pieces, and uploaded the whole thing on every backup. The new
 engine is incremental and deduplicating: after the first baseline, a backup
 costs roughly the changed data plus a metadata scan.
 
-The engine is a self-contained library today. Wiring it into `ndl-agent` and
-`ndl-control`, the Backups UI, and database migrations is tracked as follow-up
-(see "Integration status").
+The engine is wired into `ndl-agent` and `ndl-control` for new Directory
+system-container backups. Smart Application Data is the default capture scope.
+Full Machine / Full LXC remains available and still uses this engine, not the
+legacy tar path. Legacy tar/backuppack artifacts remain restorable.
 
 ## Goals recap
 
@@ -199,24 +200,40 @@ of new physical data instead of another full upload.
 - Workspace ceiling and host free-space reserve.
 - Repeated-cycle goroutine plateau and staging reclamation.
 
+## Capture scope
+
+Every backup policy has an explicit capture mode. All three modes use this
+engine (content-defined chunking, deduplication, compression, encryption,
+local repository, asynchronous remote upload, Blueprint, integrity
+verification). Full Machine is a full *scope*, not a return to the old
+whole-rootfs tar format.
+
+- `smart` (default): protect irreplaceable application and workload data
+  (databases, Docker volumes and bind mounts, uploads, persistent state,
+  relevant configuration, Blueprint). Reproducible trees such as
+  `node_modules`, package caches, image layers, and ordinary logs are
+  normally excluded. Git working trees default to excluded and are warned
+  because they may contain uncommitted or local-only state. Uncertain
+  classification is protected or flagged.
+- `custom`: user include/exclude plus detected-category overrides.
+- `full`: complete recoverable guest filesystem minus technical mounts
+  (`proc`, `sys`, `dev`, `run`). Never the default.
+
+Scope preview uses filesystem metadata (stat) and does not require a backup
+run. It never reads secret file contents to classify a path.
+
 ## Integration status
 
-Implemented and tested: the engine core (chunking, dedup repository, metadata
-cache, manifest and Blueprint, restore, retention and GC, workspace safety,
-decoupled upload queue, R2/S3 transport adapter, and remote disaster-recovery
-restore).
+Implemented: engine core; agent live capture and restore (`v2-capture`,
+`v2-restore`, `v2-preview`, `v2-status`); control persistence
+(`migrations/0047_backup_engine_v2.sql`); policy capture modes and selected
+workload default; Backups UI (scope radios, per-workload preview, protection
+states, workspace bounds); Docker persistence inventory without secret
+values; Blueprint-aware restore-as-new that stays stopped until started.
 
-Remaining follow-up, not in this change:
+Legacy tar plus `backuppack` remains only to restore historical artifacts.
 
-- Wire capture and restore into `ndl-agent` and `ndl-control`, replacing the old
-  `internal/ctbackup` tar plus fixed-chunk `internal/backuppack` creation path
-  for new backups. The old path stays only to restore legacy backups.
-- Backups UI redesign for the new protection summary and local/remote status,
-  plus Backup Workspace settings.
-- Additive database migrations for the new restore-point state model.
-- Docker inventory collection and application-aware hook execution on the agent.
-- On-hardware end-to-end validation with real LXC workloads and a real R2 bucket
-  (zero-freeze assertion via cgroup inspection, multipart resume, and the full
-  disposable-workload matrix). These require a Debian hypervisor host and R2
-  credentials and cannot run in a CI container.
+On-hardware validation with a real production container (read-only) and
+disposable mutation/restore tests is performed on the live host when this
+change is landed, not in CI.
 ```

@@ -1133,6 +1133,30 @@ fieldset.field legend.field-label {
   gap: 0.35rem;
 }
 
+.scope-preview {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.scope-preview-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  background: var(--bg-canvas);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.scope-preview-card h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.scope-warning {
+  color: var(--warn);
+  font-size: 0.8rem;
+}
+
 .kind-chip {
   color: var(--fg-secondary);
   font-size: 0.75rem;

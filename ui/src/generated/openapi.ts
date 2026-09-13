@@ -1411,6 +1411,8 @@ export interface BackupPolicy {
   keep_weekly: number;
   keep_monthly: number;
   last_run_at?: string;
+  capture_mode?: "smart" | "custom" | "full";
+  scope_json?: Record<string, unknown>;
 }
 
 export interface BackupPolicyListResponse {
@@ -1420,6 +1422,8 @@ export interface BackupPolicyListResponse {
 export interface CreateBackupPolicyRequest {
   name: string;
   scope?: "all" | "selected";
+  capture_mode?: "smart" | "custom" | "full";
+  scope_json?: Record<string, unknown>;
   workload_id?: string;
   workload_ids?: string[];
   target_id: string;
@@ -1446,7 +1450,7 @@ export interface BackupRun {
 }
 
 export interface BackupPlan {
-  method?: "directory-archive" | "zfs-send" | "qcow2-copy";
+  method?: "directory-archive" | "content-addressed" | "zfs-send" | "qcow2-copy";
   consistency?: "live-copy" | "application" | "cgroup-freezer" | "stopped" | "zfs-snapshot" | "lvm-snapshot" | "qcow2-overlay";
   included?: BackupPlanItem[];
   skipped?: BackupPlanItem[];
@@ -1490,10 +1494,81 @@ export interface BackupArtifact {
   throwaway_workload_id?: string;
   locality?: "local" | "object" | "pull";
   pull_url?: string;
+  engine_version?: string;
+  backup_id?: string;
+  namespace?: string;
+  local_complete?: boolean;
+  remote_state?: "local-only" | "queued" | "uploading" | "verifying" | "protected" | "failed";
+  logical_bytes?: number;
+  physical_new_data?: number;
+  chunks_new?: number;
+  chunks_reused?: number;
+  capture_duration_ns?: number;
+  capture_mode?: string;
+  capture_mode_label?: string;
+  protection?: string;
 }
 
 export interface BackupArtifactListResponse {
   items: BackupArtifact[];
+}
+
+export interface BackupWorkspace {
+  max_local_bytes?: number;
+  min_host_free_bytes?: number;
+  capture_concurrency?: number;
+  upload_workers?: number;
+  bandwidth_limit_bps?: number;
+  repo_bytes?: number;
+  pending_uploads?: number;
+  protected_workloads?: number;
+  host_free_bytes?: number;
+  capture_busy?: boolean;
+  root?: string;
+}
+
+export interface BackupRestorePoint {
+  id?: string;
+  artifact_id?: string;
+  run_id?: string;
+  workload_id?: string;
+  backup_id?: string;
+  namespace?: string;
+  capture_mode?: string;
+  local_complete?: boolean;
+  remote_state?: string;
+  logical_bytes?: number;
+  physical_new_data?: number;
+  created_at?: string;
+}
+
+export interface BackupRestorePointListResponse {
+  items: BackupRestorePoint[];
+}
+
+export interface BackupScopePreviewRequest {
+  workload_ids: string[];
+  capture_mode?: "smart" | "custom" | "full";
+  scope_json?: Record<string, unknown>;
+}
+
+export interface BackupScopePreviewItem {
+  workload_id?: string;
+  workload_name?: string;
+  mode?: string;
+  items?: Record<string, unknown>[];
+  warnings?: Record<string, unknown>[];
+  protected_bytes?: number;
+  excluded_bytes?: number;
+  full_bytes?: number;
+}
+
+export interface BackupScopePreviewResponse {
+  items?: BackupScopePreviewItem[];
+  protected_bytes?: number;
+  excluded_bytes?: number;
+  full_bytes?: number;
+  capture_mode?: string;
 }
 
 export interface RestoreBackupRequest {
@@ -2593,6 +2668,12 @@ export type RunBackupPolicyPath = "/api/v1/backups/policies/{id}/run";
 export type ListBackupRunsPath = "/api/v1/backups/runs";
 
 export type ListBackupArtifactsPath = "/api/v1/backups/artifacts";
+
+export type GetBackupWorkspacePath = "/api/v1/backups/workspace";
+
+export type ListBackupRestorePointsPath = "/api/v1/backups/restore-points";
+
+export type PreviewBackupScopePath = "/api/v1/backups/scope-preview";
 
 export type ExportBackupDRPath = "/api/v1/backups/dr-export";
 

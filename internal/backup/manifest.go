@@ -72,7 +72,18 @@ type Blueprint struct {
 	Docker       *DockerInfo    `json:"docker,omitempty"`
 	Packages     []string       `json:"packages,omitempty"`
 	Services     []string       `json:"services,omitempty"`
+	CaptureMode  string         `json:"capture_mode,omitempty"`
+	Includes     []string       `json:"includes,omitempty"`
+	Excludes     []string       `json:"excludes,omitempty"`
 }
+
+// Capture modes. Smart and Custom restrict the live tree; Full captures the
+// recoverable filesystem minus technical mounts. All three use this engine.
+const (
+	CaptureModeSmart  = "smart"
+	CaptureModeCustom = "custom"
+	CaptureModeFull   = "full"
+)
 
 // DockerInfo inventories a Docker-enabled workload without exposing secrets.
 type DockerInfo struct {

@@ -69,6 +69,9 @@ func OpenRepository(root string, keys *Keys) (*Repository, error) {
 
 func (r *Repository) packDir() string { return filepath.Join(r.root, "packs") }
 
+// Keys returns the repository keyring. Callers must not log or serialize it.
+func (r *Repository) Keys() *Keys { return r.keys }
+
 // rebuildIndex scans pack sidecars. A .pack without a committed .idx is an
 // interrupted write and is removed so it cannot corrupt the repository.
 func (r *Repository) rebuildIndex() error {

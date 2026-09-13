@@ -1530,6 +1530,36 @@ export async function listBackupArtifacts(): Promise<import("../generated/openap
   return readJson(await request("/backups/artifacts"));
 }
 
+export async function getBackupWorkspace(): Promise<import("../generated/openapi").BackupWorkspace> {
+  return readJson(await request("/backups/workspace"));
+}
+
+export async function patchBackupWorkspace(
+  body: import("../generated/openapi").BackupWorkspace,
+): Promise<import("../generated/openapi").BackupWorkspace> {
+  return readJson(
+    await request("/backups/workspace", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function listBackupRestorePoints(): Promise<import("../generated/openapi").BackupRestorePointListResponse> {
+  return readJson(await request("/backups/restore-points"));
+}
+
+export async function previewBackupScope(
+  body: import("../generated/openapi").BackupScopePreviewRequest,
+): Promise<import("../generated/openapi").BackupScopePreviewResponse> {
+  return readJson(
+    await request("/backups/scope-preview", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
 export async function runBackup(
   body: import("../generated/openapi").RunBackupRequest,
 ): Promise<import("../generated/openapi").BackupRun> {
