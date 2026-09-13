@@ -69,12 +69,11 @@ func (h *Host) dockerInventory(ctx context.Context, workloadID, name string) (*b
 				seenVol[name] = struct{}{}
 				info.NamedVolumes = append(info.NamedVolumes, name)
 				hint.NamedVolumes = append(hint.NamedVolumes, name)
+				// Keep an explicit host path only when it already points into
+				// the Docker volumes tree; otherwise resolve the named volume to
+				// its real host location so the backup captures the data.
 				hostPath := strings.TrimSpace(m.Source)
-				if !strings.HasPrefix(hostPath, "/") {
-					hostPath = backupscope.ResolveDockerVolumePath("", name)
-				} else if strings.HasPrefix(hostPath, "/var/lib/docker/volumes/") {
-					hostPath = hostPath
-				} else {
+				if !strings.HasPrefix(hostPath, "/var/lib/docker/volumes/") {
 					hostPath = backupscope.ResolveDockerVolumePath("", name)
 				}
 				hint.VolumePaths = append(hint.VolumePaths, hostPath)
