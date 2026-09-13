@@ -116,8 +116,11 @@ func TestFATContainsNoCloudFiles(t *testing.T) {
 	if len(img) != fatTotalSectors*fatBytesPerSector {
 		t.Fatal(len(img))
 	}
-	if string(img[43:54]) != "cidata     " {
+	if string(img[43:54]) != "CIDATA     " {
 		t.Fatalf("label %q", img[43:54])
+	}
+	if img[38] != 0x29 {
+		t.Fatal("FAT boot signature 0x29 is required for the volume label")
 	}
 	if !bytes.Contains(img, []byte("#cloud-config")) {
 		t.Fatal("user-data body missing")

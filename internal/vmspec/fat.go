@@ -29,6 +29,14 @@ func BuildCIDATA(files map[string][]byte) ([]byte, error) {
 	cluster := 2
 	rootOff := fatReserved*fatBytesPerSector + fatCount*fatSectorsPerFAT*fatBytesPerSector
 	rootIdx := 0
+	// blkid / udev / cloud-init look up /dev/disk/by-label/cidata. The
+	// boot-sector label is ignored unless BS_BootSig is 0x29, and most
+	// probes also require a volume-label directory entry.
+	var vol [32]byte
+	copy(vol[0:11], []byte("CIDATA     "))
+	vol[11] = 0x08
+	copy(img[rootOff:], vol[:])
+	rootIdx = 1
 	for name, body := range files {
 		if strings.ContainsAny(name, "\x00/") || name == "" || strings.Contains(name, "..") {
 			return nil, fmt.Errorf("cidata file name is invalid")
@@ -93,7 +101,9 @@ func writeBoot(img []byte) {
 	binary.LittleEndian.PutUint16(img[22:], fatSectorsPerFAT)
 	binary.LittleEndian.PutUint16(img[24:], 1)
 	binary.LittleEndian.PutUint16(img[26:], 1)
-	copy(img[43:], []byte("cidata     "))
+	img[38] = 0x29 // BS_BootSig: VolID / VolLab / FilSysType are valid
+	binary.LittleEndian.PutUint32(img[39:], 0x4e444c31)
+	copy(img[43:], []byte("CIDATA     "))
 	copy(img[54:], []byte("FAT16   "))
 	img[510] = 0x55
 	img[511] = 0xAA
