@@ -28,6 +28,11 @@ func createTAPDevice(name string) error {
 	if err := unix.IoctlIfreq(fd, unix.TUNSETIFF, ifr); err != nil {
 		return fmt.Errorf("TUNSETIFF %s: %w", name, err)
 	}
+	// Persist so the iface survives this fd close. QEMU later reopens the TAP
+	// by name; without TUNSETPERSIST, `ip link set master` cannot find it.
+	if err := unix.IoctlSetInt(fd, unix.TUNSETPERSIST, 1); err != nil {
+		return fmt.Errorf("TUNSETPERSIST %s: %w", name, err)
+	}
 	u, err := user.Lookup(QEMUUser)
 	if err != nil {
 		return nil
