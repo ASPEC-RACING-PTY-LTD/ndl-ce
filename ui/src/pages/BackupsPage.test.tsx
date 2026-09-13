@@ -103,7 +103,7 @@ afterEach(() => {
 });
 
 describe("Backups page", () => {
-  it("defaults new policies to All workloads and supports a selected subset", async () => {
+  it("defaults new policies to selected workloads and Smart Application Data", async () => {
     const fetchMock = mockApi({
       ...baseRoutes,
       "/api/v1/backups/policies": { status: 200, body: { items: [] } },
@@ -114,6 +114,7 @@ describe("Backups page", () => {
           name: "nightly-subset",
           scope: "selected",
           workload_ids: ["wl-a", "wl-b"],
+          capture_mode: "smart",
           target_id: "tgt-1",
           schedule: "nightly",
           keep_daily: 7,
@@ -131,12 +132,10 @@ describe("Backups page", () => {
     expect(screen.getByText(/no backup artifacts yet/i)).toBeVisible();
     fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
-    const radios = within(dialog).getAllByRole("radio");
-    expect(radios[0]).toHaveAccessibleName(/all workloads/i);
-    expect(radios[0]).toBeChecked();
-    expect(within(dialog).queryByRole("group", { name: /^workloads$/i })).not.toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByLabelText(/^selected workloads$/i));
+    expect(within(dialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
+    expect(within(dialog).getByLabelText(/^all workloads$/i)).not.toBeChecked();
+    expect(within(dialog).getByLabelText(/^smart application data$/i)).toBeChecked();
+    expect(within(dialog).getByLabelText(/^full machine \/ full lxc$/i)).not.toBeChecked();
     expect(within(dialog).getByRole("group", { name: /^workloads$/i })).toBeVisible();
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /alpha/i }));
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /bravo/i }));
@@ -151,6 +150,7 @@ describe("Backups page", () => {
       expect(post).toBeTruthy();
       const body = JSON.parse(String(post?.[1]?.body));
       expect(body.scope).toBe("selected");
+      expect(body.capture_mode).toBe("smart");
       expect(body.workload_ids).toEqual(["wl-a", "wl-b"]);
     });
   });

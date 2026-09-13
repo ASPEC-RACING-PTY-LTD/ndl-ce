@@ -1194,10 +1194,10 @@ describe("App", () => {
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
     const policyDialog = await screen.findByRole("dialog", { name: /create backup policy/i });
-    expect(within(policyDialog).getByLabelText(/^all workloads$/i)).toBeChecked();
-    const scopeRadios = within(policyDialog).getAllByRole("radio");
-    expect(scopeRadios[0]).toHaveAccessibleName(/all workloads/i);
-    expect(within(policyDialog).queryByLabelText(/^search workloads$/i)).not.toBeInTheDocument();
+    expect(within(policyDialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
+    expect(within(policyDialog).getByLabelText(/^smart application data$/i)).toBeChecked();
+    expect(within(policyDialog).getByLabelText(/^full machine \/ full lxc$/i)).not.toBeChecked();
+    expect(within(policyDialog).getByLabelText(/^search workloads$/i)).toBeVisible();
   });
 
   it("renders R2 object target fields and last-run transferred bytes", async () => {
