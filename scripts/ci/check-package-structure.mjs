@@ -896,6 +896,52 @@ if (!/chmod 0751 \/var\/lib\/ndl/.test(postinstControl)) {
   errors.push("postinst-control.sh must leave /var/lib/ndl traversable (0751) for unprivileged containers");
 }
 
+const installFiles = required.filter((rel) => rel.endsWith(".install"));
+const allowedInstallPrefixes = [
+  "usr/sbin/",
+  "usr/bin/",
+  "usr/lib/",
+  "usr/share/",
+  "lib/systemd/system/",
+  "etc/apparmor.d/",
+  "usr/lib/modules-load.d/",
+  "usr/lib/sysctl.d/",
+];
+for (const rel of installFiles) {
+  if (!existsSync(rel)) continue;
+  const body = readFileSync(rel, "utf8");
+  for (const rawLine of body.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const dest = line.split(/\s+/).pop();
+    if (!dest) continue;
+    if (dest.startsWith("/") || dest.includes("..")) {
+      errors.push(`${rel} must use a relative Debian dest, not ${dest}`);
+      continue;
+    }
+    if (dest.startsWith("var/") || dest.startsWith("root/") || dest.startsWith("home/") || dest.startsWith("opt/")) {
+      errors.push(`${rel} must not install into ${dest}`);
+      continue;
+    }
+    if (dest.includes("/") && !allowedInstallPrefixes.some((p) => dest === p.slice(0, -1) || dest.startsWith(p))) {
+      errors.push(`${rel} install dest ${dest} is outside the CE 1.0 allowlist`);
+    }
+  }
+}
+
+if (existsSync("out/debian/dists/trixie/InRelease") && existsSync("out/gpg")) {
+  const gpgv = spawnSync("gpgv", ["--keyring", "out/gpg", "out/debian/dists/trixie/InRelease"], { encoding: "utf8" });
+  if (gpgv.status !== 0) {
+    const verify = spawnSync("gpg", ["--verify", "out/debian/dists/trixie/InRelease"], {
+      encoding: "utf8",
+      env: { ...process.env, GNUPGHOME: existsSync("out/signing/gnupg") ? "out/signing/gnupg" : process.env.GNUPGHOME },
+    });
+    if (verify.status !== 0) {
+      errors.push(`signed InRelease must verify: ${(gpgv.stderr || verify.stderr || "").trim()}`);
+    }
+  }
+}
+
 const uiBuild = spawnSync("sh", ["packaging/e2e/check-ui-build.sh"], { encoding: "utf8" });
 if (uiBuild.status !== 0) {
   errors.push(`check-ui-build.sh failed: ${(uiBuild.stderr || uiBuild.stdout || "").trim()}`);

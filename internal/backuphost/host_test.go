@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/backup"
 	"github.com/no-dal/ndl-ce/internal/backupscope"
@@ -108,6 +109,47 @@ func TestHostPreviewDoesNotCapture(t *testing.T) {
 	if len(states) != 0 {
 		t.Fatal("preview must not create a restore point")
 	}
+}
+
+func TestHostEnqueueProtectsLocalTarget(t *testing.T) {
+	src := t.TempDir()
+	mustWrite(t, filepath.Join(src, "var/lib/app/data"), []byte("keep"))
+	remote := t.TempDir()
+	h, err := Open(Options{Root: t.TempDir(), Settings: Settings{MaxLocalBytes: 1 << 30, MinHostFreeBytes: 1, UploadWorkers: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.Handle(context.Background(), ActionCapture, src, mustJSON(Request{
+		Action: ActionCapture, WorkloadID: "wl-q", WorkloadName: "queued",
+		CaptureMode: backup.CaptureModeSmart,
+		Target:      TargetSpec{ID: "local-1", Kind: "local", Locator: remote},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out Result
+	if err := json.Unmarshal([]byte(res.Extra), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.LocalComplete {
+		t.Fatalf("local complete %+v", out)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		st, err := h.Handle(context.Background(), ActionStatus, "", mustJSON(Request{Action: ActionStatus}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var status Result
+		_ = json.Unmarshal([]byte(st.Extra), &status)
+		for _, p := range status.Points {
+			if p.BackupID == out.BackupID && p.Remote == backup.RemoteProtected {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("enqueue to a local target must reach Protected")
 }
 
 func mustWrite(t *testing.T, path string, body []byte) {
