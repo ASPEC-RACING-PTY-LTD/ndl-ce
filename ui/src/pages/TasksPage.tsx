@@ -15,7 +15,7 @@ export function TasksPage() {
   const { data, error, loading } = useQuery("tasks-page", () => listTasks(), 5000);
   const [openId, setOpenId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
-  const items = data ?? [];
+  const items = useMemo(() => data ?? [], [data]);
   const selected = items.find((item) => item.id === openId) ?? null;
   const filtered = useMemo(() => {
     return items.filter((item) => {

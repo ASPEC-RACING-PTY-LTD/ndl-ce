@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ApiError,
   createAPIToken,
@@ -58,18 +58,18 @@ export function APIAccessPage() {
   const [spTtl, setSpTtl] = useState("168");
   const [query, setQuery] = useState("");
 
-  async function reload() {
+  const reload = useCallback(async () => {
     const listed = await listAPITokens(true);
     setTokens(listed.items ?? []);
     if (admin) {
       const sps = await listServicePrincipals();
       setPrincipals(sps.items ?? []);
     }
-  }
+  }, [admin]);
 
   useEffect(() => {
     void reload().catch((err) => setError(err instanceof Error ? err.message : "Unavailable"));
-  }, [admin]);
+  }, [reload]);
 
   function created(label: string, body: CreatedAPIToken | { token: string }) {
     setReveal({ label, token: body.token });

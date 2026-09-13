@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError, disableFeature, enableFeature, listFeatures } from "../api/client";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
@@ -48,15 +48,15 @@ export function FeaturesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  async function reload() {
+  const reload = useCallback(async () => {
     const next = await listFeatures();
     setList(next);
     await reloadFeatures();
-  }
+  }, [reloadFeatures]);
 
   useEffect(() => {
     void reload().catch((err) => setError(err instanceof Error ? err.message : "Unavailable"));
-  }, [reloadFeatures]);
+  }, [reload]);
 
   async function onEnablePackage(item: Feature) {
     setBusy(item.id);
