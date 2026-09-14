@@ -1,0 +1,396 @@
+package appdb
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"strings"
+
+	"github.com/google/uuid"
+)
+
+// Postgres implements Store on PostgreSQL 16.
+type Postgres struct {
+	DB *sql.DB
+}
+
+func (p *Postgres) GetCluster(ctx context.Context) (*Cluster, error) {
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, name, setup_completed_at, COALESCE(mfa_required, false) FROM clusters LIMIT 1`)
+	var c Cluster
+	var completed sql.NullTime
+	if err := row.Scan(&c.ID, &c.Name, &completed, &c.MFARequired); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if completed.Valid {
+		c.SetupCompletedAt = &completed.Time
+	}
+	return &c, nil
+}
+
+func (p *Postgres) CreateCluster(ctx context.Context, c Cluster) error {
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO clusters (id, name) VALUES ($1, $2)`, c.ID, c.Name)
+	return err
+}
+
+func (p *Postgres) CompleteSetup(ctx context.Context, clusterID string) error {
+	_, err := p.DB.ExecContext(ctx, `UPDATE clusters SET setup_completed_at = now() WHERE id = $1`, clusterID)
+	return err
+}
+
+func (p *Postgres) GetSetup(ctx context.Context) (*SetupToken, error) {
+	row := p.DB.QueryRowContext(ctx, `SELECT cluster_id::text, token_hash, consumed_at FROM secrets.setup_tokens LIMIT 1`)
+	var s SetupToken
+	var consumed sql.NullTime
+	if err := row.Scan(&s.ClusterID, &s.TokenHash, &consumed); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if consumed.Valid {
+		s.ConsumedAt = &consumed.Time
+	}
+	return &s, nil
+}
+
+func (p *Postgres) PutSetup(ctx context.Context, clusterID, tokenHash string) error {
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO secrets.setup_tokens (cluster_id, token_hash)
+VALUES ($1, $2)
+ON CONFLICT (cluster_id) DO NOTHING`, clusterID, tokenHash)
+	return err
+}
+
+func (p *Postgres) ConsumeSetup(ctx context.Context, clusterID string) error {
+	res, err := p.DB.ExecContext(ctx, `
+UPDATE secrets.setup_tokens
+SET consumed_at = now()
+WHERE cluster_id = $1 AND consumed_at IS NULL`, clusterID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("setup already claimed")
+	}
+	return nil
+}
+
+const userSelect = `SELECT id::text, cluster_id::text, username, password_hash, COALESCE(kind, 'person'), COALESCE(display_name, ''), created_at, disabled_at, COALESCE(mfa_required, false), last_login_at FROM users`
+
+func (p *Postgres) CreateUser(ctx context.Context, u User) error {
+	if u.Kind == "" {
+		u.Kind = UserKindPerson
+	}
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO users (id, cluster_id, username, password_hash, kind, display_name, mfa_required) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		u.ID, u.ClusterID, u.Username, u.PasswordHash, u.Kind, u.DisplayName, u.MFARequired)
+	return err
+}
+
+func (p *Postgres) GetUserByName(ctx context.Context, clusterID, username string) (*User, error) {
+	return scanUser(p.DB.QueryRowContext(ctx, userSelect+` WHERE cluster_id=$1 AND username=$2`, clusterID, username))
+}
+
+func (p *Postgres) GetUser(ctx context.Context, id string) (*User, error) {
+	if !ValidUUID(id) {
+		return nil, nil
+	}
+	return scanUser(p.DB.QueryRowContext(ctx, userSelect+` WHERE id=$1`, id))
+}
+
+func scanUser(row *sql.Row) (*User, error) {
+	var u User
+	var disabled, lastLogin sql.NullTime
+	if err := row.Scan(&u.ID, &u.ClusterID, &u.Username, &u.PasswordHash, &u.Kind, &u.DisplayName, &u.CreatedAt, &disabled, &u.MFARequired, &lastLogin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if u.Kind == "" {
+		u.Kind = UserKindPerson
+	}
+	if disabled.Valid {
+		u.DisabledAt = &disabled.Time
+	}
+	if lastLogin.Valid {
+		u.LastLoginAt = &lastLogin.Time
+	}
+	return &u, nil
+}
+
+func (p *Postgres) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	_, err := p.DB.ExecContext(ctx, `UPDATE users SET password_hash=$2 WHERE id=$1`, userID, passwordHash)
+	return err
+}
+
+func (p *Postgres) CountAdmins(ctx context.Context, clusterID string) (int, error) {
+	row := p.DB.QueryRowContext(ctx, `
+SELECT count(*)
+FROM role_bindings b
+JOIN roles r ON r.id = b.role_id
+WHERE b.cluster_id = $1 AND r.name = 'admin'`, clusterID)
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (p *Postgres) CountEnabledAdmins(ctx context.Context, clusterID string) (int, error) {
+	row := p.DB.QueryRowContext(ctx, `
+SELECT count(*)
+FROM role_bindings b
+JOIN roles r ON r.id = b.role_id
+JOIN users u ON u.id = b.user_id
+WHERE b.cluster_id = $1 AND r.name = 'admin' AND u.disabled_at IS NULL`, clusterID)
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (p *Postgres) EnsureRoles(ctx context.Context, clusterID string, roles map[string][]string) error {
+	for name, perms := range roles {
+		_, err := p.DB.ExecContext(ctx, `
+INSERT INTO roles (id, cluster_id, name, permissions)
+VALUES ($1, $2, $3, string_to_array($4, ','))
+ON CONFLICT (cluster_id, name) DO UPDATE SET permissions = EXCLUDED.permissions`,
+			uuid.NewString(), clusterID, name, strings.Join(perms, ","))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Postgres) BindRole(ctx context.Context, clusterID, userID, roleName string) error {
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO role_bindings (id, cluster_id, user_id, role_id)
+SELECT $4, $1, $2, r.id
+FROM roles r
+WHERE r.cluster_id = $1 AND r.name = $3
+ON CONFLICT (user_id, role_id) DO NOTHING`, clusterID, userID, roleName, uuid.NewString())
+	return err
+}
+
+func (p *Postgres) UnbindRole(ctx context.Context, clusterID, userID, roleName string) error {
+	_, err := p.DB.ExecContext(ctx, `
+DELETE FROM role_bindings b
+USING roles r
+WHERE b.role_id = r.id AND r.cluster_id = $1 AND b.user_id = $2 AND r.name = $3`, clusterID, userID, roleName)
+	return err
+}
+
+func (p *Postgres) UserRoles(ctx context.Context, userID string) ([]string, error) {
+	rows, err := p.DB.QueryContext(ctx, `
+SELECT r.name
+FROM role_bindings b
+JOIN roles r ON r.id = b.role_id
+WHERE b.user_id = $1
+UNION
+SELECT r.name
+FROM group_members m
+JOIN group_role_bindings gb ON gb.group_id = m.group_id
+JOIN roles r ON r.id = gb.role_id
+WHERE m.user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) CreateSession(ctx context.Context, s Session) error {
+	if s.AAL <= 0 {
+		s.AAL = 1
+	}
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO sessions (id, cluster_id, user_id, token_hash, expires_at, aal) VALUES ($1,$2,$3,$4,$5,$6)`,
+		s.ID, s.ClusterID, s.UserID, s.TokenHash, s.ExpiresAt, s.AAL)
+	return err
+}
+
+func (p *Postgres) GetSessionByHash(ctx context.Context, hash string) (*Session, error) {
+	row := p.DB.QueryRowContext(ctx, `SELECT id::text, cluster_id::text, user_id::text, token_hash, expires_at, revoked_at, aal FROM sessions WHERE token_hash=$1`, hash)
+	var s Session
+	var revoked sql.NullTime
+	if err := row.Scan(&s.ID, &s.ClusterID, &s.UserID, &s.TokenHash, &s.ExpiresAt, &revoked, &s.AAL); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if revoked.Valid {
+		s.RevokedAt = &revoked.Time
+	}
+	if s.AAL <= 0 {
+		s.AAL = 1
+	}
+	return &s, nil
+}
+
+func (p *Postgres) RevokeSession(ctx context.Context, id string) error {
+	_, err := p.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at=now() WHERE id=$1`, id)
+	return err
+}
+
+func (p *Postgres) RevokeUserSessions(ctx context.Context, userID string) error {
+	_, err := p.DB.ExecContext(ctx, `UPDATE sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, userID)
+	return err
+}
+
+func (p *Postgres) CreateToken(ctx context.Context, t APIToken) error {
+	_, err := p.DB.ExecContext(ctx, `INSERT INTO api_tokens (id, cluster_id, user_id, name, token_hash, prefix, permissions, expires_at) VALUES ($1,$2,$3,$4,$5,$6,COALESCE(string_to_array(NULLIF($7, ''), ','), '{}'),$8)`,
+		t.ID, t.ClusterID, t.UserID, t.Name, t.TokenHash, t.Prefix, strings.Join(t.Permissions, ","), t.ExpiresAt)
+	return err
+}
+
+func scanAPIToken(row interface {
+	Scan(dest ...any) error
+}) (*APIToken, error) {
+	var t APIToken
+	var revoked, expires, lastUsed sql.NullTime
+	var permCSV string
+	if err := row.Scan(&t.ID, &t.ClusterID, &t.UserID, &t.Name, &t.TokenHash, &t.Prefix, &t.CreatedAt, &revoked, &expires, &permCSV, &lastUsed); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if revoked.Valid {
+		t.RevokedAt = &revoked.Time
+	}
+	if expires.Valid {
+		t.ExpiresAt = &expires.Time
+	}
+	if lastUsed.Valid {
+		t.LastUsedAt = &lastUsed.Time
+	}
+	if permCSV != "" {
+		t.Permissions = strings.Split(permCSV, ",")
+	}
+	return &t, nil
+}
+
+const apiTokenSelect = `SELECT id::text, cluster_id::text, user_id::text, name, token_hash, prefix, created_at, revoked_at, expires_at, COALESCE(array_to_string(permissions, ','), ''), last_used_at FROM api_tokens`
+
+func (p *Postgres) GetTokenByHash(ctx context.Context, hash string) (*APIToken, error) {
+	return scanAPIToken(p.DB.QueryRowContext(ctx, apiTokenSelect+` WHERE token_hash=$1`, hash))
+}
+
+func (p *Postgres) GetToken(ctx context.Context, id string) (*APIToken, error) {
+	return scanAPIToken(p.DB.QueryRowContext(ctx, apiTokenSelect+` WHERE id=$1`, id))
+}
+
+func (p *Postgres) ListTokens(ctx context.Context, clusterID string) ([]APIToken, error) {
+	rows, err := p.DB.QueryContext(ctx, apiTokenSelect+` WHERE cluster_id=$1 ORDER BY created_at DESC`, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []APIToken
+	for rows.Next() {
+		tok, err := scanAPIToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		if tok != nil {
+			out = append(out, *tok)
+		}
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) RevokeToken(ctx context.Context, id, userID string) error {
+	res, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("token not found")
+	}
+	return nil
+}
+
+func (p *Postgres) RevokeClusterToken(ctx context.Context, clusterID, id string) error {
+	res, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE id=$1 AND cluster_id=$2 AND revoked_at IS NULL`, id, clusterID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return errors.New("token not found")
+	}
+	return nil
+}
+
+func (p *Postgres) UpsertNode(ctx context.Context, n Node) error {
+	role := n.Role
+	if role == "" {
+		role = "control"
+	}
+	if len(n.HostPlatform) == 0 {
+		n.HostPlatform = json.RawMessage(`{}`)
+	}
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO nodes (id, cluster_id, name, host_platform, role, hostname)
+VALUES ($1,$2,$3,$4,$5,$6)
+ON CONFLICT (id) DO UPDATE SET
+  host_platform = EXCLUDED.host_platform,
+  hostname = CASE WHEN EXCLUDED.hostname = '' THEN nodes.hostname ELSE EXCLUDED.hostname END,
+  role = CASE WHEN EXCLUDED.role = '' THEN nodes.role ELSE EXCLUDED.role END`,
+		n.ID, n.ClusterID, n.Name, n.HostPlatform, role, n.Hostname)
+	return err
+}
+
+func (p *Postgres) GetNode(ctx context.Context, clusterID string) (*Node, error) {
+	row := p.DB.QueryRowContext(ctx, `
+SELECT id::text, cluster_id::text, name, host_platform, COALESCE(role, 'control'), COALESCE(hostname, ''), revoked_at
+FROM nodes
+WHERE cluster_id=$1 AND revoked_at IS NULL
+ORDER BY CASE WHEN COALESCE(role, '') IN ('', 'control') THEN 0 ELSE 1 END,
+         CASE WHEN name = 'local' THEN 0 ELSE 1 END,
+         enrolled_at ASC
+LIMIT 1`, clusterID)
+	return scanNode(row)
+}
+
+func (p *Postgres) InsertAudit(ctx context.Context, e AuditEvent) error {
+	if len(e.Detail) == 0 {
+		e.Detail = json.RawMessage(`{}`)
+	}
+	actor := any(nil)
+	if e.ActorUserID != "" {
+		actor = e.ActorUserID
+	}
+	cluster := any(nil)
+	if e.ClusterID != "" {
+		cluster = e.ClusterID
+	}
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO audit_events (id, cluster_id, actor_user_id, action, result, remote_addr, detail)
+VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		e.ID, cluster, actor, e.Action, e.Result, nullIfEmpty(e.RemoteAddr), e.Detail)
+	return err
+}
+
+func nullIfEmpty(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
+}

@@ -1,0 +1,134 @@
+package appdb
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/storage"
+)
+
+func TestReconcileStorageMarksUnavailableWithoutDelete(t *testing.T) {
+	m := NewMemory()
+	cluster := uuid.NewString()
+	node := uuid.NewString()
+	poolID := uuid.NewString()
+	volID := uuid.NewString()
+	itemID := uuid.NewString()
+	_ = m.CreateCluster(context.Background(), Cluster{ID: cluster, Name: "local"})
+	_ = m.CreateStoragePool(context.Background(), StoragePool{
+		ID: poolID, ClusterID: cluster, NodeID: node, Name: "local",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable, RootPath: "/mnt/data",
+	})
+	_ = m.CreateVolume(context.Background(), Volume{
+		ID: volID, ClusterID: cluster, NodeID: node, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatQCOW2,
+		SizeBytes: 1 << 30, Status: storage.StatusAvailable, BackendType: storage.BackendDirectory,
+		BackendRef: "volumes/vm-disk/" + volID + ".qcow2", CreatedAt: time.Now().UTC(),
+	})
+	_ = m.CreateLibraryItem(context.Background(), LibraryItem{
+		ID: itemID, ClusterID: cluster, NodeID: node, PoolID: poolID, Kind: storage.LibraryISO,
+		DisplayName: "a.iso", BackendRef: "library/iso/" + itemID + ".iso", SizeBytes: 12,
+		ChecksumSHA256: "aa", Status: storage.StatusAvailable,
+	})
+	pools, _ := m.ListStoragePools(context.Background(), cluster)
+	unavail, recovered, err := ReconcileStorage(context.Background(), m, cluster, pools, storage.Observation{
+		Pools: []storage.ObservedPool{{
+			PoolID: poolID, Status: storage.StatusUnavailable, Reason: "pool path is missing",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unavail) != 1 || len(recovered) != 0 {
+		t.Fatalf("unavail=%v recovered=%v", unavail, recovered)
+	}
+	got, _ := m.GetStoragePool(context.Background(), cluster, poolID)
+	if got == nil || got.Status != storage.StatusUnavailable {
+		t.Fatal("pool must remain and be unavailable")
+	}
+	if got.UsableBytes != nil {
+		t.Fatal("unavailable pool must not report zero usable")
+	}
+	vol, _ := m.GetVolume(context.Background(), cluster, volID)
+	if vol == nil || vol.Status != storage.StatusUnavailable {
+		t.Fatal("volume row must remain unavailable")
+	}
+	item, _ := m.GetLibraryItem(context.Background(), cluster, itemID)
+	if item == nil || item.Status != storage.StatusUnavailable {
+		t.Fatal("library row must remain unavailable")
+	}
+}
+
+func TestReconcileStorageKeepsZFSVolumesWhenPoolAvailable(t *testing.T) {
+	m := NewMemory()
+	cluster := uuid.NewString()
+	node := uuid.NewString()
+	poolID := uuid.NewString()
+	volID := uuid.NewString()
+	_ = m.CreateCluster(context.Background(), Cluster{ID: cluster, Name: "local"})
+	_ = m.CreateStoragePool(context.Background(), StoragePool{
+		ID: poolID, ClusterID: cluster, NodeID: node, Name: "tank",
+		BackendType: storage.BackendZFS, Status: storage.StatusAvailable, RootPath: storage.ZFSMountRoot + "/1",
+	})
+	_ = m.CreateVolume(context.Background(), Volume{
+		ID: volID, ClusterID: cluster, NodeID: node, PoolID: poolID,
+		Class: storage.ClassVMDisk, Kind: storage.KindBlock, Format: storage.FormatZvol,
+		SizeBytes: 1 << 30, Status: storage.StatusAvailable, BackendType: storage.BackendZFS,
+		BackendRef: "/dev/zvol/tank/" + volID,
+	})
+	pools, _ := m.ListStoragePools(context.Background(), cluster)
+	_, _, err := ReconcileStorage(context.Background(), m, cluster, pools, storage.Observation{
+		Pools: []storage.ObservedPool{{
+			PoolID: poolID, BackendType: storage.BackendZFS, Status: storage.StatusAvailable,
+			Capabilities: storage.ZFSCapabilities(),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vol, _ := m.GetVolume(context.Background(), cluster, volID)
+	if vol == nil || vol.Status != storage.StatusAvailable {
+		t.Fatalf("zfs volume must stay available: %+v", vol)
+	}
+}
+
+func TestReconcileStoragePersistsRootBacked(t *testing.T) {
+	m := NewMemory()
+	cluster := uuid.NewString()
+	node := uuid.NewString()
+	poolID := uuid.NewString()
+	_ = m.CreateCluster(context.Background(), Cluster{ID: cluster, Name: "local"})
+	_ = m.CreateStoragePool(context.Background(), StoragePool{
+		ID: poolID, ClusterID: cluster, NodeID: node, Name: "local",
+		BackendType: storage.BackendDirectory, Status: storage.StatusAvailable,
+		RootPath: "/var/lib/ndl/storage/local", Backing: []byte(`{"fs_uuid":"ROOTFS"}`),
+	})
+	pools, _ := m.ListStoragePools(context.Background(), cluster)
+	_, _, err := ReconcileStorage(context.Background(), m, cluster, pools, storage.Observation{
+		Pools: []storage.ObservedPool{{
+			PoolID: poolID, Status: storage.StatusWarning,
+			Backing: storage.BackingIdentity{
+				FSUUID: "ROOTFS", FSType: "ext4", MountPoint: "/", Device: "/dev/sda1",
+				Dev: 1, RootBacked: true,
+			},
+			Warnings: []string{storage.WarnRootFilesystem},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := m.GetStoragePool(context.Background(), cluster, poolID)
+	if got == nil {
+		t.Fatal("pool missing")
+	}
+	var backing storage.BackingIdentity
+	if err := json.Unmarshal(got.Backing, &backing); err != nil {
+		t.Fatal(err)
+	}
+	if !backing.RootBacked || backing.MountPoint != "/" {
+		t.Fatalf("root_backed must persist: %+v", backing)
+	}
+}

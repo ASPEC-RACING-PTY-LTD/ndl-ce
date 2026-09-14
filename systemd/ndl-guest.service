@@ -1,0 +1,15 @@
+[Unit]
+Description=No-dal Guest Agent
+Documentation=https://no-dal.com
+After=sysinit.target
+DefaultDependencies=yes
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/ndl-guest
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

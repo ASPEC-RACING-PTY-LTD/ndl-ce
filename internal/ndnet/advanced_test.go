@@ -1,0 +1,279 @@
+package ndnet
+
+import (
+	"context"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+func TestVLANAccessPortVID20(t *testing.T) {
+	id := uuid.NewString()
+	netID := uuid.NewString()
+	bridge, err := BridgeName(netID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := testEngine(t, testHost())
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, NetworkID: netID, VID: 20,
+		ParentIfName: bridge, BridgeName: bridge, Mode: VLANAccess, AccessIfName: "eth1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.VID != 20 || res.Status != StatusAvailable || res.RollbackArmed {
+		t.Fatalf("%+v", res)
+	}
+	joined := strings.Join(res.Argv, " ")
+	if !strings.Contains(joined, "vid 20") || !strings.Contains(joined, "pvid") || strings.Contains(joined, "bash") {
+		t.Fatal(joined)
+	}
+	body := ""
+	for _, f := range res.Files {
+		body += f.Body
+	}
+	if !strings.Contains(body, "Id=20") || !strings.Contains(body, "Kind=vlan") {
+		t.Fatal(body)
+	}
+}
+
+func TestVLANAddRefusesInvalidModeAndParent(t *testing.T) {
+	e := testEngine(t, testHost())
+	id := uuid.NewString()
+	_, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20, ParentIfName: "eth1", Mode: "foo",
+	})
+	if err == nil || !strings.Contains(err.Error(), "vlan mode must be access or trunk") {
+		t.Fatalf("mode: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20,
+	})
+	if err == nil || !strings.Contains(err.Error(), "vlan parent interface is required") {
+		t.Fatalf("parent: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20, ParentIfName: "eth1;rm",
+	})
+	if err == nil || !strings.Contains(err.Error(), "vlan parent interface is required") {
+		t.Fatalf("ifname: %v", err)
+	}
+}
+
+func TestVLANOnManagementRequiresConfirmAndWatchdogWins(t *testing.T) {
+	e := testEngine(t, testHost())
+	e.Probe = func() error { return os.ErrInvalid }
+	id := uuid.NewString()
+	_, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20, ParentIfName: "eth0", AccessIfName: "eth0",
+	})
+	if err == nil || !strings.Contains(err.Error(), "typed interface") {
+		t.Fatalf("expected confirm, got %v", err)
+	}
+	before, _ := os.ReadDir(e.networkDir())
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionVLANAdd, ObjectID: id, VID: 20, ParentIfName: "eth0", ConfirmIfName: "eth0",
+	})
+	if err != nil && res.RolledBack {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.RollbackArmed {
+		t.Fatal("watchdog must arm when VLAN touches management")
+	}
+	_ = before
+}
+
+func TestBondActiveBackupShown(t *testing.T) {
+	e := testEngine(t, testHost())
+	id := uuid.NewString()
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: BondActiveBackup, Members: []string{"eth1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Locator == "" || res.Mode != BondActiveBackup || res.Status != StatusAvailable {
+		t.Fatalf("%+v", res)
+	}
+	body := ""
+	for _, f := range res.Files {
+		body += f.Body
+	}
+	if !strings.Contains(body, "Kind=bond") || !strings.Contains(body, "Mode=active-backup") {
+		t.Fatal(body)
+	}
+	if res.RollbackArmed {
+		t.Fatal("bonding extra NIC must not arm management rollback")
+	}
+}
+
+func TestBondAddRefusesInvalidModeAndMembers(t *testing.T) {
+	e := testEngine(t, testHost())
+	id := uuid.NewString()
+	_, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: "foo", Members: []string{"eth1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond mode must be active-backup or 802.3ad") {
+		t.Fatalf("mode: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: BondActiveBackup,
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond requires at least one member interface") {
+		t.Fatalf("empty members: %v", err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: BondActiveBackup, Members: []string{"eth1;rm"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond member interface name is not valid") {
+		t.Fatalf("ifname: %v", err)
+	}
+	bondIf, err := BondName(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionBondAdd, ObjectID: id, Name: "uplink", Mode: BondActiveBackup, Members: []string{bondIf},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bond member cannot be the bond locator") {
+		t.Fatalf("self member: %v", err)
+	}
+}
+
+func TestPolicyDeniesPairAndRefusesManagementINPUT(t *testing.T) {
+	src := "02:00:00:00:00:01"
+	dst := "02:00:00:00:00:02"
+	rules, err := RenderBridgePolicy(uuid.NewString(), "deny", src, dst, "eth0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rules, "table bridge") || !strings.Contains(rules, "drop") || !strings.Contains(rules, src) {
+		t.Fatal(rules)
+	}
+	if strings.Contains(strings.ToLower(rules), "hook input") {
+		t.Fatal(rules)
+	}
+	if err := RefuseManagementINPUT("table inet x { chain input { type filter hook input priority 0; policy drop; } }", "eth0"); err == nil {
+		t.Fatal("management INPUT")
+	}
+	e := testEngine(t, testHost())
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionPolicyApply, ObjectID: uuid.NewString(), PolicyAction: "deny", SrcMAC: src, DstMAC: dst,
+	})
+	if err != nil || res.Status != StatusUnavailable {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if !strings.Contains(res.Reason, "host commands skipped") {
+		t.Fatalf("SkipHostCmds must not invent nft success: %+v", res)
+	}
+}
+
+func TestPolicyApplyRefusesInvalidActionAndSameMAC(t *testing.T) {
+	src := "02:00:00:00:00:01"
+	dst := "02:00:00:00:00:02"
+	_, err := RenderBridgePolicy(uuid.NewString(), "foo", src, dst, "eth0")
+	if err == nil || !strings.Contains(err.Error(), "policy action must be deny or allow") {
+		t.Fatalf("action: %v", err)
+	}
+	_, err = RenderBridgePolicy(uuid.NewString(), "deny", src, src, "eth0")
+	if err == nil || !strings.Contains(err.Error(), "policy source and destination must differ") {
+		t.Fatalf("same mac: %v", err)
+	}
+}
+
+func TestPolicyApplyRendersFullSetInOneTable(t *testing.T) {
+	src := "02:00:00:00:00:01"
+	mid := "02:00:00:00:00:02"
+	dst := "02:00:00:00:00:03"
+	idA := uuid.NewString()
+	idB := uuid.NewString()
+	e := testEngine(t, testHost())
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionPolicyApply, ObjectID: idA, PolicyAction: "deny", SrcMAC: src, DstMAC: mid,
+		Policies: []PolicyRule{
+			{ID: idA, Action: "deny", SrcMAC: src, DstMAC: mid},
+			{ID: idB, Action: "deny", SrcMAC: src, DstMAC: dst},
+		},
+	})
+	if err != nil || res.Status != StatusUnavailable {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if strings.Count(res.NFT, "table bridge") != 1 {
+		t.Fatalf("one table replace, got %s", res.NFT)
+	}
+	if !strings.Contains(res.NFT, src) || !strings.Contains(res.NFT, mid) || !strings.Contains(res.NFT, dst) {
+		t.Fatalf("full set missing MACs: %s", res.NFT)
+	}
+	if !strings.Contains(res.NFT, "ndl-policy-"+idA) || !strings.Contains(res.NFT, "ndl-policy-"+idB) {
+		t.Fatalf("full set missing policy comments: %s", res.NFT)
+	}
+}
+
+func TestOverlayPrepRefusesInvalidVNI(t *testing.T) {
+	e := testEngine(t, testHost())
+	_, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionOverlayPrep, ObjectID: uuid.NewString(), OverlayVNI: 0,
+	})
+	if err == nil || !strings.Contains(err.Error(), "overlay vni is invalid") {
+		t.Fatalf("vni 0: %v", err)
+	}
+}
+
+func TestOverlayIsPrepNotClusterFabric(t *testing.T) {
+	e := testEngine(t, testHost())
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{
+		Action: ActionOverlayPrep, ObjectID: uuid.NewString(), OverlayVNI: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Reason, "Phase 30") {
+		t.Fatal(res.Reason)
+	}
+}
+
+func TestApplyAdvancedNetworkDelete(t *testing.T) {
+	e := testEngine(t, testHost())
+	id := uuid.NewString()
+	if _, err := e.Apply(context.Background(), Spec{NetworkID: id, Name: "iso", Kind: KindIsolated}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.ApplyAdvanced(context.Background(), AdvancedOp{Action: ActionNetworkDelete, NetworkID: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Action != ActionNetworkDelete || res.Reason != "deleted" {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestDeleteRefusesLANBridge(t *testing.T) {
+	e := testEngine(t, testHost())
+	err := e.Delete(context.Background(), Spec{NetworkID: uuid.NewString(), Kind: KindLANBridge, Name: "lan"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be deleted") {
+		t.Fatalf("lan delete: %v", err)
+	}
+}
+
+func TestLANBridgeWatchdogStillWins(t *testing.T) {
+	host := testHost()
+	e := testEngine(t, host)
+	e.Probe = func() error { return os.ErrInvalid }
+	before, _ := os.ReadDir(e.networkDir())
+	_, err := e.Apply(context.Background(), Spec{
+		NetworkID: uuid.NewString(), Name: "lan", Kind: KindLANBridge, UplinkIfName: "eth0", ConfirmIfName: "eth0",
+	})
+	if err == nil {
+		t.Fatal("expected probe failure")
+	}
+	after, _ := os.ReadDir(e.networkDir())
+	if len(after) != len(before) {
+		t.Fatalf("watchdog must restore: before=%d after=%d", len(before), len(after))
+	}
+}

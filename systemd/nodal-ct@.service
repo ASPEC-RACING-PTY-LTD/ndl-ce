@@ -1,0 +1,25 @@
+[Unit]
+Description=No-dal system container %i
+Documentation=https://no-dal.com
+After=nodal-workloads.target
+# Supervised by systemd. Do not bind to ndl-control or ndl-agent.
+
+[Service]
+# Foreground monitor. Type=forking plus lxc-start -d loses the main PID
+# and systemd immediately runs ExecStop.
+Type=simple
+ExecStartPre=/usr/lib/ndl/ndl-ct-prepare %i
+ExecStart=/usr/bin/lxc-start -P /var/lib/ndl/runtime/lxc -n %i -F
+# Ignore lxc-stop when the guest is already gone. Without this, a clean
+# init exit or a stop of a dead container marks the unit failed and the
+# control plane reports "nodal-ct unit failed" even though the guest
+# simply stopped.
+ExecStop=-/usr/bin/lxc-stop -P /var/lib/ndl/runtime/lxc -n %i --timeout 30
+KillMode=mixed
+Restart=no
+Delegate=yes
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=nodal-workloads.target

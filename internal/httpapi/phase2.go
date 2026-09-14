@@ -1,0 +1,483 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/inventory"
+	"github.com/no-dal/ndl-ce/internal/metrics"
+	"github.com/no-dal/ndl-ce/internal/rbac"
+)
+
+func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.NodeRead)
+	if err != nil {
+		return
+	}
+	nodes, err := s.Store.ListClusterNodes(r.Context(), p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	redact := redactViewer(p)
+	items := []map[string]any{}
+	seenNames := map[string]struct{}{}
+	for i := range nodes {
+		n := nodes[i]
+		if n.RevokedAt != nil {
+			continue
+		}
+		inv, _ := s.Store.GetInventory(r.Context(), n.ID)
+		items = append(items, s.nodeSummary(&n, inv, redact))
+		seenNames[n.Name] = struct{}{}
+	}
+	remotes, _ := s.Store.ListRemoteNodes(r.Context(), p.User.ClusterID)
+	now := s.now()
+	for _, remote := range remotes {
+		if _, ok := seenNames[remote.Name]; ok {
+			continue
+		}
+		items = append(items, remoteNodeJSON(remote, now))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) getNode(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.NodeRead)
+	if err != nil {
+		return
+	}
+	node, inv, err := s.cachedNode(r, p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	id := r.PathValue("id")
+	if node != nil && node.ID == id {
+		writeJSON(w, http.StatusOK, s.nodeSummary(node, inv, redactViewer(p)))
+		return
+	}
+	member, err := s.Store.GetNodeByID(r.Context(), p.User.ClusterID, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if member != nil {
+		minv, _ := s.Store.GetInventory(r.Context(), member.ID)
+		writeJSON(w, http.StatusOK, s.nodeSummary(member, minv, redactViewer(p)))
+		return
+	}
+	remote, err := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if remote == nil {
+		writeErr(w, http.StatusNotFound, "node not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, remoteNodeJSON(*remote, s.now()))
+}
+
+func (s *Server) nodeHardware(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.NodeRead)
+	if err != nil {
+		return
+	}
+	node, inv, err := s.cachedNode(r, p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if node == nil || node.ID != r.PathValue("id") {
+		writeErr(w, http.StatusNotFound, "node not found")
+		return
+	}
+	if inv == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "collecting",
+			"stale":   false,
+			"message": "Collecting",
+		})
+		return
+	}
+	payload := inv.Payload
+	if parsed, ok := decodeInv(inv); ok {
+		parsed.Stale = inv.Stale
+		if redactViewer(p) {
+			parsed = inventory.RedactForViewer(parsed)
+		}
+		if b, err := json.Marshal(parsed); err == nil {
+			payload = b
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"node_id":     node.ID,
+		"observed_at": inv.ObservedAt.UTC().Format(time.RFC3339),
+		"stale":       inv.Stale,
+		"status":      inventoryStatus(inv),
+		"inventory":   json.RawMessage(payload),
+	})
+}
+
+func (s *Server) nodeCapabilities(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.NodeRead)
+	if err != nil {
+		return
+	}
+	node, inv, err := s.cachedNode(r, p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if node == nil || node.ID != r.PathValue("id") {
+		writeErr(w, http.StatusNotFound, "node not found")
+		return
+	}
+	caps := []inventory.Capability{}
+	if parsed, ok := decodeInv(inv); ok {
+		caps = parsed.Capabilities
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"node_id":      node.ID,
+		"stale":        inv != nil && inv.Stale,
+		"capabilities": caps,
+	})
+}
+
+func (s *Server) nodeMetrics(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.MetricsRead)
+	if err != nil {
+		return
+	}
+	node, inv, err := s.cachedNode(r, p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if node == nil || node.ID != r.PathValue("id") {
+		writeErr(w, http.StatusNotFound, "node not found")
+		return
+	}
+	if s.Observer == nil {
+		writeJSON(w, http.StatusOK, metrics.QueryResult{Status: metrics.StatusUnavailable, Series: []metrics.Series{}})
+		return
+	}
+	if inv != nil && inv.Stale {
+		writeJSON(w, http.StatusOK, metrics.QueryResult{Status: metrics.StatusStale, Series: []metrics.Series{}})
+		return
+	}
+	from, to := parseWindow(r)
+	res, err := s.Observer.GetMetrics(r.Context(), from, to)
+	if err != nil {
+		writeJSON(w, http.StatusOK, metrics.QueryResult{Status: metrics.StatusUnavailable, Series: []metrics.Series{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, filterHostMetrics(res))
+}
+
+func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.NodeRead)
+	if err != nil {
+		return
+	}
+	ops, err := s.Store.ListOperations(r.Context(), p.User.ClusterID, 50)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if ops == nil {
+		ops = []appdb.Operation{}
+	}
+	items := make([]map[string]any, 0, len(ops))
+	for _, op := range ops {
+		item := map[string]any{
+			"id":         op.ID,
+			"kind":       op.Kind,
+			"state":      op.State,
+			"stage":      op.Stage,
+			"message":    op.Message,
+			"created_at": op.CreatedAt.UTC().Format(time.RFC3339),
+			"updated_at": op.UpdatedAt.UTC().Format(time.RFC3339),
+		}
+		if op.Progress != nil {
+			item["progress"] = *op.Progress
+		}
+		if name := operationResourceName(op.Message); name != "" {
+			item["resource_name"] = name
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) listEvents(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.EventsRead)
+	if err != nil {
+		return
+	}
+	events, err := s.Store.ListEvents(r.Context(), p.User.ClusterID, 50)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": encodeEvents(events)})
+}
+
+func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
+	if !s.requireTLS(w, r) {
+		return
+	}
+	p, err := s.require(w, r, rbac.EventsRead)
+	if err != nil {
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "stream unsupported")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	ch := s.Hub.subscribe()
+	if ch != nil {
+		defer s.Hub.unsubscribe(ch)
+	}
+	recent, _ := s.Store.ListEvents(r.Context(), p.User.ClusterID, 10)
+	for i := len(recent) - 1; i >= 0; i-- {
+		writeSSE(w, recent[i])
+	}
+	flusher.Flush()
+	if ch == nil {
+		return
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case e, ok := <-ch:
+			if !ok {
+				return
+			}
+			if e.ClusterID != "" && e.ClusterID != p.User.ClusterID {
+				continue
+			}
+			writeSSE(w, e)
+			flusher.Flush()
+		}
+	}
+}
+
+func writeSSE(w http.ResponseWriter, e appdb.Event) {
+	b, err := json.Marshal(encodeEvent(e))
+	if err != nil {
+		return
+	}
+	_, _ = w.Write([]byte("data: "))
+	_, _ = w.Write(b)
+	_, _ = w.Write([]byte("\n\n"))
+}
+
+func encodeEvents(events []appdb.Event) []map[string]any {
+	if events == nil {
+		return []map[string]any{}
+	}
+	out := make([]map[string]any, 0, len(events))
+	for _, e := range events {
+		out = append(out, encodeEvent(e))
+	}
+	return out
+}
+
+func encodeEvent(e appdb.Event) map[string]any {
+	payload := json.RawMessage(`{}`)
+	if len(e.Payload) > 0 {
+		payload = e.Payload
+	}
+	return map[string]any{
+		"id":         e.ID,
+		"type":       e.Type,
+		"node_id":    e.NodeID,
+		"payload":    payload,
+		"created_at": e.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func (s *Server) cachedNode(r *http.Request, clusterID string) (*appdb.Node, *appdb.HardwareInventory, error) {
+	node, err := s.Store.GetNode(r.Context(), clusterID)
+	if err != nil || node == nil {
+		return node, nil, err
+	}
+	inv, err := s.Store.GetInventory(r.Context(), node.ID)
+	return node, inv, err
+}
+
+func (s *Server) nodeSummary(node *appdb.Node, inv *appdb.HardwareInventory, redact bool) map[string]any {
+	out := map[string]any{
+		"id":           node.ID,
+		"name":         node.Name,
+		"status":       "unknown",
+		"support_tier": "unknown",
+		"role":         node.Role,
+		"hostname":     node.Hostname,
+	}
+	if node.Role == "" {
+		out["role"] = "control"
+	}
+	if node.RevokedAt != nil {
+		out["revoked"] = true
+		out["revoked_at"] = node.RevokedAt.UTC().Format(time.RFC3339)
+		out["status"] = "revoked"
+	}
+	if len(node.HostPlatform) > 0 {
+		var hp struct {
+			SupportTier string `json:"support_tier"`
+			ID          string `json:"id"`
+		}
+		if json.Unmarshal(node.HostPlatform, &hp) == nil {
+			if hp.SupportTier != "" {
+				out["support_tier"] = hp.SupportTier
+			}
+			if hp.ID != "" {
+				out["host_platform"] = hp.ID
+			}
+		}
+	}
+	if parsed, ok := decodeInv(inv); ok {
+		if redact {
+			parsed = inventory.RedactForViewer(parsed)
+		}
+		out["status"] = inventoryStatus(inv)
+		out["stale"] = inv.Stale
+		out["observed_at"] = inv.ObservedAt.UTC().Format(time.RFC3339)
+		out["host_os"] = parsed.Host.PrettyName
+		if out["host_os"] == "" {
+			out["host_os"] = parsed.Host.ID + " " + parsed.Host.VersionID
+		}
+		out["host_id"] = parsed.Host.ID
+		out["host_version_id"] = parsed.Host.VersionID
+		out["cpu_model"] = parsed.CPU.Model
+		out["cpu_sockets"] = parsed.CPU.Sockets
+		out["cpu_cores"] = parsed.CPU.Cores
+		out["cpu_threads"] = parsed.CPU.Threads
+		out["memory_bytes"] = parsed.Memory.TotalBytes
+		out["disk_count"] = len(parsed.BlockDevices)
+		var diskBytes uint64
+		for _, d := range parsed.BlockDevices {
+			diskBytes += d.SizeBytes
+		}
+		out["disk_bytes"] = diskBytes
+		out["nic_count"] = len(parsed.NICs)
+		out["gpu_count"] = len(parsed.GPUs)
+		out["gpu_present"] = len(parsed.GPUs) > 0
+	} else {
+		out["status"] = "collecting"
+	}
+	return out
+}
+
+func decodeInv(inv *appdb.HardwareInventory) (inventory.Inventory, bool) {
+	if inv == nil || len(inv.Payload) == 0 {
+		return inventory.Inventory{}, false
+	}
+	var parsed inventory.Inventory
+	if err := json.Unmarshal(inv.Payload, &parsed); err != nil {
+		return inventory.Inventory{}, false
+	}
+	return parsed, true
+}
+
+func inventoryStatus(inv *appdb.HardwareInventory) string {
+	if inv == nil {
+		return "collecting"
+	}
+	if inv.Stale {
+		return "stale"
+	}
+	return "available"
+}
+
+func redactViewer(p *principal) bool {
+	if p == nil {
+		return true
+	}
+	if rbac.Authorize(p.Grants, rbac.All) {
+		return false
+	}
+	for _, role := range p.Roles {
+		if role == rbac.Admin || role == rbac.Operator {
+			return false
+		}
+	}
+	return true
+}
+
+func parseWindow(r *http.Request) (time.Time, time.Time) {
+	to := time.Now().UTC()
+	from := to.Add(-time.Hour)
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			to = t
+		}
+	}
+	if v := r.URL.Query().Get("from"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			from = t
+		}
+	}
+	if mins := r.URL.Query().Get("minutes"); mins != "" {
+		if n, err := strconv.Atoi(mins); err == nil && n > 0 {
+			from = to.Add(-time.Duration(n) * time.Minute)
+		}
+	}
+	return from, to
+}
+
+func filterHostMetrics(res metrics.QueryResult) metrics.QueryResult {
+	out := metrics.QueryResult{Status: res.Status, Series: make([]metrics.Series, 0, len(res.Series))}
+	for _, ser := range res.Series {
+		if strings.HasPrefix(ser.Name, metrics.WorkloadMetricPrefix) {
+			continue
+		}
+		out.Series = append(out.Series, ser)
+	}
+	return out
+}
+
+func filterWorkloadMetrics(res metrics.QueryResult, id string) metrics.QueryResult {
+	prefix := metrics.WorkloadMetricPrefix + strings.TrimSpace(id) + "."
+	out := metrics.QueryResult{Status: metrics.StatusCollecting, Series: make([]metrics.Series, 0, 3)}
+	for _, ser := range res.Series {
+		if strings.HasPrefix(ser.Name, prefix) {
+			out.Series = append(out.Series, ser)
+		}
+	}
+	if len(out.Series) == 0 {
+		for _, name := range metrics.WorkloadMetricNames(id) {
+			out.Series = append(out.Series, metrics.Series{Name: name, Status: metrics.StatusCollecting, Unit: "", Points: nil})
+		}
+		return out
+	}
+	out.Status = res.Status
+	return out
+}
+
+func operationResourceName(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" || (!strings.HasPrefix(message, "{") && !strings.HasPrefix(message, "[")) {
+		return ""
+	}
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(message), &rec); err != nil {
+		return ""
+	}
+	if name, ok := rec["name"].(string); ok {
+		return strings.TrimSpace(name)
+	}
+	return ""
+}

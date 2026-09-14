@@ -1,0 +1,487 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/ai"
+	"github.com/no-dal/ndl-ce/internal/appdb"
+)
+
+func TestPhase42PlanInstallDatabaseIsExistingAPI(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "node-02"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"install a database on node-02"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("plan %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), `"/api/v1/workloads"`) || !strings.Contains(string(raw), `"create_workload"`) {
+		t.Fatalf("expected existing API %s", raw)
+	}
+	if strings.Contains(strings.ToLower(string(raw)), "host.exec") || strings.Contains(string(raw), `"exec"`) {
+		t.Fatalf("exec in plan %s", raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := plan["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+id+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("confirm required %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+id+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) {
+		t.Fatalf("approve without pool/image must fail closed %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "partial plan failure") {
+		t.Fatalf("expected validation stop %s", raw)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), cluster.ID)
+	for _, wl := range wls {
+		if wl.Status == "pending" && wl.ImagePin == "" {
+			t.Fatalf("naked pending row %s kind=%s", wl.ID, wl.Kind)
+		}
+	}
+	if len(wls) != 0 {
+		t.Fatalf("create validation must not insert a workload, got %d", len(wls))
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"run host.exec to wipe disks"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("exec plan %d %s", res.StatusCode, raw)
+	}
+}
+
+func TestPhase42AskProfileCannotOperateAndPartialStops(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "node-02"})
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/profiles", strings.NewReader(`{"name":"reader","mode":"ask","grants":["events.read","metrics.read"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("ask profile %d %s", res.StatusCode, raw)
+	}
+	var askProf map[string]any
+	_ = json.Unmarshal(raw, &askProf)
+	askID, _ := askProf["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"install a database on node-02","profile_id":"`+askID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusForbidden || !strings.Contains(string(raw), "ask profile cannot operate") {
+		t.Fatalf("ask profile POST /ai/plans %d %s", res.StatusCode, raw)
+	}
+	if plans, _ := mem.ListAIPlans(context.Background(), cluster.ID, 20); len(plans) != 0 {
+		t.Fatalf("ask profile must not record a mutate plan, got %d", len(plans))
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/profiles", strings.NewReader(`{"name":"limited","mode":"operate","grants":["events.read","metrics.read","compute.create"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var opProf map[string]any
+	_ = json.Unmarshal(raw, &opProf)
+	opID, _ := opProf["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"install a database on node-02 and restart it","profile_id":"`+opID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("two step plan %d %s", res.StatusCode, raw)
+	}
+	var two map[string]any
+	_ = json.Unmarshal(raw, &two)
+	twoID, _ := two["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+twoID+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) {
+		t.Fatalf("partial %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "missing permissions") {
+		t.Fatalf("expected permission stop %s", raw)
+	}
+
+	audits, _ := mem.ListAuditEvents(context.Background(), cluster.ID, 20)
+	found := false
+	for _, a := range audits {
+		if a.Action == "ai.plan.approve" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("audit must remain after partial failure")
+	}
+}
+
+func TestPhase42StoreInstallWithoutIDStops(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	plan := appdb.AIPlan{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Prompt: "install store app",
+		Status: appdb.PlanPreview, ActorType: ai.ActorTypeAI,
+	}
+	steps := []appdb.AIPlanStep{{
+		ID: uuid.NewString(), ClusterID: cluster.ID, PlanID: plan.ID, Ordinal: 1,
+		Action: ai.ActionInstallStore, Permission: "store.install",
+		Method: "POST", Path: "/api/v1/workloads", Title: "install",
+		BodyJSON: `{"name":"app"}`, Status: appdb.PlanPreview,
+	}}
+	if err := mem.CreateAIPlan(context.Background(), plan, steps); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan.ID+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) {
+		t.Fatalf("store install %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "store install must use POST /api/v1/store/apps/{id}/install") {
+		t.Fatalf("expected store install API error %s", raw)
+	}
+}
+
+func TestPhase42PolicyPlanUsesAutomationValidation(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := plan["id"].(string)
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+id+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"succeeded"`) {
+		t.Fatalf("approve policy %d %s", res.StatusCode, raw)
+	}
+	storedPlan, err := mem.GetAIPlan(context.Background(), cluster.ID, id)
+	if err != nil || storedPlan == nil || storedPlan.Status != appdb.PlanSucceeded {
+		t.Fatalf("plan row %+v %v", storedPlan, err)
+	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/tasks", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"kind":"ai.create_policy"`) || !strings.Contains(string(raw), `"state":"succeeded"`) {
+		t.Fatalf("ai plan task must finish %d %s", res.StatusCode, raw)
+	}
+	pols, _ := mem.ListPolicies(context.Background(), cluster.ID)
+	if len(pols) != 1 || pols[0].Kind != "storage_pressure" || pols[0].Action != "enqueue_migrate_low_priority" {
+		t.Fatalf("policy %+v", pols)
+	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/policies", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(listed), `"name":"storage pressure"`) {
+		t.Fatalf("policy list %d %s", res.StatusCode, listed)
+	}
+
+	nameless := appdb.AIPlan{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Prompt: "nameless policy",
+		Status: appdb.PlanPreview, ActorType: ai.ActorTypeAI,
+	}
+	namelessSteps := []appdb.AIPlanStep{{
+		ID: uuid.NewString(), ClusterID: cluster.ID, PlanID: nameless.ID, Ordinal: 1,
+		Action: ai.ActionCreatePolicy, Permission: "policy.apply",
+		Method: "POST", Path: "/api/v1/policies", Title: "policy",
+		BodyJSON: `{"kind":"storage_pressure","action":"enqueue_migrate_low_priority","threshold_percent":85}`,
+		Status:   appdb.PlanPreview,
+	}}
+	if err := mem.CreateAIPlan(context.Background(), nameless, namelessSteps); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+nameless.ID+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) || !strings.Contains(string(raw), "name is required") {
+		t.Fatalf("nameless policy must use the HTTP handler %d %s", res.StatusCode, raw)
+	}
+
+	bad := appdb.AIPlan{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Prompt: "bad policy",
+		Status: appdb.PlanPreview, ActorType: ai.ActorTypeAI,
+	}
+	badSteps := []appdb.AIPlanStep{{
+		ID: uuid.NewString(), ClusterID: cluster.ID, PlanID: bad.ID, Ordinal: 1,
+		Action: ai.ActionCreatePolicy, Permission: "policy.apply",
+		Method: "POST", Path: "/api/v1/policies", Title: "policy",
+		BodyJSON: `{"name":"exec","kind":"storage_pressure","action":"host.exec","threshold_percent":85}`,
+		Status:   appdb.PlanPreview,
+	}}
+	if err := mem.CreateAIPlan(context.Background(), bad, badSteps); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+bad.ID+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"status":"stopped"`) {
+		t.Fatalf("banned policy action %d %s", res.StatusCode, raw)
+	}
+	pols, _ = mem.ListPolicies(context.Background(), cluster.ID)
+	if len(pols) != 1 {
+		t.Fatalf("banned action must not insert a second policy %d", len(pols))
+	}
+}
+
+func TestExistingAPIErrorNoStatusIsFailure(t *testing.T) {
+	s, _, _ := testServer(t)
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/workloads", nil)
+	code, raw := s.invokeExistingAPI(r, func(http.ResponseWriter, *http.Request) {}, http.MethodPost, "/api/v1/workloads", []byte(`{}`), "")
+	if err := existingAPIError(code, raw); err == nil {
+		t.Fatal("silent handler")
+	}
+	if err := existingAPIError(http.StatusCreated, []byte(`{"id":"x"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if existingAPIID([]byte(`{"name":"x"}`), "id") != "" {
+		t.Fatal("missing id")
+	}
+}
+
+type failUpdateAIPlanStore struct {
+	appdb.Store
+}
+
+func (f failUpdateAIPlanStore) UpdateAIPlan(context.Context, appdb.AIPlan) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase42ApproveFailsClosedWhenPlanPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpdateAIPlanStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string)+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("plan persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record AI plan") {
+		t.Fatalf("plan persist body %s", raw)
+	}
+}
+
+type silentUpdateAIPlanStore struct {
+	appdb.Store
+}
+
+func (silentUpdateAIPlanStore) UpdateAIPlan(context.Context, appdb.AIPlan) error {
+	return nil
+}
+
+func TestPhase42ApproveFailsClosedWhenPlanPersistDoesNotWrite(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = silentUpdateAIPlanStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string)+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("silent plan persist %d %s", res.StatusCode, raw)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string), nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	gotRaw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("get plan %d %s", res.StatusCode, gotRaw)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(gotRaw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["status"] != appdb.PlanPreview {
+		t.Fatalf("GET must keep preview after silent persist %+v", got)
+	}
+}
+
+func TestPhase42ApproveFailsClosedWhenTaskPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/ai/plans", strings.NewReader(`{"prompt":"If this storage pool exceeds 85%, move eligible low-priority workloads"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("policy plan %d %s", res.StatusCode, raw)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failUpsertOperationStore{Store: mem}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/ai/plans/"+plan["id"].(string)+"/approve", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(confirmHeader, ai.ApproveConfirm)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("task persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), `"status":"stopped"`) || !strings.Contains(string(raw), "could not record AI plan task") {
+		t.Fatalf("task persist body %s", raw)
+	}
+	s.Store = mem
+	stored, err := mem.GetAIPlan(context.Background(), cluster.ID, plan["id"].(string))
+	if err != nil || stored == nil || stored.Status != appdb.PlanStopped {
+		t.Fatalf("plan row %+v %v", stored, err)
+	}
+	pols, _ := mem.ListPolicies(context.Background(), cluster.ID)
+	if len(pols) != 0 {
+		t.Fatalf("task persist must not execute the step %+v", pols)
+	}
+	ops, err := mem.ListOperations(context.Background(), cluster.ID, 50)
+	if err != nil || len(ops) != 0 {
+		t.Fatalf("invented AI plan task %+v %v", ops, err)
+	}
+}

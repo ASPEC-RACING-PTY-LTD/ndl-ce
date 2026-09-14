@@ -1,0 +1,184 @@
+package agentrpc
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/no-dal/ndl-ce/internal/iojail"
+)
+
+type termRequest struct {
+	TargetKind string
+	TargetID   string
+	JailRoot   string
+	CWD        string
+	LXCPath    string
+}
+
+type termSession interface {
+	Read(p []byte) (int, error)
+	Write(p []byte) (int, error)
+	Resize(rows, cols uint16) error
+	CWD() (string, bool)
+	Pong() error
+	Done() <-chan struct{}
+	Close()
+}
+
+func startTermSession(ctx context.Context, h *Handler, req termRequest) (termSession, error) {
+	switch strings.TrimSpace(req.TargetKind) {
+	case "docker":
+		return startDockerExec(ctx, h, req)
+	case "vm-guest":
+		return startGuestPTY(ctx, h, req)
+	case "vm":
+		if isGuestJail(req.JailRoot) {
+			return startGuestPTY(ctx, h, req)
+		}
+		return startVMConsole(ctx, req)
+	default:
+		return startPTYSession(ctx, req)
+	}
+}
+
+func hostShellArgv() []string {
+	if _, err := os.Stat("/bin/bash"); err == nil {
+		return []string{"/bin/bash", "-l"}
+	}
+	return []string{"/bin/sh", "-l"}
+}
+
+// ctRootShell starts a root login shell in /root. /bin/login -f is not used:
+// PAM/securetty on unprivileged LXC leaves a blank PTY or exits, which the UI
+// shows as a disconnected terminal.
+const ctRootShell = "cd /root 2>/dev/null; if [ -x /bin/bash ]; then exec /bin/bash --login; fi; exec /bin/sh -l"
+
+func ctAttachArgv(lxcPath, id string) []string {
+	return []string{
+		"/usr/bin/lxc-attach", "-P", lxcPath, "-n", id,
+		"--clear-env",
+		"-v", "TERM=xterm-256color",
+		"-v", "LANG=C.UTF-8",
+		"-v", "HOME=/root",
+		"-v", "USER=root",
+		"-v", "LOGNAME=root",
+		"-v", "SHELL=/bin/bash",
+		"--", "/bin/sh", "-c", ctRootShell,
+	}
+}
+
+func termArgv(req termRequest) ([]string, error) {
+	kind := strings.TrimSpace(req.TargetKind)
+	mode := strings.TrimSpace(req.CWD)
+	switch kind {
+	case "", iojail.TargetHost, "node":
+		return hostShellArgv(), nil
+	case iojail.TargetCT, "workload", "system-container-console":
+		if strings.TrimSpace(req.TargetID) == "" {
+			return nil, fmt.Errorf("target_id is required")
+		}
+		lxcPath := req.LXCPath
+		if lxcPath == "" {
+			lxcPath = "/var/lib/ndl/runtime/lxc"
+		}
+		if kind == "system-container-console" || mode == "console" {
+			return []string{"/usr/bin/lxc-console", "-P", lxcPath, "-n", req.TargetID}, nil
+		}
+		return ctAttachArgv(lxcPath, req.TargetID), nil
+	default:
+		return nil, fmt.Errorf("unsupported terminal target %q", kind)
+	}
+}
+
+func allowlisted(argv []string) error {
+	if len(argv) == 0 {
+		return fmt.Errorf("empty argv")
+	}
+	switch argv[0] {
+	case "/bin/bash", "/bin/sh", "/usr/bin/lxc-attach", "/usr/bin/lxc-console":
+		return nil
+	default:
+		return fmt.Errorf("binary is not on the terminal allowlist")
+	}
+}
+
+func hostStartDir(root, cwd string) (string, error) {
+	if cwd == "" || cwd == "/" || cwd == "console" {
+		if root == "/" {
+			return "/", nil
+		}
+		return root, nil
+	}
+	f, abs, err := iojail.OpenBeneath(root, cwd, os.O_RDONLY, 0)
+	if err != nil {
+		if root == "/" {
+			return "/", nil
+		}
+		return root, nil
+	}
+	info, err := f.Stat()
+	_ = f.Close()
+	if err != nil || !info.IsDir() {
+		return root, nil
+	}
+	return abs, nil
+}
+
+// jailRelCWD maps a host-visible /proc cwd into a path beneath the
+// workload jail. Guest jails already report guest paths.
+func jailRelCWD(jail, cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return "/"
+	}
+	if isGuestJail(jail) {
+		if !strings.HasPrefix(cwd, "/") {
+			return "/" + cwd
+		}
+		return cwd
+	}
+	jail = filepath.Clean(jail)
+	cleaned := filepath.Clean(cwd)
+	if jail == "/" {
+		return filepath.ToSlash(cleaned)
+	}
+	rel, err := filepath.Rel(jail, cleaned)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(cleaned)
+	}
+	if rel == "." {
+		return "/"
+	}
+	return "/" + filepath.ToSlash(rel)
+}
+
+func cwdTick() <-chan time.Time {
+	return time.After(2 * time.Second)
+}
+
+type closedTerm struct {
+	err error
+	ch  chan struct{}
+}
+
+func newClosedTerm(err error) *closedTerm {
+	ch := make(chan struct{})
+	close(ch)
+	return &closedTerm{err: err, ch: ch}
+}
+
+func (c *closedTerm) Read([]byte) (int, error)  { return 0, c.err }
+func (c *closedTerm) Write([]byte) (int, error) { return 0, c.err }
+func (c *closedTerm) Resize(uint16, uint16) error {
+	return c.err
+}
+func (c *closedTerm) CWD() (string, bool) { return "", false }
+func (c *closedTerm) Pong() error         { return c.err }
+func (c *closedTerm) Done() <-chan struct{} {
+	return c.ch
+}
+func (c *closedTerm) Close() {}

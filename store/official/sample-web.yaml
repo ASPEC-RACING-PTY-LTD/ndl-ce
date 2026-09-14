@@ -1,0 +1,28 @@
+apiVersion: nodal.store/v1
+name: sample-web
+version: "1.0.0"
+class: official
+title: Sample Web
+summary: Official sample OCI application installed from a Store manifest only.
+resources:
+  cpu: 1
+  memory_bytes: 268435456
+storage:
+  - name: data
+    persistent: true
+devices:
+  gpu:
+    optional: true
+ports:
+  - container: 80
+    host: 8080
+deployment:
+  kind: oci
+  image: docker.io/library/caddy:2.8.4
+hooks:
+  backup: existing-backup-api
+  restore: existing-restore-api
+ai_actions:
+  - id: restart
+    title: Restart
+    declaration: Calls compute restart. Not executed by the Store.

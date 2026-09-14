@@ -1,0 +1,518 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/oci"
+)
+
+func TestPhase36OfficialSampleInstallsFromManifest(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _, _ := phase22Ready(t)
+	_ = s
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+	if listed.Items[0]["name"] != "sample-web" || listed.Items[0]["class"] != "official" {
+		t.Fatalf("%s", raw)
+	}
+
+	body, _ := json.Marshal(map[string]any{"name": "sample-web"})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("install %d %s", res.StatusCode, raw)
+	}
+	var inst map[string]any
+	if err := json.Unmarshal(raw, &inst); err != nil {
+		t.Fatal(err)
+	}
+	if inst["status"] != appdb.StoreInstallOK || inst["workload_id"] == "" || inst["stack_id"] == "" {
+		t.Fatalf("%s", raw)
+	}
+	got, err := mem.GetStoreInstallation(context.Background(), clusterID, inst["id"].(string))
+	if err != nil || got == nil || got.Status != appdb.StoreInstallOK || got.WorkloadID == "" {
+		t.Fatalf("install row %+v %v", got, err)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 1 || wls[0].Kind != oci.KindOCI {
+		t.Fatalf("workloads %+v", wls)
+	}
+	members, err := mem.ListStackMembers(context.Background(), clusterID, inst["stack_id"].(string))
+	if err != nil || len(members) != 1 || members[0].WorkloadID != wls[0].ID {
+		t.Fatalf("stack member workload %+v %v", members, err)
+	}
+}
+
+func TestPhase36RejectRunBashAndRollbackFailedInstall(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _, fo := phase22Ready(t)
+	evil := `
+apiVersion: nodal.store/v1
+name: evil
+version: "1"
+class: community
+deployment:
+  kind: oci
+  image: docker.io/library/caddy:2.8.4
+run: bash
+`
+	body, _ := json.Marshal(map[string]any{"manifest": evil})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/store/apps/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(raw), "run") {
+		t.Fatalf("bash %d %s", res.StatusCode, raw)
+	}
+
+	ok := `
+apiVersion: nodal.store/v1
+name: flaky
+version: "1"
+class: community
+title: Flaky
+deployment:
+  kind: oci
+  image: docker.io/library/caddy:2.8.4
+`
+	body, _ = json.Marshal(map[string]any{"manifest": ok})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("import %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "Unsigned Community") {
+		t.Fatalf("missing unsigned warning %s", raw)
+	}
+	var pkg map[string]any
+	if err := json.Unmarshal(raw, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := pkg["id"].(string)
+	fo.err = errors.New("pull failed")
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(`{"name":"flaky"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode == http.StatusCreated {
+		t.Fatalf("failed install succeeded %s", raw)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 0 {
+		t.Fatalf("rollback left workloads %+v", wls)
+	}
+	stacks, _ := mem.ListStacks(context.Background(), clusterID)
+	if len(stacks) != 0 {
+		t.Fatalf("rollback left stacks %+v", stacks)
+	}
+	_ = s
+}
+
+func TestPhase36InstallHonorsNodeIDAndFailsRemote(t *testing.T) {
+	_, mem, ts, cookie, clusterID, _, _ := phase22Ready(t)
+	control, err := mem.GetNode(context.Background(), clusterID)
+	if err != nil || control == nil {
+		t.Fatal("control node missing")
+	}
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil || len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+	body, _ := json.Marshal(map[string]any{"name": "on-control", "node_id": control.ID})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("install %d %s", res.StatusCode, raw)
+	}
+	var inst map[string]any
+	if err := json.Unmarshal(raw, &inst); err != nil {
+		t.Fatal(err)
+	}
+	if inst["node_id"] != control.ID {
+		t.Fatalf("install node_id %s", raw)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 1 || wls[0].NodeID != control.ID {
+		t.Fatalf("workload node %+v", wls)
+	}
+
+	worker := appdb.Node{ID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", ClusterID: clusterID, Name: "box-b", Role: "worker"}
+	if err := mem.UpsertNode(context.Background(), worker); err != nil {
+		t.Fatal(err)
+	}
+	body, _ = json.Marshal(map[string]any{"name": "on-worker", "node_id": worker.ID})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusFailedDependency || !strings.Contains(string(raw), destAgentNotConnected) {
+		t.Fatalf("remote %d %s", res.StatusCode, raw)
+	}
+	wls, _ = mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 1 || wls[0].NodeID != control.ID {
+		t.Fatalf("remote install must not create or move %+v", wls)
+	}
+}
+
+func TestPhase36RollbackDeletesVolumes(t *testing.T) {
+	_, mem, ts, cookie, clusterID, poolID, fo := phase22Ready(t)
+	ok := `
+apiVersion: nodal.store/v1
+name: vol-flaky
+version: "1"
+class: community
+title: Flaky volumes
+deployment:
+  kind: oci
+  image: docker.io/library/caddy:2.8.4
+storage:
+  - name: data
+    persistent: true
+`
+	body, _ := json.Marshal(map[string]any{"manifest": ok})
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/store/apps/import", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("import %d %s", res.StatusCode, raw)
+	}
+	var pkg map[string]any
+	if err := json.Unmarshal(raw, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := pkg["id"].(string)
+	fo.err = errors.New("pull failed")
+	instBody, _ := json.Marshal(map[string]any{"name": "vol-flaky", "pool_id": poolID})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(instBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode == http.StatusCreated {
+		t.Fatalf("failed install succeeded %s", raw)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 0 {
+		t.Fatalf("rollback left workloads %+v", wls)
+	}
+	stacks, _ := mem.ListStacks(context.Background(), clusterID)
+	if len(stacks) != 0 {
+		t.Fatalf("rollback left stacks %+v", stacks)
+	}
+	vols, _ := mem.ListVolumes(context.Background(), clusterID, "")
+	if len(vols) != 0 {
+		t.Fatalf("rollback left volumes %+v", vols)
+	}
+}
+
+type failUpdateStackMemberStore struct {
+	appdb.Store
+}
+
+func (f failUpdateStackMemberStore) UpdateStackMember(context.Context, appdb.StackMember) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase36InstallFailsClosedWhenMemberPersistFails(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _, _ := phase22Ready(t)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+	s.Store = failUpdateStackMemberStore{Store: mem}
+
+	body, _ := json.Marshal(map[string]any{"name": "sample-web"})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("member persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record stack member") {
+		t.Fatalf("member persist body %s", raw)
+	}
+	wls, _ := mem.ListWorkloads(context.Background(), clusterID)
+	if len(wls) != 0 {
+		t.Fatalf("member persist left workloads %+v", wls)
+	}
+	stacks, _ := mem.ListStacks(context.Background(), clusterID)
+	if len(stacks) != 0 {
+		t.Fatalf("member persist left stacks %+v", stacks)
+	}
+}
+
+type failUpdateStoreInstallationStore struct {
+	appdb.Store
+}
+
+func (f failUpdateStoreInstallationStore) UpdateStoreInstallation(context.Context, appdb.StoreInstallation) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase36InstallFailsClosedWhenRowPersistFails(t *testing.T) {
+	s, mem, ts, cookie, _, _, _ := phase22Ready(t)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+	s.Store = failUpdateStoreInstallationStore{Store: mem}
+
+	body, _ := json.Marshal(map[string]any{"name": "sample-web"})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("install persist %d %s", res.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "could not record store installation") {
+		t.Fatalf("install persist body %s", raw)
+	}
+}
+
+func TestAssignStoreGPUFailsClosedWhenAgentUnavailable(t *testing.T) {
+	s, mem, _ := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:02:00.0")
+	if err == nil || !strings.Contains(err.Error(), "gpu agent is unavailable") {
+		t.Fatalf("unavailable store gpu %v", err)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("assignment leaked %+v %v", got, listErr)
+	}
+}
+
+func TestAssignStoreGPUFailsClosedWhenAgentFails(t *testing.T) {
+	s, mem, _ := testServer(t)
+	s.GPU = &fakeGPU{err: errors.New("bind failed")}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:02:00.0")
+	if err == nil || !strings.Contains(err.Error(), "bind failed") {
+		t.Fatalf("failed store gpu %v", err)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("assignment leaked %+v %v", got, listErr)
+	}
+}
+
+func TestAssignStoreGPUFailsClosedForMissingGPU(t *testing.T) {
+	s, mem, _ := testServer(t)
+	s.GPU = &fakeGPU{}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:99:00.0")
+	if err == nil || !strings.Contains(err.Error(), "gpu is not present on this node") {
+		t.Fatalf("missing store gpu %v", err)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("GET must not list a GPU GET /gpus would miss: %+v %v", got, listErr)
+	}
+}
+
+func TestAssignStoreGPURecordsInventoryDeviceNodes(t *testing.T) {
+	s, mem, _ := testServer(t)
+	fg := &fakeGPU{}
+	s.GPU = fg
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, gpuInv(), false)
+	id := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: id, ClusterID: cluster.ID, Name: "app", Kind: oci.KindOCI, Status: oci.StatusStopped,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.assignStoreGPU(context.Background(), cluster.ID, id, "0000:02:00.0"); err != nil {
+		t.Fatal(err)
+	}
+	if len(fg.calls) != 1 || len(fg.calls[0].DeviceNodes) == 0 {
+		t.Fatalf("store gpu apply %+v", fg.calls)
+	}
+	got, err := mem.ListGPUAssignments(context.Background(), cluster.ID)
+	if err != nil || len(got) != 1 || got[0].GPUID != "0000:02:00.0" || len(got[0].DeviceNodes) == 0 {
+		t.Fatalf("assignment %+v %v", got, err)
+	}
+}
+
+func TestPhase36StoreInstallFailsClosedForMissingGPU(t *testing.T) {
+	s, mem, ts, cookie, clusterID, _, _ := phase22Ready(t)
+	s.GPU = &fakeGPU{}
+	cluster, _ := mem.GetCluster(context.Background())
+	node, err := mem.GetNode(context.Background(), cluster.ID)
+	if err != nil || node == nil {
+		t.Fatalf("node %v", err)
+	}
+	body, err := json.Marshal(gpuInv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpsertInventory(context.Background(), appdb.HardwareInventory{
+		NodeID: node.ID, ClusterID: cluster.ID, Payload: body,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/store/apps", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, raw)
+	}
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) < 1 {
+		t.Fatalf("official sample missing %s", raw)
+	}
+	id, _ := listed.Items[0]["id"].(string)
+
+	install, _ := json.Marshal(map[string]any{"name": "sample-web", "gpu_id": "0000:99:00.0"})
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/store/apps/"+id+"/install", strings.NewReader(string(install)))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(raw), "gpu is not present on this node") {
+		t.Fatalf("missing gpu install %d %s", res.StatusCode, raw)
+	}
+	got, listErr := mem.ListGPUAssignments(context.Background(), clusterID)
+	if listErr != nil || len(got) != 0 {
+		t.Fatalf("GET /workloads/id/gpus must not list a GPU GET /gpus would miss: %+v %v", got, listErr)
+	}
+}
+
+func TestRemapBusyHostPortsDropsBoundControlPort(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	got := remapBusyHostPorts([]oci.Port{
+		{ContainerPort: 80, HostPort: port, Protocol: "tcp"},
+		{ContainerPort: 81, HostPort: 0, Protocol: "tcp"},
+	})
+	if len(got) != 2 || got[0].HostPort != 0 || got[0].ContainerPort != 80 {
+		t.Fatalf("busy host port must be remapped: %+v", got)
+	}
+	if got[1].HostPort != 0 || got[1].ContainerPort != 81 {
+		t.Fatalf("zero host port must stay zero: %+v", got)
+	}
+}

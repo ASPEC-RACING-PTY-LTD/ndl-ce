@@ -1,0 +1,16 @@
+FROM debian:13
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    systemd systemd-sysv dbus curl ca-certificates iproute2 hostname openssl \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* \
+  && systemctl mask \
+    systemd-udevd.service \
+    systemd-udevd-kernel.socket \
+    systemd-udevd-control.socket \
+    dev-hugepages.mount \
+    sys-fs-fuse-connections.mount \
+    systemd-firstboot.service
+STOPSIGNAL SIGRTMIN+3
+CMD ["/lib/systemd/systemd"]

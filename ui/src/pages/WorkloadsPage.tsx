@@ -1,0 +1,257 @@
+import { useEffect, useMemo, useState } from "react";
+import { bulkDeleteWorkloads, listWorkloads } from "../api/client";
+import type { Workload } from "../api/phase5";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
+import { Link } from "../components/Link";
+import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
+import { StatusBadge } from "../components/StatusBadge";
+import { formatBytes } from "../format";
+import { kindLabel, osLabel } from "../labels";
+import { canMutate } from "../rbac";
+import { useSession } from "../session";
+
+const containerKind = "system-container";
+
+function isContainer(w: Workload): boolean {
+  return w.kind === containerKind;
+}
+
+export function WorkloadsPage() {
+  const session = useSession();
+  const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const mutate = canMutate(roles);
+  const [items, setItems] = useState<Workload[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState<{ id: string; name?: string; ok: boolean; error?: string }[] | null>(null);
+
+  async function reload() {
+    const listed = await listWorkloads();
+    setItems(listed.items ?? []);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void listWorkloads()
+      .then((listed) => {
+        if (!cancelled) {
+          setItems(listed.items ?? []);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unavailable");
+          setItems([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const list = items ?? [];
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      return list;
+    }
+    return list.filter((w) => w.name.toLowerCase().includes(q) || (w.kind ?? "").toLowerCase().includes(q));
+  }, [items, query]);
+
+  const selectable = useMemo(() => filtered.filter(isContainer), [filtered]);
+  const selectedItems = useMemo(
+    () => selectable.filter((w) => selected.includes(w.id)),
+    [selectable, selected],
+  );
+  const allSelected = selectable.length > 0 && selectedItems.length === selectable.length;
+
+  function toggle(id: string) {
+    setSelected((cur) => (cur.includes(id) ? cur.filter((n) => n !== id) : [...cur, id]));
+  }
+
+  async function onConfirmDelete() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await bulkDeleteWorkloads(selectedItems.map((w) => w.id));
+      setResults(res.results ?? []);
+      setConfirmOpen(false);
+      setSelected([]);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Bulk delete failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const headers = mutate
+    ? [
+        <input
+          key="all"
+          type="checkbox"
+          aria-label="Select all"
+          checked={allSelected}
+          disabled={selectable.length === 0}
+          onChange={(e) => setSelected(e.target.checked ? selectable.map((w) => w.id) : [])}
+        />,
+        "Name",
+        "Type",
+        "Status",
+        "Image",
+        "IPv4",
+        "Memory",
+      ]
+    : ["Name", "Type", "Status", "Image", "IPv4", "Memory"];
+
+  return (
+    <section className="page" aria-labelledby="workloads-heading">
+      <PageHeader
+        id="workloads-heading"
+        title="Workloads"
+        kicker="System containers and virtual machines on this node."
+        actions={
+          mutate ? (
+            <div className="btn-row is-flush">
+              <Link className="btn btn-primary" href="/workloads/new/system-container">
+                <Icon name="create" size={14} />
+                Create system container
+              </Link>
+              <Link className="btn btn-secondary" href="/workloads/new/oci">
+                Create OCI
+              </Link>
+              <Link className="btn btn-secondary" href="/workloads/new/vm">
+                Create VM
+              </Link>
+              <Link className="btn btn-ghost" href="/workloads/import">
+                Import VM
+              </Link>
+              <Link className="btn btn-ghost" href="/stacks">
+                Stacks
+              </Link>
+              <Link className="btn btn-ghost" href="/templates">
+                Templates
+              </Link>
+            </div>
+          ) : null
+        }
+      />
+      {error ? <ErrorState>{error}</ErrorState> : null}
+      {results ? (
+        <div className="banner" role="status">
+          <p>
+            Deleted {results.filter((r) => r.ok).length} of {results.length} containers.
+          </p>
+          <ul>
+            {results.map((r) => (
+              <li key={r.id}>
+                {r.name || r.id}: {r.ok ? "deleted" : r.error || "failed"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <div className="stack">
+        <div className="toolbar">
+          <label className="search-field">
+            <Icon name="search" size={14} />
+            <input
+              className="field-input"
+              type="search"
+              placeholder="Search by name"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search workloads"
+            />
+          </label>
+          {mutate && selectedItems.length > 0 ? (
+            <button className="btn btn-danger" type="button" disabled={busy} onClick={() => setConfirmOpen(true)}>
+              Delete selected
+            </button>
+          ) : null}
+        </div>
+        <ResourceTable
+          headers={headers}
+          numeric={mutate ? [6] : [5]}
+          empty={
+            loading ? (
+              <LoadingState label="Loading workloads" />
+            ) : (
+            <EmptyState title={query.trim() ? "No matching workloads" : "No workloads yet"}>
+              {query.trim()
+                ? "Nothing matches that search."
+                : mutate
+                  ? "Create a VM or system container when a usable storage pool and guest network are available."
+                  : "No workloads are visible yet. Creating them requires operator or admin."}
+            </EmptyState>
+            )
+          }
+          rows={filtered.map((w) => {
+            const cells = [
+              <Link key="name" href={`/workloads/${w.id}`}>
+                {w.name}
+              </Link>,
+              <span key="kind" className="type-cell">
+                <Icon name="workloads" size={14} />
+                {kindLabel(w.kind)}
+              </span>,
+              <span key="st">
+                <StatusBadge status={w.status} />
+                {w.status === "warning" || w.status === "failed" ? ` ${w.reason || ""}` : ""}
+              </span>,
+              osLabel(w.image_pin),
+              w.nics?.[0]?.ipv4 || "Not reported",
+              formatBytes(w.memory_bytes),
+            ];
+            if (!mutate) {
+              return cells;
+            }
+            return [
+              isContainer(w) ? (
+                <input
+                  key="sel"
+                  type="checkbox"
+                  aria-label={`Select ${w.name}`}
+                  checked={selected.includes(w.id)}
+                  onChange={() => toggle(w.id)}
+                />
+              ) : (
+                <span key="sel" />
+              ),
+              ...cells,
+            ];
+          })}
+        />
+      </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete containers"
+        confirmLabel="Delete"
+        danger
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => void onConfirmDelete()}
+      >
+        <p>
+          Delete {selectedItems.length} container{selectedItems.length === 1 ? "" : "s"}? This cannot be undone.
+        </p>
+        <ul>
+          {selectedItems.map((w) => (
+            <li key={w.id}>{w.name}</li>
+          ))}
+        </ul>
+      </ConfirmDialog>
+    </section>
+  );
+}

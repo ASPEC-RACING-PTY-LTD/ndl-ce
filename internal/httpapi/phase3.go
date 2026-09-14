@@ -1,0 +1,665 @@
+package httpapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/rbac"
+	"github.com/no-dal/ndl-ce/internal/storage"
+)
+
+// StorageRPC is the privileged agent surface for Directory storage.
+type StorageRPC interface {
+	CreateDirectoryPool(ctx context.Context, req storage.CreatePoolRequest, existing []string) (storage.CreatePoolResult, error)
+	CreateDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) (storage.CreateVolumeResult, error)
+	DestroyDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error
+	ResizeDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error
+	GetStorage(ctx context.Context, hints []storage.PoolHint) (storage.Observation, error)
+	UploadLibrary(ctx context.Context, begin storage.BeginUploadRequest, hint storage.PoolHint, r io.Reader, expectedSHA string) (storage.UploadResult, error)
+}
+
+func (s *Server) listPools(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageRead)
+	if err != nil {
+		return
+	}
+	s.refreshStorage(r.Context(), p.User.ClusterID)
+	pools, err := s.Store.ListStoragePools(r.Context(), p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]map[string]any, 0, len(pools))
+	for _, pool := range pools {
+		items = append(items, poolJSON(pool))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "default_path": storage.DefaultPoolPath})
+}
+
+func (s *Server) createPool(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StoragePoolCreate)
+	if err != nil {
+		return
+	}
+	var req struct {
+		Name    string `json:"name"`
+		Path    string `json:"path"`
+		Create  *bool  `json:"create"`
+		Backend string `json:"backend_type"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		req.Name = storage.DefaultPoolName
+	}
+	if req.Path == "" {
+		req.Path = storage.DefaultPoolPath
+	}
+	if req.Backend != "" && req.Backend != storage.BackendDirectory && req.Backend != storage.BackendZFS && req.Backend != storage.BackendLVM && req.Backend != storage.BackendNFS && req.Backend != storage.BackendSMB && req.Backend != storage.BackendISCSI && req.Backend != storage.BackendDistributed {
+		writeErr(w, http.StatusBadRequest, "unsupported storage backend")
+		return
+	}
+	if req.Backend == storage.BackendZFS {
+		writeErr(w, http.StatusBadRequest, "create a ZFS pool with POST /api/v1/storage/zfs/create or import with POST /api/v1/storage/zfs/import")
+		return
+	}
+	if req.Backend == storage.BackendLVM {
+		writeErr(w, http.StatusBadRequest, "create an LVM-thin pool with POST /api/v1/storage/lvm/create")
+		return
+	}
+	if req.Backend == storage.BackendNFS || req.Backend == storage.BackendSMB || req.Backend == storage.BackendISCSI {
+		writeErr(w, http.StatusBadRequest, "create a network datastore with POST /api/v1/storage/nfs, /api/v1/storage/smb, or /api/v1/storage/iscsi")
+		return
+	}
+	if req.Backend == storage.BackendDistributed {
+		writeErr(w, http.StatusBadRequest, "attach distributed storage with POST /api/v1/storage/distributed")
+		return
+	}
+	node, err := s.Store.GetNode(r.Context(), p.User.ClusterID)
+	if err != nil || node == nil {
+		writeErr(w, http.StatusFailedDependency, "local node is not enrolled")
+		return
+	}
+	if s.Storage == nil {
+		writeErr(w, http.StatusBadGateway, "storage agent is unavailable")
+		return
+	}
+	existing, _ := s.Store.ListStoragePools(r.Context(), p.User.ClusterID)
+	var roots []string
+	for _, pool := range existing {
+		roots = append(roots, pool.RootPath)
+	}
+	create := true
+	if req.Create != nil {
+		create = *req.Create
+	}
+	poolID := uuid.NewString()
+	op := s.startOp(r.Context(), p.User.ClusterID, node.ID, "pool.create", "validating", 10)
+	res, err := s.Storage.CreateDirectoryPool(r.Context(), storage.CreatePoolRequest{
+		PoolID: poolID, Name: req.Name, RootPath: req.Path, Create: create,
+	}, roots)
+	if err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.pool.create", "denied", err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	backing, _ := json.Marshal(res.Backing)
+	caps, _ := json.Marshal(res.Capabilities)
+	row := appdb.StoragePool{
+		ID: poolID, ClusterID: p.User.ClusterID, NodeID: node.ID, Name: req.Name,
+		BackendType: storage.BackendDirectory, Status: res.Status, RootPath: res.RootPath,
+		Backing: backing, Warnings: res.Warnings, WarningText: res.WarningText,
+		Capabilities: caps, UsableBytes: res.Capacity.UsableBytes, AllocatedBytes: res.Capacity.AllocatedBytes,
+		ProvisionedBytes: res.Capacity.ProvisionedBytes, TotalBytes: res.Capacity.TotalBytes, Adopted: res.Adopted,
+	}
+	if err := s.Store.CreateStoragePool(r.Context(), row); err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		writeErr(w, http.StatusConflict, "could not record storage pool")
+		return
+	}
+	s.finishOp(r.Context(), op, "succeeded", "directory pool created", 100)
+	s.audit(r, p.User.ClusterID, p.User.ID, "storage.pool.create", "ok", poolID)
+	s.emitEvent(r.Context(), p.User.ClusterID, node.ID, "storage.pool.created", map[string]string{"pool_id": poolID})
+	writeJSON(w, http.StatusCreated, poolJSON(row))
+}
+
+func (s *Server) getPool(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageRead)
+	if err != nil {
+		return
+	}
+	s.refreshStorage(r.Context(), p.User.ClusterID)
+	pool, err := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil || pool == nil {
+		writeErr(w, http.StatusNotFound, "pool not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, poolJSON(*pool))
+}
+
+func (s *Server) listVolumes(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageRead)
+	if err != nil {
+		return
+	}
+	s.refreshStorage(r.Context(), p.User.ClusterID)
+	items, err := s.Store.ListVolumes(r.Context(), p.User.ClusterID, r.URL.Query().Get("pool_id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, v := range items {
+		out = append(out, volumeJSON(v))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+func (s *Server) createVolume(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageVolumeCreate)
+	if err != nil {
+		return
+	}
+	var req struct {
+		PoolID string `json:"pool_id"`
+		Class  string `json:"class"`
+		Size   int64  `json:"size_bytes"`
+		Format string `json:"format"`
+	}
+	if err := readJSON(r, &req); err != nil || req.PoolID == "" {
+		writeErr(w, http.StatusBadRequest, "pool_id, class, and size_bytes are required")
+		return
+	}
+	pool, err := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, req.PoolID)
+	if err != nil || pool == nil {
+		writeErr(w, http.StatusNotFound, "pool not found")
+		return
+	}
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+		writeErr(w, http.StatusConflict, "storage pool is unavailable")
+		return
+	}
+	if !storage.ValidClass(req.Class) {
+		writeErr(w, http.StatusBadRequest, "storage class is unsupported")
+		return
+	}
+	if invalidVolumeSize(pool.BackendType, req.Class, req.Size) {
+		writeErr(w, http.StatusBadRequest, storage.ErrInvalidSize.Error())
+		return
+	}
+	if pool.BackendType == storage.BackendZFS {
+		row, err := s.createZFSVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, volumeJSON(row))
+		return
+	}
+	if pool.BackendType == storage.BackendLVM {
+		row, err := s.createLVMVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, volumeJSON(row))
+		return
+	}
+	if pool.BackendType == storage.BackendISCSI {
+		row, err := s.createISCSIVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
+		if err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, volumeJSON(row))
+		return
+	}
+	if pool.BackendType == storage.BackendDistributed {
+		row, err := s.createDistributedVolume(r.Context(), p.User.ClusterID, *pool, req.Class, req.Size)
+		if err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", row.ID)
+		writeJSON(w, http.StatusCreated, volumeJSON(row))
+		return
+	}
+	if s.Storage == nil {
+		writeErr(w, http.StatusBadGateway, "storage agent is unavailable")
+		return
+	}
+	volID := uuid.NewString()
+	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
+	op := s.startOp(r.Context(), p.User.ClusterID, pool.NodeID, "volume.create", "allocating", 20)
+	res, err := s.Storage.CreateDirectoryVolume(r.Context(), storage.CreateVolumeRequest{
+		VolumeID: volID, PoolID: pool.ID, RootPath: pool.RootPath, Class: req.Class, Size: req.Size, Format: req.Format,
+	}, hint)
+	if err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "denied", err.Error())
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	row := appdb.Volume{
+		ID: volID, ClusterID: p.User.ClusterID, NodeID: pool.NodeID, PoolID: pool.ID,
+		Class: res.Handle.Class, Kind: res.Handle.Kind, Format: res.Handle.Format, SizeBytes: req.Size,
+		Status: storage.StatusAvailable, BackendType: res.Handle.BackendType, BackendRef: res.Handle.BackendRef,
+		XattrState: res.XattrState, AllocatedBytes: &res.Allocated,
+	}
+	if pool.BackendType == storage.BackendNFS || pool.BackendType == storage.BackendSMB {
+		row.BackendType = pool.BackendType
+	}
+	if err := s.Store.CreateVolume(r.Context(), row); err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		writeErr(w, http.StatusConflict, "could not record volume")
+		return
+	}
+	s.finishOp(r.Context(), op, "succeeded", "volume created", 100)
+	s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", volID)
+	s.emitEvent(r.Context(), p.User.ClusterID, pool.NodeID, "storage.volume.created", map[string]string{"volume_id": volID})
+	writeJSON(w, http.StatusCreated, volumeJSON(row))
+}
+
+func (s *Server) getVolume(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageRead)
+	if err != nil {
+		return
+	}
+	s.refreshStorage(r.Context(), p.User.ClusterID)
+	v, err := s.Store.GetVolume(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil || v == nil {
+		writeErr(w, http.StatusNotFound, "volume not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, volumeJSON(*v))
+}
+
+func (s *Server) listImages(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageRead)
+	if err != nil {
+		return
+	}
+	s.refreshStorage(r.Context(), p.User.ClusterID)
+	items, err := s.Store.ListLibraryItems(r.Context(), p.User.ClusterID, r.URL.Query().Get("pool_id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, libraryJSON(item))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageImageUpload)
+	if err != nil {
+		return
+	}
+	if s.Storage == nil {
+		writeErr(w, http.StatusBadGateway, "storage agent is unavailable")
+		return
+	}
+	poolID, kind, display, body, closer, err := readUpload(r)
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	pool, err := s.Store.GetStoragePool(r.Context(), p.User.ClusterID, poolID)
+	if err != nil || pool == nil {
+		writeErr(w, http.StatusNotFound, "pool not found")
+		return
+	}
+	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
+		writeErr(w, http.StatusConflict, "storage pool is unavailable")
+		return
+	}
+	if err := refuseDirectoryCopyDest(pool.BackendType); err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	itemID := uuid.NewString()
+	hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
+	existingItems, _ := s.Store.ListLibraryItems(r.Context(), p.User.ClusterID, pool.ID)
+	var reject []string
+	for _, item := range existingItems {
+		if item.ChecksumSHA256 != "" {
+			reject = append(reject, item.ChecksumSHA256)
+		}
+	}
+	op := s.startOp(r.Context(), p.User.ClusterID, pool.NodeID, "image.upload", "receiving", 15)
+	res, err := s.Storage.UploadLibrary(r.Context(), storage.BeginUploadRequest{
+		ItemID: itemID, PoolID: pool.ID, Kind: kind, DisplayName: display, MaxBytes: storage.DefaultLibraryMax,
+		RejectChecksums: reject,
+	}, hint, body, "")
+	if err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.image.upload", "denied", err.Error())
+		if errors.Is(err, storage.ErrDuplicate) {
+			writeErr(w, http.StatusConflict, "an identical image already exists in this pool")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if existing, _ := s.Store.GetLibraryByChecksum(r.Context(), pool.ID, res.SHA256); existing != nil {
+		s.finishOp(r.Context(), op, "succeeded", "duplicate checksum", 100)
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.image.upload", "ok", existing.ID)
+		writeJSON(w, http.StatusOK, libraryJSON(*existing))
+		return
+	}
+	row := appdb.LibraryItem{
+		ID: res.ItemID, ClusterID: p.User.ClusterID, NodeID: pool.NodeID, PoolID: pool.ID,
+		Kind: res.Kind, DisplayName: res.DisplayName, BackendRef: res.BackendRef,
+		SizeBytes: res.SizeBytes, ChecksumSHA256: res.SHA256, Status: storage.StatusAvailable,
+	}
+	if err := s.Store.CreateLibraryItem(r.Context(), row); err != nil {
+		s.finishOp(r.Context(), op, "failed", err.Error(), 0)
+		writeErr(w, http.StatusConflict, "could not record library item")
+		return
+	}
+	s.finishOp(r.Context(), op, "succeeded", "image uploaded", 100)
+	s.audit(r, p.User.ClusterID, p.User.ID, "storage.image.upload", "ok", row.ID)
+	s.emitEvent(r.Context(), p.User.ClusterID, pool.NodeID, "storage.image.uploaded", map[string]string{"item_id": row.ID})
+	writeJSON(w, http.StatusCreated, libraryJSON(row))
+}
+
+func (s *Server) getImage(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.StorageRead)
+	if err != nil {
+		return
+	}
+	s.refreshStorage(r.Context(), p.User.ClusterID)
+	item, err := s.Store.GetLibraryItem(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil || item == nil {
+		writeErr(w, http.StatusNotFound, "image not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, libraryJSON(*item))
+}
+
+func readUpload(r *http.Request) (poolID, kind, display string, body io.Reader, closer func(), err error) {
+	r.Body = http.MaxBytesReader(nil, r.Body, storage.DefaultLibraryMax)
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/") {
+		file, hdr, ferr := r.FormFile("file")
+		if ferr != nil {
+			return "", "", "", nil, nil, errors.New("file is required")
+		}
+		return strings.TrimSpace(r.FormValue("pool_id")), strings.TrimSpace(r.FormValue("kind")),
+			storage.DisplayName(firstNonEmpty(r.FormValue("filename"), hdr.Filename)),
+			file, func() { _ = file.Close() }, nil
+	}
+	poolID = strings.TrimSpace(r.URL.Query().Get("pool_id"))
+	kind = strings.TrimSpace(r.URL.Query().Get("kind"))
+	display = storage.DisplayName(r.URL.Query().Get("filename"))
+	if poolID == "" || kind == "" {
+		return "", "", "", nil, nil, errors.New("pool_id and kind are required")
+	}
+	return poolID, kind, display, r.Body, nil, nil
+}
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func (s *Server) refreshStorage(ctx context.Context, clusterID string) {
+	pools, err := s.Store.ListStoragePools(ctx, clusterID)
+	if err != nil || len(pools) == 0 {
+		return
+	}
+	var dir, zfs, lvm, ds, dist []appdb.StoragePool
+	for _, p := range pools {
+		switch p.BackendType {
+		case storage.BackendZFS:
+			zfs = append(zfs, p)
+		case storage.BackendLVM:
+			lvm = append(lvm, p)
+		case storage.BackendNFS, storage.BackendSMB, storage.BackendISCSI:
+			ds = append(ds, p)
+		case storage.BackendDistributed:
+			dist = append(dist, p)
+		default:
+			dir = append(dir, p)
+		}
+	}
+	if s.Storage != nil && len(dir) > 0 {
+		obs, err := s.Storage.GetStorage(ctx, appdb.PoolHints(dir))
+		if err == nil {
+			_, _, _ = appdb.ReconcileStorage(ctx, s.Store, clusterID, dir, obs)
+		}
+	}
+	if len(zfs) > 0 {
+		s.refreshZFS(ctx, clusterID, zfs)
+	}
+	if len(lvm) > 0 {
+		s.refreshLVM(ctx, clusterID, lvm)
+	}
+	if len(ds) > 0 {
+		s.refreshDatastores(ctx, clusterID, ds)
+	}
+	if len(dist) > 0 {
+		s.refreshDistributed(ctx, clusterID, dist)
+	}
+}
+
+func (s *Server) refreshZFS(ctx context.Context, clusterID string, pools []appdb.StoragePool) {
+	obs := storage.Observation{}
+	for _, p := range pools {
+		res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
+			Action: "observe", PoolID: p.ID, Name: s.zfsPoolName(ctx, p), GUID: zfsGUID(ctx, s.Store, p.ID),
+		})
+		seen := storage.ObservedPool{
+			PoolID: p.ID, BackendType: storage.BackendZFS, RootPath: p.RootPath,
+			Status: storage.StatusUnavailable, Capabilities: storage.ZFSCapabilities(),
+		}
+		if err != nil {
+			seen.Reason = err.Error()
+		} else {
+			seen.Status = res.Status
+			seen.Reason = res.Reason
+			if res.RootPath != "" {
+				seen.RootPath = res.RootPath
+			}
+			if res.Status != storage.StatusAvailable {
+				seen.Capacity = storage.Capacity{}
+			}
+		}
+		obs.Pools = append(obs.Pools, seen)
+	}
+	_, _, _ = appdb.ReconcileStorage(ctx, s.Store, clusterID, pools, obs)
+}
+
+func zfsGUID(ctx context.Context, st appdb.Store, poolID string) string {
+	z, _ := st.GetZFSPool(ctx, poolID)
+	if z == nil {
+		return ""
+	}
+	return z.ZPoolGUID
+}
+
+func persistOpCtx(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
+}
+
+func (s *Server) startOp(ctx context.Context, clusterID, nodeID, kind, stage string, progress int) appdb.Operation {
+	op := appdb.Operation{
+		ID: uuid.NewString(), ClusterID: clusterID, NodeID: nodeID, Kind: kind,
+		State: "running", Stage: stage, Progress: &progress, UpdatedAt: time.Now().UTC(),
+	}
+	if err := s.Store.UpsertOperation(persistOpCtx(ctx), op); err != nil {
+		log.Printf("operation start persist %s %s: %v", op.Kind, op.ID, err)
+	}
+	return op
+}
+
+func (s *Server) finishOp(ctx context.Context, op appdb.Operation, state, message string, progress int) {
+	op.State = state
+	op.Progress = &progress
+	op.Message = mergeOpMessage(op.Message, message, state)
+	if state == "succeeded" {
+		op.Stage = "done"
+	}
+	op.UpdatedAt = time.Now().UTC()
+	if err := s.Store.UpsertOperation(persistOpCtx(ctx), op); err != nil {
+		log.Printf("operation finish persist %s %s %s: %v", op.Kind, op.ID, state, err)
+	}
+}
+
+func looksLikeCreateIDs(message string) bool {
+	return strings.Contains(message, `"workload_id"`)
+}
+
+type opMessage struct {
+	WorkloadID string `json:"workload_id,omitempty"`
+	VolumeID   string `json:"volume_id,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+func parseOpMessage(raw string) opMessage {
+	var out opMessage
+	if looksLikeCreateIDs(raw) {
+		_ = json.Unmarshal([]byte(raw), &out)
+	}
+	return out
+}
+
+func mergeOpMessage(prev, next, state string) string {
+	ids := parseOpMessage(prev)
+	more := parseOpMessage(next)
+	if more.WorkloadID != "" {
+		ids.WorkloadID = more.WorkloadID
+	}
+	if more.VolumeID != "" {
+		ids.VolumeID = more.VolumeID
+	}
+	if ids.WorkloadID == "" && ids.VolumeID == "" {
+		return next
+	}
+	if state == "failed" {
+		errText := strings.TrimSpace(next)
+		if looksLikeCreateIDs(next) {
+			errText = more.Error
+		}
+		ids.Error = errText
+		ids.Message = ""
+	} else {
+		if looksLikeCreateIDs(next) {
+			if more.Message != "" {
+				ids.Message = more.Message
+			} else if more.Error == "" {
+				ids.Message = "created"
+			}
+		} else {
+			ids.Message = next
+		}
+		ids.Error = ""
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return next
+	}
+	return string(b)
+}
+
+func (s *Server) emitEvent(ctx context.Context, clusterID, nodeID, typ string, payload map[string]string) {
+	body, _ := json.Marshal(payload)
+	e := appdb.Event{ID: uuid.NewString(), ClusterID: clusterID, NodeID: nodeID, Type: typ, Payload: body, CreatedAt: time.Now().UTC()}
+	if err := s.Store.InsertEvent(ctx, e); err != nil {
+		return
+	}
+	if s.Hub != nil {
+		s.Hub.Publish(e)
+	}
+}
+
+func poolJSON(p appdb.StoragePool) map[string]any {
+	var caps any = json.RawMessage(`{}`)
+	if len(p.Capabilities) > 0 {
+		caps = json.RawMessage(p.Capabilities)
+	}
+	out := map[string]any{
+		"id": p.ID, "node_id": p.NodeID, "name": p.Name, "backend_type": p.BackendType,
+		"status": p.Status, "reason": p.Reason, "locator": p.RootPath,
+		"warnings": p.Warnings, "warning_text": p.WarningText, "capabilities": caps,
+		"usable_bytes": p.UsableBytes, "allocated_bytes": p.AllocatedBytes,
+		"provisioned_bytes": p.ProvisionedBytes, "total_bytes": p.TotalBytes,
+		"physical_used_bytes": storage.PhysicalUsedBytes(storage.Capacity{
+			TotalBytes: p.TotalBytes, UsableBytes: p.UsableBytes,
+		}),
+		"adopted": p.Adopted, "created_at": p.CreatedAt.UTC().Format(time.RFC3339),
+		"storage_classes": []string{
+			storage.ClassVMDisk, storage.ClassContainerRoot, storage.ClassISO,
+			storage.ClassTemplate, storage.ClassBackupStaging,
+		},
+	}
+	var backing storage.BackingIdentity
+	if len(p.Backing) > 0 {
+		_ = json.Unmarshal(p.Backing, &backing)
+	}
+	if backing.MetadataPercent != nil {
+		out["metadata_percent"] = *backing.MetadataPercent
+	}
+	return out
+}
+
+func volumeJSON(v appdb.Volume) map[string]any {
+	return map[string]any{
+		"id": v.ID, "pool_id": v.PoolID, "class": v.Class, "kind": v.Kind, "format": v.Format,
+		"size_bytes": v.SizeBytes, "status": v.Status, "backend_type": v.BackendType,
+		"backend_ref": v.BackendRef, "xattr_state": v.XattrState, "allocated_bytes": v.AllocatedBytes,
+		"created_at": v.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func invalidVolumeSize(backend, class string, size int64) bool {
+	if size <= 0 || size > storage.MaxVolumeBytes {
+		return true
+	}
+	if class == storage.ClassVMDisk && size < storage.MinBlockBytes {
+		return true
+	}
+	if backend == storage.BackendLVM && size < storage.MinBlockBytes {
+		return true
+	}
+	if backend == storage.BackendDirectory && class == storage.ClassTemplate && size < storage.MinBlockBytes {
+		return true
+	}
+	return false
+}
+
+func libraryJSON(item appdb.LibraryItem) map[string]any {
+	return map[string]any{
+		"id": item.ID, "pool_id": item.PoolID, "kind": item.Kind, "display_name": item.DisplayName,
+		"backend_ref": item.BackendRef, "size_bytes": item.SizeBytes, "checksum_sha256": item.ChecksumSHA256,
+		"status": item.Status, "created_at": item.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}

@@ -1,0 +1,58 @@
+[Unit]
+Description=No-dal node agent
+After=ndl-agent.socket
+Requires=ndl-agent.socket
+Documentation=https://no-dal.com
+# Workloads must not use BindsTo, PartOf, or Requires against this unit.
+
+[Service]
+# Type=simple until the agent calls sd_notify READY=1 from Go.
+# Switch to Type=notify when that lands.
+Type=simple
+User=root
+# Load loop before the agent starts so /dev/loop-control exists for DeviceAllow.
+ExecStartPre=-/sbin/modprobe loop
+ExecStart=/usr/sbin/ndl-agent
+Restart=on-failure
+RestartSec=2
+# The socket unit owns /run/ndl. Do not set RuntimeDirectory=ndl here;
+# a service restart would delete agent.sock.
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE
+DevicePolicy=closed
+DeviceAllow=char-pts rw
+DeviceAllow=/dev/ptmx rw
+DeviceAllow=/dev/pts rw
+DeviceAllow=block-device-mapper r
+DeviceAllow=/dev/mapper r
+DeviceAllow=/dev/loop-control rw
+DeviceAllow=block-loop rw
+DeviceAllow=/dev/net/tun rw
+# CAP_NET_ADMIN is required for isolated-nat nftables.
+# CAP_CHOWN remaps unprivileged container rootfs onto the persisted uid map.
+# CAP_FOWNER is required for dest chmod, lchown, and fchownat on UID-mapped
+# Local Host Migration copies. Without it those calls return EPERM even as
+# root. ndl-control must not gain this capability.
+# CAP_DAC_OVERRIDE writes through uid-mapped container rootfs for Files.
+# CAP_SETUID and CAP_SETGID write /proc/<pid>/{u,g}id_map during typed lxc-attach.
+# CAP_SETFCAP is required since Linux 5.12 to map host uid 0 into the helper
+# user namespace LXC creates for unprivileged cgroup attach (userns_exec_minimal).
+# Without it, lxc-attach fails with "Failed to write uid mapping".
+# CAP_SYS_ADMIN is required for typed lxc-attach setns into mount/pid/net namespaces.
+# CAP_SYS_PTRACE is required to setns into another process's namespaces
+# (PTRACE_MODE_ATTACH_REALCREDS on Debian 13 / Linux 6.12).
+# DevicePolicy stays closed. Attach uses ptmx/pts already allowlisted; cgroup
+# and uid_map writes are not device nodes. block-device-mapper is read-only
+# so Local Host Migration can mount a stopped unprivileged LVM LXC rootfs
+# without chmod or chown of the source.
+# loop-control and block-loop size directory container-root images so a
+# directory pool cannot give a container the whole host filesystem.
+# /dev/net/tun is required to create TAP fds for KVM guests. The VM unit
+# already allowlists tun and kvm; the agent opens the TAP before exec.
+# NoNewPrivileges stays yes. Host-root attach writes uid_map directly and does
+# not need the setuid newuidmap helper.
+# There is still no generic host execution RPC.
+# ExecStop must not stop guest workload units.
+
+[Install]
+WantedBy=multi-user.target

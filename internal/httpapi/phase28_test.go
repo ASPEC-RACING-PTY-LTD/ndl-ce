@@ -1,0 +1,575 @@
+package httpapi
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
+)
+
+func TestPhase28WGPeerAndNotReadyHonesty(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	now := time.Unix(1_700_000_000, 0).UTC()
+	s.Now = func() time.Time { return now }
+
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"worker-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), `"private_key"`) && strings.Contains(string(body), "local") {
+		// worker_private_key is shown once; list bodies must not include private_key.
+	}
+	if !strings.Contains(string(body), "worker_private_key") || !strings.Contains(string(body), "pairing_token") {
+		t.Fatalf("once secrets missing %s", body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "PrivateKey=") {
+		t.Fatal("private key in JSON")
+	}
+	peerID := created["id"].(string)
+	pairing := created["pairing_token"].(string)
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/cluster/wg", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), "worker_private_key") || strings.Contains(string(body), "pairing_token") {
+		t.Fatalf("secrets leaked in list %s", body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(body), `"status":"NotReady"`) {
+		t.Fatalf("expected NotReady before handshake %s", body)
+	}
+
+	sessBody := `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), "NotReady") {
+		t.Fatalf("session without handshake must stay NotReady %d %s", res.StatusCode, body)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("pairing token must be single-use %d %s", res.StatusCode, body)
+	}
+
+	sessBody = `{"peer_id":"` + peerID + `","listen_addr":"10.64.8.2:9444","handshake_unix":1700000000}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("reconnect after pairing consume requires cluster client cert %d %s", res.StatusCode, body)
+	}
+
+	certPEM, _, err := s.ClusterCA.IssueNode("worker-1", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hreq := httptest.NewRequest("POST", "/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	hreq.Header.Set("Content-Type", "application/json")
+	hreq.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, hreq)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"Ready"`) {
+		t.Fatalf("mTLS reconnect %d %s", rec.Code, rec.Body.String())
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(body), `"status":"Ready"`) {
+		t.Fatalf("expected Ready %s", body)
+	}
+
+	s.Now = func() time.Time { return now.Add(3 * time.Minute) }
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(body), `"status":"NotReady"`) {
+		t.Fatalf("stale tunnel must be NotReady %s", body)
+	}
+}
+
+func TestPhase28WGEndpointRefusesCredentials(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"leaky","endpoint":"user:SECRET@203.0.113.8:51820"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("userinfo %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), "SECRET") {
+		t.Fatalf("must not echo leftover secret %s", body)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"ok","endpoint":"203.0.113.8:51820"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("host:port %d %s", res.StatusCode, body)
+	}
+}
+
+func TestPhase28WGCreateFailsClosedForInvalidPortAndAddress(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	cases := []struct {
+		body string
+		want string
+	}{
+		{`{"name":"bad-port","listen_port":70000}`, "wireguard listen port is invalid"},
+		{`{"name":"neg-port","listen_port":-1}`, "wireguard listen port is invalid"},
+		{`{"name":"bad-local","local_address":"not-a-cidr"}`, "wireguard address must be CIDR"},
+		{`{"name":"bad-worker","worker_address":"10.64.8.2"}`, "wireguard address must be CIDR"},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		res, _ := ts.Client().Do(req)
+		body, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), tc.want) {
+			t.Fatalf("%s: %d %s", tc.want, res.StatusCode, body)
+		}
+	}
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/cluster/wg", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	listed, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	for _, name := range []string{"bad-port", "neg-port", "bad-local", "bad-worker"} {
+		if strings.Contains(string(listed), `"name":"`+name+`"`) {
+			t.Fatalf("GET /cluster/wg must not list invalid peer %s: %s", name, listed)
+		}
+	}
+}
+
+func TestPhase28ListenAddrRefusesCredentials(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"leaky-listen"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	peerID := created["id"].(string)
+	pairing := created["pairing_token"].(string)
+
+	sessBody := `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"user:SECRET@10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("userinfo %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), "SECRET") {
+		t.Fatalf("must not echo leftover secret %s", body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if strings.Contains(string(body), "SECRET") {
+		t.Fatalf("listen_addr must not persist credentials %s", body)
+	}
+
+	sessBody = `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("host:port %d %s", res.StatusCode, body)
+	}
+}
+
+func TestPhase28GuestsKeepRunningWhenTunnelDown(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	local := seedNode(t, mem, cluster.ID, debianInv(), false)
+	now := time.Unix(1_700_000_000, 0).UTC()
+	s.Now = func() time.Time { return now }
+	remoteID := uuid.NewString()
+	seen := now
+	_ = mem.CreateRemoteNode(t.Context(), appdb.RemoteNode{
+		ID: remoteID, ClusterID: cluster.ID, Name: "worker-1", Status: ndnet.NodeReady,
+		LastSeenAt: &seen, LastHandshakeUnix: now.Unix(),
+	})
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: uuid.NewString(), ClusterID: cluster.ID, NodeID: remoteID, Name: "keep-running",
+		Kind: "vm", Status: "running", DesiredPower: "running",
+	})
+
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	s.Now = func() time.Time { return now.Add(5 * time.Minute) }
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(body), `"status":"NotReady"`) {
+		t.Fatalf("tunnel down %s", body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(body), `"status":"running"`) {
+		t.Fatalf("guests must keep running %s", body)
+	}
+	if !strings.Contains(string(body), local.ID) && !strings.Contains(string(body), "keep-running") {
+		t.Fatalf("workload missing %s", body)
+	}
+}
+
+func TestPhase28OpenSessionRejectsBadToken(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"w"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var created map[string]any
+	_ = json.Unmarshal(raw, &created)
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(`{"peer_id":"`+created["id"].(string)+`","pairing_token":"nope"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+}
+
+func TestPhase28OpenSessionAcceptsClusterClientCert(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"w"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var created map[string]any
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	peerID, _ := created["id"].(string)
+	certPEM, _, err := s.ClusterCA.IssueNode("n1", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"peer_id":"` + peerID + `","node_id":"n1","listen_addr":"10.64.8.2:9444","handshake_unix":0}`
+	hreq := httptest.NewRequest("POST", "/api/v1/cluster/sessions", strings.NewReader(body))
+	hreq.Header.Set("Content-Type", "application/json")
+	hreq.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, hreq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mTLS session %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+type failCreateRemoteSessionStore struct {
+	appdb.Store
+}
+
+func (f failCreateRemoteSessionStore) CreateRemoteSession(context.Context, appdb.RemoteSession) error {
+	return errors.New("persist failed")
+}
+
+func TestPhase28OpenSessionFailsClosedWhenPersistFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"persist-session"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = failCreateRemoteSessionStore{Store: mem}
+
+	sessBody := `{"peer_id":"` + created["id"].(string) + `","pairing_token":"` + created["pairing_token"].(string) + `","listen_addr":"10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("session persist %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not record cluster session") {
+		t.Fatalf("session persist body %s", body)
+	}
+}
+
+type missUpdateRemoteNodeSessionStore struct {
+	appdb.Store
+}
+
+func (missUpdateRemoteNodeSessionStore) UpdateRemoteNodeSession(context.Context, appdb.RemoteNode) error {
+	return nil
+}
+
+func TestPhase28OpenSessionFailsClosedWhenRemotePersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	now := time.Unix(1_700_000_000, 0).UTC()
+	s.Now = func() time.Time { return now }
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"persist-miss"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	s.Store = missUpdateRemoteNodeSessionStore{Store: mem}
+
+	sessBody := `{"peer_id":"` + created["id"].(string) + `","pairing_token":"` + created["pairing_token"].(string) + `","listen_addr":"10.64.8.2:9444","handshake_unix":1700000000}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("session persist miss %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not record remote node") {
+		t.Fatalf("session persist miss body %s", body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("nodes GET %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), `"status":"Ready"`) {
+		t.Fatalf("GET must not claim Ready after persist miss: %s", body)
+	}
+	if !strings.Contains(string(body), `"status":"NotReady"`) {
+		t.Fatalf("GET must stay NotReady after persist miss: %s", body)
+	}
+}
+
+func TestPhase28OpenSessionFailsClosedWhenPairingConsumeFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Network = fakeNet{}
+	cluster, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/wg/peers", strings.NewReader(`{"name":"pairing-consume"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	peerID := created["id"].(string)
+	pairing := created["pairing_token"].(string)
+
+	usedDir := filepath.Join(s.ClusterCA.Dir, "pairing-used")
+	if err := os.WriteFile(usedDir, []byte("not-a-dir\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sessBody := `{"peer_id":"` + peerID + `","pairing_token":"` + pairing + `","listen_addr":"10.64.8.2:9444"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("pairing consume %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not consume pairing token") {
+		t.Fatalf("pairing consume body %s", body)
+	}
+	if s.ClusterCA.PairingUsed(peerID) {
+		t.Fatal("failed consume must not mark pairing used")
+	}
+
+	if err := os.Remove(usedDir); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("retry after consume restore %d %s", res.StatusCode, body)
+	}
+	if !s.ClusterCA.PairingUsed(peerID) {
+		t.Fatal("successful session must consume pairing token")
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/sessions", strings.NewReader(sessBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("pairing token must stay single-use %d %s", res.StatusCode, body)
+	}
+}

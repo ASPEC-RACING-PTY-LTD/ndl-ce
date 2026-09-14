@@ -1,0 +1,10 @@
+[Unit]
+Description=No-dal management-network rollback watchdog
+Documentation=https://no-dal.com
+# Independent of ndl-control and ndl-agent. Do not add Requires, BindsTo, or PartOf.
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/ndl/ndl-network-rollback
+User=root
+Nice=0

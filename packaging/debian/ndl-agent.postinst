@@ -1,0 +1,127 @@
+#!/bin/sh
+set -e
+
+# Socket ListenStream is owned by group ndl-control. Create the group
+# and service user here so this package can start before ndl-control.
+ensure_group() {
+  if getent group ndl-control >/dev/null; then
+    return
+  fi
+  if command -v addgroup >/dev/null 2>&1; then
+    addgroup --system ndl-control
+    return
+  fi
+  groupadd --system ndl-control
+}
+
+ensure_user() {
+  ensure_group
+  if getent passwd ndl-control >/dev/null; then
+    return
+  fi
+  if command -v adduser >/dev/null 2>&1; then
+    adduser --system --ingroup ndl-control --home /var/lib/ndl \
+      --no-create-home --shell /usr/sbin/nologin \
+      --gecos "No-dal control plane" ndl-control
+    return
+  fi
+  useradd --system --gid ndl-control --home-dir /var/lib/ndl \
+    --no-create-home --shell /usr/sbin/nologin ndl-control
+}
+
+ensure_qemu_group() {
+  if getent group ndl-qemu >/dev/null; then
+    return
+  fi
+  if command -v addgroup >/dev/null 2>&1; then
+    addgroup --system ndl-qemu
+    return
+  fi
+  groupadd --system ndl-qemu
+}
+
+ensure_qemu_user() {
+  ensure_qemu_group
+  if ! getent passwd ndl-qemu >/dev/null; then
+    if command -v adduser >/dev/null 2>&1; then
+      adduser --system --ingroup ndl-qemu --home /var/lib/ndl/runtime/qemu \
+        --no-create-home --shell /usr/sbin/nologin \
+        --gecos "No-dal QEMU" ndl-qemu
+    else
+      useradd --system --gid ndl-qemu --home-dir /var/lib/ndl/runtime/qemu \
+        --no-create-home --shell /usr/sbin/nologin ndl-qemu
+    fi
+  fi
+  mkdir -p /var/lib/ndl/runtime/qemu /var/lib/ndl/workloads /var/lib/ndl/storage
+  chown ndl-qemu:ndl-qemu /var/lib/ndl/runtime/qemu
+  chmod 0751 /var/lib/ndl /var/lib/ndl/workloads /var/lib/ndl/storage /var/lib/ndl/runtime /var/lib/ndl/runtime/qemu
+  if getent group kvm >/dev/null; then
+    if command -v adduser >/dev/null 2>&1; then
+      adduser ndl-qemu kvm
+      return
+    fi
+    usermod -a -G kvm ndl-qemu
+  fi
+}
+
+reload_qemu_apparmor() {
+  if [ ! -f /etc/apparmor.d/usr.bin.qemu-system-x86_64 ]; then
+    return
+  fi
+  if command -v apparmor_parser >/dev/null 2>&1; then
+    apparmor_parser -r /etc/apparmor.d/usr.bin.qemu-system-x86_64 >/dev/null 2>&1 || true
+  fi
+}
+
+reload_lxc_apparmor() {
+  # Drop the obsolete static nesting profile file. Do not unload an
+  # in-kernel copy: running containers may still wear that label until
+  # their next start, which loads LXC's generated nesting profile.
+  rm -f /etc/apparmor.d/lxc/lxc-ndl-nesting
+  if ! command -v apparmor_parser >/dev/null 2>&1; then
+    return
+  fi
+  if [ -f /etc/apparmor.d/lxc-containers ]; then
+    apparmor_parser -r /etc/apparmor.d/lxc-containers >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_root_idmap() {
+  if [ ! -f /etc/subuid ] || ! grep -q '^root:' /etc/subuid; then
+    echo 'root:100000:65536' >> /etc/subuid
+  fi
+  if [ ! -f /etc/subgid ] || ! grep -q '^root:' /etc/subgid; then
+    echo 'root:100000:65536' >> /etc/subgid
+  fi
+}
+
+start_units() {
+  if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    # The system-wide dnsmasq unit would be a second DHCP server on the LAN.
+    systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
+    systemctl mask dnsmasq.service >/dev/null 2>&1 || true
+    # lxc-net would be a second DHCP server on the LAN.
+    systemctl disable --now lxc-net.service >/dev/null 2>&1 || true
+    systemctl mask lxc-net.service >/dev/null 2>&1 || true
+    systemctl enable --now lxcfs.service >/dev/null 2>&1 || true
+    systemctl enable nodal-workloads.target >/dev/null 2>&1 || true
+    systemctl enable ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
+    systemctl start ndl-agent.socket ndl-agent.service >/dev/null 2>&1 || true
+  fi
+}
+
+case "$1" in
+  configure)
+    ensure_user
+    ensure_qemu_user
+    ensure_root_idmap
+    reload_qemu_apparmor
+    reload_lxc_apparmor
+    start_units
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

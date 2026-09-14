@@ -1,0 +1,28 @@
+[Unit]
+Description=No-dal virtual machine %i
+Documentation=https://no-dal.com
+After=nodal-workloads.target
+# Supervised by systemd. Do not bind to ndl-control or ndl-agent.
+
+[Service]
+Type=simple
+User=ndl-qemu
+Group=ndl-qemu
+ExecStart=/usr/sbin/ndl-qemu-launch %i
+# ACPI first. The agent may have already issued system_powerdown.
+ExecStop=/bin/true
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Restart=no
+# Interrupted start must not leak a second instance of this UUID.
+RestartPreventExitStatus=
+NoNewPrivileges=yes
+PrivateTmp=yes
+DevicePolicy=closed
+DeviceAllow=/dev/kvm rw
+DeviceAllow=/dev/net/tun rw
+# No human monitor. QMP and consoles are unix sockets only.
+
+[Install]
+WantedBy=nodal-workloads.target

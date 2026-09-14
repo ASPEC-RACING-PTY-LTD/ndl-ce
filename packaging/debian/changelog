@@ -1,0 +1,763 @@
+nodal (1.0.9) UNRELEASED; urgency=medium
+
+  * System-container delete removes the exclusive root volume row. Postgres
+    previously left unavailable volume leftovers because DeleteVolume hit
+    workload_disks and snapshots foreign keys.
+  * The dashboard shows Collecting instead of 0 running / no events / no
+    pool while the first inventory requests are still in flight.
+
+ -- No-dal <packaging@no-dal.com>  Mon, 14 Sep 2026 10:20:00 +0000
+
+nodal (1.0.8) UNRELEASED; urgency=medium
+
+  * The header task chip only flags failures from the last hour, so old
+    setup-extra errors do not keep a permanent Task failed bang.
+  * Workload detail shows a loading state instead of a fake Workload heading
+    before the row arrives, so Start/Stop/Delete are not missing.
+  * Start and Stop re-enable as soon as the lifecycle call returns. Docker
+    inventory no longer holds those buttons disabled, and the 4s refresh
+    does not re-scan every guest Docker engine.
+  * The workload sidebar follows the live GET status instead of a stale
+    catalog row, so a stopped guest is not shown as Running.
+  * Files shows Loading files instead of This directory is empty while the
+    listing is still in flight.
+
+ -- No-dal <packaging@no-dal.com>  Mon, 14 Sep 2026 10:05:00 +0000
+
+nodal (1.0.7) UNRELEASED; urgency=medium
+
+  * Ignore lxc-stop / ctr kill when a guest is already gone so a clean
+    shutdown is not reported as a failed systemd unit.
+  * Workload delete resets leftover failed systemd units so orphans do not
+    remain after the row is removed.
+  * Add Features reports actual VM and system-container counts instead of
+    always zero.
+  * Create/import wizards default guests onto an isolated network instead of
+    the LAN when one exists. Workload search no longer says the cluster is
+    empty when the query matches nothing. The workloads table shows loading
+    instead of an empty cluster while the first list request is in flight.
+
+ -- No-dal <packaging@no-dal.com>  Mon, 14 Sep 2026 08:50:00 +0000
+
+nodal (1.0.6) UNRELEASED; urgency=medium
+
+  * dest-listen TCP is dest-agent ready without a fresh WireGuard handshake.
+  * Offline CT migrate copies the rootfs to the dest agent and CreateCT there;
+    QEMU incoming is VM-only.
+  * Dest pull_volume downloads HTTP archives and extracts them into a directory.
+  * Restore-as-new prefers a Full artifact and an isolated network, never LAN.
+  * Certification cleanup also deletes leftover run-prefixed Store installs.
+  * Offline CT migrate writes the transfer pack under /var/lib/ndl/control/tmp.
+  * Dest pull_volume and copy_volume do not require a guest UUID.
+  * Dest-owned CT start, apply-spec, delete, and refresh use the dest agent.
+  * OCI/Store delete removes the workload row so leftovers do not stay unavailable.
+  * Dest migrate serves the gzip pack Archive actually writes and advertises the
+    dest-reachable LAN address, not an isolated-nat gateway.
+  * Dest-listen CT migrate/restore apply isolated-nat on the dest host so the
+    guest is not bound to a control-only bridge.
+  * Dest-listen CT start waits for init pid, not dest isolated-nat DHCP.
+  * Certification re-registers dest-listen immediately before migrate/restore.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 13 Sep 2026 08:35:00 +0000
+
+nodal (1.0.5) UNRELEASED; urgency=medium
+
+  * Guest-setup extras reach the agent. CTLifecycle dropped extras, so docker
+    install reported success without installing packages.
+  * Docker extras fail closed if docker info never succeeds.
+  * Certification probes guest docker with lxc-attach, not the host lxc-start PID.
+  * Restore-point listings refresh remote_state after async object upload
+    reaches Protected.
+  * GPU inventory records observed /dev/dri/by-path locators so render assign
+    does not fail with empty device nodes.
+  * nodal-feature-oci Depends on containerd and starts it; signed Store OCI
+    install can pull the official sample.
+  * Store install remaps a host port that is already bound (control plane :8080).
+  * Certification records every gate 01-28 and prefers CERT_NODE_B_ID.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 13 Sep 2026 07:50:00 +0000
+
+nodal (1.0.4) UNRELEASED; urgency=medium
+
+  * Isolated-nat create refuses an overlapping IPv4 subnet.
+  * Certification runs use a unique isolated-nat CIDR so leftover cert nets
+    cannot collide with 10.77.0.0/24.
+  * Alpine system-container first bootstrap uses busybox wget/nslookup/ping
+    instead of Debian getent/python3/apt, so alpine guests can be created.
+  * Isolated and isolated-nat networks can be deleted (API/CLI). LAN-bridge
+    and in-use networks are refused.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 13 Sep 2026 06:50:00 +0000
+
+nodal (1.0.3) UNRELEASED; urgency=medium
+
+  * Control-plane TLS-state read uses a fresh context so upgrades do not
+    fail closed after the 30s boot deadline is consumed by migrate/lease.
+  * Live qcow2 snapshots send snapshot-node-name (required by QEMU 10).
+  * Offline migrate copies Directory volumes onto a worker that has not
+    registered its own local pool, using the cluster default path.
+  * Live qcow2 overlay parents are group-writable by ndl-qemu so QMP can
+    create snapshot files on Directory pools.
+  * Guest Docker extras retry daemon start until docker info succeeds.
+  * Certification harness reads Files JSON content, restores only
+    disposable artifacts, and assigns GPUs in render mode to a local CT.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 13 Sep 2026 06:20:00 +0000
+
+nodal (1.0.2) UNRELEASED; urgency=medium
+
+  * QEMU runtime files (cidata.fat) are chowned to ndl-qemu so NoCloud seeds are readable.
+  * FAT cidata volumes advertise LABEL=CIDATA so cloud-init applies hostname, SSH keys, and DHCP.
+  * Cluster CA directory is created at install time so join tokens can be issued.
+  * VM NIC IPv4 is observed from the host ARP table.
+  * ndl-agent may use /dev/net/tun and persists TAP devices for bridged VM NICs.
+  * Destination-agent TCP listen and dest-listen registration for two-node migrate.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 13 Sep 2026 05:57:00 +0000
+
+nodal (1.0.1) UNRELEASED; urgency=medium
+
+  * Docker Management tucks engines with no containers into one collapsed row so the page does not end in a stack of empty cards. Native scrollbar chrome is hidden site-wide; scrolling still works.
+  * Unprivileged nested Docker needs host keyring quota. No-DAL ships `usr/lib/sysctl.d/ndl-lxc-keys.conf` and raises `kernel.keys.maxkeys` / `maxbytes` at agent start so runc session keyrings are not rejected with "disk quota exceeded" when many system containers share the default uid map. Runtime guest-baseline and DNS-fallback files are chowned onto the mapped UID/GID.
+  * Fresh Debian system containers get a helper-script compatible baseline: umask 022 extract, `/` and `/etc` traverse for `_apt`, C.UTF-8 locale, timezone files, masked wait-online and homed first-boot units, root console autologin (`TERM=linux`), helper-script packages (`sudo` `curl` `mc` `gnupg2` `jq`) plus small No-DAL extras (`ca-certificates` `wget` `iproute2`), apt update/upgrade on first boot only, DNS/TCP readiness before apt, resolved FallbackDNS when DHCP DNS is unusable. Existing guests reconcile files and missing packages without OS upgrade. `EXTERNALLY-MANAGED` stays unless `python_system_pip` is set. Root SSH and TUN/mknod stay opt-in. Nested-engine Docker features are unchanged.
+  * Directory and container-root storage use thin/sparse accounting. Provisioned size is a logical limit, not a reservation of pool capacity. Pool used/available follow StatFS. Aggregate logical capacity may exceed physical size; that is a warning, not `storage is unavailable`. Create and grow admit on physical free space (16 MiB floor). UI shows physical total/used/available separately from logical provisioned.
+
+  * Docker Management column tracks are fixed. Hierarchy uses one table per machine so SERVICE, STATUS, IMAGE, PORTS, UPTIME, and CPU do not shift with project or container names. Long names and images truncate.
+  * System containers get nano by default. Create, start, prepare, and agent reconcile copy the host editor into the guest rootfs when the guest does not already have it. Existing nano is left alone. Missing host nano is skipped and does not fail provision. Running guests pick it up on overlay without a restart.
+  * System containers get a persisted Docker/nesting LXC feature set: generated AppArmor with `allow_nesting=1`, `seccomp.allow_nesting=1`, `/dev/fuse`, unprivileged `userns.conf` (keyctl stays), `proc:mixed sys:rw cgroup:mixed`, and a start-host hook that applies current LXC generated-profile nesting semantics on liblxc that still emits pre-6.0.6 `/proc` and `/sys` write denials. last-applied records `nesting: true`. Create, start, prepare, and agent reconcile apply it idempotently. Guests stay unprivileged and confined. Nested engines still cannot change host-global kernel state or mknod arbitrary host devices.
+  * Web terminal keeps focus while typing. Slot mounts use a stable ref so cwd and connection updates no longer reparent xterm (React 19 was calling the inline callback ref with null, which blurred the helper textarea after the first keystroke).
+  * Directory pools that live on the host root filesystem stay available with a root-filesystem warning. A dedicated backing mount that disappears still fail-closes instead of writing into the naked mountpoint on `/`. Legacy pool records without `root_backed` keep working when the recorded UUID or `mount_point=/` is the root filesystem.
+  * Unprivileged system-container extract no longer needs pathname access to the root-owned image cache. The privileged agent opens the verified archive and feeds tar over stdin inside `lxc-usernsexec`, then chowns the dest onto the persisted uid map. Cache files stay mode 0640. Failed creates still drop the partial rootfs and keep the cache.
+  * Directory container-root loop images remount after host reboot. `nodal-ct@.service` runs `ndl-ct-prepare` before `lxc-start`, and `ndl-agent` restores mounts under `/var/lib/ndl/storage` at start so a sized image cannot silently fall back to the host directory.
+  * Loop-mount Directory (and LVM ext4) container roots without XFS `nouuid`. Debian 13 util-linux passes leftover `-o` values to `fsconfig()`, and ext4 rejects `nouuid` with "failed to setup loop device". `ndl-agent` loads the loop module at start and ships `modules-load.d` so `/dev/loop-control` exists after reboot. Invalid MAC is rejected before volume allocation. Volume-create failures persist a failed `workload.create` task.
+  * Do not write `lxc.net.0.ipv6.address = none` (or the IPv4 equivalent). LXC 6 on Debian 13 rejects that sentinel and `lxc-start` fails to load the container. Disabled families omit the address keys; guest networkd still sets `IPv6AcceptRA=no`. Start/restart rewrite config from last-applied and wait until `nodal-ct@` is active so Type=simple cannot report success after an immediate crash.
+  * Unprivileged Debian 13 guests enable IPv4 DHCP with a guest `ndl-dhclient` unit (`dhclient`/`udhcpc`/`dhcpcd`) because systemd-networkd crash-loops on mount namespacing (`226/NAMESPACE`) and does not apply `.network` files even after the sandbox is relaxed. A last-wins networkd drop-in stops the crash loop. Unprivileged LXC configs include `userns.conf` and `sys:rw`.
+  * Growing a Directory container-root image runs `e2fsck -f -p` before `resize2fs`. A clean unmount still leaves the image requiring a force check on Debian 13. Retrying the same size after a truncated-but-unresized image still runs fsck and resize so a failed grow can complete.
+  * System container create accepts an optional MAC. When omitted, No-dal still generates a stable locally-administered address. An explicit MAC is validated, rejected if another workload already uses it, written to lxc.net.0.hwaddr, and persisted across apply, stop/start, and host reboot. Changing it later requires the container to be stopped. No-dal does not assign the old DHCP IP; the upstream router does that once the original MAC is presented.
+  * System container Memory input is GB (1 GB = 1024 MiB). The API still uses memory_bytes.
+  * System container create takes Disk size (GB), default 8 GB. Directory roots are a loop-mounted ext4 image of that size so a directory pool cannot give a container the host filesystem. ZFS datasets set quota/refquota. LVM-thin already used a sized LV. Grow is supported; shrink is refused.
+  * Unprivileged Debian rootfs extract runs tar through lxc-usernsexec on the persisted uid/gid map so chmod/chown apply inside the map. The privileged parent opens the root-owned cache archive and passes it on stdin (`tar -f -`). Mapped root never opens the 0750/0640 cache pathname. Host-root tar --same-owner was failing on Debian 13 auxfiles and systemd/network with EPERM. Failed creates remove the partial rootfs and dest volume and keep the image cache. Task rows store the tar error.
+  * startOp/finishOp persist with a detached context. Failed workload.create keeps create ids plus the real error. network.apply is reconciled. Running rows last updated before this control-plane process started are treated as abandoned.
+  * Tasks (operations) persist finish state by primary key. Postgres no longer leaves pool.create, network.create, workload.start/delete, or migration.import rows running after the work completed. Startup and observer reconciliation close stale running tasks from real pool, network, workload, and migration-job state, heartbeats live jobs, and fails abandoned tasks after 20 minutes. Events record the reconcile reason.
+  * Failed container imports roll back No-dal-owned destination volumes (DB row plus on-disk directory). Volumes write .ndl-owned plus owner/owner_kind/owner_job_id. A sweeper removes unattached migration leftovers, including the empty 4 GiB dests from failed lchown/import, and never deletes operator or attached volumes. Evidence is logged before delete.
+  * Isolated networks heal a down bridge on observe when persist files exist. Status follows the live bridge (warning when down). network.degraded is emitted. Unused wifi down is not a fault.
+  * Built-in health events (throttled): stale running tasks, leftover migration volumes, isolated network degraded, and repeated migration failures.
+  * Local Host copy no longer treats filenames that contain ".." as path traversal. RelJail rejects only parent-directory segments. Vzdump archives are copied via the node agent when the control plane cannot read /var/lib/vz/dump, and Proxmox wrapper tars unwrap the inner backup. Control-plane CopyLocalRootfs without the agent is refused. Preflight fails closed when a vzdump is unreadable and the agent is missing.
+  * Import / Export Recent Jobs loads durable jobs from GET /migration/jobs. Every running, failed, succeeded, or canceled job is a button. Clicking expands diagnostics from GET /migration/jobs/{id}/diagnostics (workloads, stage, progress, timestamps, source, destination, mappings, mode, logs, verification, job id) with Copy Details and Copy Diagnostics. An active job restores the Progress view on load and keeps polling. Failed or canceled jobs can Retry when the API allows it. History does not depend on React-only state.
+  * Migration submit and retry run preflight for source access, destination storage and network, readable backup or archive path, free space, supported archive type, duplicate destination ids or names, and partial or failed destinations. Retries skip already imported items and refuse corrupt dests. Temporary vzdump cleanup deletes only ndl-temp-migration archives. Staging removal requires No-dal ownership. GET /api/v1/migration/jobs/{id}/diagnostics and GET /api/v1/workloads/{id}/migration-diagnostics return the plan, stages, logs, events, mappings, source and destination metadata (no tokens), and health checks for AI debugging.
+  * Proxmox LXC vzdump archives are treated as archives, not disk images. When the content API returns volume metadata for local:backup/vzdump-lxc-*.tar.zst, No-dal resolves the storage dump path, copies the .tar.zst, imports it, verifies the rootfs, and deletes temporary migration backups on success or failure. Review still blocks only when a backup store or local archive path is genuinely missing.
+  * Dashboard Recent events and tasks, Tasks, Events, and Import / Export recent jobs are clickable and expand with stage, status, timestamps, workload and job IDs, errors, and Copy Details.
+  * Dashboard API Access issues and revokes scoped REST tokens and service accounts (TTL, read-only debug, full audit, RBAC, audit log). A diagnostic agent can inspect jobs, events, logs, workloads, storage, networking, and health over REST without the UI. This is not MCP and not profile settings.
+  * Local Host Migration resolves a populated Proxmox LXC rootfs (prefer /var/lib/lxc/{vmid}/rootfs) instead of an empty ZFS dataset mountpoint. Copy fails unless the source and destination contain an executable init and nontrivial content. transfer_complete and configuration_verified are not recorded for a skeleton dest. After this fix, rerun migration rather than reuse those volumes.
+  * Workloads can multi-select system containers, Select All, and delete them in one confirmation. The API processes every selected id, returns per-container success or failure, and requires compute.delete.
+  * ndl-agent CapabilityBoundingSet includes CAP_FOWNER so Local Host Migration can chmod, lchown, and fchownat UID-mapped destination trees. Without it those calls return EPERM even as root. ndl-control stays CAP_NET_BIND_SERVICE only.
+  * System containers have independent IPv4 and IPv6 modes (DHCP, Static, Disabled). Static uses address/CIDR, gateway, and optional DNS. A configured family leaves the other disabled unless set. DHCP IPv4 remains the default. LXC config and guest network files apply the same policy. Migration Review shows the resulting addressing.
+  * Proxmox LXC on LVM-thin or ZFS uses a temporary vzdump when a directory, NFS, or CIFS backup store exists. Review blocks the guest with the exact reason when that path cannot run. The temporary archive is deleted after verification.
+  * Fix Import / Export automap compile: do not shadow the storage package.
+  * Progressive disclosure: Simple is the default sidebar. Add Features enables optional capabilities. Advanced and Custom templates do not drop enablement or Custom layout. RBAC still hides Audit, Groups, and Updates.
+  * Import / Export automatic mapping uses one global strategy, then fills method, storage, network, and compatibility per guest. Proxmox tokens must be user@realm!tokenid=secret.
+
+ -- No-dal <dev@no-dal.com>  Tue, 08 Sep 2026 15:51:00 +1000
+
+nodal (1.0.0) UNRELEASED; urgency=medium
+
+  * Import / Export / Migration: copy-first vendor-neutral engine, Proxmox REST discovery and downloadable file-volume import, disk/OVF/libvirt/bundle adapters, No-dal portable export, compatibility ratings, and source-safety invariants. Source destruction is not a migration operation. Live and snapshot-assisted are listed as unavailable in V1. vma paths fail closed. CE is not license-gated.
+  * Phase 43 CE 1.0: license-activation surface, operator docs, and API freeze. The license stub does nothing unless a key is present. An unreachable licensing API uses grace and does not stop workloads. This tree does not embed EE blobs or mint production apt signatures here. Signed install remains the documented HTTPS repo and keyring path. CE 1.0 hardware gates are not yet passed; this entry stays UNRELEASED.
+  * Isolated-nat enables IPv4 forwarding from host routing state, persists it in sysctl.d, and installs per-network nftables masquerade without flushing administrator rules.
+  * ndl-control relinquishes its writer lease on SIGTERM so a package upgrade or systemd restart can start immediately. Packaging no longer stops the unit on upgrade; dh_installsystemd restarts it once.
+  * ndl-control maintainer scripts keep the automatic systemd helper token on its own line so debhelper cannot turn comment text into executable shell.
+  * Files is a workload file manager with Monaco editing, bulk operations, and typed copy/chmod/chown. Terminal drag-and-drop uploads through the file API and inserts shell-escaped paths without executing them.
+  * Terminal is a first-class workspace of independent PTY sessions. Quick Switch opens a new session against any authorized target, including one that already has tabs. Host identity stays distinct from workload shells.
+  * Workloads opens a contextual operator sidebar in the same region as main navigation. Back to Main Menu restores the global sidebar without dropping Terminal workspace sessions. Hosts appear beside containers and VMs. The workload table remains on Manage.
+  * Terminal fills remaining viewport space by default and can be dragged from a corner handle. The chosen size is a local workspace preference. Double-click the handle or Reset size restores fill-available behavior.
+  * ndl-agent.service grants CAP_SETFCAP and CAP_SYS_PTRACE for typed lxc-attach of unprivileged system containers. NoNewPrivileges stays yes. DevicePolicy stays closed. The bounding set is not unrestricted.
+  * Fail the Debian UI package unless Vite rebuilds dist during dh_auto_build. rebuild-packages.sh and the e2e builders discard any copied ui/dist so a stale frontend cannot be packed.
+  * ndl-ui try-restarts ndl-control after configure. The control plane rereads index.html from disk, sends Cache-Control: no-cache for the shell, immutable caching for hashed /assets/, and 404s missing hashed files instead of SPA HTML.
+  * Terminal workspace keeps each tab's xterm and PTY mounted while switching. Inactive sessions stay full-size and hidden instead of being parked in a 1px holder that resized the live shell.
+  * Host Files cannot rename or follow a symlink into denied prefixes. Rename onto an existing directory fails instead of deleting that tree. Postgres data, /var/lib/ndl/secrets, and /var/lib/ndl/certs are denied the same way host.key already is. Restore-as-new of extra data disks is refused like clone. Migrate fails closed when a disk volume is missing. Join cert failure revokes the orphan node. Node revoke fails closed if the CA serial cannot be recorded.
+  * Rolling drain fails closed if node maintenance persist fails. A 200 does not claim maintenance recorded that GET would miss. Guests still keep running when that persist succeeds.
+  * qemu-proto unit_active stays on the stored row like status. observe_status and unit_status stay live. A 200 does not invent unit_active GET /workloads would miss.
+  * Network policy apply fails closed if status persist misses. A 200 does not claim available GET /networks policies would miss.
+  * Cluster session fails closed if remote node persist misses. A 200 does not claim Ready GET /nodes would miss.
+  * Host Files parent delete and rename refuse a path that contains a denied prefix. A 200 does not wipe secrets, certs, or Postgres by deleting /var/lib/ndl.
+  * Host update apply fails closed if operation persist misses. A 200 does not claim succeeded GET /updates last_operation would miss.
+  * Group role bind fails closed if the binding persist misses. A 200 does not claim operator GET /me would miss.
+  * Group member add fails closed if membership persist misses. A 200 does not claim a member GET /groups would miss.
+  * GPU unassign fails closed if assignment delete persist misses. A 200 does not claim the GPU gone GET /workloads/{id}/gpus would still list.
+  * MFA confirm fails closed if enable persist misses. A 200 does not claim enabled GET /mfa would miss.
+  * Node maintenance enter and rolling drain fail closed if persist misses. A 200 does not claim maintenance recorded that placement would miss.
+  * Node maintenance exit fails closed if clear persist misses. A 200 does not claim maintenance false while the node stays draining.
+  * VM delete fails closed if catalog persist misses. A 200 does not claim deleted GET /workloads would still list.
+  * Stack delete fails closed if catalog persist misses. A 200 does not claim deleted GET /stacks would still list.
+  * Migration source delete fails closed if persist misses. A 200 does not claim credentials removed GET /migration/sources would still list.
+  * Node revoke fails closed if persist misses. A 200 does not claim revoked GET /nodes would still list.
+  * Token revoke fails closed if persist misses. A 204 does not mean GET /me with that bearer still works.
+  * Logout fails closed if session persist misses. A 204 does not mean GET /me with that cookie still works.
+  * GPU assign fails closed if catalog persist misses. A 201 does not list an assignment GET /workloads/{id}/gpus would miss.
+  * USB attach fails closed if catalog persist misses. A 201 does not claim claimed_by GET /nodes/{id}/usb would miss.
+  * PCI attach fails closed if catalog persist misses. A 201 does not list an assignment GET /workloads/{id}/gpus would miss.
+  * Snapshot create fails closed if catalog persist misses. A 201 does not list a snapshot GET /workloads/{id}/snapshots would miss.
+  * Template create fails closed if snapshot or template persist misses. A 201 does not claim snapshot_id GET /templates or GET snapshots would miss.
+  * A fenced writer cannot renew or clear the lease; mutate APIs refuse both the fenced holder and a standby until promote. Partitioned OS root marks the parent disk so ZFS/LVM/OSD create cannot wipe it. Files names reject empty and parent-directory segments before they reach the jail.
+  * Overlay snapshot rollback refuses a running VM like ZFS and LVM. Template create records the new overlay as the volume tip. recover-admin fails closed when the user row is missing. MFA challenges and recovery codes are consumed before a session is issued. Migration cancel and retry fail closed when job persist fails.
+  * Mutating APIs refuse a fenced writer and a standby until promote; fence and promote stay reachable. Overlay flatten refuses a running VM. Restore of a system container is refused instead of using the VM replace path.
+  * System container create and clone join rootfs under the pool with HostVolumePath. An absolute or parent-directory volume locator is refused instead of path.Join discarding the pool root. System-container Files and Terminal refuse unavailable root storage the same way start does. GET no longer lists files or a 201 jail_root whose volume GET /volumes would show unavailable.
+  * VM create with desired_power running fails closed when storage is unavailable instead of returning 201. Clone records desired_power running after start. System container create honors desired_power stopped. PATCH does not apply CT create to OCI workloads and fails closed when the CT agent apply fails.
+  * Storage-pressure policy apply records failed migrate operations instead of leaving them queued and marking the run succeeded. Dest-agent-not-connected stays queued. Approved AI plan steps finish their task rows as succeeded or failed instead of leaving them queued.
+  * Policy automation binds the seeded automation role and unbinds leftover Operator so the service identity cannot inherit tokens, feature manage, compute delete, or backups.
+  * Workload delete requires compute.delete. A token scoped to compute.lifecycle can still start and stop and cannot delete.
+  * Workload clone requires compute.create. PATCH of CPUs, memory, firmware, or cloud-init requires compute.modify. desired_power stays on compute.lifecycle.
+  * Workloads contextual-nav test retries the main-nav click until Back to Main Menu is visible. A detached anchor can change the pathname without a popstate, which would leave Dashboard mounted.
+  * Agent Files for a system container uses last-applied rootfs and fails closed when that record is missing instead of trusting client jail_root. Create and clone refuse an unclean rootfs_path before mkdir.
+  * Alert webhook delivery resolves hostnames and refuses loopback, link-local, unique-local, and RFC1918 addresses. Mixed records fail closed. Delivery does not follow HTTP redirects.
+  * Migration archive extract restores only user.* xattrs. security.* and trusted.* from a tar cannot land on the host.
+  * OpenAPI documents the existing AAL 2 cluster.destroy, secrets.reveal, and volume unlock paths. They stay honest 422. CI fails if the HTTP mux and the freeze spec drift.
+  * Approved AI plans create policies through POST /api/v1/policies instead of writing the store beside that handler.
+  * nodalctl workload, network, and image upload use the same TLS client as login so a generated appliance certificate is not rejected.
+  * Offline migrate dest locators join under the dest pool root. An invalid volume class cannot walk out of that pool. Relative source BackendRef is joined the same way.
+  * Node GPU test waits for the IOMMU group member list. The GPUs heading renders before /gpus returns.
+  * Join client TLS keeps system certificate roots and adds the cluster CA so northbound HTTPS still verifies after node.crt is written.
+  * OpenAPI documents existing VM create balloon, secure_boot, and spec, OCI secret_refs and volumes, and PATCH iso_library_id and nocloud. Raw qemu_args stay undocumented and refused.
+  * Migration archive extract refuses GNU sparse members instead of skipping them without error.
+  * AI provider endpoints must be http(s) without userinfo so API keys stay in secrets. Completions do not follow HTTP redirects.
+  * Object-store backup endpoints and OCI registry URLs must not include credentials. Access keys stay in dedicated fields and are not returned in list JSON.
+  * Migration source endpoints must be http(s) without userinfo. Tokens stay in dedicated fields. An HA replica endpoint that looks like a DSN is refused so the secret stays in the DSN field.
+  * Approved AI plan steps fail when the existing API handler writes no HTTP status. Create-workload steps fail when the response has no id.
+  * Files copy and rename dest paths are jailed in the control plane before the agent. The Files UI refuses parent-directory dest and upload names the same way mkdir already does.
+  * Migration import path and xml_path must be under No-dal storage, staging, or /tmp. OpenAPI documents the create-source token field and the start fields the handlers already use.
+  * ACME directory URLs must be https without userinfo. A failed probe does not persist credentials that GET /certs would list. ACME configure fails closed if the certificate row cannot be recorded. A 200 does not list a pending or failed directory GET /certs would miss.
+  * Files upload expected sha256 must match the digest field. A substring of the JSON result is not a checksum.
+  * OpenAPI documents Files dest_path jail, write-only SMTP password, and HA replica host:port.
+  * Backup target probe will not stat a host path outside the allowed artifact prefixes. SMB UNC locators are unchanged.
+  * Files upload sha256 checksums the uploaded bytes. expected_sha256 is compare-and-swap of the existing file. They are not the same field.
+  * WireGuard peer endpoint must be host:port without userinfo. Credentials stay out of listed peer JSON.
+  * Backup copy dest is an allowed artifact locator such as /var/lib/ndl/backups. qemu-img convert for a VM disk still requires the storage root.
+  * OpenAPI documents Directory pool backend_type routing and the library image upload fields the handlers already use.
+  * NFS/SMB/iSCSI create fails closed if datastore or SMB credential persist fails. A 201 does not mean credentials were stored.
+  * Distributed attach fails closed if locator or cephx persist fails. OSD create fails closed if the OSD row cannot be recorded.
+  * ZFS import and create fail closed if zpool GUID identity cannot be recorded. A 201 does not skip GetZFSPoolByGUID uniqueness.
+  * Cluster session listen_addr must be host:port without userinfo. Credentials stay out of listed remote node JSON. Pairing token is optional on reconnect.
+  * LVM create fails closed if volume-group identity cannot be recorded. Kubelet and ceph-osd start/stop fail closed if feature runtime status cannot be recorded.
+  * HA fence and promote fail closed if HA state persist fails. Replica configure already required that persist.
+  * Node group create fails closed if member persist fails. A 201 does not mean node_ids were stored.
+  * Viewer command palette test retries Ctrl+K until the dialog is open. The shortcut listener is attached after first paint.
+  * Cluster OpenSession fails closed if the session row cannot be recorded. A 200 does not invent session_id.
+  * Rolling update and policy apply fail closed if step or run persist fails. A 2xx body is not a substitute for the stored row.
+  * Store install 201 fails closed if the installation row cannot be updated to succeeded. USB/PCI attach fails closed if workload spec persist fails.
+  * Backup run, restore, and verify fail closed if the run or artifact verify row cannot be updated. A 202 body is not a substitute for the stored status.
+  * Host update apply and rollback fail closed if the update operation row cannot be updated. Rolling update surfaces that persist error instead of inventing a step.
+  * AI plan approve fails closed if plan or step persist fails. A 200 body is not a substitute for the stored plan status.
+  * Workload migrate fails closed if the migrate job row cannot be created or updated. A 200 body is not a substitute for GET /migrate.
+  * Service principal create, network policy apply, and VM PATCH fail closed if the catalog row cannot be recorded. A 2xx body is not a substitute for list or GET.
+  * Network apply fails closed if observed status persist fails. A 200 body is not a substitute for the stored network row.
+  * VM and system-container create fail closed if boot disk or NIC persist fails. Object backup target 201 fails closed if probed status cannot be recorded. Lab qemu-proto start fails closed if the disk join cannot be recorded. A 201 does not list a VM whose GET disks would miss the volume. Stop and restart fail closed if desired_power cannot be recorded. Catalog status stays the stored row; observe_status stays live.
+  * OCI create and system-container clone fail closed if disk, NIC, or clone volume persist fails.
+  * VM clone, library import, restore-as-new, and migration disk import fail closed if disk or NIC persist fails.
+  * GPU assign and unassign fail closed if the agent apply fails or is unavailable. A 201 does not leave an assigned row the agent did not apply.
+  * USB and PCI attach fail closed if the VM agent is unavailable. ApplyUSB failure restores spec like ApplyVFIO. A 201 does not claim a device the agent did not apply.
+  * System-container PATCH fails closed if the workload agent is unavailable. A 200 does not rewrite CPUs or desired_power the host did not apply.
+  * Store install GPU assign fails closed if the agent apply fails or is unavailable. A 201 does not leave an assigned row the agent did not apply.
+  * Files chmod applies mode 0. Omitted mode is still required; mkdir still defaults 0755.
+  * Restore-replace refuses extra data disks like restore-as-new. Boot replace does not mix with unrestored data volumes. Migration bundle export refuses extra data disks the same way. Offline and live migrate refuse extra data disks the same way. Dest incoming compiles one boot disk. GET no longer claims dest ownership of unrestored data volumes. Backup of extra data disks is refused before a run or artifact is recorded. A 202 does not create a boot-only copy restore cannot apply. Nightly policy ticks skip that VM instead of storing a succeeded boot-only run. VM import from the library refuses ISO items. Create already refuses a cloud-image as installation media. CopyBackup would qemu-img that ISO as qcow2. GET no longer lists a VM whose boot disk is that ISO.
+  * Node maintain records succeeded or failed after a local dest migrate instead of leaving the listed operation queued. Extra-disk migrate 422 is visible on GET /tasks.
+  * PCI attach applies the union of VFIO hosts already assigned to the VM. A second passthrough does not drop the first from frozen argv. GPU VFIO assign merges and unassign subtracts instead of wiping every host.
+  * GPU VFIO assign records pci_hosts on the VM spec so start reprepare cannot drop the bound devices. Unassign removes those hosts from spec.
+  * Template create refuses extra data disks like clone. Clone and template refuse catalog extra data disks the same way spec extra disks already are. A 201 does not copy only the boot volume. Deploy clones the live source, so a boot-only overlay must not be recorded as a usable template.
+  * Alert tick does not notify or publish unless the firing event and last_fired_at persist. A webhook is not a substitute for GET /alerts last_fired_at.
+  * Platform event emit does not publish unless the event row persists. A live stream is not a substitute for GET /events.
+  * ZFS backup verify fails closed if the artifact verify row cannot be recorded. A 422 body is not a substitute for GET last_tested_at.
+  * USB attach on a running VM fails closed if live QMP device_add fails. A stopped VM still records usb-host in frozen argv without inventing a live hotplug. The southbound client treats Execute Ok false as an apply error.
+  * VM delete releases USB and exclusive GPU/PCI claims before runtime is removed. PCI unassign restores the assignment BDF when pci_devices is empty.
+  * Logout fails closed if the session row cannot be revoked. A 204 does not clear a cookie while the session remains valid.
+  * Store install fails closed if the stack member cannot record the created workload. A 201 does not leave GET /stacks with a null member workload_id.
+  * Node maintain fails closed if a queued migrate operation cannot be recorded. A 200 does not invent migrate_operation_id.
+  * Storage-pressure policy apply fails closed if a queued migrate operation cannot be recorded. A 200 does not invent operation_ids that GET /tasks would miss.
+  * AI plan approve stops if the task row cannot be recorded. A succeeded plan does not invent operation_id that GET /tasks would miss.
+  * Overlay snapshot after flatten does not inherit leftover catalog parent_id. Flattened depth is a new chain.
+  * Template snapshot catalog records the frozen overlay backing, not the live -tmpl.qcow2 tip. Rollback overlays that frozen parent. Deploy still clones the live source.
+  * Cluster OpenSession fails closed if a pairing token cannot be marked used. A 200 does not leave the token reusable.
+  * Host update apply and rollback fail closed if the update operation row cannot be created. A 200 does not invent an operation id that GET /updates would miss.
+  * Backup overlay after flatten does not inherit leftover catalog parent_id. Flattened depth is a new chain.
+  * Template overlay honors the qcow2 chain cap and records catalog parent_id and chain_depth like user and backup overlays. Flattened depth is a new chain.
+  * Overlay snapshot after rollback does not inherit leftover catalog parent_id. Rolled-back depth is a new chain.
+  * MFA confirm fails closed if the method cannot be marked enabled. A 200 does not invent enabled that GET /mfa would miss.
+  * Second template overlay uses a unique -tmpl.qcow2 tip so overlay path is not the live backing. qemu-img create refuses dest equal to backing.
+  * Live migrate 200 workload JSON is re-read after observed persist. A
+    200 does not invent dest running or reason that GET /workloads would
+    miss.
+  * Network policy apply loads every stored policy in one nft table
+    replace. Applying one policy does not drop sibling rules while GET
+    still shows them available.
+  * DELETE of a missing migration source fails closed. Postgres no longer
+    returns 200 ok when no catalog row was removed.
+  * Network apply, backup verify, live migrate job, import/export job, and
+    rolling plan persist fail closed on Postgres UPDATE of zero rows. A 2xx
+    does not invent status GET would miss.
+  * Group member add fails closed for a missing user and is idempotent. A
+    200 does not invent membership GET /groups would miss, and a second add
+    does not 404.
+  * Node group create fails closed for a missing node_id. Memory no longer
+    invents membership GET /node-groups would list for a node GET would
+    miss.
+  * VM PATCH iso_library_id fails closed when the library item is missing
+    or is not installation media. A 200 does not invent an ISO GET
+    /images would miss. Empty iso_library_id still detaches.
+  * Network policy create fails closed for an empty or missing workload id.
+    An empty src_workload_id no longer borrows another VM MAC. A missing
+    workload is 404, and GET /networks does not list a policy.
+  * Overlay chain depth counts a live qcow2 overlay that snapshot catalog
+    persist missed, including that file when a later snapshot stores it as
+    BackendRef. A follow-on 201 cannot exceed the chain cap of 16. Flatten
+    and rollback tips still start a new chain.
+  * AI plan approve fails closed when plan status persist writes zero rows
+    or the stored status does not match. A 200 does not invent executing
+    or succeeded that GET /ai/plans would still show as preview.
+  * Overlay create refuses VNI 0 before persist. fakeNet and an unavailable
+    agent no longer 201 a catalog row GET /networks would list that apply
+    cannot install.
+  * Bond create refuses empty members, invalid member ifnames, and modes
+    other than active-backup or 802.3ad before persist. fakeNet and an
+    unavailable agent no longer 201 a catalog row GET /networks would list
+    that apply cannot install.
+  * VLAN create refuses a missing or invalid parent ifname, modes other
+    than access or trunk, and an invalid access ifname before persist.
+    fakeNet and an unavailable agent no longer 201 a catalog row GET
+    /networks would list that apply cannot install.
+  * WireGuard peer create refuses a listen port outside 1-65535 and
+    addresses that are not CIDR before persist. fakeNet no longer 201 a
+    catalog row GET /cluster/wg would list that apply cannot install.
+  * Network policy create refuses an action apply cannot install and a
+    source that is the destination before persist. GET /networks no
+    longer lists a policy apply cannot install.
+  * DHCP reservation create refuses an address outside the isolated
+    subnet or equal to the gateway or network address before persist.
+    GET /networks/{id}/reservations no longer lists a mapping apply
+    cannot install.
+  * Terminal session create refuses a cwd that escapes the jail, matching
+    Files. GET /io/sessions no longer lists a session whose connect path
+    would silently start at the jail root.
+  * HA replica endpoint must be host:port. A DSN without userinfo is no
+    longer stored as replica_endpoint that GET /cluster/ha would list.
+    Credentials stay in the dsn field.
+  * Distributed OSD create fails closed when pool_id is missing. A 201
+    does not invent a pool_id GET /storage/pools would miss. Empty
+    pool_id is still optional.
+  * Store install GPU assign refuses a PCI address that is not in node
+    inventory before persist, matching POST /gpus/assign. fakeGPU no
+    longer 201 an assignment GET /workloads/{id}/gpus would list that
+    GET /gpus would miss.
+  * Network create and apply refuse a LAN-bridge without a valid uplink
+    ifname and an isolated ipv4_cidr BuildPlan cannot install before
+    persist. fakeNet no longer 201 a catalog row GET /networks would
+    list that apply cannot install. Empty isolated CIDR still defaults
+    to 10.64.0.0/24.
+  * Backup NFS and SMB create refuse a relative locator that is not
+    server:/export or //server/share, and refuse parent-directory
+    segments, before persist. SMB UNC is not passed through the Unix
+    artifact jail. GET /backups/targets no longer lists garbage that
+    apply cannot use. Absolute artifact paths stay AllowedArtifactPath.
+  * VM create refuses an extra NIC network_id GET /networks would miss
+    before persist. NIC rows and launch bridges follow each spec NIC
+    network, so GET spec.nics cannot claim a network the TAP is not on.
+  * ZFS and LVM volume create refuse an unsupported class before persist.
+    fakeZFS and fakeLVM no longer 201 a catalog row GET /volumes would
+    list that apply cannot create. Directory still stores the agent handle
+    class.
+  * Volume create refuses a size apply cannot allocate before persist.
+    Block and LVM volumes require 1 MiB. Directory, ZFS zvol, LVM, iSCSI,
+    and distributed no longer 201 a catalog row GET /volumes would list
+    that qemu-img, zvol, thin LV, or RBD cannot create. ZFS datasets are
+    not given a block minimum.
+  * VM create refuses a boot disk smaller than the volume engine floor
+    before persist. fakeStorage no longer 201 a workload whose GET volume
+    size_bytes qemu-img cannot allocate.
+  * Directory template volume create and lab qemu-proto refuse a block
+    size below 1 MiB before persist. GET /volumes no longer lists a
+    qcow2 apply cannot allocate.
+  * Workload NIC list is ordered by created_at then id, matching
+    Postgres. GET /workloads nics no longer shuffles extra NIC
+    network_id under Memory map iteration.
+  * Workload disk list is ordered by slot, created_at, then id,
+    matching Postgres. GET /workloads disks no longer shuffles extra
+    data disks under Memory map iteration.
+  * GET /networks vlan, bond, policy, and overlay lists, and GET
+    reservations, are ordered by created_at then id, matching
+    Postgres. Nested catalog arrays no longer shuffle under Memory
+    map iteration.
+  * GET /workloads, /networks items, /storage/pools, /storage/volumes,
+    and /storage/images are ordered by created_at then id, matching
+    Postgres. Collection lists no longer shuffle under Memory map
+    iteration.
+  * GET /node-groups is ordered by name then id. GET WireGuard peers,
+    remote nodes, distributed OSDs, migration sources, and service
+    principals are ordered by created_at then id, matching Postgres.
+    GET /migration/jobs and GET /workloads/{id}/migrate return newest
+    jobs first, matching Postgres created_at DESC, so a later job is
+    not hidden behind map iteration. Workload migrate GET looks up
+    that workload's latest job instead of scanning a 50-row cluster
+    window that can hide it. Host update rollback looks up the latest
+    check version the same way instead of scanning a 20-row cluster
+    window that can hide it.
+  * VM create refuses an extra data disk whose storage pool is
+    unavailable before persist. GET /workloads no longer lists a VM
+    whose extra volume start cannot attach.
+  * OCI create refuses an unavailable volume, storage pool, or
+    network before persist. GET /workloads no longer lists a
+    container whose mount or NIC apply cannot attach. OCI start
+    and PATCH refuse an unavailable volume, pool, or network
+    before the agent start, matching system-container start.
+    GET no longer claims desired_power running when start cannot
+    mount or attach.
+  * VM create and PATCH refuse installation media that is not
+    available, matching cloud-image create. GET spec.iso_library_id
+    no longer claims an ISO GET /images would show unavailable.
+  * VM create and PATCH refuse ISO or cloud-image library items whose
+    storage pool is unavailable before persist. GET spec no longer
+    claims media start or convert cannot read.
+  * System-container create with an existing volume_id refuses a
+    non-container-root class and an unavailable volume or pool, and
+    joins rootfs under that volume's pool. GET /workloads no longer
+    lists a container whose root apply cannot mount.
+  * VM create with an existing boot volume_id refuses an unavailable
+    boot pool before persist. GET /workloads no longer lists a VM
+    whose boot disk start cannot attach.
+  * System-container clone refuses an unavailable source volume or
+    pool before persist. GET /workloads no longer lists a clone
+    whose root apply cannot copy, and no clone volume is stored.
+  * VM import refuses an unavailable library item, library pool,
+    dest pool, or network before persist. GET /workloads no longer
+    lists an import copy or start cannot apply, and no dest volume
+    is stored.
+  * VM clone, export, snapshot, template, backup, restore, and
+    migrate refuse an unavailable boot volume or pool before persist.
+    GET no longer lists a clone, library export, or overlay whose
+    copy or snapshot apply cannot use the boot disk.
+  * Migration disk import refuses an unavailable dest pool or
+    network before persist. GET /workloads no longer lists an
+    import copy or start cannot apply, and no dest volume is stored.
+  * Volume create, library upload, stack named-volume import, and
+    distributed RBD create refuse a failed storage pool, matching
+    available-or-warning. GET no longer lists a volume, image, or
+    stack whose apply cannot allocate.
+  * VLAN create refuses an unavailable parent network before apply.
+    GET /networks no longer lists a VLAN whose parent bridge apply
+    cannot attach.
+  * Lab qemu-proto start refuses an unavailable existing volume
+    before persist. GET /lab/qemu-proto no longer claims a disk
+    start cannot attach.
+  * System-container start refuses an unavailable root volume, pool,
+    or network before the agent start. GET no longer claims
+    desired_power running when start cannot mount or attach.
+  * System-container PATCH refuses an unavailable root volume, pool,
+    or network, and an invalid volume locator, before persist. GET
+    no longer claims CPUs the host apply cannot jail.
+  * VM start and clone reprepare refuse an unavailable ISO library
+    item before attach. GET no longer claims desired_power running
+    when start cannot attach media GET /images would show unavailable.
+  * VM import, migration disk import, and orphan restore refuse an
+    unavailable fallback dest pool before persist. Omitting pool_id
+    no longer 201s onto a failed first pool GET would list.
+	* Lab qemu-proto start joins an existing volume with HostVolumePath.
+    A ZFS zvol is the device path start attaches, not a path under
+    the pool root JoinUnder would invent. Disk format follows
+    QEMUFormat, so a zvol, thin LV, RBD, or iSCSI LUN starts as raw the
+    same way product VM start already does. GET disk_format is not a
+    catalog zvol or rbd string compile refuses. An existing
+    container-root is refused the same way VM boot is not a
+    filesystem volume. GET /lab/qemu-proto no longer claims a
+    directory mount start would attach as a disk.
+  * Files and Terminal join a system-container root with HostVolumePath.
+    A ZFS dataset under the ZFS mount root is that path, not a nested
+    JoinUnder of the absolute locator.
+  * VM create on a distributed pool allocates an RBD handle and attaches
+    that device. Compile accepts RBD, NBD, thin LV, and iSCSI locators the
+    same way qemu-img already does. A directory qcow2 is not stored under
+    /dev/rbd. Clone, export, import, restore, and qemu-proto new disks
+    refuse device-backed pool roots. System-container create on RBD or
+    iSCSI is 422 like clone.
+  * CompileLaunch accepts mapped RBD, thin LV, NBD, and iSCSI boot disks
+    the same way ValidateDiskPath already does. A frozen Launch for a
+    distributed VM is argv the host can start, not a disk path refuse.
+    Generic /dev remains refused. Runtime cidata and firmware locators
+    still compile under the per-VM runtime prefix.
+  * Library image upload refuses a distributed RBD or iSCSI pool before
+    persist. GET /images no longer lists an ISO under /dev/rbd that
+    Compile cannot attach.
+  * Stack import and Store install refuse named Directory volumes on a
+    distributed RBD or iSCSI pool before persist. GET no longer lists a
+    stack whose compose volumes are directory files under /dev/rbd.
+  * OCI create refuses a vm-disk bind the same way system-container create
+    refuses a non container-root. GET no longer lists an application
+    container whose volume apply would bind a qcow2 or RBD device.
+  * VM clone, export, import, restore, and migration disk import refuse a
+    ZFS or LVM-thin dest the same way they refuse RBD and iSCSI. qemu-img
+    convert does not write a directory qcow2 onto a zvol or thin LV.
+    Restore-replace of a qcow2 artifact onto a zvol, thin LV, RBD, or
+    iSCSI LUN is refused before stop or copy. BackupReplace dest format
+    is qcow2 and those volumes start as raw. Migration bundle export
+    refuses a zvol, thin LV, RBD, or iSCSI source before the job is
+    recorded. ConvertImport would treat that raw device as qcow2.
+    Template overlay is refused; ZFS and LVM snapshots stay native.
+    Snapshot, template, flatten, and backup of a mapped RBD or iSCSI LUN
+    are refused before persist. GET no longer lists a qcow2 overlay or
+    backup run those backends cannot create. GET no longer lists a clone
+    whose start would attach a qcow2 as raw. Offline migrate refuses
+    that zvol copy before ownership moves. Offline migrate also refuses
+    a missing source pool and an unavailable dest directory pool before
+    the job is recorded. GET no longer claims dest ownership copy cannot
+    write.
+
+ -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nodal (0.1.41) UNRELEASED; urgency=medium
+
+  * Phase 42 AI Plan Operate Automate: reviewable existing-API plans, ask profile cannot operate, missing permissions stop the plan, audit remains, never a shell, automate binds to Phase 40 policies
+
+ -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nodal (0.1.40) UNRELEASED; urgency=medium
+
+  * Phase 41 AI Ask: provider-neutral read-only assistant cites events and metrics, BYO providers optional, API keys stay in secrets, profile without read cannot query, provider down leaves the platform working
+
+ -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nodal (0.1.39) UNRELEASED; urgency=medium
+
+  * Phase 40 automation engine: deterministic storage-pressure policies enqueue visible workload.migrate tasks, optional approval, service identity, no Host.Exec, no agent policy engine, not an LLM loop
+
+ -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nodal (0.1.38) UNRELEASED; urgency=medium
+
+  * Phase 39 optional distributed storage: consume an external RBD cluster as pool type distributed, fake RBD VM disk handles, cluster down leaves volumes unavailable, OSD bring-up is a typed extra-disk action that does not start by default
+
+ -- No-dal <dev@no-dal.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nodal (0.1.37) UNRELEASED; urgency=medium
+
+  * Phase 38 optional Kubernetes: default install has no kube process, VMs and CTs do not require Kubernetes, feature enable kubernetes does not start kubelet, start-kubelet is a separate typed action and stays unstarted on this host
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.36) UNRELEASED; urgency=medium
+
+  * Phase 37 Store trust pipeline: Ed25519 signatures, tamper fails closed, scan report with honest CVE unavailable, verified-only install policy, revoked signing key stops new installs without deleting running workloads
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.35) UNRELEASED; urgency=medium
+
+  * Phase 36 No-dal Store: declarative manifests, official sample-web install maps to stack plus OCI, reject run bash, failed install rolls back objects, unsigned Community warns
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.34) UNRELEASED; urgency=medium
+
+  * Phase 35 feature modules: optional OCI, GPU, Kubernetes, distributed storage, and AI packages stay out of the nodal metapackage, typed feature-install update, Kubernetes on a tiny node needs confirm and does not start kubelet, disable leaves workloads
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.33) UNRELEASED; urgency=medium
+
+  * Phase 34 HA foundations and rolling updates: single writer lease, operator fence then promote, replica DSN never returned, rolling drain plus Phase 12 apply on this control node, guests are not stopped
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.32) UNRELEASED; urgency=medium
+
+  * Phase 33 cluster storage and disaster recovery: restore to target_node_id, artifact locality vs pull URL, DR metadata export without credentials, dest agent not connected does not start a second copy
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.31) UNRELEASED; urgency=medium
+
+  * Phase 32 workload migration: dest builds identical ABI plus incoming defer, offline stop/copy/start, live QMP migrate, failed live leaves source running, CT/OCI offline only, ownership epoch, compute.migrate
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.30) UNRELEASED; urgency=medium
+
+  * Phase 31 placement and maintenance: automatic/specific/group placement, GPU/class scheduler fixtures, drain lists workloads and queues migrate jobs, remote apply never starts a second copy on the control node
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.29) UNRELEASED; urgency=medium
+
+  * Phase 30 cluster join: single-use join tokens, worker nodes in inventory, enroll over TLS HTTP, one Postgres writer lease, hostname is not identity
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.28) UNRELEASED; urgency=medium
+
+  * Phase 29 host platform compatibility: formal adapter interface, Ubuntu LTS remains unqualified, Debian installer ISO wraps the same nodal metapackage
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.27) UNRELEASED; urgency=medium
+
+  * Phase 28 WireGuard and remote nodes: systemd-networkd WireGuard, OpenSession dial-out, tunnel down marks NotReady while guests keep running, cluster join remains Phase 30
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.26) UNRELEASED; urgency=medium
+
+  * Phase 27 advanced networking: stacked VLAN access ports, active-backup/LACP bonds, guest bridge-family policies that cannot drop management INPUT, VXLAN overlay prep, watchdog still wins
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.25) UNRELEASED; urgency=medium
+
+  * Phase 26 NFS/SMB/iSCSI compute datastores: mount or login, ISO library on NFS, VM disk on iSCSI or NFS file, share down stays unavailable, passwords in secrets not unit files
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.24) UNRELEASED; urgency=medium
+
+  * Phase 25 LVM-thin storage: VG and thin pool, thin LV disks, metadata percent, no incremental send, vgexport refused
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.23) UNRELEASED; urgency=medium
+
+  * Phase 24 backup verification and file restore: open-verify, throwaway isolated restore tests, restore-file, unverified until catalog plus verify
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.22) UNRELEASED; urgency=medium
+
+  * Phase 23 object-storage backup: S3/R2/AWS/B2/MinIO encrypt-before-upload, no_check_bucket, ZFS send -i incrementals, restore to a new UUID
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.21) UNRELEASED; urgency=medium
+
+  * Phase 22 application stacks and Compose import: stacks/stack_members, inspectable No-dal objects, member PATCH, storage.volume.create on named-volume import, OCI apply with partial resume
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.20) UNRELEASED; urgency=medium
+
+  * Phase 21 OCI application workloads: containerd runtime, registries, nodal-oci@ units, GPU device nodes
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.19) UNRELEASED; urgency=medium
+
+  * Phase 20 guest Terminal and Files: VM tabs when nodal_ga is ok, guest:/ jail, vm:/ audit paths
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.18) UNRELEASED; urgency=medium
+
+  * Phase 19 No-dal Guest Agent: org.nodal.guest.0 channel, Linux PTY/Files daemon, Windows shutdown/IP/Files subset
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.17) UNRELEASED; urgency=medium
+
+  * Phase 18 VM advanced: templates, clone, import/export, USB and generic PCI passthrough
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.16) UNRELEASED; urgency=medium
+
+  * Phase 17 operator UX: Guided/Advanced/Expert prefs, command palette, tablet chrome
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.15) UNRELEASED; urgency=medium
+
+  * Phase 16 observability complete: historical metrics downsample, typed logs, local alerts, timeline, capacity, SMART
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.14) UNRELEASED; urgency=medium
+
+  * Phase 15 ZFS storage: import by GUID, zvol VM disks, dataset CT roots, no zpool import -f
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.13) UNRELEASED; urgency=medium
+
+  * Phase 14 GPU runtime and assignment: explicit gpu_id, IOMMU groups, exclusive claims, Debian 13 runtime
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.12) UNRELEASED; urgency=medium
+
+  * Phase 13 identity completion: TOTP MFA, groups, service principals, audit browser
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.11) UNRELEASED; urgency=medium
+
+  * Phase 12 platform updates: host-neutral Update API, Debian 13 signed-repo adapter, checkpoint, rollback
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.10) UNRELEASED; urgency=medium
+
+  * Phase 11 backup engine: local/NFS/SMB targets, snapshot-then-copy, restore new or replace
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.9) UNRELEASED; urgency=medium
+
+  * Phase 10 Directory qcow2 overlay snapshots
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.8) UNRELEASED; urgency=medium
+
+  * Phase 9 HTTPS and certificates for the management plane
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.7) UNRELEASED; urgency=medium
+
+  * Phase 8 product virtual machines (Dogfood Host)
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.6) UNRELEASED; urgency=medium
+
+  * Phase 7 QEMU/QMP supervisory prototype
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.5) UNRELEASED; urgency=medium
+
+  * Phase 6 Terminal and Files for the host and system containers.
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.4) UNRELEASED; urgency=medium
+
+  * Phase 5 system containers: unprivileged liblxc, official image pins, and nodal-ct@ units.
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.3) UNRELEASED; urgency=medium
+
+  * Phase 4 safe networking: isolated, isolated-NAT, LAN-bridge, dry-run, and rollback.
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.2) UNRELEASED; urgency=medium
+
+  * Phase 3 Directory storage pools, volumes, and image library.
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.1) UNRELEASED; urgency=medium
+
+  * Phase 2 host visibility: inventory, metrics, tasks, and events.
+  * Keep the agent socket directory out of RuntimeDirectory so restarts do not delete agent.sock.
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000
+
+nodal (0.1.0) UNRELEASED; urgency=medium
+
+  * Phase 1 Debian packaging: binaries, systemd units, and host prepare.
+
+ -- No-dal <dev@no-dal.com>  Tue, 01 Sep 2026 00:00:00 +0000

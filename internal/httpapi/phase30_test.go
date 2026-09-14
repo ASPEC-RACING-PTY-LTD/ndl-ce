@@ -1,0 +1,518 @@
+package httpapi
+
+import (
+	"context"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/appdb"
+)
+
+func TestPhase30JoinCreatesSecondNodeAndTokenReuseFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	_ = mem.CreateWorkload(t.Context(), appdb.Workload{
+		ID: uuid.NewString(), ClusterID: clusterRow.ID, NodeID: control.ID,
+		OwnerNodeID: control.ID, DesiredNodeID: control.ID,
+		Name: "keep-running", Kind: "vm", Status: "running",
+	})
+
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("token create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	joinToken, _ := created["token"].(string)
+	if joinToken == "" {
+		t.Fatal("token shown once")
+	}
+	if strings.Contains(string(body), "PRIVATE KEY") && strings.Contains(string(body), "cluster CA") {
+		t.Fatal("CA private key must not be in join-token JSON")
+	}
+
+	joinBody := `{"token":"` + joinToken + `","hostname":"box-b"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/join", strings.NewReader(joinBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("join %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(string(body), "BEGIN EC PRIVATE KEY") && !strings.Contains(string(body), "node_key") {
+		t.Fatal("unexpected key")
+	}
+	if !strings.Contains(string(body), `"role":"worker"`) || !strings.Contains(string(body), "node_key") {
+		t.Fatalf("worker certs missing %s", body)
+	}
+	var joined map[string]any
+	if err := json.Unmarshal(body, &joined); err != nil {
+		t.Fatal(err)
+	}
+	if joined["id"] == control.ID {
+		t.Fatal("hostname must not become node identity")
+	}
+	if joined["hostname"] != "box-b" {
+		t.Fatalf("hostname locator %v", joined["hostname"])
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/join", strings.NewReader(joinBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict && res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("reuse %d %s", res.StatusCode, body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/cluster", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("cluster %d %s", res.StatusCode, body)
+	}
+	var inv map[string]any
+	if err := json.Unmarshal(body, &inv); err != nil {
+		t.Fatal(err)
+	}
+	nodes, _ := inv["nodes"].([]any)
+	if len(nodes) != 2 {
+		t.Fatalf("inventory %s", body)
+	}
+
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(body), control.ID) || !strings.Contains(string(body), joined["id"].(string)) {
+		t.Fatalf("nodes list %s", body)
+	}
+
+	workloads, _ := mem.ListWorkloads(t.Context(), clusterRow.ID)
+	if len(workloads) != 1 || workloads[0].Status != "running" || workloads[0].NodeID != control.ID {
+		t.Fatalf("existing VM on node A must be untouched: %+v", workloads)
+	}
+}
+
+func TestPhase30PairingTokenIsNotJoinToken(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_ = claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join", strings.NewReader(`{"token":"pairing-not-join","hostname":"box-b"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("pairing as join %d %s", res.StatusCode, body)
+	}
+}
+
+func TestPhase30HostnameCollisionStillUniqueUUID(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	id1, _ := mintJoin(t, ts, cookie, "box-b")
+	id2, _ := mintJoin(t, ts, cookie, "box-b")
+	if id1 == id2 {
+		t.Fatal("hostname is not identity")
+	}
+	nodes, _ := mem.ListClusterNodes(t.Context(), clusterRow.ID)
+	names := map[string]int{}
+	for _, n := range nodes {
+		names[n.Name]++
+	}
+	for name, count := range names {
+		if count > 1 {
+			t.Fatalf("duplicate name %s", name)
+		}
+	}
+}
+
+func TestPhase30RevokeWorkerAndRefuseControl(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	workerID, certPEM := mintJoin(t, ts, cookie, "box-b")
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+control.ID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("revoke control %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+workerID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("revoke worker %d %s", res.StatusCode, body)
+	}
+	got, _ := mem.GetNodeByID(t.Context(), clusterRow.ID, workerID)
+	if got == nil || got.RevokedAt == nil {
+		t.Fatal("worker must be revoked")
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err == nil {
+		t.Fatal("revoked node serial must fail closed")
+	}
+}
+
+type missRevokeNodeStore struct {
+	appdb.Store
+}
+
+func (missRevokeNodeStore) RevokeNode(context.Context, string, string, time.Time) error {
+	return nil
+}
+
+func TestPhase30RevokeFailsClosedWhenPersistMisses(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	workerID, certPEM := mintJoin(t, ts, cookie, "box-miss")
+	s.Store = missRevokeNodeStore{Store: mem}
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+workerID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("revoke persist miss %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "could not record node revoke") {
+		t.Fatalf("revoke persist miss body %s", body)
+	}
+
+	s.Store = mem
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/nodes/"+workerID, nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET node %d %s", res.StatusCode, raw)
+	}
+	var node map[string]any
+	if err := json.Unmarshal(raw, &node); err != nil {
+		t.Fatal(err)
+	}
+	if node["revoked"] == true {
+		t.Fatalf("GET /nodes must not claim revoked after persist miss %s", raw)
+	}
+
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err != nil {
+		t.Fatalf("CA must stay valid until persist succeeds: %v", err)
+	}
+}
+
+func TestPhase30JoinCertFailureRevokesOrphanNode(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	control := seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("token create %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	joinToken, _ := created["token"].(string)
+	if joinToken == "" {
+		t.Fatal("token shown once")
+	}
+
+	bad := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(bad, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.ClusterCA.Dir = bad
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/join", strings.NewReader(`{"token":"`+joinToken+`","hostname":"box-b"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("join cert fail %d %s", res.StatusCode, body)
+	}
+	nodes, _ := mem.ListClusterNodes(t.Context(), clusterRow.ID)
+	unrevoked := 0
+	for _, n := range nodes {
+		if n.RevokedAt == nil {
+			unrevoked++
+			if n.ID != control.ID {
+				t.Fatalf("orphan worker must be revoked: %+v", n)
+			}
+		}
+	}
+	if unrevoked != 1 {
+		t.Fatalf("only the control node should remain: %+v", nodes)
+	}
+}
+
+func TestPhase30RevokeFailsClosedWhenCAWriteFails(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	workerID, certPEM := mintJoin(t, ts, cookie, "box-b")
+
+	blockPath := filepath.Join(s.ClusterCA.Dir, "revoked")
+	if err := os.WriteFile(blockPath, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+workerID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("blocked revoke %d %s", res.StatusCode, body)
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("node cert pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err != nil {
+		t.Fatalf("certificate must stay valid until CA revoke succeeds: %v", err)
+	}
+	if err := os.Remove(blockPath); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/nodes/"+workerID+"/revoke", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("retry revoke %d %s", res.StatusCode, body)
+	}
+	if err := s.ClusterCA.VerifyClientCerts([][]byte{cert.Raw}); err == nil {
+		t.Fatal("revoked node serial must fail closed")
+	}
+}
+
+func TestPhase30SecondWriterLeaseRefusesWrites(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	exp := time.Now().UTC().Add(time.Minute)
+	if err := mem.AcquireLease(t.Context(), clusterRow.ID, "writer-a", exp); err != nil {
+		t.Fatal(err)
+	}
+	s.LeaseHolder = "writer-b"
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("second writer %d %s", res.StatusCode, body)
+	}
+}
+
+func TestPhase30FencedWriterCannotIssueJoinTokens(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	exp := time.Now().UTC().Add(time.Minute)
+	if err := mem.AcquireLease(t.Context(), clusterRow.ID, "writer-a", exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.FenceLease(t.Context(), clusterRow.ID, time.Now().UTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	s.LeaseHolder = "writer-a"
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict || !strings.Contains(strings.ToLower(string(body)), "fenced") {
+		t.Fatalf("fenced writer %d %s", res.StatusCode, body)
+	}
+	s.LeaseHolder = "writer-b"
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("standby before promote %d %s", res.StatusCode, body)
+	}
+}
+
+func TestFencedWriterCannotCreateWorkloads(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	_ = seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	exp := time.Now().UTC().Add(time.Minute)
+	if err := mem.AcquireLease(t.Context(), clusterRow.ID, "writer-a", exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.FenceLease(t.Context(), clusterRow.ID, time.Now().UTC().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	s.LeaseHolder = "writer-a"
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(`{"name":"web","kind":"vm"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict || !strings.Contains(strings.ToLower(string(body)), "fenced") {
+		t.Fatalf("fenced create %d %s", res.StatusCode, body)
+	}
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/workloads", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("read on fenced writer %d", res.StatusCode)
+	}
+	s.LeaseHolder = "writer-b"
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/workloads", strings.NewReader(`{"name":"web","kind":"vm"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("standby create before promote %d %s", res.StatusCode, body)
+	}
+}
+
+func mintJoin(t *testing.T, ts *httptest.Server, cookie, hostname string) (string, string) {
+	t.Helper()
+	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/cluster/join-tokens", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("token %d %s", res.StatusCode, body)
+	}
+	var created map[string]any
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	joinBody := `{"token":"` + created["token"].(string) + `","hostname":"` + hostname + `"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/cluster/join", strings.NewReader(joinBody))
+	req.Header.Set("Content-Type", "application/json")
+	res, _ = ts.Client().Do(req)
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("join %d %s", res.StatusCode, body)
+	}
+	var joined map[string]any
+	if err := json.Unmarshal(body, &joined); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := joined["id"].(string)
+	if id == "" {
+		t.Fatal("missing node id")
+	}
+	certPEM, _ := joined["node_cert"].(string)
+	if certPEM == "" {
+		t.Fatal("missing node cert")
+	}
+	return id, certPEM
+}

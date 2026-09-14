@@ -1,0 +1,211 @@
+package rbac
+
+import "testing"
+
+func TestAuthorizeMatrix(t *testing.T) {
+	c := New()
+	admin := c.PermissionsForRole(Admin)
+	op := c.PermissionsForRole(Operator)
+	view := c.PermissionsForRole(Viewer)
+	if !Authorize(admin, IdentityTokenCreate) {
+		t.Fatal("admin")
+	}
+	if !Authorize(op, IdentityTokenCreate) {
+		t.Fatal("operator tokens")
+	}
+	if Authorize(view, IdentityTokenCreate) {
+		t.Fatal("viewer must be denied token create")
+	}
+	if !Authorize(view, IdentityRead) {
+		t.Fatal("viewer read")
+	}
+	if !Authorize(view, NodeRead) || !Authorize(view, EventsRead) || !Authorize(view, MetricsRead) {
+		t.Fatal("viewer phase 2 reads")
+	}
+	if !Authorize(op, NodeRead) || !Authorize(op, EventsRead) || !Authorize(op, MetricsRead) {
+		t.Fatal("operator phase 2 reads")
+	}
+	if !Authorize(view, StorageRead) || Authorize(view, StoragePoolCreate) || Authorize(view, StorageVolumeCreate) || Authorize(view, StorageImageUpload) {
+		t.Fatal("viewer storage is read-only")
+	}
+	if !Authorize(op, StoragePoolCreate) || !Authorize(op, StorageVolumeCreate) || !Authorize(op, StorageImageUpload) {
+		t.Fatal("operator storage mutations")
+	}
+	if !Authorize(view, NetworkRead) || Authorize(view, NetworkCreate) || Authorize(view, NetworkApply) {
+		t.Fatal("viewer network is read-only")
+	}
+	if !Authorize(op, NetworkCreate) || !Authorize(op, NetworkApply) {
+		t.Fatal("operator isolated network mutations")
+	}
+	if !Authorize(view, ComputeRead) || Authorize(view, ComputeCreate) || Authorize(view, ComputeLifecycle) {
+		t.Fatal("viewer compute is read-only")
+	}
+	if !Authorize(op, ComputeCreate) || !Authorize(op, ComputeLifecycle) {
+		t.Fatal("operator unprivileged create and lifecycle")
+	}
+	if !Authorize(op, ComputeModify) || !Authorize(op, ComputeStart) || !Authorize(op, ComputeStop) || !Authorize(op, ComputeDelete) || !Authorize(op, ComputeConsole) {
+		t.Fatal("operator phase 8 compute permissions")
+	}
+	if Authorize(view, ComputeModify) || Authorize(view, ComputeStart) || Authorize(view, ComputeConsole) || Authorize(view, ComputeDelete) {
+		t.Fatal("viewer compute remains read-only")
+	}
+	if !Authorize(op, ComputeGPUAssign) || Authorize(view, ComputeGPUAssign) {
+		t.Fatal("operator gpu assign; viewer not")
+	}
+	if Authorize(view, TerminalOpen) {
+		t.Fatal("viewer must not have terminal")
+	}
+	if !Authorize(view, FilesRead) || Authorize(view, FilesDownload) || Authorize(view, TerminalOpen) {
+		t.Fatal("viewer files.read only, no download, no terminal")
+	}
+	if !Authorize(op, TerminalOpen) || !Authorize(op, FilesUpload) || !Authorize(op, FilesDelete) {
+		t.Fatal("operator CT terminal and files")
+	}
+	if Authorize(view, SettingsTLSManage) || Authorize(op, SettingsTLSManage) {
+		t.Fatal("only admin may manage TLS")
+	}
+	if !Authorize(view, SettingsTLSRead) || !Authorize(op, SettingsTLSRead) {
+		t.Fatal("tls status is readable")
+	}
+	if !Authorize(view, SettingsLicenseRead) || Authorize(view, SettingsLicenseManage) || Authorize(op, SettingsLicenseManage) {
+		t.Fatal("only admin may activate a license; CE status is readable")
+	}
+	if !Authorize(op, SettingsLicenseRead) {
+		t.Fatal("operator may read license status")
+	}
+	if !Authorize(op, ComputeSnapshot) || !Authorize(op, StorageSnapshot) {
+		t.Fatal("operator snapshots")
+	}
+	if Authorize(view, ComputeSnapshot) || Authorize(view, StorageSnapshot) {
+		t.Fatal("viewer must not snapshot")
+	}
+	if !Authorize(op, ComputeMigrate) || Authorize(view, ComputeMigrate) {
+		t.Fatal("operator migrate; viewer not")
+	}
+	if !Authorize(view, BackupRead) || Authorize(view, BackupCreate) || Authorize(view, BackupRestore) {
+		t.Fatal("viewer backup is read-only")
+	}
+	if !Authorize(op, BackupRead) || !Authorize(op, BackupCreate) || !Authorize(op, BackupRestore) {
+		t.Fatal("operator backup run and restore")
+	}
+	if !Authorize(op, NodeUpdate) || Authorize(view, NodeUpdate) {
+		t.Fatal("operator may update the node; viewer may not")
+	}
+	if Authorize(op, ClusterPromote) || Authorize(view, ClusterPromote) {
+		t.Fatal("promotion is privileged")
+	}
+	if !Authorize(op, ClusterJoin) || Authorize(view, ClusterJoin) {
+		t.Fatal("operator may create join tokens; viewer may not")
+	}
+	if !Authorize(op, NodeRevoke) || Authorize(view, NodeRevoke) {
+		t.Fatal("operator may revoke workers; viewer may not")
+	}
+	if Authorize(view, AuditRead) || Authorize(op, AuditRead) {
+		t.Fatal("viewer and operator must not read audit")
+	}
+	if !Authorize(op, IdentityMFA) || !Authorize(view, IdentityMFA) {
+		t.Fatal("people may enroll MFA")
+	}
+	if !Authorize(op, IdentityGroupManage) || Authorize(view, IdentityGroupManage) {
+		t.Fatal("operator groups; viewer not")
+	}
+	if Authorize(op, SecretReveal) || Authorize(op, ClusterDestroy) || Authorize(op, IdentityService) {
+		t.Fatal("step-up and service principals stay admin")
+	}
+	if !Authorize(view, AlertRead) || Authorize(view, AlertManage) {
+		t.Fatal("viewer alert is read-only")
+	}
+	if !Authorize(op, AlertRead) || !Authorize(op, AlertManage) {
+		t.Fatal("operator may manage alerts")
+	}
+	if !Authorize(view, FeatureRead) || Authorize(view, FeatureManage) {
+		t.Fatal("viewer feature is read-only")
+	}
+	if !Authorize(op, FeatureRead) || !Authorize(op, FeatureManage) {
+		t.Fatal("operator may enable features")
+	}
+	if !Authorize(view, StoreRead) || Authorize(view, StoreInstall) || Authorize(view, StoreVerify) {
+		t.Fatal("viewer store is read-only")
+	}
+	if !Authorize(op, StoreRead) || !Authorize(op, StoreInstall) || !Authorize(op, StoreVerify) {
+		t.Fatal("operator may install and verify store apps")
+	}
+	if !Authorize(view, PolicyRead) || Authorize(view, PolicyApply) || Authorize(view, PolicyRun) {
+		t.Fatal("viewer policy is read-only")
+	}
+	if !Authorize(op, PolicyRead) || !Authorize(op, PolicyApply) || !Authorize(op, PolicyRun) {
+		t.Fatal("operator may apply policies")
+	}
+	if !Authorize(view, AIAsk) || Authorize(view, AIManage) {
+		t.Fatal("viewer ai is ask-only")
+	}
+	if !Authorize(op, AIAsk) || !Authorize(op, AIManage) {
+		t.Fatal("operator may manage ai providers")
+	}
+	if !Authorize(view, MigrationRead) || Authorize(view, MigrationImport) || Authorize(view, MigrationExport) || Authorize(view, MigrationManage) {
+		t.Fatal("viewer migration is read-only")
+	}
+	if !Authorize(op, MigrationRead) || !Authorize(op, MigrationImport) || !Authorize(op, MigrationExport) || !Authorize(op, MigrationManage) {
+		t.Fatal("operator may import and export")
+	}
+	if Authorize(view, UsersRead) || Authorize(view, UsersCreate) || Authorize(view, RolesManage) || Authorize(view, SettingsSecurityManage) || Authorize(view, APIAccessManage) || Authorize(view, UpdatesManage) {
+		t.Fatal("viewer must not have management grants")
+	}
+	if Authorize(op, UsersRead) || Authorize(op, UsersCreate) || Authorize(op, UsersDelete) || Authorize(op, UsersRolesManage) || Authorize(op, RolesManage) || Authorize(op, SettingsSecurityManage) || Authorize(op, AuditRead) {
+		t.Fatal("operator must not manage users, roles, audit, or security policy")
+	}
+	if !Authorize(op, APIAccessManage) || !Authorize(op, UpdatesManage) || !Authorize(op, FeatureManage) {
+		t.Fatal("operator may manage API access, updates, and features")
+	}
+	if !Authorize(admin, UsersRead) || !Authorize(admin, UsersDelete) || !Authorize(admin, RolesManage) || !Authorize(admin, SettingsSecurityManage) {
+		t.Fatal("owner has user management")
+	}
+}
+
+func TestPermissionsForAutomationIsNarrowerThanOperator(t *testing.T) {
+	got := PermissionsForAutomation()
+	want := []string{PolicyApply, ComputeMigrate, ComputeRead, NodeRead, StorageRead}
+	if len(got) != len(want) {
+		t.Fatalf("grants %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("grants %v", got)
+		}
+	}
+	c := New()
+	op := c.PermissionsForRole(Operator)
+	view := c.PermissionsForRole(Viewer)
+	for _, p := range got {
+		if !Authorize(op, p) {
+			t.Fatalf("operator still has %s", p)
+		}
+	}
+	if Authorize(view, PolicyApply) || Authorize(view, ComputeMigrate) {
+		t.Fatal("viewer must not run automation writes")
+	}
+	if Authorize(got, All) || Authorize(got, FeatureManage) || Authorize(got, ComputeDelete) || Authorize(got, SettingsLicenseManage) || Authorize(got, IdentityService) || Authorize(got, IdentityTokenCreate) {
+		t.Fatal("Operator is too broad; automation must not inherit it")
+	}
+	if !Authorize(got, ComputeMigrate) || !Authorize(got, PolicyApply) {
+		t.Fatal("automation reuses compute.migrate and policy.apply")
+	}
+	seed := SeedRoles()
+	if len(seed[Automation]) == 0 || seed[Automation][0] != PolicyApply {
+		t.Fatalf("seed automation %v", seed[Automation])
+	}
+}
+
+func TestTokenPresets(t *testing.T) {
+	debug := PermissionsForTokenPreset(TokenPresetReadonlyDebug)
+	if !Authorize(debug, ComputeRead) || !Authorize(debug, MigrationRead) || !Authorize(debug, EventsRead) || Authorize(debug, AuditRead) || Authorize(debug, ComputeDelete) {
+		t.Fatalf("readonly-debug %v", debug)
+	}
+	audit := PermissionsForTokenPreset(TokenPresetFullAudit)
+	if !Authorize(audit, AuditRead) || !Authorize(audit, NodeRead) || Authorize(audit, IdentityTokenCreate) {
+		t.Fatalf("full-audit %v", audit)
+	}
+	if PermissionsForTokenPreset("nope") != nil {
+		t.Fatal("unknown preset")
+	}
+}
