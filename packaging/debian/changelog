@@ -1,3 +1,16 @@
+nodal (1.0.10) UNRELEASED; urgency=medium
+
+  * Allow the agent to open /dev/zfs so imported ZFS pools can be observed.
+    DevicePolicy=closed previously made zpool status fail, so a healthy pool
+    stayed unavailable with no capacity.
+  * GET /storage/zfs reports installed when the typed zpool and zfs binaries
+    exist instead of always claiming ZFS userland is missing on Debian 13.
+  * ZFS observe records pool size, allocated, and free from zpool get.
+  * The Storage page shows Collecting until pools load, so the first-run
+    modal does not appear on refresh when pools already exist.
+
+ -- No-dal <packaging@no-dal.com>  Tue, 15 Sep 2026 08:30:00 +0000
+
 nodal (1.0.9) UNRELEASED; urgency=medium
 
   * System-container delete removes the exclusive root volume row. Postgres

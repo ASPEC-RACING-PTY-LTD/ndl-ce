@@ -338,6 +338,65 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /bring up osd/i })).toBeVisible();
   });
 
+  it("does not show the first-run storage modal while pools are still loading", async () => {
+    window.history.replaceState({}, "", "/storage");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/storage/volumes": { status: 200, body: { items: [] } },
+      "/api/v1/storage/images": { status: 200, body: { items: [] } },
+      "/api/v1/storage/zfs": { status: 200, body: { status: "installed", host_supported: true } },
+    });
+    const inner = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const path = new URL(url, "http://localhost").pathname;
+      if (path === "/api/v1/storage/pools") {
+        return new Promise(() => undefined) as Promise<Response>;
+      }
+      return inner(input, init);
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^storage$/i })).toBeVisible();
+    expect(screen.getByText("Collecting")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: /first storage pool/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/this installation has no usable storage pool yet/i)).not.toBeInTheDocument();
+  });
+
+  it("does not claim ZFS userland is missing when the runtime is installed", async () => {
+    window.history.replaceState({}, "", "/storage");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/storage/pools": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "zfs-1",
+              name: "storage",
+              backend_type: "zfs",
+              status: "available",
+              total_bytes: 3985729650688,
+              usable_bytes: 3985728643072,
+              allocated_bytes: 1007616,
+            },
+          ],
+        },
+      },
+      "/api/v1/storage/volumes": { status: 200, body: { items: [] } },
+      "/api/v1/storage/images": { status: 200, body: { items: [] } },
+      "/api/v1/storage/zfs": { status: 200, body: { status: "installed", host_supported: true, directory_default: true } },
+    });
+    render(<App />);
+    expect(await screen.findByRole("button", { name: "storage" })).toBeVisible();
+    expect((await screen.findAllByText(/^available$/i)).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /add storage/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^zfs$/i }));
+    expect(await screen.findByRole("heading", { name: /^zfs$/i })).toBeVisible();
+    expect(screen.queryByText(/zfs userland is not installed/i)).not.toBeInTheDocument();
+  });
+
   it("shows isolated network first-run and create form", async () => {
     window.history.replaceState({}, "", "/network");
     mockApi({

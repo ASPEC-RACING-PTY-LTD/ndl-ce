@@ -1,8 +1,14 @@
 package storage
 
 import (
+	"context"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/no-dal/ndl-ce/internal/hostos"
 )
 
 func TestZFSImportRefusesForceAndAcceptsGUID(t *testing.T) {
@@ -128,6 +134,110 @@ func TestHostVolumePathAndSendDest(t *testing.T) {
 	}
 	if QEMUFormat(BackendZFS, FormatZvol) != "raw" {
 		t.Fatal("qemu format")
+	}
+}
+
+func TestEvaluateZFSRuntimeDetectsUserland(t *testing.T) {
+	unsupported := EvaluateZFSRuntime(hostos.Platform{ID: "ubuntu", VersionID: "24.04", Architecture: "amd64"}, true)
+	if unsupported.HostSupported || unsupported.Status != ZFSRuntimeUnsupported {
+		t.Fatalf("%+v", unsupported)
+	}
+	missing := EvaluateZFSRuntime(hostos.Platform{ID: "debian", VersionID: "13", Architecture: "amd64"}, false)
+	if !missing.HostSupported || missing.Status != ZFSRuntimeNotInstalled || missing.Reason != ZFSMissing {
+		t.Fatalf("%+v", missing)
+	}
+	ready := EvaluateZFSRuntime(hostos.Platform{ID: "debian", VersionID: "13", Architecture: "amd64"}, true)
+	if !ready.HostSupported || ready.Status != ZFSRuntimeInstalled {
+		t.Fatalf("%+v", ready)
+	}
+}
+
+func TestZFSUserlandInstalledRequiresTypedBins(t *testing.T) {
+	seen := map[string]bool{}
+	ok := zfsBinsPresent(func(name string) (os.FileInfo, error) {
+		seen[name] = true
+		if name == ZPoolBin || name == ZFSBin {
+			return fakeFileInfo{}, nil
+		}
+		return nil, os.ErrNotExist
+	})
+	if !ok || !seen[ZPoolBin] || !seen[ZFSBin] {
+		t.Fatalf("installed=%v seen=%v", ok, seen)
+	}
+	if zfsBinsPresent(func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }) {
+		t.Fatal("missing bins")
+	}
+}
+
+type fakeFileInfo struct{}
+
+func (fakeFileInfo) Name() string       { return "zpool" }
+func (fakeFileInfo) Size() int64        { return 1 }
+func (fakeFileInfo) Mode() os.FileMode  { return 0o755 }
+func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (fakeFileInfo) IsDir() bool        { return false }
+func (fakeFileInfo) Sys() any           { return nil }
+
+func TestParseZPoolCapacity(t *testing.T) {
+	props := ParseZPoolGet("size\t3985729650688\nallocated\t1007616\nfree\t3985728643072\nguid\t2835117654106017634\nhealth\tONLINE\n")
+	if props["guid"] != "2835117654106017634" || props["health"] != "ONLINE" {
+		t.Fatalf("%+v", props)
+	}
+	cap := ZPoolCapacityFromProps(props)
+	if cap.TotalBytes == nil || *cap.TotalBytes != 3985729650688 {
+		t.Fatalf("total %+v", cap)
+	}
+	if cap.UsableBytes == nil || *cap.UsableBytes != 3985728643072 {
+		t.Fatalf("usable %+v", cap)
+	}
+	if cap.AllocatedBytes == nil || *cap.AllocatedBytes != 1007616 {
+		t.Fatalf("alloc %+v", cap)
+	}
+	argv, err := ZFSCapacityArgv("storage")
+	if err != nil || argv[0] != ZPoolBin || strings.Contains(strings.Join(argv, " "), "-f") {
+		t.Fatal(argv, err)
+	}
+}
+
+func TestZFSObserveReportsCapacityForHealthyPool(t *testing.T) {
+	e := ZFSEngine{Run: func(_ context.Context, argv []string) (string, error) {
+		joined := strings.Join(argv, " ")
+		if strings.Contains(joined, "status") {
+			return "  pool: storage\n state: ONLINE\nerrors: No known data errors\n", nil
+		}
+		if strings.Contains(joined, "get") {
+			return "size\t1000\nallocated\t100\nfree\t900\nguid\t1234567890\nhealth\tONLINE\n", nil
+		}
+		return "", fmt.Errorf("unexpected %v", argv)
+	}}
+	obs := e.ObserveHints(t.Context(), []PoolHint{{
+		PoolID: "11111111-1111-4111-8111-111111111111", BackendType: BackendZFS,
+		RootPath: ZFSMountRoot + "/1", Backing: BackingIdentity{FSUUID: "1234567890", Device: "storage", FSType: BackendZFS},
+	}})
+	if len(obs) != 1 || obs[0].Status != StatusAvailable {
+		t.Fatalf("%+v", obs)
+	}
+	if obs[0].Capacity.TotalBytes == nil || *obs[0].Capacity.TotalBytes != 1000 {
+		t.Fatalf("capacity %+v", obs[0].Capacity)
+	}
+	if obs[0].Capacity.UsableBytes == nil || *obs[0].Capacity.UsableBytes != 900 {
+		t.Fatalf("usable %+v", obs[0].Capacity)
+	}
+}
+
+func TestZFSObserveDeviceMissingIsHonest(t *testing.T) {
+	e := ZFSEngine{Run: func(_ context.Context, argv []string) (string, error) {
+		return "/dev/zfs and /proc/self/mounts are required.", fmt.Errorf("exit 1")
+	}}
+	res, err := e.observeOne(t.Context(), ZFSOp{Action: "observe", Name: "storage", GUID: "1234567890"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusUnavailable || res.Reason != ZFSDeviceMissing {
+		t.Fatalf("%+v", res)
+	}
+	if res.Capacity.UsableBytes != nil {
+		t.Fatal("unavailable must not report capacity")
 	}
 }
 

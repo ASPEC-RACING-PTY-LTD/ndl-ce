@@ -485,8 +485,10 @@ func (s *Server) refreshZFS(ctx context.Context, clusterID string, pools []appdb
 			if res.RootPath != "" {
 				seen.RootPath = res.RootPath
 			}
-			if res.Status != storage.StatusAvailable {
+			if res.Status == storage.StatusUnavailable {
 				seen.Capacity = storage.Capacity{}
+			} else {
+				seen.Capacity = res.Capacity
 			}
 		}
 		obs.Pools = append(obs.Pools, seen)

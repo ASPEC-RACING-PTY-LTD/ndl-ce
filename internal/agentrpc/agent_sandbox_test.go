@@ -65,6 +65,7 @@ func TestAgentUnitKeepsLeastPrivilegeAttachSandbox(t *testing.T) {
 		"DeviceAllow=/dev/loop-control rw",
 		"DeviceAllow=block-loop rw",
 		"DeviceAllow=/dev/net/tun rw",
+		"DeviceAllow=/dev/zfs rw",
 	} {
 		if !strings.Contains(unit, allow) {
 			t.Fatalf("missing %s", allow)

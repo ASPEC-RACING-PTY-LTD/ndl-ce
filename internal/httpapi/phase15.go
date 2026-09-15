@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
-	"github.com/no-dal/ndl-ce/internal/hostos/debian"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
@@ -50,17 +49,18 @@ func (s *Server) zfsRuntime(w http.ResponseWriter, r *http.Request) {
 	_, invRow, _ := s.cachedNode(r, p.User.ClusterID)
 	parsed, _ := decodeInv(invRow)
 	plat := s.hostPlatform(parsed)
-	if plat.ID != "debian" || plat.VersionID != "13" || plat.Architecture != "amd64" {
-		out["host_supported"] = false
-		out["status"] = "unsupported"
-		out["reason"] = debian.ZFSUnsupportedHost
-		writeJSON(w, http.StatusOK, out)
-		return
+	rt := storage.EvaluateZFSRuntime(plat, storage.ZFSUserlandInstalled())
+	out["host_supported"] = rt.HostSupported
+	out["status"] = rt.Status
+	if rt.Reason != "" {
+		out["reason"] = rt.Reason
 	}
-	out["host_supported"] = true
-	out["status"] = "not_installed"
-	out["packages"] = debian.ZFSRuntimePackages
-	out["argv"] = debian.ZFSRuntimeInstallArgv(true)
+	if len(rt.Packages) > 0 {
+		out["packages"] = rt.Packages
+	}
+	if len(rt.Argv) > 0 {
+		out["argv"] = rt.Argv
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

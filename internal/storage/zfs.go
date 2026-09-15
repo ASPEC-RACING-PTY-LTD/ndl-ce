@@ -2,23 +2,32 @@ package storage
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/no-dal/ndl-ce/internal/hostos"
+	"github.com/no-dal/ndl-ce/internal/hostos/debian"
 )
 
 const (
-	BackendZFS     = "zfs"
-	FormatZvol     = "zvol"
-	FormatDataset  = "dataset"
-	ZPoolBin       = "/usr/sbin/zpool"
-	ZFSBin         = "/usr/sbin/zfs"
-	ZVolDevPrefix  = "/dev/zvol/"
-	ZFSMountRoot   = "/var/lib/ndl/storage/zfs"
-	ZFSForceRefuse = "zpool import -f is refused"
-	ZFSRootRefuse  = "ZFS pools must be created on extra disks, not the host root disk"
-	ZFSMissing     = "ZFS is not installed on this host. Directory storage remains first-class."
-	ZFSUnsupported = "ZFS runtime install uses the Debian 13 adapter. This host is not Debian 13 amd64."
+	BackendZFS             = "zfs"
+	FormatZvol             = "zvol"
+	FormatDataset          = "dataset"
+	ZPoolBin               = "/usr/sbin/zpool"
+	ZFSBin                 = "/usr/sbin/zfs"
+	ZVolDevPrefix          = "/dev/zvol/"
+	ZFSMountRoot           = "/var/lib/ndl/storage/zfs"
+	ZFSForceRefuse         = "zpool import -f is refused"
+	ZFSRootRefuse          = "ZFS pools must be created on extra disks, not the host root disk"
+	ZFSMissing             = "ZFS is not installed on this host. Directory storage remains first-class."
+	ZFSUnsupported         = "ZFS runtime install uses the Debian 13 adapter. This host is not Debian 13 amd64."
+	ZFSRuntimeInstalled    = "installed"
+	ZFSRuntimeNotInstalled = "not_installed"
+	ZFSRuntimeUnsupported  = "unsupported"
+	ZFSDeviceMissing       = "ZFS kernel device is not available to the agent. Desired rows remain."
 )
 
 var zpoolGUIDRe = regexp.MustCompile(`^[0-9]{1,20}$`)
@@ -212,6 +221,127 @@ func ZFSGetGUIDArgv(name string) ([]string, error) {
 		return nil, err
 	}
 	return []string{ZPoolBin, "get", "-H", "-o", "value", "guid", name}, nil
+}
+
+// ZFSCapacityArgv reads parseable pool size, allocated, free, guid, and health.
+func ZFSCapacityArgv(name string) ([]string, error) {
+	name, err := ParseZFSName(name)
+	if err != nil {
+		return nil, err
+	}
+	return []string{ZPoolBin, "get", "-Hp", "-o", "property,value", "size,allocated,free,guid,health", name}, nil
+}
+
+// ZFSUserlandInstalled is true when the typed zpool and zfs binaries exist.
+func ZFSUserlandInstalled() bool {
+	return zfsBinsPresent(os.Stat)
+}
+
+func zfsBinsPresent(stat func(string) (os.FileInfo, error)) bool {
+	if stat == nil {
+		return false
+	}
+	if _, err := stat(ZPoolBin); err != nil {
+		return false
+	}
+	if _, err := stat(ZFSBin); err != nil {
+		return false
+	}
+	return true
+}
+
+// ZFSRuntimeStatus is host-platform ZFS userland, not pool health.
+type ZFSRuntimeStatus struct {
+	HostSupported bool     `json:"host_supported"`
+	Status        string   `json:"status"`
+	Reason        string   `json:"reason,omitempty"`
+	Packages      []string `json:"packages,omitempty"`
+	Argv          []string `json:"argv,omitempty"`
+}
+
+// EvaluateZFSRuntime reports Debian 13 ZFS userland. Other hosts stay unsupported.
+func EvaluateZFSRuntime(p hostos.Platform, installed bool) ZFSRuntimeStatus {
+	out := ZFSRuntimeStatus{}
+	if p.ID != "debian" || p.VersionID != "13" || p.Architecture != "amd64" {
+		out.HostSupported = false
+		out.Status = ZFSRuntimeUnsupported
+		out.Reason = debian.ZFSUnsupportedHost
+		return out
+	}
+	out.HostSupported = true
+	out.Packages = debian.ZFSRuntimePackages
+	out.Argv = debian.ZFSRuntimeInstallArgv(true)
+	if installed {
+		out.Status = ZFSRuntimeInstalled
+		return out
+	}
+	out.Status = ZFSRuntimeNotInstalled
+	out.Reason = ZFSMissing
+	return out
+}
+
+// ParseZPoolGet reads `zpool get -Hp -o property,value` lines.
+func ParseZPoolGet(out string) map[string]string {
+	props := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		prop, val, ok := strings.Cut(line, "\t")
+		if !ok {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			prop, val = fields[0], fields[1]
+		}
+		props[strings.TrimSpace(prop)] = strings.TrimSpace(val)
+	}
+	return props
+}
+
+// ZPoolCapacityFromProps maps zpool size/allocated/free onto Capacity.
+func ZPoolCapacityFromProps(props map[string]string) Capacity {
+	var cap Capacity
+	if total, ok := parseZPoolBytes(props["size"]); ok {
+		cap.TotalBytes = int64ptr(total)
+	}
+	if free, ok := parseZPoolBytes(props["free"]); ok {
+		cap.UsableBytes = int64ptr(free)
+	}
+	if alloc, ok := parseZPoolBytes(props["allocated"]); ok {
+		cap.AllocatedBytes = int64ptr(alloc)
+	} else if cap.TotalBytes != nil && cap.UsableBytes != nil {
+		used := *cap.TotalBytes - *cap.UsableBytes
+		if used < 0 {
+			used = 0
+		}
+		cap.AllocatedBytes = int64ptr(used)
+	}
+	return cap
+}
+
+func parseZPoolBytes(v string) (int64, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" || v == "-" {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+func zpoolHealthUnavailable(health, statusOut string) bool {
+	h := strings.ToLower(strings.TrimSpace(health))
+	switch h {
+	case "faulted", "unavail", "unavailable", "offline", "removed", "suspended":
+		return true
+	}
+	lower := strings.ToLower(statusOut)
+	return strings.Contains(lower, "faulted") || strings.Contains(lower, "unavailable") || strings.Contains(lower, "no such pool")
 }
 
 // ZFSStatusArgv observes pool health. Missing/pulled disks surface as faulted.

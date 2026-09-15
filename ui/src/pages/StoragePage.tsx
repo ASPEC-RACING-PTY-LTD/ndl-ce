@@ -21,6 +21,7 @@ import {
 } from "../api/client";
 import type { DatastoreRuntime, DistributedRuntime, LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
 import { Field } from "../components/Field";
+import { LoadingState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes } from "../format";
 import { useSession } from "../session";
@@ -103,6 +104,7 @@ export function StoragePage() {
   const [distKey, setDistKey] = useState("");
   const [osdDisk, setOsdDisk] = useState("");
   const [addKind, setAddKind] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<"collecting" | "ready" | "unavailable">("collecting");
 
   async function reload() {
     const listed = await listPools();
@@ -132,16 +134,17 @@ export function StoragePage() {
     setLvm(lvmStatus);
     setDatastores(dsStatus);
     setDistributed(distStatus);
+    setLoadState("ready");
   }
 
   useEffect(() => {
     let cancelled = false;
-    void reload()
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unavailable");
-        }
-      });
+    void reload().catch((err) => {
+      if (!cancelled) {
+        setLoadState("unavailable");
+        setError(err instanceof Error ? err.message : "Unavailable");
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -161,7 +164,7 @@ export function StoragePage() {
   }, [selected]);
 
   const pool = pools.find((p) => p.id === selected) ?? pools[0];
-  const firstRun = pools.length === 0;
+  const firstRun = loadState === "ready" && pools.length === 0;
 
   async function onCreatePool() {
     setBusy(true);
@@ -340,7 +343,7 @@ export function StoragePage() {
         title="Storage"
         kicker="Existing pools first. Directory remains the default. The host root disk is never used accidentally."
         actions={
-          mutate && !firstRun ? (
+          mutate && loadState === "ready" && !firstRun ? (
             <button className="btn btn-primary" type="button" onClick={() => setAddKind("pick")}>
               Add storage
             </button>
@@ -683,7 +686,9 @@ export function StoragePage() {
       ) : null}
       <article className="panel table-card">
         <h2>Pools</h2>
-        {pools.length === 0 ? (
+        {loadState === "collecting" ? (
+          <LoadingState label="Collecting" />
+        ) : pools.length === 0 ? (
           <p>No storage pools.</p>
         ) : (
           <div className="table-wrap">

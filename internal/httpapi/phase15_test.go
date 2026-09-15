@@ -77,11 +77,29 @@ func TestZFSForceImportRefusedAndCapabilities(t *testing.T) {
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/storage/zfs/import", strings.NewReader(`{"guid":"1234567890","force":true}`))
-	req.Header.Set("Content-Type", "application/json")
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/storage/zfs", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ := ts.Client().Do(req)
 	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(b), `"host_supported":true`) {
+		t.Fatalf("debian runtime %d %s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), `"status":"unsupported"`) {
+		t.Fatalf("debian 13 must not be unsupported: %s", b)
+	}
+	if storage.ZFSUserlandInstalled() && !strings.Contains(string(b), `"status":"installed"`) {
+		t.Fatalf("typed zpool/zfs exist so runtime must be installed: %s", b)
+	}
+	if storage.ZFSUserlandInstalled() && strings.Contains(string(b), storage.ZFSMissing) {
+		t.Fatalf("installed userland must not claim ZFS is missing: %s", b)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/storage/zfs/import", strings.NewReader(`{"guid":"1234567890","force":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	b, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(b), "import -f") {
 		t.Fatalf("force %d %s", res.StatusCode, b)
@@ -281,7 +299,7 @@ func TestZFSViewerDeniedAndUbuntuUnsupported(t *testing.T) {
 	res, _ := ts.Client().Do(req)
 	b, _ := io.ReadAll(res.Body)
 	_ = res.Body.Close()
-	if res.StatusCode != 200 || !strings.Contains(string(b), `"host_supported":false`) || !strings.Contains(string(b), `"directory_default":true`) {
+	if res.StatusCode != 200 || !strings.Contains(string(b), `"host_supported":false`) || !strings.Contains(string(b), `"directory_default":true`) || !strings.Contains(string(b), `"status":"unsupported"`) {
 		t.Fatalf("runtime %d %s", res.StatusCode, b)
 	}
 

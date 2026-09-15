@@ -38,6 +38,7 @@ type ZFSResult struct {
 	Argv         []string     `json:"argv,omitempty"`
 	Capabilities Capabilities `json:"capabilities"`
 	Incremental  bool         `json:"incremental_send"`
+	Capacity     Capacity     `json:"capacity"`
 }
 
 // ZFSEngine runs typed zpool/zfs argv. SkipHostCmds is the Cloud-safe default.
@@ -269,11 +270,46 @@ func (e ZFSEngine) observeOne(ctx context.Context, op ZFSOp) (ZFSResult, error) 
 	out, err := e.output(ctx, argv)
 	if err != nil {
 		res.Status = StatusUnavailable
-		res.Reason = "pool is faulted or missing. Desired rows remain."
+		combined := strings.TrimSpace(out + " " + err.Error())
+		if strings.Contains(combined, "/dev/zfs") {
+			res.Reason = ZFSDeviceMissing
+		} else {
+			res.Reason = "pool is faulted or missing. Desired rows remain."
+		}
 		return res, nil
 	}
-	lower := strings.ToLower(out)
-	if strings.Contains(lower, "faulted") || strings.Contains(lower, "unavailable") || strings.Contains(lower, "no such pool") {
+	if capArgv, capErr := ZFSCapacityArgv(name); capErr == nil {
+		if capOut, capRunErr := e.output(ctx, capArgv); capRunErr == nil {
+			props := ParseZPoolGet(capOut)
+			res.Argv = append(res.Argv, strings.Join(capArgv, " "))
+			if guid := strings.TrimSpace(props["guid"]); guid != "" {
+				if parsed, perr := ParseZPoolGUID(guid); perr == nil {
+					res.GUID = parsed
+				}
+			}
+			if op.GUID != "" && res.GUID != "" && res.GUID != op.GUID {
+				res.Status = StatusUnavailable
+				res.Reason = "zpool GUID does not match the recorded identity. Desired rows remain."
+				return res, nil
+			}
+			if zpoolHealthUnavailable(props["health"], out) {
+				res.Status = StatusUnavailable
+				res.Reason = "pool is faulted or missing. Desired rows remain."
+				return res, nil
+			}
+			res.Capacity = ZPoolCapacityFromProps(props)
+			if strings.EqualFold(strings.TrimSpace(props["health"]), "DEGRADED") {
+				res.Status = StatusWarning
+			} else {
+				res.Status = StatusAvailable
+			}
+			if op.GUID != "" {
+				res.RootPath = ZFSMountRoot + "/" + op.GUID
+			}
+			return res, nil
+		}
+	}
+	if zpoolHealthUnavailable("", out) {
 		res.Status = StatusUnavailable
 		res.Reason = "pool is faulted or missing. Desired rows remain."
 		return res, nil
@@ -308,10 +344,11 @@ func (e ZFSEngine) ObserveHints(ctx context.Context, hints []PoolHint) []Observe
 		if res.RootPath != "" {
 			obs.RootPath = res.RootPath
 		}
-		if res.Status != StatusAvailable {
+		if res.Status == StatusUnavailable {
 			obs.Capacity = Capacity{}
 			obs.Writable = false
 		} else {
+			obs.Capacity = res.Capacity
 			obs.Writable = true
 		}
 		out = append(out, obs)

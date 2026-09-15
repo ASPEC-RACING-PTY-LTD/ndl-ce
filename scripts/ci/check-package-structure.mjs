@@ -424,6 +424,9 @@ if (/qemu-system|ndl-qemu-launch/.test(agentUnit)) {
 if (!/DeviceAllow=char-pts rw/.test(agentUnit) || !/DeviceAllow=\/dev\/ptmx rw/.test(agentUnit)) {
   errors.push("ndl-agent.service must allow PTY devices");
 }
+if (!/DeviceAllow=\/dev\/zfs rw/.test(agentUnit)) {
+  errors.push("ndl-agent.service must allow /dev/zfs so ZFS observe can run");
+}
 const agentInstall = existsSync("packaging/debian/ndl-agent.install")
   ? readFileSync("packaging/debian/ndl-agent.install", "utf8")
   : "";
