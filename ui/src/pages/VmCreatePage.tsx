@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { createWorkload, listImages, listNetworks, listPools } from "../api/client";
+import { createWorkload, listImages, listNetworks, listPhysicalDisks, listPools } from "../api/client";
+import type { PhysicalDisk } from "../api/client";
 import type { LibraryItem, StoragePool } from "../api/phase3";
 import type { Network } from "../api/phase4";
 import { Field } from "../components/Field";
+import { formatBytes } from "../format";
 import { preferredGuestNetwork } from "../components/form/NetworkPicker";
 import { navigate } from "../router";
 import { useSession } from "../session";
@@ -10,6 +12,14 @@ import { canMutate, uxLevel } from "../ux";
 import { buildVmCreateBody } from "../vmCreate";
 
 const STEPS = ["Basics", "Compute", "Storage", "Network", "Boot", "Cloud-init", "Review"] as const;
+
+function physicalDiskOption(d: PhysicalDisk): string {
+  const kind = d.rotational === false ? "SSD" : d.rotational ? "HDD" : "disk";
+  const transport = (d.transport || "disk").toUpperCase();
+  const size = d.size_bytes ? formatBytes(d.size_bytes) : "";
+  const reason = d.eligible ? "" : ` (${(d.reasons ?? []).join("; ") || "unavailable"})`;
+  return `${d.display_name || d.model || d.id} ${size} ${transport} ${kind}${reason}`.replace(/\s+/g, " ").trim();
+}
 
 export function VmCreatePage() {
   const session = useSession();
@@ -25,6 +35,9 @@ export function VmCreatePage() {
   const [cpus, setCpus] = useState("2");
   const [memoryGB, setMemoryGB] = useState("2");
   const [poolID, setPoolID] = useState("");
+  const [bootDisk, setBootDisk] = useState<"virtual" | "physical">("virtual");
+  const [physicalDeviceID, setPhysicalDeviceID] = useState("");
+  const [physicalDisks, setPhysicalDisks] = useState<PhysicalDisk[]>([]);
   const [networkID, setNetworkID] = useState("");
   const [firmware, setFirmware] = useState("bios");
   const [cloudImageID, setCloudImageID] = useState("");
@@ -40,14 +53,15 @@ export function VmCreatePage() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([listPools(), listNetworks(), listImages()])
-      .then(([poolRes, netRes, imgs]) => {
+    void Promise.all([listPools(), listNetworks(), listImages(), listPhysicalDisks().catch(() => ({ items: [] }))])
+      .then(([poolRes, netRes, imgs, disks]) => {
         if (cancelled) {
           return;
         }
         setPools(poolRes.items ?? []);
         setNets(netRes.items ?? []);
         setImages(imgs ?? []);
+        setPhysicalDisks(disks.items ?? []);
         if (!poolID && poolRes.items?.[0]?.id) {
           setPoolID(poolRes.items[0].id);
         }
@@ -82,6 +96,8 @@ export function VmCreatePage() {
     sshKeys,
     placement,
     requireGPU,
+    bootDisk,
+    physicalDeviceID,
   });
 
   async function onCreate() {
@@ -106,6 +122,8 @@ export function VmCreatePage() {
     );
   }
 
+  const selectedPhysical = physicalDisks.find((d) => d.id === physicalDeviceID);
+  const canCreate = Boolean(networkID) && (bootDisk === "virtual" || Boolean(physicalDeviceID && selectedPhysical?.eligible));
   const clouds = images.filter((item) => item.kind === "cloud-image");
   const isos = images.filter((item) => item.kind === "iso");
   const showBasics = !guided || step === 0 || step === 6;
@@ -167,27 +185,97 @@ export function VmCreatePage() {
       ) : null}
       {showStorage && !reviewOnly ? (
         <article className="panel">
-          <label htmlFor="vm-pool">
-            Storage pool
-            <select id="vm-pool" value={poolID} onChange={(e) => setPoolID(e.target.value)}>
-              {pools.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label htmlFor="vm-cloud">
-            Cloud image (optional)
-            <select id="vm-cloud" value={cloudImageID} onChange={(e) => setCloudImageID(e.target.value)}>
-              <option value="">None</option>
-              {clouds.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <fieldset>
+            <legend className="field-label">Add disk</legend>
+            <label className="field-label">
+              <input type="radio" name="vm-boot-disk" checked={bootDisk === "virtual"} onChange={() => setBootDisk("virtual")} />{" "}
+              Virtual disk
+            </label>
+            <label className="field-label">
+              <input
+                type="radio"
+                name="vm-boot-disk"
+                checked={bootDisk === "physical"}
+                onChange={() => {
+                  setBootDisk("physical");
+                  setCloudImageID("");
+                  if (firmware === "bios") {
+                    setFirmware("uefi");
+                  }
+                }}
+              />{" "}
+              Physical disk
+            </label>
+          </fieldset>
+          {bootDisk === "virtual" ? (
+            <>
+              <label htmlFor="vm-pool">
+                Storage pool
+                <select id="vm-pool" value={poolID} onChange={(e) => setPoolID(e.target.value)}>
+                  {pools.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label htmlFor="vm-cloud">
+                Cloud image (optional)
+                <select id="vm-cloud" value={cloudImageID} onChange={(e) => setCloudImageID(e.target.value)}>
+                  <option value="">None</option>
+                  {clouds.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <>
+              <p className="banner">
+                This attaches an existing host disk. No-DAL will not format, partition, mount, or convert it. The current
+                contents, including an installed OS, stay intact.
+              </p>
+              <label htmlFor="vm-phys">
+                Physical disk
+                <select id="vm-phys" value={physicalDeviceID} onChange={(e) => setPhysicalDeviceID(e.target.value)}>
+                  <option value="">Select a disk</option>
+                  {physicalDisks.map((d) => (
+                    <option key={d.id} value={d.id} disabled={!d.eligible}>
+                      {physicalDiskOption(d)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedPhysical ? (
+                <dl className="definition-list">
+                  <div>
+                    <dt>Stable path</dt>
+                    <dd>{selectedPhysical.by_id_path || selectedPhysical.id}</dd>
+                  </div>
+                  <div>
+                    <dt>Capacity</dt>
+                    <dd>{selectedPhysical.size_bytes ? formatBytes(selectedPhysical.size_bytes) : "Not reported"}</dd>
+                  </div>
+                  <div>
+                    <dt>Existing data</dt>
+                    <dd>
+                      {selectedPhysical.existing_data
+                        ? `Detected (${(selectedPhysical.fs_signatures ?? []).join(", ") || "partitions present"})`
+                        : "No filesystem signatures detected"}
+                    </dd>
+                  </div>
+                  {selectedPhysical.reasons?.length ? (
+                    <div>
+                      <dt>Eligibility</dt>
+                      <dd>{selectedPhysical.reasons.join("; ")}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : null}
+            </>
+          )}
         </article>
       ) : null}
       {showNetwork && !reviewOnly ? (
@@ -257,6 +345,14 @@ export function VmCreatePage() {
               <dd>{memoryGB} GB</dd>
             </div>
             <div>
+              <dt>Boot disk</dt>
+              <dd>
+                {bootDisk === "physical"
+                  ? `Physical disk ${selectedPhysical?.display_name || physicalDeviceID} (not formatted)`
+                  : `Virtual disk on ${pools.find((p) => p.id === poolID)?.name || poolID}`}
+              </dd>
+            </div>
+            <div>
               <dt>Firmware</dt>
               <dd>{firmware}</dd>
             </div>
@@ -285,13 +381,13 @@ export function VmCreatePage() {
                 Next
               </button>
             ) : (
-              <button className="btn btn-primary" type="button" disabled={busy || !networkID} onClick={() => void onCreate()}>
+              <button className="btn btn-primary" type="button" disabled={busy || !canCreate} onClick={() => void onCreate()}>
                 Create VM
               </button>
             )}
           </>
         ) : (
-          <button className="btn btn-primary" type="button" disabled={busy || !networkID} onClick={() => void onCreate()}>
+          <button className="btn btn-primary" type="button" disabled={busy || !canCreate} onClick={() => void onCreate()}>
             Create VM
           </button>
         )}

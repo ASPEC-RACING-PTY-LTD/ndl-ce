@@ -1,8 +1,29 @@
 export type WorkloadDisk = {
   id: string;
-  volume_id: string;
+  volume_id?: string;
+  source?: string;
+  device_id?: string;
+  by_id_path?: string;
   role?: string;
+  slot?: number;
+  bus?: string;
+  model?: string;
+  serial?: string;
   size_bytes?: number;
+  format?: string;
+};
+
+export type PhysicalDiskAssignment = {
+  id: string;
+  workload_id: string;
+  device_id: string;
+  by_id_path?: string;
+  model?: string;
+  serial?: string;
+  size_bytes?: number;
+  role?: string;
+  slot?: number;
+  bus?: string;
 };
 
 export type WorkloadNIC = {
@@ -42,6 +63,7 @@ export type Workload = {
   devices?: unknown;
   warnings?: string[];
   disks?: WorkloadDisk[];
+  physical_disks?: PhysicalDiskAssignment[];
   nics?: WorkloadNIC[];
   autostart?: boolean;
   pending_restart?: boolean;

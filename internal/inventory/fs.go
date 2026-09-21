@@ -85,6 +85,15 @@ func (f FS) readlink(p string) string {
 	return filepath.ToSlash(target)
 }
 
+// ReadOK, Exists, List, and Readlink expose fixture-safe host reads to
+// other packages such as physical-disk discovery.
+func (f FS) ReadOK(p string) string { return f.readOK(p) }
+func (f FS) Exists(p string) bool   { return f.exists(p) }
+func (f FS) List(p string) []string { return f.list(p) }
+func (f FS) Readlink(p string) string {
+	return f.readlink(p)
+}
+
 func (f FS) readUint(p string) (uint64, bool) {
 	s := f.readOK(p)
 	if s == "" {

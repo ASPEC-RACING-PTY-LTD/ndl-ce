@@ -8,27 +8,31 @@ import (
 )
 
 const (
-	KindVM            = "vm"
-	SchemaDesired     = "ndl.vm.spec.v1"
-	SchemaLaunch      = "ndl.vm.launch.v1"
-	DefaultMachine    = "pc-q35-10.0"
-	DefaultCPUs       = 2
-	DefaultMemory     = 2 << 30
-	DefaultDiskBytes  = 8 << 30
-	FirmwareBIOS      = "bios"
-	FirmwareUEFI      = "uefi"
-	DiskRoleBoot      = "boot"
-	DiskRoleData      = "data"
-	DiskRoleCDROM     = "cdrom"
-	DiskRoleCIDATA    = "cidata"
-	DiskRoleVars      = "uefi-vars"
-	NICModelVirtio    = "virtio"
-	ApplyLive         = "live"
-	ApplyRestart      = "restart"
-	ApplyStop         = "stop"
-	ApplyUnsupported  = "unsupported"
-	GuestAgentChannel = "org.qemu.guest_agent.0"
-	NodalGuestChannel = "org.nodal.guest.0"
+	KindVM             = "vm"
+	SchemaDesired      = "ndl.vm.spec.v1"
+	SchemaLaunch       = "ndl.vm.launch.v1"
+	DefaultMachine     = "pc-q35-10.0"
+	DefaultCPUs        = 2
+	DefaultMemory      = 2 << 30
+	DefaultDiskBytes   = 8 << 30
+	FirmwareBIOS       = "bios"
+	FirmwareUEFI       = "uefi"
+	DiskRoleBoot       = "boot"
+	DiskRoleData       = "data"
+	DiskRoleCDROM      = "cdrom"
+	DiskRoleCIDATA     = "cidata"
+	DiskRoleVars       = "uefi-vars"
+	DiskSourceVolume   = "volume"
+	DiskSourcePhysical = "physical"
+	DiskBusVirtio      = "virtio-blk"
+	DiskBusAHCI        = "ahci"
+	NICModelVirtio     = "virtio"
+	ApplyLive          = "live"
+	ApplyRestart       = "restart"
+	ApplyStop          = "stop"
+	ApplyUnsupported   = "unsupported"
+	GuestAgentChannel  = "org.qemu.guest_agent.0"
+	NodalGuestChannel  = "org.nodal.guest.0"
 )
 
 // Spec is user-facing desired VM intent. Paths, TAP names, unit names,
@@ -54,7 +58,8 @@ type Spec struct {
 	PCIHosts      []string `json:"pci_hosts,omitempty"`
 }
 
-// Disk is a volume attachment by UUID. Path is never product identity.
+// Disk is a volume attachment by UUID or a physical host disk by stable id.
+// Path is never product identity.
 type Disk struct {
 	VolumeID  string `json:"volume_id,omitempty"`
 	Role      string `json:"role"`
@@ -63,6 +68,9 @@ type Disk struct {
 	ReadOnly  bool   `json:"read_only,omitempty"`
 	SizeBytes int64  `json:"size_bytes,omitempty"`
 	PCIAddr   string `json:"pci_addr,omitempty"`
+	Source    string `json:"source,omitempty"`
+	DeviceID  string `json:"device_id,omitempty"`
+	Bus       string `json:"bus,omitempty"`
 }
 
 // USB is a host USB device selected from inventory. Not a QEMU argv string.
@@ -111,7 +119,7 @@ type Resolved struct {
 	Accel          string
 }
 
-// ResolvedDisk is a VolumeHandle locator for one disk.
+// ResolvedDisk is a VolumeHandle locator or a resolved physical device path.
 type ResolvedDisk struct {
 	VolumeID string
 	Role     string
@@ -120,6 +128,11 @@ type ResolvedDisk struct {
 	Format   string
 	ReadOnly bool
 	PCIAddr  string
+	Source   string
+	DeviceID string
+	Bus      string
+	Serial   string
+	Discard  bool
 }
 
 // ResolvedNIC is a network object locator for one NIC.
@@ -188,6 +201,11 @@ type LaunchDisk struct {
 	ReadOnly bool   `json:"read_only"`
 	PCIAddr  string `json:"pci_addr,omitempty"`
 	NodeName string `json:"node_name"`
+	Source   string `json:"source,omitempty"`
+	DeviceID string `json:"device_id,omitempty"`
+	Bus      string `json:"bus,omitempty"`
+	Serial   string `json:"serial,omitempty"`
+	Discard  bool   `json:"discard,omitempty"`
 }
 
 // LaunchNIC is a compiled NIC with persisted MAC and derived TAP name.
@@ -257,10 +275,22 @@ func Normalize(spec Spec) Spec {
 		}
 	}
 	hasBoot := false
-	for _, d := range spec.Disks {
-		if d.Role == DiskRoleBoot {
+	for i := range spec.Disks {
+		spec.Disks[i].Source = strings.ToLower(strings.TrimSpace(spec.Disks[i].Source))
+		if spec.Disks[i].DeviceID != "" && spec.Disks[i].Source == "" {
+			spec.Disks[i].Source = DiskSourcePhysical
+		}
+		if spec.Disks[i].Source == DiskSourcePhysical {
+			if spec.Disks[i].Format == "" {
+				spec.Disks[i].Format = "raw"
+			}
+			if spec.Disks[i].Bus == "" {
+				spec.Disks[i].Bus = DiskBusAHCI
+			}
+			spec.Disks[i].VolumeID = ""
+		}
+		if spec.Disks[i].Role == DiskRoleBoot {
 			hasBoot = true
-			break
 		}
 	}
 	if !hasBoot {

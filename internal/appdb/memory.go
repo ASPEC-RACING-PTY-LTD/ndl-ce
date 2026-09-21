@@ -32,6 +32,7 @@ type Memory struct {
 	reservations       map[string]DHCPReservation
 	workloads          map[string]Workload
 	workloadDisks      map[string]WorkloadDisk
+	physDisks          map[string]PhysicalDiskAssignment
 	workloadNICs       map[string]WorkloadNIC
 	vmCidata           map[string]VMCidata
 	vmFirmware         map[string]VMFirmware

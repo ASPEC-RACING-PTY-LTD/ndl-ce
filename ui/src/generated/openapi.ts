@@ -939,6 +939,7 @@ export interface Workload {
   autostart?: boolean;
   pending_restart?: boolean;
   firmware?: string;
+  physical_disks?: PhysicalDiskAssignment[];
   spec?: Record<string, unknown>;
   health?: Record<string, unknown>;
   unit?: string;
@@ -1860,6 +1861,88 @@ export interface GPUUnassignRequest {
 
 export interface GPUInstallRequest {
   dry_run?: boolean;
+}
+
+export interface PhysicalDiskPartition {
+  kernel?: string;
+  number?: number;
+  size_bytes?: number;
+  fs_type?: string;
+  label?: string;
+  part_type?: string;
+  mount_point?: string;
+  swap?: boolean;
+}
+
+export interface PhysicalDisk {
+  id: string;
+  by_id_path?: string;
+  kernel_name?: string;
+  kernel_path?: string;
+  model?: string;
+  vendor?: string;
+  serial?: string;
+  size_bytes?: number;
+  transport?: string;
+  rotational?: boolean;
+  removable?: boolean;
+  partitions?: PhysicalDiskPartition[];
+  fs_signatures?: string[];
+  mounted?: string[];
+  swap?: boolean;
+  host_disk: boolean;
+  pool_kind?: string;
+  pool_name?: string;
+  assigned_workload_id?: string;
+  assigned_workload_name?: string;
+  assigned_running?: boolean;
+  existing_data: boolean;
+  eligible: boolean;
+  reasons?: string[];
+  display_name?: string;
+}
+
+export interface PhysicalDiskListResponse {
+  items: PhysicalDisk[];
+}
+
+export interface PhysicalDiskAssignment {
+  id: string;
+  workload_id: string;
+  device_id: string;
+  by_id_path: string;
+  kernel_name?: string;
+  model?: string;
+  serial?: string;
+  size_bytes?: number;
+  role?: string;
+  slot?: number;
+  bus?: string;
+  device?: PhysicalDisk;
+}
+
+export interface PhysicalDiskAssignmentListResponse {
+  items: PhysicalDiskAssignment[];
+}
+
+export interface PhysicalDiskAssignRequest {
+  workload_id: string;
+  device_id: string;
+  role?: string;
+  bus?: string;
+  boot?: boolean;
+}
+
+export interface PhysicalDiskUnassignRequest {
+  workload_id?: string;
+  device_id: string;
+}
+
+export interface PhysicalDiskWorkloadAssignRequest {
+  device_id: string;
+  role?: string;
+  bus?: string;
+  boot?: boolean;
 }
 
 export interface GPURuntime {
@@ -2932,3 +3015,15 @@ export type AssignGpuPath = "/api/v1/gpus/assign";
 export type UnassignGpuPath = "/api/v1/gpus/unassign";
 
 export type ListWorkloadGpusPath = "/api/v1/workloads/{id}/gpus";
+
+export type ListPhysicalDisksPath = "/api/v1/physical-disks";
+
+export type ListNodePhysicalDisksPath = "/api/v1/nodes/{id}/physical-disks";
+
+export type AssignPhysicalDiskPath = "/api/v1/physical-disks/assign";
+
+export type UnassignPhysicalDiskPath = "/api/v1/physical-disks/unassign";
+
+export type ListWorkloadPhysicalDisksPath = "/api/v1/workloads/{id}/physical-disks";
+
+export type RemoveWorkloadPhysicalDiskPath = "/api/v1/workloads/{id}/physical-disks/{device_id}/remove";

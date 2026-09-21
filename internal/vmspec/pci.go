@@ -54,6 +54,9 @@ func AllocatePCI(spec Spec) (Spec, map[string]string, error) {
 	}
 	next := PCIFirstDisk
 	for i := range spec.Disks {
+		if diskUsesAHCI(spec.Disks[i]) {
+			continue
+		}
 		key := fmt.Sprintf("disk:%s:%d", spec.Disks[i].Role, spec.Disks[i].Slot)
 		addr := spec.Disks[i].PCIAddr
 		if addr == "" {
@@ -87,17 +90,18 @@ func AllocatePCI(spec Spec) (Spec, map[string]string, error) {
 			next = n
 		}
 	}
-	if spec.ISOLibraryID != "" {
-		if _, ok := pci["scsi"]; !ok {
-			addr, n := nextFree(used, next)
-			if err := claim("scsi", addr); err != nil {
-				return spec, nil, err
-			}
-			pci["scsi"] = addr
-			next = n
-		}
-	}
 	return spec, pci, nil
+}
+
+func diskUsesAHCI(d Disk) bool {
+	if d.Role == DiskRoleCDROM {
+		return true
+	}
+	src := strings.ToLower(strings.TrimSpace(d.Source))
+	if src == "" && d.DeviceID != "" {
+		src = DiskSourcePhysical
+	}
+	return src == DiskSourcePhysical && (d.Bus == "" || d.Bus == DiskBusAHCI)
 }
 
 func nextFree(used map[int]string, start int) (string, int) {

@@ -7185,6 +7185,145 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GPUAssignmentListResponse"
+  /physical-disks:
+    get:
+      operationId: listPhysicalDisks
+      summary: List host physical disks with passthrough eligibility. Requires node.read.
+      responses:
+        "200":
+          description: Physical disks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhysicalDiskListResponse"
+  /nodes/{id}/physical-disks:
+    get:
+      operationId: listNodePhysicalDisks
+      summary: List physical disks observed for one node
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Physical disks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhysicalDiskListResponse"
+        "404":
+          description: Node not found
+  /physical-disks/assign:
+    post:
+      operationId: assignPhysicalDisk
+      summary: Assign an entire physical disk to a stopped VM. Requires compute.modify. Never formats the disk.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhysicalDiskAssignRequest"
+      responses:
+        "200":
+          description: Updated workload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+        "400":
+          description: Missing device_id or workload_id
+        "403":
+          description: compute.modify required
+        "409":
+          description: Ineligible, assigned elsewhere, or VM is running
+  /physical-disks/unassign:
+    post:
+      operationId: unassignPhysicalDisk
+      summary: Release exclusive physical disk ownership without wiping the device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhysicalDiskUnassignRequest"
+      responses:
+        "200":
+          description: Updated workload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+        "404":
+          description: Assignment or workload not found
+        "409":
+          description: VM is running or the disk is the only boot disk
+  /workloads/{id}/physical-disks:
+    get:
+      operationId: listWorkloadPhysicalDisks
+      summary: Physical disk assignments for one VM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhysicalDiskAssignmentListResponse"
+    post:
+      operationId: attachWorkloadPhysicalDisk
+      summary: Attach a physical disk to a stopped VM. Never formats or imports the device.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhysicalDiskWorkloadAssignRequest"
+      responses:
+        "200":
+          description: Updated workload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+        "409":
+          description: Ineligible, assigned elsewhere, or VM is running
+  /workloads/{id}/physical-disks/{device_id}/remove:
+    post:
+      operationId: removeWorkloadPhysicalDisk
+      summary: Remove a physical disk assignment. Releases ownership and never wipes the disk.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated workload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workload"
+        "409":
+          description: VM is running or the disk is the only boot disk
 components:
   schemas:
     HealthResponse:
@@ -9394,6 +9533,10 @@ components:
           type: boolean
         firmware:
           type: string
+        physical_disks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhysicalDiskAssignment"
         spec:
           type: object
           additionalProperties: true
@@ -11714,6 +11857,188 @@ components:
       additionalProperties: false
       properties:
         dry_run:
+          type: boolean
+    PhysicalDiskPartition:
+      type: object
+      additionalProperties: false
+      properties:
+        kernel:
+          type: string
+        number:
+          type: integer
+        size_bytes:
+          type: integer
+        fs_type:
+          type: string
+        label:
+          type: string
+        part_type:
+          type: string
+        mount_point:
+          type: string
+        swap:
+          type: boolean
+    PhysicalDisk:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - eligible
+        - existing_data
+        - host_disk
+      properties:
+        id:
+          type: string
+          description: Stable /dev/disk/by-id identity. Never a transient /dev/sdX name.
+        by_id_path:
+          type: string
+        kernel_name:
+          type: string
+        kernel_path:
+          type: string
+        model:
+          type: string
+        vendor:
+          type: string
+        serial:
+          type: string
+        size_bytes:
+          type: integer
+        transport:
+          type: string
+        rotational:
+          type: boolean
+        removable:
+          type: boolean
+        partitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhysicalDiskPartition"
+        fs_signatures:
+          type: array
+          items:
+            type: string
+        mounted:
+          type: array
+          items:
+            type: string
+        swap:
+          type: boolean
+        host_disk:
+          type: boolean
+        pool_kind:
+          type: string
+        pool_name:
+          type: string
+        assigned_workload_id:
+          type: string
+        assigned_workload_name:
+          type: string
+        assigned_running:
+          type: boolean
+        existing_data:
+          type: boolean
+        eligible:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+        display_name:
+          type: string
+    PhysicalDiskListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhysicalDisk"
+    PhysicalDiskAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - workload_id
+        - device_id
+        - by_id_path
+      properties:
+        id:
+          type: string
+        workload_id:
+          type: string
+        device_id:
+          type: string
+        by_id_path:
+          type: string
+        kernel_name:
+          type: string
+        model:
+          type: string
+        serial:
+          type: string
+        size_bytes:
+          type: integer
+        role:
+          type: string
+        slot:
+          type: integer
+        bus:
+          type: string
+        device:
+          $ref: "#/components/schemas/PhysicalDisk"
+    PhysicalDiskAssignmentListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhysicalDiskAssignment"
+    PhysicalDiskAssignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+        - device_id
+      properties:
+        workload_id:
+          type: string
+        device_id:
+          type: string
+        role:
+          type: string
+        bus:
+          type: string
+        boot:
+          type: boolean
+    PhysicalDiskUnassignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - device_id
+      properties:
+        workload_id:
+          type: string
+        device_id:
+          type: string
+    PhysicalDiskWorkloadAssignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - device_id
+      properties:
+        device_id:
+          type: string
+        role:
+          type: string
+        bus:
+          type: string
+        boot:
           type: boolean
     GPURuntime:
       type: object

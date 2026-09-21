@@ -23,6 +23,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
+	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/migrate"
@@ -110,6 +111,7 @@ type Server struct {
 	docker       *dockerCache
 	destOverride *destAgentOverride
 	Game         *gameserver.Runtime
+	PhysFS       inventory.FS
 }
 
 type principal struct {
@@ -454,6 +456,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/gpus/assign", s.assignGPU)
 	mux.HandleFunc("POST /api/v1/gpus/unassign", s.unassignGPU)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/gpus", s.workloadGPUs)
+	mux.HandleFunc("GET /api/v1/physical-disks", s.listPhysicalDisks)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/physical-disks", s.listPhysicalDisks)
+	mux.HandleFunc("POST /api/v1/physical-disks/assign", s.assignPhysicalDiskAPI)
+	mux.HandleFunc("POST /api/v1/physical-disks/unassign", s.unassignPhysicalDiskAPI)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/physical-disks", s.workloadPhysicalDisks)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/physical-disks", s.assignWorkloadPhysicalDisk)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/physical-disks/{device_id}/remove", s.removeWorkloadPhysicalDisk)
 	mux.HandleFunc("GET /api/v1/registries", s.listRegistries)
 	mux.HandleFunc("POST /api/v1/registries", s.createRegistry)
 	mux.HandleFunc("GET /api/v1/stacks", s.listStacks)

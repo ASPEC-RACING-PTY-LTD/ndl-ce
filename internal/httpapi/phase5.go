@@ -1172,6 +1172,21 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		}
 		diskOut = append(diskOut, item)
 	}
+	physOut := make([]map[string]any, 0)
+	if phys, perr := s.Store.ListPhysicalDiskAssignments(ctx, w.ClusterID, w.ID); perr == nil {
+		for _, a := range phys {
+			physOut = append(physOut, physicalAssignmentJSON(a))
+			item := map[string]any{
+				"id": a.ID, "source": "physical", "device_id": a.DeviceID, "by_id_path": a.ByIDPath,
+				"role": a.Role, "slot": a.Slot, "bus": a.Bus, "model": a.Model, "serial": a.Serial,
+				"size_bytes": a.SizeBytes, "format": "raw",
+			}
+			diskOut = append(diskOut, item)
+			if a.Role == vmspec.DiskRoleBoot && a.SizeBytes > 0 {
+				diskBytes = a.SizeBytes
+			}
+		}
+	}
 	nicOut := make([]map[string]any, 0, len(nics))
 	for _, n := range nics {
 		nicOut = append(nicOut, map[string]any{
@@ -1200,7 +1215,7 @@ func (s *Server) workloadJSON(ctx context.Context, w appdb.Workload) map[string]
 		"cpus": w.CPUs, "memory_bytes": w.MemoryBytes, "disk_bytes": diskBytes, "privileged": w.Privileged,
 		"uid_map": w.UIDMap, "gid_map": w.GIDMap, "pid": pid, "unit_active": w.UnitActive,
 		"migrate_ready": w.MigrateReady, "migrate_blockers": blockers, "devices": devices,
-		"warnings": w.Warnings, "disks": diskOut, "nics": nicOut,
+		"warnings": w.Warnings, "disks": diskOut, "physical_disks": physOut, "nics": nicOut,
 		"autostart": w.Autostart, "pending_restart": w.PendingRestart, "firmware": w.Firmware,
 		"spec": specJSON(w), "applied": appliedJSON(w),
 		"desired_node_id": w.DesiredNodeID, "owner_node_id": w.OwnerNodeID,

@@ -180,9 +180,11 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	for i := range spec.Disks {
-		if spec.Disks[i].Role == vmspec.DiskRoleBoot {
-			spec.Disks[i].VolumeID = vol.ID
+	if vol != nil {
+		for i := range spec.Disks {
+			if spec.Disks[i].Role == vmspec.DiskRoleBoot && !isPhysicalSpecDisk(spec.Disks[i]) {
+				spec.Disks[i].VolumeID = vol.ID
+			}
 		}
 	}
 	if req.DesiredPower == "" {
@@ -216,13 +218,26 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request, p *principal, 
 		return
 	}
 	s.recordPlacement(r.Context(), p.User.ClusterID, row.ID, req)
-	if err := s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
-		ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
-		VolumeID: vol.ID, Role: vmspec.DiskRoleBoot, Slot: 0, BusAddr: launch.Disks[0].PCIAddr,
-		Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
-	}); err != nil {
-		writeErr(w, http.StatusInternalServerError, "could not record VM disk")
-		return
+	if specHasPhysicalDisks(spec) {
+		if err := s.persistSpecPhysicalDisks(r.Context(), p.User.ClusterID, row.ID, row.Name, spec); err != nil {
+			_ = s.Store.DeleteWorkload(r.Context(), p.User.ClusterID, row.ID)
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+	}
+	if vol != nil {
+		bootPCI := ""
+		if len(launch.Disks) > 0 {
+			bootPCI = launch.Disks[0].PCIAddr
+		}
+		if err := s.Store.CreateWorkloadDisk(r.Context(), appdb.WorkloadDisk{
+			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
+			VolumeID: vol.ID, Role: vmspec.DiskRoleBoot, Slot: 0, BusAddr: bootPCI,
+			Format: firstNonEmpty(vol.Format, storage.FormatQCOW2),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "could not record VM disk")
+			return
+		}
 	}
 	for _, d := range spec.Disks {
 		if d.Role != vmspec.DiskRoleData || d.VolumeID == "" || d.VolumeID == vol.ID {
@@ -384,32 +399,52 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 	if netw == nil {
 		return vmspec.Resolved{}, nil, nil, convert, errNotFound("network is not found")
 	}
-	pool, err := s.pickQemuPool(ctx, clusterID, req.PoolID)
-	if err != nil {
-		return vmspec.Resolved{}, nil, nil, convert, err
+	physicalBoot := specHasPhysicalBoot(spec)
+	if physicalBoot && spec.CloudImageID != "" {
+		return vmspec.Resolved{}, nil, nil, convert, errConflict("a cloud image cannot be applied to a physical boot disk")
 	}
-	mustExist := strings.TrimSpace(req.VolumeID) != ""
-	for _, d := range spec.Disks {
-		if d.Role == vmspec.DiskRoleBoot && strings.TrimSpace(d.VolumeID) != "" {
-			mustExist = true
+	var vol *appdb.Volume
+	var diskPath string
+	if !physicalBoot {
+		pool, err := s.pickQemuPool(ctx, clusterID, req.PoolID)
+		if err != nil {
+			return vmspec.Resolved{}, nil, nil, convert, err
+		}
+		mustExist := strings.TrimSpace(req.VolumeID) != ""
+		for _, d := range spec.Disks {
+			if d.Role == vmspec.DiskRoleBoot && strings.TrimSpace(d.VolumeID) != "" {
+				mustExist = true
+			}
+		}
+		vol, diskPath, err = s.ensureVMBootVolume(ctx, clusterID, nodeID, pool, ids.VolumeID, spec, mustExist)
+		if err != nil {
+			return vmspec.Resolved{}, nil, nil, convert, err
+		}
+		if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
+			return vmspec.Resolved{}, nil, nil, convert, errConflict("storage is unavailable")
 		}
 	}
-	vol, diskPath, err := s.ensureVMBootVolume(ctx, clusterID, nodeID, pool, ids.VolumeID, spec, mustExist)
-	if err != nil {
-		return vmspec.Resolved{}, nil, nil, convert, err
-	}
-	if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
-		return vmspec.Resolved{}, nil, nil, convert, errConflict("storage is unavailable")
-	}
-	resolved := vmspec.Resolved{
-		Accel: qemu.DetectAccel(),
-		Disks: []vmspec.ResolvedDisk{{
-			VolumeID: vol.ID, Role: vmspec.DiskRoleBoot, Path: diskPath,
-			Format: storage.QEMUFormat(vol.BackendType, vol.Format), PCIAddr: spec.Disks[0].PCIAddr,
-		}},
-	}
+	resolved := vmspec.Resolved{Accel: qemu.DetectAccel()}
 	for _, d := range spec.Disks {
-		if d.Role != vmspec.DiskRoleData || strings.TrimSpace(d.VolumeID) == "" || d.VolumeID == vol.ID {
+		if d.Role == vmspec.DiskRoleCDROM || d.Role == vmspec.DiskRoleCIDATA || d.Role == vmspec.DiskRoleVars {
+			continue
+		}
+		if isPhysicalSpecDisk(d) {
+			rd, rerr := s.resolvePhysicalDisk(ctx, clusterID, ids.WorkloadID, d)
+			if rerr != nil {
+				return vmspec.Resolved{}, nil, nil, convert, rerr
+			}
+			resolved.Disks = append(resolved.Disks, rd)
+			continue
+		}
+		if d.Role == vmspec.DiskRoleBoot && vol != nil {
+			resolved.Disks = append(resolved.Disks, vmspec.ResolvedDisk{
+				VolumeID: vol.ID, Role: vmspec.DiskRoleBoot, Path: diskPath,
+				Format: storage.QEMUFormat(vol.BackendType, vol.Format), PCIAddr: d.PCIAddr,
+			})
+			continue
+		}
+		if d.Role != vmspec.DiskRoleData || strings.TrimSpace(d.VolumeID) == "" || (vol != nil && d.VolumeID == vol.ID) {
 			continue
 		}
 		extra, eerr := s.Store.GetVolume(ctx, clusterID, d.VolumeID)
@@ -497,7 +532,9 @@ func (s *Server) resolveVM(ctx context.Context, clusterID, nodeID string, ids cr
 		}
 		resolved.FirmwareCode = code
 	}
-	_ = pool
+	if len(resolved.Disks) == 0 {
+		return vmspec.Resolved{}, nil, nil, convert, errConflict("VM storage is unavailable")
+	}
 	return resolved, vol, netw, convert, nil
 }
 
@@ -925,8 +962,21 @@ func (s *Server) patchVM(w http.ResponseWriter, r *http.Request, p *principal, r
 
 func (s *Server) ensureVMStorageAvailable(ctx context.Context, clusterID, workloadID string) error {
 	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, workloadID)
-	if err != nil || len(disks) == 0 {
+	if err != nil {
 		return errConflict("VM storage is unavailable")
+	}
+	phys, perr := s.Store.ListPhysicalDiskAssignments(ctx, clusterID, workloadID)
+	if perr != nil {
+		return perr
+	}
+	if len(disks) == 0 && len(phys) == 0 {
+		return errConflict("VM storage is unavailable")
+	}
+	for _, a := range phys {
+		disk := vmspec.Disk{Role: a.Role, Source: vmspec.DiskSourcePhysical, DeviceID: a.DeviceID, Bus: a.Bus, Slot: a.Slot}
+		if _, err := s.resolvePhysicalDisk(ctx, clusterID, workloadID, disk); err != nil {
+			return err
+		}
 	}
 	for _, d := range disks {
 		if d.VolumeID == "" {
@@ -986,7 +1036,14 @@ func (s *Server) reprepareVM(ctx context.Context, clusterID string, row appdb.Wo
 
 func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appdb.Workload, spec vmspec.Spec) (vmspec.Resolved, error) {
 	disks, err := s.Store.ListWorkloadDisks(ctx, clusterID, row.ID)
-	if err != nil || len(disks) == 0 {
+	if err != nil {
+		return vmspec.Resolved{}, errConflict("VM storage is unavailable")
+	}
+	phys, perr := s.Store.ListPhysicalDiskAssignments(ctx, clusterID, row.ID)
+	if perr != nil {
+		return vmspec.Resolved{}, perr
+	}
+	if len(disks) == 0 && len(phys) == 0 && !specHasPhysicalDisks(spec) {
 		return vmspec.Resolved{}, errConflict("VM storage is unavailable")
 	}
 	if len(spec.NICs) == 0 {
@@ -1020,6 +1077,17 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 		if d.Role == vmspec.DiskRoleCDROM || d.Role == vmspec.DiskRoleCIDATA || d.Role == vmspec.DiskRoleVars {
 			continue
 		}
+		if isPhysicalSpecDisk(d) {
+			rd, rerr := s.resolvePhysicalDisk(ctx, clusterID, row.ID, d)
+			if rerr != nil {
+				return vmspec.Resolved{}, rerr
+			}
+			resolved.Disks = append(resolved.Disks, rd)
+			if d.Role == vmspec.DiskRoleBoot {
+				bootDone = true
+			}
+			continue
+		}
 		volID := d.VolumeID
 		if volID == "" && d.Role == vmspec.DiskRoleBoot {
 			for _, rowd := range disks {
@@ -1050,8 +1118,34 @@ func (s *Server) resolveStoredVM(ctx context.Context, clusterID string, row appd
 			if err := addVol(d.VolumeID, d.Role, d.Slot, d.BusAddr, d.ReadOnly, d.Format); err != nil {
 				return vmspec.Resolved{}, err
 			}
+			bootDone = true
 		}
 	}
+	seenPhys := map[string]struct{}{}
+	for _, d := range resolved.Disks {
+		if d.DeviceID != "" {
+			seenPhys[d.DeviceID] = struct{}{}
+		}
+	}
+	for _, a := range phys {
+		if _, ok := seenPhys[a.DeviceID]; ok {
+			continue
+		}
+		rd, rerr := s.resolvePhysicalDisk(ctx, clusterID, row.ID, vmspec.Disk{
+			Role: a.Role, Source: vmspec.DiskSourcePhysical, DeviceID: a.DeviceID, Bus: a.Bus, Slot: a.Slot,
+		})
+		if rerr != nil {
+			return vmspec.Resolved{}, rerr
+		}
+		resolved.Disks = append(resolved.Disks, rd)
+		if a.Role == vmspec.DiskRoleBoot {
+			bootDone = true
+		}
+	}
+	if len(resolved.Disks) == 0 {
+		return vmspec.Resolved{}, errConflict("VM storage is unavailable")
+	}
+	_ = bootDone
 	for i, n := range spec.NICs {
 		resolvedNet, bridge, err := s.resolveWorkloadNetwork(ctx, clusterID, n.NetworkID)
 		if err != nil {

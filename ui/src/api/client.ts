@@ -1948,6 +1948,55 @@ export async function attachWorkloadPCI(id: string, pci: string) {
   return readJson(await request(`/workloads/${id}/pci`, { method: "POST", body: JSON.stringify({ pci }) }));
 }
 
+export type PhysicalDisk = {
+  id: string;
+  by_id_path?: string;
+  kernel_name?: string;
+  kernel_path?: string;
+  model?: string;
+  vendor?: string;
+  serial?: string;
+  size_bytes?: number;
+  transport?: string;
+  rotational?: boolean | null;
+  removable?: boolean | null;
+  partitions?: Array<{ kernel?: string; number?: number; size_bytes?: number; fs_type?: string; label?: string; mount_point?: string }>;
+  fs_signatures?: string[];
+  mounted?: string[];
+  swap?: boolean;
+  host_disk?: boolean;
+  pool_kind?: string;
+  pool_name?: string;
+  assigned_workload_id?: string;
+  assigned_workload_name?: string;
+  assigned_running?: boolean;
+  existing_data?: boolean;
+  eligible?: boolean;
+  reasons?: string[];
+  display_name?: string;
+};
+
+export async function listPhysicalDisks(nodeId?: string) {
+  const path = nodeId ? `/nodes/${nodeId}/physical-disks` : "/physical-disks";
+  return readJson<{ items: PhysicalDisk[] }>(await request(path));
+}
+
+export async function assignPhysicalDisk(body: { workload_id: string; device_id: string; role?: string; bus?: string; boot?: boolean }) {
+  return readJson(await request("/physical-disks/assign", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function unassignPhysicalDisk(body: { workload_id?: string; device_id: string }) {
+  return readJson(await request("/physical-disks/unassign", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function attachWorkloadPhysicalDisk(id: string, body: { device_id: string; role?: string; bus?: string; boot?: boolean }) {
+  return readJson(await request(`/workloads/${id}/physical-disks`, { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function removeWorkloadPhysicalDisk(id: string, deviceId: string) {
+  return readJson(await request(`/workloads/${id}/physical-disks/${encodeURIComponent(deviceId)}/remove`, { method: "POST" }));
+}
+
 export type ManagedUser = {
   id: string;
   username: string;

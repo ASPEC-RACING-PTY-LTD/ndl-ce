@@ -88,16 +88,22 @@ func (s *Server) cloneVMRow(ctx context.Context, clusterID string, src appdb.Wor
 	if s.VM == nil || s.Backup == nil || s.Storage == nil {
 		return nil, errUnavailable("vm agent is unavailable")
 	}
+	spec, err := vmspec.Parse(src.SpecJSON)
+	if err != nil {
+		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}
+	}
+	if specHasPhysicalDisks(spec) {
+		return nil, errUnprocessable("clone of a VM with a physical disk is not supported. Physical disks are exclusive host devices")
+	}
+	if assigns, aerr := s.Store.ListPhysicalDiskAssignments(ctx, clusterID, src.ID); aerr == nil && len(assigns) > 0 {
+		return nil, errUnprocessable("clone of a VM with a physical disk is not supported. Physical disks are exclusive host devices")
+	}
 	vol, pool, tip, err := s.bootVolumeLocator(ctx, clusterID, src)
 	if err != nil {
 		return nil, err
 	}
 	if err := refuseQemuImgCopyDest(pool.BackendType); err != nil {
 		return nil, err
-	}
-	spec, err := vmspec.Parse(src.SpecJSON)
-	if err != nil {
-		spec = vmspec.Spec{Name: src.Name, CPUs: src.CPUs, MemoryBytes: src.MemoryBytes, Firmware: src.Firmware}
 	}
 	for _, d := range spec.Disks {
 		if d.Role == vmspec.DiskRoleData && d.VolumeID != "" && d.VolumeID != vol.ID {
