@@ -10989,6 +10989,16 @@ components:
           type: integer
         capture_duration_ns:
           type: integer
+        upload_duration_ns:
+          type: integer
+        consistency:
+          type: string
+        stats:
+          type: object
+          additionalProperties: true
+        blueprint:
+          type: object
+          additionalProperties: true
         capture_mode:
           type: string
         capture_mode_label:
@@ -11029,6 +11039,16 @@ components:
           type: integer
         capture_busy:
           type: boolean
+        capture_active:
+          type: integer
+        cache_retention_hours:
+          type: integer
+        logical_bytes:
+          type: integer
+        physical_bytes:
+          type: integer
+        pending_bytes:
+          type: integer
         root:
           type: string
     BackupRestorePoint:
@@ -11058,6 +11078,10 @@ components:
         physical_new_data:
           type: integer
         created_at:
+          type: string
+        protection:
+          type: string
+        consistency:
           type: string
     BackupRestorePointListResponse:
       type: object

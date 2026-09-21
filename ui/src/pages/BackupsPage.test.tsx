@@ -94,6 +94,24 @@ const baseRoutes = {
   },
   "/api/v1/backups/runs": { status: 200, body: { items: [] } },
   "/api/v1/backups/artifacts": { status: 200, body: { items: [] } },
+  "/api/v1/backups/workspace": {
+    status: 200,
+    body: {
+      max_local_bytes: 50 * 1024 * 1024 * 1024,
+      min_host_free_bytes: 10 * 1024 * 1024 * 1024,
+      capture_concurrency: 2,
+      upload_workers: 4,
+      bandwidth_limit_bps: 0,
+      cache_retention_hours: 24,
+      repo_bytes: 8 * 1024 * 1024,
+      physical_bytes: 8 * 1024 * 1024,
+      logical_bytes: 32 * 1024 * 1024,
+      pending_bytes: 1024 * 1024,
+      pending_uploads: 1,
+      capture_active: 0,
+      root: "/var/lib/ndl/backup-repo",
+    },
+  },
 };
 
 afterEach(() => {
@@ -103,7 +121,7 @@ afterEach(() => {
 });
 
 describe("Backups page", () => {
-  it("defaults new policies to selected workloads and Smart Application Data", async () => {
+  it("defaults new policies to selected workloads and Full Machine", async () => {
     const fetchMock = mockApi({
       ...baseRoutes,
       "/api/v1/backups/policies": { status: 200, body: { items: [] } },
@@ -114,7 +132,7 @@ describe("Backups page", () => {
           name: "nightly-subset",
           scope: "selected",
           workload_ids: ["wl-a", "wl-b"],
-          capture_mode: "smart",
+          capture_mode: "full",
           target_id: "tgt-1",
           schedule: "nightly",
           keep_daily: 7,
@@ -130,14 +148,16 @@ describe("Backups page", () => {
     expect(screen.getByText(/no backup policies yet/i)).toBeVisible();
     expect(screen.getByText(/no backup runs yet/i)).toBeVisible();
     expect(screen.getByText(/no backup artifacts yet/i)).toBeVisible();
+    expect(screen.getByText(/^remote protected$/i)).toBeVisible();
+    expect(screen.getByText(/^local repository$/i)).toBeVisible();
     fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     expect(within(dialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
     expect(within(dialog).getByLabelText(/^all workloads$/i)).not.toBeChecked();
-    expect(within(dialog).getByLabelText(/^smart application data$/i)).toBeChecked();
-    expect(within(dialog).getByLabelText(/^full machine \/ full lxc$/i)).not.toBeChecked();
+    expect(within(dialog).getByLabelText(/^full machine \/ full lxc$/i)).toBeChecked();
+    expect(within(dialog).getByLabelText(/^smart application data$/i)).not.toBeChecked();
     expect(within(dialog).getByRole("group", { name: /^workloads$/i })).toBeVisible();
-    expect(within(dialog).getByText(/automatically protects persistent application data/i)).toBeVisible();
+    expect(within(dialog).getByText(/full machine \/ full lxc is the default/i)).toBeVisible();
     expect(within(dialog).queryByText(/backup scope preview/i)).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("group", { name: /detected data categories/i })).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /alpha/i }));
@@ -153,7 +173,7 @@ describe("Backups page", () => {
       expect(post).toBeTruthy();
       const body = JSON.parse(String(post?.[1]?.body));
       expect(body.scope).toBe("selected");
-      expect(body.capture_mode).toBe("smart");
+      expect(body.capture_mode).toBe("full");
       expect(body.workload_ids).toEqual(["wl-a", "wl-b"]);
     });
     expect(
@@ -192,7 +212,7 @@ describe("Backups page", () => {
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /alpha/i }));
     fireEvent.click(within(dialog).getByLabelText(/^full machine \/ full lxc$/i));
-    expect(within(dialog).getByText(/backs up the entire recoverable workload/i)).toBeVisible();
+    expect(within(dialog).getByText(/captures the complete recoverable guest filesystem/i)).toBeVisible();
     expect(within(dialog).queryByText(/backup scope preview/i)).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: /configure alpha/i })).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByLabelText(/^custom$/i));
@@ -330,6 +350,205 @@ describe("Backups page", () => {
         expect.stringMatching(/\/api\/v1\/backups\/targets\/tgt-r2\/test$/),
         expect.objectContaining({ method: "POST" }),
       );
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^workspace$/i }));
+    const workspace = await screen.findByRole("dialog", { name: /backup workspace/i });
+    expect(within(workspace).getByText(/r2 local uploads/i)).toBeVisible();
+    expect(within(workspace).getByLabelText(/^capture concurrency$/i)).toHaveValue(2);
+    expect(within(workspace).getByLabelText(/^upload bandwidth limit \(mib\/s\)$/i)).toBeVisible();
+    expect(within(workspace).getByLabelText(/^local cache retention \(hours\)$/i)).toHaveValue(24);
+  });
+
+  it("shows protection states, repository statistics, consistency, and restore-point detail", async () => {
+    mockApi({
+      ...baseRoutes,
+      "/api/v1/backups/policies": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "pol-1",
+              name: "nightly",
+              scope: "selected",
+              workload_ids: ["wl-a"],
+              capture_mode: "full",
+              target_id: "tgt-1",
+              schedule: "nightly",
+              keep_daily: 7,
+              keep_weekly: 4,
+              keep_monthly: 3,
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/runs": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "run-1",
+              policy_id: "pol-1",
+              target_id: "tgt-1",
+              workload_id: "wl-a",
+              status: "succeeded",
+              started_at: "2026-09-01T12:00:00Z",
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/artifacts": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "art-protected",
+              run_id: "run-1",
+              workload_id: "wl-a",
+              checksum_sha256: "a",
+              size_bytes: 100,
+              locator: "ndl-cab://a",
+              format: "ndl-cab",
+              created_at: "2026-09-01T12:00:00Z",
+              local_complete: true,
+              remote_state: "protected",
+              protection: "Protected",
+              consistency: "crash-consistent",
+              logical_bytes: 4096,
+              physical_new_data: 1024,
+              capture_duration_ns: 1500000000,
+              upload_duration_ns: 2500000000,
+              capture_mode: "full",
+              capture_mode_label: "Full Machine",
+              blueprint: { name: "alpha", os: "alpine", arch: "amd64" },
+            },
+            {
+              id: "art-queued",
+              run_id: "run-q",
+              workload_id: "wl-a",
+              checksum_sha256: "b",
+              size_bytes: 50,
+              locator: "ndl-cab://b",
+              format: "ndl-cab",
+              created_at: "2026-09-01T12:01:00Z",
+              local_complete: true,
+              remote_state: "queued",
+              protection: "Queued",
+            },
+            {
+              id: "art-uploading",
+              run_id: "run-u",
+              workload_id: "wl-a",
+              checksum_sha256: "c",
+              size_bytes: 50,
+              locator: "ndl-cab://c",
+              format: "ndl-cab",
+              created_at: "2026-09-01T12:02:00Z",
+              local_complete: true,
+              remote_state: "uploading",
+              protection: "Uploading",
+            },
+            {
+              id: "art-local",
+              run_id: "run-l",
+              workload_id: "wl-a",
+              checksum_sha256: "d",
+              size_bytes: 50,
+              locator: "ndl-cab://d",
+              format: "ndl-cab",
+              created_at: "2026-09-01T12:03:00Z",
+              local_complete: true,
+              remote_state: "local-only",
+              protection: "Local complete",
+            },
+            {
+              id: "art-failed",
+              run_id: "run-f",
+              workload_id: "wl-a",
+              checksum_sha256: "e",
+              size_bytes: 50,
+              locator: "ndl-cab://e",
+              format: "ndl-cab",
+              created_at: "2026-09-01T12:04:00Z",
+              local_complete: true,
+              remote_state: "failed",
+              protection: "Failed",
+            },
+            {
+              id: "art-legacy",
+              run_id: "run-legacy",
+              workload_id: "wl-b",
+              checksum_sha256: "f",
+              size_bytes: 50,
+              locator: "/var/lib/ndl/backups/old.tar.zst",
+              format: "tar.zst",
+              created_at: "2026-08-01T12:00:00Z",
+              protection: "Legacy",
+            },
+          ],
+        },
+      },
+    });
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+    expect(await screen.findByText("nightly")).toBeVisible();
+    expect(screen.getByLabelText(/^protection summary$/i)).toBeVisible();
+    expect(screen.getByLabelText(/^repository statistics$/i)).toBeVisible();
+    expect(screen.getByText(/^remote protected$/i)).toBeVisible();
+    expect(screen.getByText(/^local pending$/i)).toBeVisible();
+    expect(screen.getByText(/^logical protected data$/i)).toBeVisible();
+    expect(screen.getByText(/^physical stored data$/i)).toBeVisible();
+    expect(screen.getAllByText(/^queued$/i).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/^uploading$/i).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/^failed$/i).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/^legacy$/i).length).toBeGreaterThan(1);
+    expect(screen.getByText(/crash-consistent/i)).toBeVisible();
+    expect(screen.getAllByText("Protected").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Local complete").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: /^restore or verify$/i })[0]);
+    const detail = await screen.findByRole("dialog", { name: /restore or verify/i });
+    expect(within(detail).getByText("Full Machine")).toBeVisible();
+    expect(within(detail).getByText("Protected")).toBeVisible();
+    expect(within(detail).getByText("Crash-consistent")).toBeVisible();
+    expect(within(detail).getByText(/alpha · alpine · amd64/i)).toBeVisible();
+  });
+
+  it("saves workspace capture concurrency, bandwidth, and cache retention", async () => {
+    const fetchMock = mockApi({
+      ...baseRoutes,
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "PATCH /api/v1/backups/workspace": {
+        status: 200,
+        body: {
+          max_local_bytes: 20 * 1024 * 1024 * 1024,
+          min_host_free_bytes: 5 * 1024 * 1024 * 1024,
+          capture_concurrency: 4,
+          upload_workers: 6,
+          bandwidth_limit_bps: 8 * 1024 * 1024,
+          cache_retention_hours: 12,
+        },
+      },
+    });
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^policies$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^workspace$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /backup workspace/i });
+    fireEvent.change(within(dialog).getByLabelText(/^capture concurrency$/i), { target: { value: "4" } });
+    fireEvent.change(within(dialog).getByLabelText(/^upload workers$/i), { target: { value: "6" } });
+    fireEvent.change(within(dialog).getByLabelText(/^upload bandwidth limit \(mib\/s\)$/i), { target: { value: "8" } });
+    fireEvent.change(within(dialog).getByLabelText(/^local cache retention \(hours\)$/i), { target: { value: "12" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^save workspace$/i }));
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find((call) => {
+        const url = String(call[0]);
+        return url.includes("/api/v1/backups/workspace") && call[1]?.method === "PATCH";
+      });
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch?.[1]?.body));
+      expect(body.capture_concurrency).toBe(4);
+      expect(body.upload_workers).toBe(6);
+      expect(body.bandwidth_limit_bps).toBe(8 * 1024 * 1024);
+      expect(body.cache_retention_hours).toBe(12);
     });
   });
 });

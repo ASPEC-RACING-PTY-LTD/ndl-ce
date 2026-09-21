@@ -104,6 +104,8 @@ type GCStats struct {
 // always survives. The operation is idempotent and safe to re-run after an
 // interruption.
 func (r *Repository) CollectGarbage() (GCStats, error) {
+	r.capture.Lock()
+	defer r.capture.Unlock()
 	var stats GCStats
 	referenced, err := r.referencedChunks()
 	if err != nil {

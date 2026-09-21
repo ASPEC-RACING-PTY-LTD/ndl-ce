@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestRepeatedCyclesPlateau runs many capture+upload cycles and asserts the
@@ -43,6 +45,42 @@ func TestRepeatedCyclesPlateau(t *testing.T) {
 
 	// No temporary staging files should remain anywhere in the repository.
 	assertNoTempFiles(t, e.Repo().root)
+
+	var before, afterMem runtime.MemStats
+	runtime.ReadMemStats(&before)
+	fdBefore := openFDCount(t)
+	for i := 0; i < 8; i++ {
+		runOneCycle(t, e, target, src, 100+i)
+	}
+	runtime.GC()
+	runtime.ReadMemStats(&afterMem)
+	fdAfter := openFDCount(t)
+	if fdAfter > fdBefore+16 {
+		t.Fatalf("open file descriptors grew: before=%d after=%d", fdBefore, fdAfter)
+	}
+	if afterMem.HeapAlloc > before.HeapAlloc+32<<20 {
+		t.Fatalf("heap alloc grew without bound: before=%d after=%d", before.HeapAlloc, afterMem.HeapAlloc)
+	}
+}
+
+func openFDCount(t *testing.T) int {
+	t.Helper()
+	var lim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &lim); err != nil {
+		t.Skip(err)
+	}
+	n := 0
+	max := int(lim.Cur)
+	if max > 4096 {
+		max = 4096
+	}
+	for fd := 0; fd < max; fd++ {
+		var stat unix.Stat_t
+		if err := unix.Fstat(fd, &stat); err == nil {
+			n++
+		}
+	}
+	return n
 }
 
 func runOneCycle(t *testing.T, e *Engine, target *MemTarget, src string, i int) {

@@ -26,10 +26,50 @@ func runGuestHook(ctx context.Context, unit, rootfs, guestPath string) error {
 	return hookRunner(ctx, unit, rootfs, guestPath)
 }
 
+// HookOutcome reports whether a guest hook existed and ran. A missing hook is
+// not an error and must not be labelled application-consistent.
+type HookOutcome struct {
+	Unit    string
+	Path    string
+	Present bool
+	Ran     bool
+	Err     error
+}
+
 // RunGuestHook runs an optional in-guest pre/post backup hook. It never
 // freezes, pauses, or stops the guest.
 func RunGuestHook(ctx context.Context, unit, rootfs, guestPath string) error {
 	return runGuestHook(ctx, unit, rootfs, guestPath)
+}
+
+// ObserveGuestHook reports whether the hook file is present and executable
+// without running it.
+func ObserveGuestHook(rootfs, guestPath string) bool {
+	hostPath := filepath.Join(rootfs, filepath.FromSlash(strings.TrimPrefix(guestPath, "/")))
+	if !underRootfs(rootfs, hostPath) {
+		return false
+	}
+	st, err := os.Stat(hostPath)
+	if err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
+		return false
+	}
+	return true
+}
+
+// RunGuestHookDetailed runs a hook and reports whether it actually executed.
+func RunGuestHookDetailed(ctx context.Context, unit, rootfs, guestPath string) HookOutcome {
+	out := HookOutcome{Unit: strings.TrimSpace(unit), Path: guestPath}
+	if out.Unit == "" {
+		return out
+	}
+	out.Present = ObserveGuestHook(rootfs, guestPath)
+	if !out.Present {
+		return out
+	}
+	err := runGuestHook(ctx, unit, rootfs, guestPath)
+	out.Ran = err == nil
+	out.Err = err
+	return out
 }
 
 func runGuestHookDefault(ctx context.Context, unit, rootfs, guestPath string) error {

@@ -1319,10 +1319,10 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
     const policyDialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     expect(within(policyDialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
-    expect(within(policyDialog).getByLabelText(/^smart application data$/i)).toBeChecked();
-    expect(within(policyDialog).getByLabelText(/^full machine \/ full lxc$/i)).not.toBeChecked();
+    expect(within(policyDialog).getByLabelText(/^full machine \/ full lxc$/i)).toBeChecked();
+    expect(within(policyDialog).getByLabelText(/^smart application data$/i)).not.toBeChecked();
     expect(within(policyDialog).getByLabelText(/^search workloads$/i)).toBeVisible();
-    expect(within(policyDialog).getByText(/automatically protects persistent application data/i)).toBeVisible();
+    expect(within(policyDialog).getByText(/full machine \/ full lxc is the default/i)).toBeVisible();
     expect(within(policyDialog).queryByText(/backup scope preview/i)).not.toBeInTheDocument();
   });
 

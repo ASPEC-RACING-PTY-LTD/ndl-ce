@@ -91,6 +91,31 @@ func TestWriteReadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLegacyPackRestoreCompatibility(t *testing.T) {
+	prev := ChunkSize
+	ChunkSize = 32
+	t.Cleanup(func() { ChunkSize = prev })
+	payload := []byte("legacy-guest-rootfs-payload")
+	repo := &MemRepo{MaxPut: MaxLiveBytes()}
+	meta, err := Write(context.Background(), repo, "backups/legacy/2024-01-01T00-00-00Z", bytes.NewReader(payload), []byte(`{"kind":"system-container"}`), GzipWrap, Manifest{
+		WorkloadID: "legacy-wl", WorkloadName: "legacy", ArtifactID: "legacy-art", PayloadKind: PayloadTar,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	got, err := Reconstruct(context.Background(), repo, meta.ObjectPrefix, &out, GzipUnwrap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out.Bytes(), payload) {
+		t.Fatalf("legacy reconstruct %q", out.Bytes())
+	}
+	if got.WorkloadID != "legacy-wl" || got.PayloadKind != PayloadTar {
+		t.Fatalf("legacy identity %+v", got)
+	}
+}
+
 func TestWriteStaysInsideMemoryEnvelope(t *testing.T) {
 	prev := ChunkSize
 	ChunkSize = 1 << 20

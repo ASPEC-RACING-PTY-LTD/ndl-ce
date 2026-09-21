@@ -129,6 +129,32 @@ func TestUploadRetriesTransientFailures(t *testing.T) {
 	})
 }
 
+func TestUploadExhaustionMarksFailed(t *testing.T) {
+	e := testEngine(t, smallCfg())
+	target := NewMemTarget()
+	src := t.TempDir()
+	writeFile(t, filepath.Join(src, "f.bin"), randBytes(26, 64<<10), 0o644)
+	_, state, err := e.Capture(context.Background(), CaptureOptions{Source: src, WorkloadID: "fail", WorkloadName: "fail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, packID := range state.Packs {
+		target.FailFor(objectKeyPack(packID), 40)
+	}
+	q := NewUploadQueue(e.Repo(), target, 1)
+	if err := q.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer q.Stop()
+	if err := q.EnqueueBackup(state); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 8*time.Second, func() bool {
+		ps, _ := e.Repo().LoadState(state.Namespace, state.BackupID)
+		return ps != nil && ps.Remote == RemoteFailed
+	})
+}
+
 func TestUploadEnforcesBandwidthLimit(t *testing.T) {
 	e := testEngine(t, smallCfg())
 	target := NewMemTarget()

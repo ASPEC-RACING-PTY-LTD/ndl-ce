@@ -148,7 +148,7 @@ func (s *Server) planBackup(ctx context.Context, clusterID string, wl appdb.Work
 		plan.Method = appdb.BackupMethodContentAddressed
 		if wl.Status == lxc.StatusRunning || wl.UnitActive {
 			plan.Consistency = appdb.BackupConsistencyLiveCopy
-			plan.Warning = "Backup Engine V2 live capture. Crash-consistent, no freeze/pause/stop. Default scope is Smart Application Data; Full Machine is opt-in. Optional guest hooks /etc/ndl/hooks/backup-pre and /etc/ndl/hooks/backup-post can flush application state."
+			plan.Warning = "Backup Engine V2 live capture. Crash-consistent, no freeze/pause/stop. Default scope is Full Machine so restore can rebuild the guest; Smart Application Data remains available. Optional guest hooks /etc/ndl/hooks/backup-pre and /etc/ndl/hooks/backup-post can flush application state."
 		} else {
 			plan.Consistency = appdb.BackupConsistencyStopped
 		}
@@ -185,6 +185,8 @@ func (s *Server) ctBackupMeta(ctx context.Context, clusterID string, wl appdb.Wo
 	return b
 }
 
+// executeDirectoryCTBackup is retained only for historical review. New Directory
+// CT backups must use executeDirectoryCTBackupV2. Do not call this for capture.
 func (s *Server) executeDirectoryCTBackup(ctx context.Context, clusterID string, wl appdb.Workload, vol *appdb.Volume, rootfs string, objectKind bool, tgt appdb.BackupTarget, run *appdb.BackupRun, artifactID string) error {
 	staging := filepath.Join(ctbackup.StagingRoot, run.ID)
 	if _, err := s.Backup.CopyBackup(ctx, qemu.BackupMkdir, "", staging); err != nil {
@@ -829,6 +831,22 @@ func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appd
 		return "", err
 	}
 	name := uniqueRestoredName(firstNonEmpty(meta.Name, "restored"), newID)
+	if apply && art.Format == backup.Format && rootfs != "" && bp.Docker != nil {
+		note, _ := json.Marshal(map[string]any{
+			"named_volumes": bp.Docker.NamedVolumes, "bind_mounts": bp.Docker.BindMounts,
+			"images": bp.Docker.Images, "local_images": bp.Docker.LocalImages,
+			"registry_images": bp.Docker.RegistryImages, "compose_projects": bp.Docker.ComposeProject,
+			"compose_files": bp.Docker.ComposeFiles, "uncertainty": bp.Docker.Uncertainty,
+			"reconstructable": bp.Docker.Reconstructable,
+		})
+		dir := path.Join(rootfs, "var", "lib", "ndl", "restore")
+		_ = os.MkdirAll(dir, 0o750)
+		_ = os.WriteFile(path.Join(dir, "docker-inventory.json"), note, 0o640)
+	}
+	if meta.Nesting == nil && (bp.Nesting || hasFeature(bp.Features, "nesting")) {
+		on := true
+		meta.Nesting = &on
+	}
 	if apply && workloads != nil {
 		if _, err := workloads.CreateCT(ctx, lxc.Spec{
 			WorkloadID: newID, Name: name, ImagePin: meta.ImagePin,
@@ -841,7 +859,7 @@ func (s *Server) restoreNewCTV2(ctx context.Context, clusterID string, src *appd
 				}
 				return lxc.IPConfig{IPv4Mode: lxc.IPModeDHCP, IPv6Mode: lxc.IPModeDisabled}
 			}(),
-			SkipImage: true, NoStart: true, Nesting: meta.Nesting, TUN: meta.TUN, AllowMknod: meta.AllowMknod,
+			SkipImage: true, NoStart: true, Nesting: meta.Nesting, TUN: meta.TUN || hasFeature(bp.Features, "tun"), AllowMknod: meta.AllowMknod || hasFeature(bp.Features, "allow_mknod"),
 		}); err != nil {
 			return "", err
 		}

@@ -23,7 +23,6 @@ import (
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
-	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/journald"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/migrate"
@@ -60,58 +59,60 @@ type LogsRPC interface {
 
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
-	Store        appdb.Store
-	Lockout      *auth.Lockout
-	Agent        Agent
-	Observer     Observer
-	Logs         LogsRPC
-	HTTPClient   *http.Client
-	Storage      StorageRPC
-	Network      NetworkRPC
-	Workloads    WorkloadRPC
-	IO           IORPC
-	QEMU         QemuRPC
-	VM           VMRPC
-	OCI          OCIRPC
-	Docker       DockerRPC
-	Backup       BackupRPC
-	Object       ObjectRPC
-	Verify       VerifyRPC
-	Update       UpdateRPC
-	GPU          GPURPC
-	ZFS          ZFSRPC
-	LVM          LVMRPC
-	Datastore    DatastoreRPC
-	Distributed  DistributedRPC
-	K8sProcs     func() []string
-	OSDProcs     func() []string
-	AICompleter  ai.Completer
-	LicenseProbe LicenseProbe
-	Hub          *EventHub
-	Migrate      migrate.Runtime
-	UI           fs.FS
-	Now          func() time.Time
-	SetupHash    string
-	AllowedUID   uint32
-	TLSRequired  bool
-	TLSServing   bool // true when this process is listening with TLS
-	CertDirty    bool // true when on-disk material changed since TLSServing
-	TLSListen    string
-	HTTPListen   string
-	HTTPSURL     string
-	CertDir      ndltls.Dir
-	ClusterCA    cluster.CA
-	LeaseHolder  string
-	Challenges   *ndltls.ChallengeMem
-	backupMu     sync.Mutex
-	policyMu     sync.Mutex
-	policyActive string
-	nightlyBusy  atomic.Bool
-	alertBusy    atomic.Bool
-	docker       *dockerCache
-	destOverride *destAgentOverride
-	Game         *gameserver.Runtime
-	PhysFS       inventory.FS
+	Store          appdb.Store
+	Lockout        *auth.Lockout
+	Agent          Agent
+	Observer       Observer
+	Logs           LogsRPC
+	HTTPClient     *http.Client
+	Storage        StorageRPC
+	Network        NetworkRPC
+	Workloads      WorkloadRPC
+	IO             IORPC
+	QEMU           QemuRPC
+	VM             VMRPC
+	OCI            OCIRPC
+	Docker         DockerRPC
+	Backup         BackupRPC
+	Object         ObjectRPC
+	Verify         VerifyRPC
+	Update         UpdateRPC
+	GPU            GPURPC
+	ZFS            ZFSRPC
+	LVM            LVMRPC
+	Datastore      DatastoreRPC
+	Distributed    DistributedRPC
+	K8sProcs       func() []string
+	OSDProcs       func() []string
+	AICompleter    ai.Completer
+	LicenseProbe   LicenseProbe
+	Hub            *EventHub
+	Migrate        migrate.Runtime
+	UI             fs.FS
+	Now            func() time.Time
+	SetupHash      string
+	AllowedUID     uint32
+	TLSRequired    bool
+	TLSServing     bool // true when this process is listening with TLS
+	CertDirty      bool // true when on-disk material changed since TLSServing
+	TLSListen      string
+	HTTPListen     string
+	HTTPSURL       string
+	CertDir        ndltls.Dir
+	ClusterCA      cluster.CA
+	LeaseHolder    string
+	Challenges     *ndltls.ChallengeMem
+	backupMu       sync.Mutex
+	backupWait     *sync.Cond
+	backupInflight map[string]struct{}
+	policyMu       sync.Mutex
+	policyActive   string
+	nightlyBusy    atomic.Bool
+	alertBusy      atomic.Bool
+	docker         *dockerCache
+	destOverride   *destAgentOverride
+	Game           *gameserver.Runtime
+	PhysFS         inventory.FS
 }
 
 type principal struct {
@@ -456,13 +457,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/gpus/assign", s.assignGPU)
 	mux.HandleFunc("POST /api/v1/gpus/unassign", s.unassignGPU)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/gpus", s.workloadGPUs)
-	mux.HandleFunc("GET /api/v1/physical-disks", s.listPhysicalDisks)
-	mux.HandleFunc("GET /api/v1/nodes/{id}/physical-disks", s.listPhysicalDisks)
-	mux.HandleFunc("POST /api/v1/physical-disks/assign", s.assignPhysicalDiskAPI)
-	mux.HandleFunc("POST /api/v1/physical-disks/unassign", s.unassignPhysicalDiskAPI)
-	mux.HandleFunc("GET /api/v1/workloads/{id}/physical-disks", s.workloadPhysicalDisks)
-	mux.HandleFunc("POST /api/v1/workloads/{id}/physical-disks", s.assignWorkloadPhysicalDisk)
-	mux.HandleFunc("POST /api/v1/workloads/{id}/physical-disks/{device_id}/remove", s.removeWorkloadPhysicalDisk)
 	mux.HandleFunc("GET /api/v1/registries", s.listRegistries)
 	mux.HandleFunc("POST /api/v1/registries", s.createRegistry)
 	mux.HandleFunc("GET /api/v1/stacks", s.listStacks)

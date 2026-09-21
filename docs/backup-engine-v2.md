@@ -7,9 +7,11 @@ engine is incremental and deduplicating: after the first baseline, a backup
 costs roughly the changed data plus a metadata scan.
 
 The engine is wired into `ndl-agent` and `ndl-control` for new Directory
-system-container backups. Smart Application Data is the default capture scope.
-Full Machine / Full LXC remains available and still uses this engine, not the
-legacy tar path. Legacy tar/backuppack artifacts remain restorable.
+system-container backups. Full Machine / Full LXC is the default capture scope
+so a normal backup can restore the complete recoverable guest. Smart Application
+Data remains available when an operator only wants application state. All three
+scopes use this engine, not the legacy tar path. Legacy tar/backuppack artifacts
+remain restorable.
 
 ## Goals recap
 
@@ -209,16 +211,18 @@ local repository, asynchronous remote upload, Blueprint, integrity
 verification). Full Machine is a full *scope*, not a return to the old
 whole-rootfs tar format.
 
-- `smart` (default): protect irreplaceable application and workload data
+- `full` (default): complete recoverable guest filesystem minus technical mounts
+  (`proc`, `sys`, `dev`, `run`). Repeated OS data is inexpensive because later
+  backups reuse content-addressed chunks.
+- `smart`: protect irreplaceable application and workload data
   (databases, Docker volumes and bind mounts, uploads, persistent state,
   relevant configuration, Blueprint). Reproducible trees such as
   `node_modules`, package caches, image layers, and ordinary logs are
   normally excluded. Git working trees default to excluded and are warned
   because they may contain uncommitted or local-only state. Uncertain
-  classification is protected or flagged.
+  classification is protected or flagged. Smart cannot rebuild a complete
+  guest by itself.
 - `custom`: user include/exclude plus detected-category overrides.
-- `full`: complete recoverable guest filesystem minus technical mounts
-  (`proc`, `sys`, `dev`, `run`). Never the default.
 
 Scope discovery uses filesystem metadata (stat) and does not require a
 backup run. It never reads secret file contents to classify a path. The
@@ -230,14 +234,26 @@ asks.
 
 Implemented: engine core; agent live capture and restore (`v2-capture`,
 `v2-restore`, `v2-preview`, `v2-status`); control persistence
-(`migrations/0047_backup_engine_v2.sql`); policy capture modes and selected
-workload default; Backups UI (scope radios, opt-in Custom discovery, protection
-states, workspace bounds); Docker persistence inventory without secret
-values; Blueprint-aware restore-as-new that stays stopped until started.
+(`migrations/0047_backup_engine_v2.sql`, `migrations/0050_backup_workspace_hardening.sql`);
+policy capture modes with Full Machine default; bounded capture concurrency;
+honest application-consistency reporting; filesystem metadata fidelity;
+Backups UI (protection summary, repository statistics, workspace controls);
+Docker persistence inventory without secret values; Blueprint-aware
+restore-as-new that stays stopped until started.
 
-Legacy tar plus `backuppack` remains only to restore historical artifacts.
+## Current creation versus legacy compatibility
+
+CURRENT BACKUP CREATION for Directory system containers is Backup Engine V2
+(`v2-capture`). ZFS guests still use `zfs send`. Directory VMs still snapshot
+and flatten qcow2 from a consistent snapshot, never a live qcow2 FastCDC read.
+
+LEGACY COMPATIBILITY: `archive`, `sync-tree`, `pack`, and `unpack` remain so
+historical tar/backuppack artifacts can be restored. `executeDirectoryCTBackup`
+must not be called for new capture. Do not migrate or delete old artifacts
+merely to simplify the new engine.
 
 On-hardware validation with a real production container (read-only) and
 disposable mutation/restore tests is performed on the live host when this
-change is landed, not in CI.
+change is landed, not in CI. The disposable engine lifecycle lives in
+`internal/backup/e2e_cert_test.go`.
 ```

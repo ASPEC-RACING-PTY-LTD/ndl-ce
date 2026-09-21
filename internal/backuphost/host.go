@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/backup"
 	"github.com/no-dal/ndl-ce/internal/backupscope"
@@ -25,11 +26,11 @@ type Host struct {
 	eng    *backup.Engine
 	docker *docker.Engine
 
-	mu        sync.Mutex
-	settings  Settings
-	queues    map[string]*backup.UploadQueue
-	pending   int
-	capturing bool
+	mu       sync.Mutex
+	settings Settings
+	queues   map[string]*backup.UploadQueue
+	pending  int
+	busy     map[string]struct{}
 }
 
 // Options open the host repository.
@@ -68,6 +69,7 @@ func Open(opts Options) (*Host, error) {
 		docker:   opts.Docker,
 		settings: opts.Settings.withDefaults(),
 		queues:   map[string]*backup.UploadQueue{},
+		busy:     map[string]struct{}{},
 	}
 	if err := h.resumeTargets(context.Background()); err != nil {
 		return nil, err
@@ -105,7 +107,8 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 	if req.Action == "" {
 		req.Action = action
 	}
-	if req.Settings.MaxLocalBytes > 0 || req.Settings.MinHostFreeBytes > 0 || req.Settings.UploadWorkers > 0 {
+	if req.Settings.MaxLocalBytes > 0 || req.Settings.MinHostFreeBytes > 0 || req.Settings.UploadWorkers > 0 ||
+		req.Settings.CaptureConcurrency > 0 || req.Settings.BandwidthLimitBPS > 0 || req.Settings.CacheRetentionHours > 0 {
 		h.applySettings(req.Settings)
 	}
 	var out Result
@@ -147,28 +150,26 @@ func (h *Host) applySettings(s Settings) {
 	h.eng = backup.NewEngine(h.repo, backup.Config{
 		MaxLocalBytes: s.MaxLocalBytes, MinHostFreeBytes: s.MinHostFreeBytes,
 	})
+	for _, q := range h.queues {
+		if q != nil {
+			q.SetBandwidthLimit(s.BandwidthLimitBPS)
+		}
+	}
+	h.pruneCachesLocked()
 }
 
 func (h *Host) capture(ctx context.Context, source string, req Request) (Result, error) {
 	if source == "" {
 		return Result{}, fmt.Errorf("capture source is required")
 	}
-	h.mu.Lock()
-	if h.capturing {
-		h.mu.Unlock()
-		return Result{}, fmt.Errorf("another capture is already running")
+	if err := h.acquireCapture(ctx, req.WorkloadID); err != nil {
+		return Result{}, err
 	}
-	h.capturing = true
-	h.mu.Unlock()
-	defer func() {
-		h.mu.Lock()
-		h.capturing = false
-		h.mu.Unlock()
-	}()
+	defer h.releaseCapture(req.WorkloadID)
 
 	mode := strings.TrimSpace(req.CaptureMode)
 	if mode == "" {
-		mode = backup.CaptureModeSmart
+		mode = backup.CaptureModeFull
 	}
 	dockerInfo, hint := h.dockerInventory(ctx, req.WorkloadID, req.WorkloadName)
 	bp := req.Blueprint
@@ -190,19 +191,34 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 	bp.Excludes = excludes
 
 	unit := strings.TrimSpace(req.Unit)
-	if err := ctbackup.RunGuestHook(ctx, unit, source, ctbackup.GuestHookPre); err != nil {
+	pre := ctbackup.RunGuestHookDetailed(ctx, unit, source, ctbackup.GuestHookPre)
+	if pre.Err != nil {
 		_ = ctbackup.RunGuestHook(ctx, unit, source, ctbackup.GuestHookPost)
-		return Result{}, err
+		return Result{}, pre.Err
 	}
 	defer func() { _ = ctbackup.RunGuestHook(ctx, unit, source, ctbackup.GuestHookPost) }()
 
-	consistency := firstNonEmpty(req.Consistency, backup.ConsistencyCrash)
-	if unit != "" {
-		consistency = backup.ConsistencyApp
+	info := backup.ConsistencyReport{
+		Requested: firstNonEmpty(req.Consistency, backup.ConsistencyCrash),
+		Unit:      unit,
+		HookPath:  ctbackup.GuestHookPre,
+		HookRan:   pre.Ran,
+		HookOK:    pre.Ran,
+	}
+	if pre.Ran {
+		info.Result = backup.ConsistencyApp
+		info.Note = "guest pre-hook ran successfully"
+	} else {
+		info.Result = backup.ConsistencyCrash
+		if unit != "" && !pre.Present {
+			info.Note = "guest pre-hook is not installed; capture is crash-consistent"
+		} else if unit == "" {
+			info.Note = "no guest consistency hook was configured"
+		}
 	}
 	man, state, err := h.eng.Capture(ctx, backup.CaptureOptions{
 		Source: source, WorkloadID: req.WorkloadID, WorkloadName: req.WorkloadName,
-		Consistency: consistency, Blueprint: bp, Includes: includes, Excludes: excludes,
+		Consistency: info.Result, ConsistencyInfo: info, Blueprint: bp, Includes: includes, Excludes: excludes,
 	})
 	if err != nil {
 		return Result{}, err
@@ -276,7 +292,7 @@ func (h *Host) preview(source string, req Request) (Result, error) {
 		return Result{}, fmt.Errorf("preview source is required")
 	}
 	_, hint := h.dockerInventory(context.Background(), req.WorkloadID, req.WorkloadName)
-	mode := firstNonEmpty(req.CaptureMode, backup.CaptureModeSmart)
+	mode := firstNonEmpty(req.CaptureMode, backup.CaptureModeFull)
 	prev, err := backupscope.Discover(backupscope.Options{
 		Root: source, WorkloadID: req.WorkloadID, Name: req.WorkloadName,
 		Mode: mode, Selection: req.Selection, Docker: hint,
@@ -295,14 +311,20 @@ func (h *Host) status(_ Request) (Result, error) {
 	points := make([]PointView, 0, len(states))
 	protected := 0
 	for _, s := range states {
-		mode := ""
+		mode, consistency := "", ""
+		var logical, physical int64
 		if man, err := h.repo.LoadManifest(s.Namespace, s.BackupID); err == nil {
 			mode = man.Blueprint.CaptureMode
+			consistency = man.Consistency
+			logical = man.Stats.LogicalBytes
+			physical = man.Stats.PhysicalNewData
 		}
 		points = append(points, PointView{
 			BackupID: s.BackupID, Namespace: s.Namespace, WorkloadID: s.WorkloadID,
 			WorkloadName: s.WorkloadName, CreatedAtNS: s.CreatedAtNS,
 			LocalComplete: s.LocalComplete, Remote: s.Remote, CaptureMode: mode,
+			Consistency: consistency, LogicalBytes: logical, PhysicalNewData: physical,
+			UploadStartedNS: s.UploadStartedNS, UploadEndedNS: s.UploadEndedNS,
 		})
 		if s.Remote == backup.RemoteProtected {
 			protected++
@@ -311,7 +333,7 @@ func (h *Host) status(_ Request) (Result, error) {
 	repoBytes, _ := h.repo.SizeOnDisk()
 	free, _ := hostFreeBytes(h.root)
 	h.mu.Lock()
-	capturing := h.capturing
+	active := len(h.busy)
 	settings := h.settings
 	h.mu.Unlock()
 	pending := h.pendingJobs()
@@ -320,7 +342,9 @@ func (h *Host) status(_ Request) (Result, error) {
 		Workspace: WorkspaceStatus{
 			Root: h.root, RepoBytes: repoBytes, MaxLocalBytes: settings.MaxLocalBytes,
 			MinHostFreeBytes: settings.MinHostFreeBytes, HostFreeBytes: free,
-			PendingUploads: pending, CaptureBusy: capturing, UploadWorkers: settings.UploadWorkers,
+			PendingUploads: pending, CaptureBusy: active > 0, CaptureActive: active,
+			CaptureConcurrency: settings.CaptureConcurrency, UploadWorkers: settings.UploadWorkers,
+			BandwidthLimitBPS: settings.BandwidthLimitBPS, CacheRetentionHours: settings.CacheRetentionHours,
 		},
 	}, nil
 }
@@ -378,6 +402,72 @@ func resultFrom(man *backup.Manifest, state *backup.PointState) Result {
 		FilesScanned: man.Stats.FilesScanned, FilesUnchanged: man.Stats.FilesUnchanged,
 		FilesChanged: man.Stats.FilesChanged, PacksCommitted: man.Stats.PacksCommitted,
 		DurationNanos: man.Stats.DurationNanos, DedupeRatio: dedupe,
+		ConsistencyInfo: man.ConsistencyInfo,
+	}
+}
+
+func (h *Host) acquireCapture(ctx context.Context, workloadID string) error {
+	id := strings.TrimSpace(workloadID)
+	if id == "" {
+		id = "anonymous"
+	}
+	for {
+		h.mu.Lock()
+		if h.busy == nil {
+			h.busy = map[string]struct{}{}
+		}
+		if _, ok := h.busy[id]; ok {
+			h.mu.Unlock()
+			return fmt.Errorf("a backup is already running for this workload")
+		}
+		slots := h.settings.CaptureConcurrency
+		if slots < 1 {
+			slots = DefaultCaptureSlots
+		}
+		if len(h.busy) < slots {
+			h.busy[id] = struct{}{}
+			h.mu.Unlock()
+			return nil
+		}
+		h.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
+func (h *Host) releaseCapture(workloadID string) {
+	id := strings.TrimSpace(workloadID)
+	if id == "" {
+		id = "anonymous"
+	}
+	h.mu.Lock()
+	delete(h.busy, id)
+	h.mu.Unlock()
+}
+
+func (h *Host) pruneCachesLocked() {
+	hours := h.settings.CacheRetentionHours
+	if hours <= 0 || h.repo == nil {
+		return
+	}
+	dir := filepath.Join(h.root, "cache")
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour)
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
 	}
 }
 

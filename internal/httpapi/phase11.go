@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -94,7 +95,7 @@ func backupPolicyJSON(p appdb.BackupPolicy) map[string]any {
 		"id": p.ID, "name": p.Name, "target_id": p.TargetID,
 		"scope": p.Scope, "workload_ids": ids,
 		"schedule": p.Schedule, "keep_daily": p.KeepDaily, "keep_weekly": p.KeepWeekly, "keep_monthly": p.KeepMonthly,
-		"capture_mode": firstNonEmpty(p.CaptureMode, appdb.BackupCaptureSmart),
+		"capture_mode": firstNonEmpty(p.CaptureMode, appdb.BackupCaptureFull),
 	}
 	if p.ScopeJSON != "" {
 		out["scope_json"] = json.RawMessage(p.ScopeJSON)
@@ -201,11 +202,23 @@ func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
 	if a.CaptureDurationNS > 0 {
 		out["capture_duration_ns"] = a.CaptureDurationNS
 	}
+	if a.UploadDurationNS > 0 {
+		out["upload_duration_ns"] = a.UploadDurationNS
+	}
+	if a.Consistency != "" {
+		out["consistency"] = a.Consistency
+	}
+	if a.StatsJSON != "" {
+		out["stats"] = json.RawMessage(a.StatsJSON)
+	}
+	if a.BlueprintJSON != "" {
+		out["blueprint"] = json.RawMessage(a.BlueprintJSON)
+	}
 	if a.CaptureMode != "" {
 		out["capture_mode"] = a.CaptureMode
 		out["capture_mode_label"] = captureModeLabel(a.CaptureMode)
 	}
-	out["protection"] = protectionLabel(a.RemoteState, a.LocalComplete, a.Format)
+	out["protection"] = protectionLabel(a.RemoteState, a.LocalComplete, a.Format, a.ObjectKey, a.Locator)
 	appdb.FillArtifactLocality(&a)
 	out["locality"] = a.Locality
 	if a.PullURL != "" {
@@ -504,7 +517,7 @@ func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID st
 	captureMode := strings.ToLower(strings.TrimSpace(req.CaptureMode))
 	switch captureMode {
 	case "":
-		captureMode = appdb.BackupCaptureSmart
+		captureMode = appdb.BackupCaptureFull
 	case appdb.BackupCaptureSmart, appdb.BackupCaptureCustom, appdb.BackupCaptureFull:
 	default:
 		return appdb.BackupPolicy{}, errBadRequest("capture_mode must be smart, custom, or full")
@@ -760,25 +773,41 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 	if err != nil {
 		return nil, err
 	}
-	var runs []appdb.BackupRun
-	var lastErr error
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		runs    []appdb.BackupRun
+		lastErr error
+	)
 	for _, workloadID := range ids {
-		wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
-		if err != nil || wl == nil {
-			lastErr = errNotFound("workload not found")
-			run := s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, lastErr.Error())
+		wg.Add(1)
+		go func(workloadID string) {
+			defer wg.Done()
+			wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
+			if err != nil || wl == nil {
+				run := s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, "workload not found")
+				mu.Lock()
+				lastErr = errNotFound("workload not found")
+				runs = append(runs, run)
+				mu.Unlock()
+				return
+			}
+			_ = wl
+			run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID, "", nil)
+			if err != nil {
+				run = s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, err.Error())
+				mu.Lock()
+				lastErr = err
+				runs = append(runs, run)
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
 			runs = append(runs, run)
-			continue
-		}
-		run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID, "", nil)
-		if err != nil {
-			lastErr = err
-			run = s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, err.Error())
-			runs = append(runs, run)
-			continue
-		}
-		runs = append(runs, run)
+			mu.Unlock()
+		}(workloadID)
 	}
+	wg.Wait()
 	if len(runs) == 0 {
 		if lastErr != nil {
 			return nil, lastErr
@@ -837,6 +866,7 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	s.syncV2State(ctx, cluster.ID)
 	now := s.now()
 	for _, pol := range policies {
 		if pol.Schedule != appdb.BackupNightly {
@@ -867,8 +897,10 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 }
 
 func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID, captureMode string, scopeJSON json.RawMessage) (appdb.BackupRun, error) {
-	s.backupMu.Lock()
-	defer s.backupMu.Unlock()
+	if err := s.acquireBackupSlot(ctx, clusterID, workloadID); err != nil {
+		return appdb.BackupRun{}, err
+	}
+	defer s.releaseBackupSlot(workloadID)
 	wl, err := s.Store.GetWorkload(ctx, clusterID, workloadID)
 	if err != nil || wl == nil {
 		return appdb.BackupRun{}, errNotFound("workload not found")
@@ -928,11 +960,11 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	artifactID := uuid.NewString()
 	objectKind := isObjectBackupKind(tgt.Kind)
 	if plan.Method == appdb.BackupMethodDirectoryArchive || plan.Method == appdb.BackupMethodContentAddressed {
-		mode := firstNonEmpty(captureMode, appdb.BackupCaptureSmart)
+		mode := firstNonEmpty(captureMode, appdb.BackupCaptureFull)
 		sel := backupscope.Selection{}
 		if policyID != "" {
 			if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
-				mode = firstNonEmpty(captureMode, pol.CaptureMode, appdb.BackupCaptureSmart)
+				mode = firstNonEmpty(captureMode, pol.CaptureMode, appdb.BackupCaptureFull)
 				sel = selectionFor(pol.ScopeJSON, workloadID)
 			}
 		}
@@ -1202,7 +1234,13 @@ func (s *Server) pruneBackupArtifacts(ctx context.Context, clusterID, workloadID
 		if _, ok := keep[a.ID]; ok {
 			continue
 		}
-		if s.Backup != nil && !strings.HasPrefix(a.Locator, "s3://") && a.ObjectKey == "" {
+		if a.Format == "ndl-cab" && a.BackupID != "" && s.Backup != nil {
+			raw, _ := json.Marshal(map[string]string{
+				"action": "v2-expire", "namespace": a.Namespace, "backup_id": a.BackupID,
+			})
+			_, _ = s.Backup.CopyBackup(ctx, qemu.BackupV2Expire, "", string(raw))
+		}
+		if s.Backup != nil && !strings.HasPrefix(a.Locator, "s3://") && a.ObjectKey == "" && a.Format != "ndl-cab" {
 			if a.Format == backuppack.FormatNDLB {
 				_, _ = s.Backup.CopyBackup(ctx, qemu.BackupRmTree, "", a.Locator)
 			} else {

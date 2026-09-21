@@ -119,7 +119,7 @@ func NormalizeBackupPolicy(p *BackupPolicy) {
 		p.WorkloadID = p.WorkloadIDs[0]
 	}
 	if p.CaptureMode != BackupCaptureSmart && p.CaptureMode != BackupCaptureCustom && p.CaptureMode != BackupCaptureFull {
-		p.CaptureMode = BackupCaptureSmart
+		p.CaptureMode = BackupCaptureFull
 	}
 }
 
@@ -199,13 +199,14 @@ type BackupArtifact struct {
 
 // BackupWorkspaceSettings bounds the local V2 repository.
 type BackupWorkspaceSettings struct {
-	ClusterID          string
-	MaxLocalBytes      int64
-	MinHostFreeBytes   int64
-	CaptureConcurrency int
-	UploadWorkers      int
-	BandwidthLimitBPS  int64
-	UpdatedAt          time.Time
+	ClusterID           string
+	MaxLocalBytes       int64
+	MinHostFreeBytes    int64
+	CaptureConcurrency  int
+	UploadWorkers       int
+	BandwidthLimitBPS   int64
+	CacheRetentionHours int
+	UpdatedAt           time.Time
 }
 
 // BackupRepository is the catalogued local V2 store.
@@ -588,11 +589,12 @@ func (m *Memory) ListBackupUploadJobs(_ context.Context, clusterID string) ([]Ba
 
 func DefaultBackupWorkspaceSettings(clusterID string) *BackupWorkspaceSettings {
 	return &BackupWorkspaceSettings{
-		ClusterID:          clusterID,
-		MaxLocalBytes:      50 << 30,
-		MinHostFreeBytes:   10 << 30,
-		CaptureConcurrency: 1,
-		UploadWorkers:      4,
+		ClusterID:           clusterID,
+		MaxLocalBytes:       50 << 30,
+		MinHostFreeBytes:    10 << 30,
+		CaptureConcurrency:  1,
+		UploadWorkers:       4,
+		CacheRetentionHours: 0,
 	}
 }
 

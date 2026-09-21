@@ -117,7 +117,7 @@ func (p *Postgres) CreateBackupPolicy(ctx context.Context, pol BackupPolicy) err
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO backup_policies (id, cluster_id, name, workload_id, target_id, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, scope, capture_mode, scope_json)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		pol.ID, pol.ClusterID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureSmart), pol.ScopeJSON)
+		pol.ID, pol.ClusterID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureFull), pol.ScopeJSON)
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (p *Postgres) UpdateBackupPolicy(ctx context.Context, pol BackupPolicy) err
 	res, err := tx.ExecContext(ctx, `
 UPDATE backup_policies SET name=$3, workload_id=$4, target_id=$5, schedule=$6, keep_daily=$7, keep_weekly=$8, keep_monthly=$9, scope=$10, capture_mode=$11, scope_json=$12
 WHERE cluster_id=$1 AND id=$2`,
-		pol.ClusterID, pol.ID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureSmart), pol.ScopeJSON)
+		pol.ClusterID, pol.ID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureFull), pol.ScopeJSON)
 	if err != nil {
 		return err
 	}
