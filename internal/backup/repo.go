@@ -44,6 +44,8 @@ type Repository struct {
 
 	mu    sync.RWMutex
 	index map[KeyID]location
+
+	capture sync.RWMutex
 }
 
 // OpenRepository opens or creates a repository rooted at root.
@@ -113,6 +115,9 @@ func (r *Repository) rebuildIndex() error {
 	}
 	return nil
 }
+
+func (r *Repository) beginCapture() { r.capture.RLock() }
+func (r *Repository) endCapture()   { r.capture.RUnlock() }
 
 // Has reports whether a chunk id is already stored.
 func (r *Repository) Has(id KeyID) bool {

@@ -108,14 +108,14 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 			if target != "" && !strings.HasPrefix(strings.TrimSpace(target), "{") {
 				_ = os.MkdirAll(target, 0o755)
 			}
-			extra, _ := json.Marshal(map[string]any{"backup_id": req.BackupID, "namespace": req.Namespace, "locator": target, "capture_mode": firstNonEmpty(req.CaptureMode, "smart")})
+			extra, _ := json.Marshal(map[string]any{"backup_id": req.BackupID, "namespace": req.Namespace, "locator": target, "capture_mode": firstNonEmpty(req.CaptureMode, "full")})
 			return storage.CopyResult{Dest: target, Format: "ndl-cab", Extra: string(extra)}, nil
 		}
 		if action == qemu.BackupV2Preview || action == qemu.BackupV2Status || action == qemu.BackupV2Workspace {
 			extra, _ := json.Marshal(map[string]any{
-				"capture_mode": firstNonEmpty(req.CaptureMode, "smart"),
+				"capture_mode": firstNonEmpty(req.CaptureMode, "full"),
 				"preview": map[string]any{
-					"workload_id": req.WorkloadID, "workload_name": req.WorkloadName, "mode": firstNonEmpty(req.CaptureMode, "smart"),
+					"workload_id": req.WorkloadID, "workload_name": req.WorkloadName, "mode": firstNonEmpty(req.CaptureMode, "full"),
 					"items":           []map[string]any{{"id": "db:postgresql", "kind": "database", "label": "PostgreSQL", "paths": []string{"/var/lib/postgresql"}, "bytes": 4, "selected": true, "default_on": true}},
 					"protected_bytes": 4, "excluded_bytes": 0, "full_bytes": 4,
 				},
@@ -133,10 +133,10 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		extra, _ := json.Marshal(map[string]any{
 			"backup_id": "11111111-1111-4111-8111-111111111111",
 			"namespace": ns, "workload_id": req.WorkloadID, "workload_name": req.WorkloadName,
-			"local_complete": true, "remote": "queued", "capture_mode": firstNonEmpty(req.CaptureMode, "smart"),
+			"local_complete": true, "remote": "queued", "capture_mode": firstNonEmpty(req.CaptureMode, "full"),
 			"logical_bytes": 4, "physical_new_data": 4, "chunks_new": 1, "chunks_reused": 0,
 			"locator":   "ndl-cab://backups/" + ns + "/11111111-1111-4111-8111-111111111111",
-			"blueprint": map[string]any{"kind": "ndl-backup-blueprint", "name": req.WorkloadName, "capture_mode": firstNonEmpty(req.CaptureMode, "smart")},
+			"blueprint": map[string]any{"kind": "ndl-backup-blueprint", "name": req.WorkloadName, "capture_mode": firstNonEmpty(req.CaptureMode, "full")},
 		})
 		return storage.CopyResult{Dest: "ndl-cab://backups/" + ns + "/", SHA256: "11111111-1111-4111-8111-111111111111", Size: 4, Format: "ndl-cab", Extra: string(extra)}, nil
 	}
@@ -1626,7 +1626,7 @@ func TestBackupPolicyAllScopeDefaultAndSelectedMulti(t *testing.T) {
 	if allPol["scope"] != "all" {
 		t.Fatalf("explicit all scope %+v", allPol["scope"])
 	}
-	if allPol["capture_mode"] != "smart" {
+	if allPol["capture_mode"] != "full" {
 		t.Fatalf("default capture mode %+v", allPol["capture_mode"])
 	}
 	if _, ok := allPol["workload_id"]; ok {
@@ -2219,5 +2219,189 @@ func TestReconcileInterruptedBackupRuns(t *testing.T) {
 	kept, _ := mem.GetBackupRun(context.Background(), cluster.ID, done.ID)
 	if kept == nil || kept.Status != appdb.BackupSucceeded {
 		t.Fatalf("succeeded run must stay %+v", kept)
+	}
+}
+
+func TestLegacyArchiveRestoreRemainsAvailable(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	fb := &fakeBackup{}
+	fw := &fakeWorkloads{}
+	s.Backup = fb
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	wlID := uuid.NewString()
+	if err := mem.CreateWorkload(context.Background(), appdb.Workload{
+		ID: wlID, ClusterID: cluster.ID, NodeID: nodeID, OwnerNodeID: nodeID, DesiredNodeID: nodeID,
+		Name: "legacy-ct", Kind: lxc.KindSystemContainer, Status: lxc.StatusStopped,
+		ImagePin: "alpine/3.21/amd64/default",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.CreateWorkloadNIC(context.Background(), appdb.WorkloadNIC{
+		ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: wlID, NetworkID: netID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), "legacy.tar.zst")
+	if err := os.WriteFile(archive, []byte("legacy-rootfs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tgtID := uuid.NewString()
+	if err := mem.CreateBackupTarget(context.Background(), appdb.BackupTarget{
+		ID: tgtID, ClusterID: cluster.ID, Name: "local", Kind: appdb.BackupLocal, Locator: t.TempDir(), Status: appdb.BackupAvailable,
+	}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	runID := uuid.NewString()
+	if err := mem.CreateBackupRun(context.Background(), appdb.BackupRun{
+		ID: runID, ClusterID: cluster.ID, TargetID: tgtID, WorkloadID: wlID, Status: appdb.BackupSucceeded,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	artID := uuid.NewString()
+	if err := mem.CreateBackupArtifact(context.Background(), appdb.BackupArtifact{
+		ID: artID, ClusterID: cluster.ID, RunID: runID, WorkloadID: wlID,
+		ChecksumSHA256: "abc", SizeBytes: 13, Locator: archive, Format: "tar.zst",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = poolID
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/backups/artifacts", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	_ = json.NewDecoder(res.Body).Decode(&listed)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK || len(listed.Items) != 1 || listed.Items[0]["protection"] != "Legacy" {
+		t.Fatalf("legacy catalog %+v %d", listed, res.StatusCode)
+	}
+
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/artifacts/"+artID+"/restore", strings.NewReader(`{"mode":"new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("legacy restore %d %s", res.StatusCode, raw)
+	}
+	usedV2 := false
+	usedExtract := false
+	for _, c := range fb.copies {
+		if c[0] == qemu.BackupV2Restore {
+			usedV2 = true
+		}
+		if c[0] == qemu.BackupExtractRoot {
+			usedExtract = true
+		}
+	}
+	if usedV2 || !usedExtract {
+		t.Fatalf("legacy restore must extract the archive, not use V2: %+v", fb.copies)
+	}
+	if fw.creates == 0 {
+		t.Fatal("legacy restore-as-new must CreateCT")
+	}
+}
+
+func TestWorkspaceSettingsHonorCaptureAndBandwidth(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	_ = cluster
+	s.Backup = &fakeBackup{}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	body := `{"capture_concurrency":3,"bandwidth_limit_bps":1048576,"cache_retention_hours":48,"max_local_bytes":1073741824,"min_host_free_bytes":268435456,"upload_workers":2}`
+	req, _ := http.NewRequest("PATCH", ts.URL+"/api/v1/backups/workspace", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("patch workspace %d %s", res.StatusCode, raw)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["capture_concurrency"] != float64(3) || out["bandwidth_limit_bps"] != float64(1048576) || out["cache_retention_hours"] != float64(48) {
+		t.Fatalf("workspace %+v", out)
+	}
+	got, err := mem.GetBackupWorkspaceSettings(context.Background(), cluster.ID)
+	if err != nil || got == nil || got.CaptureConcurrency != 3 || got.BandwidthLimitBPS != 1048576 || got.CacheRetentionHours != 48 {
+		t.Fatalf("stored workspace %+v %v", got, err)
+	}
+}
+
+func TestArtifactProtectionLabels(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	tgtID := uuid.NewString()
+	_ = mem.CreateBackupTarget(context.Background(), appdb.BackupTarget{
+		ID: tgtID, ClusterID: cluster.ID, Name: "local", Kind: appdb.BackupLocal, Locator: t.TempDir(), Status: appdb.BackupAvailable,
+	}, "", "")
+	runID := uuid.NewString()
+	_ = mem.CreateBackupRun(context.Background(), appdb.BackupRun{
+		ID: runID, ClusterID: cluster.ID, TargetID: tgtID, WorkloadID: uuid.NewString(), Status: appdb.BackupSucceeded,
+	})
+	cases := []struct {
+		id, format, remote string
+		local              bool
+		want               string
+	}{
+		{"a1", "ndl-cab", "protected", true, "Protected"},
+		{"a2", "ndl-cab", "queued", true, "Queued"},
+		{"a3", "ndl-cab", "uploading", true, "Uploading"},
+		{"a4", "ndl-cab", "local-only", true, "Local complete"},
+		{"a5", "ndl-cab", "failed", true, "Failed"},
+		{"a6", "tar.zst", "", false, "Legacy"},
+	}
+	for _, c := range cases {
+		if err := mem.CreateBackupArtifact(context.Background(), appdb.BackupArtifact{
+			ID: c.id, ClusterID: cluster.ID, RunID: runID, WorkloadID: uuid.NewString(),
+			ChecksumSHA256: "x", SizeBytes: 1, Locator: "/tmp/" + c.id, Format: c.format,
+			LocalComplete: c.local, RemoteState: c.remote,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/backups/artifacts", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ := ts.Client().Do(req)
+	var listed struct {
+		Items []map[string]any `json:"items"`
+	}
+	_ = json.NewDecoder(res.Body).Decode(&listed)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list %d", res.StatusCode)
+	}
+	got := map[string]string{}
+	for _, it := range listed.Items {
+		id, _ := it["id"].(string)
+		prot, _ := it["protection"].(string)
+		got[id] = prot
+	}
+	for _, c := range cases {
+		if got[c.id] != c.want {
+			t.Fatalf("%s protection %q want %q", c.id, got[c.id], c.want)
+		}
 	}
 }

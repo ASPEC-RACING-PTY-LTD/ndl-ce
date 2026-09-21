@@ -269,8 +269,9 @@ func (q *UploadQueue) backoff(name string) {
 	n := q.attempts[name]
 	q.mu.Unlock()
 	if n >= q.maxAttempts {
-		// Leave the job file so a later run or operator can retry; do not lose
-		// knowledge of the pending upload.
+		// Leave the job file so a later run or operator can retry, but mark the
+		// restore point failed so UI never claims it is still queued forever.
+		q.markFailed(name)
 		return
 	}
 	d := q.baseBackoff * time.Duration(1<<uint(min(n, 6)))
@@ -290,8 +291,28 @@ func (q *UploadQueue) markUploading(job uploadJob) {
 	}
 	if state.Remote == RemoteQueued {
 		state.Remote = RemoteUploading
+		if state.UploadStartedNS == 0 {
+			state.UploadStartedNS = time.Now().UnixNano()
+		}
 		_ = q.repo.writeState(state)
 	}
+}
+
+func (q *UploadQueue) markFailed(jobName string) {
+	raw, err := os.ReadFile(filepath.Join(q.queueDir(), jobName))
+	if err != nil {
+		return
+	}
+	var job uploadJob
+	if json.Unmarshal(raw, &job) != nil {
+		return
+	}
+	state, err := q.repo.LoadState(job.Namespace, job.BackupID)
+	if err != nil {
+		return
+	}
+	state.Remote = RemoteFailed
+	_ = q.repo.writeState(state)
 }
 
 // maybeComplete promotes a restore point to protected once every one of its
@@ -335,6 +356,7 @@ func (q *UploadQueue) maybeComplete(job uploadJob) {
 		return
 	}
 	state.Remote = RemoteProtected
+	state.UploadEndedNS = time.Now().UnixNano()
 	_ = q.repo.writeState(state)
 }
 

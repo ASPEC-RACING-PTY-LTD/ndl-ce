@@ -11,16 +11,19 @@ fleet, including workloads created later). All must be chosen
 deliberately. One policy can cover many workloads, and one workload can
 belong to more than one policy.
 
-Directory system containers also have a capture mode: `smart` (default,
-application data), `custom` (detected categories plus include/exclude),
-or `full` (complete recoverable filesystem). Full Machine is never
-implied. All three modes use Backup Engine V2. Smart and Full do not
-walk guest filesystems in the policy editor. Custom discovery loads
-only when the operator configures one selected workload.
+Directory system containers also have a capture mode: `full` (default,
+complete recoverable filesystem), `custom` (detected categories plus
+include/exclude), or `smart` (application data only). Full Machine is
+the normal path because later backups reuse chunks instead of storing
+another full OS copy. All three modes use Backup Engine V2. Smart and
+Full do not walk guest filesystems in the policy editor. Custom discovery
+loads only when the operator configures one selected workload.
 Run now executes the policy against its current scope. One policy
 execution runs at a time. A second Run now (or a nightly tick) against
-any policy returns 409 while another execution is in progress. Fleet
-workload concurrency stays at 1. Eligible means
+any policy returns 409 while another execution is in progress. Different
+workloads in that policy capture concurrently up to the workspace
+capture-concurrency limit. The same workload cannot capture twice.
+Eligible means
 the root disk can be copied with any supported method: ZFS send when the
 pool is ZFS, qcow2 flatten for Directory VMs, or Backup Engine V2 content-addressed capture
 for Directory system containers. A running Directory container is copied

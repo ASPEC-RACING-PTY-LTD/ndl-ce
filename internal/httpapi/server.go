@@ -59,57 +59,59 @@ type LogsRPC interface {
 
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
-	Store        appdb.Store
-	Lockout      *auth.Lockout
-	Agent        Agent
-	Observer     Observer
-	Logs         LogsRPC
-	HTTPClient   *http.Client
-	Storage      StorageRPC
-	Network      NetworkRPC
-	Workloads    WorkloadRPC
-	IO           IORPC
-	QEMU         QemuRPC
-	VM           VMRPC
-	OCI          OCIRPC
-	Docker       DockerRPC
-	Backup       BackupRPC
-	Object       ObjectRPC
-	Verify       VerifyRPC
-	Update       UpdateRPC
-	GPU          GPURPC
-	ZFS          ZFSRPC
-	LVM          LVMRPC
-	Datastore    DatastoreRPC
-	Distributed  DistributedRPC
-	K8sProcs     func() []string
-	OSDProcs     func() []string
-	AICompleter  ai.Completer
-	LicenseProbe LicenseProbe
-	Hub          *EventHub
-	Migrate      migrate.Runtime
-	UI           fs.FS
-	Now          func() time.Time
-	SetupHash    string
-	AllowedUID   uint32
-	TLSRequired  bool
-	TLSServing   bool // true when this process is listening with TLS
-	CertDirty    bool // true when on-disk material changed since TLSServing
-	TLSListen    string
-	HTTPListen   string
-	HTTPSURL     string
-	CertDir      ndltls.Dir
-	ClusterCA    cluster.CA
-	LeaseHolder  string
-	Challenges   *ndltls.ChallengeMem
-	backupMu     sync.Mutex
-	policyMu     sync.Mutex
-	policyActive string
-	nightlyBusy  atomic.Bool
-	alertBusy    atomic.Bool
-	docker       *dockerCache
-	destOverride *destAgentOverride
-	Game         *gameserver.Runtime
+	Store          appdb.Store
+	Lockout        *auth.Lockout
+	Agent          Agent
+	Observer       Observer
+	Logs           LogsRPC
+	HTTPClient     *http.Client
+	Storage        StorageRPC
+	Network        NetworkRPC
+	Workloads      WorkloadRPC
+	IO             IORPC
+	QEMU           QemuRPC
+	VM             VMRPC
+	OCI            OCIRPC
+	Docker         DockerRPC
+	Backup         BackupRPC
+	Object         ObjectRPC
+	Verify         VerifyRPC
+	Update         UpdateRPC
+	GPU            GPURPC
+	ZFS            ZFSRPC
+	LVM            LVMRPC
+	Datastore      DatastoreRPC
+	Distributed    DistributedRPC
+	K8sProcs       func() []string
+	OSDProcs       func() []string
+	AICompleter    ai.Completer
+	LicenseProbe   LicenseProbe
+	Hub            *EventHub
+	Migrate        migrate.Runtime
+	UI             fs.FS
+	Now            func() time.Time
+	SetupHash      string
+	AllowedUID     uint32
+	TLSRequired    bool
+	TLSServing     bool // true when this process is listening with TLS
+	CertDirty      bool // true when on-disk material changed since TLSServing
+	TLSListen      string
+	HTTPListen     string
+	HTTPSURL       string
+	CertDir        ndltls.Dir
+	ClusterCA      cluster.CA
+	LeaseHolder    string
+	Challenges     *ndltls.ChallengeMem
+	backupMu       sync.Mutex
+	backupWait     *sync.Cond
+	backupInflight map[string]struct{}
+	policyMu       sync.Mutex
+	policyActive   string
+	nightlyBusy    atomic.Bool
+	alertBusy      atomic.Bool
+	docker         *dockerCache
+	destOverride   *destAgentOverride
+	Game           *gameserver.Runtime
 }
 
 type principal struct {

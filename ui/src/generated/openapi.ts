@@ -1526,6 +1526,10 @@ export interface BackupArtifact {
   chunks_new?: number;
   chunks_reused?: number;
   capture_duration_ns?: number;
+  upload_duration_ns?: number;
+  consistency?: string;
+  stats?: Record<string, unknown>;
+  blueprint?: Record<string, unknown>;
   capture_mode?: string;
   capture_mode_label?: string;
   protection?: string;
@@ -1546,6 +1550,11 @@ export interface BackupWorkspace {
   protected_workloads?: number;
   host_free_bytes?: number;
   capture_busy?: boolean;
+  capture_active?: number;
+  cache_retention_hours?: number;
+  logical_bytes?: number;
+  physical_bytes?: number;
+  pending_bytes?: number;
   root?: string;
 }
 
@@ -1562,6 +1571,8 @@ export interface BackupRestorePoint {
   logical_bytes?: number;
   physical_new_data?: number;
   created_at?: string;
+  protection?: string;
+  consistency?: string;
 }
 
 export interface BackupRestorePointListResponse {

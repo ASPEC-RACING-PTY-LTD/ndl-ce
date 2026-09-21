@@ -17,15 +17,19 @@ import (
 )
 
 const (
-	BackupCopy        = "copy"
-	BackupReplace     = "replace"
-	BackupDelete      = "delete"
-	BackupMkdir       = "mkdir"
-	BackupStat        = "stat"
+	BackupCopy    = "copy"
+	BackupReplace = "replace"
+	BackupDelete  = "delete"
+	BackupMkdir   = "mkdir"
+	BackupStat    = "stat"
+	// BackupArchive and BackupSyncTree exist for legacy restore of historical
+	// tar/rsync artifacts. New Directory CT capture uses BackupV2Capture.
 	BackupArchive     = "archive"
 	BackupExtractRoot = "extract-root"
 	BackupWrite       = "write"
 	BackupSyncTree    = "sync-tree"
+	// BackupPack/Unpack wrap legacy backuppack objects. New backups do not
+	// create these; they remain so existing user artifacts can be restored.
 	BackupPack        = "pack"
 	BackupUnpack      = "unpack"
 	BackupStatFS      = "statfs"

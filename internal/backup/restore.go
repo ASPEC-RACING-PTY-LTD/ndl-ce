@@ -124,40 +124,80 @@ func (r *Repository) Restore(ctx context.Context, m *Manifest, opts RestoreOptio
 	}
 	entries := append([]FileEntry(nil), m.Files...)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	var links []FileEntry
 	for _, e := range entries {
-		if err := ctx.Err(); err != nil {
+		if e.Type == EntryFile && e.Hardlink != "" {
+			links = append(links, e)
+			continue
+		}
+		if err := r.restoreEntry(ctx, opts.Dest, e, opts.Chown); err != nil {
 			return err
 		}
-		target := filepath.Join(opts.Dest, filepath.FromSlash(e.Path))
-		switch e.Type {
-		case EntryDir:
-			if err := os.MkdirAll(target, os.FileMode(e.Mode)); err != nil {
-				return err
-			}
-		case EntrySymlink:
-			_ = os.Remove(target)
-			if err := os.Symlink(e.Linkname, target); err != nil {
-				return err
-			}
-		case EntryFile:
-			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
-				return err
-			}
-			if err := r.restoreFile(target, e); err != nil {
-				return err
-			}
+	}
+	for _, e := range links {
+		if err := r.restoreEntry(ctx, opts.Dest, e, opts.Chown); err != nil {
+			return err
 		}
-		r.applyMetadata(target, e, opts.Chown)
 	}
 	return nil
 }
 
+func (r *Repository) restoreEntry(ctx context.Context, dest string, e FileEntry, chown bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target := filepath.Join(dest, filepath.FromSlash(e.Path))
+	switch e.Type {
+	case EntryDir:
+		if err := os.MkdirAll(target, os.FileMode(e.Mode).Perm()); err != nil {
+			return err
+		}
+	case EntrySymlink:
+		_ = os.Remove(target)
+		if err := os.Symlink(e.Linkname, target); err != nil {
+			return err
+		}
+	case EntryFile:
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			return err
+		}
+		if e.Hardlink != "" {
+			src := filepath.Join(dest, filepath.FromSlash(e.Hardlink))
+			_ = os.Remove(target)
+			if err := os.Link(src, target); err != nil {
+				return err
+			}
+			break
+		}
+		if err := r.restoreFile(target, e); err != nil {
+			return err
+		}
+	case EntryFIFO, EntrySocket, EntryBlock, EntryChar:
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			return err
+		}
+		_ = os.Remove(target)
+		if err := makeSpecial(target, e.Type, e.Mode, e.Rdev); err != nil {
+			return fmt.Errorf("restore special %s: %w", e.Path, err)
+		}
+	}
+	r.applyMetadata(target, e, chown)
+	return nil
+}
+
 func (r *Repository) restoreFile(target string, e FileEntry) error {
-	f, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(e.Mode))
+	perm := os.FileMode(e.Mode).Perm()
+	if perm == 0 {
+		perm = 0o600
+	}
+	f, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	if e.Size > 0 {
+		_ = f.Truncate(e.Size)
+	}
 	for _, id := range e.Chunks {
 		plain, err := r.GetChunk(id)
 		if err != nil {
@@ -171,17 +211,26 @@ func (r *Repository) restoreFile(target string, e FileEntry) error {
 			return err
 		}
 	}
+	if len(e.Holes) > 0 {
+		punchHoles(f, e.Holes)
+	}
 	return nil
 }
 
 func (r *Repository) applyMetadata(target string, e FileEntry, chown bool) {
 	if e.Type != EntrySymlink {
-		_ = os.Chmod(target, os.FileMode(e.Mode))
-		mt := time.Unix(0, e.MTimeNS)
-		_ = os.Chtimes(target, mt, mt)
+		perm := os.FileMode(e.Mode).Perm()
+		if perm != 0 {
+			_ = os.Chmod(target, perm)
+		}
+		if e.MTimeNS != 0 {
+			mt := time.Unix(0, e.MTimeNS)
+			_ = os.Chtimes(target, mt, mt)
+		}
 	}
 	if chown {
 		// Best-effort: ignore permission errors so unprivileged restores work.
 		_ = os.Lchown(target, e.UID, e.GID)
 	}
+	_ = applyXattrs(target, e.Xattrs)
 }

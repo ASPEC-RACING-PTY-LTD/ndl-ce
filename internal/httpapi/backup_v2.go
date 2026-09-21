@@ -35,11 +35,12 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		MaxLocalBytes      *int64 `json:"max_local_bytes"`
-		MinHostFreeBytes   *int64 `json:"min_host_free_bytes"`
-		CaptureConcurrency *int   `json:"capture_concurrency"`
-		UploadWorkers      *int   `json:"upload_workers"`
-		BandwidthLimitBPS  *int64 `json:"bandwidth_limit_bps"`
+		MaxLocalBytes       *int64 `json:"max_local_bytes"`
+		MinHostFreeBytes    *int64 `json:"min_host_free_bytes"`
+		CaptureConcurrency  *int   `json:"capture_concurrency"`
+		UploadWorkers       *int   `json:"upload_workers"`
+		BandwidthLimitBPS   *int64 `json:"bandwidth_limit_bps"`
+		CacheRetentionHours *int   `json:"cache_retention_hours"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid workspace settings")
@@ -64,7 +65,10 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 	if req.BandwidthLimitBPS != nil {
 		cur.BandwidthLimitBPS = *req.BandwidthLimitBPS
 	}
-	if cur.MaxLocalBytes < 0 || cur.MinHostFreeBytes < 0 || cur.CaptureConcurrency < 0 || cur.UploadWorkers < 0 || cur.BandwidthLimitBPS < 0 {
+	if req.CacheRetentionHours != nil {
+		cur.CacheRetentionHours = *req.CacheRetentionHours
+	}
+	if cur.MaxLocalBytes < 0 || cur.MinHostFreeBytes < 0 || cur.CaptureConcurrency < 0 || cur.UploadWorkers < 0 || cur.BandwidthLimitBPS < 0 || cur.CacheRetentionHours < 0 {
 		writeErr(w, http.StatusBadRequest, "workspace limits cannot be negative")
 		return
 	}
@@ -116,7 +120,7 @@ func (s *Server) previewBackupScope(w http.ResponseWriter, r *http.Request) {
 	}
 	mode := strings.ToLower(strings.TrimSpace(req.CaptureMode))
 	if mode == "" {
-		mode = appdb.BackupCaptureSmart
+		mode = appdb.BackupCaptureFull
 	}
 	selections := decodePolicySelections(string(req.ScopeJSON))
 	var previews []map[string]any
@@ -181,7 +185,7 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 		settings = appdb.DefaultBackupWorkspaceSettings(clusterID)
 	}
 	bp := s.v2Blueprint(ctx, clusterID, wl, vol)
-	bp.CaptureMode = firstNonEmpty(captureMode, appdb.BackupCaptureSmart)
+	bp.CaptureMode = firstNonEmpty(captureMode, appdb.BackupCaptureFull)
 	unit := ""
 	if wl.Status == lxc.StatusRunning || wl.UnitActive {
 		unit = lxc.UnitName(wl.ID)
@@ -215,7 +219,7 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 		LocalComplete: true, RemoteState: string(out.Remote),
 		LogicalBytes: out.LogicalBytes, PhysicalNewData: out.PhysicalNewData,
 		ChunksNew: out.ChunksNew, ChunksReused: out.ChunksReused,
-		CaptureDurationNS: out.DurationNanos, Consistency: out.Consistency,
+		CaptureDurationNS: out.DurationNanos, Consistency: firstNonEmpty(out.ConsistencyInfo.Result, out.Consistency),
 		CaptureMode: out.CaptureMode, BlueprintJSON: string(blueprint), StatsJSON: string(stats),
 	}
 	if out.Remote == backup.RemoteProtected || out.Remote == backup.RemoteVerifying || out.Remote == backup.RemoteUploading || out.Remote == backup.RemoteQueued {
@@ -242,28 +246,98 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 }
 
 func (s *Server) v2Blueprint(ctx context.Context, clusterID string, wl appdb.Workload, vol *appdb.Volume) backup.Blueprint {
+	osName, arch := pinOSArch(wl.ImagePin)
 	bp := backup.Blueprint{
 		Kind: backup.BlueprintKind, Version: 1, WorkloadID: wl.ID, Name: wl.Name,
-		Hostname: wl.Name, WorkloadType: lxc.KindSystemContainer, BaseImage: wl.ImagePin,
+		Hostname: wl.Name, WorkloadType: firstNonEmpty(wl.Kind, lxc.KindSystemContainer),
+		BaseImage: wl.ImagePin, OS: osName, Arch: arch,
 		CPU: wl.CPUs, MemoryBytes: wl.MemoryBytes, Autostart: wl.Autostart,
 	}
 	if vol != nil {
 		bp.StorageBytes = vol.SizeBytes
 		bp.StoragePool = vol.PoolID
 	}
+	var spec lxc.Spec
+	if len(wl.SpecJSON) > 0 {
+		_ = json.Unmarshal(wl.SpecJSON, &spec)
+	}
+	if spec.WorkloadID == "" && len(wl.AppliedJSON) > 0 {
+		var applied lxc.Applied
+		if json.Unmarshal(wl.AppliedJSON, &applied) == nil {
+			spec = applied.Spec
+		}
+	}
+	if spec.WorkloadID != "" || spec.ImagePin != "" || spec.Nesting != nil {
+		nest := lxc.SpecWantsNesting(spec)
+		bp.Nesting = nest
+		if spec.TUN {
+			bp.Features = append(bp.Features, "tun")
+		}
+		if spec.AllowMknod {
+			bp.Features = append(bp.Features, "allow_mknod")
+		}
+		if spec.SSHRoot {
+			bp.Features = append(bp.Features, "ssh_root")
+		}
+		if spec.PythonSystemPIP {
+			bp.Features = append(bp.Features, "python_system_pip")
+		}
+		if nest {
+			bp.Features = append(bp.Features, "nesting")
+		}
+		bp.GuestExtras = append([]string(nil), bp.Features...)
+	}
+	vlans, _ := s.Store.ListNetworkVLANs(ctx, clusterID)
+	vlanByNet := map[string]int{}
+	for _, v := range vlans {
+		if v.VID > 0 {
+			vlanByNet[v.NetworkID] = v.VID
+		}
+	}
 	nics, _ := s.Store.ListWorkloadNICs(ctx, clusterID, wl.ID)
 	for i, n := range nics {
-		name := "eth0"
-		if i > 0 {
-			name = "eth" + strings.TrimPrefix(n.ID, "")[:1]
-		}
+		name := "eth" + itoa(i)
 		bridge := ""
 		if netw, err := s.Store.GetNetwork(ctx, clusterID, n.NetworkID); err == nil && netw != nil {
 			bridge = netw.BridgeName
 		}
-		bp.Interfaces = append(bp.Interfaces, backup.NetInterface{Name: name, MAC: n.MAC, Bridge: bridge})
+		bp.Interfaces = append(bp.Interfaces, backup.NetInterface{
+			Name: name, MAC: n.MAC, Bridge: bridge, VLAN: vlanByNet[n.NetworkID],
+		})
 	}
 	return bp
+}
+
+func hasFeature(features []string, name string) bool {
+	for _, f := range features {
+		if f == name {
+			return true
+		}
+	}
+	return false
+}
+
+func pinOSArch(pin string) (osName, arch string) {
+	parts := strings.Split(strings.TrimSpace(pin), "/")
+	if len(parts) > 0 {
+		osName = parts[0]
+	}
+	if len(parts) > 2 {
+		arch = parts[2]
+	}
+	return osName, arch
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
 }
 
 func (s *Server) v2TargetSpec(ctx context.Context, tgt appdb.BackupTarget) backuphost.TargetSpec {
@@ -328,6 +402,12 @@ func (s *Server) syncV2State(ctx context.Context, clusterID string) {
 		if a, ok := byBackup[pt.BackupID]; ok {
 			a.RemoteState = string(pt.Remote)
 			a.LocalComplete = pt.LocalComplete
+			if pt.UploadEndedNS > pt.UploadStartedNS && pt.UploadStartedNS > 0 {
+				a.UploadDurationNS = pt.UploadEndedNS - pt.UploadStartedNS
+			}
+			if pt.Consistency != "" {
+				a.Consistency = pt.Consistency
+			}
 			_ = s.Store.UpdateBackupArtifact(ctx, a)
 		}
 		if rp, ok := byPoint[pt.BackupID]; ok {
@@ -384,8 +464,31 @@ func workspaceJSON(s appdb.BackupWorkspaceSettings, st backuphost.Result) map[st
 		"bandwidth_limit_bps": s.BandwidthLimitBPS,
 		"repo_bytes":          st.RepoBytes, "pending_uploads": st.PendingUploads,
 		"protected_workloads": st.Protected, "host_free_bytes": st.Workspace.HostFreeBytes,
-		"capture_busy": st.Workspace.CaptureBusy, "root": firstNonEmpty(st.Workspace.Root, backuphost.DefaultRoot),
+		"capture_busy": st.Workspace.CaptureBusy, "capture_active": st.Workspace.CaptureActive,
+		"root":                  firstNonEmpty(st.Workspace.Root, backuphost.DefaultRoot),
+		"cache_retention_hours": s.CacheRetentionHours,
+		"logical_bytes":         logicalRepoBytes(st),
+		"physical_bytes":        st.RepoBytes,
+		"pending_bytes":         pendingUploadBytes(st),
 	}
+}
+
+func logicalRepoBytes(st backuphost.Result) int64 {
+	var n int64
+	for _, p := range st.Points {
+		n += p.LogicalBytes
+	}
+	return n
+}
+
+func pendingUploadBytes(st backuphost.Result) int64 {
+	var n int64
+	for _, p := range st.Points {
+		if p.Remote == backup.RemoteQueued || p.Remote == backup.RemoteUploading || p.Remote == backup.RemoteVerifying {
+			n += p.PhysicalNewData
+		}
+	}
+	return n
 }
 
 func restorePointJSON(p appdb.BackupRestorePoint) map[string]any {
@@ -395,6 +498,7 @@ func restorePointJSON(p appdb.BackupRestorePoint) map[string]any {
 		"local_complete": p.LocalComplete, "remote_state": p.RemoteState,
 		"logical_bytes": p.LogicalBytes, "physical_new_data": p.PhysicalNewData,
 		"created_at": p.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		"protection": protectionLabel(p.RemoteState, p.LocalComplete, backup.Format, "", ""),
 	}
 }
 
@@ -442,28 +546,35 @@ func captureModeLabel(mode string) string {
 	}
 }
 
-func protectionLabel(remote string, local bool, format string) string {
-	if format != backup.Format {
-		if local {
-			return "Local complete"
+func protectionLabel(remote string, local bool, format, objectKey, locator string) string {
+	switch format {
+	case backup.Format:
+		switch remote {
+		case string(backup.RemoteQueued):
+			return "Queued"
+		case string(backup.RemoteUploading):
+			return "Uploading"
+		case string(backup.RemoteVerifying):
+			return "Remote verifying"
+		case string(backup.RemoteProtected):
+			return "Protected"
+		case string(backup.RemoteFailed):
+			return "Failed"
+		default:
+			if local {
+				return "Local complete"
+			}
+			return "Capturing"
 		}
-		return "Legacy"
-	}
-	switch remote {
-	case string(backup.RemoteQueued):
-		return "Queued"
-	case string(backup.RemoteUploading):
-		return "Uploading"
-	case string(backup.RemoteVerifying):
-		return "Remote verifying"
-	case string(backup.RemoteProtected):
-		return "Protected"
-	case string(backup.RemoteFailed):
-		return "Failed"
-	default:
-		if local {
+	case "zfs", "qcow2":
+		if objectKey != "" || strings.HasPrefix(locator, "s3://") {
+			return "Protected"
+		}
+		if local || locator != "" {
 			return "Local complete"
 		}
 		return "Capturing"
+	default:
+		return "Legacy"
 	}
 }

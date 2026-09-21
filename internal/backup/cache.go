@@ -11,14 +11,16 @@ import (
 // mtime alone. If anything differs, or the entry is missing, the file is reread
 // and rechunked. Correctness beats speed.
 type cacheEntry struct {
-	Size    int64   `json:"size"`
-	MTimeNS int64   `json:"mtime_ns"`
-	CTimeNS int64   `json:"ctime_ns"`
-	Inode   uint64  `json:"inode"`
-	Mode    uint32  `json:"mode"`
-	UID     int     `json:"uid"`
-	GID     int     `json:"gid"`
-	Chunks  []KeyID `json:"chunks"`
+	Size        int64   `json:"size"`
+	MTimeNS     int64   `json:"mtime_ns"`
+	CTimeNS     int64   `json:"ctime_ns"`
+	Inode       uint64  `json:"inode"`
+	Mode        uint32  `json:"mode"`
+	UID         int     `json:"uid"`
+	GID         int     `json:"gid"`
+	MetaHash    string  `json:"meta_hash,omitempty"`
+	Fingerprint string  `json:"fingerprint,omitempty"`
+	Chunks      []KeyID `json:"chunks"`
 }
 
 // metaCache is a persistent per-workload filesystem metadata cache. It avoids
@@ -74,7 +76,8 @@ func (c *metaCache) lookup(path string, meta cacheEntry) ([]KeyID, bool) {
 		return nil, false
 	}
 	if prev.Size != meta.Size || prev.MTimeNS != meta.MTimeNS || prev.CTimeNS != meta.CTimeNS ||
-		prev.Inode != meta.Inode || prev.Mode != meta.Mode || prev.UID != meta.UID || prev.GID != meta.GID {
+		prev.Inode != meta.Inode || prev.Mode != meta.Mode || prev.UID != meta.UID || prev.GID != meta.GID ||
+		prev.MetaHash != meta.MetaHash || prev.Fingerprint != meta.Fingerprint {
 		return nil, false
 	}
 	return prev.Chunks, true

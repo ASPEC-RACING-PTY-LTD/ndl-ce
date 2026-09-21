@@ -15,21 +15,39 @@ const (
 	EntryFile    EntryType = "file"
 	EntryDir     EntryType = "dir"
 	EntrySymlink EntryType = "symlink"
+	EntryFIFO    EntryType = "fifo"
+	EntrySocket  EntryType = "socket"
+	EntryBlock   EntryType = "block"
+	EntryChar    EntryType = "char"
 )
+
+// Hole is a sparse region that must be restored as a hole, not as stored zeros.
+type Hole struct {
+	Offset int64 `json:"offset"`
+	Length int64 `json:"length"`
+}
 
 // FileEntry records one filesystem object and, for regular files, the ordered
 // content-defined chunk ids needed to reconstruct it. Enough metadata is kept
-// to restore the object faithfully.
+// to restore the object faithfully. Older manifests without the optional
+// fields remain restorable.
 type FileEntry struct {
-	Path     string    `json:"path"`
-	Type     EntryType `json:"type"`
-	Mode     uint32    `json:"mode"`
-	UID      int       `json:"uid"`
-	GID      int       `json:"gid"`
-	Size     int64     `json:"size"`
-	MTimeNS  int64     `json:"mtime_ns"`
-	Linkname string    `json:"linkname,omitempty"`
-	Chunks   []KeyID   `json:"chunks,omitempty"`
+	Path     string            `json:"path"`
+	Type     EntryType         `json:"type"`
+	Mode     uint32            `json:"mode"`
+	UID      int               `json:"uid"`
+	GID      int               `json:"gid"`
+	Size     int64             `json:"size"`
+	MTimeNS  int64             `json:"mtime_ns"`
+	Linkname string            `json:"linkname,omitempty"`
+	Chunks   []KeyID           `json:"chunks,omitempty"`
+	Inode    uint64            `json:"inode,omitempty"`
+	NLink    uint32            `json:"nlink,omitempty"`
+	Hardlink string            `json:"hardlink,omitempty"`
+	Rdev     uint64            `json:"rdev,omitempty"`
+	Xattrs   map[string]string `json:"xattrs,omitempty"`
+	Holes    []Hole            `json:"holes,omitempty"`
+	Degraded []string          `json:"degraded,omitempty"`
 }
 
 // NetInterface is a network interface captured in the Blueprint.
@@ -72,6 +90,7 @@ type Blueprint struct {
 	Docker       *DockerInfo    `json:"docker,omitempty"`
 	Packages     []string       `json:"packages,omitempty"`
 	Services     []string       `json:"services,omitempty"`
+	GuestExtras  []string       `json:"guest_extras,omitempty"`
 	CaptureMode  string         `json:"capture_mode,omitempty"`
 	Includes     []string       `json:"includes,omitempty"`
 	Excludes     []string       `json:"excludes,omitempty"`
@@ -87,30 +106,35 @@ const (
 
 // DockerInfo inventories a Docker-enabled workload without exposing secrets.
 type DockerInfo struct {
-	EngineVersion  string   `json:"engine_version,omitempty"`
-	ComposeVersion string   `json:"compose_version,omitempty"`
-	ComposeProject []string `json:"compose_projects,omitempty"`
-	NamedVolumes   []string `json:"named_volumes,omitempty"`
-	BindMounts     []string `json:"bind_mounts,omitempty"`
-	Images         []string `json:"images,omitempty"`
-	LocalImages    []string `json:"local_images,omitempty"`
+	EngineVersion   string   `json:"engine_version,omitempty"`
+	ComposeVersion  string   `json:"compose_version,omitempty"`
+	ComposeProject  []string `json:"compose_projects,omitempty"`
+	NamedVolumes    []string `json:"named_volumes,omitempty"`
+	BindMounts      []string `json:"bind_mounts,omitempty"`
+	Images          []string `json:"images,omitempty"`
+	LocalImages     []string `json:"local_images,omitempty"`
+	RegistryImages  []string `json:"registry_images,omitempty"`
+	ComposeFiles    []string `json:"compose_files,omitempty"`
+	Reconstructable bool     `json:"reconstructable,omitempty"`
+	Uncertainty     []string `json:"uncertainty,omitempty"`
 }
 
 // CaptureStats instruments a backup so its cost can be explained from real
 // numbers rather than guesses.
 type CaptureStats struct {
-	FilesScanned    int   `json:"files_scanned"`
-	FilesUnchanged  int   `json:"files_unchanged"`
-	FilesChanged    int   `json:"files_changed"`
-	LogicalBytes    int64 `json:"logical_bytes"`
-	BytesRead       int64 `json:"bytes_read"`
-	ChunksTotal     int   `json:"chunks_total"`
-	ChunksNew       int   `json:"chunks_new"`
-	ChunksReused    int   `json:"chunks_reused"`
-	StoredBytes     int64 `json:"stored_bytes"`
-	DurationNanos   int64 `json:"duration_ns"`
-	PacksCommitted  int   `json:"packs_committed"`
-	PhysicalNewData int64 `json:"physical_new_data"`
+	FilesScanned    int      `json:"files_scanned"`
+	FilesUnchanged  int      `json:"files_unchanged"`
+	FilesChanged    int      `json:"files_changed"`
+	LogicalBytes    int64    `json:"logical_bytes"`
+	BytesRead       int64    `json:"bytes_read"`
+	ChunksTotal     int      `json:"chunks_total"`
+	ChunksNew       int      `json:"chunks_new"`
+	ChunksReused    int      `json:"chunks_reused"`
+	StoredBytes     int64    `json:"stored_bytes"`
+	DurationNanos   int64    `json:"duration_ns"`
+	PacksCommitted  int      `json:"packs_committed"`
+	PhysicalNewData int64    `json:"physical_new_data"`
+	Degraded        []string `json:"degraded,omitempty"`
 }
 
 // Consistency levels. The engine never freezes a guest, so the default is
@@ -122,19 +146,32 @@ const (
 
 // Manifest is the authenticated commit record for one restore point.
 type Manifest struct {
-	Kind           string       `json:"kind"`
-	RepoVersion    int          `json:"repo_version"`
-	ChunkAlgorithm string       `json:"chunk_algorithm"`
-	ChunkConfig    cdc.Config   `json:"chunk_config"`
-	BackupID       string       `json:"backup_id"`
-	WorkloadID     string       `json:"workload_id"`
-	WorkloadName   string       `json:"workload_name"`
-	Namespace      string       `json:"namespace"`
-	CreatedAtNS    int64        `json:"created_at_ns"`
-	Consistency    string       `json:"consistency"`
-	Blueprint      Blueprint    `json:"blueprint"`
-	Files          []FileEntry  `json:"files"`
-	Stats          CaptureStats `json:"stats"`
+	Kind            string            `json:"kind"`
+	RepoVersion     int               `json:"repo_version"`
+	ChunkAlgorithm  string            `json:"chunk_algorithm"`
+	ChunkConfig     cdc.Config        `json:"chunk_config"`
+	BackupID        string            `json:"backup_id"`
+	WorkloadID      string            `json:"workload_id"`
+	WorkloadName    string            `json:"workload_name"`
+	Namespace       string            `json:"namespace"`
+	CreatedAtNS     int64             `json:"created_at_ns"`
+	Consistency     string            `json:"consistency"`
+	ConsistencyInfo ConsistencyReport `json:"consistency_info,omitempty"`
+	Blueprint       Blueprint         `json:"blueprint"`
+	Files           []FileEntry       `json:"files"`
+	Stats           CaptureStats      `json:"stats"`
+}
+
+// ConsistencyReport records what was requested and what actually happened.
+// Application consistency is claimed only when a guest pre-hook ran successfully.
+type ConsistencyReport struct {
+	Requested string `json:"requested,omitempty"`
+	Result    string `json:"result,omitempty"`
+	Unit      string `json:"unit,omitempty"`
+	HookPath  string `json:"hook_path,omitempty"`
+	HookRan   bool   `json:"hook_ran,omitempty"`
+	HookOK    bool   `json:"hook_ok,omitempty"`
+	Note      string `json:"note,omitempty"`
 }
 
 // RemoteState models where a restore point exists. A locally complete restore
@@ -154,14 +191,16 @@ const (
 // restore point. The manifest itself is sealed; this small file drives UI and
 // GC without decrypting every manifest.
 type PointState struct {
-	BackupID      string      `json:"backup_id"`
-	Namespace     string      `json:"namespace"`
-	WorkloadID    string      `json:"workload_id"`
-	WorkloadName  string      `json:"workload_name"`
-	CreatedAtNS   int64       `json:"created_at_ns"`
-	LocalComplete bool        `json:"local_complete"`
-	Remote        RemoteState `json:"remote"`
-	Packs         []string    `json:"packs"`
+	BackupID        string      `json:"backup_id"`
+	Namespace       string      `json:"namespace"`
+	WorkloadID      string      `json:"workload_id"`
+	WorkloadName    string      `json:"workload_name"`
+	CreatedAtNS     int64       `json:"created_at_ns"`
+	LocalComplete   bool        `json:"local_complete"`
+	Remote          RemoteState `json:"remote"`
+	Packs           []string    `json:"packs"`
+	UploadStartedNS int64       `json:"upload_started_ns,omitempty"`
+	UploadEndedNS   int64       `json:"upload_ended_ns,omitempty"`
 }
 
 // CollectedAt returns the creation time.

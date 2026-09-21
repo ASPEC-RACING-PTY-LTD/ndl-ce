@@ -41,7 +41,7 @@ func (h *Host) dockerInventory(ctx context.Context, workloadID, name string) (*b
 				hint.Projects = appendUnique(hint.Projects, p.Name)
 			}
 			if p.ConfigFiles != "" {
-				info.ComposeProject = appendUnique(info.ComposeProject, p.ConfigFiles)
+				info.ComposeFiles = appendUnique(info.ComposeFiles, p.ConfigFiles)
 			}
 		}
 	}
@@ -54,6 +54,11 @@ func (h *Host) dockerInventory(ctx context.Context, workloadID, name string) (*b
 				seenImg[c.Image] = struct{}{}
 				info.Images = append(info.Images, c.Image)
 				hint.Images = append(hint.Images, c.Image)
+				if isLocalDockerImage(c.Image, c.ImageID) {
+					info.LocalImages = appendUnique(info.LocalImages, c.Image)
+				} else {
+					info.RegistryImages = appendUnique(info.RegistryImages, c.Image)
+				}
 			}
 		}
 		for _, m := range c.Mounts {
@@ -94,7 +99,29 @@ func (h *Host) dockerInventory(ctx context.Context, workloadID, name string) (*b
 	if info.EngineVersion == "" && len(info.NamedVolumes)+len(info.BindMounts)+len(info.Images) == 0 {
 		return nil, nil
 	}
+	info.Reconstructable = len(info.NamedVolumes)+len(info.BindMounts)+len(info.Images) > 0
+	if len(info.Images) > 0 {
+		info.Uncertainty = append(info.Uncertainty, "container process state and anonymous layers are not rebuilt")
+	}
+	if len(info.LocalImages) > 0 {
+		info.Uncertainty = append(info.Uncertainty, "local-only images cannot be pulled from a registry during restore")
+	}
+	if len(info.ComposeProject) > 0 || len(info.ComposeFiles) > 0 {
+		info.Uncertainty = append(info.Uncertainty, "compose projects are inventoried; restore does not recreate the Docker engine")
+	}
 	return info, hint
+}
+
+func isLocalDockerImage(ref, imageID string) bool {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, "sha256:") || strings.HasPrefix(imageID, "sha256:") && !strings.Contains(ref, "/") {
+		return true
+	}
+	host, _, ok := strings.Cut(ref, "/")
+	if !ok {
+		return true
+	}
+	return !strings.Contains(host, ".") && host != "localhost" && !strings.Contains(host, ":")
 }
 
 func appendUnique(in []string, v string) []string {

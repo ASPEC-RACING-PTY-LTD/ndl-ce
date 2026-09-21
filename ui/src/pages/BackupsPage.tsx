@@ -181,7 +181,7 @@ function protectionLabel(art: BackupArtifact): string {
   if (art.protection) {
     return art.protection;
   }
-  if (art.format !== "ndl-cab") {
+  if (art.format !== "ndl-cab" && art.format !== "zfs" && art.format !== "qcow2") {
     return art.verify_status === "verified" ? "Legacy verified" : "Legacy";
   }
   switch (art.remote_state) {
@@ -198,6 +198,77 @@ function protectionLabel(art: BackupArtifact): string {
     default:
       return art.local_complete ? "Local complete" : "Capturing";
   }
+}
+
+function protectionBucket(art: BackupArtifact): "protected" | "localPending" | "queued" | "uploading" | "failed" | "legacy" {
+  const label = protectionLabel(art);
+  switch (label) {
+    case "Protected":
+      return "protected";
+    case "Queued":
+      return "queued";
+    case "Uploading":
+    case "Remote verifying":
+      return "uploading";
+    case "Failed":
+      return "failed";
+    case "Legacy":
+    case "Legacy verified":
+      return "legacy";
+    default:
+      return "localPending";
+  }
+}
+
+function formatDurationNS(ns: number | undefined): string {
+  if (ns == null || ns <= 0) {
+    return "None";
+  }
+  const ms = ns / 1e6;
+  if (ms < 1000) {
+    return `${Math.max(1, Math.round(ms))} ms`;
+  }
+  const seconds = ms / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)} s`;
+  }
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+}
+
+function consistencyLabel(value: string | undefined): string {
+  switch (value) {
+    case "application-consistent":
+      return "Application-consistent";
+    case "crash-consistent":
+      return "Crash-consistent";
+    default:
+      return value ? honestStatus(value) : "Crash-consistent";
+  }
+}
+
+function blueprintSummary(raw: BackupArtifact["blueprint"]): string {
+  if (!raw || typeof raw !== "object") {
+    return "None";
+  }
+  const bp = raw as {
+    name?: string;
+    os?: string;
+    arch?: string;
+    workload_type?: string;
+    nesting?: boolean;
+    docker?: { compose_projects?: string[]; uncertainty?: string[] };
+  };
+  const parts = [bp.name, bp.os, bp.arch, bp.workload_type].filter((v): v is string => Boolean(v));
+  if (bp.nesting) {
+    parts.push("nesting");
+  }
+  if (bp.docker?.compose_projects?.length) {
+    parts.push(`compose ${bp.docker.compose_projects.join(", ")}`);
+  }
+  if (bp.docker?.uncertainty?.length) {
+    parts.push("docker uncertain");
+  }
+  return parts.length ? parts.join(" · ") : "Recorded";
 }
 
 function parseSelections(raw: unknown): Record<string, WorkloadSelection> {
@@ -363,7 +434,7 @@ export function BackupsPage() {
 
   const [policyName, setPolicyName] = useState("");
   const [policyScope, setPolicyScope] = useState<"all" | "selected">("selected");
-  const [policyCaptureMode, setPolicyCaptureMode] = useState<CaptureMode>("smart");
+  const [policyCaptureMode, setPolicyCaptureMode] = useState<CaptureMode>("full");
   const [policyWorkloadIds, setPolicyWorkloadIds] = useState<string[]>([]);
   const [policySelections, setPolicySelections] = useState<Record<string, WorkloadSelection>>({});
   const [policyTargetId, setPolicyTargetId] = useState("");
@@ -380,10 +451,13 @@ export function BackupsPage() {
   const [maxLocalGiB, setMaxLocalGiB] = useState("50");
   const [minFreeGiB, setMinFreeGiB] = useState("10");
   const [uploadWorkers, setUploadWorkers] = useState("4");
+  const [captureConcurrency, setCaptureConcurrency] = useState("1");
+  const [bandwidthMBps, setBandwidthMBps] = useState("0");
+  const [cacheRetentionHours, setCacheRetentionHours] = useState("0");
 
   const [runWorkloadId, setRunWorkloadId] = useState("");
   const [runTargetId, setRunTargetId] = useState("");
-  const [runCaptureMode, setRunCaptureMode] = useState<CaptureMode>("smart");
+  const [runCaptureMode, setRunCaptureMode] = useState<CaptureMode>("full");
   const [filePath, setFilePath] = useState("/etc/hostname");
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [restoreNodeId, setRestoreNodeId] = useState("");
@@ -414,6 +488,15 @@ export function BackupsPage() {
       }
       if (ws.upload_workers) {
         setUploadWorkers(String(ws.upload_workers));
+      }
+      if (ws.capture_concurrency) {
+        setCaptureConcurrency(String(ws.capture_concurrency));
+      }
+      if (ws.bandwidth_limit_bps != null) {
+        setBandwidthMBps(String(Math.round((ws.bandwidth_limit_bps / 1024 / 1024) * 10) / 10));
+      }
+      if (ws.cache_retention_hours != null) {
+        setCacheRetentionHours(String(ws.cache_retention_hours));
       }
     } catch {
       setWorkspace(null);
@@ -457,7 +540,7 @@ export function BackupsPage() {
     if (policy) {
       setPolicyName(policy.name);
       setPolicyScope(policy.scope === "all" ? "all" : "selected");
-      setPolicyCaptureMode(policy.capture_mode === "custom" || policy.capture_mode === "full" ? policy.capture_mode : "smart");
+      setPolicyCaptureMode(policy.capture_mode === "custom" || policy.capture_mode === "smart" ? policy.capture_mode : "full");
       setPolicyWorkloadIds(policy.workload_ids?.length ? [...policy.workload_ids] : policy.workload_id ? [policy.workload_id] : []);
       setPolicySelections(parseSelections(policy.scope_json));
       setPolicyTargetId(policy.target_id);
@@ -467,7 +550,7 @@ export function BackupsPage() {
     } else {
       setPolicyName("");
       setPolicyScope("selected");
-      setPolicyCaptureMode("smart");
+      setPolicyCaptureMode("full");
       setPolicyWorkloadIds([]);
       setPolicySelections({});
       setPolicyTargetId(targets?.[0]?.id ?? "");
@@ -691,7 +774,10 @@ export function BackupsPage() {
     const maxLocal = Number(maxLocalGiB);
     const minFree = Number(minFreeGiB);
     const workers = Number(uploadWorkers);
-    if (![maxLocal, minFree, workers].every((n) => Number.isFinite(n) && n >= 0)) {
+    const slots = Number(captureConcurrency);
+    const bandwidth = Number(bandwidthMBps);
+    const cacheHours = Number(cacheRetentionHours);
+    if (![maxLocal, minFree, workers, slots, bandwidth, cacheHours].every((n) => Number.isFinite(n) && n >= 0)) {
       setError("Workspace limits must be non-negative numbers");
       return;
     }
@@ -702,6 +788,9 @@ export function BackupsPage() {
         max_local_bytes: Math.round(maxLocal * 1024 * 1024 * 1024),
         min_host_free_bytes: Math.round(minFree * 1024 * 1024 * 1024),
         upload_workers: Math.max(1, Math.round(workers)),
+        capture_concurrency: Math.max(1, Math.round(slots)),
+        bandwidth_limit_bps: Math.round(bandwidth * 1024 * 1024),
+        cache_retention_hours: Math.max(0, Math.round(cacheHours)),
       });
       setWorkspace(ws);
       setDialog(null);
@@ -864,6 +953,28 @@ export function BackupsPage() {
     policyScope === "all" ? workloads : workloads.filter((w) => policyWorkloadIds.includes(w.id));
   const recentRuns = (runs ?? []).slice(0, 12);
   const recentArtifacts = artifacts ?? [];
+  const protectionSummary = useMemo(() => {
+    const counts = { protected: 0, localPending: 0, queued: 0, uploading: 0, failed: 0, legacy: 0 };
+    for (const art of artifacts ?? []) {
+      counts[protectionBucket(art)] += 1;
+    }
+    return counts;
+  }, [artifacts]);
+  const latestArtifactByRun = useMemo(() => {
+    const map = new Map<string, BackupArtifact>();
+    for (const art of artifacts ?? []) {
+      const prev = map.get(art.run_id);
+      if (!prev || Date.parse(art.created_at) >= Date.parse(prev.created_at)) {
+        map.set(art.run_id, art);
+      }
+    }
+    return map;
+  }, [artifacts]);
+  const logicalBytes = workspace?.logical_bytes ?? 0;
+  const physicalBytes = workspace?.physical_bytes ?? workspace?.repo_bytes ?? 0;
+  const pendingBytes = workspace?.pending_bytes ?? 0;
+  const dedupeSaved = logicalBytes > physicalBytes ? logicalBytes - physicalBytes : 0;
+  const hasR2Target = (targets ?? []).some((t) => t.kind === "r2");
 
   return (
     <section className="page page-wide" aria-labelledby="backups-heading">
@@ -918,17 +1029,39 @@ export function BackupsPage() {
 
       {loadState === "ready" ? (
         <>
-          <div className="summary-grid">
+          <div className="summary-grid" aria-label="Protection summary">
             <article className="summary-card">
-              <span className="label">Policies</span>
-              <span className="value">{policies?.length ?? 0}</span>
-              <span className="meta">{(runs ?? []).some((r) => r.status === "running") ? "Backup running" : "Idle"}</span>
+              <span className="label">Remote protected</span>
+              <span className="value">{protectionSummary.protected}</span>
+              <span className="meta">Off-host objects verified</span>
             </article>
             <article className="summary-card">
-              <span className="label">Targets</span>
-              <span className="value">{targets?.length ?? 0}</span>
-              <span className="meta">{(targets ?? []).filter((t) => t.status === "available").length} healthy</span>
+              <span className="label">Local pending</span>
+              <span className="value">{protectionSummary.localPending}</span>
+              <span className="meta">Local complete, not yet remote</span>
             </article>
+            <article className="summary-card">
+              <span className="label">Queued</span>
+              <span className="value">{protectionSummary.queued}</span>
+              <span className="meta">Waiting for upload workers</span>
+            </article>
+            <article className="summary-card">
+              <span className="label">Uploading</span>
+              <span className="value">{protectionSummary.uploading}</span>
+              <span className="meta">Includes remote verifying</span>
+            </article>
+            <article className="summary-card">
+              <span className="label">Failed</span>
+              <span className="value">{protectionSummary.failed}</span>
+              <span className="meta">Remote or capture failure</span>
+            </article>
+            <article className="summary-card">
+              <span className="label">Legacy</span>
+              <span className="value">{protectionSummary.legacy}</span>
+              <span className="meta">Historical tar or pack artifacts</span>
+            </article>
+          </div>
+          <div className="summary-grid" aria-label="Repository statistics">
             <article className="summary-card">
               <span className="label">Local repository</span>
               <span className="value">{workspace?.repo_bytes != null ? formatBytes(workspace.repo_bytes) : "Unknown"}</span>
@@ -937,9 +1070,19 @@ export function BackupsPage() {
               </span>
             </article>
             <article className="summary-card">
-              <span className="label">Recent failures</span>
-              <span className="value">{(runs ?? []).filter((r) => r.status === "failed").length}</span>
-              <span className="meta">Last {recentRuns.length} runs</span>
+              <span className="label">Logical protected data</span>
+              <span className="value">{workspace?.logical_bytes != null ? formatBytes(workspace.logical_bytes) : "Unknown"}</span>
+              <span className="meta">Sum of restore-point logical sizes</span>
+            </article>
+            <article className="summary-card">
+              <span className="label">Physical stored data</span>
+              <span className="value">{physicalBytes ? formatBytes(physicalBytes) : "Unknown"}</span>
+              <span className="meta">{dedupeSaved > 0 ? `${formatBytes(dedupeSaved)} saved by dedupe` : "Dedupe savings unknown"}</span>
+            </article>
+            <article className="summary-card">
+              <span className="label">Pending upload data</span>
+              <span className="value">{workspace?.pending_bytes != null ? formatBytes(pendingBytes) : "Unknown"}</span>
+              <span className="meta">{workspace?.capture_active ? `${workspace.capture_active} capture${workspace.capture_active === 1 ? "" : "s"} active` : "No active captures"}</span>
             </article>
           </div>
           <div className="card-grid">
@@ -955,7 +1098,7 @@ export function BackupsPage() {
               ) : policies.length === 0 ? (
                 <article className="panel dashboard-card empty-card">
                   <p className="empty-title">No backup policies yet</p>
-                  <p className="muted">A policy is the thing you schedule and run. Select the workloads it protects. Smart Application Data is the default backup scope.</p>
+                  <p className="muted">A policy is the thing you schedule and run. Select the workloads it protects. Full Machine / Full LXC is the default backup scope so restore can rebuild the complete recoverable guest.</p>
                   {mutate ? (
                     <div className="btn-row">
                       <button className="btn btn-primary" type="button" onClick={() => openPolicyDialog()}>
@@ -967,6 +1110,7 @@ export function BackupsPage() {
               ) : (
                 policies.map((p) => {
                   const latest = latestPolicyRun(runs ?? [], p.id);
+                  const latestArt = latest ? latestArtifactByRun.get(latest.id) : undefined;
                   const target = targetById.get(p.target_id);
                   return (
                     <article className="panel dashboard-card" key={p.id}>
@@ -997,6 +1141,30 @@ export function BackupsPage() {
                           <dd>{latest ? runStatusLabel(latest.status) : "No runs yet"}</dd>
                         </div>
                         <div>
+                          <dt>Protection</dt>
+                          <dd>{latestArt ? protectionLabel(latestArt) : "None"}</dd>
+                        </div>
+                        <div>
+                          <dt>Consistency</dt>
+                          <dd>{latestArt ? consistencyLabel(latestArt.consistency) : "None"}</dd>
+                        </div>
+                        <div>
+                          <dt>Capture duration</dt>
+                          <dd>{formatDurationNS(latestArt?.capture_duration_ns)}</dd>
+                        </div>
+                        <div>
+                          <dt>Upload duration</dt>
+                          <dd>{formatDurationNS(latestArt?.upload_duration_ns)}</dd>
+                        </div>
+                        <div>
+                          <dt>Logical changed</dt>
+                          <dd>{latestArt?.logical_bytes != null ? formatBytes(latestArt.logical_bytes) : "None"}</dd>
+                        </div>
+                        <div>
+                          <dt>Physical stored</dt>
+                          <dd>{latestArt?.physical_new_data != null ? formatBytes(latestArt.physical_new_data) : "None"}</dd>
+                        </div>
+                        <div>
                           <dt>Last run</dt>
                           <dd>{formatWhen(p.last_run_at ?? latest?.started_at)}</dd>
                         </div>
@@ -1005,7 +1173,7 @@ export function BackupsPage() {
                         <p className="muted">
                           All workloads covers every current and future eligible guest. Extra disks, iSCSI, and
                           distributed volumes are skipped when the root disk can still be backed up. Directory
-                          system containers use Backup Engine V2 for Smart, Custom, and Full Machine scope.
+                          system containers use Backup Engine V2. Full Machine is the default; Smart and Custom remain available.
                         </p>
                       ) : null}
                       {mutate ? (
@@ -1474,14 +1642,14 @@ export function BackupsPage() {
           </div>
           {policyCaptureMode === "smart" ? (
             <p className="field-hint">
-              Automatically protects persistent application data, databases, configuration and Docker volumes while
-              excluding reproducible caches, repositories and temporary data.
+              Protects persistent application data, databases, configuration and Docker volumes. It excludes much of
+              the OS and reproducible tree, so it cannot rebuild a complete guest by itself.
             </p>
           ) : null}
           {policyCaptureMode === "full" ? (
-            <p className="banner banner-warn" role="status">
-              Full Machine / Full LXC backs up the entire recoverable workload with Backup Engine V2. It consumes
-              substantially more storage and bandwidth. It is not selected by default.
+            <p className="field-hint">
+              Full Machine / Full LXC is the default. It captures the complete recoverable guest filesystem. Repeated
+              OS data stays inexpensive because Backup Engine V2 reuses content-addressed chunks.
             </p>
           ) : null}
         </fieldset>
@@ -1655,8 +1823,8 @@ export function BackupsPage() {
             </label>
           </div>
           {runCaptureMode === "full" ? (
-            <p className="banner banner-warn" role="status">
-              Full Machine / Full LXC backs up the entire recoverable workload. It is not the ad-hoc default.
+            <p className="field-hint">
+              Full Machine / Full LXC is the ad-hoc default so the copy can restore the complete recoverable guest.
             </p>
           ) : null}
         </fieldset>
@@ -1759,6 +1927,32 @@ export function BackupsPage() {
               <div>
                 <dt>Protection</dt>
                 <dd>{protectionLabel(dialog.artifact)}</dd>
+              </div>
+              <div>
+                <dt>Local / remote</dt>
+                <dd>
+                  {dialog.artifact.local_complete ? "Local complete" : "Local incomplete"} · {dialog.artifact.remote_state || "local-only"}
+                </dd>
+              </div>
+              <div>
+                <dt>Consistency</dt>
+                <dd>{consistencyLabel(dialog.artifact.consistency)}</dd>
+              </div>
+              <div>
+                <dt>Logical size</dt>
+                <dd>{formatBytes(dialog.artifact.logical_bytes || dialog.artifact.size_bytes)}</dd>
+              </div>
+              <div>
+                <dt>Physical / stored size</dt>
+                <dd>{dialog.artifact.physical_new_data != null ? formatBytes(dialog.artifact.physical_new_data) : "Unknown"}</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{formatWhen(dialog.artifact.created_at)}</dd>
+              </div>
+              <div>
+                <dt>Workload / Blueprint</dt>
+                <dd>{blueprintSummary(dialog.artifact.blueprint)}</dd>
               </div>
             </dl>
             {dialog.artifact.capture_mode === "full" || dialog.artifact.capture_mode_label === "Full Machine" ? (
@@ -1870,7 +2064,16 @@ export function BackupsPage() {
         <p className="muted">
           Repository: {workspace?.root || "/var/lib/ndl/backup-repo"}. Used {workspace?.repo_bytes != null ? formatBytes(workspace.repo_bytes) : "unknown"}.
           Host free {workspace?.host_free_bytes != null ? formatBytes(workspace.host_free_bytes) : "unknown"}.
+          Logical {workspace?.logical_bytes != null ? formatBytes(workspace.logical_bytes) : "unknown"}.
+          Physical {workspace?.physical_bytes != null || workspace?.repo_bytes != null ? formatBytes(workspace.physical_bytes || workspace.repo_bytes || 0) : "unknown"}.
         </p>
+        {hasR2Target ? (
+          <p className="muted">
+            Cloudflare R2 Local Uploads is a bucket-side option that can reduce upload latency. Backup Engine V2 works
+            without it and does not toggle the setting. Enable it in the Cloudflare dashboard if this bucket benefits
+            from it.
+          </p>
+        ) : null}
         <Field
           id="backup-workspace-max-local"
           label="Local repository ceiling (GiB)"
@@ -1888,12 +2091,39 @@ export function BackupsPage() {
           onChange={(e) => setMinFreeGiB(e.target.value)}
         />
         <Field
+          id="backup-workspace-capture-concurrency"
+          label="Capture concurrency"
+          type="number"
+          min={1}
+          value={captureConcurrency}
+          onChange={(e) => setCaptureConcurrency(e.target.value)}
+          hint="How many different workloads may capture at once. The same workload cannot capture twice."
+        />
+        <Field
           id="backup-workspace-upload-workers"
           label="Upload workers"
           type="number"
           min={1}
           value={uploadWorkers}
           onChange={(e) => setUploadWorkers(e.target.value)}
+        />
+        <Field
+          id="backup-workspace-bandwidth"
+          label="Upload bandwidth limit (MiB/s)"
+          type="number"
+          min={0}
+          value={bandwidthMBps}
+          onChange={(e) => setBandwidthMBps(e.target.value)}
+          hint="0 means unlimited. This limits remote upload, not local capture."
+        />
+        <Field
+          id="backup-workspace-cache-retention"
+          label="Local cache retention (hours)"
+          type="number"
+          min={0}
+          value={cacheRetentionHours}
+          onChange={(e) => setCacheRetentionHours(e.target.value)}
+          hint="0 keeps metadata caches until the next successful prune. Loss of cache only slows the next capture."
         />
       </ConfirmDialog>
     </section>

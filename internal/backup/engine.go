@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,11 +55,12 @@ func (e *Engine) Repo() *Repository { return e.repo }
 
 // CaptureOptions describes one workload capture.
 type CaptureOptions struct {
-	Source       string
-	WorkloadID   string
-	WorkloadName string
-	Consistency  string
-	Blueprint    Blueprint
+	Source          string
+	WorkloadID      string
+	WorkloadName    string
+	Consistency     string
+	ConsistencyInfo ConsistencyReport
+	Blueprint       Blueprint
 	// Includes, when non-empty, restrict capture to these paths (absolute or
 	// relative to Source) and their descendants. Parent directories are kept
 	// so restore can rebuild the tree. Empty means the whole tree minus Excludes.
@@ -79,6 +81,8 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 	if err := e.checkWorkspace(); err != nil {
 		return nil, nil, err
 	}
+	e.repo.beginCapture()
+	defer e.repo.endCapture()
 	start := time.Now()
 	namespace := Namespace(firstNonEmpty(opts.WorkloadName, opts.WorkloadID), opts.WorkloadID)
 	chunker := cdc.New(e.cfg.ChunkConfig)
@@ -96,6 +100,7 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 		files []FileEntry
 		stats CaptureStats
 		seen  = map[string]struct{}{}
+		links = map[string]string{}
 	)
 
 	walkErr := filepath.WalkDir(opts.Source, func(path string, d os.DirEntry, err error) error {
@@ -124,28 +129,55 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 			return err
 		}
 		uid, gid, inode, ctimeNS := statMeta(info)
+		nlink, rdev := fileNlinkRdev(info)
+		xattrs, xdeg := readXattrs(path)
 		seen[rel] = struct{}{}
+		ent := FileEntry{
+			Path: rel, Mode: uint32(info.Mode()), UID: uid, GID: gid,
+			MTimeNS: info.ModTime().UnixNano(), Inode: inode, NLink: nlink,
+			Rdev: rdev, Xattrs: xattrs, Degraded: xdeg,
+		}
 		switch {
 		case d.IsDir():
-			files = append(files, FileEntry{
-				Path: rel, Type: EntryDir, Mode: uint32(info.Mode().Perm()),
-				UID: uid, GID: gid, MTimeNS: info.ModTime().UnixNano(),
-			})
+			ent.Type = EntryDir
+			files = append(files, ent)
 			return nil
 		case info.Mode()&os.ModeSymlink != 0:
 			target, err := os.Readlink(path)
 			if err != nil {
 				return err
 			}
-			files = append(files, FileEntry{
-				Path: rel, Type: EntrySymlink, Mode: uint32(info.Mode().Perm()),
-				UID: uid, GID: gid, MTimeNS: info.ModTime().UnixNano(), Linkname: target,
-			})
+			ent.Type = EntrySymlink
+			ent.Linkname = target
+			files = append(files, ent)
 			return nil
 		case info.Mode().IsRegular():
+			key := ""
+			if inode != 0 && nlink > 1 {
+				key = strconv.FormatUint(inode, 10)
+			}
+			if key != "" {
+				if first, ok := links[key]; ok {
+					ent.Type = EntryFile
+					ent.Size = info.Size()
+					ent.Hardlink = first
+					files = append(files, ent)
+					return nil
+				}
+				links[key] = rel
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			holes, hdeg := detectHoles(f, info.Size())
+			_ = f.Close()
+			ent.Holes = holes
+			ent.Degraded = uniqueStrings(append(ent.Degraded, hdeg...))
 			meta := cacheEntry{
 				Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), CTimeNS: ctimeNS,
-				Inode: inode, Mode: uint32(info.Mode().Perm()), UID: uid, GID: gid,
+				Inode: inode, Mode: uint32(info.Mode()), UID: uid, GID: gid,
+				MetaHash: metaHash(xattrs, holes), Fingerprint: fileFingerprint(path, info.Size()),
 			}
 			stats.FilesScanned++
 			stats.LogicalBytes += info.Size()
@@ -159,14 +191,29 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 				stats.FilesChanged++
 			}
 			cache.update(rel, meta, chunks)
-			files = append(files, FileEntry{
-				Path: rel, Type: EntryFile, Mode: meta.Mode, UID: uid, GID: gid,
-				Size: info.Size(), MTimeNS: meta.MTimeNS, Chunks: chunks,
-			})
+			ent.Type = EntryFile
+			ent.Size = info.Size()
+			ent.Chunks = chunks
+			files = append(files, ent)
+			return nil
+		case info.Mode()&os.ModeNamedPipe != 0:
+			ent.Type = EntryFIFO
+			files = append(files, ent)
+			return nil
+		case info.Mode()&os.ModeSocket != 0:
+			ent.Type = EntrySocket
+			files = append(files, ent)
+			return nil
+		case info.Mode()&os.ModeDevice != 0:
+			if info.Mode()&os.ModeCharDevice != 0 {
+				ent.Type = EntryChar
+			} else {
+				ent.Type = EntryBlock
+			}
+			files = append(files, ent)
 			return nil
 		default:
-			// Sockets, devices, and pipes are recorded as metadata-only dirs of
-			// their parent; their contents are not meaningful to copy.
+			stats.Degraded = uniqueStrings(append(stats.Degraded, "special"))
 			return nil
 		}
 	})
@@ -181,21 +228,34 @@ func (e *Engine) Capture(ctx context.Context, opts CaptureOptions) (*Manifest, *
 
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 
+	for _, f := range files {
+		stats.Degraded = uniqueStrings(append(stats.Degraded, f.Degraded...))
+	}
+	bp := normalizeBlueprint(opts.Blueprint, opts, incl, excl)
+	InspectGuest(opts.Source, &bp)
+	info := opts.ConsistencyInfo
+	info.Requested = firstNonEmpty(info.Requested, opts.Consistency, ConsistencyCrash)
+	info.Result = firstNonEmpty(info.Result, opts.Consistency, ConsistencyCrash)
+	if info.Result == ConsistencyApp && !info.HookRan {
+		info.Result = ConsistencyCrash
+		info.Note = firstNonEmpty(info.Note, "application consistency requires a successful guest pre-hook")
+	}
 	backupID := uuid.NewString()
 	man := &Manifest{
-		Kind:           ManifestKind,
-		RepoVersion:    RepoVersion,
-		ChunkAlgorithm: ChunkAlgorithm,
-		ChunkConfig:    chunker.Config(),
-		BackupID:       backupID,
-		WorkloadID:     opts.WorkloadID,
-		WorkloadName:   opts.WorkloadName,
-		Namespace:      namespace,
-		CreatedAtNS:    time.Now().UnixNano(),
-		Consistency:    firstNonEmpty(opts.Consistency, ConsistencyCrash),
-		Blueprint:      normalizeBlueprint(opts.Blueprint, opts, incl, excl),
-		Files:          files,
-		Stats:          stats,
+		Kind:            ManifestKind,
+		RepoVersion:     RepoVersion,
+		ChunkAlgorithm:  ChunkAlgorithm,
+		ChunkConfig:     chunker.Config(),
+		BackupID:        backupID,
+		WorkloadID:      opts.WorkloadID,
+		WorkloadName:    opts.WorkloadName,
+		Namespace:       namespace,
+		CreatedAtNS:     time.Now().UnixNano(),
+		Consistency:     info.Result,
+		ConsistencyInfo: info,
+		Blueprint:       bp,
+		Files:           files,
+		Stats:           stats,
 	}
 	if err := e.repo.writeManifest(man); err != nil {
 		return nil, nil, err
