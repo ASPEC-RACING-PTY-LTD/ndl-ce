@@ -22,6 +22,9 @@ func (p *Postgres) DeleteWorkload(ctx context.Context, clusterID, id string) err
 	if _, err := tx.ExecContext(ctx, `DELETE FROM workload_disks WHERE workload_id=$1`, id); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM physical_disk_assignments WHERE workload_id=$1`, id); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM workload_nics WHERE workload_id=$1`, id); err != nil {
 		return err
 	}

@@ -33,6 +33,7 @@ func Validate(spec Spec) error {
 		return fmt.Errorf("firmware contains a banned character")
 	}
 	boot := 0
+	phys := map[string]struct{}{}
 	for i, d := range spec.Disks {
 		switch d.Role {
 		case DiskRoleBoot, DiskRoleData, DiskRoleCDROM, DiskRoleCIDATA, DiskRoleVars:
@@ -42,7 +43,32 @@ func Validate(spec Spec) error {
 		if d.Role == DiskRoleBoot {
 			boot++
 		}
-		if d.VolumeID != "" {
+		src := strings.ToLower(strings.TrimSpace(d.Source))
+		if src == "" && d.DeviceID != "" {
+			src = DiskSourcePhysical
+		}
+		if src == DiskSourcePhysical {
+			id := strings.TrimSpace(d.DeviceID)
+			if id == "" {
+				return fmt.Errorf("disk %d physical device_id is required", i)
+			}
+			if strings.Contains(id, "..") || strings.ContainsAny(id, " \n\r,=") {
+				return fmt.Errorf("disk %d device_id is invalid", i)
+			}
+			if _, ok := phys[id]; ok {
+				return fmt.Errorf("disk %d physical device is already attached", i)
+			}
+			phys[id] = struct{}{}
+			if d.VolumeID != "" {
+				return fmt.Errorf("disk %d is a physical device and must not reference a volume", i)
+			}
+			if d.Format != "" && d.Format != "raw" {
+				return fmt.Errorf("disk %d physical format must be raw", i)
+			}
+			if d.Bus != "" && d.Bus != DiskBusAHCI && d.Bus != DiskBusVirtio {
+				return fmt.Errorf("disk %d bus must be ahci or virtio-blk", i)
+			}
+		} else if d.VolumeID != "" {
 			if _, err := uuid.Parse(d.VolumeID); err != nil {
 				return fmt.Errorf("disk %d volume_id must be a UUID", i)
 			}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/no-dal/ndl-ce/internal/physdisk"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
@@ -59,11 +60,31 @@ func (e *Engine) PrepareLaunch(ctx context.Context, launch vmspec.Launch, source
 			return Result{}, err
 		}
 		for _, d := range launch.Disks {
-			if d.Role == vmspec.DiskRoleBoot || d.Role == vmspec.DiskRoleData {
-				if err := e.chownDisk(d.Path); err != nil {
+			if d.Role != vmspec.DiskRoleBoot && d.Role != vmspec.DiskRoleData {
+				continue
+			}
+			if isPhysicalLaunchDisk(d) {
+				id, err := physdisk.ParseDeviceID(firstNonEmpty(d.DeviceID, pathBase(d.Path)))
+				if err != nil {
 					_ = e.cleanupTAPs(launch)
 					return Result{}, err
 				}
+				if err := physdisk.GrantRuntimeAccess(d.Path); err != nil {
+					_ = e.cleanupPhysical(launch)
+					_ = e.cleanupTAPs(launch)
+					return Result{}, err
+				}
+				if err := physdisk.Claim(id, launch.WorkloadID, true); err != nil {
+					_ = e.cleanupPhysical(launch)
+					_ = e.cleanupTAPs(launch)
+					return Result{}, err
+				}
+				continue
+			}
+			if err := e.chownDisk(d.Path); err != nil {
+				_ = e.cleanupPhysical(launch)
+				_ = e.cleanupTAPs(launch)
+				return Result{}, err
 			}
 		}
 	}
@@ -172,11 +193,33 @@ func (e *Engine) CleanupLaunch(id string, launch vmspec.Launch) error {
 		return err
 	}
 	if !e.SkipHostCmds {
+		_ = e.cleanupPhysical(launch)
 		if err := e.cleanupTAPs(launch); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (e *Engine) cleanupPhysical(launch vmspec.Launch) error {
+	for _, d := range launch.Disks {
+		if !isPhysicalLaunchDisk(d) {
+			continue
+		}
+		_ = physdisk.RevokeRuntimeAccess(d.Path)
+		if id, err := physdisk.ParseDeviceID(firstNonEmpty(d.DeviceID, pathBase(d.Path))); err == nil {
+			_ = physdisk.Release(id, launch.WorkloadID)
+		}
+	}
+	return nil
+}
+
+func pathBase(p string) string {
+	p = strings.TrimSuffix(p, "/")
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 func (e *Engine) DeleteRuntime(ctx context.Context, id string) error {

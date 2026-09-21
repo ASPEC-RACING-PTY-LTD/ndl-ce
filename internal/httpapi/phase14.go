@@ -394,6 +394,9 @@ func (s *Server) releaseWorkloadClaims(ctx context.Context, clusterID, workloadI
 			return err
 		}
 	}
+	if err := s.releasePhysicalAssignments(ctx, clusterID, workloadID); err != nil {
+		return err
+	}
 	return nil
 }
 

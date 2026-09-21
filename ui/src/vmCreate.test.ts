@@ -23,4 +23,25 @@ describe("VM create body", () => {
     expect(JSON.stringify(guided)).toBe(JSON.stringify(advanced));
     expect(guided.kind).toBe("vm");
   });
+
+  it("sends a physical boot disk without a storage pool", () => {
+    const body = buildVmCreateBody({
+      ...fields,
+      bootDisk: "physical",
+      physicalDeviceID: "ata-CT1000MX500SSD1_0001",
+      firmware: "uefi",
+    });
+    expect(body.pool_id).toBeUndefined();
+    expect(body.cloud_image_id).toBeUndefined();
+    expect(body.spec?.disks).toEqual([
+      {
+        role: "boot",
+        source: "physical",
+        device_id: "ata-CT1000MX500SSD1_0001",
+        format: "raw",
+        bus: "ahci",
+      },
+    ]);
+    expect(body.nocloud.enable).toBe(false);
+  });
 });

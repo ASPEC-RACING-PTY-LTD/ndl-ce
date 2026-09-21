@@ -13,12 +13,14 @@ import {
   distributedRuntime,
   importZFS,
   listImages,
+  listPhysicalDisks,
   listPools,
   listVolumes,
   lvmRuntime,
   uploadImage,
   zfsRuntime,
 } from "../api/client";
+import type { PhysicalDisk } from "../api/client";
 import type { DatastoreRuntime, DistributedRuntime, LibraryItem, LVMRuntime, StoragePool, StorageVolume, ZFSRuntime } from "../api/phase3";
 import { Field } from "../components/Field";
 import { LoadingState } from "../components/EmptyState";
@@ -105,6 +107,7 @@ export function StoragePage() {
   const [osdDisk, setOsdDisk] = useState("");
   const [addKind, setAddKind] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<"collecting" | "ready" | "unavailable">("collecting");
+  const [hostDisks, setHostDisks] = useState<PhysicalDisk[]>([]);
 
   async function reload() {
     const listed = await listPools();
@@ -120,13 +123,14 @@ export function StoragePage() {
       setSelected(first);
     }
     const poolId = first;
-    const [vols, imgs, runtime, lvmStatus, dsStatus, distStatus] = await Promise.all([
+    const [vols, imgs, runtime, lvmStatus, dsStatus, distStatus, disks] = await Promise.all([
       listVolumes(poolId),
       listImages(poolId),
       zfsRuntime().catch(() => null),
       lvmRuntime().catch(() => null),
       datastoreRuntime().catch(() => null),
       distributedRuntime().catch(() => null),
+      listPhysicalDisks().catch(() => ({ items: [] as PhysicalDisk[] })),
     ]);
     setVolumes(vols);
     setImages(imgs);
@@ -134,6 +138,7 @@ export function StoragePage() {
     setLvm(lvmStatus);
     setDatastores(dsStatus);
     setDistributed(distStatus);
+    setHostDisks(disks.items ?? []);
     setLoadState("ready");
   }
 
@@ -684,6 +689,48 @@ export function StoragePage() {
       </div>
       </Dialog>
       ) : null}
+      <article className="panel table-card">
+        <h2>Host disks</h2>
+        <p className="page-kicker">
+          Physical devices on this host. This is not a storage pool. Unused disks can be assigned directly to a VM without
+          formatting.
+        </p>
+        {hostDisks.length === 0 ? (
+          <p>No whole disks reported.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Disk</th>
+                  <th>Path</th>
+                  <th>Capacity</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hostDisks.map((d) => (
+                  <tr key={d.id}>
+                    <td>
+                      {d.display_name || d.model || d.id}
+                      {d.existing_data ? " (existing data)" : ""}
+                    </td>
+                    <td>{d.by_id_path || d.id}</td>
+                    <td>{d.size_bytes ? formatBytes(d.size_bytes) : "Not reported"}</td>
+                    <td>
+                      {d.assigned_workload_name
+                        ? `Assigned directly to VM: ${d.assigned_workload_name}`
+                        : d.eligible
+                          ? "Available physical device"
+                          : (d.reasons ?? []).join("; ") || "Unavailable"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
       <article className="panel table-card">
         <h2>Pools</h2>
         {loadState === "collecting" ? (

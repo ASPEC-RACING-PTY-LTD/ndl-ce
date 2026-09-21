@@ -56,6 +56,13 @@ func ValidateDiskPath(diskPath string) error {
 		if err := storage.ValidateNBDPath(cleaned); err == nil {
 			return nil
 		}
+		if strings.HasPrefix(cleaned, "/dev/disk/by-id/") {
+			rest := strings.TrimPrefix(cleaned, "/dev/disk/by-id/")
+			if rest == "" || strings.Contains(rest, "/") {
+				return fmt.Errorf("disk_path is not a clean locator")
+			}
+			return nil
+		}
 		return fmt.Errorf("disk_path must be under the storage root")
 	}
 	return nil

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  attachWorkloadPhysicalDisk,
   attachWorkloadUSB,
   createTemplate,
   exportWorkload,
@@ -9,11 +10,13 @@ import {
   getWorkloadLogs,
   getWorkloadMetrics,
   listNodeUSB,
+  listPhysicalDisks,
   migrateWorkload,
   patchWorkload,
+  removeWorkloadPhysicalDisk,
   workloadAction,
 } from "../api/client";
-import type { USBDeviceRow, WorkloadGuest } from "../api/client";
+import type { PhysicalDisk, USBDeviceRow, WorkloadGuest } from "../api/client";
 import type { MetricSeries } from "../api/phase2";
 import type { Workload } from "../api/phase5";
 import type { DockerMachine } from "../generated/openapi";
@@ -75,6 +78,8 @@ export function WorkloadDetailPage() {
   const [busy, setBusy] = useState(false);
   const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
   const [usbAddr, setUsbAddr] = useState("");
+  const [physicalDisks, setPhysicalDisks] = useState<PhysicalDisk[]>([]);
+  const [physicalDeviceID, setPhysicalDeviceID] = useState("");
   const [guest, setGuest] = useState<WorkloadGuest | null>(null);
   const [destNode, setDestNode] = useState("");
   const [migrateMode, setMigrateMode] = useState<"live" | "offline">("live");
@@ -127,6 +132,8 @@ export function WorkloadDetailPage() {
       if (!usbAddr && listed.items?.[0]?.address) {
         setUsbAddr(listed.items[0].address);
       }
+      const disks = await listPhysicalDisks(w.node_id).catch(() => ({ items: [] as PhysicalDisk[] }));
+      setPhysicalDisks(disks.items ?? []);
     }
     try {
       const m = await getWorkloadMetrics(w.id, { minutes: 15 });
@@ -429,7 +436,13 @@ export function WorkloadDetailPage() {
                     <dt>Disks</dt>
                     <dd>
                       {(item.disks ?? []).length
-                        ? (item.disks ?? []).map((d) => `${d.role || "disk"} ${d.volume_id}`).join(", ")
+                        ? (item.disks ?? [])
+                            .map((d) =>
+                              d.source === "physical" || d.device_id
+                                ? `${d.role || "disk"} physical ${d.model || d.device_id} (not formatted)`
+                                : `${d.role || "disk"} ${d.volume_id}`,
+                            )
+                            .join(", ")
                         : "Not reported"}
                     </dd>
                   </div>
@@ -612,6 +625,77 @@ export function WorkloadDetailPage() {
       ) : null}
 
       {view === "machine" && mutate && item.kind === "vm" ? (
+        <>
+        <article className="panel">
+          <h2>Physical disk passthrough</h2>
+          <p className="page-kicker">
+            Assigns an existing host disk exclusively to this VM. No-DAL does not format, partition, mount, or convert it.
+          </p>
+          {(item.physical_disks ?? []).length ? (
+            <ul>
+              {(item.physical_disks ?? []).map((d) => (
+                <li key={d.id}>
+                  {d.model || d.device_id} {d.by_id_path} ({d.role || "data"})
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setBusy(true);
+                      setError(null);
+                      void removeWorkloadPhysicalDisk(item.id, d.device_id)
+                        .then(() => reload())
+                        .catch((err) => setError(err instanceof Error ? err.message : "Physical disk remove failed"))
+                        .finally(() => setBusy(false));
+                    }}
+                  >
+                    Remove assignment
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No physical disks assigned.</p>
+          )}
+          {physicalDisks.length ? (
+            <>
+              <label htmlFor="phys-disk">
+                Host disk
+                <select
+                  id="phys-disk"
+                  className="field-input"
+                  value={physicalDeviceID}
+                  onChange={(e) => setPhysicalDeviceID(e.target.value)}
+                >
+                  <option value="">Select a disk</option>
+                  {physicalDisks.map((d) => (
+                    <option key={d.id} value={d.id} disabled={!d.eligible}>
+                      {d.display_name || d.model || d.id} {d.size_bytes ? formatBytes(d.size_bytes) : ""}{" "}
+                      {d.eligible ? "" : (d.reasons ?? []).join("; ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="btn"
+                type="button"
+                disabled={busy || !physicalDeviceID}
+                onClick={() => {
+                  setBusy(true);
+                  setError(null);
+                  void attachWorkloadPhysicalDisk(item.id, { device_id: physicalDeviceID, role: "data" })
+                    .then(() => reload())
+                    .catch((err) => setError(err instanceof Error ? err.message : "Physical disk attach failed"))
+                    .finally(() => setBusy(false));
+                }}
+              >
+                Attach physical disk
+              </button>
+            </>
+          ) : (
+            <p>No host disks reported.</p>
+          )}
+        </article>
         <article className="panel">
           <h2>USB passthrough</h2>
           {usbs.length === 0 ? <p>None detected</p> : null}
@@ -645,6 +729,7 @@ export function WorkloadDetailPage() {
             </>
           ) : null}
         </article>
+        </>
       ) : null}
 
       <ConfirmDialog

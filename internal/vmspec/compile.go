@@ -83,14 +83,18 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 		if err := ValidateCleanPath(d.Path, "disk path"); err != nil {
 			return Launch{}, err
 		}
+		physical := d.Source == DiskSourcePhysical || strings.HasPrefix(d.Path, "/dev/disk/by-id/")
 		underStorage := strings.HasPrefix(d.Path, "/var/lib/ndl/storage/") || strings.HasPrefix(d.Path, "/var/lib/ndl/runtime/qemu/"+workloadID+"/")
 		zvol, block := hostBlockDisk(d.Path)
-		if !underStorage && !block {
+		if !underStorage && !block && !physical {
 			return Launch{}, fmt.Errorf("disk path must be a VolumeHandle locator")
+		}
+		if physical && !strings.HasPrefix(d.Path, "/dev/disk/by-id/") {
+			return Launch{}, fmt.Errorf("physical disk path must be a /dev/disk/by-id locator")
 		}
 		format := d.Format
 		if format == "" {
-			if block {
+			if block || physical {
 				format = "raw"
 			} else {
 				format = "qcow2"
@@ -99,7 +103,7 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 		if zvol && format != "raw" {
 			return Launch{}, fmt.Errorf("zvol disk format must be raw")
 		}
-		if block && format != "raw" {
+		if (block || physical) && format != "raw" {
 			return Launch{}, fmt.Errorf("block disk format must be raw")
 		}
 		if format != "qcow2" && format != "raw" {
@@ -108,6 +112,10 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 		addr := d.PCIAddr
 		if addr == "" && i < len(spec.Disks) {
 			addr = spec.Disks[i].PCIAddr
+		}
+		bus := d.Bus
+		if physical && bus == "" {
+			bus = DiskBusAHCI
 		}
 		launch.Disks = append(launch.Disks, LaunchDisk{
 			VolumeID: d.VolumeID,
@@ -118,6 +126,11 @@ func Compile(workloadID string, spec Spec, resolved Resolved) (Launch, error) {
 			ReadOnly: d.ReadOnly || d.Role == DiskRoleCDROM || d.Role == DiskRoleCIDATA,
 			PCIAddr:  addr,
 			NodeName: fmt.Sprintf("disk%d", i),
+			Source:   d.Source,
+			DeviceID: d.DeviceID,
+			Bus:      bus,
+			Serial:   d.Serial,
+			Discard:  d.Discard,
 		})
 	}
 	if len(resolved.NICs) == 0 {
@@ -259,6 +272,12 @@ func hostBlockDisk(p string) (zvol bool, block bool) {
 		return false, true
 	}
 	if strings.HasPrefix(p, storage.ISCSIByPath) {
+		cleaned := path.Clean(p)
+		if cleaned == p && !strings.Contains(p, "..") {
+			return false, true
+		}
+	}
+	if strings.HasPrefix(p, "/dev/disk/by-id/") {
 		cleaned := path.Clean(p)
 		if cleaned == p && !strings.Contains(p, "..") {
 			return false, true

@@ -100,7 +100,7 @@ func (e *Engine) CompileLaunch(launch vmspec.Launch) ([]string, error) {
 		}
 		argv = append(argv, "-device", "virtio-balloon-pci,id=balloon0,addr="+addr)
 	}
-	scsi := false
+	ahciPort := 0
 	for _, d := range launch.Disks {
 		if err := validateLaunchDisk(launch.WorkloadID, d); err != nil {
 			return nil, err
@@ -110,24 +110,43 @@ func (e *Engine) CompileLaunch(launch vmspec.Launch) ([]string, error) {
 			ro = ",read-only=on"
 		}
 		fileNode := d.NodeName + "-file"
+		fileDriver := "file"
+		cache := ""
+		discard := "unmap"
+		if isPhysicalLaunchDisk(d) {
+			fileDriver = "host_device"
+			cache = ",cache.direct=on,aio=native"
+			if !d.Discard {
+				discard = "ignore"
+			}
+		}
 		argv = append(argv,
-			"-blockdev", fmt.Sprintf("driver=file,node-name=%s,filename=%s,discard=unmap%s", fileNode, d.Path, ro),
+			"-blockdev", fmt.Sprintf("driver=%s,node-name=%s,filename=%s,discard=%s%s%s", fileDriver, fileNode, d.Path, discard, cache, ro),
 			"-blockdev", fmt.Sprintf("driver=%s,node-name=%s,file=%s%s", d.Format, d.NodeName, fileNode, ro),
 		)
-		switch d.Role {
-		case vmspec.DiskRoleCDROM:
-			if !scsi {
-				addr := launch.PCI["scsi"]
-				if addr == "" {
-					addr = "0x07"
-				}
-				if err := vmspec.ValidatePCIAddr(addr); err != nil {
-					return nil, err
-				}
-				argv = append(argv, "-device", "virtio-scsi-pci,id=scsi0,addr="+addr)
-				scsi = true
+		switch {
+		case d.Role == vmspec.DiskRoleCDROM:
+			// q35 provides a native ICH9 AHCI controller. Attach installation
+			// media to it so guests such as Windows PE can access the ISO
+			// without requiring a VirtIO SCSI driver.
+			dev := fmt.Sprintf("ide-cd,drive=%s,bus=ide.%d,id=%s", d.NodeName, ahciPort, d.NodeName)
+			ahciPort++
+			if idx := bootIndex(launch.BootOrder, 'd'); idx > 0 {
+				dev += ",bootindex=" + strconv.Itoa(idx)
 			}
-			argv = append(argv, "-device", "scsi-cd,drive="+d.NodeName+",bus=scsi0.0")
+			argv = append(argv, "-device", dev)
+		case usesAHCI(d):
+			dev := fmt.Sprintf("ide-hd,drive=%s,bus=ide.%d,id=%s", d.NodeName, ahciPort, d.NodeName)
+			ahciPort++
+			if serial := qemuSerial(d.Serial, d.DeviceID); serial != "" {
+				dev += ",serial=" + serial
+			}
+			if d.Role == vmspec.DiskRoleBoot {
+				if idx := bootIndex(launch.BootOrder, 'c'); idx > 0 {
+					dev += ",bootindex=" + strconv.Itoa(idx)
+				}
+			}
+			argv = append(argv, "-device", dev)
 		default:
 			if d.PCIAddr == "" {
 				return nil, fmt.Errorf("disk %s is missing a pci address", d.NodeName)
@@ -135,7 +154,16 @@ func (e *Engine) CompileLaunch(launch vmspec.Launch) ([]string, error) {
 			if err := vmspec.ValidatePCIAddr(d.PCIAddr); err != nil {
 				return nil, err
 			}
-			argv = append(argv, "-device", "virtio-blk-pci,drive="+d.NodeName+",addr="+d.PCIAddr)
+			dev := "virtio-blk-pci,drive=" + d.NodeName + ",addr=" + d.PCIAddr
+			if serial := qemuSerial(d.Serial, d.DeviceID); serial != "" {
+				dev += ",serial=" + serial
+			}
+			if d.Role == vmspec.DiskRoleBoot {
+				if idx := bootIndex(launch.BootOrder, 'c'); idx > 0 {
+					dev += ",bootindex=" + strconv.Itoa(idx)
+				}
+			}
+			argv = append(argv, "-device", dev)
 		}
 	}
 	for i, g := range launch.GPUs {
@@ -192,11 +220,49 @@ func validateLaunchDisk(id string, d vmspec.LaunchDisk) error {
 	if d.Format != "qcow2" && d.Format != "raw" {
 		return fmt.Errorf("disk format must be qcow2 or raw")
 	}
+	if isPhysicalLaunchDisk(d) && d.Format != "raw" {
+		return fmt.Errorf("physical disk format must be raw")
+	}
 	prefix := "/var/lib/ndl/runtime/qemu/" + id + "/"
 	if strings.HasPrefix(d.Path, prefix) {
 		return vmspec.ValidateCleanPath(d.Path, "disk path")
 	}
 	return ValidateDiskPath(d.Path)
+}
+
+func isPhysicalLaunchDisk(d vmspec.LaunchDisk) bool {
+	return d.Source == vmspec.DiskSourcePhysical || strings.HasPrefix(d.Path, "/dev/disk/by-id/")
+}
+
+func usesAHCI(d vmspec.LaunchDisk) bool {
+	if d.Role == vmspec.DiskRoleCDROM {
+		return true
+	}
+	return isPhysicalLaunchDisk(d) && (d.Bus == "" || d.Bus == vmspec.DiskBusAHCI)
+}
+
+func qemuSerial(serial, deviceID string) string {
+	s := strings.TrimSpace(serial)
+	if s == "" {
+		s = strings.TrimSpace(deviceID)
+	}
+	s = strings.ReplaceAll(s, "/", "")
+	if strings.ContainsAny(s, ",=\n\r ") {
+		return ""
+	}
+	if len(s) > 20 {
+		s = s[:20]
+	}
+	return s
+}
+
+func bootIndex(order string, device byte) int {
+	for i := 0; i < len(order); i++ {
+		if order[i] == device {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 func safeBoot(order string) string {

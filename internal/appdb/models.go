@@ -145,6 +145,11 @@ type Store interface {
 	CreateWorkloadDisk(ctx context.Context, d WorkloadDisk) error
 	ListWorkloadDisks(ctx context.Context, clusterID, workloadID string) ([]WorkloadDisk, error)
 
+	CreatePhysicalDiskAssignment(ctx context.Context, a PhysicalDiskAssignment) error
+	ListPhysicalDiskAssignments(ctx context.Context, clusterID, workloadID string) ([]PhysicalDiskAssignment, error)
+	GetPhysicalDiskAssignment(ctx context.Context, clusterID, deviceID string) (*PhysicalDiskAssignment, error)
+	DeletePhysicalDiskAssignment(ctx context.Context, clusterID, deviceID string) error
+
 	CreateWorkloadNIC(ctx context.Context, n WorkloadNIC) error
 	ListWorkloadNICs(ctx context.Context, clusterID, workloadID string) ([]WorkloadNIC, error)
 	UpdateWorkloadNIC(ctx context.Context, n WorkloadNIC) error

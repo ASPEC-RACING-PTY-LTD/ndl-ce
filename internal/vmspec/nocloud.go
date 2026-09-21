@@ -154,7 +154,7 @@ func disksChanged(a, b []Disk) bool {
 		return true
 	}
 	for i := range a {
-		if a[i].VolumeID != b[i].VolumeID || a[i].Role != b[i].Role || a[i].ReadOnly != b[i].ReadOnly {
+		if a[i].VolumeID != b[i].VolumeID || a[i].Role != b[i].Role || a[i].ReadOnly != b[i].ReadOnly || a[i].DeviceID != b[i].DeviceID || a[i].Source != b[i].Source {
 			return true
 		}
 	}

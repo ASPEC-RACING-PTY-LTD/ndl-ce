@@ -18,6 +18,11 @@ func (m *Memory) DeleteWorkload(_ context.Context, clusterID, id string) error {
 			delete(m.workloadDisks, k)
 		}
 	}
+	for k, a := range m.physDisks {
+		if a.WorkloadID == id {
+			delete(m.physDisks, k)
+		}
+	}
 	for k, n := range m.workloadNICs {
 		if n.WorkloadID == id {
 			delete(m.workloadNICs, k)
