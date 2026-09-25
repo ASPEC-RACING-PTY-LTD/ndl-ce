@@ -68,6 +68,9 @@ func TestOverlayCreateOfflineRetargetsBootDisk(t *testing.T) {
 }
 
 func TestOverlayCreateRefusesLiveQEMUImg(t *testing.T) {
+	if _, err := user.Lookup(QEMUUser); err != nil {
+		t.Skip("requires ndl-qemu system account")
+	}
 	e := &Engine{DataDir: t.TempDir(), SkipHostCmds: true, LiveUnits: map[string]bool{}}
 	id := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 	backing := "/var/lib/ndl/storage/p/volumes/vm-disk/" + id + ".qcow2"

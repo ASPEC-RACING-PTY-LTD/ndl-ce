@@ -230,9 +230,9 @@ func TestRestoreLoopMountsRefusesSlash(t *testing.T) {
 }
 
 func TestMountLoopExt4AcceptsLoopAndRejectsNouuid(t *testing.T) {
-        if os.Getenv("CI") == "true" {
-                t.Skip("requires a host with ext4 loop-mount capability")
-        }
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.Skip("requires a host with ext4 loop-mount capability")
+	}
 	if os.Geteuid() != 0 {
 		t.Skip("requires root to loop-mount")
 	}
