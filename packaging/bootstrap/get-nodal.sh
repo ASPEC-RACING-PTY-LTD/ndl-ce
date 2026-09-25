@@ -1,6 +1,6 @@
 #!/bin/sh
 # No-dal Community Edition bootstrap.
-# Public URL: https://get.no-dal.com (inspect, then run as root).
+# Public URL: https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/packaging/bootstrap/get-nodal.sh (inspect, then run as root).
 # This script is not the platform. Packages own users, database, and units.
 set -eu
 

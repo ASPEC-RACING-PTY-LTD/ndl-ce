@@ -15,14 +15,25 @@ metapackage, starts services, and the operator claims `/setup`.
 See `docs/install.md`. Public convenience command:
 
 ```text
-curl -fsSL https://get.no-dal.com | sudo sh
+curl -fsSL https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/packaging/bootstrap/get-nodal.sh | sudo sh
 ```
 
-The live URL may still be a placeholder. The in-repo script is the
-same contract. Use `NODAL_APT_KEY_URL`, `NODAL_APT_REPO`, and
+The command fetches the bootstrap directly from GitHub. Use
+`NODAL_APT_KEY_URL`, `NODAL_APT_REPO`, and
 `NODAL_DEV_REPO=1` against a local test repository. Signed production
 packages use the documented HTTPS repo and keyring path. This tree
 does not mint those signatures here.
+
+## Alpha builds
+
+GitHub evaluates the release workflow on pushes to `main`, but its build and
+release job is skipped unless the commit subject starts with `DEPLOY:`. It
+defaults to the next patch version; use
+`DEPLOY: minor` or `DEPLOY: major` for those increments, or include an
+explicit greater version such as `DEPLOY: 1.1.0`. The workflow tests and
+builds the project, updates the Debian package version, and publishes the
+Debian packages as a GitHub prerelease. Other commits do not create releases
+or advance the published version.
 
 ## Host support
 

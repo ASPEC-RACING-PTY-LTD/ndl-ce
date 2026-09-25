@@ -25,7 +25,7 @@ not require a license key. See [ce-1.0.md](ce-1.0.md).
 Inspect the script, then run it as root:
 
 ```text
-curl -fsSL https://get.no-dal.com | sudo sh
+curl -fsSL https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/packaging/bootstrap/get-nodal.sh | sudo sh
 ```
 
 The script checks the host, installs the signing key and signed apt

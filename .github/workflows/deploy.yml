@@ -1,0 +1,101 @@
+name: Alpha Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: alpha-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: startsWith(github.event.head_commit.message, 'DEPLOY:')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+      - name: Calculate release tag
+        id: version
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          latest_tag="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)"
+          tag="$(node scripts/release-version.mjs "$latest_tag" "$COMMIT_MESSAGE")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Validate release versioning
+        run: node --test scripts/release-version.test.mjs
+      - name: Build Go services
+        run: go build ./...
+      - name: Test Go services
+        run: go test ./...
+      - name: Build and test web UI
+        working-directory: ui
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+      - name: Install Debian packaging tools
+        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts dpkg-dev
+      - name: Stamp package version and build Debian packages
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          DEBFULLNAME: No-dal Release Bot
+          DEBEMAIL: packaging@no-dal.com
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          dch --changelog packaging/debian/changelog \
+            --newversion "${TAG#v}" \
+            --distribution trixie \
+            --urgency medium \
+            "Alpha release: $COMMIT_MESSAGE"
+          cp -a packaging/debian ./debian
+          dpkg-buildpackage -us -uc -b -d
+          mapfile -t debs < <(find .. -maxdepth 1 -type f -name '*.deb' -print)
+          if [ "${#debs[@]}" -eq 0 ]; then
+            echo "No Debian packages were produced" >&2
+            exit 1
+          fi
+          printf '%s\n' "${debs[@]}" > "$RUNNER_TEMP/deb-artifacts.txt"
+      - name: Commit release version
+        id: release_commit
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packaging/debian/changelog
+          git commit -m "chore(release): $TAG [skip ci]"
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Publish Alpha release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          mapfile -t debs < "$RUNNER_TEMP/deb-artifacts.txt"
+          gh release create "$TAG" "${debs[@]}" \
+            --title "No-DAL CE $TAG (Alpha)" \
+            --notes "Alpha build from commit ${{ steps.release_commit.outputs.sha }}. Install support and current limitations are documented at https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/blob/main/docs/install.md." \
+            --prerelease
