@@ -1672,6 +1672,12 @@ export interface UpdatePackage {
   status: "current" | "update_available" | "unsupported" | "not_configured" | "not_reported";
 }
 
+export interface UpdateCandidate {
+  name: "ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl";
+  current_version: string;
+  candidate_version: string;
+}
+
 export interface UpdateOperation {
   id: string;
   action: "check" | "preflight" | "checkpoint" | "apply" | "rollback";
@@ -1683,12 +1689,6 @@ export interface UpdateOperation {
   finished_at?: string;
   packages?: ("ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl")[];
   candidates?: UpdateCandidate[];
-}
-
-export interface UpdateCandidate {
-  name: "ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl";
-  current_version: string;
-  candidate_version: string;
 }
 
 export interface UpdateStatus {

@@ -115,9 +115,9 @@ is `none` and DMI/sysfs do not show a guest). A KVM/QEMU/VM/container is
 
 Gate 20 PASSes only after an armed reboot of the primary physical host.
 Until `CERT_REBOOT_NODE_A=I-UNDERSTAND-REBOOT-PRIMARY` and a real Node A
-`boot_id` change are proven — with management recovery, disposable
+`boot_id` change are proven  -  with management recovery, disposable
 autostart on Node A, healthy production `nodal-ct@` units, and no
-duplicate workload names — the gate is `BLOCKED-PHYSICAL`. After reboot,
+duplicate workload names  -  the gate is `BLOCKED-PHYSICAL`. After reboot,
 re-run with the same `CERT_RUN_ID` and `--resume-reboot`.
 
 Gate 21 PASSes only on a real supported version transition

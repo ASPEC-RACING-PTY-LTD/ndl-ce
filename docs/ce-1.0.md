@@ -14,9 +14,9 @@ single-node and virtual two-node integration evidence on this Debian
 13 homelab, but three required physical gates were too permissive and
 are no longer a CE 1.0 PASS:
 
-- gate 12 (second physical node) — Node B was a KVM guest
-- gate 20 (host reboot/autostart) — only the guest was rebooted
-- gate 21 (package upgrade) — `1.0.6 -> 1.0.6` is not a version upgrade
+- gate 12 (second physical node)  -  Node B was a KVM guest
+- gate 20 (host reboot/autostart)  -  only the guest was rebooted
+- gate 21 (package upgrade)  -  `1.0.6 -> 1.0.6` is not a version upgrade
 
 CE 1.0 is not physically certified until those gates PASS honestly.
 The installer ISO is still not booted in this tree.
