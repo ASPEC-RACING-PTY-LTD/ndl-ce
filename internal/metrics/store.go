@@ -21,6 +21,12 @@ type Store struct {
 	retention time.Duration
 }
 
+type metricSample struct {
+	name  string
+	ts    time.Time
+	value float64
+}
+
 const schema = `
 CREATE TABLE IF NOT EXISTS samples (
 	name TEXT NOT NULL,
@@ -89,13 +95,16 @@ func (s *Store) Close() error {
 
 // Record inserts one real sample and prunes expired rows.
 func (s *Store) Record(name string, ts time.Time, value float64) error {
+	return s.recordBatch([]metricSample{{name: name, ts: ts, value: value}})
+}
+
+func (s *Store) recordBatch(samples []metricSample) error {
 	if s == nil || s.db == nil {
 		return errors.New("metrics: store closed")
 	}
-	if name == "" {
-		return errors.New("metrics: empty name")
+	if len(samples) == 0 {
+		return nil
 	}
-	ts = ts.UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.db.Begin()
@@ -103,23 +112,29 @@ func (s *Store) Record(name string, ts time.Time, value float64) error {
 		return fmt.Errorf("metrics: begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(
-		`INSERT OR REPLACE INTO samples (name, ts, value) VALUES (?, ?, ?)`,
-		name, ts.UnixMicro(), value,
-	); err != nil {
-		return fmt.Errorf("metrics: insert: %w", err)
-	}
-	bucket := ts.Truncate(time.Hour).Unix()
-	if _, err := tx.Exec(
-		`INSERT INTO samples_1h (name, bucket, sum, min, max, count) VALUES (?, ?, ?, ?, ?, 1)
-		 ON CONFLICT(name, bucket) DO UPDATE SET
-			sum = samples_1h.sum + excluded.sum,
-			min = MIN(samples_1h.min, excluded.min),
-			max = MAX(samples_1h.max, excluded.max),
-			count = samples_1h.count + 1`,
-		name, bucket, value, value, value,
-	); err != nil {
-		return fmt.Errorf("metrics: downsample: %w", err)
+	for _, sample := range samples {
+		if sample.name == "" {
+			return errors.New("metrics: empty name")
+		}
+		ts := sample.ts.UTC()
+		if _, err := tx.Exec(
+			`INSERT OR REPLACE INTO samples (name, ts, value) VALUES (?, ?, ?)`,
+			sample.name, ts.UnixMicro(), sample.value,
+		); err != nil {
+			return fmt.Errorf("metrics: insert: %w", err)
+		}
+		bucket := ts.Truncate(time.Hour).Unix()
+		if _, err := tx.Exec(
+			`INSERT INTO samples_1h (name, bucket, sum, min, max, count) VALUES (?, ?, ?, ?, ?, 1)
+			 ON CONFLICT(name, bucket) DO UPDATE SET
+				sum = samples_1h.sum + excluded.sum,
+				min = MIN(samples_1h.min, excluded.min),
+				max = MAX(samples_1h.max, excluded.max),
+				count = samples_1h.count + 1`,
+			sample.name, bucket, sample.value, sample.value, sample.value,
+		); err != nil {
+			return fmt.Errorf("metrics: downsample: %w", err)
+		}
 	}
 	if err := pruneTx(tx, time.Now().UTC(), s.retention, s.maxRows); err != nil {
 		return err

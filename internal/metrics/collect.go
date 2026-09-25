@@ -49,10 +49,9 @@ func (c *Collector) Scrape(now time.Time) error {
 	}
 	now = now.UTC()
 	var first error
+	var samples []metricSample
 	record := func(name string, value float64) {
-		if err := c.Store.Record(name, now, value); err != nil && first == nil {
-			first = err
-		}
+		samples = append(samples, metricSample{name: name, ts: now, value: value})
 	}
 
 	if raw, err := os.ReadFile(c.procPath("proc/stat")); err == nil {
@@ -133,6 +132,9 @@ func (c *Collector) Scrape(now time.Time) error {
 		}
 	}
 	c.scrapeGuestCgroups(now, record)
+	if err := c.Store.recordBatch(samples); err != nil && first == nil {
+		first = err
+	}
 	return first
 }
 
