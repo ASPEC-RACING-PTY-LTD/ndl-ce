@@ -43,7 +43,7 @@ jobs:
         run: node scripts/ci/check-openapi-routes.mjs
       - name: ShellCheck
         run: |
-          shellcheck packaging/bootstrap/get-nodal.sh \
+          shellcheck --severity=error packaging/bootstrap/get-nodal.sh \
             packaging/lib/ndl/build-ui.sh \
             packaging/e2e/lib/ensure-node.sh \
             packaging/e2e/check-ui-build.sh \
