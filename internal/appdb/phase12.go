@@ -25,8 +25,15 @@ type UpdateOperation struct {
 	Error      string
 	Version    string
 	Packages   []string
+	Candidates []UpdateCandidate
 	StartedAt  time.Time
 	FinishedAt *time.Time
+}
+
+type UpdateCandidate struct {
+	Name             string `json:"name"`
+	CurrentVersion   string `json:"current_version"`
+	CandidateVersion string `json:"candidate_version"`
 }
 
 func (m *Memory) CreateUpdateOperation(_ context.Context, op UpdateOperation) error {
@@ -38,6 +45,7 @@ func (m *Memory) CreateUpdateOperation(_ context.Context, op UpdateOperation) er
 	if op.StartedAt.IsZero() {
 		op.StartedAt = time.Now().UTC()
 	}
+	op.Candidates = append([]UpdateCandidate(nil), op.Candidates...)
 	m.updateOps[op.ID] = op
 	return nil
 }
@@ -48,7 +56,7 @@ func (m *Memory) ListUpdateOperations(_ context.Context, clusterID string, limit
 	var out []UpdateOperation
 	for _, op := range m.updateOps {
 		if op.ClusterID == clusterID {
-			out = append(out, op)
+			out = append(out, cloneUpdateOperation(op))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -68,7 +76,7 @@ func (m *Memory) GetLatestUpdateOperation(_ context.Context, clusterID string) (
 		if op.ClusterID != clusterID {
 			continue
 		}
-		cp := op
+		cp := cloneUpdateOperation(op)
 		if latest == nil || cp.StartedAt.After(latest.StartedAt) {
 			latest = &cp
 		}
@@ -84,12 +92,18 @@ func (m *Memory) GetLatestCheckUpdateOperation(_ context.Context, clusterID stri
 		if op.ClusterID != clusterID || op.Action != "check" || strings.TrimSpace(op.Version) == "" {
 			continue
 		}
-		cp := op
+		cp := cloneUpdateOperation(op)
 		if latest == nil || cp.StartedAt.After(latest.StartedAt) || (cp.StartedAt.Equal(latest.StartedAt) && cp.ID < latest.ID) {
 			latest = &cp
 		}
 	}
 	return latest, nil
+}
+
+func cloneUpdateOperation(op UpdateOperation) UpdateOperation {
+	op.Packages = append([]string(nil), op.Packages...)
+	op.Candidates = append([]UpdateCandidate(nil), op.Candidates...)
+	return op
 }
 
 func (m *Memory) UpdateUpdateOperation(_ context.Context, op UpdateOperation) error {
@@ -99,6 +113,7 @@ func (m *Memory) UpdateUpdateOperation(_ context.Context, op UpdateOperation) er
 	if !ok || cur.ClusterID != op.ClusterID {
 		return fmt.Errorf("update operation not found")
 	}
+	op.Candidates = append([]UpdateCandidate(nil), op.Candidates...)
 	m.updateOps[op.ID] = op
 	return nil
 }

@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,9 +40,18 @@ jobs:
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
+          for existing_tag in $(git tag --list 'v[0-9]*' --sort=-version:refname); do
+            tagged_commit="$(git rev-list -n 1 "$existing_tag")"
+            if [ "$(git rev-parse "$tagged_commit^")" = "$GITHUB_SHA" ]; then
+              echo "tag=$existing_tag" >> "$GITHUB_OUTPUT"
+              echo "existing=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
           latest_tag="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)"
           tag="$(node scripts/release-version.mjs "$latest_tag" "$COMMIT_MESSAGE")"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "existing=false" >> "$GITHUB_OUTPUT"
       - name: Validate release versioning
         run: node --test scripts/release-version.test.mjs
       - name: Build Go services
@@ -56,7 +67,9 @@ jobs:
           pnpm test
           pnpm build
       - name: Install Debian packaging tools
-        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts dpkg-dev
+        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts dpkg-dev apt-utils
+      - name: Test signed APT upgrade path
+        run: packaging/release/test-apt-upgrade.sh
       - name: Stamp package version and build Debian packages
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
@@ -81,21 +94,87 @@ jobs:
         id: release_commit
         env:
           TAG: ${{ steps.version.outputs.tag }}
+          EXISTING_TAG: ${{ steps.version.outputs.existing }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add packaging/debian/changelog
-          git commit -m "chore(release): $TAG [skip ci]"
-          git tag "$TAG"
-          git push origin "refs/tags/$TAG"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Publish Alpha release
+          if [ "$EXISTING_TAG" = true ]; then
+            release_sha="$(git rev-list -n 1 "$TAG")"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add packaging/debian/changelog
+            git commit -m "chore(release): $TAG [skip ci]"
+            git tag "$TAG"
+            git push origin "refs/tags/$TAG"
+            release_sha=$(git rev-parse HEAD)
+          fi
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+      - name: Import persistent APT signing key
+        id: apt-key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          APT_SIGNING_KEY_PASSPHRASE: ${{ secrets.APT_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          if [ -z "$APT_SIGNING_KEY" ]; then
+            echo "Configure the APT_SIGNING_KEY and APT_SIGNING_KEY_PASSPHRASE repository secrets before releasing." >&2
+            exit 1
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/apt-gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s' "$APT_SIGNING_KEY" > "$RUNNER_TEMP/apt-signing-key.asc"
+          printf '%s' "$APT_SIGNING_KEY_PASSPHRASE" > "$RUNNER_TEMP/apt-signing-passphrase"
+          chmod 600 "$RUNNER_TEMP/apt-signing-key.asc" "$RUNNER_TEMP/apt-signing-passphrase"
+          gpg --batch --import "$RUNNER_TEMP/apt-signing-key.asc"
+          fingerprint="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test -n "$fingerprint"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+      - name: Publish versioned Alpha release assets
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.release_commit.outputs.sha }}
         run: |
           mapfile -t debs < "$RUNNER_TEMP/deb-artifacts.txt"
-          gh release create "$TAG" "${debs[@]}" \
-            --title "No-DAL CE $TAG (Alpha)" \
-            --notes "Alpha build from commit ${{ steps.release_commit.outputs.sha }}. Install support and current limitations are documented at https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/blob/main/docs/install.md." \
-            --prerelease
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${debs[@]}" --clobber
+          else
+            gh release create "$TAG" "${debs[@]}" \
+              --title "No-DAL CE $TAG (Alpha)" \
+              --notes "Alpha build from commit $RELEASE_SHA. Install support and current limitations are documented at https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/blob/main/docs/install.md." \
+              --prerelease
+          fi
+      - name: Collect retained package versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          package_dir="$RUNNER_TEMP/apt-debs"
+          mkdir -p "$package_dir"
+          mapfile -t current_debs < "$RUNNER_TEMP/deb-artifacts.txt"
+          for deb in "${current_debs[@]}"; do cp -n "$deb" "$package_dir/"; done
+          while IFS= read -r release_tag; do
+            [ -n "$release_tag" ] || continue
+            release_dir="$RUNNER_TEMP/release-assets/$release_tag"
+            mkdir -p "$release_dir"
+            if gh release download "$release_tag" --pattern '*.deb' --dir "$release_dir" >/dev/null 2>&1; then
+              find "$release_dir" -maxdepth 1 -type f -name '*.deb' -exec cp -n {} "$package_dir/" \;
+            fi
+          done < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          find "$package_dir" -maxdepth 1 -type f -name '*.deb' -print | sort
+      - name: Build signed APT site
+        env:
+          GNUPGHOME: ${{ runner.temp }}/apt-gnupg
+          APT_SIGNING_KEY_FINGERPRINT: ${{ steps.apt-key.outputs.fingerprint }}
+          APT_SIGNING_KEY_PASSPHRASE_FILE: ${{ runner.temp }}/apt-signing-passphrase
+          APT_PAGES_DOMAIN: packages.no-dal.com
+        run: packaging/release/build-apt-repo.sh "$RUNNER_TEMP/apt-debs" "$RUNNER_TEMP/apt-site"
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/apt-site
+      - name: Publish signed APT repository
+        id: pages
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 600000
+          error_count: 10

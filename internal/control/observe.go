@@ -14,17 +14,24 @@ import (
 )
 
 type observer struct {
-	Store      appdb.Store
-	Agent      agentrpc.Client
-	Hub        *httpapi.EventHub
-	Period     time.Duration
-	Nightly    func(context.Context)
-	Alerts     func(context.Context)
-	lastHealth map[string]time.Time
-	dockerFP   map[string]string
+	Store                   appdb.Store
+	Agent                   agentrpc.Client
+	Hub                     *httpapi.EventHub
+	Period                  time.Duration
+	Nightly                 func(context.Context)
+	Alerts                  func(context.Context)
+	UpdateCheck             func(context.Context) bool
+	UpdateCheckPeriod       time.Duration
+	UpdateCheckRetry        time.Duration
+	UpdateCheckInitialDelay time.Duration
+	lastHealth              map[string]time.Time
+	dockerFP                map[string]string
 }
 
 func (o observer) run(ctx context.Context) {
+	if o.UpdateCheck != nil {
+		go o.runUpdateChecks(ctx)
+	}
 	period := o.Period
 	if period <= 0 {
 		period = 15 * time.Second
@@ -128,6 +135,38 @@ func (o observer) run(ctx context.Context) {
 			return
 		case <-t.C:
 			tick()
+		}
+	}
+}
+
+func (o observer) runUpdateChecks(ctx context.Context) {
+	period := o.UpdateCheckPeriod
+	if period <= 0 {
+		period = 6 * time.Hour
+	}
+	retry := o.UpdateCheckRetry
+	if retry <= 0 {
+		retry = 15 * time.Minute
+	}
+	initial := o.UpdateCheckInitialDelay
+	if initial <= 0 {
+		initial = time.Minute
+	}
+	timer := time.NewTimer(initial)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			checkCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			succeeded := o.UpdateCheck(checkCtx)
+			cancel()
+			next := period
+			if !succeeded {
+				next = retry
+			}
+			timer.Reset(next)
 		}
 	}
 }

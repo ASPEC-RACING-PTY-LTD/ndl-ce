@@ -131,8 +131,18 @@ export function UpdatesPage() {
         }
       }
     })();
+    const statusPoll = window.setInterval(() => {
+      void getUpdates()
+        .then((next) => {
+          if (!cancelled) {
+            setStatus(next);
+          }
+        })
+        .catch(() => undefined);
+    }, 60_000);
     return () => {
       cancelled = true;
+      window.clearInterval(statusPoll);
     };
   }, []);
 
@@ -200,6 +210,7 @@ export function UpdatesPage() {
 
   const hostSupported = status?.host_supported === true;
   const actionsEnabled = mutate && hostSupported && !busy;
+  const updateCandidates = status?.last_check?.candidates ?? [];
 
   return (
     <section className="page page-wide" aria-labelledby="updates-heading">
@@ -233,6 +244,14 @@ export function UpdatesPage() {
       {loadState === "unavailable" && !error ? (
         <p className="banner banner-error" role="alert">
           Unavailable
+        </p>
+      ) : null}
+
+      {updateCandidates.length > 0 ? (
+        <p className="banner banner-warn" role="status">
+          Platform updates are available: {updateCandidates
+            .map((candidate) => `${candidate.name} ${candidate.current_version} to ${candidate.candidate_version}`)
+            .join(", ")}. Review the preview and apply manually when ready.
         </p>
       ) : null}
 

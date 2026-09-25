@@ -1,11 +1,35 @@
 package appdb
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+func TestUpdateOperationCandidatesAreCopied(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	candidate := UpdateCandidate{Name: "nodal", CurrentVersion: "1.0.1", CandidateVersion: "1.0.2"}
+	op := UpdateOperation{
+		ID: "check-1", ClusterID: "cluster-1", Action: "check", Status: UpdateSucceeded,
+		Version: "1.0.1", Candidates: []UpdateCandidate{candidate}, StartedAt: time.Now().UTC(),
+	}
+	if err := m.CreateUpdateOperation(ctx, op); err != nil {
+		t.Fatal(err)
+	}
+	op.Candidates[0].CandidateVersion = "mutated"
+	got, err := m.GetLatestCheckUpdateOperation(ctx, "cluster-1")
+	if err != nil || got == nil || got.Candidates[0].CandidateVersion != "1.0.2" {
+		t.Fatalf("stored candidate changed through caller slice: %+v %v", got, err)
+	}
+	got.Candidates[0].CandidateVersion = "mutated result"
+	again, err := m.GetLatestCheckUpdateOperation(ctx, "cluster-1")
+	if err != nil || again == nil || again.Candidates[0].CandidateVersion != "1.0.2" {
+		t.Fatalf("stored candidate changed through result slice: %+v %v", again, err)
+	}
+}
 
 func TestMemoryGetLatestCheckUpdateOperationIgnoresNewerOtherActions(t *testing.T) {
 	m := NewMemory()

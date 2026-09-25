@@ -1196,6 +1196,15 @@ describe("App", () => {
             { name: "ndl-agent", version: "0.1.10", status: "current" },
             { name: "ndl-ui", version: "0.1.10", status: "current" },
           ],
+          last_check: {
+            id: "check-1",
+            action: "check",
+            status: "succeeded",
+            dry_run: true,
+            started_at: "2026-09-26T00:00:00Z",
+            version: "1.0.1",
+            candidates: [{ name: "nodal", current_version: "1.0.1", candidate_version: "1.0.2" }],
+          },
         },
       },
     });
@@ -1211,6 +1220,7 @@ describe("App", () => {
     expect(await screen.findByText("ndl-control")).toBeVisible();
     expect(screen.getByRole("button", { name: /^check for updates$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^apply update$/i })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(/nodal 1\.0\.1 to 1\.0\.2/i);
   });
 
   it("shows Unsupported host honestly on /settings/updates", async () => {

@@ -186,7 +186,11 @@ func Run(cfg Config) error {
 	if enabled {
 		srv.TLSRequired = true
 	}
-	go observer{Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups, Alerts: srv.TickAlerts, lastHealth: map[string]time.Time{}, dockerFP: map[string]string{}}.run(runCtx)
+	go observer{
+		Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups,
+		Alerts: srv.TickAlerts, UpdateCheck: srv.TickUpdateCheck,
+		lastHealth: map[string]time.Time{}, dockerFP: map[string]string{},
+	}.run(runCtx)
 	handler := srv.Handler()
 	instances, err := controlHTTPInstances(cfg, srv, handler, challenges)
 	if err != nil {

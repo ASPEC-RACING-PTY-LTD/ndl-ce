@@ -11335,6 +11335,26 @@ components:
             - unsupported
             - not_configured
             - not_reported
+    UpdateCandidate:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - current_version
+        - candidate_version
+      properties:
+        name:
+          type: string
+          enum:
+            - ndl-control
+            - ndl-agent
+            - ndl-ui
+            - nodal
+            - nodalctl
+        current_version:
+          type: string
+        candidate_version:
+          type: string
     UpdateOperation:
       type: object
       additionalProperties: false
@@ -11366,6 +11386,8 @@ components:
           type: boolean
         error:
           type: string
+        version:
+          type: string
         started_at:
           type: string
         finished_at:
@@ -11381,6 +11403,10 @@ components:
               - nodal
               - nodalctl
           description: Control-plane package names only. Never package-manager verbs.
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdateCandidate"
     UpdateStatus:
       type: object
       additionalProperties: false
@@ -11403,6 +11429,8 @@ components:
           items:
             $ref: "#/components/schemas/UpdatePackage"
         last_operation:
+          $ref: "#/components/schemas/UpdateOperation"
+        last_check:
           $ref: "#/components/schemas/UpdateOperation"
     UpdatePreviewItem:
       type: object

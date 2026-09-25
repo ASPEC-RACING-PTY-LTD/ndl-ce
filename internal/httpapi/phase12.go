@@ -3,9 +3,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -60,6 +60,9 @@ func updateOperationJSON(op appdb.UpdateOperation) map[string]any {
 	if op.Error != "" {
 		out["error"] = op.Error
 	}
+	if op.Version != "" {
+		out["version"] = op.Version
+	}
 	if op.FinishedAt != nil {
 		out["finished_at"] = op.FinishedAt.UTC().Format("2006-01-02T15:04:05Z")
 	}
@@ -78,6 +81,25 @@ func updateOperationJSON(op appdb.UpdateOperation) map[string]any {
 	}
 	if len(pkgs) > 0 {
 		out["packages"] = pkgs
+	}
+	candidates := make([]map[string]string, 0, len(op.Candidates))
+	for _, candidate := range op.Candidates {
+		allowed := false
+		for _, name := range hostos.PackageNames {
+			if name == candidate.Name {
+				allowed = true
+				break
+			}
+		}
+		if allowed && candidate.CandidateVersion != "" {
+			candidates = append(candidates, map[string]string{
+				"name": candidate.Name, "current_version": candidate.CurrentVersion,
+				"candidate_version": candidate.CandidateVersion,
+			})
+		}
+	}
+	if len(candidates) > 0 {
+		out["candidates"] = candidates
 	}
 	return out
 }
@@ -107,6 +129,9 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 	if last, err := s.Store.GetLatestUpdateOperation(r.Context(), p.User.ClusterID); err == nil && last != nil {
 		body["last_operation"] = updateOperationJSON(*last)
+	}
+	if lastCheck, err := s.Store.GetLatestCheckUpdateOperation(r.Context(), p.User.ClusterID); err == nil && lastCheck != nil {
+		body["last_check"] = updateOperationJSON(*lastCheck)
 	}
 	writeJSON(w, http.StatusOK, body)
 }
@@ -261,10 +286,46 @@ func (s *Server) recordedControlVersion(ctx context.Context, clusterID string) s
 }
 
 func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation, error) {
+	res, op, err := s.runUpdateOperation(r.Context(), p.User.ClusterID, req)
+	if err != nil {
+		return res, op, err
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "update."+req.Action, op.Status, op.ID)
+	return res, op, nil
+}
+
+func (s *Server) TickUpdateCheck(ctx context.Context) bool {
+	if !s.updateCheckBusy.CompareAndSwap(false, true) {
+		return false
+	}
+	defer s.updateCheckBusy.Store(false)
+	cluster, err := s.Store.GetCluster(ctx)
+	if err != nil || cluster == nil || cluster.SetupCompletedAt == nil {
+		return false
+	}
+	_, op, err := s.runUpdateOperation(ctx, cluster.ID, hostos.UpdateRequest{
+		Action: "check", Channel: hostos.ChannelStable, DryRun: true,
+	})
+	if err != nil {
+		log.Printf("background update check: %v", err)
+		return false
+	}
+	return op.Status == appdb.UpdateSucceeded
+}
+
+func (s *Server) runUpdateOperation(ctx context.Context, clusterID string, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation, error) {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	var previousCandidates []appdb.UpdateCandidate
+	if req.Action == "check" {
+		if previous, err := s.Store.GetLatestCheckUpdateOperation(ctx, clusterID); err == nil && previous != nil {
+			previousCandidates = append(previousCandidates, previous.Candidates...)
+		}
+	}
 	now := s.now()
 	op := appdb.UpdateOperation{
 		ID:        uuid.NewString(),
-		ClusterID: p.User.ClusterID,
+		ClusterID: clusterID,
 		Action:    req.Action,
 		Status:    appdb.UpdateRunning,
 		DryRun:    req.DryRun,
@@ -278,10 +339,10 @@ func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateReq
 		op.Packages = []string{"ndl-control"}
 		op.Version = req.Version
 	}
-	if err := s.Store.CreateUpdateOperation(r.Context(), op); err != nil {
+	if err := s.Store.CreateUpdateOperation(ctx, op); err != nil {
 		return hostos.UpdateResult{}, op, errInternal("could not record update operation")
 	}
-	res, err := s.updater().HostUpdate(r.Context(), req)
+	res, err := s.updater().HostUpdate(ctx, req)
 	finished := s.now()
 	op.FinishedAt = &finished
 	if err != nil {
@@ -303,26 +364,68 @@ func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateReq
 	if req.Action == "check" {
 		op.DryRun = true
 		names := make([]string, 0, len(res.Packages))
-		for _, pkg := range res.Packages {
-			names = append(names, pkg.Name)
+		for _, item := range res.Items {
+			if item.Action == "upgrade" && item.CandidateVersion != "" && item.CandidateVersion != item.CurrentVersion {
+				names = append(names, item.Name)
+				op.Candidates = append(op.Candidates, appdb.UpdateCandidate{
+					Name: item.Name, CurrentVersion: item.CurrentVersion, CandidateVersion: item.CandidateVersion,
+				})
+			}
 		}
-		if len(names) > 0 {
-			op.Packages = names
-		}
+		op.Packages = names
 	}
-	if err := s.Store.UpdateUpdateOperation(r.Context(), op); err != nil {
+	if err := s.Store.UpdateUpdateOperation(ctx, op); err != nil {
 		return res, op, errInternal("could not record update operation")
 	}
-	got, gerr := s.Store.GetLatestUpdateOperation(r.Context(), p.User.ClusterID)
+	got, gerr := s.Store.GetLatestUpdateOperation(ctx, clusterID)
 	if gerr != nil || got == nil || got.ID != op.ID || got.Status != op.Status {
 		return res, op, errInternal("could not record update operation")
 	}
 	op = *got
-	s.audit(r, p.User.ClusterID, p.User.ID, "update."+req.Action, op.Status, op.ID)
-	payload, _ := json.Marshal(map[string]string{"status": op.Status})
-	_ = s.Store.InsertEvent(r.Context(), appdb.Event{
-		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Type: "update." + req.Action,
-		Payload: payload, CreatedAt: time.Now().UTC(),
-	})
+	if req.Action == "check" {
+		s.emitUpdateEvent(ctx, clusterID, "update.check", map[string]any{"status": op.Status})
+		if op.Status == appdb.UpdateSucceeded && !sameUpdateCandidates(previousCandidates, op.Candidates) {
+			switch {
+			case len(op.Candidates) > 0:
+				payload, _ := json.Marshal(map[string]any{"candidates": op.Candidates})
+				s.emitUpdatePayload(ctx, clusterID, "update.available", payload)
+				s.notify(ctx, clusterID, payload)
+			case len(previousCandidates) > 0:
+				s.emitUpdateEvent(ctx, clusterID, "update.current", map[string]any{})
+			}
+		}
+	} else {
+		s.emitUpdateEvent(ctx, clusterID, "update."+req.Action, map[string]any{"status": op.Status})
+	}
 	return res, op, nil
+}
+
+func sameUpdateCandidates(left, right []appdb.UpdateCandidate) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) emitUpdateEvent(ctx context.Context, clusterID, eventType string, payload any) {
+	body, _ := json.Marshal(payload)
+	s.emitUpdatePayload(ctx, clusterID, eventType, body)
+}
+
+func (s *Server) emitUpdatePayload(ctx context.Context, clusterID, eventType string, payload []byte) {
+	event := appdb.Event{
+		ID: uuid.NewString(), ClusterID: clusterID, Type: eventType, Payload: payload, CreatedAt: s.now(),
+	}
+	if err := s.Store.InsertEvent(ctx, event); err != nil {
+		log.Printf("update event %s: %v", eventType, err)
+		return
+	}
+	if s.Hub != nil {
+		s.Hub.Publish(event)
+	}
 }

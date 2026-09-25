@@ -22,10 +22,14 @@ type fakeUpdate struct {
 	supported bool
 	reason    string
 	calls     []hostos.UpdateRequest
+	result    *hostos.UpdateResult
 }
 
 func (f *fakeUpdate) HostUpdate(_ context.Context, req hostos.UpdateRequest) (hostos.UpdateResult, error) {
 	f.calls = append(f.calls, req)
+	if f.result != nil {
+		return *f.result, nil
+	}
 	if !f.supported {
 		reason := f.reason
 		if reason == "" {
@@ -37,22 +41,97 @@ func (f *fakeUpdate) HostUpdate(_ context.Context, req hostos.UpdateRequest) (ho
 	return hostos.RunUpdate(context.Background(), p, req, nil)
 }
 
+func TestBackgroundUpdateCheckPersistsCandidatesAndNotifiesOnTransitions(t *testing.T) {
+	s, mem, token := testServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	claimAdmin(t, ts, token)
+	cluster, err := mem.GetCluster(context.Background())
+	if err != nil || cluster == nil {
+		t.Fatalf("cluster: %+v %v", cluster, err)
+	}
+	candidate := appdb.UpdateCandidate{Name: "nodal", CurrentVersion: "1.0.1", CandidateVersion: "1.0.2"}
+	fake := &fakeUpdate{result: &hostos.UpdateResult{
+		Supported: true,
+		Status:    appdb.UpdateSucceeded,
+		Version:   "1.0.1",
+		Items: []hostos.PreviewItem{{
+			Name: candidate.Name, CurrentVersion: candidate.CurrentVersion,
+			CandidateVersion: candidate.CandidateVersion, Action: "upgrade",
+		}},
+	}}
+	s.Update = fake
+
+	s.TickUpdateCheck(context.Background())
+	check, err := mem.GetLatestCheckUpdateOperation(context.Background(), cluster.ID)
+	if err != nil || check == nil || len(check.Candidates) != 1 || check.Candidates[0] != candidate {
+		t.Fatalf("scheduled candidate not persisted: %+v %v", check, err)
+	}
+	if check.Version != "1.0.1" {
+		t.Fatalf("installed version used by rollback was changed: %+v", check)
+	}
+	assertUpdateEventCount(t, mem, cluster.ID, "update.available", 1)
+
+	s.TickUpdateCheck(context.Background())
+	assertUpdateEventCount(t, mem, cluster.ID, "update.available", 1)
+
+	fake.result = &hostos.UpdateResult{Supported: true, Status: appdb.UpdateSucceeded, Version: "1.0.2"}
+	s.TickUpdateCheck(context.Background())
+	assertUpdateEventCount(t, mem, cluster.ID, "update.current", 1)
+}
+
+func assertUpdateEventCount(t *testing.T, mem *appdb.Memory, clusterID, eventType string, want int) {
+	t.Helper()
+	events, err := mem.ListEvents(context.Background(), clusterID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range events {
+		if event.Type == eventType {
+			count++
+		}
+	}
+	if count != want {
+		t.Fatalf("%s count=%d, want %d (events=%+v)", eventType, count, want, events)
+	}
+}
+
 func TestUpdatesGetUsesStatusNotCheck(t *testing.T) {
-	s, _, token := testServer(t)
+	s, mem, token := testServer(t)
 	fu := &fakeUpdate{}
 	s.Update = fu
+	cluster, err := mem.GetCluster(context.Background())
+	if err != nil || cluster == nil {
+		t.Fatalf("cluster: %+v %v", cluster, err)
+	}
+	if err := mem.CreateUpdateOperation(context.Background(), appdb.UpdateOperation{
+		ID: uuid.NewString(), ClusterID: cluster.ID, Action: "check", Status: appdb.UpdateSucceeded,
+		Version: "1.0.1", Candidates: []appdb.UpdateCandidate{{
+			Name: "nodal", CurrentVersion: "1.0.1", CandidateVersion: "1.0.2",
+		}}, StartedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, _ := ts.Client().Do(req)
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("%d", res.StatusCode)
+		t.Fatalf("%d %s", res.StatusCode, body)
 	}
 	if len(fu.calls) != 1 || fu.calls[0].Action != "status" {
 		t.Fatalf("GET must not refresh package indexes: %+v", fu.calls)
+	}
+	if !strings.Contains(string(body), `"last_check"`) || !strings.Contains(string(body), `"candidate_version":"1.0.2"`) {
+		t.Fatalf("GET omitted persisted update candidates: %s", body)
 	}
 }
 

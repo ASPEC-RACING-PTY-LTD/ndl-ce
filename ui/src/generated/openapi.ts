@@ -1678,9 +1678,17 @@ export interface UpdateOperation {
   status: "running" | "succeeded" | "failed" | "unsupported";
   dry_run: boolean;
   error?: string;
+  version?: string;
   started_at: string;
   finished_at?: string;
   packages?: ("ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl")[];
+  candidates?: UpdateCandidate[];
+}
+
+export interface UpdateCandidate {
+  name: "ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl";
+  current_version: string;
+  candidate_version: string;
 }
 
 export interface UpdateStatus {
@@ -1689,6 +1697,7 @@ export interface UpdateStatus {
   host_reason: string;
   packages: UpdatePackage[];
   last_operation?: UpdateOperation;
+  last_check?: UpdateOperation;
 }
 
 export interface UpdatePreviewItem {

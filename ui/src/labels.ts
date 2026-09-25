@@ -153,6 +153,12 @@ export function taskKindLabel(kind?: string): string {
 }
 
 export function eventTypeLabel(type?: string): string {
+  if (type === "update.available") {
+    return "Platform updates available";
+  }
+  if (type === "update.current") {
+    return "Platform is up to date";
+  }
   return taskKindLabel(type);
 }
 

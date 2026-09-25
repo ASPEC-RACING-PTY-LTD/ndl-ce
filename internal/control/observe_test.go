@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -42,5 +43,40 @@ func TestSparseInventory(t *testing.T) {
 		CPU: inventory.CPU{Status: inventory.StatusAvailable, Model: "x"},
 	}) {
 		t.Fatal("cpu available is not sparse")
+	}
+}
+
+func TestUpdateChecksRetryUnavailableThenUseRegularInterval(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	results := make(chan bool, 2)
+	done := make(chan struct{})
+	calls := 0
+	o := observer{
+		UpdateCheckInitialDelay: time.Millisecond,
+		UpdateCheckRetry:        time.Millisecond,
+		UpdateCheckPeriod:       time.Hour,
+		UpdateCheck: func(context.Context) bool {
+			calls++
+			ok := calls > 1
+			results <- ok
+			return ok
+		},
+	}
+	go func() {
+		o.runUpdateChecks(ctx)
+		close(done)
+	}()
+	if first := <-results; first {
+		t.Fatal("first check should simulate the unavailable agent")
+	}
+	if second := <-results; !second {
+		t.Fatal("retry should recover and report success")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("update check loop did not stop after cancellation")
 	}
 }

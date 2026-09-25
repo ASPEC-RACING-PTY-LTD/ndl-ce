@@ -21,6 +21,8 @@ describe("humanize", () => {
   it("uses a resource name in the event headline when present", () => {
     expect(eventHeadline("workload.started", { name: "web-01" })).toBe("Workload Started · web-01");
     expect(eventHeadline("node.stale")).toBe("Node Stale");
+    expect(eventHeadline("update.available")).toBe("Platform updates available");
+    expect(eventHeadline("update.current")).toBe("Platform is up to date");
   });
 
   it("maps task kinds to operator intent with real names", () => {
