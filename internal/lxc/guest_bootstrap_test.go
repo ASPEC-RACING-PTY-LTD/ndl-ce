@@ -90,3 +90,34 @@ func TestBootstrapAlpineWritesResolvFallbackWhenUnreachable(t *testing.T) {
 		t.Fatalf("resolv fallback: %s", body)
 	}
 }
+
+func TestBootstrapReconcileSkipsPackageProvisioning(t *testing.T) {
+	e := &Engine{DataDir: t.TempDir()}
+	id := uuid.NewString()
+	root := filepath.Join(e.DataDir, "rootfs")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.writeApplied(Spec{
+		WorkloadID: id, Name: "reconcile", ImagePin: "imported", SkipImage: true, RootfsPath: root,
+	}, true, "abc"); err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	e.Run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		command := name + " " + strings.Join(args, " ")
+		commands = append(commands, command)
+		if strings.Contains(command, "getent hosts") {
+			return []byte("192.0.2.1 example\n"), nil
+		}
+		return nil, fmt.Errorf("unexpected command: %s", command)
+	}
+	if err := e.bootstrapGuest(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range commands {
+		if strings.Contains(command, "apt-get") {
+			t.Fatalf("reconcile must not provision packages: %s", command)
+		}
+	}
+}

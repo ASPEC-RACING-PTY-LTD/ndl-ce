@@ -63,9 +63,11 @@ func (e *Engine) bootstrapGuest(ctx context.Context, id string, reconcileOnly bo
 			return err
 		}
 	}
-	if err := e.ensureGuestPackages(ctx, id, rootfs, spec, first); err != nil {
-		if first && !reconcileOnly {
-			return err
+	if !reconcileOnly {
+		if err := e.ensureGuestPackages(ctx, id, rootfs, spec, first); err != nil {
+			if first {
+				return err
+			}
 		}
 	}
 	if err := ensureGuestConsole(rootfs); err != nil {
