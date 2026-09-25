@@ -10,6 +10,81 @@ import (
 	"time"
 )
 
+// ManifestSummary contains the fields needed for status views without
+// retaining the manifest's potentially large file and chunk lists.
+type ManifestSummary struct {
+	CaptureMode     string
+	Consistency     string
+	LogicalBytes    int64
+	PhysicalNewData int64
+}
+
+type manifestSummaryCacheEntry struct {
+	size    int64
+	modTime int64
+	summary ManifestSummary
+}
+
+// LoadManifestSummary reads and authenticates the status fields of a manifest.
+// An unchanged manifest is read and parsed once per repository process.
+func (r *Repository) LoadManifestSummary(namespace, backupID string) (ManifestSummary, error) {
+	path := filepath.Join(r.root, "snapshots", namespace, backupID+".snap")
+	info, err := os.Stat(path)
+	if err != nil {
+		return ManifestSummary{}, err
+	}
+
+	r.manifestMu.Lock()
+	defer r.manifestMu.Unlock()
+	if cached, ok := r.manifestCache[path]; ok && cached.size == info.Size() && cached.modTime == info.ModTime().UnixNano() {
+		return cached.summary, nil
+	}
+
+	readFile := r.manifestRead
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
+	raw, err := readFile(path)
+	if err != nil {
+		return ManifestSummary{}, err
+	}
+	plain, err := r.keys.OpenBytes("manifest:"+namespace, raw)
+	if err != nil {
+		return ManifestSummary{}, fmt.Errorf("manifest failed authentication: %w", err)
+	}
+	var decoded struct {
+		RepoVersion    int    `json:"repo_version"`
+		ChunkAlgorithm string `json:"chunk_algorithm"`
+		Consistency    string `json:"consistency"`
+		Blueprint      struct {
+			CaptureMode string `json:"capture_mode"`
+		} `json:"blueprint"`
+		Stats struct {
+			LogicalBytes    int64 `json:"logical_bytes"`
+			PhysicalNewData int64 `json:"physical_new_data"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(plain, &decoded); err != nil {
+		return ManifestSummary{}, err
+	}
+	if decoded.RepoVersion != RepoVersion {
+		return ManifestSummary{}, fmt.Errorf("unsupported repository version %d", decoded.RepoVersion)
+	}
+	if decoded.ChunkAlgorithm != ChunkAlgorithm {
+		return ManifestSummary{}, fmt.Errorf("unsupported chunk algorithm %q", decoded.ChunkAlgorithm)
+	}
+	summary := ManifestSummary{
+		CaptureMode:     decoded.Blueprint.CaptureMode,
+		Consistency:     decoded.Consistency,
+		LogicalBytes:    decoded.Stats.LogicalBytes,
+		PhysicalNewData: decoded.Stats.PhysicalNewData,
+	}
+	r.manifestCache[path] = manifestSummaryCacheEntry{
+		size: info.Size(), modTime: info.ModTime().UnixNano(), summary: summary,
+	}
+	return summary, nil
+}
+
 // LoadManifest reads and authenticates one restore point's manifest.
 func (r *Repository) LoadManifest(namespace, backupID string) (*Manifest, error) {
 	raw, err := os.ReadFile(filepath.Join(r.root, "snapshots", namespace, backupID+".snap"))

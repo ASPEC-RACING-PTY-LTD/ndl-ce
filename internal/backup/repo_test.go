@@ -1,6 +1,9 @@
 package backup
 
 import (
+	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -62,5 +65,55 @@ func TestRepositoryDedupAndIndexRebuild(t *testing.T) {
 	isNew3, err := pw2.add(id, sealed)
 	if err != nil || isNew3 {
 		t.Fatalf("already-stored chunk must dedup across sessions: new=%v err=%v", isNew3, err)
+	}
+}
+
+func TestManifestSummaryCachesUnchangedManifestAndInvalidatesWrites(t *testing.T) {
+	repo, err := OpenRepository(t.TempDir(), testKeys(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := &Manifest{
+		Kind: "ndl-manifest", RepoVersion: RepoVersion, ChunkAlgorithm: ChunkAlgorithm,
+		BackupID: "backup-1", Namespace: "namespace", Consistency: ConsistencyCrash,
+		Blueprint: Blueprint{CaptureMode: CaptureModeFull},
+		Stats:     CaptureStats{LogicalBytes: 10, PhysicalNewData: 4},
+	}
+	if err := repo.writeManifest(manifest); err != nil {
+		t.Fatal(err)
+	}
+	var reads atomic.Int32
+	repo.manifestRead = func(path string) ([]byte, error) {
+		reads.Add(1)
+		return os.ReadFile(path)
+	}
+
+	const callers = 8
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := repo.LoadManifestSummary("namespace", "backup-1")
+			if err != nil || got.LogicalBytes != 10 {
+				t.Errorf("summary=%+v err=%v", got, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("unchanged manifest read %d times, want 1", got)
+	}
+
+	manifest.Stats.LogicalBytes = 20
+	if err := repo.writeManifest(manifest); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.LoadManifestSummary("namespace", "backup-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LogicalBytes != 20 || reads.Load() != 2 {
+		t.Fatalf("updated summary=%+v reads=%d", got, reads.Load())
 	}
 }

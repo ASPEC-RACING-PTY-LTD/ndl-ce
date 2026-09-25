@@ -313,11 +313,11 @@ func (h *Host) status(_ Request) (Result, error) {
 	for _, s := range states {
 		mode, consistency := "", ""
 		var logical, physical int64
-		if man, err := h.repo.LoadManifest(s.Namespace, s.BackupID); err == nil {
-			mode = man.Blueprint.CaptureMode
-			consistency = man.Consistency
-			logical = man.Stats.LogicalBytes
-			physical = man.Stats.PhysicalNewData
+		if summary, err := h.repo.LoadManifestSummary(s.Namespace, s.BackupID); err == nil {
+			mode = summary.CaptureMode
+			consistency = summary.Consistency
+			logical = summary.LogicalBytes
+			physical = summary.PhysicalNewData
 		}
 		points = append(points, PointView{
 			BackupID: s.BackupID, Namespace: s.Namespace, WorkloadID: s.WorkloadID,

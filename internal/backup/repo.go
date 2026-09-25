@@ -45,6 +45,10 @@ type Repository struct {
 	mu    sync.RWMutex
 	index map[KeyID]location
 
+	manifestMu    sync.Mutex
+	manifestCache map[string]manifestSummaryCacheEntry
+	manifestRead  func(string) ([]byte, error)
+
 	capture sync.RWMutex
 }
 
@@ -62,7 +66,10 @@ func OpenRepository(root string, keys *Keys) (*Repository, error) {
 			return nil, err
 		}
 	}
-	r := &Repository{root: root, keys: keys, index: map[KeyID]location{}}
+	r := &Repository{
+		root: root, keys: keys, index: map[KeyID]location{},
+		manifestCache: map[string]manifestSummaryCacheEntry{},
+	}
 	if err := r.rebuildIndex(); err != nil {
 		return nil, err
 	}
@@ -73,6 +80,13 @@ func (r *Repository) packDir() string { return filepath.Join(r.root, "packs") }
 
 // Keys returns the repository keyring. Callers must not log or serialize it.
 func (r *Repository) Keys() *Keys { return r.keys }
+
+func (r *Repository) invalidateManifest(namespace, backupID string) {
+	path := filepath.Join(r.root, "snapshots", namespace, backupID+".snap")
+	r.manifestMu.Lock()
+	delete(r.manifestCache, path)
+	r.manifestMu.Unlock()
+}
 
 // rebuildIndex scans pack sidecars. A .pack without a committed .idx is an
 // interrupted write and is removed so it cannot corrupt the repository.

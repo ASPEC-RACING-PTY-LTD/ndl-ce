@@ -470,7 +470,11 @@ func (r *Repository) writeManifest(m *Manifest) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(dir, m.BackupID+".snap"), sealed)
+	if err := writeFileAtomic(filepath.Join(dir, m.BackupID+".snap"), sealed); err != nil {
+		return err
+	}
+	r.invalidateManifest(m.Namespace, m.BackupID)
+	return nil
 }
 
 func (r *Repository) writeState(s *PointState) error {

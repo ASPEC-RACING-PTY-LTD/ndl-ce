@@ -87,6 +87,7 @@ func itoa(n int) string {
 func (r *Repository) DeleteRestorePoint(namespace, backupID string) error {
 	dir := filepath.Join(r.root, "snapshots", namespace)
 	_ = os.Remove(filepath.Join(dir, backupID+".snap"))
+	r.invalidateManifest(namespace, backupID)
 	return os.Remove(filepath.Join(dir, backupID+".state"))
 }
 
