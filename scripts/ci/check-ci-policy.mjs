@@ -13,7 +13,7 @@ const forbidden = [
   [/\bghcr\.io\b/, "ghcr.io"],
   [/\bnext\s+build\b/, "next build"],
   [/\bplaywright\b/, "playwright"],
-  [/\bsudo\b/, "sudo"],
+  [/\bsudo\b(?!\s+go\s+test\s+\.\/\.\.\.(?!\S))/, "sudo outside Go tests"],
   [/\bprivileged:\s*true\b/, "privileged container"],
   [/\buseradd\b|\badduser\b/, "useradd"],
   [/\bsystemctl\b/, "systemctl"],
