@@ -96,11 +96,11 @@ type GameBackup struct {
 }
 
 type GameContent struct {
-	ID         string
-	ServerID   string
-	Body       []byte
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID        string
+	ServerID  string
+	Body      []byte
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type GameContentProfile struct {

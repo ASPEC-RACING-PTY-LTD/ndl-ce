@@ -280,8 +280,8 @@ func TestEngineDeleteResetsFailedUnit(t *testing.T) {
 	id := uuid.NewString()
 	var got []string
 	e := &Engine{
-		DataDir:  t.TempDir(),
-		Runtime:  &FakeRuntime{},
+		DataDir:      t.TempDir(),
+		Runtime:      &FakeRuntime{},
 		SkipHostCmds: false,
 		Run: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			got = append(got, name+" "+strings.Join(args, " "))
