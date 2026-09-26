@@ -261,9 +261,7 @@ func TestMountLoopExt4AcceptsLoopAndRejectsNouuid(t *testing.T) {
 	}
 	if out, err := exec.Command(BinMount, "-o", "loop,nouuid", img, mnt).CombinedOutput(); err == nil {
 		_ = exec.Command(BinUmount, mnt).Run()
-		t.Fatal("ext4 must reject nouuid")
-	} else if !strings.Contains(string(out), "nouuid") && !strings.Contains(string(out), "Unknown parameter") {
-		t.Fatalf("unexpected nouuid failure: %s %v", out, err)
+		t.Fatalf("ext4 must reject nouuid; mount output: %s", out)
 	}
 	argv, err := MountLoopArgv(img, mnt)
 	if err != nil {
