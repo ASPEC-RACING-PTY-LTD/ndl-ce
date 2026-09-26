@@ -61,8 +61,16 @@ Debug::NoLocking "true";
 EOF
 
 apt_options=(-c "$apt_root/apt.conf")
+download_apt_package() {
+  local package=$1
+  (
+    cd "$apt_root/archives"
+    apt-get "${apt_options[@]}" download "$package"
+  )
+}
 apt-get "${apt_options[@]}" update
 apt-get "${apt_options[@]}" --yes --download-only install nodal=1.0.1
+download_apt_package nodal=1.0.1
 old_deb="$apt_root/archives/nodal_1.0.1_all.deb"
 test -f "$old_deb" || { echo "APT did not cache the downloaded package at $old_deb" >&2; exit 1; }
 dpkg --root="$install_root" --install "$old_deb"
@@ -74,6 +82,7 @@ gpg --batch --yes --dearmor --output "$tmp/repository-keyring.gpg" "$site_dir/gp
 gpgv --keyring "$tmp/repository-keyring.gpg" "$site_dir/debian/dists/trixie/InRelease"
 apt-get "${apt_options[@]}" update
 apt-get "${apt_options[@]}" --yes --download-only install nodal
+download_apt_package nodal
 new_deb="$apt_root/archives/nodal_1.0.2_all.deb"
 test -f "$new_deb" || { echo "APT did not cache the downloaded package at $new_deb" >&2; exit 1; }
 dpkg --root="$install_root" --install "$new_deb"
