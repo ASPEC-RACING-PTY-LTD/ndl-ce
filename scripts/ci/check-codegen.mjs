@@ -17,7 +17,9 @@ function listTree(dir) {
 }
 
 function snapshot(files) {
-  return files.map((f) => `${f}\n${readFileSync(f, "utf8")}`).join("\n--\n");
+  return files
+    .map((f) => `${f}\n${readFileSync(f, "utf8").replace(/\r\n/g, "\n")}`)
+    .join("\n--\n");
 }
 
 const openAPIFiles = ["ui/src/generated/openapi.ts"];

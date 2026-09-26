@@ -253,7 +253,7 @@ describe("Docker page", () => {
   });
 
   it("pins docker column tracks in CSS so names cannot shift the grid", () => {
-    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../styles.css"), "utf8");
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../styles.css"), "utf8").replace(/\r\n/g, "\n");
     expect(css).toContain("table-layout: fixed");
     expect(css).toContain(".docker-table .docker-col-service");
     expect(css).toContain(".docker-table .docker-col-status");

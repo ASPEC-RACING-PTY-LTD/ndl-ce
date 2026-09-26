@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const server = readFileSync("internal/httpapi/server.go", "utf8");
-const yaml = readFileSync("api/openapi/nodal.v1.yaml", "utf8");
+const yaml = readFileSync("api/openapi/nodal.v1.yaml", "utf8").replace(/\r\n/g, "\n");
 
 const mux = new Set();
 for (const m of server.matchAll(/mux\.HandleFunc\("([A-Z]+) (\/api\/v1\/[^"]+)"/g)) {
