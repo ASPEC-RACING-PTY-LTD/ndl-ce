@@ -38,7 +38,7 @@ EOF
 }
 
 make_test_deb 1.0.1
-"$src/packaging/release/build-apt-repo.sh" "$deb_dir" "$site_dir"
+bash "$src/packaging/release/build-apt-repo.sh" "$deb_dir" "$site_dir"
 gpg --batch --dearmor --output "$tmp/repository-keyring.gpg" "$site_dir/gpg"
 gpgv --keyring "$tmp/repository-keyring.gpg" "$site_dir/debian/dists/trixie/InRelease"
 
@@ -69,7 +69,7 @@ dpkg --root="$install_root" --install "$old_deb"
 test "$(dpkg-query --root="$install_root" -W -f='${Version}' nodal)" = 1.0.1
 
 make_test_deb 1.0.2
-"$src/packaging/release/build-apt-repo.sh" "$deb_dir" "$site_dir"
+bash "$src/packaging/release/build-apt-repo.sh" "$deb_dir" "$site_dir"
 gpg --batch --yes --dearmor --output "$tmp/repository-keyring.gpg" "$site_dir/gpg"
 gpgv --keyring "$tmp/repository-keyring.gpg" "$site_dir/debian/dists/trixie/InRelease"
 apt-get "${apt_options[@]}" update
