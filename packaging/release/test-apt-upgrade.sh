@@ -55,7 +55,7 @@ Dir::Etc::sourcelist "$apt_root/sources.list";
 Dir::Etc::sourceparts "-";
 Dir::State::status "$install_root/var/lib/dpkg/status";
 Dir::State::lists "$apt_root/lists";
-Dir::Cache::archives "$apt_root/archives";
+Dir::Cache::archives "$apt_root/archives/";
 APT::Architecture "amd64";
 Debug::NoLocking "true";
 EOF
@@ -64,7 +64,7 @@ apt_options=(-c "$apt_root/apt.conf")
 apt-get "${apt_options[@]}" update
 apt-get "${apt_options[@]}" --yes --download-only install nodal=1.0.1
 old_deb="$apt_root/archives/nodal_1.0.1_all.deb"
-test -f "$old_deb"
+test -f "$old_deb" || { echo "APT did not cache the downloaded package at $old_deb" >&2; exit 1; }
 dpkg --root="$install_root" --install "$old_deb"
 test "$(dpkg-query --root="$install_root" -W -f='${Version}' nodal)" = 1.0.1
 
@@ -75,7 +75,7 @@ gpgv --keyring "$tmp/repository-keyring.gpg" "$site_dir/debian/dists/trixie/InRe
 apt-get "${apt_options[@]}" update
 apt-get "${apt_options[@]}" --yes --download-only install nodal
 new_deb="$apt_root/archives/nodal_1.0.2_all.deb"
-test -f "$new_deb"
+test -f "$new_deb" || { echo "APT did not cache the downloaded package at $new_deb" >&2; exit 1; }
 dpkg --root="$install_root" --install "$new_deb"
 test "$(dpkg-query --root="$install_root" -W -f='${Version}' nodal)" = 1.0.2
 
