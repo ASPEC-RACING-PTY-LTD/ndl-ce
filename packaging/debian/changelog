@@ -1,5 +1,6 @@
-nodal (1.0.10) UNRELEASED; urgency=medium
+nodal (1.0.11) trixie; urgency=medium
 
+  [ No-dal ]
   * Allow the agent to open /dev/zfs so imported ZFS pools can be observed.
     DevicePolicy=closed previously made zpool status fail, so a healthy pool
     stayed unavailable with no capacity.
@@ -21,7 +22,10 @@ nodal (1.0.10) UNRELEASED; urgency=medium
   * GPU nodes assigned through /dev/dri/by-path locators get the exact rule
     of the node they resolve to instead of no rule.
 
- -- No-dal <packaging@no-dal.com>  Tue, 15 Sep 2026 08:30:00 +0000
+  [ No-dal Release Bot ]
+  * Alpha release: DEPLOY: patch
+
+ -- No-dal Release Bot <packaging@no-dal.com>  Sun, 27 Sep 2026 01:11:17 +0000
 
 nodal (1.0.9) UNRELEASED; urgency=medium
 
