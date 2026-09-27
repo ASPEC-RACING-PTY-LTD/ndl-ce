@@ -35,7 +35,7 @@ for deb in "$deb_dir"/*.deb; do
   package=$(dpkg-deb -f "$deb" Package)
   architecture=$(dpkg-deb -f "$deb" Architecture)
   case "$package" in
-    nodal|nodalctl|ndl-agent|ndl-control|ndl-guest|ndl-network-rollback|ndl-ct-prepare|ndl-lxc-nesting-apparmor|ndl-qemu-launch|ndl-oci-launch|nodal-feature-*) ;;
+    nodal|nodalctl|ndl-agent|ndl-control|ndl-ui|ndl-guest|ndl-network-rollback|ndl-ct-prepare|ndl-lxc-nesting-apparmor|ndl-qemu-launch|ndl-oci-launch|nodal-feature-*) ;;
     *) echo "Refusing unexpected package in APT repository: $package" >&2; exit 1 ;;
   esac
   case "$architecture" in

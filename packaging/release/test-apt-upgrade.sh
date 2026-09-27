@@ -12,6 +12,17 @@ for tool in apt-get apt-ftparchive dpkg dpkg-deb dpkg-scanpackages gpg gpgv; do
   }
 done
 
+# dpkg refuses to install as a normal user even into a private --root.
+# fakeroot keeps the scratch tree owned by the caller so cleanup still works.
+dpkg_install=(dpkg)
+if [ "$(id -u)" -ne 0 ]; then
+  command -v fakeroot >/dev/null || {
+    echo "Missing required integration-test tool: fakeroot" >&2
+    exit 1
+  }
+  dpkg_install=(fakeroot dpkg)
+fi
+
 export GNUPGHOME="$tmp/gnupg"
 mkdir -m 700 "$GNUPGHOME"
 gpg --batch --passphrase '' --quick-gen-key "No-DAL APT Test <apt-test@no-dal.invalid>" rsa2048 sign 1d
@@ -73,7 +84,7 @@ apt-get "${apt_options[@]}" --yes --download-only install nodal=1.0.1
 download_apt_package nodal=1.0.1
 old_deb="$apt_root/archives/nodal_1.0.1_all.deb"
 test -f "$old_deb" || { echo "APT did not cache the downloaded package at $old_deb" >&2; exit 1; }
-dpkg --root="$install_root" --install "$old_deb"
+"${dpkg_install[@]}" --root="$install_root" --install "$old_deb"
 test "$(dpkg-query --root="$install_root" -W -f='${Version}' nodal)" = 1.0.1
 
 make_test_deb 1.0.2
@@ -85,7 +96,7 @@ apt-get "${apt_options[@]}" --yes --download-only install nodal
 download_apt_package nodal
 new_deb="$apt_root/archives/nodal_1.0.2_all.deb"
 test -f "$new_deb" || { echo "APT did not cache the downloaded package at $new_deb" >&2; exit 1; }
-dpkg --root="$install_root" --install "$new_deb"
+"${dpkg_install[@]}" --root="$install_root" --install "$new_deb"
 test "$(dpkg-query --root="$install_root" -W -f='${Version}' nodal)" = 1.0.2
 
 apt-get "${apt_options[@]}" --yes --allow-downgrades --download-only install nodal=1.0.1

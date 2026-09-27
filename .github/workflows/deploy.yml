@@ -17,6 +17,9 @@ jobs:
     if: startsWith(github.event.head_commit.message, 'DEPLOY:')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
     permissions:
       contents: write
       pages: write
@@ -67,7 +70,7 @@ jobs:
           pnpm test
           pnpm build
       - name: Install Debian packaging tools
-        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts dpkg-dev apt-utils
+        run: sudo apt-get update && sudo apt-get install -y debhelper devscripts dpkg-dev apt-utils fakeroot
       - name: Test signed APT upgrade path
         run: bash packaging/release/test-apt-upgrade.sh
       - name: Stamp package version and build Debian packages
