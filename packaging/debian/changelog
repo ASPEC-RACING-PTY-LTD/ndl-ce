@@ -1,3 +1,16 @@
+nodal (1.0.12) UNRELEASED; urgency=medium
+
+  * Release versions keep minor and patch to a single digit and roll over
+    after 9, so 1.0.9 is followed by 1.1.0 and 1.9.9 by 2.0.0. This release
+    replaces the withdrawn 1.0.11 and 1.0.12 Alpha builds and includes all
+    of their changes, listed in the 1.0.11 and 1.0.12 entries below: GPU
+    unassign keeping other GPUs, NVIDIA device node derivation, the
+    workload Diagnostics page with Reapply, workload CPU stats, the Updates
+    page release link, the Terminal tab context menu, and the ZFS and
+    unprivileged container device fixes.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 27 Sep 2026 06:55:00 +0000
+
 nodal (1.0.12) trixie; urgency=medium
 
   [ No-dal ]

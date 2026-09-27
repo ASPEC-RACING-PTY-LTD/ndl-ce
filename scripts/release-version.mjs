@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 
 const VERSION_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)$/;
+// Minor and patch are single digits: 1.0.9 is followed by 1.1.0, and 1.9.9
+// by 2.0.0. Older baselines such as 1.0.12 are read, then rolled over.
+const DIGIT_LIMIT = 9;
 
 function parseVersion(value) {
   const match = VERSION_PATTERN.exec(value ?? "");
@@ -13,6 +16,25 @@ function compareVersions(left, right) {
     if (left[index] !== right[index]) return left[index] - right[index];
   }
   return 0;
+}
+
+function carry([major, minor, patch]) {
+  if (patch > DIGIT_LIMIT) {
+    minor += 1;
+    patch = 0;
+  }
+  if (minor > DIGIT_LIMIT) {
+    major += 1;
+    minor = 0;
+    patch = 0;
+  }
+  return [major, minor, patch];
+}
+
+function bumpVersion([major, minor, patch], bump) {
+  if (bump === "major") return [major + 1, 0, 0];
+  if (bump === "minor") return carry([major, minor + 1, 0]);
+  return carry([major, minor, patch + 1]);
 }
 
 export function nextReleaseVersion(latestTag, commitMessage, changelog = "") {
@@ -35,6 +57,9 @@ export function nextReleaseVersion(latestTag, commitMessage, changelog = "") {
 
   if (explicit) {
     const target = explicit.slice(1).map(Number);
+    if (target[1] > DIGIT_LIMIT || target[2] > DIGIT_LIMIT) {
+      throw new Error(`Minor and patch versions go up to ${DIGIT_LIMIT}; use the next minor or major version instead`);
+    }
     if (compareVersions(target, current) <= 0) {
       throw new Error("The requested release version must be newer than the current version");
     }
@@ -42,13 +67,7 @@ export function nextReleaseVersion(latestTag, commitMessage, changelog = "") {
   }
 
   const bump = /^(major|minor|patch)\b/i.exec(directive)?.[1]?.toLowerCase() ?? "patch";
-  const [major, minor, patch] = current;
-  const target = bump === "major"
-    ? [major + 1, 0, 0]
-    : bump === "minor"
-      ? [major, minor + 1, 0]
-      : [major, minor, patch + 1];
-  return `v${target.join(".")}`;
+  return `v${bumpVersion(current, bump).join(".")}`;
 }
 
 if (/(?:^|[\\/])release-version\.mjs$/.test(process.argv[1] ?? "")) {

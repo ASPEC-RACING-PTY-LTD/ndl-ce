@@ -31,7 +31,9 @@ GitHub evaluates the release workflow on pushes to `main`, but its build and
 release job is skipped unless the commit subject starts with `DEPLOY:`. It
 defaults to the next patch version; use
 `DEPLOY: minor` or `DEPLOY: major` for those increments, or include an
-explicit greater version such as `DEPLOY: 1.1.0`. The workflow tests and
+explicit greater version such as `DEPLOY: 1.1.0`. Minor and patch versions
+are single digits and roll over after 9: 1.0.9 is followed by 1.1.0, and
+1.9.9 by 2.0.0. Explicit versions such as `1.0.10` are refused. The workflow tests and
 builds the project, stamps the top `UNRELEASED` entry of
 `packaging/debian/changelog` with the release version, tags it, pushes the
 stamped changelog back to `main`, and publishes the Debian packages as a
