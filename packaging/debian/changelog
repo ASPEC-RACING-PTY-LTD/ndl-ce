@@ -1,5 +1,6 @@
-nodal (1.0.11) UNRELEASED; urgency=medium
+nodal (1.0.12) trixie; urgency=medium
 
+  [ No-dal ]
   * GPU unassign keeps the workload's other GPUs. The control plane rebuilds
     the device list from the remaining saved claims and sends it with a new
     release agent action instead of applying an empty list, verifies the
@@ -24,7 +25,11 @@ nodal (1.0.11) UNRELEASED; urgency=medium
     Close Sessions to the Left or Right, greyed out when nothing is on that
     side. Middle-clicking a tab closes it.
 
- -- No-dal <packaging@no-dal.com>  Sun, 27 Sep 2026 05:40:00 +0000
+  [ No-dal Release Bot ]
+  * Alpha release: DEPLOY: patch, terminal tab context menu fits its
+    items, adds close to side and close others, middle-click closes
+
+ -- No-dal Release Bot <packaging@no-dal.com>  Sun, 27 Sep 2026 06:11:37 +0000
 
 nodal (1.0.11) trixie; urgency=medium
 
