@@ -98,12 +98,14 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
           EXISTING_TAG: ${{ steps.version.outputs.existing }}
+          DEPLOY_AUTHOR_NAME: ${{ github.event.head_commit.author.name }}
+          DEPLOY_AUTHOR_EMAIL: ${{ github.event.head_commit.author.email }}
         run: |
           if [ "$EXISTING_TAG" = true ]; then
             release_sha="$(git rev-list -n 1 "$TAG")"
           else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.name "$DEPLOY_AUTHOR_NAME"
+            git config user.email "$DEPLOY_AUTHOR_EMAIL"
             git add packaging/debian/changelog
             git commit -m "chore(release): $TAG [skip ci]"
             git tag "$TAG"
