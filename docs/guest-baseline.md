@@ -14,11 +14,18 @@ start-host hook. That set is not reduced to a single `nesting=1` line.
 Optional, off by default:
 
 - TUN (`c 10:200 rwm` plus `/dev/net/tun`)
-- `mknod`
+- `mknod` (`c *:* m` and `b *:* m`; the user namespace still blocks real
+  device nodes in unprivileged guests)
 - root SSH (`PermitRootLogin yes` after OpenSSH is installed)
 - `python_system_pip` (removes Debian `EXTERNALLY-MANAGED`)
 
 GPU and other host devices stay on Add Features / workload assignment.
+
+Unprivileged guests always get a deny-all cgroup2 device allowlist with the
+standard guest devices (`/dev/null`, `/dev/zero`, `/dev/full`, random,
+tty, console, ptmx, pts), plus FUSE for nesting and one exact rule per
+optional feature or assigned device. See "Device access" in
+`docs/docker.md`.
 
 ## Rootfs sanity
 

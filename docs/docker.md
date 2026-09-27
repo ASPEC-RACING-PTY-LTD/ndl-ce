@@ -71,6 +71,62 @@ current kernel AppArmor label until the next start.
 See `docs/guest-baseline.md` for Debian package, DNS, locale, console,
 and Python-compat behaviour that runs around this feature set.
 
+## Device access
+
+Every unprivileged system container gets a complete cgroup2 device
+allowlist that starts from deny-all:
+
+```
+lxc.cgroup2.devices.deny = a
+lxc.cgroup2.devices.allow = c 1:3 rwm     # /dev/null
+lxc.cgroup2.devices.allow = c 1:5 rwm     # /dev/zero
+lxc.cgroup2.devices.allow = c 1:7 rwm     # /dev/full
+lxc.cgroup2.devices.allow = c 1:8 rwm     # /dev/random
+lxc.cgroup2.devices.allow = c 1:9 rwm     # /dev/urandom
+lxc.cgroup2.devices.allow = c 5:0 rwm     # /dev/tty
+lxc.cgroup2.devices.allow = c 5:1 rwm     # /dev/console
+lxc.cgroup2.devices.allow = c 5:2 rwm     # /dev/ptmx
+lxc.cgroup2.devices.allow = c 136:* rwm   # /dev/pts/*
+lxc.cgroup2.devices.allow = c 10:229 rwm  # /dev/fuse, nesting only
+```
+
+TUN adds `c 10:200 rwm`. `allow_mknod` adds `c *:* m` and `b *:* m`
+(mknod only, no read or write). Each assigned GPU node adds one exact
+`c MAJOR:MINOR rwm` rule read from the host node, so dynamic majors such
+as `nvidia-uvm` are never hardcoded. `/dev/dri/by-path/*` locators resolve
+to the node they point at. A node that does not exist on the host gets no
+rule and stays denied. There are no `195:*`, `226:*`, or `a` allow rules.
+
+The list is written in full because Debian's `userns.conf` clears the
+`common.conf` device rules for unprivileged guests, and liblxc attaches a
+default-deny eBPF device program as soon as one rule is present. Appending
+only GPU or TUN rules therefore denied `/dev/null`, `/dev/zero`, and
+`/dev/pts`, which broke `nvidia-smi`, `dockerd`, and interactive shells.
+Privileged containers keep the `common.conf` allowlist and only append
+their feature and GPU rules.
+
+The LXC config is generated from last-applied on every start and restart
+(`ndl-ct-prepare`), on agent startup, and on GPU assign or unassign. Do not
+hand-edit `/var/lib/ndl/runtime/lxc/<uuid>/config`; the next start
+overwrites it. A running container keeps its loaded device program until
+it restarts.
+
+### NVIDIA with Docker and CDI
+
+Assign every node the guest workload needs, typically `/dev/nvidia0` (one
+per GPU), `/dev/nvidiactl`, `/dev/nvidia-uvm`, `/dev/nvidia-uvm-tools`, and
+`/dev/nvidia-modeset`. The host must have created those nodes before the
+container starts; `nvidia-uvm` nodes appear only after the module loads
+(for example after `nvidia-modprobe -u -c=0` or the first CUDA call on the
+host). A node created later is picked up on the next container start.
+
+Inside the container, install the NVIDIA userspace matching the host
+driver without its kernel module, install `nvidia-container-toolkit`, and
+generate the CDI spec with `nvidia-ctk cdi generate`. Nested Docker
+containers can only use devices the system container itself is allowed,
+so `docker run --device nvidia.com/gpu=all` exposes exactly the assigned
+nodes.
+
 Nested Docker can create containers, namespaces, cgroups, overlay
 mounts, bind/rbind mounts, networking, volumes, BuildKit workloads,
 and namespaced sysctls. It cannot:

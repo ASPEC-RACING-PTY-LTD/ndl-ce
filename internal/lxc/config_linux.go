@@ -5,11 +5,20 @@ package lxc
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 )
 
-func cgroupAllowFromStat(dev string) string {
-	st, err := os.Lstat(dev)
+// cgroupRuleFromStat reads the host node's major:minor. Symlinks such as
+// /dev/dri/by-path/* resolve to the node lxc.mount.entry will bind, and must
+// stay inside /dev.
+func cgroupRuleFromStat(dev string) string {
+	resolved, err := filepath.EvalSymlinks(dev)
+	if err != nil || !strings.HasPrefix(resolved, "/dev/") {
+		return ""
+	}
+	st, err := os.Lstat(resolved)
 	if err != nil {
 		return ""
 	}
@@ -26,5 +35,5 @@ func cgroupAllowFromStat(dev string) string {
 	if maj == 0 && min == 0 {
 		return ""
 	}
-	return fmt.Sprintf("lxc.cgroup2.devices.allow = c %d:%d rwm\n", maj, min)
+	return fmt.Sprintf("c %d:%d rwm", maj, min)
 }

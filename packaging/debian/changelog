@@ -8,6 +8,18 @@ nodal (1.0.10) UNRELEASED; urgency=medium
   * ZFS observe records pool size, allocated, and free from zpool get.
   * The Storage page shows Collecting until pools load, so the first-run
     modal does not appear on refresh when pools already exist.
+  * Unprivileged system containers with GPU nodes or TUN can use /dev/null,
+    /dev/zero, and /dev/pts again. userns.conf clears the common.conf device
+    rules, so appending only GPU or TUN rules left liblxc with a
+    default-deny program that blocked the guest's own devices and broke
+    nvidia-smi and Docker. Unprivileged guests now get a complete deny-all
+    allowlist with the standard devices, FUSE for nesting, and one exact
+    rule per assigned node. Existing containers pick it up on the next
+    start or restart.
+  * allow_mknod renders valid `m` rules. The previous `mknod` access string
+    made liblxc reject the config and the container failed to start.
+  * GPU nodes assigned through /dev/dri/by-path locators get the exact rule
+    of the node they resolve to instead of no rule.
 
  -- No-dal <packaging@no-dal.com>  Tue, 15 Sep 2026 08:30:00 +0000
 

@@ -94,12 +94,7 @@ func RenderConfig(spec Spec) string {
 		b.WriteString(renderNetIP(spec.IP))
 	}
 	if spec.TUN {
-		b.WriteString("lxc.cgroup2.devices.allow = c 10:200 rwm\n")
 		b.WriteString("lxc.mount.entry = /dev/net/tun dev/net/tun none bind,optional,create=file 0 0\n")
-	}
-	if spec.AllowMknod {
-		b.WriteString("lxc.cgroup2.devices.allow = c *:* mknod\n")
-		b.WriteString("lxc.cgroup2.devices.allow = b *:* mknod\n")
 	}
 	if !spec.Privileged {
 		uid := spec.UIDMap
@@ -113,48 +108,115 @@ func RenderConfig(spec Spec) string {
 		fmt.Fprintf(&b, "lxc.idmap = %s\n", uid)
 		fmt.Fprintf(&b, "lxc.idmap = %s\n", gid)
 	}
-	seenAllow := map[string]bool{}
+	var gpuRules []string
+	for _, dev := range gpuDeviceNodes(spec) {
+		rel := strings.TrimPrefix(dev, "/")
+		fmt.Fprintf(&b, "lxc.mount.entry = %s %s none bind,optional,create=file\n", dev, rel)
+		if rule := cgroupDeviceRule(dev); rule != "" {
+			gpuRules = append(gpuRules, rule)
+		}
+	}
+	b.WriteString(renderDevicePolicy(spec, gpuRules))
+	return b.String()
+}
+
+// unprivilegedDeviceBaseline is what every unprivileged guest needs: the
+// liblxc autodev nodes, the console, and devpts. It matches the device list in
+// LXC common.conf, without the c/b *:* m wildcards (mknod stays opt-in, and
+// the kernel exempts overlayfs whiteouts) and without fuse (nesting adds it).
+var unprivilegedDeviceBaseline = []string{
+	"c 1:3 rwm",   // /dev/null
+	"c 1:5 rwm",   // /dev/zero
+	"c 1:7 rwm",   // /dev/full
+	"c 1:8 rwm",   // /dev/random
+	"c 1:9 rwm",   // /dev/urandom
+	"c 5:0 rwm",   // /dev/tty
+	"c 5:1 rwm",   // /dev/console
+	"c 5:2 rwm",   // /dev/ptmx
+	"c 136:* rwm", // /dev/pts/*
+}
+
+const (
+	deviceRuleFuse = "c 10:229 rwm"
+	deviceRuleTUN  = "c 10:200 rwm"
+)
+
+// renderDevicePolicy writes the cgroup2 device allowlist.
+//
+// userns.conf clears every lxc.cgroup2.devices rule inherited from
+// common.conf. liblxc then attaches a default-deny eBPF program as soon as a
+// single rule is present, so appending only GPU or TUN rules would deny
+// /dev/null, /dev/pts, and the rest of the guest's own devices. Unprivileged
+// guests therefore get a complete policy that starts from deny-all. Privileged
+// guests keep the common.conf allowlist, which userns.conf does not clear.
+func renderDevicePolicy(spec Spec, gpuRules []string) string {
+	var rules []string
+	var b strings.Builder
+	if !spec.Privileged {
+		b.WriteString("lxc.cgroup2.devices.deny = a\n")
+		rules = append(rules, unprivilegedDeviceBaseline...)
+		if SpecWantsNesting(spec) {
+			rules = append(rules, deviceRuleFuse)
+		}
+	}
+	if spec.TUN {
+		rules = append(rules, deviceRuleTUN)
+	}
+	if spec.AllowMknod {
+		rules = append(rules, "c *:* m", "b *:* m")
+	}
+	rules = append(rules, gpuRules...)
+	seen := map[string]bool{}
+	for _, rule := range rules {
+		if seen[rule] {
+			continue
+		}
+		seen[rule] = true
+		fmt.Fprintf(&b, "lxc.cgroup2.devices.allow = %s\n", rule)
+	}
+	return b.String()
+}
+
+func gpuDeviceNodes(spec Spec) []string {
+	var out []string
 	for _, dev := range spec.GPUDevices {
 		dev = strings.TrimSpace(dev)
 		if dev == "" || strings.Contains(dev, "..") || !strings.HasPrefix(dev, "/dev/") {
 			continue
 		}
-		rel := strings.TrimPrefix(dev, "/")
-		fmt.Fprintf(&b, "lxc.mount.entry = %s %s none bind,optional,create=file\n", dev, rel)
-		if line := cgroupAllowLine(dev); line != "" && !seenAllow[line] {
-			seenAllow[line] = true
-			b.WriteString(line)
-		}
+		out = append(out, dev)
 	}
-	return b.String()
+	return out
 }
 
-func cgroupAllowLine(dev string) string {
-	if line := cgroupAllowFromStat(dev); line != "" {
-		return line
+// cgroupDeviceRule returns the exact "c MAJOR:MINOR rwm" rule for one host
+// node. Unknown nodes get no rule, which the allowlist denies.
+func cgroupDeviceRule(dev string) string {
+	if rule := cgroupRuleFromStat(dev); rule != "" {
+		return rule
 	}
-	return cgroupAllowFromName(dev)
+	return cgroupRuleFromName(dev)
 }
 
-func cgroupAllowFromName(dev string) string {
+func cgroupRuleFromName(dev string) string {
 	base := filepath.Base(dev)
 	switch {
 	case strings.HasPrefix(base, "renderD"):
 		n := strings.TrimPrefix(base, "renderD")
 		if digitsOnly(n) {
-			return "lxc.cgroup2.devices.allow = c 226:" + n + " rwm\n"
+			return "c 226:" + n + " rwm"
 		}
 	case strings.HasPrefix(base, "card"):
 		n := strings.TrimPrefix(base, "card")
 		if digitsOnly(n) {
-			return "lxc.cgroup2.devices.allow = c 226:" + n + " rwm\n"
+			return "c 226:" + n + " rwm"
 		}
 	case base == "nvidiactl":
-		return "lxc.cgroup2.devices.allow = c 195:255 rwm\n"
+		return "c 195:255 rwm"
 	case strings.HasPrefix(base, "nvidia"):
 		n := strings.TrimPrefix(base, "nvidia")
 		if digitsOnly(n) {
-			return "lxc.cgroup2.devices.allow = c 195:" + n + " rwm\n"
+			return "c 195:" + n + " rwm"
 		}
 	}
 	return ""

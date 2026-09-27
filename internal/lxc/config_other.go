@@ -2,4 +2,4 @@
 
 package lxc
 
-func cgroupAllowFromStat(string) string { return "" }
+func cgroupRuleFromStat(string) string { return "" }
