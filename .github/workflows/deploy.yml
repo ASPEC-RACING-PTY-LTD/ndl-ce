@@ -75,16 +75,19 @@ jobs:
         run: bash packaging/release/test-apt-upgrade.sh
       - name: Stamp package version and build Debian packages
         env:
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-          DEBFULLNAME: No-dal Release Bot
+          DEBFULLNAME: No-dal
           DEBEMAIL: packaging@no-dal.com
           TAG: ${{ steps.version.outputs.tag }}
         run: |
+          if ! head -n 1 packaging/debian/changelog | grep -q ') UNRELEASED;'; then
+            echo "Add an UNRELEASED entry describing this release to packaging/debian/changelog before a DEPLOY commit" >&2
+            exit 1
+          fi
           dch --changelog packaging/debian/changelog \
             --newversion "${TAG#v}" \
             --distribution trixie \
             --urgency medium \
-            "Alpha release: $COMMIT_MESSAGE"
+            ""
           cp -a packaging/debian ./debian
           dpkg-buildpackage -us -uc -b -d
           mapfile -t debs < <(find .. -maxdepth 1 -type f -name '*.deb' -print)

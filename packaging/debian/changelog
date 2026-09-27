@@ -1,6 +1,5 @@
 nodal (1.1.0) trixie; urgency=medium
 
-  [ No-dal ]
   * Release versions keep minor and patch to a single digit and roll over
     after 9, so 1.0.9 is followed by 1.1.0 and 1.9.9 by 2.0.0. This release
     replaces the withdrawn 1.0.11 and 1.0.12 Alpha builds and includes all
@@ -10,15 +9,10 @@ nodal (1.1.0) trixie; urgency=medium
     page release link, the Terminal tab context menu, and the ZFS and
     unprivileged container device fixes.
 
-  [ No-dal Release Bot ]
-  * Alpha release: DEPLOY: patch, single digit minor and patch versions,
-    1.1.0 replaces the 1.0.11 and 1.0.12 Alpha builds
-
- -- No-dal Release Bot <packaging@no-dal.com>  Sun, 27 Sep 2026 06:55:52 +0000
+ -- No-dal <packaging@no-dal.com>  Sun, 27 Sep 2026 06:55:52 +0000
 
 nodal (1.0.12) trixie; urgency=medium
 
-  [ No-dal ]
   * GPU unassign keeps the workload's other GPUs. The control plane rebuilds
     the device list from the remaining saved claims and sends it with a new
     release agent action instead of applying an empty list, verifies the
@@ -43,15 +37,10 @@ nodal (1.0.12) trixie; urgency=medium
     Close Sessions to the Left or Right, greyed out when nothing is on that
     side. Middle-clicking a tab closes it.
 
-  [ No-dal Release Bot ]
-  * Alpha release: DEPLOY: patch, terminal tab context menu fits its
-    items, adds close to side and close others, middle-click closes
-
- -- No-dal Release Bot <packaging@no-dal.com>  Sun, 27 Sep 2026 06:11:37 +0000
+ -- No-dal <packaging@no-dal.com>  Sun, 27 Sep 2026 06:11:37 +0000
 
 nodal (1.0.11) trixie; urgency=medium
 
-  [ No-dal ]
   * Allow the agent to open /dev/zfs so imported ZFS pools can be observed.
     DevicePolicy=closed previously made zpool status fail, so a healthy pool
     stayed unavailable with no capacity.
@@ -73,10 +62,7 @@ nodal (1.0.11) trixie; urgency=medium
   * GPU nodes assigned through /dev/dri/by-path locators get the exact rule
     of the node they resolve to instead of no rule.
 
-  [ No-dal Release Bot ]
-  * Alpha release: DEPLOY: patch
-
- -- No-dal Release Bot <packaging@no-dal.com>  Sun, 27 Sep 2026 01:11:17 +0000
+ -- No-dal <packaging@no-dal.com>  Sun, 27 Sep 2026 01:11:17 +0000
 
 nodal (1.0.9) UNRELEASED; urgency=medium
 

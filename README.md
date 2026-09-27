@@ -41,8 +41,8 @@ GitHub prerelease whose notes are that changelog entry. Other commits do not
 create releases or advance the published version.
 
 Record user-visible changes in the top `UNRELEASED` changelog entry before a
-`DEPLOY:` commit. Keep that entry's version at the latest released version;
-the release calculates the next version from it.
+`DEPLOY:` commit; a release without one fails. Keep that entry's version at
+the latest released version; the release calculates the next version from it.
 
 ## Host support
 
