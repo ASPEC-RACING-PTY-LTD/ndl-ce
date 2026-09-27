@@ -30,6 +30,8 @@ export function viewFromPath(path: string): OpView {
       return "migrate";
     case "machine":
       return "machine";
+    case "diagnostics":
+      return "diagnostics";
     default:
       return "summary";
   }
@@ -73,6 +75,9 @@ export function resolveView(target: NavTarget, requested: OpView): OpView {
   }
   if (requested === "machine") {
     return target.group === "vm" ? "machine" : "summary";
+  }
+  if (requested === "diagnostics") {
+    return target.group === "system-container" ? "diagnostics" : "summary";
   }
   return "summary";
 }

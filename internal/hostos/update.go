@@ -25,6 +25,25 @@ const (
 // PackageNames are the only names the public update contract may mention.
 var PackageNames = debian.PackageNames
 
+// ReleaseRepository is where the release workflow publishes a GitHub release
+// tagged v<package version> for every version it adds to the APT repository.
+const ReleaseRepository = "https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce"
+
+// ReleaseURL returns the GitHub release page for a published package version,
+// or "" when the version is not a plain dotted release version.
+func ReleaseURL(version string) string {
+	parts := strings.Split(strings.TrimSpace(version), ".")
+	if len(parts) < 2 || len(parts) > 4 {
+		return ""
+	}
+	for _, p := range parts {
+		if p == "" || len(p) > 6 || strings.Trim(p, "0123456789") != "" {
+			return ""
+		}
+	}
+	return ReleaseRepository + "/releases/tag/v" + strings.TrimSpace(version)
+}
+
 // FeaturePackageNames are optional Phase 35 modules, never core Depends.
 var FeaturePackageNames = debian.FeaturePackageNames
 

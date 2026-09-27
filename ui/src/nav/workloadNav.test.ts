@@ -15,6 +15,7 @@ describe("buildWorkloadNav", () => {
     expect(labels).toEqual([
       "Overview",
       "Summary",
+      "Diagnostics",
       "Access",
       "Terminal",
       "Files",
@@ -27,6 +28,19 @@ describe("buildWorkloadNav", () => {
       "Migrate",
     ]);
     expect(groups[0].items[0].current).toBe(true);
+    expect(groups[0].items[1]).toMatchObject({ href: "/workloads/wl-a/diagnostics", current: false });
+    const onDiagnostics = buildWorkloadNav({
+      id: "wl-a",
+      kind: "system-container",
+      leaf: "diagnostics",
+      guestOk: false,
+      mutate: false,
+      dockerOn: false,
+    });
+    expect(onDiagnostics[0].items.map((i) => [i.label, i.current])).toEqual([
+      ["Summary", false],
+      ["Diagnostics", true],
+    ]);
   });
 
   it("omits unavailable VM guest IO and viewer-only operations", () => {

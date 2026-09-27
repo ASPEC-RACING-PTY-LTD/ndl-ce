@@ -142,6 +142,8 @@ type GPU struct {
 	Driver     string `json:"driver,omitempty"`
 	IOMMUGroup string `json:"iommu_group,omitempty"`
 	Hint       string `json:"hint,omitempty"`
+	// NVIDIAMinor is the /dev/nvidiaN minor reported by the proprietary driver.
+	NVIDIAMinor *int `json:"nvidia_minor,omitempty"`
 }
 
 // IOMMU is group membership. No ACS or bind changes.

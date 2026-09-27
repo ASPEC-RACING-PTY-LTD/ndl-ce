@@ -33,6 +33,7 @@ export type IconName =
   | "mark-bad"
   | "mark-info"
   | "mark-neutral"
+  | "diagnostics"
   | "game";
 
 const PATHS: Record<IconName, ReactNode> = {
@@ -162,6 +163,7 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M8 4.8V8l2.2 1.4" />
     </>
   ),
+  diagnostics: <path d="M1.8 8.4h2.8l1.6-4 2.6 7.4 1.8-3.4h3.6" />,
   collapse: <path d="M10 3.5 5.5 8 10 12.5" />,
   expand: <path d="M6 3.5 10.5 8 6 12.5" />,
   "mark-ok": <circle cx="8" cy="8" r="4" fill="currentColor" stroke="none" />,

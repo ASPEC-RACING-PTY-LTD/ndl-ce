@@ -256,3 +256,84 @@ func TestGuestCgroupScrape(t *testing.T) {
 		t.Fatal("QueryWindow empty")
 	}
 }
+
+func TestGuestCgroupScrapeTemplateSliceAndLXCPayload(t *testing.T) {
+	root := t.TempDir()
+	writeProc(t, root, "proc/stat", "cpu  100 0 100 800 0 0 0 0\n")
+	ct := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	nested := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	vm := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	ctUnit := `sys/fs/cgroup/system.slice/system-nodal\x2dct.slice/nodal-ct@` + ct + ".service"
+	nestedUnit := `sys/fs/cgroup/system.slice/system-nodal\x2dct.slice/nodal-ct@` + nested + ".service"
+	vmUnit := `sys/fs/cgroup/system.slice/system-nodal\x2dvm.slice/nodal-vm@` + vm + ".service"
+	ctPayload := "sys/fs/cgroup/lxc.payload." + ct
+	nestedPayload := nestedUnit + "/lxc.payload." + nested
+	writeProc(t, root, ctUnit+"/cpu.stat", "usage_usec 5\n")
+	writeProc(t, root, ctPayload+"/cpu.stat", "usage_usec 1000000\n")
+	writeProc(t, root, ctPayload+"/memory.current", "8192\n")
+	writeProc(t, root, nestedUnit+"/cpu.stat", "usage_usec 5\n")
+	writeProc(t, root, nestedPayload+"/cpu.stat", "usage_usec 0\n")
+	writeProc(t, root, vmUnit+"/cpu.stat", "usage_usec 0\n")
+	s := openTestStore(t)
+	c := &Collector{FSRoot: root, Store: s}
+	t1 := time.Now().UTC().Truncate(time.Second)
+	if err := c.Scrape(t1); err != nil {
+		t.Fatal(err)
+	}
+	writeProc(t, root, ctUnit+"/cpu.stat", "usage_usec 5\n")
+	writeProc(t, root, ctPayload+"/cpu.stat", "usage_usec 4000000\n")
+	writeProc(t, root, nestedPayload+"/cpu.stat", "usage_usec 7500000\n")
+	writeProc(t, root, vmUnit+"/cpu.stat", "usage_usec 15000000\n")
+	t2 := t1.Add(15 * time.Second)
+	if err := c.Scrape(t2); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]float64{ct: 0.2, nested: 0.5, vm: 1} {
+		names := WorkloadMetricNames(id)
+		res, err := s.Query(names, t1.Add(-time.Minute), t2.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cpu := seriesByName(res, names[0])
+		if cpu.Status != StatusAvailable || len(cpu.Points) != 1 {
+			t.Fatalf("%s cpu: %+v", id, cpu)
+		}
+		if got := cpu.Points[0].Value; got < want-0.001 || got > want+0.001 {
+			t.Fatalf("%s busy %v want %v", id, got, want)
+		}
+	}
+	res, err := s.Query(WorkloadMetricNames(ct), t1.Add(-time.Minute), t2.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mem := seriesByName(res, WorkloadMetricNames(ct)[1]); len(mem.Points) == 0 || mem.Points[0].Value != 8192 {
+		t.Fatalf("payload memory: %+v", mem)
+	}
+}
+
+func TestGuestCgroupScrapeSkipsCounterReset(t *testing.T) {
+	root := t.TempDir()
+	writeProc(t, root, "proc/stat", "cpu  100 0 100 800 0 0 0 0\n")
+	id := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	unit := "sys/fs/cgroup/system.slice/nodal-ct@" + id + ".service"
+	writeProc(t, root, unit+"/cpu.stat", "usage_usec 9000000\n")
+	s := openTestStore(t)
+	c := &Collector{FSRoot: root, Store: s}
+	t1 := time.Now().UTC().Truncate(time.Second)
+	if err := c.Scrape(t1); err != nil {
+		t.Fatal(err)
+	}
+	writeProc(t, root, unit+"/cpu.stat", "usage_usec 100\n")
+	t2 := t1.Add(15 * time.Second)
+	if err := c.Scrape(t2); err != nil {
+		t.Fatal(err)
+	}
+	names := WorkloadMetricNames(id)
+	res, err := s.Query(names, t1.Add(-time.Minute), t2.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cpu := seriesByName(res, names[0]); len(cpu.Points) != 0 {
+		t.Fatalf("counter reset produced a sample: %+v", cpu)
+	}
+}

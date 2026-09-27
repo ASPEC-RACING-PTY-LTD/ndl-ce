@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/internal/gpu"
 	"github.com/no-dal/ndl-ce/internal/hostos"
@@ -48,6 +49,9 @@ func (h *Handler) execGPUAssign(ctx context.Context, m *agentv1.GPUAssign) (*con
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: req.Action, ResultJson: mustJSON(st)}), nil
 	}
+	if req.Action == gpu.ActionReapply || req.Action == gpu.ActionDiagnose {
+		return h.execGPUWorkload(ctx, req)
+	}
 	if _, err := gpu.ParseGPUID(req.GPUID); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
@@ -62,6 +66,9 @@ func (h *Handler) execGPUAssign(ctx context.Context, m *agentv1.GPUAssign) (*con
 		if !gpu.AllowDeviceNode(node) {
 			return nil, connect.NewError(connect.CodeInvalidArgument, errDeviceNode)
 		}
+	}
+	if req.Action == gpu.ActionRelease {
+		return h.execGPURelease(ctx, req)
 	}
 	res := gpu.AssignResult{Status: gpu.StatusAssigned, PCIDevices: req.PCIDevices, DeviceNodes: req.DeviceNodes}
 	if req.Action == "unassign" {
@@ -108,6 +115,75 @@ func (h *Handler) execGPUAssign(ctx context.Context, m *agentv1.GPUAssign) (*con
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
 	}
+	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: req.Action, ResultJson: mustJSON(res)}), nil
+}
+
+// execGPURelease applies the complete device list a workload keeps after one
+// claim is dropped. A system container also reports its diagnosis, so the
+// caller can verify the regenerated config.
+func (h *Handler) execGPURelease(ctx context.Context, req gpu.AssignRequest) (*connect.Response[agentv1.ExecuteResponse], error) {
+	res := gpu.AssignResult{Status: gpu.StatusReleased, DeviceNodes: req.DeviceNodes}
+	if h.Workloads == nil && h.OCI == nil {
+		res.Status = gpu.StatusUnsupported
+		res.Reason = "workload engines are unavailable"
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
+	}
+	var err error
+	systemContainer := false
+	if h.Workloads != nil {
+		err = h.Workloads.ApplyGPUDevices(req.WorkloadID, req.DeviceNodes)
+		systemContainer = err == nil
+	}
+	if h.OCI != nil && (h.Workloads == nil || err != nil) {
+		err = h.OCI.ApplyGPUDevices(req.WorkloadID, req.DeviceNodes)
+	}
+	if err != nil {
+		res.Status = gpu.StatusFailed
+		res.Reason = err.Error()
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
+	}
+	if systemContainer {
+		diag, derr := h.Workloads.DiagnoseGPU(ctx, req.WorkloadID)
+		if derr != nil {
+			res.Status = gpu.StatusFailed
+			res.Reason = derr.Error()
+			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
+		}
+		res.Diagnosis = mustJSON(diag)
+	}
+	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: req.Action, ResultJson: mustJSON(res)}), nil
+}
+
+// execGPUWorkload reapplies or diagnoses a system container's complete GPU
+// device list. It never starts, stops, or restarts the guest.
+func (h *Handler) execGPUWorkload(ctx context.Context, req gpu.AssignRequest) (*connect.Response[agentv1.ExecuteResponse], error) {
+	if _, err := uuid.Parse(req.WorkloadID); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("workload_id must be a UUID"))
+	}
+	if h.Workloads == nil {
+		res := gpu.AssignResult{Status: gpu.StatusUnsupported, Reason: "system container engine is unavailable"}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
+	}
+	res := gpu.AssignResult{Status: "ok", DeviceNodes: req.DeviceNodes}
+	if req.Action == gpu.ActionReapply {
+		for _, node := range req.DeviceNodes {
+			if !gpu.AllowDeviceNode(node) {
+				return nil, connect.NewError(connect.CodeInvalidArgument, errDeviceNode)
+			}
+		}
+		if err := h.Workloads.ApplyGPUDevices(req.WorkloadID, req.DeviceNodes); err != nil {
+			res.Status = gpu.StatusFailed
+			res.Reason = err.Error()
+			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
+		}
+	}
+	diag, err := h.Workloads.DiagnoseGPU(ctx, req.WorkloadID)
+	if err != nil {
+		res.Status = gpu.StatusFailed
+		res.Reason = err.Error()
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: req.Action, ResultJson: mustJSON(res)}), nil
+	}
+	res.Diagnosis = mustJSON(diag)
 	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: req.Action, ResultJson: mustJSON(res)}), nil
 }
 

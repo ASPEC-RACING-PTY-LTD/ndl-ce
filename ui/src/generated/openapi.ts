@@ -1685,6 +1685,7 @@ export interface UpdateOperation {
   dry_run: boolean;
   error?: string;
   version?: string;
+  release_url?: string;
   started_at: string;
   finished_at?: string;
   packages?: ("ndl-control" | "ndl-agent" | "ndl-ui" | "nodal" | "nodalctl")[];
@@ -1712,6 +1713,8 @@ export interface UpdatePreview {
   items: UpdatePreviewItem[];
   changelog: string;
   dry_run: true;
+  version?: string;
+  release_url?: string;
 }
 
 export interface UpdatePreflightCheck {
@@ -1824,6 +1827,7 @@ export interface ServicePrincipalCreated {
 
 export interface GPUListResponse {
   items: GPU[];
+  orphaned_assignments?: GPUAssignment[];
   iommu?: Record<string, unknown>;
   runtime?: GPURuntime;
   acs_override: string;
@@ -1865,6 +1869,63 @@ export interface GPUAssignment {
 
 export interface GPUAssignmentListResponse {
   items: GPUAssignment[];
+}
+
+export interface GPUDiagnosisAssignment {
+  id: string;
+  gpu_id: string;
+  mode: string;
+  saved_nodes: string[];
+  expected_nodes: string[];
+  current: boolean;
+  error?: string;
+}
+
+export interface GPUNodeDiagnosis {
+  path: string;
+  canonical?: boolean;
+  optional?: boolean;
+  host_rule?: string;
+  mounted: boolean;
+  allowed: boolean;
+  guest: "present" | "missing" | "mismatch" | "not_running" | "unknown";
+}
+
+export interface GPUDiagnosis {
+  saved: string[];
+  nodes: GPUNodeDiagnosis[];
+  running: boolean;
+  pid?: number;
+  config_present: boolean;
+  config_current: boolean;
+  restart_required: boolean;
+  devices_missing: boolean;
+  issues: string[];
+}
+
+export interface GPUUnassignResponse {
+  ok: boolean;
+  device_nodes?: string[];
+  restart_required?: boolean;
+  message?: string;
+}
+
+export interface WorkloadGPUDiagnostics {
+  workload_id: string;
+  supported: boolean;
+  reason?: string;
+  assignments?: GPUDiagnosisAssignment[];
+  diagnosis?: GPUDiagnosis;
+  diagnosis_error?: string;
+  applied_matches_saved?: boolean;
+}
+
+export interface GPUReapplyResponse {
+  status: "applied" | "restart_required" | "failed";
+  message?: string;
+  error?: string;
+  assignments?: GPUDiagnosisAssignment[];
+  diagnosis?: GPUDiagnosis;
 }
 
 export interface GPUAssignRequest {
@@ -3035,6 +3096,10 @@ export type AssignGpuPath = "/api/v1/gpus/assign";
 export type UnassignGpuPath = "/api/v1/gpus/unassign";
 
 export type ListWorkloadGpusPath = "/api/v1/workloads/{id}/gpus";
+
+export type WorkloadGpuDiagnosticsPath = "/api/v1/workloads/{id}/diagnostics/gpu";
+
+export type ReapplyWorkloadGpusPath = "/api/v1/workloads/{id}/gpus/reapply";
 
 export type ListPhysicalDisksPath = "/api/v1/physical-disks";
 

@@ -46,7 +46,7 @@ func gpuInv() inventory.Inventory {
 		Host:          inventory.Host{Status: inventory.StatusAvailable, ID: "debian", VersionID: "13", Architecture: "amd64"},
 		GPUs: []inventory.GPU{{
 			ID: "0000:02:00.0", PCI: "0000:02:00.0", Vendor: "NVIDIA", IOMMUGroup: "12", Driver: "nvidia",
-			Hint: "/dev/dri/by-path/pci-0000:02:00.0-render",
+			Hint: "/dev/dri/by-path/pci-0000:02:00.0-render", NVIDIAMinor: intPtr(1),
 		}},
 		PCI: []inventory.PCIDevice{
 			{Address: "0000:02:00.0", Class: "0x030000", Driver: "nvidia", IOMMUGroup: "12"},
@@ -239,6 +239,7 @@ func TestGPUAssignWithoutLocatorIsUnavailable(t *testing.T) {
 	cluster, _ := mem.GetCluster(context.Background())
 	inv := gpuInv()
 	inv.GPUs[0].Hint = ""
+	inv.GPUs[0].Vendor, inv.GPUs[0].Driver, inv.GPUs[0].NVIDIAMinor = "AMD", "amdgpu", nil
 	seedNode(t, mem, cluster.ID, inv, false)
 	ct := appdb.Workload{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "ct", Kind: lxc.KindSystemContainer, Status: "stopped"}
 	if err := mem.CreateWorkload(context.Background(), ct); err != nil {

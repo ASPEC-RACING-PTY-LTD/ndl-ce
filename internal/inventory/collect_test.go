@@ -538,6 +538,38 @@ func TestCollectGPUDeviceHintsFromDRI(t *testing.T) {
 	}
 }
 
+func TestCollectNVIDIADeviceMinor(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"sys/bus/pci/devices/0000:01:00.0/vendor":          "0x10de\n",
+		"sys/bus/pci/devices/0000:01:00.0/device":          "0x2d05\n",
+		"sys/bus/pci/devices/0000:01:00.0/class":           "0x030000\n",
+		"sys/bus/pci/devices/0000:01:00.0/uevent":          "DRIVER=nvidia\nPCI_SLOT_NAME=0000:01:00.0\n",
+		"sys/bus/pci/devices/0000:02:00.0/vendor":          "0x10de\n",
+		"sys/bus/pci/devices/0000:02:00.0/device":          "0x2d05\n",
+		"sys/bus/pci/devices/0000:02:00.0/class":           "0x030000\n",
+		"sys/bus/pci/devices/0000:02:00.0/uevent":          "DRIVER=nvidia\nPCI_SLOT_NAME=0000:02:00.0\n",
+		"proc/driver/nvidia/gpus/0000:01:00.0/information": "Model: \t\t NVIDIA GeForce RTX 5060\nIRQ:   \t\t 180\nDevice Minor: \t 1\nBus Location: \t 0000:01:00.0\n",
+		"dev/dri/by-path/pci-0000:01:00.0-render":          "",
+		"dev/dri/by-path/pci-0000:02:00.0-render":          "",
+	})
+	inv := collectFixture(t, root, missingTools)
+	if len(inv.GPUs) != 2 {
+		t.Fatalf("gpus=%d %+v", len(inv.GPUs), inv.GPUs)
+	}
+	for _, g := range inv.GPUs {
+		switch g.PCI {
+		case "0000:01:00.0":
+			if g.NVIDIAMinor == nil || *g.NVIDIAMinor != 1 {
+				t.Fatalf("minor=%v", g.NVIDIAMinor)
+			}
+		case "0000:02:00.0":
+			if g.NVIDIAMinor != nil {
+				t.Fatalf("unreported minor must stay unknown, got %d", *g.NVIDIAMinor)
+			}
+		}
+	}
+}
+
 func TestCollectGPUEmptyValid(t *testing.T) {
 	root := writeTree(t, map[string]string{
 		"sys/bus/pci/devices/0000:00:1f.2/vendor": "0x8086\n",

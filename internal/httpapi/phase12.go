@@ -100,8 +100,30 @@ func updateOperationJSON(op appdb.UpdateOperation) map[string]any {
 	}
 	if len(candidates) > 0 {
 		out["candidates"] = candidates
+		if url := hostos.ReleaseURL(availableVersion(candidates)); url != "" && op.Action == "check" {
+			out["release_url"] = url
+		}
 	}
 	return out
+}
+
+// availableVersion is the platform version an update would install. All
+// packages ship from one source, so the nodal meta package is preferred and
+// any other candidate carries the same version.
+func availableVersion(candidates []map[string]string) string {
+	version := ""
+	for _, c := range candidates {
+		if c["candidate_version"] == "" {
+			continue
+		}
+		if c["name"] == "nodal" {
+			return c["candidate_version"]
+		}
+		if version == "" {
+			version = c["candidate_version"]
+		}
+	}
+	return version
 }
 
 func packageJSON(p hostos.PackageStatus) map[string]any {
@@ -162,22 +184,33 @@ func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := make([]map[string]any, 0, len(res.Items))
+	var upgrades []map[string]string
 	for _, it := range res.Items {
 		items = append(items, map[string]any{
 			"name": it.Name, "current_version": it.CurrentVersion,
 			"candidate_version": it.CandidateVersion, "action": it.Action,
 		})
+		if it.Action == "upgrade" {
+			upgrades = append(upgrades, map[string]string{"name": it.Name, "candidate_version": it.CandidateVersion})
+		}
 	}
 	changelog := res.Changelog
 	if changelog == "" {
 		changelog = "Changelog is not reported."
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"channel":   hostos.ChannelStable,
 		"items":     items,
 		"changelog": changelog,
 		"dry_run":   true,
-	})
+	}
+	if version := availableVersion(upgrades); version != "" {
+		body["version"] = version
+		if url := hostos.ReleaseURL(version); url != "" {
+			body["release_url"] = url
+		}
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {

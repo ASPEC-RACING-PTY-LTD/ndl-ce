@@ -177,14 +177,28 @@ func renderDevicePolicy(spec Spec, gpuRules []string) string {
 	return b.String()
 }
 
+// gpuDeviceNodes lists every node the guest receives. A by-path locator is
+// followed by the canonical node it names on this host (renderD129, card1),
+// because VAAPI, NVENC, and libdrm enumerate /dev/dri/renderD* and card*.
+// The config is rendered on every start, so renumbered nodes are picked up.
 func gpuDeviceNodes(spec Spec) []string {
 	var out []string
+	seen := map[string]bool{}
+	add := func(dev string) {
+		if !seen[dev] {
+			seen[dev] = true
+			out = append(out, dev)
+		}
+	}
 	for _, dev := range spec.GPUDevices {
 		dev = strings.TrimSpace(dev)
 		if dev == "" || strings.Contains(dev, "..") || !strings.HasPrefix(dev, "/dev/") {
 			continue
 		}
-		out = append(out, dev)
+		add(dev)
+		if canon := resolveDeviceNode(dev); canon != "" {
+			add(canon)
+		}
 	}
 	return out
 }

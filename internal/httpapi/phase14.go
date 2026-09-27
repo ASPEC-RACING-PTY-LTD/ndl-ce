@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -72,14 +75,23 @@ func (s *Server) listGPUs(w http.ResponseWriter, r *http.Request) {
 		row["assignments"] = claimed
 		items = append(items, row)
 	}
+	// Claims on a GPU that inventory no longer reports (removed card or
+	// unloaded driver) stay listed so they can be unassigned.
+	orphaned := make([]map[string]any, 0)
+	for _, a := range assigns {
+		if _, ok := gpuRecord(a.GPUID, parsed); !ok {
+			orphaned = append(orphaned, gpuAssignmentJSON(a))
+		}
+	}
 	rt := gpu.EvaluateRuntime(s.hostPlatform(parsed), nil)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items":           items,
-		"iommu":           parsed.IOMMU,
-		"runtime":         rt,
-		"acs_override":    "refused",
-		"default_devices": []string{},
-		"note":            "Workloads created without a GPU assignment do not receive /dev/dri.",
+		"items":                items,
+		"orphaned_assignments": orphaned,
+		"iommu":                parsed.IOMMU,
+		"runtime":              rt,
+		"acs_override":         "refused",
+		"default_devices":      []string{},
+		"note":                 "Workloads created without a GPU assignment do not receive /dev/dri.",
 	})
 }
 
@@ -226,9 +238,15 @@ func (s *Server) assignGPU(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	applyNodes := nodes
+	if mode != gpu.ModeVFIO {
+		// The agent replaces the guest's whole device list, so send every
+		// claim this workload holds, not only the new one.
+		applyNodes = s.gpuDeviceNodes(r.Context(), p.User.ClusterID, wl.ID)
+	}
 	res, err := s.gpus().GPUAssign(r.Context(), gpu.AssignRequest{
 		Action: "assign", GPUID: gpuID, WorkloadID: wl.ID, Mode: mode, Exclusive: exclusive,
-		PCIDevices: pci, DeviceNodes: nodes,
+		PCIDevices: pci, DeviceNodes: applyNodes,
 	})
 	if gpuApplyFailed(res, err) || (res.Status != "" && res.Status != gpu.StatusAssigned) {
 		_ = s.Store.DeleteGPUAssignment(r.Context(), p.User.ClusterID, a.ID)
@@ -261,12 +279,25 @@ func (s *Server) unassignGPU(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "assignment not found")
 		return
 	}
-	if err := s.releaseGPUAssignment(r.Context(), p.User.ClusterID, *a); err != nil {
+	body := map[string]any{"ok": true}
+	if a.Mode == gpu.ModeVFIO {
+		err = s.releaseGPUAssignment(r.Context(), p.User.ClusterID, *a)
+	} else {
+		var rel deviceRelease
+		rel, err = s.releaseDeviceClaim(r.Context(), p.User.ClusterID, *a)
+		body["device_nodes"] = rel.Remaining
+		body["restart_required"] = rel.RestartRequired
+		if rel.RestartRequired {
+			body["message"] = "The config no longer grants this GPU. The running container keeps its device nodes until it restarts."
+		}
+	}
+	if err != nil {
+		s.audit(r, p.User.ClusterID, p.User.ID, "gpu.unassign", "failed", a.ID)
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "gpu.unassign", "ok", a.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) workloadGPUs(w http.ResponseWriter, r *http.Request) {
@@ -322,6 +353,10 @@ func (s *Server) clusterInventory(ctx context.Context, clusterID string) invento
 }
 
 func (s *Server) releaseGPUAssignment(ctx context.Context, clusterID string, a appdb.GPUAssignment) error {
+	if a.Mode != gpu.ModeVFIO {
+		_, err := s.releaseDeviceClaim(ctx, clusterID, a)
+		return err
+	}
 	var origSpec []byte
 	var vfioRow *appdb.Workload
 	hosts := assignmentHosts(a)
@@ -370,6 +405,122 @@ func (s *Server) releaseGPUAssignment(ctx context.Context, clusterID string, a a
 		return errInternal("could not record GPU unassign")
 	}
 	return nil
+}
+
+// deviceRelease reports what a released device claim leaves behind.
+type deviceRelease struct {
+	// Remaining is the complete device list the workload keeps.
+	Remaining []string
+	// RestartRequired means the running guest keeps the released nodes until
+	// it restarts; the config no longer grants them.
+	RestartRequired bool
+}
+
+// releaseDeviceClaim drops one render, compute, or encode claim. The agent
+// replaces the guest's whole device list, so it receives every node the
+// remaining claims hold, rebuilt from their saved GPU and mode. Stored rows,
+// the applied config, and the claim are rolled back together on failure so
+// they cannot drift apart.
+func (s *Server) releaseDeviceClaim(ctx context.Context, clusterID string, a appdb.GPUAssignment) (deviceRelease, error) {
+	var out deviceRelease
+	all, err := s.Store.ListGPUAssignments(ctx, clusterID)
+	if err != nil {
+		return out, errInternal("could not list GPU assignments")
+	}
+	inv := s.clusterInventory(ctx, clusterID)
+	var previous []string
+	var stale []appdb.GPUAssignment
+	var restoreNodes [][]string
+	seenPrev, seenNext := map[string]bool{}, map[string]bool{}
+	desired := []string{}
+	for _, row := range all {
+		if row.WorkloadID != a.WorkloadID || row.Mode == gpu.ModeVFIO {
+			continue
+		}
+		for _, n := range row.DeviceNodes {
+			if n != "" && !seenPrev[n] {
+				seenPrev[n] = true
+				previous = append(previous, n)
+			}
+		}
+		if row.ID == a.ID {
+			continue
+		}
+		keep := row.DeviceNodes
+		if rec, ok := gpuRecord(row.GPUID, inv); ok {
+			if nodes, nerr := deviceNodesForMode(row.Mode, rec); nerr == nil && !slices.Equal(nodes, row.DeviceNodes) {
+				stale = append(stale, row)
+				restoreNodes = append(restoreNodes, row.DeviceNodes)
+				keep = nodes
+				stale[len(stale)-1].DeviceNodes = nodes
+			}
+		}
+		for _, n := range keep {
+			if n == "" || seenNext[n] {
+				continue
+			}
+			if !gpu.AllowDeviceNode(n) {
+				return out, errUnprocessable("device node is not allowlisted")
+			}
+			seenNext[n] = true
+			desired = append(desired, n)
+		}
+	}
+	restoreRows := func(upTo int) {
+		for i := 0; i < upTo; i++ {
+			_ = s.Store.UpdateGPUAssignmentDeviceNodes(ctx, clusterID, stale[i].ID, restoreNodes[i])
+		}
+	}
+	for i, row := range stale {
+		if err := s.Store.UpdateGPUAssignmentDeviceNodes(ctx, clusterID, row.ID, row.DeviceNodes); err != nil {
+			restoreRows(i)
+			return out, errInternal("could not record GPU device nodes")
+		}
+	}
+	rollback := func() {
+		restoreRows(len(stale))
+		if previous == nil {
+			previous = []string{}
+		}
+		_, _ = s.gpus().GPUAssign(ctx, gpu.AssignRequest{
+			Action: gpu.ActionRelease, GPUID: a.GPUID, WorkloadID: a.WorkloadID, Mode: a.Mode, DeviceNodes: previous,
+		})
+	}
+	res, applyErr := s.gpus().GPUAssign(ctx, gpu.AssignRequest{
+		Action: gpu.ActionRelease, GPUID: a.GPUID, WorkloadID: a.WorkloadID, Mode: a.Mode, DeviceNodes: desired,
+	})
+	if gpuApplyFailed(res, applyErr) || (res.Status != gpu.StatusReleased && res.Status != gpu.StatusAssigned) {
+		restoreRows(len(stale))
+		if applyErr == nil && res.Status != gpu.StatusFailed && res.Status != gpu.StatusUnsupported && res.Reason == "" {
+			res.Reason = "gpu agent did not confirm the release"
+		}
+		return out, errUnavailable(gpuApplyError(res, applyErr))
+	}
+	if len(res.DeviceNodes) != len(desired) || (len(desired) > 0 && !slices.Equal(res.DeviceNodes, desired)) {
+		rollback()
+		return out, errUnavailable("gpu agent applied a different device list; the previous GPU config was restored")
+	}
+	if len(res.Diagnosis) > 0 {
+		var diag lxc.GPUDiagnosis
+		if err := json.Unmarshal(res.Diagnosis, &diag); err != nil || !diag.ConfigCurrent {
+			rollback()
+			return out, errUnavailable("the LXC config did not match the remaining GPU assignments; the previous GPU config was restored")
+		}
+		out.RestartRequired = diag.Running && len(previous) > len(desired)
+	}
+	// A delete error is ignored when the row is gone: the applied config then
+	// already matches the store.
+	_ = s.Store.DeleteGPUAssignment(ctx, clusterID, a.ID)
+	got, gerr := s.Store.GetGPUAssignment(ctx, clusterID, a.ID)
+	if gerr != nil {
+		return out, errInternal("could not confirm GPU unassign; open workload Diagnostics to compare the saved and applied devices")
+	}
+	if got != nil {
+		rollback()
+		return out, errInternal("could not record GPU unassign; the previous GPU config was restored")
+	}
+	out.Remaining = desired
+	return out, nil
 }
 
 func (s *Server) releaseWorkloadClaims(ctx context.Context, clusterID, workloadID string) error {
@@ -459,11 +610,26 @@ func locatorsFromGPU(g inventory.GPU) []string {
 	return out
 }
 
+// nvidiaSharedNodes are the proprietary driver's control nodes. NVENC and
+// NVDEC need nvidiactl plus the per-GPU node, CUDA needs nvidia-uvm, and
+// nvidia-modeset is used by the driver's display and encode stack. They carry
+// no per-GPU access, so sharing them keeps other GPUs isolated. nvidia-caps
+// is left out: it only gates MIG, and caps/nvidia-cap1 grants MIG
+// configuration of every GPU on the host.
+var nvidiaSharedNodes = []string{"/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/nvidia-uvm-tools", "/dev/nvidia-modeset"}
+
 func deviceNodesForMode(mode string, rec inventory.GPU) ([]string, error) {
 	if mode == gpu.ModeVFIO {
 		return nil, nil
 	}
 	nodes := locatorsFromGPU(rec)
+	if rec.Driver == "nvidia" {
+		if rec.NVIDIAMinor == nil {
+			return nil, errUnprocessable("NVIDIA device minor is unavailable in inventory; refresh node inventory after the NVIDIA driver loads")
+		}
+		nodes = append(nodes, "/dev/nvidia"+strconv.Itoa(*rec.NVIDIAMinor))
+		nodes = append(nodes, nvidiaSharedNodes...)
+	}
 	if len(nodes) == 0 {
 		return nil, errUnprocessable("GPU device nodes are unavailable in inventory")
 	}

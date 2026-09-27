@@ -33,17 +33,23 @@ export function buildWorkloadNav(opts: {
   const groups: WorkloadNavGroup[] = [];
   const summaryCurrent = leaf === "summary";
 
-  groups.push({
-    label: "Overview",
-    items: [
-      {
-        href: `/workloads/${id}`,
-        label: "Summary",
-        icon: "dashboard",
-        current: summaryCurrent,
-      },
-    ],
-  });
+  const overview: WorkloadNavLink[] = [
+    {
+      href: `/workloads/${id}`,
+      label: "Summary",
+      icon: "dashboard",
+      current: summaryCurrent,
+    },
+  ];
+  if (kind === "system-container") {
+    overview.push({
+      href: `/workloads/${id}/diagnostics`,
+      label: "Diagnostics",
+      icon: "diagnostics",
+      current: leaf === "diagnostics",
+    });
+  }
+  groups.push({ label: "Overview", items: overview });
 
   const access: WorkloadNavLink[] = [];
   if (kind === "system-container") {

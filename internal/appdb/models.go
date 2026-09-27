@@ -245,6 +245,7 @@ type Store interface {
 	ListGPUAssignmentsForGPU(ctx context.Context, clusterID, gpuID string) ([]GPUAssignment, error)
 	GetGPUAssignment(ctx context.Context, clusterID, id string) (*GPUAssignment, error)
 	DeleteGPUAssignment(ctx context.Context, clusterID, id string) error
+	UpdateGPUAssignmentDeviceNodes(ctx context.Context, clusterID, id string, nodes []string) error
 
 	UpsertZFSPool(ctx context.Context, p ZFSPool) error
 	GetZFSPool(ctx context.Context, poolID string) (*ZFSPool, error)

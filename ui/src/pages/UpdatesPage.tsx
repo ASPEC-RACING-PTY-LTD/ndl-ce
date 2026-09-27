@@ -17,6 +17,7 @@ import type {
 } from "../generated/openapi";
 import { formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
+import { Dialog } from "../ui/Dialog";
 import { SummaryCard } from "../ui/SummaryCard";
 
 import { hasGrant } from "../rbac";
@@ -50,19 +51,6 @@ function operationStatusLabel(status: UpdateOperation["status"]): string {
       return "Unsupported";
     default:
       return honestStatus(status);
-  }
-}
-
-function previewActionLabel(action: string): string {
-  switch (action) {
-    case "hold":
-      return "Hold";
-    case "upgrade":
-      return "Upgrade";
-    case "unsupported":
-      return "Unsupported";
-    default:
-      return honestStatus(action);
   }
 }
 
@@ -107,6 +95,7 @@ export function UpdatesPage() {
   const [loadState, setLoadState] = useState<"collecting" | "ready" | "unavailable">("collecting");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   async function reload() {
     const next = await getUpdates();
@@ -210,7 +199,18 @@ export function UpdatesPage() {
 
   const hostSupported = status?.host_supported === true;
   const actionsEnabled = mutate && hostSupported && !busy;
-  const updateCandidates = status?.last_check?.candidates ?? [];
+  const lastCheckCandidates = status?.last_check?.candidates ?? [];
+  const available = preview
+    ? { version: preview.version, url: preview.release_url }
+    : lastCheckCandidates.length > 0
+      ? {
+          version:
+            lastCheckCandidates.find((c) => c.name === "nodal")?.candidate_version ||
+            lastCheckCandidates[0].candidate_version,
+          url: status?.last_check?.release_url,
+        }
+      : null;
+  const op = status?.last_operation ?? lastOp;
 
   return (
     <section className="page page-wide" aria-labelledby="updates-heading">
@@ -221,6 +221,24 @@ export function UpdatesPage() {
           plane while workloads keep running.
         </p>
       </header>
+
+      <div className="btn-row">
+        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onCheck()}>
+          Check for updates
+        </button>
+        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onPreflight()}>
+          Run preflight
+        </button>
+        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onCheckpoint()}>
+          Create checkpoint
+        </button>
+        <button className="btn btn-primary" type="button" disabled={!actionsEnabled} onClick={() => void onApply()}>
+          Apply update
+        </button>
+        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onRollback()}>
+          Roll back update
+        </button>
+      </div>
 
       {busy || lastOp?.status === "running" || status?.last_operation?.status === "running" ? (
         <p className="banner" role="status">
@@ -247,11 +265,17 @@ export function UpdatesPage() {
         </p>
       ) : null}
 
-      {updateCandidates.length > 0 ? (
-        <p className="banner banner-warn" role="status">
-          Platform updates are available: {updateCandidates
-            .map((candidate) => `${candidate.name} ${candidate.current_version} to ${candidate.candidate_version}`)
-            .join(", ")}. Review the preview and apply manually when ready.
+      {available ? (
+        <p className={available.version ? "banner banner-warn" : "banner"} role="status">
+          {available.version ? `Version ${available.version} is available.` : "No update is available."}
+          {available.version && available.url ? (
+            <>
+              {" "}
+              <a href={available.url} target="_blank" rel="noopener noreferrer">
+                View release on GitHub
+              </a>
+            </>
+          ) : null}
         </p>
       ) : null}
 
@@ -262,8 +286,9 @@ export function UpdatesPage() {
             <SummaryCard label="Host" value={hostSupported ? "Supported" : "Unsupported"} meta={hostSupported ? status.host_reason || undefined : undefined} />
             <SummaryCard
               label="Last operation"
-              value={status.last_operation ? operationStatusLabel(status.last_operation.status) : "None"}
-              meta={status.last_operation?.id}
+              value={op ? operationStatusLabel(op.status) : "None"}
+              meta={op ? "View details" : undefined}
+              onClick={op ? () => setDetailsOpen(true) : undefined}
             />
           </div>
           <article className="panel">
@@ -328,151 +353,6 @@ export function UpdatesPage() {
               </div>
             )}
           </article>
-
-          <article className="panel">
-            <h2>Last operation</h2>
-            {lastOp || status.last_operation ? (
-              (() => {
-                const op = lastOp ?? status.last_operation!;
-                return (
-                  <dl className="definition-list">
-                    <div>
-                      <dt>ID</dt>
-                      <dd>{op.id}</dd>
-                    </div>
-                    <div>
-                      <dt>Action</dt>
-                      <dd>{op.action}</dd>
-                    </div>
-                    <div>
-                      <dt>Status</dt>
-                      <dd>{operationStatusLabel(op.status)}</dd>
-                    </div>
-                    <div>
-                      <dt>Dry run</dt>
-                      <dd>{op.dry_run ? "Yes" : "No"}</dd>
-                    </div>
-                    <div>
-                      <dt>Packages</dt>
-                      <dd>{op.packages?.length ? op.packages.join(", ") : "None"}</dd>
-                    </div>
-                    <div>
-                      <dt>Started</dt>
-                      <dd>{formatWhen(op.started_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>Finished</dt>
-                      <dd>{formatWhen(op.finished_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>Error</dt>
-                      <dd>{op.error || "None"}</dd>
-                    </div>
-                  </dl>
-                );
-              })()
-            ) : (
-              <p>Not configured</p>
-            )}
-          </article>
-
-          <article className="panel">
-            <h2>Actions</h2>
-            {!mutate ? (
-              <p className="banner" role="status">
-                Update actions are read-only for your role. An operator or administrator can check,
-                preflight, checkpoint, apply, or roll back.
-              </p>
-            ) : !hostSupported ? (
-              <p className="muted">
-                Actions stay disabled while this host does not support platform updates. Check,
-                apply, and rollback will not be treated as successful.
-              </p>
-            ) : (
-              <p className="muted">
-                Check is always a dry run. Apply and rollback require confirmation and send
-                X-Nodal-Confirm.
-              </p>
-            )}
-            <div className="btn-row">
-              <button
-                className="btn"
-                type="button"
-                disabled={!actionsEnabled}
-                onClick={() => void onCheck()}
-              >
-                Check for updates
-              </button>
-              <button
-                className="btn"
-                type="button"
-                disabled={!actionsEnabled}
-                onClick={() => void onPreflight()}
-              >
-                Run preflight
-              </button>
-              <button
-                className="btn"
-                type="button"
-                disabled={!actionsEnabled}
-                onClick={() => void onCheckpoint()}
-              >
-                Create checkpoint
-              </button>
-              <button
-                className="btn btn-primary"
-                type="button"
-                disabled={!actionsEnabled}
-                onClick={() => void onApply()}
-              >
-                Apply update
-              </button>
-              <button
-                className="btn"
-                type="button"
-                disabled={!actionsEnabled}
-                onClick={() => void onRollback()}
-              >
-                Roll back update
-              </button>
-            </div>
-          </article>
-
-          {preview ? (
-            <article className="panel">
-              <h2>Preview</h2>
-              <p className="muted">
-                Dry run: {preview.dry_run ? "Yes" : "No"}. Channel: {preview.channel}.
-              </p>
-              {preview.changelog ? <p>{preview.changelog}</p> : <p>No changelog reported.</p>}
-              {preview.items.length === 0 ? (
-                <p>No package changes in this preview.</p>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Current</th>
-                        <th>Candidate</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.items.map((item) => (
-                        <tr key={item.name}>
-                          <td>{item.name}</td>
-                          <td>{item.current_version || "Not reported"}</td>
-                          <td>{item.candidate_version || "Not reported"}</td>
-                          <td>{previewActionLabel(item.action)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </article>
-          ) : null}
 
           {preflight ? (
             <article className="panel">
@@ -547,6 +427,45 @@ export function UpdatesPage() {
           ) : null}
         </>
       ) : null}
+
+      <Dialog open={detailsOpen && op != null} title="Last operation" onClose={() => setDetailsOpen(false)}>
+        {op ? (
+          <dl className="definition-list">
+            <div>
+              <dt>ID</dt>
+              <dd>{op.id}</dd>
+            </div>
+            <div>
+              <dt>Action</dt>
+              <dd>{op.action}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{operationStatusLabel(op.status)}</dd>
+            </div>
+            <div>
+              <dt>Dry run</dt>
+              <dd>{op.dry_run ? "Yes" : "No"}</dd>
+            </div>
+            <div>
+              <dt>Packages</dt>
+              <dd>{op.packages?.length ? op.packages.join(", ") : "None"}</dd>
+            </div>
+            <div>
+              <dt>Started</dt>
+              <dd>{formatWhen(op.started_at)}</dd>
+            </div>
+            <div>
+              <dt>Finished</dt>
+              <dd>{formatWhen(op.finished_at)}</dd>
+            </div>
+            <div>
+              <dt>Error</dt>
+              <dd>{op.error || "None"}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </Dialog>
     </section>
   );
 }

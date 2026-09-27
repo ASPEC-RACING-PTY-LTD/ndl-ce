@@ -23,6 +23,7 @@ import { TerminalWorkspacePage } from "./pages/TerminalWorkspacePage";
 import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
 import { OciCreatePage } from "./pages/OciCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
+import { WorkloadDiagnosticsPage } from "./pages/WorkloadDiagnosticsPage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
 import { VmCreatePage } from "./pages/VmCreatePage";
 import { TemplatesPage } from "./pages/TemplatesPage";
@@ -152,6 +153,9 @@ function matchPage(path: string) {
   }
   if (/^\/workloads\/[^/]+\/gpus$/.test(path)) {
     return <GpuPage />;
+  }
+  if (/^\/workloads\/[^/]+\/diagnostics$/.test(path)) {
+    return <WorkloadDiagnosticsPage />;
   }
   if (path.startsWith("/workloads/") && path !== "/workloads") {
     return <WorkloadDetailPage />;

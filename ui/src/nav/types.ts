@@ -12,7 +12,8 @@ export type OpView =
   | "operations"
   | "clone"
   | "migrate"
-  | "machine";
+  | "machine"
+  | "diagnostics";
 
 export type NavTarget = {
   kind: NavKind;

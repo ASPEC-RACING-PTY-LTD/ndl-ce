@@ -162,6 +162,18 @@ input.field-input[type="number"] {
   font-size: 0.75rem;
 }
 
+.summary-card.is-action {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.summary-card.is-action:hover {
+  background: var(--bg-hover);
+}
+
 .summary-card.is-warn {
   border-color: color-mix(in oklch, var(--warn) 45%, var(--line));
 }

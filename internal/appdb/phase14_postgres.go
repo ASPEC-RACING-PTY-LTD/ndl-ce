@@ -100,6 +100,20 @@ func (p *Postgres) DeleteGPUAssignment(ctx context.Context, clusterID, id string
 	return nil
 }
 
+func (p *Postgres) UpdateGPUAssignmentDeviceNodes(ctx context.Context, clusterID, id string, nodes []string) error {
+	res, err := p.DB.ExecContext(ctx, `
+UPDATE gpu_assignments SET device_nodes=COALESCE(string_to_array(NULLIF($3,''), ','), '{}')
+WHERE cluster_id=$1 AND id=$2`, clusterID, id, strings.Join(nodes, ","))
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("assignment not found")
+	}
+	return nil
+}
+
 type gpuScanner interface {
 	Scan(dest ...any) error
 }

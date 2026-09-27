@@ -887,6 +887,16 @@ export async function getWorkload(id: string): Promise<import("./phase5").Worklo
   return readJson(await request(`/workloads/${id}`));
 }
 
+export async function getWorkloadGPUDiagnostics(
+  id: string,
+): Promise<import("../generated/openapi").WorkloadGPUDiagnostics> {
+  return readJson(await request(`/workloads/${id}/diagnostics/gpu`));
+}
+
+export async function reapplyWorkloadGPUs(id: string): Promise<import("../generated/openapi").GPUReapplyResponse> {
+  return readJson(await request(`/workloads/${id}/gpus/reapply`, { method: "POST" }));
+}
+
 export type GuestChannelState = {
   state: "ok" | "not_installed" | "stale" | "unavailable";
   version?: string;
@@ -1806,7 +1816,7 @@ export async function assignGpu(body: import("../generated/openapi").GPUAssignRe
   );
 }
 
-export async function unassignGpu(id: string) {
+export async function unassignGpu(id: string): Promise<import("../generated/openapi").GPUUnassignResponse> {
   return readJson(await request("/gpus/unassign", { method: "POST", body: JSON.stringify({ id }) }));
 }
 

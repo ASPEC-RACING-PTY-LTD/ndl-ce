@@ -1,6 +1,9 @@
 package inventory
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 func collectGPUs(opt Options, pci []PCIDevice) []GPU {
 	fs := opt.fs()
@@ -16,6 +19,9 @@ func collectGPUs(opt Options, pci []PCIDevice) []GPU {
 			Driver:     p.Driver,
 			IOMMUGroup: p.IOMMUGroup,
 			Hint:       gpuDeviceHint(fs, p.Address),
+		}
+		if p.Driver == "nvidia" {
+			g.NVIDIAMinor = nvidiaDeviceMinor(fs, p.Address)
 		}
 		if v, d := normalizeHex(p.Vendor), normalizeHex(p.Device); v != "" && d != "" {
 			g.Model = "PCI " + v + ":" + d
@@ -40,6 +46,29 @@ func gpuDeviceHint(fs FS, pci string) string {
 		}
 	}
 	return strings.Join(nodes, " ")
+}
+
+// nvidiaDeviceMinor reads the /dev/nvidiaN minor the proprietary driver gave
+// this PCI function. It returns nil when the driver does not report one, so
+// callers never guess which /dev/nvidiaN belongs to which GPU.
+func nvidiaDeviceMinor(fs FS, pci string) *int {
+	pci = strings.ToLower(strings.TrimSpace(pci))
+	if pci == "" {
+		return nil
+	}
+	raw := fs.readOK("/proc/driver/nvidia/gpus/" + pci + "/information")
+	for _, line := range strings.Split(raw, "\n") {
+		key, val, ok := strings.Cut(line, ":")
+		if !ok || !strings.EqualFold(strings.TrimSpace(key), "Device Minor") {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(val))
+		if err != nil || n < 0 || n > 254 {
+			return nil
+		}
+		return &n
+	}
+	return nil
 }
 
 func isDisplayPCI(p PCIDevice) bool {

@@ -7168,6 +7168,10 @@ paths:
       responses:
         "200":
           description: Unassigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUUnassignResponse"
   /workloads/{id}/gpus:
     get:
       operationId: listWorkloadGpus
@@ -7185,6 +7189,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GPUAssignmentListResponse"
+  /workloads/{id}/diagnostics/gpu:
+    get:
+      operationId: workloadGpuDiagnostics
+      summary: Compare saved GPU assignments, the generated LXC config, host nodes, and guest exposure. Read-only. Requires compute.read.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: GPU diagnosis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadGPUDiagnostics"
+        "404":
+          description: Workload not found
+  /workloads/{id}/gpus/reapply:
+    post:
+      operationId: reapplyWorkloadGpus
+      summary: Regenerate a system container's GPU devices from its saved assignments. Never restarts the workload. Requires compute.gpu.assign.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Applied or restart required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUReapplyResponse"
+        "422":
+          description: Not a system container, or a saved assignment cannot be resolved
+        "502":
+          description: The agent could not apply the devices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GPUReapplyResponse"
   /physical-disks:
     get:
       operationId: listPhysicalDisks
@@ -11388,6 +11436,9 @@ components:
           type: string
         version:
           type: string
+        release_url:
+          type: string
+          description: GitHub release page for the candidate version of a check.
         started_at:
           type: string
         finished_at:
@@ -11483,6 +11534,12 @@ components:
           enum:
             - true
           description: Always true. Check never applies packages.
+        version:
+          type: string
+          description: Platform version an update would install. Absent when nothing is available.
+        release_url:
+          type: string
+          description: GitHub release page for version. Absent when no published release can be named.
     UpdatePreflightCheck:
       type: object
       additionalProperties: false
@@ -11776,6 +11833,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GPU"
+        orphaned_assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUAssignment"
         iommu:
           type: object
           additionalProperties: true
@@ -11878,6 +11939,162 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GPUAssignment"
+    GPUDiagnosisAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - gpu_id
+        - mode
+        - saved_nodes
+        - expected_nodes
+        - current
+      properties:
+        id:
+          type: string
+        gpu_id:
+          type: string
+        mode:
+          type: string
+        saved_nodes:
+          type: array
+          items:
+            type: string
+        expected_nodes:
+          type: array
+          items:
+            type: string
+        current:
+          type: boolean
+        error:
+          type: string
+    GPUNodeDiagnosis:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - mounted
+        - allowed
+        - guest
+      properties:
+        path:
+          type: string
+        canonical:
+          type: boolean
+        optional:
+          type: boolean
+        host_rule:
+          type: string
+        mounted:
+          type: boolean
+        allowed:
+          type: boolean
+        guest:
+          type: string
+          enum:
+            - present
+            - missing
+            - mismatch
+            - not_running
+            - unknown
+    GPUDiagnosis:
+      type: object
+      additionalProperties: false
+      required:
+        - saved
+        - nodes
+        - running
+        - config_present
+        - config_current
+        - restart_required
+        - devices_missing
+        - issues
+      properties:
+        saved:
+          type: array
+          items:
+            type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUNodeDiagnosis"
+        running:
+          type: boolean
+        pid:
+          type: integer
+        config_present:
+          type: boolean
+        config_current:
+          type: boolean
+        restart_required:
+          type: boolean
+        devices_missing:
+          type: boolean
+        issues:
+          type: array
+          items:
+            type: string
+    GPUUnassignResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+        device_nodes:
+          type: array
+          items:
+            type: string
+        restart_required:
+          type: boolean
+        message:
+          type: string
+    WorkloadGPUDiagnostics:
+      type: object
+      additionalProperties: false
+      required:
+        - workload_id
+        - supported
+      properties:
+        workload_id:
+          type: string
+        supported:
+          type: boolean
+        reason:
+          type: string
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUDiagnosisAssignment"
+        diagnosis:
+          $ref: "#/components/schemas/GPUDiagnosis"
+        diagnosis_error:
+          type: string
+        applied_matches_saved:
+          type: boolean
+    GPUReapplyResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - applied
+            - restart_required
+            - failed
+        message:
+          type: string
+        error:
+          type: string
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/GPUDiagnosisAssignment"
+        diagnosis:
+          $ref: "#/components/schemas/GPUDiagnosis"
     GPUAssignRequest:
       type: object
       additionalProperties: false

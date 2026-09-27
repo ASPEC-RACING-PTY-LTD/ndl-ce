@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
+	"github.com/no-dal/ndl-ce/internal/gpu"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
@@ -68,6 +69,93 @@ func TestGPUAssignRenderRewritesLXC(t *testing.T) {
 	}
 	if len(applied.Spec.GPUDevices) != 1 {
 		t.Fatalf("%v", applied.Spec.GPUDevices)
+	}
+}
+
+func TestGPUReapplyAndDiagnoseSystemContainer(t *testing.T) {
+	eng := &lxc.Engine{DataDir: t.TempDir(), SkipHostCmds: true, FakeUnpack: true}
+	id := uuid.NewString()
+	if _, err := eng.Create(context.Background(), lxc.Spec{
+		WorkloadID: id, Name: "ct", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: uuid.NewString(), RootfsPath: t.TempDir(), BridgeName: "ndldeadbeef",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{SkipHostCmds: true, Workloads: eng}
+	exec := func(m *agentv1.GPUAssign) (*connect.Response[agentv1.ExecuteResponse], error) {
+		return h.Execute(context.Background(), connect.NewRequest(&agentv1.ExecuteRequest{
+			Method: &agentv1.ExecuteRequest_GpuAssign{GpuAssign: m},
+		}))
+	}
+	nodes := []string{"/dev/nvidia1", "/dev/nvidiactl"}
+	res, err := exec(&agentv1.GPUAssign{Action: "reapply", WorkloadId: id, DeviceNodes: nodes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Msg.GetOk() || !strings.Contains(string(res.Msg.GetResultJson()), `"diagnosis":{`) {
+		t.Fatalf("reapply %s", res.Msg.GetResultJson())
+	}
+	applied, _ := eng.LastApplied(id)
+	if len(applied.Spec.GPUDevices) != 2 || applied.Spec.GPUDevices[0] != "/dev/nvidia1" {
+		t.Fatalf("applied %v", applied.Spec.GPUDevices)
+	}
+	res, err = exec(&agentv1.GPUAssign{Action: "diagnose", WorkloadId: id})
+	if err != nil || !strings.Contains(string(res.Msg.GetResultJson()), `"saved":["/dev/nvidia1","/dev/nvidiactl"]`) {
+		t.Fatalf("diagnose %v %s", err, res.Msg.GetResultJson())
+	}
+	if _, err := exec(&agentv1.GPUAssign{Action: "reapply", WorkloadId: id, DeviceNodes: []string{"/dev/sda"}}); err == nil {
+		t.Fatal("non-GPU node must be refused")
+	}
+	if _, err := exec(&agentv1.GPUAssign{Action: "diagnose", WorkloadId: "../etc"}); err == nil {
+		t.Fatal("workload id must be a UUID")
+	}
+}
+
+func TestGPUReleaseKeepsRemainingDevices(t *testing.T) {
+	eng := &lxc.Engine{DataDir: t.TempDir(), SkipHostCmds: true, FakeUnpack: true}
+	id := uuid.NewString()
+	if _, err := eng.Create(context.Background(), lxc.Spec{
+		WorkloadID: id, Name: "ct", ImagePin: "alpine/3.21/amd64/default",
+		VolumeID: uuid.NewString(), RootfsPath: t.TempDir(), BridgeName: "ndldeadbeef",
+		GPUDevices: []string{"/dev/nvidia1", "/dev/nvidiactl", "/dev/dri/renderD128"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{SkipHostCmds: true, Workloads: eng}
+	exec := func(m *agentv1.GPUAssign) (*connect.Response[agentv1.ExecuteResponse], error) {
+		return h.Execute(context.Background(), connect.NewRequest(&agentv1.ExecuteRequest{
+			Method: &agentv1.ExecuteRequest_GpuAssign{GpuAssign: m},
+		}))
+	}
+	res, err := exec(&agentv1.GPUAssign{Action: gpu.ActionRelease, GpuId: "0000:02:00.0", WorkloadId: id, Mode: "encode", DeviceNodes: []string{"/dev/dri/renderD128"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(res.Msg.GetResultJson())
+	if !res.Msg.GetOk() || !strings.Contains(body, `"status":"released"`) || !strings.Contains(body, `"config_current":true`) {
+		t.Fatalf("release %s", body)
+	}
+	applied, _ := eng.LastApplied(id)
+	if len(applied.Spec.GPUDevices) != 1 || applied.Spec.GPUDevices[0] != "/dev/dri/renderD128" {
+		t.Fatalf("remaining devices %v", applied.Spec.GPUDevices)
+	}
+
+	res, err = exec(&agentv1.GPUAssign{Action: gpu.ActionRelease, GpuId: "0000:13:00.0", WorkloadId: id, Mode: "render"})
+	if err != nil || !res.Msg.GetOk() {
+		t.Fatalf("last release %v %s", err, res.Msg.GetResultJson())
+	}
+	applied, _ = eng.LastApplied(id)
+	if len(applied.Spec.GPUDevices) != 0 {
+		t.Fatalf("last release must clear devices %v", applied.Spec.GPUDevices)
+	}
+
+	missing := uuid.NewString()
+	res, err = exec(&agentv1.GPUAssign{Action: gpu.ActionRelease, GpuId: "0000:02:00.0", WorkloadId: missing, Mode: "encode"})
+	if err != nil || res.Msg.GetOk() || !strings.Contains(string(res.Msg.GetResultJson()), `"status":"failed"`) {
+		t.Fatalf("release on a missing workload must fail, got %v %s", err, res.Msg.GetResultJson())
+	}
+	if _, err := exec(&agentv1.GPUAssign{Action: gpu.ActionRelease, GpuId: "0000:02:00.0", WorkloadId: id, Mode: "encode", DeviceNodes: []string{"/dev/sda"}}); err == nil {
+		t.Fatal("non-GPU node must be refused")
 	}
 }
 

@@ -93,3 +93,17 @@ func (m *Memory) DeleteGPUAssignment(_ context.Context, clusterID, id string) er
 	delete(m.gpuAssignments, id)
 	return nil
 }
+
+// UpdateGPUAssignmentDeviceNodes replaces the derived Linux device nodes of
+// one claim. GPU, mode, exclusivity, and group stay as assigned.
+func (m *Memory) UpdateGPUAssignmentDeviceNodes(_ context.Context, clusterID, id string, nodes []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.gpuAssignments[id]
+	if !ok || a.ClusterID != clusterID {
+		return fmt.Errorf("assignment not found")
+	}
+	a.DeviceNodes = append([]string(nil), nodes...)
+	m.gpuAssignments[id] = a
+	return nil
+}

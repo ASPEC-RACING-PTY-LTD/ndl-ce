@@ -652,9 +652,15 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^ndl-audit-ct1$/i })).toBeVisible();
+    const shortcut = screen
+      .getAllByRole("link", { name: /^diagnostics$/i })
+      .find((link) => link.classList.contains("btn-icon"));
+    expect(shortcut).toHaveAttribute("href", "/workloads/ct-1/diagnostics");
+    expect(shortcut).toHaveAttribute("title", "Diagnostics");
     fireEvent.click(screen.getByRole("button", { name: /^stop$/i }));
     expect((await screen.findAllByText("Stopped")).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^start$/i })).not.toBeDisabled();
+    expect(screen.queryByText("Collecting")).not.toBeInTheDocument();
   });
 
   it("says VM terminal is unsupported", async () => {
@@ -1204,6 +1210,16 @@ describe("App", () => {
             started_at: "2026-09-26T00:00:00Z",
             version: "1.0.1",
             candidates: [{ name: "nodal", current_version: "1.0.1", candidate_version: "1.0.2" }],
+            release_url: "https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/releases/tag/v1.0.2",
+          },
+          last_operation: {
+            id: "op-apply-7",
+            action: "apply",
+            status: "succeeded",
+            dry_run: false,
+            packages: ["nodal"],
+            started_at: "2026-09-26T01:00:00Z",
+            finished_at: "2026-09-26T01:02:00Z",
           },
         },
       },
@@ -1218,9 +1234,62 @@ describe("App", () => {
     ).toBeVisible();
     expect(screen.queryByRole("button", { name: /^create snapshot$/i })).not.toBeInTheDocument();
     expect(await screen.findByText("ndl-control")).toBeVisible();
-    expect(screen.getByRole("button", { name: /^check for updates$/i })).toBeVisible();
+    const check = screen.getByRole("button", { name: /^check for updates$/i });
     expect(screen.getByRole("button", { name: /^apply update$/i })).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent(/nodal 1\.0\.1 to 1\.0\.2/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/version 1\.0\.2 is available/i);
+    expect(screen.getByRole("link", { name: /view release on github/i })).toHaveAttribute(
+      "href",
+      "https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/releases/tag/v1.0.2",
+    );
+    expect(screen.queryByRole("heading", { name: /^actions$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^last operation$/i })).not.toBeInTheDocument();
+
+    const lastOpCard = screen.getByRole("button", { name: /last operation/i });
+    expect(check.compareDocumentPosition(lastOpCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText("op-apply-7")).not.toBeInTheDocument();
+    fireEvent.click(lastOpCard);
+    const dialog = await screen.findByRole("dialog", { name: /^last operation$/i });
+    expect(within(dialog).getByText("op-apply-7")).toBeVisible();
+    expect(within(dialog).getByText("apply")).toBeVisible();
+    expect(within(dialog).getByText("Succeeded")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^close$/i }));
+    await waitFor(() => expect(screen.queryByText("op-apply-7")).not.toBeInTheDocument());
+  });
+
+  it("shows only the available version and release link after a check", async () => {
+    window.history.replaceState({}, "", "/settings/updates");
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "GET /api/v1/updates": {
+        status: 200,
+        body: { channel: "stable", host_supported: true, host_reason: "Debian 13 amd64", packages: [] },
+      },
+      "POST /api/v1/updates/check": {
+        status: 200,
+        body: {
+          dry_run: true,
+          channel: "stable",
+          items: [{ name: "nodal", current_version: "1.0.1", candidate_version: "1.0.3", action: "upgrade" }],
+          changelog: "Full changelog text that must stay out of the UI",
+          version: "1.0.3",
+          release_url: "https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/releases/tag/v1.0.3",
+        },
+      },
+    });
+
+    render(<App />);
+
+    const check = await screen.findByRole("button", { name: /^check for updates$/i });
+    await waitFor(() => expect(check).not.toBeDisabled());
+    fireEvent.click(check);
+    expect(await screen.findByText(/version 1\.0\.3 is available/i)).toBeVisible();
+    expect(screen.getByRole("link", { name: /view release on github/i })).toHaveAttribute(
+      "href",
+      "https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/releases/tag/v1.0.3",
+    );
+    expect(screen.queryByText(/full changelog text/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^preview$/i })).not.toBeInTheDocument();
   });
 
   it("shows Unsupported host honestly on /settings/updates", async () => {

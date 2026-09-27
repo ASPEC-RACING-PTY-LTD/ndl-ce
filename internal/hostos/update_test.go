@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+func TestReleaseURL(t *testing.T) {
+	cases := map[string]string{
+		"1.0.2":     ReleaseRepository + "/releases/tag/v1.0.2",
+		" 0.1.10 ":  ReleaseRepository + "/releases/tag/v0.1.10",
+		"1.2.3.4":   ReleaseRepository + "/releases/tag/v1.2.3.4",
+		"":          "",
+		"1":         "",
+		"1.0.2-1":   "",
+		"1.0.2~rc1": "",
+		"1..2":      "",
+		"1.0/../x":  "",
+	}
+	for in, want := range cases {
+		if got := ReleaseURL(in); got != want {
+			t.Errorf("ReleaseURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestEvaluateUpdateUnsupportedUbuntu(t *testing.T) {
 	p, err := DetectFrom(strings.NewReader("ID=ubuntu\nVERSION_ID=24.04\nPRETTY_NAME=\"Ubuntu 24.04\"\n"), "x86_64")
 	if err == nil {

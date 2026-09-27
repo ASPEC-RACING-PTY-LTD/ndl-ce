@@ -15,6 +15,20 @@ export function GpuPage() {
   const [mode, setMode] = useState("render");
   const [exclusive, setExclusive] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  function onUnassign(id: string) {
+    setError(null);
+    setNotice(null);
+    void unassignGpu(id)
+      .then((res) => {
+        if (res.restart_required) {
+          setNotice(res.message || "Restart the workload to remove the GPU devices from the running container.");
+        }
+        return reload();
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Unassign failed"));
+  }
 
   async function reload() {
     const body = await listGpus();
@@ -30,6 +44,7 @@ export function GpuPage() {
   }, []);
 
   const items = data?.items ?? [];
+  const orphaned = data?.orphaned_assignments ?? [];
   const nested = currentPath().startsWith("/node");
   const heading = nested ? (
     <h2 id="gpu-heading">GPUs</h2>
@@ -48,6 +63,11 @@ export function GpuPage() {
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="banner banner-warn" role="status">
+          {notice}
         </p>
       ) : null}
       {data?.runtime && data.runtime.host_supported === false ? (
@@ -74,15 +94,7 @@ export function GpuPage() {
               {g.assignments?.map((a) => (
                 <li key={a.id}>
                   {a.mode} {a.workload_id}{" "}
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={() => {
-                      void unassignGpu(a.id)
-                        .then(() => reload())
-                        .catch((err) => setError(err instanceof ApiError ? err.message : "Unassign failed"));
-                    }}
-                  >
+                  <button className="btn" type="button" onClick={() => onUnassign(a.id)}>
                     Unassign
                   </button>
                 </li>
@@ -91,6 +103,25 @@ export function GpuPage() {
           )}
         </article>
       ))}
+      {orphaned.length > 0 ? (
+        <article className="panel">
+          <h2>Assigned GPUs not on this node</h2>
+          <p className="banner banner-warn" role="status">
+            These GPUs are no longer reported by the node. The card was removed or its driver is not loaded. Unassign
+            them, or refresh inventory once the GPU is back.
+          </p>
+          <ul>
+            {orphaned.map((a) => (
+              <li key={a.id}>
+                {a.gpu_id} {a.mode} {a.workload_id}{" "}
+                <button className="btn" type="button" onClick={() => onUnassign(a.id)}>
+                  Unassign
+                </button>
+              </li>
+            ))}
+          </ul>
+        </article>
+      ) : null}
       {workloadID ? (
         <form
           className="form"

@@ -8,7 +8,6 @@ import {
   getWorkload,
   getWorkloadGuest,
   getWorkloadLogs,
-  getWorkloadMetrics,
   listNodeUSB,
   listPhysicalDisks,
   migrateWorkload,
@@ -19,6 +18,7 @@ import {
 import type { PhysicalDisk, USBDeviceRow, WorkloadGuest } from "../api/client";
 import type { MetricSeries } from "../api/phase2";
 import type { Workload } from "../api/phase5";
+import { metricReading, seriesBySuffix, useWorkloadMetrics, type WorkloadMetricsState } from "../workloadMetrics";
 import type { DockerMachine } from "../generated/openapi";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorState, LoadingState } from "../components/EmptyState";
@@ -35,7 +35,7 @@ import { Link } from "../components/Link";
 import { MetricChart, lastPoint } from "../components/MetricChart";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
-import { formatBytes, formatMetricValue, honestStatus } from "../format";
+import { formatBytes, honestStatus } from "../format";
 import { isOperationsLeaf } from "../nav/workloadNav";
 import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
 import { kindLabel } from "../labels";
@@ -53,8 +53,25 @@ function leafFromPath(path: string): string {
   return parts[2] || "summary";
 }
 
-function seriesBySuffix(series: MetricSeries[] | undefined, suffix: string): MetricSeries | undefined {
-  return (series ?? []).find((s) => s.name.endsWith(suffix));
+function MetricArea({
+  series,
+  state,
+  running,
+}: {
+  series: MetricSeries | undefined;
+  state: WorkloadMetricsState;
+  running: boolean;
+}) {
+  if (!running) {
+    return <p className="chart-empty">Not running</p>;
+  }
+  if (state === "unavailable") {
+    return <p className="chart-empty">Unavailable</p>;
+  }
+  if (!series) {
+    return <p className="chart-empty">{state === "loading" ? "Loading" : "Collecting data"}</p>;
+  }
+  return <MetricChart series={series} />;
 }
 
 export function WorkloadDetailPage() {
@@ -86,13 +103,14 @@ export function WorkloadDetailPage() {
   const [logLines, setLogLines] = useState<string[]>([]);
   const [logStatus, setLogStatus] = useState<string>("");
   const [logMessage, setLogMessage] = useState<string>("");
-  const [metrics, setMetrics] = useState<MetricSeries[]>([]);
   const [dockerMachine, setDockerMachine] = useState<DockerMachine | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [restartAfterSave, setRestartAfterSave] = useState(false);
   const [expandFS, setExpandFS] = useState(true);
   const [applyNote, setApplyNote] = useState<{ field: string; apply: string; reason: string }[]>([]);
   const [confirm, setConfirm] = useState<"delete" | null>(null);
+  const running = item ? item.status === "running" || Boolean(item.unit_active) : false;
+  const { series: metrics, state: metricsState } = useWorkloadMetrics(id, running);
 
   function applyCore(w: Workload) {
     setItem(w);
@@ -134,12 +152,6 @@ export function WorkloadDetailPage() {
       }
       const disks = await listPhysicalDisks(w.node_id).catch(() => ({ items: [] as PhysicalDisk[] }));
       setPhysicalDisks(disks.items ?? []);
-    }
-    try {
-      const m = await getWorkloadMetrics(w.id, { minutes: 15 });
-      setMetrics(m.series ?? []);
-    } catch {
-      setMetrics([]);
     }
     try {
       const inv = await getDocker();
@@ -276,14 +288,23 @@ export function WorkloadDetailPage() {
   const ipv4 = item.nics?.[0]?.ipv4;
   const currentMAC = item.mac || item.nics?.[0]?.mac;
   const guestOk = guest?.nodal_ga?.state === "ok";
-  const running = item.status === "running" || Boolean(item.unit_active);
   const cpuSeries = seriesBySuffix(metrics, ".cpu.busy_ratio");
   const memCur = seriesBySuffix(metrics, ".memory.current_bytes");
   const memMax = seriesBySuffix(metrics, ".memory.max_bytes");
-  const cpuLast = lastPoint(cpuSeries);
   const memLast = lastPoint(memCur);
   const memLimit = lastPoint(memMax);
   const diskGrowing = parseMemoryGB(diskGB, 8) > parseMemoryGB(origDiskGB, 8);
+  const diagnosticsLink =
+    item.kind === "system-container" ? (
+      <Link
+        className="btn btn-sm btn-ghost btn-icon"
+        href={`/workloads/${item.id}/diagnostics`}
+        aria-label="Diagnostics"
+        title="Diagnostics"
+      >
+        <Icon name="diagnostics" size={14} />
+      </Link>
+    ) : null;
 
   return (
     <section className="page page-wide" aria-labelledby="workload-heading">
@@ -298,6 +319,7 @@ export function WorkloadDetailPage() {
         actions={
           mutate ? (
             <div className="btn-row is-flush">
+              {diagnosticsLink}
               <button className="btn btn-sm btn-secondary" type="button" disabled={busy} onClick={() => setEditOpen(true)}>
                 <Icon name="edit" size={14} />
                 Edit
@@ -319,6 +341,8 @@ export function WorkloadDetailPage() {
                 Delete
               </button>
             </div>
+          ) : diagnosticsLink ? (
+            <div className="btn-row is-flush">{diagnosticsLink}</div>
           ) : null
         }
       />
@@ -341,10 +365,8 @@ export function WorkloadDetailPage() {
           <section className="overview-metrics" aria-label="Runtime metrics">
             <article className="panel metric-tile">
               <h2>CPU</h2>
-              <p className="metric-value">
-                {cpuLast == null ? "Collecting" : formatMetricValue(cpuSeries?.name || "cpu.busy_ratio", cpuLast, cpuSeries?.unit)}
-              </p>
-              {cpuSeries ? <MetricChart series={cpuSeries} /> : <p className="chart-empty">Collecting data</p>}
+              <p className="metric-value">{metricReading(metricsState, cpuSeries, running)}</p>
+              <MetricArea series={cpuSeries} state={metricsState} running={running} />
             </article>
             <article className="panel metric-tile">
               <h2>Memory</h2>
@@ -353,7 +375,7 @@ export function WorkloadDetailPage() {
                   ? formatBytes(item.memory_bytes)
                   : `${formatBytes(memLast)}${memLimit ? ` / ${formatBytes(memLimit)}` : ""}`}
               </p>
-              {memCur ? <MetricChart series={memCur} /> : <p className="chart-empty">Collecting data</p>}
+              <MetricArea series={memCur} state={metricsState} running={running} />
             </article>
             <article className="panel metric-tile">
               <h2>Storage</h2>

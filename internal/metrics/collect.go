@@ -38,6 +38,7 @@ type ioSnap struct {
 }
 
 type guestCPU struct {
+	dir   string
 	usage uint64
 	at    time.Time
 }
@@ -354,24 +355,74 @@ func WorkloadMetricNames(id string) []string {
 	}
 }
 
-func (c *Collector) scrapeGuestCgroups(now time.Time, record func(string, float64)) {
+// workloadCgroupDirs maps workload IDs to the cgroup that holds the guest.
+// systemd places template instances in a per-template slice such as
+// system.slice/system-nodal\x2dct.slice, so both layouts are scanned. For
+// system containers liblxc moves the payload into lxc.payload.<name>, either
+// inside the unit (lxc.cgroup.relative) or at the cgroup root, leaving the
+// unit cgroup itself empty.
+func (c *Collector) workloadCgroupDirs() map[string]string {
 	slice := c.cgroupPath("system.slice")
 	ents, err := os.ReadDir(slice)
 	if err != nil {
-		return
+		return nil
 	}
+	out := map[string]string{}
+	add := func(parent, name string) {
+		id, ok := workloadIDFromUnitDir(name)
+		if !ok {
+			return
+		}
+		dir := filepath.Join(parent, name)
+		if strings.HasPrefix(name, "nodal-ct@") {
+			for _, payload := range []string{
+				filepath.Join(dir, "lxc.payload."+id),
+				c.cgroupPath("lxc.payload." + id),
+			} {
+				if st, err := os.Stat(payload); err == nil && st.IsDir() {
+					dir = payload
+					break
+				}
+			}
+		}
+		out[id] = dir
+	}
+	for _, ent := range ents {
+		if !ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		if strings.HasSuffix(name, ".slice") {
+			sub := filepath.Join(slice, name)
+			inner, err := os.ReadDir(sub)
+			if err != nil {
+				continue
+			}
+			for _, in := range inner {
+				if in.IsDir() {
+					add(sub, in.Name())
+				}
+			}
+			continue
+		}
+		add(slice, name)
+	}
+	return out
+}
+
+func (c *Collector) scrapeGuestCgroups(now time.Time, record func(string, float64)) {
+	dirs := c.workloadCgroupDirs()
 	c.mu.Lock()
 	if c.prevGuestCPU == nil {
 		c.prevGuestCPU = map[string]guestCPU{}
 	}
-	c.mu.Unlock()
-	for _, ent := range ents {
-		name := ent.Name()
-		id, ok := workloadIDFromUnitDir(name)
-		if !ok {
-			continue
+	for id := range c.prevGuestCPU {
+		if _, ok := dirs[id]; !ok {
+			delete(c.prevGuestCPU, id)
 		}
-		dir := filepath.Join(slice, name)
+	}
+	c.mu.Unlock()
+	for id, dir := range dirs {
 		if raw, err := os.ReadFile(filepath.Join(dir, "memory.current")); err == nil {
 			if n, perr := parseUint(strings.TrimSpace(string(raw))); perr == nil {
 				record(WorkloadMetricPrefix+id+".memory.current_bytes", float64(n))
@@ -391,9 +442,9 @@ func (c *Collector) scrapeGuestCgroups(now time.Time, record func(string, float6
 		}
 		c.mu.Lock()
 		prev, have := c.prevGuestCPU[id]
-		c.prevGuestCPU[id] = guestCPU{usage: usage, at: now}
+		c.prevGuestCPU[id] = guestCPU{dir: dir, usage: usage, at: now}
 		c.mu.Unlock()
-		if !have || !now.After(prev.at) {
+		if !have || prev.dir != dir || usage < prev.usage || !now.After(prev.at) {
 			continue
 		}
 		dt := now.Sub(prev.at).Seconds()
@@ -401,9 +452,6 @@ func (c *Collector) scrapeGuestCgroups(now time.Time, record func(string, float6
 			continue
 		}
 		busy := float64(usage-prev.usage) / (dt * 1e6)
-		if busy < 0 {
-			busy = 0
-		}
 		record(WorkloadMetricPrefix+id+".cpu.busy_ratio", busy)
 	}
 }
