@@ -92,7 +92,7 @@ Review before Dogfood Host, Homelab Migration Candidate, Feature-Complete Beta, 
 ## Phase 14
 
 - MEDIUM. Physical GPU, IOMMU, VFIO bind, and DKMS are not available in this Cloud VM. Why not blocking: API/RBAC, group listing, exclusive claims, typed driverctl argv, and LXC config without /dev/dri are proven; hardware bind remains appliance validation.
-- LOW. Render assignment uses the planned `/dev/dri/renderD128` locator. Why not blocking: the node is optional in LXC config; Cloud has no DRM device to prove the live node number.
+- LOW. Render assignment uses observed `/dev/dri/by-path` locators and the canonical node they resolve to, and NVIDIA claims read the device minor from `/proc/driver/nvidia`. Why not blocking: fixture tests cover the derivation; Cloud has no DRM or NVIDIA device to prove live node numbers.
 - LOW. QEMU vfio-pci slots start at 0x1a rather than a live query-pci allocation. Why not blocking: locators are not identity; Phase 8 already pins compiled PCI slots.
 
 ## Phase 15

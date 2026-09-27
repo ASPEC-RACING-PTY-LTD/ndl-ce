@@ -21,8 +21,9 @@ curl -fsSL https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/pa
 The command fetches the bootstrap directly from GitHub. Use
 `NODAL_APT_KEY_URL`, `NODAL_APT_REPO`, and
 `NODAL_DEV_REPO=1` against a local test repository. Signed production
-packages use the documented HTTPS repo and keyring path. This tree
-does not mint those signatures here.
+packages use the documented HTTPS repo and keyring path. The release
+workflow signs the APT repository with a persistent key held in the
+repository secrets; no signing key is stored in this tree.
 
 ## Alpha builds
 
@@ -31,9 +32,15 @@ release job is skipped unless the commit subject starts with `DEPLOY:`. It
 defaults to the next patch version; use
 `DEPLOY: minor` or `DEPLOY: major` for those increments, or include an
 explicit greater version such as `DEPLOY: 1.1.0`. The workflow tests and
-builds the project, updates the Debian package version, and publishes the
-Debian packages as a GitHub prerelease. Other commits do not create releases
-or advance the published version.
+builds the project, stamps the top `UNRELEASED` entry of
+`packaging/debian/changelog` with the release version, tags it, pushes the
+stamped changelog back to `main`, and publishes the Debian packages as a
+GitHub prerelease whose notes are that changelog entry. Other commits do not
+create releases or advance the published version.
+
+Record user-visible changes in the top `UNRELEASED` changelog entry before a
+`DEPLOY:` commit. Keep that entry's version at the latest released version;
+the release calculates the next version from it.
 
 ## Host support
 
@@ -45,8 +52,14 @@ closed and install nothing. Ubuntu is not claimed as Tier 1.
 - `docs/ce-1.0.md`
 - `docs/install.md`
 - `docs/uninstall.md`
+- `docs/management.md`
+- `docs/workload-lifecycle.md`
+- `docs/docker.md`
+- `docs/guest-baseline.md`
+- `docs/migration.md`
 - `docs/recovery.md`
 - `docs/backup.md`
+- `docs/backup-engine-v2.md`
 - `docs/cluster.md`
 - `docs/store.md`
 - `docs/ai.md`

@@ -109,8 +109,25 @@ jobs:
             git tag "$TAG"
             git push origin "refs/tags/$TAG"
             release_sha=$(git rev-parse HEAD)
+            if ! git push origin "HEAD:refs/heads/main"; then
+              echo "::warning::main moved during the release build, so the $TAG changelog was not pushed to main. Merge the $TAG tag into main to keep the source version in step."
+            fi
           fi
           echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+      - name: Write release notes
+        env:
+          RELEASE_SHA: ${{ steps.release_commit.outputs.sha }}
+        run: |
+          notes="$RUNNER_TEMP/release-notes.md"
+          awk 'NR == 1 { next } /^ -- / { exit } { sub(/^  /, ""); print }' packaging/debian/changelog > "$notes"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "The stamped Debian changelog entry is empty" >&2
+            exit 1
+          fi
+          {
+            echo
+            echo "Alpha build from commit $RELEASE_SHA. Install support and current limitations are documented at https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/blob/main/docs/install.md."
+          } >> "$notes"
       - name: Import persistent APT signing key
         id: apt-key
         env:
@@ -134,15 +151,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          RELEASE_SHA: ${{ steps.release_commit.outputs.sha }}
         run: |
           mapfile -t debs < "$RUNNER_TEMP/deb-artifacts.txt"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${debs[@]}" --clobber
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
           else
             gh release create "$TAG" "${debs[@]}" \
               --title "No-DAL CE $TAG (Alpha)" \
-              --notes "Alpha build from commit $RELEASE_SHA. Install support and current limitations are documented at https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce/blob/main/docs/install.md." \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
               --prerelease
           fi
       - name: Collect retained package versions

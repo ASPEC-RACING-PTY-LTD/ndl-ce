@@ -93,9 +93,13 @@ lxc.cgroup2.devices.allow = c 10:229 rwm  # /dev/fuse, nesting only
 TUN adds `c 10:200 rwm`. `allow_mknod` adds `c *:* m` and `b *:* m`
 (mknod only, no read or write). Each assigned GPU node adds one exact
 `c MAJOR:MINOR rwm` rule read from the host node, so dynamic majors such
-as `nvidia-uvm` are never hardcoded. `/dev/dri/by-path/*` locators resolve
-to the node they point at. A node that does not exist on the host gets no
-rule and stays denied. There are no `195:*`, `226:*`, or `a` allow rules.
+as `nvidia-uvm` are never hardcoded. A `/dev/dri/by-path/*` locator also
+mounts the canonical `renderD*` or `card*` node it points at, because
+VAAPI, NVENC, and libdrm enumerate those names. When a node is missing on
+the host, well-known names (`renderD<N>`, `card<N>`, `nvidia<N>`,
+`nvidiactl`) keep an exact rule derived from the name; any other missing
+node gets no rule and stays denied. There are no `195:*`, `226:*`, or `a`
+allow rules.
 
 The list is written in full because Debian's `userns.conf` clears the
 `common.conf` device rules for unprivileged guests, and liblxc attaches a
@@ -106,17 +110,26 @@ Privileged containers keep the `common.conf` allowlist and only append
 their feature and GPU rules.
 
 The LXC config is generated from last-applied on every start and restart
-(`ndl-ct-prepare`), on agent startup, and on GPU assign or unassign. Do not
-hand-edit `/var/lib/ndl/runtime/lxc/<uuid>/config`; the next start
-overwrites it. A running container keeps its loaded device program until
-it restarts.
+(`ndl-ct-prepare`), on agent startup, on GPU assign or unassign, and on
+Reapply from the workload's Diagnostics page. Unassign keeps the
+workload's other GPUs. Do not hand-edit
+`/var/lib/ndl/runtime/lxc/<uuid>/config`; the next start overwrites it. A
+running container keeps its loaded device program until it restarts, so
+Reapply never restarts on its own and reports when a restart is still
+needed.
 
 ### NVIDIA with Docker and CDI
 
-Assign every node the guest workload needs, typically `/dev/nvidia0` (one
-per GPU), `/dev/nvidiactl`, `/dev/nvidia-uvm`, `/dev/nvidia-uvm-tools`, and
-`/dev/nvidia-modeset`. The host must have created those nodes before the
-container starts; `nvidia-uvm` nodes appear only after the module loads
+Assign the GPU in render, compute, or encode mode; the node list is
+derived for you. An NVIDIA claim includes the per-GPU `/dev/nvidia<N>`
+(the minor the driver reports in
+`/proc/driver/nvidia/gpus/<pci>/information`), `/dev/nvidiactl`,
+`/dev/nvidia-uvm`, `/dev/nvidia-uvm-tools`, `/dev/nvidia-modeset`, and the
+GPU's DRI render and card nodes. `nvidia-caps` is never included, because
+`caps/nvidia-cap1` grants MIG configuration of every GPU on the host.
+Assign is refused until inventory reports the NVIDIA minor, so refresh
+node inventory after the driver loads. The host must have created those
+nodes before the container starts; `nvidia-uvm` nodes appear only after the module loads
 (for example after `nvidia-modprobe -u -c=0` or the first CUDA call on the
 host). A node created later is picked up on the next container start.
 

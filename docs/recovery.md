@@ -364,9 +364,34 @@ group are listed and included in the VFIO host set.
 GPU runtime packages are optional host-platform work. They are not Depends of
 `ndl-agent`. NVIDIA_VISIBLE_DEVICES=all is never set.
 
-Failed VFIO restore: unassign still records the dropped claim and retries
-host-driver restore through the same typed argv. If driverctl is missing, the
-status is failed with an honest reason, not a fake unbound GPU.
+Failed VFIO restore: unassign keeps the claim and the VM spec unchanged and
+returns the error, so the GPU is never reported free while still bound to
+vfio-pci. Fix the cause and unassign again; the retry uses the same typed
+argv. If driverctl is missing, the status is failed with an honest reason,
+not a fake unbound GPU.
+
+Render, compute, and encode claims on system containers and OCI workloads
+derive their device nodes from inventory. NVIDIA claims add the per-GPU
+`/dev/nvidia<N>` reported by the driver plus `nvidiactl`, `nvidia-uvm`,
+`nvidia-uvm-tools`, and `nvidia-modeset`; `nvidia-caps` is excluded. See
+`docs/docker.md` for the exact device rules.
+
+Unassign keeps the workload's other GPUs: the control plane rebuilds the
+device list from the remaining claims, checks the regenerated config, and
+rolls the claim rows and config back together if the agent fails. A running
+container keeps its device nodes until it restarts; the unassign response
+says when a restart is still needed.
+
+Removing a GPU from the host: its claims stay recorded and the GPU page lists
+them under "Assigned GPUs not on this node", so they can still be
+unassigned. Unassign them before or after pulling the card, then restart the
+affected workloads.
+
+The workload Diagnostics page compares saved, expected, configured, and
+guest GPU devices. Reapply rewrites the container config from the saved
+claims without restarting. It fails when a node is missing on the host (the
+GPU is removed or its driver is not loaded) and reports restart required
+when the running container has not received every device.
 
 ## ZFS storage (Phase 15)
 

@@ -1,3 +1,27 @@
+nodal (1.0.11) UNRELEASED; urgency=medium
+
+  * GPU unassign keeps the workload's other GPUs. The control plane rebuilds
+    the device list from the remaining saved claims and sends it with a new
+    release agent action instead of applying an empty list, verifies the
+    result, and rolls the rows and applied config back together on failure.
+  * NVIDIA render, compute and encode claims include the per-GPU
+    /dev/nvidiaN node whose minor is read from /proc/driver/nvidia,
+    nvidiactl, nvidia-uvm, nvidia-uvm-tools and nvidia-modeset, plus the
+    canonical renderD and card nodes behind by-path locators. nvidia-caps
+    stays excluded. Assign sends every claim the workload holds.
+  * Claims on a GPU that is no longer in inventory are listed on the GPU
+    page so they can still be unassigned.
+  * New per-workload Diagnostics page with a health overview, a comparison
+    of saved, expected, configured and guest GPU devices, and a Reapply
+    action. Reapply never restarts the workload and reports missing host
+    devices as failures.
+  * Workload CPU stats work for template-slice units and liblxc payload
+    cgroups, survive counter resets, and refresh while the workload runs.
+  * The Updates page shows the release version with a link to its GitHub
+    release notes, and the Last operation card opens a details dialog.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 27 Sep 2026 05:40:00 +0000
+
 nodal (1.0.11) trixie; urgency=medium
 
   [ No-dal ]
