@@ -1773,7 +1773,31 @@ body.is-term-resizing {
 
 .term-ctx {
   position: fixed;
+  right: auto;
+  width: max-content;
+  min-width: 11rem;
+  max-width: calc(100vw - 1rem);
   z-index: 30;
+}
+
+.term-ctx button {
+  white-space: nowrap;
+}
+
+.term-ctx button:disabled {
+  color: var(--fg-tertiary);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.term-ctx button:disabled:hover {
+  background: transparent;
+}
+
+.term-ctx hr {
+  margin: 0.2rem 0;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 body > .term-hold[aria-hidden="true"] {

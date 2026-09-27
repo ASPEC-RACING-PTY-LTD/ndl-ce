@@ -19,6 +19,10 @@ nodal (1.0.11) UNRELEASED; urgency=medium
     cgroups, survive counter resets, and refresh while the workload runs.
   * The Updates page shows the release version with a link to its GitHub
     release notes, and the Last operation card opens a details dialog.
+  * The Terminal tab context menu fits its items instead of stretching to
+    the window edge, stays on screen, and adds Close Other Sessions and
+    Close Sessions to the Left or Right, greyed out when nothing is on that
+    side. Middle-clicking a tab closes it.
 
  -- No-dal <packaging@no-dal.com>  Sun, 27 Sep 2026 05:40:00 +0000
 

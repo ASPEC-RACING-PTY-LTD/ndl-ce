@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActionMenu } from "../components/ActionMenu";
 import { Icon } from "../components/Icon";
 import { QuickSwitch } from "../components/QuickSwitch";
@@ -24,6 +24,7 @@ export function TerminalWorkspacePage() {
     closeTab,
     closeAll,
     closeOthers,
+    closeToSide,
     closeDisconnected,
     reconnect,
     replaceCurrent,
@@ -32,6 +33,7 @@ export function TerminalWorkspacePage() {
   } = useTerminalWorkspace();
   const [qs, setQs] = useState(false);
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const qsOpen = useRef(false);
   qsOpen.current = qs;
 
@@ -84,6 +86,17 @@ export function TerminalWorkspacePage() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menu]);
 
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!menu || !el) {
+      return;
+    }
+    const margin = 8;
+    const rect = el.getBoundingClientRect();
+    el.style.left = `${Math.max(margin, Math.min(menu.x, window.innerWidth - rect.width - margin))}px`;
+    el.style.top = `${Math.max(margin, Math.min(menu.y, window.innerHeight - rect.height - margin))}px`;
+  }, [menu]);
+
   function renameTab(tabId: string, current: string) {
     const next = window.prompt("Session name", current);
     if (next) {
@@ -103,6 +116,12 @@ export function TerminalWorkspacePage() {
   }
 
   const menuTab = menu ? tabs.find((t) => t.tabId === menu.tabId) : null;
+  const menuIndex = menuTab ? tabs.indexOf(menuTab) : -1;
+
+  function menuAction(action: () => void) {
+    action();
+    setMenu(null);
+  }
 
   return (
     <section className="page page-wide page-term" aria-labelledby="term-heading">
@@ -123,6 +142,17 @@ export function TerminalWorkspacePage() {
               data-session-target={`${tab.target.kind}:${tab.target.id}`}
               title={`${tab.title} · ${tab.target.typeLabel} · ${statusLabel(tab.state)}`}
               onClick={() => setActive(tab.tabId)}
+              onMouseDown={(event) => {
+                if (event.button === 1) {
+                  event.preventDefault();
+                }
+              }}
+              onAuxClick={(event) => {
+                if (event.button === 1) {
+                  event.preventDefault();
+                  closeTab(tab.tabId);
+                }
+              }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 setMenu({ tabId: tab.tabId, x: event.clientX, y: event.clientY });
@@ -200,32 +230,59 @@ export function TerminalWorkspacePage() {
       <TerminalPane />
       {menu && menuTab ? (
         <div
+          ref={menuRef}
           className="menu-panel term-ctx"
           role="menu"
+          aria-label={`${menuTab.title} actions`}
           style={{ left: menu.x, top: menu.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <button type="button" role="menuitem" onClick={() => { renameTab(menuTab.tabId, menuTab.title); setMenu(null); }}>
+          <button type="button" role="menuitem" onClick={() => menuAction(() => renameTab(menuTab.tabId, menuTab.title))}>
             Rename
           </button>
-          <button type="button" role="menuitem" onClick={() => { newHere(menuTab.tabId); setMenu(null); }}>
+          <button type="button" role="menuitem" onClick={() => menuAction(() => newHere(menuTab.tabId))}>
             New Terminal Here
           </button>
           {menuTab.state === "disconnected" || menuTab.state === "closed" ? (
-            <button type="button" role="menuitem" onClick={() => { reconnect(menuTab.tabId); setMenu(null); }}>
+            <button type="button" role="menuitem" onClick={() => menuAction(() => reconnect(menuTab.tabId))}>
               Reconnect
             </button>
           ) : null}
+          <hr />
           <button
             type="button"
             role="menuitem"
             className="is-danger"
-            onClick={() => {
-              closeTab(menuTab.tabId);
-              setMenu(null);
-            }}
+            onClick={() => menuAction(() => closeTab(menuTab.tabId))}
           >
             Close Session
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="is-danger"
+            disabled={tabs.length < 2}
+            onClick={() => menuAction(() => closeOthers(menuTab.tabId))}
+          >
+            Close Other Sessions
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="is-danger"
+            disabled={menuIndex <= 0}
+            onClick={() => menuAction(() => closeToSide(menuTab.tabId, "left"))}
+          >
+            Close Sessions to the Left
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="is-danger"
+            disabled={menuIndex < 0 || menuIndex >= tabs.length - 1}
+            onClick={() => menuAction(() => closeToSide(menuTab.tabId, "right"))}
+          >
+            Close Sessions to the Right
           </button>
         </div>
       ) : null}

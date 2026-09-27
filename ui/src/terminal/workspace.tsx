@@ -61,6 +61,7 @@ type WorkspaceValue = {
   closeTab: (tabId: string) => void;
   closeAll: () => void;
   closeOthers: (tabId: string) => void;
+  closeToSide: (tabId: string, side: "left" | "right") => void;
   closeDisconnected: () => void;
   reconnect: (tabId: string) => void;
   replaceCurrent: (target: TermTarget) => string;
@@ -485,6 +486,26 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     [disposeRuntime],
   );
 
+  const closeToSide = useCallback(
+    (tabId: string, side: "left" | "right") => {
+      const cur = tabsRef.current;
+      const idx = cur.findIndex((t) => t.tabId === tabId);
+      if (idx < 0) {
+        return;
+      }
+      const gone = new Set((side === "left" ? cur.slice(0, idx) : cur.slice(idx + 1)).map((t) => t.tabId));
+      if (gone.size === 0) {
+        return;
+      }
+      for (const id of gone) {
+        disposeRuntime(id);
+      }
+      setTabs((tabs) => tabs.filter((t) => !gone.has(t.tabId)));
+      setActiveId((id) => (id && gone.has(id) ? tabId : id));
+    },
+    [disposeRuntime],
+  );
+
   const closeDisconnected = useCallback(() => {
     const gone = tabsRef.current.filter((t) => t.state === "disconnected" || t.state === "closed");
     for (const tab of gone) {
@@ -639,6 +660,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       closeTab,
       closeAll,
       closeOthers,
+      closeToSide,
       closeDisconnected,
       reconnect,
       replaceCurrent,
@@ -663,6 +685,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       closeTab,
       closeAll,
       closeOthers,
+      closeToSide,
       closeDisconnected,
       reconnect,
       replaceCurrent,
