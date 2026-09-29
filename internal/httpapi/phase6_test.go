@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/auth"
@@ -554,6 +555,51 @@ func TestTicketHeaderOnlyAndOrigin(t *testing.T) {
 	}
 	_ = got2.Body.Close()
 	_ = ticket
+}
+
+func TestQuietTerminalWebSocketIsPinged(t *testing.T) {
+	prev := termWSPingEvery
+	termWSPingEvery = 30 * time.Millisecond
+	t.Cleanup(func() { termWSPingEvery = prev })
+
+	_, _, ts, admin, _, wlID := seedPhase6(t)
+	res := doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	var created map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	id, _ := created["id"].(string)
+	ticket, _ := created["ticket"].(string)
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/v1/io/sessions/" + id + "/ws"
+	header := http.Header{}
+	header.Set("Origin", ts.URL)
+	header.Set("Cookie", sessionCookie+"="+admin)
+	conn, resp, err := (&websocket.Dialer{Subprotocols: []string{"ndl.ticket." + ticket}}).Dial(wsURL, header)
+	if err != nil {
+		body := ""
+		if resp != nil {
+			b, _ := io.ReadAll(resp.Body)
+			body = string(b)
+			_ = resp.Body.Close()
+		}
+		t.Fatalf("dial terminal websocket: %v %s", err, body)
+	}
+	defer conn.Close()
+	pinged := make(chan struct{}, 1)
+	conn.SetPingHandler(func(string) error {
+		select {
+		case pinged <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+	go func() { _, _, _ = conn.ReadMessage() }()
+	select {
+	case <-pinged:
+	case <-time.After(2 * time.Second):
+		t.Fatal("quiet terminal websocket received no ping; an idle proxy would drop apt and docker compose")
+	}
 }
 
 func TestWorkloadFilesCRUDCopyContentAndConflict(t *testing.T) {

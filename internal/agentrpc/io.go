@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
@@ -199,13 +201,32 @@ func (h *Handler) AttachTerminal(ctx context.Context, stream *connect.BidiStream
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	defer sess.Close()
-	errCh := make(chan error, 2)
+	return serveTerm(ctx, stream, sess, first, root, termCWDInterval)
+}
+
+const termCWDInterval = 2 * time.Second
+
+// termStream is the agent side of AttachTerminal. Send is not safe to call
+// from more than one goroutine.
+type termStream interface {
+	Send(*agentv1.TermFrame) error
+	Receive() (*agentv1.TermFrame, error)
+}
+
+func serveTerm(ctx context.Context, stream termStream, sess termSession, meta *agentv1.TermFrame, jail string, cwdEvery time.Duration) error {
+	// Output, cwd, and pong each call Send. connect's server stream is not
+	// safe for concurrent Send: overlapping writes corrupt the HTTP/2 frames,
+	// the control plane closes the browser socket, and the PTY is SIGHUPed.
+	// apt and docker compose make that race inevitable because output is
+	// continuous while cwd is sampled on a timer.
+	stream = &lockedTermSend{raw: stream}
+	errCh := make(chan error, 4)
 	go func() {
 		buf := make([]byte, 32*1024)
 		for {
 			n, rerr := sess.Read(buf)
 			if n > 0 {
-				if err := sendTerm(stream, first, ndlterm.TypeOutput, buf[:n]); err != nil {
+				if err := sendTerm(stream, meta, ndlterm.TypeOutput, buf[:n]); err != nil {
 					errCh <- err
 					return
 				}
@@ -220,20 +241,20 @@ func (h *Handler) AttachTerminal(ctx context.Context, stream *connect.BidiStream
 		for {
 			cwd, ok := sess.CWD()
 			if ok {
-				_ = sendTerm(stream, first, ndlterm.TypeCWD, []byte(jailRelCWD(root, cwd)))
+				_ = sendTerm(stream, meta, ndlterm.TypeCWD, []byte(jailRelCWD(jail, cwd)))
 			}
 			select {
 			case <-ctx.Done():
 				return
 			case <-sess.Done():
 				return
-			case <-cwdTick():
+			case <-time.After(cwdEvery):
 			}
 		}
 	}()
-	if len(first.GetFrame()) > 0 {
-		if err := applyTermFrame(sess, first.GetFrame()); err != nil && !errors.Is(err, errIgnoreFrame) {
-			_ = sendTerm(stream, first, ndlterm.TypeError, []byte(err.Error()))
+	if len(meta.GetFrame()) > 0 {
+		if err := applyTermFrame(sess, meta.GetFrame()); err != nil && !errors.Is(err, errIgnoreFrame) {
+			_ = sendTerm(stream, meta, ndlterm.TypeError, []byte(err.Error()))
 		}
 	}
 	go func() {
@@ -245,30 +266,47 @@ func (h *Handler) AttachTerminal(ctx context.Context, stream *connect.BidiStream
 			}
 			if err := applyTermFrame(sess, msg.GetFrame()); err != nil && !errors.Is(err, errIgnoreFrame) {
 				if errors.Is(err, errNeedPong) {
-					_ = sendTerm(stream, first, ndlterm.TypePong, nil)
+					_ = sendTerm(stream, meta, ndlterm.TypePong, nil)
 					continue
 				}
-				_ = sendTerm(stream, first, ndlterm.TypeError, []byte(err.Error()))
+				_ = sendTerm(stream, meta, ndlterm.TypeError, []byte(err.Error()))
 			}
 		}
 	}()
 	select {
 	case <-ctx.Done():
-		_ = sendTerm(stream, first, ndlterm.TypeSessionEnded, []byte("context canceled"))
+		_ = sendTerm(stream, meta, ndlterm.TypeSessionEnded, []byte("context canceled"))
 		return ctx.Err()
 	case err := <-errCh:
-		_ = sendTerm(stream, first, ndlterm.TypeSessionEnded, []byte("session ended"))
+		_ = sendTerm(stream, meta, ndlterm.TypeSessionEnded, []byte("session ended"))
 		if err == nil || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
 			return nil
 		}
 		return nil
 	case <-sess.Done():
-		_ = sendTerm(stream, first, ndlterm.TypeSessionEnded, []byte("session ended"))
+		_ = sendTerm(stream, meta, ndlterm.TypeSessionEnded, []byte("session ended"))
 		return nil
 	}
 }
 
-func sendTerm(stream *connect.BidiStream[agentv1.TermFrame, agentv1.TermFrame], meta *agentv1.TermFrame, typ byte, payload []byte) error {
+type lockedTermSend struct {
+	mu  sync.Mutex
+	raw termStream
+}
+
+func (s *lockedTermSend) Send(msg *agentv1.TermFrame) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.raw.Send(msg)
+}
+
+func (s *lockedTermSend) Receive() (*agentv1.TermFrame, error) {
+	return s.raw.Receive()
+}
+
+func sendTerm(stream interface {
+	Send(*agentv1.TermFrame) error
+}, meta *agentv1.TermFrame, typ byte, payload []byte) error {
 	raw, err := ndlterm.Encode(typ, payload)
 	if err != nil {
 		return err

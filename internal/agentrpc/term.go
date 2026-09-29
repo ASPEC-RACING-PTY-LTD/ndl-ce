@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/no-dal/ndl-ce/internal/iojail"
 )
@@ -154,10 +153,6 @@ func jailRelCWD(jail, cwd string) string {
 		return "/"
 	}
 	return "/" + filepath.ToSlash(rel)
-}
-
-func cwdTick() <-chan time.Time {
-	return time.After(2 * time.Second)
 }
 
 type closedTerm struct {

@@ -561,23 +561,50 @@ func decodeInventory(raw []byte) (inventory.Inventory, error) {
 	return inv, nil
 }
 
+const (
+	rpcReadIdleTimeout = 30 * time.Second
+	rpcPingTimeout     = 15 * time.Second
+)
+
 func (c Client) rpc() agentv1connect.AgentServiceClient {
+	return c.cachedRPC("", rpcReadIdleTimeout, rpcPingTimeout)
+}
+
+// streamRPC carries AttachTerminal. It does not share the unary connection
+// and it does not send HTTP/2 read-idle pings. A ping on the shared
+// connection closes every stream when apt or docker compose is quiet for
+// 30s, or when the host is too busy to answer within 15s. That cancel
+// SIGHUPs the shell, so reconnecting starts a new session and the command
+// is gone.
+func (c Client) streamRPC() agentv1connect.AgentServiceClient {
+	return c.cachedRPC("stream:", 0, 0)
+}
+
+func (c Client) cachedRPC(prefix string, readIdle, ping time.Duration) agentv1connect.AgentServiceClient {
 	key, network, addr, base := c.rpcDial()
+	key = prefix + key
 	if v, ok := rpcClients.Load(key); ok {
 		return v.(*rpcCacheEntry).cli
 	}
-	httpClient := &http.Client{Transport: &http2.Transport{
-		AllowHTTP:       true,
-		ReadIdleTimeout: 30 * time.Second,
-		PingTimeout:     15 * time.Second,
+	httpClient := &http.Client{Transport: newAgentH2(network, addr, readIdle, ping)}
+	cli := agentv1connect.NewAgentServiceClient(httpClient, base)
+	actual, _ := rpcClients.LoadOrStore(key, &rpcCacheEntry{cli: cli})
+	return actual.(*rpcCacheEntry).cli
+}
+
+func newAgentH2(network, addr string, readIdle, ping time.Duration) *http2.Transport {
+	tr := &http2.Transport{
+		AllowHTTP: true,
 		DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, network, addr)
 		},
-	}}
-	cli := agentv1connect.NewAgentServiceClient(httpClient, base)
-	actual, _ := rpcClients.LoadOrStore(key, &rpcCacheEntry{cli: cli})
-	return actual.(*rpcCacheEntry).cli
+	}
+	if readIdle > 0 {
+		tr.ReadIdleTimeout = readIdle
+		tr.PingTimeout = ping
+	}
+	return tr
 }
 
 func (c Client) rpcDial() (key, network, addr, base string) {

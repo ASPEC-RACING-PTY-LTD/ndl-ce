@@ -163,7 +163,7 @@ func (c Client) FilesGetBuffer(ctx context.Context, call FilesGetCall) ([]byte, 
 }
 
 func (c Client) OpenTerminal(ctx context.Context, open TermOpen) (TermConn, error) {
-	stream := c.rpc().AttachTerminal(ctx)
+	stream := c.streamRPC().AttachTerminal(ctx)
 	if err := stream.Send(&agentv1.TermFrame{
 		TargetKind: open.TargetKind,
 		TargetId:   open.TargetID,

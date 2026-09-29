@@ -34,6 +34,11 @@ const (
 	vmUnsupported  = "No-dal Guest Agent is not connected"
 )
 
+// termWSPingEvery keeps the browser socket from looking idle to a proxy or
+// NAT while apt or a build produces no output. The ping uses a zero write
+// deadline so a busy socket cannot fail the ping and close the terminal.
+var termWSPingEvery = 20 * time.Second
+
 // IORPC is the privileged agent surface for Files and Terminal.
 type IORPC interface {
 	FilesOp(ctx context.Context, call agentrpc.FilesCall) (json.RawMessage, error)
@@ -264,6 +269,9 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer ws.Close()
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go pingTerminalSocket(ws, pingDone)
 	now := s.now()
 	row.State = appdb.IOStateConnected
 	row.ConnectedAt = &now
@@ -797,6 +805,23 @@ func readFileUpload(r *http.Request) (rel string, body io.Reader, closer func(),
 		return "", nil, nil, "", "", "", errors.New("upload must be multipart or a raw body")
 	}
 	return strings.TrimSpace(r.URL.Query().Get("path")), r.Body, func() { _ = r.Body.Close() }, "", "", strings.TrimSpace(r.Header.Get("X-Nodal-Expected-Mtime")), nil
+}
+
+func pingTerminalSocket(ws *websocket.Conn, done <-chan struct{}) {
+	interval := termWSPingEvery
+	if interval <= 0 {
+		interval = 20 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			_ = ws.WriteControl(websocket.PingMessage, []byte("ndl"), time.Time{})
+		}
+	}
 }
 
 func wsTicket(r *http.Request) string {
