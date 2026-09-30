@@ -132,7 +132,14 @@ function manyItems(count: number): CatalogueItem[] {
 }
 
 function favouriteButtons() {
-  return screen.queryAllByRole("button", { name: /^favourite$/i });
+  return screen.queryAllByRole("button", { name: /^favourite /i });
+}
+
+function openFilters() {
+  const toggle = screen.getByRole("button", { name: /^filters/i });
+  if (toggle.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(toggle);
+  }
 }
 
 function openCreate(routes: Record<string, { status: number; body?: unknown }>) {
@@ -204,30 +211,32 @@ describe("Create Game Server catalogue", () => {
     expect(await screen.findByRole("heading", { name: /create game server/i })).toBeVisible();
     const templateSearch = screen.getByRole("searchbox", { name: /search available game templates/i });
     const serverSearch = within(screen.getByRole("navigation", { name: /^game servers$/i })).getByRole("searchbox", { name: /search game servers/i });
-    expect(screen.getByRole("button", { name: /project zomboid/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /minecraft paper/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^project zomboid/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^minecraft paper/i })).toBeVisible();
+    fireEvent.click(screen.getByText(/import a pelican or pterodactyl egg/i));
     expect(screen.getByRole("button", { name: /refresh catalogue/i })).toBeVisible();
     expect(screen.getByLabelText(/egg json url/i)).toBeVisible();
 
     fireEvent.change(templateSearch, { target: { value: "pz" } });
-    expect(screen.getByRole("button", { name: /project zomboid/i })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /minecraft paper/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^project zomboid/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^minecraft paper/i })).toBeNull();
     expect(within(screen.getByRole("navigation", { name: /^game servers$/i })).getByRole("treeitem", { name: /my minecraft server/i })).toBeVisible();
 
     fireEvent.change(serverSearch, { target: { value: "valheim" } });
-    expect(screen.getByRole("button", { name: /project zomboid/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^project zomboid/i })).toBeVisible();
     expect(within(screen.getByRole("navigation", { name: /^game servers$/i })).queryByRole("treeitem", { name: /my minecraft server/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: /^all\b/i }));
     fireEvent.change(templateSearch, { target: { value: "" } });
+    openFilters();
     fireEvent.change(screen.getByLabelText(/install method/i), { target: { value: "Standalone" } });
-    expect(screen.getByRole("button", { name: /fivem fxserver/i })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /project zomboid/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^fivem fxserver/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^project zomboid/i })).toBeNull();
 
     fireEvent.change(screen.getByLabelText(/install method/i), { target: { value: "" } });
     fireEvent.click(screen.getByRole("tab", { name: /^all\b/i }));
     fireEvent.change(templateSearch, { target: { value: "pz" } });
-    fireEvent.click(screen.getByRole("button", { name: /project zomboid/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^project zomboid/i }));
     expect(await screen.findByLabelText(/admin password/i)).toBeVisible();
     expect(screen.getAllByLabelText(/server name/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
@@ -236,7 +245,7 @@ describe("Create Game Server catalogue", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /install server/i })).toBeVisible();
     });
-    expect(screen.getByRole("heading", { name: /project zomboid/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^project zomboid/i })).toBeVisible();
   });
 
   it("redirects the old create bookmark", async () => {
@@ -257,58 +266,67 @@ describe("Create Game Server catalogue at scale", () => {
   it("renders a bounded number of cards and more after Show more", async () => {
     openCreate({ "/api/v1/game-servers/catalogue": { status: 200, body: { items: manyItems(250) } } });
     expect(await screen.findByRole("searchbox", { name: /search available game templates/i })).toBeVisible();
-    expect(screen.getByText(/250 templates, showing 60/i)).toBeVisible();
-    expect(favouriteButtons()).toHaveLength(60);
+    expect(screen.getByText(/250 games, 250 server types/i)).toBeVisible();
+    expect(favouriteButtons()).toHaveLength(48);
     fireEvent.click(screen.getByRole("button", { name: /show more/i }));
-    expect(favouriteButtons()).toHaveLength(120);
-    expect(screen.getByText(/showing 120/i)).toBeVisible();
+    expect(favouriteButtons()).toHaveLength(96);
+    expect(screen.getByRole("button", { name: /show more \(154 more\)/i })).toBeVisible();
 
     // Filtering resets the page and narrows the list.
+    openFilters();
     fireEvent.change(screen.getByLabelText(/^platform$/i), { target: { value: "arm64" } });
     expect(favouriteButtons()).toHaveLength(25);
     expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
     fireEvent.change(screen.getByLabelText(/^platform$/i), { target: { value: "" } });
     fireEvent.click(screen.getByRole("tab", { name: /^shooters\b/i }));
-    expect(favouriteButtons()).toHaveLength(50);
+    expect(favouriteButtons()).toHaveLength(48);
+    expect(screen.getByRole("button", { name: /show more \(2 more\)/i })).toBeVisible();
     fireEvent.change(screen.getByLabelText(/install method/i), { target: { value: "SteamCMD" } });
     expect(favouriteButtons()).toHaveLength(25);
     fireEvent.click(screen.getByRole("tab", { name: /^all\b/i }));
     fireEvent.change(screen.getByLabelText(/install method/i), { target: { value: "" } });
 
     fireEvent.change(screen.getByRole("searchbox", { name: /search available game templates/i }), { target: { value: "game 249" } });
-    expect(screen.getByRole("button", { name: /game 249/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^game 249/i })).toBeVisible();
     expect(favouriteButtons()).toHaveLength(1);
   });
 
-  it("groups distributions by game and filters credential-free templates", async () => {
+  it("shows one tile per game and opens a server type chooser for games with several", async () => {
     openCreate({ "/api/v1/game-servers/catalogue": { status: 200, body: { items: minecraftFamily } } });
-    const head = await screen.findByRole("button", { name: /minecraft: java edition/i });
-    expect(head).toHaveAttribute("aria-expanded", "true");
-    const group = screen.getByRole("region", { name: /minecraft: java edition/i });
-    expect(within(group).getByRole("button", { name: /paper/i })).toBeVisible();
-    expect(within(group).getByRole("button", { name: /fabric/i })).toBeVisible();
-    expect(within(group).getByRole("button", { name: /forge/i })).toBeVisible();
-    expect(within(group).getByText("EULA")).toBeVisible();
-    expect(within(group).getByText("Start tested")).toHaveAttribute("title", expect.stringMatching(/isolated test environment/i));
-    expect(screen.getByText("GSLT optional")).toBeVisible();
+    const tile = await screen.findByRole("button", { name: /^minecraft: java edition, 3 server types/i });
+    expect(screen.queryByRole("button", { name: /^paper/i })).toBeNull();
+    expect(screen.getByText(/3 games, 5 server types/i)).toBeVisible();
+    expect(favouriteButtons()).toHaveLength(3);
 
-    fireEvent.click(head);
-    expect(head).toHaveAttribute("aria-expanded", "false");
-    expect(within(group).queryAllByRole("button", { name: /^favourite$/i })).toHaveLength(0);
-    expect(head).toHaveTextContent(/3 server types: Paper, Fabric, Forge/);
-    fireEvent.click(head);
-    expect(within(group).getAllByRole("button", { name: /^favourite$/i })).toHaveLength(3);
+    fireEvent.click(tile);
+    expect(await screen.findByRole("heading", { name: /^minecraft: java edition/i })).toBeVisible();
+    expect(screen.getByText(/choose a server type\. 3 available/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^paper/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^fabric/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^forge/i })).toBeVisible();
+    expect(screen.getByText("EULA")).toBeVisible();
+    expect(screen.getByText("Start tested")).toHaveAttribute("title", expect.stringMatching(/isolated test environment/i));
+    fireEvent.click(screen.getByRole("button", { name: /all games/i }));
+    expect(await screen.findByRole("button", { name: /^minecraft: java edition, 3 server types/i })).toBeVisible();
 
     // Minecraft needs only the EULA; CS:S has an optional GSLT. Both count as credential free.
-    expect(favouriteButtons()).toHaveLength(5);
+    openFilters();
     fireEvent.click(screen.getByRole("checkbox", { name: /no credentials needed/i }));
-    expect(favouriteButtons()).toHaveLength(4);
-    expect(screen.queryByRole("button", { name: /half-life deathmatch/i })).toBeNull();
+    expect(favouriteButtons()).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /^half-life deathmatch/i })).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: /no credentials needed/i }));
 
     fireEvent.change(screen.getByRole("searchbox", { name: /search available game templates/i }), { target: { value: "gslt" } });
-    expect(screen.getByRole("button", { name: /counter-strike: source/i })).toBeVisible();
-    expect(screen.queryByRole("region", { name: /minecraft: java edition/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^counter-strike: source/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^minecraft: java edition/i })).toBeNull();
+
+    // Searching for a distribution finds its game and narrows the chooser.
+    fireEvent.change(screen.getByRole("searchbox", { name: /search available game templates/i }), { target: { value: "fabric" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^minecraft: java edition, 3 server types/i }));
+    expect(await screen.findByText(/1 match your search/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^forge/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /show all 3/i }));
+    expect(screen.getByRole("button", { name: /^forge/i })).toBeVisible();
   });
 
   it("toggles favourites and remembers recents in localStorage when prefs lack them", async () => {
@@ -316,18 +334,18 @@ describe("Create Game Server catalogue at scale", () => {
       "/api/v1/game-servers/catalogue": { status: 200, body: { items: catalogue } },
       "/api/v1/game-servers/templates": { status: 200, body: zomboidTemplate },
     });
-    await screen.findByRole("button", { name: /project zomboid/i });
-    const card = screen.getByRole("button", { name: /project zomboid/i }).closest(".gs-catalogue-card") as HTMLElement;
-    const star = within(card).getByRole("button", { name: /^favourite$/i });
+    await screen.findByRole("button", { name: /^project zomboid/i });
+    const card = screen.getByRole("button", { name: /^project zomboid/i }).closest(".gs-game") as HTMLElement;
+    const star = within(card).getByRole("button", { name: /^favourite /i });
     expect(star).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(star);
     expect(star).toHaveAttribute("aria-pressed", "true");
     expect(JSON.parse(localStorage.getItem("ndl.gameservers.catalogue.favorites") ?? "[]")).toEqual(["ndl-zomboid"]);
     fireEvent.click(screen.getByRole("tab", { name: /^favourites\b/i }));
     expect(favouriteButtons()).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /project zomboid/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^project zomboid/i })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: /project zomboid/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^project zomboid/i }));
     expect(await screen.findByLabelText(/admin password/i)).toBeVisible();
     expect(JSON.parse(localStorage.getItem("ndl.gameservers.catalogue.recents") ?? "[]")).toEqual(["ndl-zomboid"]);
     fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
@@ -340,12 +358,12 @@ describe("Create Game Server catalogue at scale", () => {
       "/api/v1/game-servers/catalogue": { status: 200, body: { items: catalogue } },
       "/api/v1/game-servers/prefs": { status: 200, body: { view: "grid", recents: "[]", favorites: JSON.stringify(["ndl-cs2"]) } },
     });
-    const card = (await screen.findByRole("button", { name: /counter-strike 2/i })).closest(".gs-catalogue-card") as HTMLElement;
+    const card = (await screen.findByRole("button", { name: /^counter-strike 2/i })).closest(".gs-game") as HTMLElement;
     await waitFor(() => {
-      expect(within(card).getByRole("button", { name: /^favourite$/i })).toHaveAttribute("aria-pressed", "true");
+      expect(within(card).getByRole("button", { name: /^favourite /i })).toHaveAttribute("aria-pressed", "true");
     });
-    const zomboid = screen.getByRole("button", { name: /project zomboid/i }).closest(".gs-catalogue-card") as HTMLElement;
-    fireEvent.click(within(zomboid).getByRole("button", { name: /^favourite$/i }));
+    const zomboid = screen.getByRole("button", { name: /^project zomboid/i }).closest(".gs-game") as HTMLElement;
+    fireEvent.click(within(zomboid).getByRole("button", { name: /^favourite /i }));
     await waitFor(() => {
       expect(requestsTo(fetchMock, "/api/v1/game-servers/prefs", "PUT")).toContainEqual({ favorites: JSON.stringify(["ndl-zomboid", "ndl-cs2"]) });
     });
@@ -369,7 +387,8 @@ describe("Create Game Server catalogue at scale", () => {
         },
       },
     });
-    fireEvent.click(await screen.findByRole("button", { name: /paper/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^minecraft: java edition/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^paper/i }));
     const summary = await screen.findByRole("complementary", { name: /template summary/i });
     expect(within(summary).getByText("PaperMC API")).toBeVisible();
     expect(within(summary).getByText(/latest build/i)).toBeVisible();
@@ -405,7 +424,8 @@ describe("Create Game Server catalogue at scale", () => {
       "/api/v1/game-servers/catalogue": { status: 200, body: { items: minecraftFamily } },
       "/api/v1/game-servers/templates": { status: 200, body: paperTemplate },
     });
-    fireEvent.click(await screen.findByRole("button", { name: /paper/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^minecraft: java edition/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^paper/i }));
     fireEvent.change(await screen.findByLabelText(/runtime version/i), { target: { value: "Java 21" } });
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^review$/i }));

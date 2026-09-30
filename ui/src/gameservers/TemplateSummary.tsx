@@ -1,6 +1,8 @@
+import { Fragment } from "react";
 import { formatRam } from "./caps";
 import { VERIFICATION_INFO, requirementStageLabel } from "./catalogue";
-import type { GamePort, GameTemplate } from "./types";
+import { GameArt } from "./CatalogueBrowser";
+import type { CatalogueItem, GamePort, GameTemplate } from "./types";
 
 export function portLabel(port: GamePort): string {
   const base = `${port.host_port || port.container_port}/${port.protocol || "tcp"}`;
@@ -12,7 +14,8 @@ function safeHttps(url?: string): string | undefined {
 }
 
 /** What the picked template will do, shown next to the Options form. */
-export function TemplateSummary({ template }: { template: GameTemplate }) {
+export function TemplateSummary({ template, art }: { template: GameTemplate; art?: CatalogueItem | null }) {
+  const fixed = (template.variables ?? []).filter((v) => v.editable === false && v.viewable !== false && v.default);
   const verify = template.verification ? VERIFICATION_INFO[template.verification] : undefined;
   const ports = template.default_ports ?? [];
   const requirements = template.requirements ?? [];
@@ -28,12 +31,26 @@ export function TemplateSummary({ template }: { template: GameTemplate }) {
 
   return (
     <aside className="gs-summary" aria-label="Template summary">
+      {art ? (
+        <GameArt
+          url={art.game_logo_url || art.logo_url}
+          kind={art.game_logo_url ? art.game_logo_kind : art.logo_kind}
+          title={template.game_title || template.name}
+          size="hero"
+        />
+      ) : null}
       <p className="gs-summary-title">
         <strong>{template.name}</strong>
         {title ? <span className="gs-meta"> {title}</span> : null}
       </p>
       {template.summary ? <p className="gs-meta">{template.summary}</p> : null}
       <dl className="gs-summary-list">
+        {fixed.map((v) => (
+          <Fragment key={v.env}>
+            <dt>{v.name}</dt>
+            <dd>{v.default}</dd>
+          </Fragment>
+        ))}
         {template.install_method ? (
           <>
             <dt>Install method</dt>

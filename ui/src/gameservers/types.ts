@@ -176,7 +176,15 @@ export type CatalogueItem = {
   verification?: VerificationLevel | string;
   source_ref?: string;
   docs_url?: string;
+  /** Template artwork: its distribution mark, or the game's art. */
+  logo_url?: string;
+  logo_kind?: LogoKind | string;
+  /** The game's own artwork, shared by every template of the game. */
+  game_logo_url?: string;
+  game_logo_kind?: LogoKind | string;
 };
+
+export type LogoKind = "banner" | "icon";
 
 export type PreflightNode = {
   id: string;

@@ -48,6 +48,9 @@ export function GameServerCreatePage() {
   const [busy, setBusy] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [preflight, setPreflight] = useState<PreflightState | null>(null);
+  // The game whose server types are open, kept while moving between steps.
+  const [game, setGame] = useState<string | null>(null);
+  const [picked, setPicked] = useState<CatalogueItem | null>(null);
   const prefs = useCataloguePrefs();
   const { markRecent } = prefs;
 
@@ -147,6 +150,7 @@ export function GameServerCreatePage() {
         setDiskMb(tmpl.default_disk_mb || 8192);
         setPreflight(null);
         markRecent(item.id);
+        setPicked(item);
         setStep(1);
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "Could not open that template");
@@ -273,18 +277,25 @@ export function GameServerCreatePage() {
             items={items ?? []}
             favorites={prefs.favorites}
             recents={prefs.recents}
+            game={game}
+            onGameChange={setGame}
             onPick={onPickCard}
             onToggleFavorite={prefs.toggleFavorite}
           />
-          <div className="gs-catalogue-tools">
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onRefresh()}>
-              Refresh catalogue
-            </button>
-            <input className="field-input" value={importUrl} placeholder="Paste an egg JSON HTTPS URL" aria-label="Egg JSON URL" onChange={(e) => setImportUrl(e.target.value)} />
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onImport()}>
-              Import
-            </button>
-          </div>
+          {game ? null : (
+            <details className="gs-catalogue-import">
+              <summary>Import a Pelican or Pterodactyl egg</summary>
+              <div className="gs-catalogue-tools">
+                <input className="field-input" value={importUrl} placeholder="Paste an egg JSON HTTPS URL" aria-label="Egg JSON URL" onChange={(e) => setImportUrl(e.target.value)} />
+                <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onImport()}>
+                  Import
+                </button>
+                <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onRefresh()}>
+                  Refresh catalogue
+                </button>
+              </div>
+            </details>
+          )}
         </div>
       ) : null}
 
@@ -292,7 +303,8 @@ export function GameServerCreatePage() {
         <div className="gs-options">
           <div className="gs-form">
             <label>
-              Server name
+              Name in No-DAL
+              <span className="field-hint">How this server appears in your server list. Players see the in-game name below.</span>
               <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} />
             </label>
             {images.length > 1 ? (
@@ -310,7 +322,8 @@ export function GameServerCreatePage() {
               </label>
             ) : null}
             {(template.variables ?? [])
-              .filter((v) => showCreateVariable(v.env, v.viewable, v.required, template.start_requires))
+              // Fixed values such as the Steam app ID are shown in the summary, not as inputs.
+              .filter((v) => v.editable !== false && showCreateVariable(v.env, v.viewable, v.required, template.start_requires))
               .map((v) => {
                 const generated = v.generate === "password";
                 const onChange = (value: string) => setEnv((cur) => ({ ...cur, [v.env]: value }));
@@ -357,7 +370,7 @@ export function GameServerCreatePage() {
               </button>
             </div>
           </div>
-          <TemplateSummary template={template} />
+          <TemplateSummary template={template} art={picked} />
         </div>
       ) : null}
 

@@ -1,309 +1,380 @@
-import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
-import { familyTone, formatRam } from "./caps";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { formatRam } from "./caps";
 import {
   CATEGORY_ALL,
   CATEGORY_FAVORITES,
   CATEGORY_RECENT,
   VERIFICATION_INFO,
   architecturesOf,
-  catalogueCategories,
   catalogueInstallMethods,
-  catalogueMark,
-  groupCatalogue,
+  categoryLabel,
+  categoryOf,
   installMethodOf,
-  queryCatalogue,
   requirementBadge,
-  type CatalogueEntry,
   type CatalogueSort,
 } from "./catalogue";
+import {
+  gameCategories,
+  gameFavoriteKey,
+  isFavoriteGame,
+  monogram,
+  queryGames,
+  sharedRequirements,
+  variantSections,
+  type GameEntry,
+} from "./games";
 import type { CatalogueItem } from "./types";
 
-/** Cards rendered per page before "Show more". */
-export const CATALOGUE_PAGE_SIZE = 60;
-/** Groups with more templates than this start collapsed unless searching. */
-export const GROUP_OPEN_MAX = 6;
+/** Game tiles rendered per page before "Show more". */
+export const CATALOGUE_PAGE_SIZE = 48;
 
 type Props = {
   items: CatalogueItem[];
   favorites: string[];
   recents: string[];
+  /** Open game (server type chooser), kept by the page across wizard steps. */
+  game: string | null;
+  onGameChange: (title: string | null) => void;
   onPick: (item: CatalogueItem) => void;
   onToggleFavorite: (id: string) => void;
 };
 
-export function CatalogueBrowser({ items, favorites, recents, onPick, onToggleFavorite }: Props) {
+export function CatalogueBrowser({ items, favorites, recents, game, onGameChange, onPick, onToggleFavorite }: Props) {
   const [q, setQ] = useState("");
   const [category, setCategory] = useState(CATEGORY_ALL);
   const [method, setMethod] = useState("");
   const [arch, setArch] = useState("");
   const [noCredentials, setNoCredentials] = useState(false);
   const [sort, setSort] = useState<CatalogueSort>("popular");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const deferredQ = useDeferredValue(q);
-  const searching = deferredQ.trim() !== "";
 
   const methods = useMemo(() => catalogueInstallMethods(items), [items]);
   const facetQuery = useMemo(
-    () => ({ q: deferredQ, method, arch, noCredentials, favorites, recents }),
-    [deferredQ, method, arch, noCredentials, favorites, recents],
+    () => ({ q: deferredQ, method, arch, noCredentials, favorites, recents, sort }),
+    [deferredQ, method, arch, noCredentials, favorites, recents, sort],
   );
-  const chips = useMemo(() => catalogueCategories(items, facetQuery), [items, facetQuery]);
-  const results = useMemo(() => queryCatalogue(items, { ...facetQuery, category, sort }), [items, facetQuery, category, sort]);
-  const entries = useMemo(() => groupCatalogue(results), [results]);
+  const chips = useMemo(() => gameCategories(items, facetQuery), [items, facetQuery]);
+  const games = useMemo(() => queryGames(items, { ...facetQuery, category }), [items, facetQuery, category]);
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
+  const templateCount = useMemo(() => games.reduce((n, g) => n + g.matched.length, 0), [games]);
+  const activeFilters = (method ? 1 : 0) + (arch ? 1 : 0) + (noCredentials ? 1 : 0) + (sort !== "popular" ? 1 : 0);
 
-  // Reset the page size whenever the result set changes shape.
   const filterKey = `${deferredQ}\u0000${category}\u0000${method}\u0000${arch}\u0000${noCredentials}\u0000${sort}`;
   const [paging, setPaging] = useState({ key: filterKey, limit: CATALOGUE_PAGE_SIZE });
   const limit = paging.key === filterKey ? paging.limit : CATALOGUE_PAGE_SIZE;
   const showMore = useCallback(() => {
     setPaging((cur) => ({ key: filterKey, limit: (cur.key === filterKey ? cur.limit : CATALOGUE_PAGE_SIZE) + CATALOGUE_PAGE_SIZE }));
   }, [filterKey]);
+  const visible = games.slice(0, limit);
+  const hasMore = games.length > visible.length;
 
-  const isOpen = useCallback(
-    (entry: Extract<CatalogueEntry, { kind: "group" }>) => expanded[entry.key] ?? (searching || entry.items.length <= GROUP_OPEN_MAX),
-    [expanded, searching],
-  );
-  const toggleGroup = useCallback(
-    (key: string, open: boolean) => {
-      setExpanded((cur) => ({ ...cur, [key]: !open }));
-    },
-    [],
-  );
-
-  const { visible, shown, total } = useMemo(() => {
-    let remaining = limit;
-    let shownCards = 0;
-    let totalCards = 0;
-    const out: { entry: CatalogueEntry; open: boolean; items: CatalogueItem[] }[] = [];
-    for (const entry of entries) {
-      if (entry.kind === "single") {
-        totalCards++;
-        if (remaining > 0) {
-          out.push({ entry, open: true, items: [entry.item] });
-          remaining--;
-          shownCards++;
-        }
-        continue;
-      }
-      const open = isOpen(entry);
-      const units = open ? entry.items.length : 1;
-      totalCards += units;
-      if (remaining <= 0) {
-        continue;
-      }
-      const slice = open ? entry.items.slice(0, remaining) : [];
-      out.push({ entry, open, items: slice });
-      const used = open ? slice.length : 1;
-      remaining -= used;
-      shownCards += used;
-    }
-    return { visible: out, shown: shownCards, total: totalCards };
-  }, [entries, isOpen, limit]);
-
-  const hasMore = shown < total;
   const sentinel = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = sentinel.current;
     if (!el || !hasMore || typeof IntersectionObserver === "undefined") {
       return;
     }
-    const observer = new IntersectionObserver(
-      (records) => {
-        if (records.some((r) => r.isIntersecting)) {
-          showMore();
-        }
-      },
-      { rootMargin: "400px 0px" },
-    );
+    const observer = new IntersectionObserver((records) => {
+      if (records.some((r) => r.isIntersecting)) {
+        showMore();
+      }
+    }, { rootMargin: "400px 0px" });
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasMore, showMore]);
 
+  const openGame = useCallback(
+    (entry: GameEntry) => {
+      if (entry.items.length === 1) {
+        onPick(entry.items[0]);
+      } else {
+        onGameChange(entry.title);
+      }
+    },
+    [onGameChange, onPick],
+  );
+
+  const selected = useMemo(() => {
+    if (!game) {
+      return null;
+    }
+    const all = queryGames(items, { favorites, recents });
+    const entry = all.find((g) => g.title === game);
+    if (!entry) {
+      return null;
+    }
+    const filtered = games.find((g) => g.key === entry.key);
+    return { entry, matched: filtered?.matched ?? [] };
+  }, [game, items, favorites, recents, games]);
+
+  if (selected) {
+    return (
+      <ServerTypeChooser
+        entry={selected.entry}
+        matched={selected.matched}
+        favorites={favoriteSet}
+        onBack={() => onGameChange(null)}
+        onPick={onPick}
+        onToggleFavorite={onToggleFavorite}
+      />
+    );
+  }
+
   const emptyMessage =
     category === CATEGORY_FAVORITES && favorites.length === 0
-      ? "No favourites yet. Use the star on a template to keep it here."
+      ? "No favourites yet. Use the star on a game to keep it here."
       : category === CATEGORY_RECENT && recents.length === 0
-        ? "Templates you pick show up here."
-        : "No templates match that search.";
+        ? "Games you pick show up here."
+        : "No games match that search.";
 
   return (
-    <>
-      <label className="gs-catalogue-search">
-        <span>Available game templates</span>
-        <input
-          className="field-input"
-          type="search"
-          value={q}
-          placeholder="Search name, alias, engine, or need. Try mc, pz, cs2, arm64, gslt"
-          aria-label="Search available game templates"
-          onChange={(e) => setQ(e.target.value)}
-        />
-      </label>
-      <div className="gs-catalogue-groups" role="tablist" aria-label="Catalogue categories">
-        {chips.map((chip) => (
-          <button
-            key={chip.id}
-            type="button"
-            role="tab"
-            className={"gs-chip" + (category === chip.id ? " is-on" : "")}
-            aria-selected={category === chip.id}
-            onClick={() => setCategory(chip.id)}
-          >
-            {chip.label}
-            <span className="gs-chip-count">{chip.count}</span>
-          </button>
-        ))}
+    <div className="gs-browser">
+      <div className="gs-browser-bar">
+        <label className="gs-browser-search">
+          <span className="visually-hidden">Search games</span>
+          <input
+            className="field-input"
+            type="search"
+            value={q}
+            placeholder="Search games, server types or engines. Try mc, rust, cs2, paper, gslt"
+            aria-label="Search available game templates"
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          className={"btn btn-ghost gs-browser-filter-btn" + (filtersOpen ? " is-on" : "")}
+          aria-expanded={filtersOpen}
+          aria-controls="gs-browser-filters"
+          onClick={() => setFiltersOpen((v) => !v)}
+        >
+          Filters{activeFilters ? ` (${activeFilters})` : ""}
+        </button>
       </div>
-      <div className="gs-catalogue-filters">
-        <label>
-          <span>Install method</span>
-          <select className="field-input" value={method} onChange={(e) => setMethod(e.target.value)}>
-            <option value="">Any method</option>
-            {methods.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Platform</span>
-          <select className="field-input" value={arch} onChange={(e) => setArch(e.target.value)}>
-            <option value="">Any platform</option>
-            <option value="amd64">amd64 (x86_64)</option>
-            <option value="arm64">arm64</option>
-          </select>
-        </label>
-        <label className="gs-catalogue-check">
-          <input type="checkbox" checked={noCredentials} onChange={(e) => setNoCredentials(e.target.checked)} />
-          <span>No credentials needed</span>
-        </label>
-        <label>
-          <span>Sort</span>
-          <select className="field-input" value={sort} onChange={(e) => setSort(e.target.value as CatalogueSort)}>
-            <option value="popular">Popular</option>
-            <option value="az">A-Z</option>
-          </select>
-        </label>
+      {filtersOpen ? (
+        <div className="gs-browser-filters" id="gs-browser-filters">
+          <label>
+            <span>Install method</span>
+            <select className="field-input" value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option value="">Any method</option>
+              {methods.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Platform</span>
+            <select className="field-input" value={arch} onChange={(e) => setArch(e.target.value)}>
+              <option value="">Any platform</option>
+              <option value="amd64">amd64 (x86_64)</option>
+              <option value="arm64">arm64</option>
+            </select>
+          </label>
+          <label>
+            <span>Sort</span>
+            <select className="field-input" value={sort} onChange={(e) => setSort(e.target.value as CatalogueSort)}>
+              <option value="popular">Popular</option>
+              <option value="az">A-Z</option>
+            </select>
+          </label>
+          <label className="gs-browser-check">
+            <input type="checkbox" checked={noCredentials} onChange={(e) => setNoCredentials(e.target.checked)} />
+            <span>No credentials needed</span>
+          </label>
+        </div>
+      ) : null}
+      <div className="gs-browser-chips" role="tablist" aria-label="Catalogue categories">
+        {chips
+          .filter((chip) => chip.count > 0 || chip.id === category || chip.id === CATEGORY_ALL)
+          .map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              role="tab"
+              className={"gs-chip" + (category === chip.id ? " is-on" : "")}
+              aria-selected={category === chip.id}
+              onClick={() => setCategory(chip.id)}
+            >
+              {chip.label}
+              <span className="gs-chip-count">{chip.count}</span>
+            </button>
+          ))}
       </div>
       <p className="gs-catalogue-count" aria-live="polite">
-        {results.length} {results.length === 1 ? "template" : "templates"}
-        {hasMore ? `, showing ${shown}` : ""}
+        {games.length} {games.length === 1 ? "game" : "games"}, {templateCount} server {templateCount === 1 ? "type" : "types"}
       </p>
-      <div className="gs-catalogue-grid">
-        {visible.map(({ entry, open, items: slice }) =>
-          entry.kind === "single" ? (
-            <CatalogueCard
-              key={entry.key}
-              item={entry.item}
-              favorite={favoriteSet.has(entry.item.id)}
-              showGameTitle
-              onPick={onPick}
-              onToggleFavorite={onToggleFavorite}
-            />
-          ) : (
-            <CatalogueGameGroup
-              key={entry.key}
-              groupKey={entry.key}
-              title={entry.title}
-              all={entry.items}
-              items={slice}
-              open={open}
-              favorites={favoriteSet}
-              onToggle={toggleGroup}
-              onPick={onPick}
-              onToggleFavorite={onToggleFavorite}
-            />
-          ),
-        )}
+      <div className="gs-game-grid">
+        {visible.map((entry) => (
+          <GameTile
+            key={entry.key}
+            entry={entry}
+            favorite={isFavoriteGame(entry, favoriteSet)}
+            onOpen={openGame}
+            onToggleFavorite={onToggleFavorite}
+          />
+        ))}
       </div>
-      {results.length === 0 ? <p className="gs-meta">{emptyMessage}</p> : null}
+      {games.length === 0 ? <p className="gs-meta">{emptyMessage}</p> : null}
       {hasMore ? (
         <div className="gs-catalogue-more" ref={sentinel}>
           <button type="button" className="btn btn-ghost" onClick={showMore}>
-            Show more ({total - shown} more)
+            Show more ({games.length - visible.length} more)
           </button>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
-type GroupProps = {
-  groupKey: string;
-  title: string;
-  all: CatalogueItem[];
-  items: CatalogueItem[];
-  open: boolean;
-  favorites: ReadonlySet<string>;
-  onToggle: (key: string, open: boolean) => void;
-  onPick: (item: CatalogueItem) => void;
+/** Game or template artwork with a monogram fallback when it cannot load. */
+export function GameArt({ url, kind, title, size }: { url?: string; kind?: string; title: string; size: "tile" | "hero" | "icon" }) {
+  const [failed, setFailed] = useState(false);
+  const show = Boolean(url) && !failed;
+  const mode = !show ? "is-mono" : kind === "banner" ? "is-banner" : "is-icon";
+  return (
+    <span className={`gs-art gs-art-${size} ${mode}`} aria-hidden="true" data-hue={hueOf(title)}>
+      {show ? (
+        <img src={url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+      ) : (
+        <span className="gs-art-mono">{monogram(title)}</span>
+      )}
+    </span>
+  );
+}
+
+function hueOf(title: string): number {
+  let h = 0;
+  for (const ch of title) {
+    h = (h * 31 + ch.charCodeAt(0)) % 360;
+  }
+  return Math.round(h / 30) * 30;
+}
+
+type TileProps = {
+  entry: GameEntry;
+  favorite: boolean;
+  onOpen: (entry: GameEntry) => void;
   onToggleFavorite: (id: string) => void;
 };
 
-const CatalogueGameGroup = memo(function CatalogueGameGroup({ groupKey, title, all, items, open, favorites, onToggle, onPick, onToggleFavorite }: GroupProps) {
-  const panelId = useId();
-  const preview = all
-    .slice(0, 4)
-    .map((item) => item.name)
-    .join(", ");
+const GameTile = memo(function GameTile({ entry, favorite, onOpen, onToggleFavorite }: TileProps) {
+  const count = entry.items.length;
+  const single = count === 1 ? entry.items[0] : null;
+  const needs = sharedRequirements(entry);
+  const meta = single ? installMethodOf(single) : `${count} server types`;
+  const favKey = single ? single.id : gameFavoriteKey(entry.title);
   return (
-    <section className={"gs-catalogue-game " + familyTone(all[0]?.family)} aria-label={title}>
-      <h3 className="gs-catalogue-game-head">
-        <button type="button" aria-expanded={open} aria-controls={panelId} onClick={() => onToggle(groupKey, open)}>
-          <span className="gs-catalogue-mark" aria-hidden="true">
-            {title.slice(0, 1).toUpperCase()}
+    <div className="gs-game">
+      <button type="button" className="gs-game-tile" onClick={() => onOpen(entry)} aria-label={count > 1 ? `${entry.title}, ${count} server types` : entry.title}>
+        <GameArt url={entry.logoUrl} kind={entry.logoKind} title={entry.title} size="tile" />
+        <span className="gs-game-body">
+          <span className="gs-game-title">{entry.title}</span>
+          <span className="gs-game-meta">
+            {categoryLabel(entry.category)} · {meta}
           </span>
-          <span className="gs-catalogue-copy">
-            <span className="gs-catalogue-game-title">{title}</span>
-            <span className="gs-catalogue-type">
-              {all.length} server types
-              {open ? "" : `: ${preview}${all.length > 4 ? ", ..." : ""}`}
+          {needs.length ? (
+            <span className="gs-game-flags">
+              {needs.slice(0, 2).map((req) => (
+                <span key={`${req.kind}:${req.stage}`} className="gs-badge is-need" title={req.label}>
+                  {requirementBadge(req)}
+                </span>
+              ))}
             </span>
-          </span>
-          <span className="gs-catalogue-caret" aria-hidden="true">
-            {open ? "▾" : "▸"}
-          </span>
-        </button>
-      </h3>
-      {open ? (
-        <div className="gs-catalogue-game-items" id={panelId}>
-          {items.map((item) => (
-            <CatalogueCard key={item.id} item={item} favorite={favorites.has(item.id)} showGameTitle={false} onPick={onPick} onToggleFavorite={onToggleFavorite} />
-          ))}
-        </div>
-      ) : null}
-    </section>
+          ) : null}
+        </span>
+      </button>
+      <button
+        type="button"
+        className={"gs-catalogue-star" + (favorite ? " is-on" : "")}
+        aria-pressed={favorite}
+        aria-label={`Favourite ${entry.title}`}
+        title={favorite ? "Remove from favourites" : "Add to favourites"}
+        onClick={() => onToggleFavorite(favKey)}
+      >
+        <span aria-hidden="true">{favorite ? "★" : "☆"}</span>
+      </button>
+    </div>
   );
 });
 
-type CardProps = {
-  item: CatalogueItem;
-  favorite: boolean;
-  showGameTitle: boolean;
+type ChooserProps = {
+  entry: GameEntry;
+  matched: CatalogueItem[];
+  favorites: ReadonlySet<string>;
+  onBack: () => void;
   onPick: (item: CatalogueItem) => void;
   onToggleFavorite: (id: string) => void;
 };
 
-export const CatalogueCard = memo(function CatalogueCard({ item, favorite, showGameTitle, onPick, onToggleFavorite }: CardProps) {
-  const titleId = useId();
-  const verifyId = useId();
+function ServerTypeChooser({ entry, matched, favorites, onBack, onPick, onToggleFavorite }: ChooserProps) {
+  const [showAll, setShowAll] = useState(false);
+  const filtered = matched.length > 0 && matched.length < entry.items.length && !showAll;
+  const list = filtered ? entry.items.filter((i) => matched.includes(i)) : entry.items;
+  const sections = variantSections(list);
+  const heading = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, [entry.key]);
+  return (
+    <div className="gs-chooser">
+      <button type="button" className="btn btn-ghost gs-chooser-back" onClick={onBack}>
+        ← All games
+      </button>
+      <header className="gs-chooser-head">
+        <GameArt url={entry.logoUrl} kind={entry.logoKind} title={entry.title} size="hero" />
+        <div>
+          <h2 ref={heading} tabIndex={-1}>
+            {entry.title}
+          </h2>
+          <p className="gs-meta">
+            Choose a server type. {entry.items.length} available
+            {filtered ? `, ${list.length} match your search.` : "."}
+          </p>
+          {filtered ? (
+            <button type="button" className="btn btn-link" onClick={() => setShowAll(true)}>
+              Show all {entry.items.length}
+            </button>
+          ) : null}
+        </div>
+      </header>
+      {sections.map((section) => (
+        <section key={section.label || "all"} className="gs-chooser-section" aria-label={section.label || `${entry.title} server types`}>
+          {section.label ? <h3 className="gs-chooser-label">{section.label}</h3> : null}
+          <div className="gs-variant-list">
+            {section.items.map((item) => (
+              <VariantCard key={item.id} item={item} favorite={favorites.has(item.id)} onPick={onPick} onToggleFavorite={onToggleFavorite} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+type VariantProps = {
+  item: CatalogueItem;
+  favorite: boolean;
+  onPick: (item: CatalogueItem) => void;
+  onToggleFavorite: (id: string) => void;
+};
+
+export const VariantCard = memo(function VariantCard({ item, favorite, onPick, onToggleFavorite }: VariantProps) {
   const verify = item.verification ? VERIFICATION_INFO[item.verification] : undefined;
   const archs = architecturesOf(item);
   const ram = item.default_memory_mb;
-  const title = item.game_title?.trim();
   return (
-    <div className={"gs-catalogue-card " + familyTone(item.family)}>
-      <button type="button" className="gs-catalogue-item" aria-describedby={verify ? verifyId : undefined} onClick={() => onPick(item)}>
-        <span className="gs-catalogue-mark" aria-hidden="true">
-          {catalogueMark(item)}
-        </span>
-        <span className="gs-catalogue-copy">
-          <h3 id={titleId}>{item.name}</h3>
-          {showGameTitle && title && title.toLowerCase() !== item.name.toLowerCase() ? <span className="gs-catalogue-type">{title}</span> : null}
+    <div className="gs-variant">
+      <button type="button" className="gs-variant-main" onClick={() => onPick(item)}>
+        <GameArt url={item.logo_url} kind={item.logo_kind} title={item.name} size="icon" />
+        <span className="gs-variant-body">
+          <span className="gs-variant-name">{item.name}</span>
+          {item.summary ? <span className="gs-variant-summary">{item.summary}</span> : null}
           <span className="gs-catalogue-badges">
             <span className="gs-badge">{installMethodOf(item)}</span>
+            {categoryOf(item) === "proxy" ? <span className="gs-badge">Proxy</span> : null}
             {archs.includes("arm64") ? <span className="gs-badge is-arch">arm64</span> : null}
             {(item.requirements ?? []).map((req) => (
               <span key={`${req.kind}:${req.stage}:${req.env ?? ""}`} className={"gs-badge" + (req.stage === "optional" ? "" : " is-need")} title={req.label}>
@@ -317,20 +388,13 @@ export const CatalogueCard = memo(function CatalogueCard({ item, favorite, showG
               </span>
             ) : null}
           </span>
-          {item.hint ? <span className="gs-catalogue-hint">{item.hint}</span> : null}
         </span>
       </button>
-      {verify ? (
-        <span id={verifyId} className="visually-hidden">
-          {verify.title}
-        </span>
-      ) : null}
       <button
         type="button"
         className={"gs-catalogue-star" + (favorite ? " is-on" : "")}
         aria-pressed={favorite}
-        aria-label="Favourite"
-        aria-describedby={titleId}
+        aria-label={`Favourite ${item.name}`}
         title={favorite ? "Remove from favourites" : "Add to favourites"}
         onClick={() => onToggleFavorite(item.id)}
       >

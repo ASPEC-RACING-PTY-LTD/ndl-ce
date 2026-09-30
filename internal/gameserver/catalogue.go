@@ -57,6 +57,10 @@ type CatalogueItem struct {
 	Verification   string        `json:"verification,omitempty"`
 	SourceRef      string        `json:"source_ref,omitempty"`
 	DocsURL        string        `json:"docs_url,omitempty"`
+	LogoURL        string        `json:"logo_url,omitempty"`
+	LogoKind       string        `json:"logo_kind,omitempty"`
+	GameLogoURL    string        `json:"game_logo_url,omitempty"`
+	GameLogoKind   string        `json:"game_logo_kind,omitempty"`
 }
 
 // CatalogueItemFromTemplate builds the catalogue card for any template,
@@ -82,7 +86,10 @@ func catalogueItemFromTemplate(t Template, source string, builtin bool) Catalogu
 			reqs = append(reqs, Requirement{Kind: ReqToken, Stage: StageStart, Env: env, Label: env})
 		}
 	}
+	logo, logoKind := TemplateLogo(t)
+	gameLogo, gameLogoKind := GameLogo(firstNonEmpty(t.GameTitle, t.Name))
 	return CatalogueItem{
+		LogoURL: logo, LogoKind: logoKind, GameLogoURL: gameLogo, GameLogoKind: gameLogoKind,
 		ID: t.ID, Name: t.Name, Game: t.Game, Implementation: t.Implementation,
 		Family: t.Family, Summary: t.Summary, Source: source, Builtin: builtin,
 		Tags: t.Tags, Capabilities: t.Capabilities, Aliases: t.Aliases,

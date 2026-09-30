@@ -15,7 +15,7 @@ export const CATEGORY_ALL = "all";
 export const CATEGORY_FAVORITES = "favorites";
 export const CATEGORY_RECENT = "recent";
 
-const CATEGORY_ORDER = [
+export const CATEGORY_ORDER = [
   "minecraft",
   "proxy",
   "survival",
