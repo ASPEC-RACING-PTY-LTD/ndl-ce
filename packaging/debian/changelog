@@ -1,4 +1,4 @@
-nodal (1.1.1) UNRELEASED; urgency=medium
+nodal (1.1.2) trixie; urgency=medium
 
   * Updates install from the Updates page. Apply now upgrades every core
     package (nodal, ndl-control, ndl-agent, ndl-ui, nodalctl) instead of
@@ -22,7 +22,7 @@ nodal (1.1.1) UNRELEASED; urgency=medium
     tile per game with its artwork, and a server type chooser for games
     with several server distributions.
 
- -- No-dal <packaging@no-dal.com>  Wed, 30 Sep 2026 03:40:00 +0000
+ -- No-dal <packaging@no-dal.com>  Wed, 30 Sep 2026 04:36:36 +0000
 
 nodal (1.1.0) trixie; urgency=medium
 
