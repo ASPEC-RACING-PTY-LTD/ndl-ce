@@ -5,8 +5,8 @@ import type { CatalogueItem } from "./types";
 const items: CatalogueItem[] = [
   { id: "paper", name: "Minecraft Paper", game: "minecraft", game_title: "Minecraft: Java Edition", category: "minecraft", aliases: ["paper"], logo_url: "https://avatars.githubusercontent.com/PaperMC?s=160", logo_kind: "icon" },
   { id: "velocity", name: "Velocity", game: "minecraft", game_title: "Minecraft: Java Edition", category: "proxy", logo_url: "https://avatars.githubusercontent.com/PaperMC?s=160", logo_kind: "icon" },
-  { id: "rust", name: "Rust", game: "rust", game_title: "Rust", category: "survival", game_logo_url: "https://cdn.cloudflare.steamstatic.com/steam/apps/252490/header.jpg", game_logo_kind: "banner", requirements: [{ kind: "gslt", stage: "optional", label: "GSLT" }] },
-  { id: "rust-oxide", name: "Rust (Oxide)", game: "rust", game_title: "Rust", category: "survival", game_logo_url: "https://cdn.cloudflare.steamstatic.com/steam/apps/252490/header.jpg", game_logo_kind: "banner" },
+  { id: "rust", name: "Rust", game: "rust", game_title: "Rust", category: "survival", game_logo_url: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/252490/header.jpg", game_logo_kind: "banner", requirements: [{ kind: "gslt", stage: "optional", label: "GSLT" }] },
+  { id: "rust-oxide", name: "Rust (Oxide)", game: "rust", game_title: "Rust", category: "survival", game_logo_url: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/252490/header.jpg", game_logo_kind: "banner" },
   { id: "dayz", name: "DayZ", game: "dayz", game_title: "DayZ", category: "survival", requirements: [{ kind: "steam_account", stage: "install", label: "Owning account" }] },
   { id: "tshock", name: "TShock", game: "terraria", game_title: "Terraria", category: "sandbox", logo_url: "https://avatars.githubusercontent.com/Pryaxis?s=160", logo_kind: "icon" },
 ];

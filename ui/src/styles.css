@@ -3133,22 +3133,21 @@ a.gs-tab {
 
 .gs-game-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(18.5rem, 1fr));
+  gap: 0.6rem;
 }
 
 .gs-game {
   position: relative;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 12rem;
 }
 
 .gs-game-tile {
-  display: grid;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
   width: 100%;
   height: 100%;
-  grid-template-rows: auto 1fr;
-  padding: 0;
+  padding: 0.55rem 2.2rem 0.55rem 0.55rem;
   overflow: hidden;
   text-align: left;
   border: 1px solid var(--line);
@@ -3169,21 +3168,27 @@ a.gs-tab {
 
 .gs-game-body {
   display: grid;
-  align-content: start;
-  gap: 0.2rem;
-  padding: 0.6rem 2.2rem 0.7rem 0.75rem;
+  align-content: center;
+  gap: 0.15rem;
+  min-width: 0;
 }
 
 .gs-game-title {
   font-weight: 650;
-  font-size: 0.98rem;
+  font-size: 0.95rem;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .gs-game-meta {
   color: var(--fg-secondary);
   font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .gs-game-flags {
@@ -3194,9 +3199,9 @@ a.gs-tab {
 }
 
 .gs-game .gs-catalogue-star {
-  top: auto;
-  bottom: 0.45rem;
-  right: 0.4rem;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
 }
 
 /* Artwork: store banners fill; square marks sit on a tinted panel. */
@@ -3250,10 +3255,23 @@ a.gs-tab {
   text-shadow: 0 2px 8px oklch(0 0 0 / 0.3);
 }
 
-.gs-art-tile {
+/* Store headers are 460x215, so the thumbnail keeps that shape. */
+.gs-art-thumb {
+  width: 5rem;
   aspect-ratio: 460 / 215;
-  width: 100%;
-  border-bottom: 1px solid var(--line);
+  border-radius: 0.45rem;
+  flex: none;
+}
+
+.gs-art-thumb.is-icon img {
+  width: auto;
+  height: 82%;
+  border-radius: 0.3rem;
+  box-shadow: none;
+}
+
+.gs-art-thumb .gs-art-mono {
+  font-size: 0.95rem;
 }
 
 .gs-art-hero {
@@ -3397,8 +3415,7 @@ a.gs-tab {
 
 @media (max-width: 640px) {
   .gs-game-grid {
-    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
-    gap: 0.6rem;
+    grid-template-columns: 1fr;
   }
 
   .gs-variant-list {

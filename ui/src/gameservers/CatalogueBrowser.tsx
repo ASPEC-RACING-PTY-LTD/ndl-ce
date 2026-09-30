@@ -26,7 +26,7 @@ import {
 import type { CatalogueItem } from "./types";
 
 /** Game tiles rendered per page before "Show more". */
-export const CATALOGUE_PAGE_SIZE = 48;
+export const CATALOGUE_PAGE_SIZE = 200;
 
 type Props = {
   items: CatalogueItem[];
@@ -69,20 +69,6 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
   const visible = games.slice(0, limit);
   const hasMore = games.length > visible.length;
 
-  const sentinel = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = sentinel.current;
-    if (!el || !hasMore || typeof IntersectionObserver === "undefined") {
-      return;
-    }
-    const observer = new IntersectionObserver((records) => {
-      if (records.some((r) => r.isIntersecting)) {
-        showMore();
-      }
-    }, { rootMargin: "400px 0px" });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [hasMore, showMore]);
 
   const openGame = useCallback(
     (entry: GameEntry) => {
@@ -219,7 +205,7 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
       </div>
       {games.length === 0 ? <p className="gs-meta">{emptyMessage}</p> : null}
       {hasMore ? (
-        <div className="gs-catalogue-more" ref={sentinel}>
+        <div className="gs-catalogue-more">
           <button type="button" className="btn btn-ghost" onClick={showMore}>
             Show more ({games.length - visible.length} more)
           </button>
@@ -230,19 +216,35 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
 }
 
 /** Game or template artwork with a monogram fallback when it cannot load. */
-export function GameArt({ url, kind, title, size }: { url?: string; kind?: string; title: string; size: "tile" | "hero" | "icon" }) {
-  const [failed, setFailed] = useState(false);
-  const show = Boolean(url) && !failed;
+export function GameArt({ url, kind, title, size }: { url?: string; kind?: string; title: string; size: "thumb" | "hero" | "icon" }) {
+  const candidates = useMemo(() => artCandidates(url), [url]);
+  const [attempt, setAttempt] = useState(0);
+  const current = candidates[attempt];
+  const show = Boolean(current);
   const mode = !show ? "is-mono" : kind === "banner" ? "is-banner" : "is-icon";
   return (
     <span className={`gs-art gs-art-${size} ${mode}`} aria-hidden="true" data-hue={hueOf(title)}>
       {show ? (
-        <img src={url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+        <img key={current} src={current} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setAttempt((n) => n + 1)} />
       ) : (
         <span className="gs-art-mono">{monogram(title)}</span>
       )}
     </span>
   );
+}
+
+const STEAM_ASSET = /^https:\/\/shared\.akamai\.steamstatic\.com\/store_item_assets\/steam\/apps\/(\d+)\/header\.jpg$/;
+
+/** Image URLs to try in order; Steam art also has an older CDN path. */
+export function artCandidates(url?: string): string[] {
+  if (!url) {
+    return [];
+  }
+  const steam = STEAM_ASSET.exec(url);
+  if (steam) {
+    return [url, `https://cdn.cloudflare.steamstatic.com/steam/apps/${steam[1]}/header.jpg`];
+  }
+  return [url];
 }
 
 function hueOf(title: string): number {
@@ -269,7 +271,7 @@ const GameTile = memo(function GameTile({ entry, favorite, onOpen, onToggleFavor
   return (
     <div className="gs-game">
       <button type="button" className="gs-game-tile" onClick={() => onOpen(entry)} aria-label={count > 1 ? `${entry.title}, ${count} server types` : entry.title}>
-        <GameArt url={entry.logoUrl} kind={entry.logoKind} title={entry.title} size="tile" />
+        <GameArt url={entry.logoUrl} kind={entry.logoKind} title={entry.title} size="thumb" />
         <span className="gs-game-body">
           <span className="gs-game-title">{entry.title}</span>
           <span className="gs-game-meta">

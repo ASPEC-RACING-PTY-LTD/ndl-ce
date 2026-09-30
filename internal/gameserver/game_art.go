@@ -70,7 +70,7 @@ var variantArt = map[string]string{
 }
 
 func steamHeaderURL(appID string) string {
-	return "https://cdn.cloudflare.steamstatic.com/steam/apps/" + appID + "/header.jpg"
+	return "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/" + appID + "/header.jpg"
 }
 
 func githubAvatarURL(login string) string {

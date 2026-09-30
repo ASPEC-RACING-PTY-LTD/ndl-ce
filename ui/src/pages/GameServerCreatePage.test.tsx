@@ -267,10 +267,10 @@ describe("Create Game Server catalogue at scale", () => {
     openCreate({ "/api/v1/game-servers/catalogue": { status: 200, body: { items: manyItems(250) } } });
     expect(await screen.findByRole("searchbox", { name: /search available game templates/i })).toBeVisible();
     expect(screen.getByText(/250 games, 250 server types/i)).toBeVisible();
-    expect(favouriteButtons()).toHaveLength(48);
-    fireEvent.click(screen.getByRole("button", { name: /show more/i }));
-    expect(favouriteButtons()).toHaveLength(96);
-    expect(screen.getByRole("button", { name: /show more \(154 more\)/i })).toBeVisible();
+    expect(favouriteButtons()).toHaveLength(200);
+    fireEvent.click(screen.getByRole("button", { name: /show more \(50 more\)/i }));
+    expect(favouriteButtons()).toHaveLength(250);
+    expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
 
     // Filtering resets the page and narrows the list.
     openFilters();
@@ -279,8 +279,7 @@ describe("Create Game Server catalogue at scale", () => {
     expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
     fireEvent.change(screen.getByLabelText(/^platform$/i), { target: { value: "" } });
     fireEvent.click(screen.getByRole("tab", { name: /^shooters\b/i }));
-    expect(favouriteButtons()).toHaveLength(48);
-    expect(screen.getByRole("button", { name: /show more \(2 more\)/i })).toBeVisible();
+    expect(favouriteButtons()).toHaveLength(50);
     fireEvent.change(screen.getByLabelText(/install method/i), { target: { value: "SteamCMD" } });
     expect(favouriteButtons()).toHaveLength(25);
     fireEvent.click(screen.getByRole("tab", { name: /^all\b/i }));
