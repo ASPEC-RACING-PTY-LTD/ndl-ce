@@ -10,6 +10,8 @@ import (
 
 const (
 	ChannelStable         = debian.ChannelStable
+	UpdateApplyStatus     = debian.UpdateApplyStatus
+	UpdateRepoEnable      = debian.UpdateRepoEnable
 	UpdateFeatureInstall  = debian.UpdateFeatureInstall
 	UpdateFeatureRemove   = debian.UpdateFeatureRemove
 	UpdateK8sRuntimeStart = debian.UpdateK8sRuntimeStart
@@ -100,6 +102,10 @@ type UpdateResult struct {
 	PostgresDump    bool             `json:"postgres_dump"`
 	Version         string           `json:"version,omitempty"`
 	PreviousVersion string           `json:"previous_version,omitempty"`
+	// RepositoryConfigured is true when the signed release repository is an APT source.
+	RepositoryConfigured bool `json:"repository_configured"`
+	// Log is the tail of a finished apply's package-manager output.
+	Log string `json:"log,omitempty"`
 }
 
 // ExecFunc runs one validated argv list. argv[0] is an absolute binary path.
@@ -189,6 +195,10 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 		return runCheckpoint(ctx, req, res, exec)
 	case debian.UpdateApply:
 		return runApply(ctx, req, res, exec)
+	case debian.UpdateApplyStatus:
+		return runApplyStatus(ctx, res, exec)
+	case debian.UpdateRepoEnable:
+		return enableRepository(ctx, res, req.DryRun || exec == nil)
 	case debian.UpdateRollback:
 		return runRollback(ctx, req, res, exec)
 	case debian.UpdateFeatureInstall:
@@ -213,6 +223,7 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 
 func runStatus(ctx context.Context, res UpdateResult, exec ExecFunc) (UpdateResult, error) {
 	res.DryRun = true
+	res.RepositoryConfigured = RepositoryConfigured()
 	if exec == nil {
 		return res, nil
 	}
@@ -227,6 +238,12 @@ func runCheck(ctx context.Context, res UpdateResult, exec ExecFunc) (UpdateResul
 	res.Changelog = "Changelog is not reported until the signed repository returns one."
 	if exec == nil {
 		res.Items = holdItems(res.Packages)
+		return res, nil
+	}
+	res.RepositoryConfigured = RepositoryConfigured()
+	if !res.RepositoryConfigured {
+		res.Status = "failed"
+		res.Reason = RepositoryNotConfigured
 		return res, nil
 	}
 	if _, err := exec(ctx, debian.CheckArgv()); err != nil {
@@ -376,13 +393,91 @@ func runApply(ctx context.Context, req UpdateRequest, res UpdateResult, exec Exe
 		res.Reason = "Package apply argv was planned. Host commands were not run."
 		return res, nil
 	}
-	if _, err := exec(ctx, debian.ApplyArgv(req.DryRun)); err != nil {
+	res.RepositoryConfigured = RepositoryConfigured()
+	if !res.RepositoryConfigured {
 		res.Status = "failed"
-		res.Reason = "control-plane package apply failed"
+		res.Reason = RepositoryNotConfigured
 		return res, nil
 	}
-	res.Status = "succeeded"
-	res.Reason = "Control-plane packages applied through the signed repository."
+	if req.DryRun {
+		if _, err := exec(ctx, debian.ApplyArgv(true)); err != nil {
+			res.Status = "failed"
+			res.Reason = "control-plane package apply failed"
+			return res, nil
+		}
+		res.Status = "succeeded"
+		res.Reason = "Dry run: control-plane packages resolve from the signed repository."
+		return res, nil
+	}
+	out, err := exec(ctx, debian.ApplyUnitShowArgv())
+	if err == nil {
+		unit := debian.ParseApplyUnit(out)
+		if unit.Running() {
+			res.Status = "failed"
+			res.Reason = "a platform update is already running"
+			return res, nil
+		}
+		if unit.Loaded() {
+			// A finished earlier run still holds the unit name.
+			_, _ = exec(ctx, debian.ApplyUnitStopArgv())
+			_, _ = exec(ctx, debian.ApplyUnitResetArgv())
+		}
+	}
+	if _, err := exec(ctx, debian.CheckArgv()); err != nil {
+		res.Status = "failed"
+		res.Reason = "package index refresh failed"
+		return res, nil
+	}
+	if _, err := exec(ctx, debian.ApplyLaunchArgv()); err != nil {
+		res.Status = "failed"
+		res.Reason = "could not start the platform update"
+		return res, nil
+	}
+	res.Status = "running"
+	res.Reason = "The platform update is running. The control plane and agent restart during it; guests keep running."
+	return res, nil
+}
+
+// runApplyStatus reports the state of the last detached apply.
+func runApplyStatus(ctx context.Context, res UpdateResult, exec ExecFunc) (UpdateResult, error) {
+	res.DryRun = false
+	if exec == nil {
+		res.Status = "not_reported"
+		return res, nil
+	}
+	out, err := exec(ctx, debian.ApplyUnitShowArgv())
+	if err != nil {
+		res.Status = "not_reported"
+		res.Reason = "the platform update unit could not be read"
+		return res, nil
+	}
+	unit := debian.ParseApplyUnit(out)
+	switch {
+	case unit.LoadState != "loaded":
+		res.Status = "not_reported"
+		res.Reason = "no platform update unit is loaded"
+		return res, nil
+	case unit.Running():
+		res.Status = "running"
+		return res, nil
+	case unit.Succeeded():
+		res.Status = "succeeded"
+		res.Reason = "Control-plane packages applied through the signed repository."
+	case unit.Failed():
+		res.Status = "failed"
+		res.Reason = "control-plane package apply failed"
+	default:
+		res.Status = "not_reported"
+		return res, nil
+	}
+	if argv, err := debian.ApplyUnitLogArgv(unit.InvocationID); err == nil {
+		if logOut, err := exec(ctx, argv); err == nil {
+			res.Log = tailText(strings.TrimSpace(logOut), 4000)
+		}
+	}
+	pkgs, _, ver := readPolicies(ctx, exec)
+	res.Packages = pkgs
+	res.Version = ver
 	return res, nil
 }
 
@@ -501,4 +596,11 @@ func trimChangelog(s string) string {
 		return s[:4000]
 	}
 	return s
+}
+
+func tailText(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	return s[len(s)-limit:]
 }

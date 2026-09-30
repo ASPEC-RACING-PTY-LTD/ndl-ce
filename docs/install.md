@@ -74,3 +74,40 @@ them later from Add Features or `nodalctl feature enable oci`.
 Kubernetes enable does not start kubelet. Docker Management enable does
 not install Docker Engine.
 
+
+## Updating
+
+Open **Settings → Updates** and use **Check for updates**, then **Apply
+update**. Apply refreshes the signed repository and upgrades `nodal`,
+`ndl-control`, `ndl-agent`, `ndl-ui` and `nodalctl` together. The package
+manager runs in its own systemd unit, `ndl-platform-update.service`, so the
+control plane and agent can restart during the upgrade without interrupting
+it. The page reconnects by itself, records the result and offers a reload
+once the new version is running. Guests keep running throughout.
+
+If the host was installed from locally built packages (`dpkg -i`), it has
+no release repository yet. The Updates page shows **Enable release
+repository**, which writes the same key and APT source as the bootstrap
+script. After that, updates come from published releases.
+
+To follow an update from a shell:
+
+```sh
+systemctl status ndl-platform-update.service
+journalctl -u ndl-platform-update.service -f
+```
+
+The first update from 1.1.0 or earlier still uses the old agent, which runs
+the package manager inside its own service and can be interrupted when the
+agent restarts. Install that one update from a shell
+(`apt-get update && apt-get install nodal ndl-control ndl-agent ndl-ui nodalctl`,
+or `dpkg -i` of locally built packages). Later updates can use the Updates page.
+
+### Publishing a release
+
+A release is cut by a commit on `main` whose message starts with `DEPLOY:`
+(for example `DEPLOY: patch`), with an `UNRELEASED` entry at the top of
+`packaging/debian/changelog`. The Alpha Release workflow builds and tests
+the packages, stamps the version, tags `vX.Y.Z`, publishes a GitHub release
+with the `.deb` files, and updates the signed APT repository at
+`packages.no-dal.com`, which is what the Updates page installs from.

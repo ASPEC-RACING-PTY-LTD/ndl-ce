@@ -311,8 +311,10 @@ for (const feat of [
 ]) {
   if (!control.includes(feat)) errors.push(`debian/control missing ${feat}`);
 }
-if (!/Depends:\s*ndl-control,\s*ndl-agent,\s*ndl-ui,\s*nodalctl/.test(control)) {
-  errors.push("nodal metapackage must depend on ndl-control, ndl-agent, ndl-ui, nodalctl");
+// Exact versions: an update of nodal must bring every core package with it.
+const pinned = (name) => `${name} \\(= \\$\\{binary:Version\\}\\)`;
+if (!new RegExp(`Depends:\\s*${["ndl-control", "ndl-agent", "ndl-ui", "nodalctl"].map(pinned).join(",\\s*")}`).test(control)) {
+  errors.push("nodal metapackage must depend on ndl-control, ndl-agent, ndl-ui, nodalctl at (= ${binary:Version})");
 }
 if (/^Package: nodal\n(?:(?!\nPackage:)[\s\S])*Depends:[^\n]*nodal-feature/m.test(control)) {
   errors.push("nodal metapackage must not Depend on feature packages");

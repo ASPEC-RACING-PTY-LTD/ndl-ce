@@ -1680,7 +1680,7 @@ export interface UpdateCandidate {
 
 export interface UpdateOperation {
   id: string;
-  action: "check" | "preflight" | "checkpoint" | "apply" | "rollback";
+  action: "check" | "preflight" | "checkpoint" | "apply" | "rollback" | "repository-enable";
   status: "running" | "succeeded" | "failed" | "unsupported";
   dry_run: boolean;
   error?: string;
@@ -1696,6 +1696,7 @@ export interface UpdateStatus {
   channel: "stable";
   host_supported: boolean;
   host_reason: string;
+  repository_configured?: boolean;
   packages: UpdatePackage[];
   last_operation?: UpdateOperation;
   last_check?: UpdateOperation;
@@ -3028,6 +3029,8 @@ export type CheckpointUpdatesPath = "/api/v1/updates/checkpoint";
 export type ApplyUpdatesPath = "/api/v1/updates/apply";
 
 export type RollbackUpdatesPath = "/api/v1/updates/rollback";
+
+export type EnableUpdateRepositoryPath = "/api/v1/updates/repository";
 
 export type VerifyMfaPath = "/api/v1/auth/mfa/verify";
 

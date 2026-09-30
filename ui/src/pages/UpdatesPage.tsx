@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
   applyUpdates,
   checkUpdates,
   checkpointUpdates,
+  enableUpdateRepository,
   getUpdates,
   preflightUpdates,
   rollbackUpdates,
@@ -21,6 +22,14 @@ import { Dialog } from "../ui/Dialog";
 import { SummaryCard } from "../ui/SummaryCard";
 
 import { hasGrant } from "../rbac";
+
+// While an apply runs the control plane and agent restart, so status reads
+// fail for a few seconds. Poll quickly and ignore those errors.
+const APPLY_POLL_MS = 3_000;
+
+function applyRunning(op: UpdateOperation | null | undefined): boolean {
+  return op?.action === "apply" && op.status === "running" && !op.dry_run;
+}
 
 function packageStatusLabel(status: string): string {
   switch (status) {
@@ -96,6 +105,9 @@ export function UpdatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Set once an apply is seen running, so its outcome can be announced.
+  const watchingApply = useRef(false);
+  const [applyOutcome, setApplyOutcome] = useState<UpdateOperation | null>(null);
 
   async function reload() {
     const next = await getUpdates();
@@ -135,6 +147,42 @@ export function UpdatesPage() {
     };
   }, []);
 
+  const currentOp = status?.last_operation ?? lastOp;
+  const updating = applyRunning(currentOp);
+
+  useEffect(() => {
+    if (updating) {
+      watchingApply.current = true;
+      setApplyOutcome(null);
+    } else if (watchingApply.current && currentOp?.action === "apply") {
+      watchingApply.current = false;
+      setApplyOutcome(currentOp);
+    }
+  }, [updating, currentOp]);
+
+  useEffect(() => {
+    if (!updating) {
+      return;
+    }
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      void getUpdates()
+        .then((next) => {
+          if (!cancelled) {
+            setStatus(next);
+            if (next.last_operation) {
+              setLastOp(next.last_operation);
+            }
+          }
+        })
+        .catch(() => undefined);
+    }, APPLY_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [updating]);
+
   async function runAction(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -172,7 +220,7 @@ export function UpdatesPage() {
   async function onApply() {
     if (
       !window.confirm(
-        "Apply control-plane package updates? Guests must keep running. Confirmation is sent as X-Nodal-Confirm: apply-update.",
+        "Install the latest release? The control plane restarts during the update and this page reconnects on its own. Guests keep running.",
       )
     ) {
       return;
@@ -180,6 +228,23 @@ export function UpdatesPage() {
     await runAction(async () => {
       const next = await applyUpdates();
       setLastOp(next);
+    });
+  }
+
+  async function onEnableRepository() {
+    if (
+      !window.confirm(
+        "Add the signed No-dal release repository (packages.no-dal.com) as a package source on this host?",
+      )
+    ) {
+      return;
+    }
+    await runAction(async () => {
+      const next = await enableUpdateRepository();
+      setLastOp(next);
+      if (next.status === "failed" && next.error) {
+        throw new Error(next.error);
+      }
     });
   }
 
@@ -198,7 +263,7 @@ export function UpdatesPage() {
   }
 
   const hostSupported = status?.host_supported === true;
-  const actionsEnabled = mutate && hostSupported && !busy;
+  const actionsEnabled = mutate && hostSupported && !busy && !applyRunning(status?.last_operation ?? lastOp);
   const lastCheckCandidates = status?.last_check?.candidates ?? [];
   const available = preview
     ? { version: preview.version, url: preview.release_url }
@@ -210,7 +275,8 @@ export function UpdatesPage() {
           url: status?.last_check?.release_url,
         }
       : null;
-  const op = status?.last_operation ?? lastOp;
+  const op = currentOp;
+  const repositoryMissing = hostSupported && status?.repository_configured === false;
 
   return (
     <section className="page page-wide" aria-labelledby="updates-heading">
@@ -240,10 +306,38 @@ export function UpdatesPage() {
         </button>
       </div>
 
-      {busy || lastOp?.status === "running" || status?.last_operation?.status === "running" ? (
+      {updating ? (
         <p className="banner" role="status">
-          Management is temporarily unavailable while the control plane updates. Guests keep
-          running. This is not an infrastructure restart.
+          Updating. The control plane restarts during the update and this page reconnects on its
+          own. Guests keep running. This is not an infrastructure restart.
+        </p>
+      ) : null}
+
+      {applyOutcome?.status === "succeeded" ? (
+        <p className="banner" role="status">
+          Update installed{applyOutcome.version ? ` (${applyOutcome.version})` : ""}. Reload to use
+          the new interface.{" "}
+          <button className="btn" type="button" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </p>
+      ) : null}
+
+      {applyOutcome?.status === "failed" ? (
+        <p className="banner banner-error banner-pre" role="alert">
+          The update failed. {applyOutcome.error || ""}
+        </p>
+      ) : null}
+
+      {repositoryMissing ? (
+        <p className="banner banner-warn" role="status">
+          This host is not subscribed to the signed release repository, so new releases cannot be
+          found or installed here.{" "}
+          {mutate ? (
+            <button className="btn" type="button" disabled={busy} onClick={() => void onEnableRepository()}>
+              Enable release repository
+            </button>
+          ) : null}
         </p>
       ) : null}
 

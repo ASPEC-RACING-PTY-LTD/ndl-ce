@@ -9,7 +9,7 @@ Rules-Requires-Root: no
 
 Package: nodal
 Architecture: amd64
-Depends: ndl-control, ndl-agent, ndl-ui, nodalctl
+Depends: ndl-control (= ${binary:Version}), ndl-agent (= ${binary:Version}), ndl-ui (= ${binary:Version}), nodalctl (= ${binary:Version})
 Suggests: nodal-feature-oci, nodal-feature-docker, nodal-feature-gpu, nodal-feature-k8s, nodal-feature-distributed-storage, nodal-feature-ai
 Description: No-dal Community Edition metapackage
  Pulls in the control plane, node agent, web UI, and CLI.

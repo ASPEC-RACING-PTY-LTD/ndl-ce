@@ -3,9 +3,11 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -14,8 +16,12 @@ import (
 )
 
 const (
-	applyUpdateConfirm    = "apply-update"
-	rollbackUpdateConfirm = "rollback-update"
+	applyUpdateConfirm      = "apply-update"
+	rollbackUpdateConfirm   = "rollback-update"
+	enableRepositoryConfirm = "enable-repository"
+	// applyResultGrace is how long a running apply may go unreported by the
+	// host before it is recorded as failed.
+	applyResultGrace = 2 * time.Hour
 )
 
 // UpdateRPC is the privileged agent surface for host-platform package updates.
@@ -144,13 +150,15 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 		res = hostos.UpdateResult{Supported: false, Reason: "update agent is unavailable", Status: appdb.UpdateUnsupported, Channel: hostos.ChannelStable}
 	}
 	body := map[string]any{
-		"channel":        hostos.ChannelStable,
-		"host_supported": res.Supported,
-		"host_reason":    res.Reason,
-		"packages":       packageListJSON(res.Packages),
+		"channel":               hostos.ChannelStable,
+		"host_supported":        res.Supported,
+		"host_reason":           res.Reason,
+		"repository_configured": res.RepositoryConfigured,
+		"packages":              packageListJSON(res.Packages),
 	}
 	if last, err := s.Store.GetLatestUpdateOperation(r.Context(), p.User.ClusterID); err == nil && last != nil {
-		body["last_operation"] = updateOperationJSON(*last)
+		op := s.settleApply(r.Context(), *last)
+		body["last_operation"] = updateOperationJSON(op)
 	}
 	if lastCheck, err := s.Store.GetLatestCheckUpdateOperation(r.Context(), p.User.ClusterID); err == nil && lastCheck != nil {
 		body["last_check"] = updateOperationJSON(*lastCheck)
@@ -180,7 +188,7 @@ func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 	res, _, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "check", Channel: hostos.ChannelStable, DryRun: true})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeUpdateErr(w, err)
 		return
 	}
 	items := make([]map[string]any, 0, len(res.Items))
@@ -220,7 +228,7 @@ func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 	res, _, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "preflight", Channel: hostos.ChannelStable, DryRun: true})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeUpdateErr(w, err)
 		return
 	}
 	checks := make([]map[string]any, 0, len(res.Checks))
@@ -256,7 +264,7 @@ func (s *Server) checkpointUpdates(w http.ResponseWriter, r *http.Request) {
 	id := uuid.NewString()
 	res, _, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "checkpoint", Channel: hostos.ChannelStable, CheckpointID: id})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeUpdateErr(w, err)
 		return
 	}
 	status := res.Status
@@ -286,7 +294,7 @@ func (s *Server) applyUpdates(w http.ResponseWriter, r *http.Request) {
 	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
 	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeUpdateErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, updateOperationJSON(op))
@@ -304,10 +312,98 @@ func (s *Server) rollbackUpdates(w http.ResponseWriter, r *http.Request) {
 	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
 	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "rollback", Channel: hostos.ChannelStable, Version: version, DryRun: false})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		writeUpdateErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, updateOperationJSON(op))
+}
+
+func (s *Server) enableUpdateRepository(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.UpdatesManage)
+	if err != nil {
+		return
+	}
+	if strings.TrimSpace(r.Header.Get(confirmHeader)) != enableRepositoryConfirm {
+		writeErr(w, http.StatusUnprocessableEntity, "enabling the release repository requires X-Nodal-Confirm: enable-repository")
+		return
+	}
+	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: hostos.UpdateRepoEnable, Channel: hostos.ChannelStable})
+	if err != nil {
+		writeUpdateErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updateOperationJSON(op))
+}
+
+// settleApply records the outcome of an apply that ran in the host's
+// detached update unit. The control plane restarts during an update, so the
+// outcome is read back from the host on the next status read instead of by
+// the request that started it.
+func (s *Server) settleApply(ctx context.Context, op appdb.UpdateOperation) appdb.UpdateOperation {
+	if op.Action != "apply" || op.Status != appdb.UpdateRunning || op.DryRun {
+		return op
+	}
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	if cur, err := s.Store.GetLatestUpdateOperation(ctx, op.ClusterID); err != nil || cur == nil || cur.ID != op.ID {
+		return op
+	} else if cur.Status != appdb.UpdateRunning {
+		return *cur
+	}
+	return s.settleApplyLocked(ctx, op)
+}
+
+// settleApplyLocked is settleApply for callers that hold updateMu.
+func (s *Server) settleApplyLocked(ctx context.Context, op appdb.UpdateOperation) appdb.UpdateOperation {
+	if op.Action != "apply" || op.Status != appdb.UpdateRunning || op.DryRun {
+		return op
+	}
+	res, err := s.updater().HostUpdate(ctx, hostos.UpdateRequest{Action: hostos.UpdateApplyStatus, Channel: hostos.ChannelStable})
+	if err != nil {
+		// The agent restarts during an update. Try again on the next read.
+		return op
+	}
+	now := s.now()
+	switch res.Status {
+	case appdb.UpdateSucceeded:
+		op.Status = appdb.UpdateSucceeded
+		op.Error = ""
+	case appdb.UpdateFailed:
+		op.Status = appdb.UpdateFailed
+		op.Error = applyFailure(res)
+	case appdb.UpdateRunning:
+		return op
+	default:
+		if now.Sub(op.StartedAt) < applyResultGrace {
+			return op
+		}
+		op.Status = appdb.UpdateFailed
+		op.Error = "The host did not report a result for this update."
+	}
+	op.FinishedAt = &now
+	if res.Version != "" {
+		op.Version = res.Version
+	}
+	if err := s.Store.UpdateUpdateOperation(ctx, op); err != nil {
+		log.Printf("settle update apply %s: %v", op.ID, err)
+		return op
+	}
+	s.emitUpdateEvent(ctx, op.ClusterID, "update.apply", map[string]any{"status": op.Status})
+	return op
+}
+
+func applyFailure(res hostos.UpdateResult) string {
+	msg := res.Reason
+	if msg == "" {
+		msg = "control-plane package apply failed"
+	}
+	if tail := strings.TrimSpace(res.Log); tail != "" {
+		if len(tail) > 1500 {
+			tail = tail[len(tail)-1500:]
+		}
+		msg += "\n" + tail
+	}
+	return msg
 }
 
 func (s *Server) recordedControlVersion(ctx context.Context, clusterID string) string {
@@ -346,9 +442,18 @@ func (s *Server) TickUpdateCheck(ctx context.Context) bool {
 	return op.Status == appdb.UpdateSucceeded
 }
 
+// errUpdateRunning refuses new update work while a detached apply runs: the
+// package manager holds its lock and the control plane is about to restart.
+var errUpdateRunning = errors.New("a platform update is running; wait for it to finish")
+
 func (s *Server) runUpdateOperation(ctx context.Context, clusterID string, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation, error) {
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
+	if last, err := s.Store.GetLatestUpdateOperation(ctx, clusterID); err == nil && last != nil {
+		if settled := s.settleApplyLocked(ctx, *last); settled.Action == "apply" && settled.Status == appdb.UpdateRunning && !settled.DryRun {
+			return hostos.UpdateResult{}, settled, errUpdateRunning
+		}
+	}
 	var previousCandidates []appdb.UpdateCandidate
 	if req.Action == "check" {
 		if previous, err := s.Store.GetLatestCheckUpdateOperation(ctx, clusterID); err == nil && previous != nil {
@@ -387,6 +492,10 @@ func (s *Server) runUpdateOperation(ctx context.Context, clusterID string, req h
 	} else if res.Status == appdb.UpdateFailed {
 		op.Status = appdb.UpdateFailed
 		op.Error = res.Reason
+	} else if res.Status == appdb.UpdateRunning {
+		// A detached apply: settleApply records the outcome later.
+		op.FinishedAt = nil
+		op.Error = ""
 	} else {
 		op.Status = appdb.UpdateSucceeded
 		op.Error = ""
@@ -461,4 +570,12 @@ func (s *Server) emitUpdatePayload(ctx context.Context, clusterID, eventType str
 	if s.Hub != nil {
 		s.Hub.Publish(event)
 	}
+}
+
+func writeUpdateErr(w http.ResponseWriter, err error) {
+	if errors.Is(err, errUpdateRunning) {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeErr(w, http.StatusInternalServerError, err.Error())
 }

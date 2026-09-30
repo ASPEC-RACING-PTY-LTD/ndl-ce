@@ -1671,6 +1671,20 @@ export async function applyUpdates(
   );
 }
 
+export async function enableUpdateRepository(
+  confirm = "enable-repository",
+): Promise<import("../generated/openapi").UpdateOperation> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", confirm);
+  return readJson(
+    await request("/updates/repository", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    }),
+  );
+}
+
 export async function rollbackUpdates(
   confirm = "rollback-update",
 ): Promise<import("../generated/openapi").UpdateOperation> {

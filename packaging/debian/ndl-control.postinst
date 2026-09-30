@@ -45,4 +45,24 @@ esac
 
 #DEBHELPER#
 
+# The debhelper block above restarts the unit on upgrade, but it skips the
+# restart in some setups (a same-version reinstall with dpkg -i, or a unit
+# systemd reports as not enabled). When dpkg has replaced the binary under a
+# running process, the kernel marks the old image deleted: restart so the
+# installed version is the one that runs.
+restart_if_stale() {
+  [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 || return 0
+  pid=$(systemctl show --property=MainPID --value "$1" 2>/dev/null || echo 0)
+  case "$pid" in
+    ''|0) return 0 ;;
+  esac
+  case "$(readlink "/proc/$pid/exe" 2>/dev/null || true)" in
+    *" (deleted)") systemctl restart "$1" >/dev/null 2>&1 || true ;;
+  esac
+}
+
+if [ "$1" = configure ]; then
+  restart_if_stale ndl-control.service
+fi
+
 exit 0

@@ -6495,7 +6495,7 @@ paths:
               - apply-update
       responses:
         "200":
-          description: Apply operation accepted or completed. Status stays honest.
+          description: Apply operation. A real apply runs in a detached host unit and is returned as running. GET /updates records the result once the unit finishes.
           content:
             application/json:
               schema:
@@ -6504,6 +6504,12 @@ paths:
           description: Unauthenticated
         "403":
           description: Forbidden
+        "409":
+          description: A platform update is already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: Confirm header missing, host unsupported, or apply not possible
           content:
@@ -6536,6 +6542,43 @@ paths:
           description: Forbidden
         "422":
           description: Confirm header missing, host unsupported, or rollback not possible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /updates/repository:
+    post:
+      operationId: enableUpdateRepository
+      summary: Add the signed No-dal release repository as an APT source on this host
+      description: Downloads the signing key from the fixed packages.no-dal.com URL and writes the same APT source as the bootstrap installer. The repository and key are never taken from the request. An existing source is left unchanged.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          description: Required confirmation. Value must be enable-repository.
+          schema:
+            type: string
+            enum:
+              - enable-repository
+      responses:
+        "200":
+          description: Repository operation. Status stays honest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateOperation"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "409":
+          description: A platform update is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Confirm header missing
           content:
             application/json:
               schema:
@@ -11444,6 +11487,7 @@ components:
             - checkpoint
             - apply
             - rollback
+            - repository-enable
         status:
           type: string
           enum:
@@ -11496,6 +11540,9 @@ components:
           type: boolean
         host_reason:
           type: string
+        repository_configured:
+          type: boolean
+          description: True when the signed release repository is an APT source on this host.
         packages:
           type: array
           items:

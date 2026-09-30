@@ -1,3 +1,29 @@
+nodal (1.1.0) UNRELEASED; urgency=medium
+
+  * Updates install from the Updates page. Apply now upgrades every core
+    package (nodal, ndl-control, ndl-agent, ndl-ui, nodalctl) instead of
+    only the nodal metapackage, and the nodal metapackage depends on the
+    exact matching version of each. The package manager runs in its own
+    systemd unit (ndl-platform-update.service), so the agent and control
+    plane restarting part way through an upgrade can no longer interrupt
+    dpkg. The page follows the update while the control plane restarts,
+    records the result, shows the package output when it fails, and
+    offers a reload once the new version is running.
+  * Hosts installed from local packages can subscribe to the signed
+    release repository from the Updates page. The key and repository are
+    fixed to packages.no-dal.com, as in the bootstrap installer. A check
+    on a host without the repository now says so instead of reporting that
+    no update is available.
+  * Reinstalling or upgrading packages restarts ndl-control and ndl-agent
+    whenever dpkg replaced the binary under a running process, including a
+    same-version reinstall with dpkg -i.
+  * The Game Servers catalogue has 187 built-in templates with verified
+    install sources, provisioning preflight checks, port allocation, one
+    tile per game with its artwork, and a server type chooser for games
+    with several server distributions.
+
+ -- No-dal <packaging@no-dal.com>  Wed, 30 Sep 2026 03:40:00 +0000
+
 nodal (1.1.0) trixie; urgency=medium
 
   * Release versions keep minor and patch to a single digit and roll over

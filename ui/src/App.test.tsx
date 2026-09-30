@@ -1292,6 +1292,91 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: /^preview$/i })).not.toBeInTheDocument();
   });
 
+  it("offers to enable the release repository when the host has none", async () => {
+    window.history.replaceState({}, "", "/settings/updates");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fetchMock = mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "GET /api/v1/updates": {
+        status: 200,
+        body: {
+          channel: "stable",
+          host_supported: true,
+          host_reason: "Debian 13 amd64",
+          repository_configured: false,
+          packages: [],
+        },
+      },
+      "POST /api/v1/updates/repository": {
+        status: 200,
+        body: {
+          id: "op-repo",
+          action: "repository-enable",
+          status: "succeeded",
+          dry_run: false,
+          started_at: "2026-09-30T00:00:00Z",
+        },
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText(/not subscribed to the signed release repository/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^enable release repository$/i }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/updates/repository") && init?.method === "POST"),
+      ).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/api/v1/updates/repository"));
+    expect(new Headers(call?.[1]?.headers).get("X-Nodal-Confirm")).toBe("enable-repository");
+    confirmSpy.mockRestore();
+  });
+
+  it("follows a running apply until the host reports the result", async () => {
+    window.history.replaceState({}, "", "/settings/updates");
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const running = {
+      id: "op-apply-9",
+      action: "apply",
+      status: "running",
+      dry_run: false,
+      started_at: "2026-09-30T00:00:00Z",
+    };
+    const routes: Record<string, { status: number; body: unknown }> = {
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "GET /api/v1/updates": {
+        status: 200,
+        body: { channel: "stable", host_supported: true, host_reason: "", repository_configured: true, packages: [], last_operation: running },
+      },
+    };
+    mockApi(routes);
+
+    render(<App />);
+
+    expect(await screen.findByText(/control plane restarts during the update/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^apply update$/i })).toBeDisabled();
+
+    routes["GET /api/v1/updates"] = {
+      status: 200,
+      body: {
+        channel: "stable",
+        host_supported: true,
+        host_reason: "",
+        repository_configured: true,
+        packages: [],
+        last_operation: { ...running, status: "succeeded", version: "1.1.1", finished_at: "2026-09-30T00:02:00Z" },
+      },
+    };
+    await vi.advanceTimersByTimeAsync(3_500);
+
+    expect(await screen.findByText(/update installed \(1\.1\.1\)/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^reload$/i })).toBeVisible();
+    vi.useRealTimers();
+  });
+
   it("shows Unsupported host honestly on /settings/updates", async () => {
     window.history.replaceState({}, "", "/settings/updates");
     mockApi({

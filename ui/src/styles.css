@@ -337,6 +337,12 @@ fieldset.field legend.field-label {
   color: var(--warn);
 }
 
+/* Package-manager output keeps its line breaks. */
+.banner-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .banner-ok {
   background: var(--ok-bg);
   color: var(--ok);
