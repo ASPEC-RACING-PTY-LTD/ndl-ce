@@ -87,3 +87,12 @@ func TestLocalHostKeepsEveryOperationInsideTheServerFolder(t *testing.T) {
 		t.Fatalf("server folder must be removed: %v", err)
 	}
 }
+
+func TestHumanErrorExplainsMissingDocker(t *testing.T) {
+	if got := HumanError("fork/exec /usr/bin/docker: no such file or directory"); !strings.Contains(got, "apt-get install docker.io") {
+		t.Fatal(got)
+	}
+	if got := HumanError("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"); !strings.Contains(got, "not running") {
+		t.Fatal(got)
+	}
+}

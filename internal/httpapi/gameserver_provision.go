@@ -332,4 +332,3 @@ func templateView(t gameserver.Template) gameTemplateView {
 	}
 	return v
 }
-

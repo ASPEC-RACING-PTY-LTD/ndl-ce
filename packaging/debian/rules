@@ -106,4 +106,6 @@ override_dh_installsystemd:
 	cp -f $(MODROOT)/systemd/ndl-agent.service debian/ndl-agent.service
 	cp -f $(MODROOT)/systemd/ndl-agent.socket debian/ndl-agent.socket
 	dh_installsystemd -pndl-control --name=ndl-control
-	dh_installsystemd -pndl-agent --name=ndl-agent
+	# ndl-agent.postinst restarts the agent itself, deferring the restart
+	# when dpkg runs inside the agent (web terminal, old updater).
+	dh_installsystemd -pndl-agent --name=ndl-agent --no-stop-on-upgrade

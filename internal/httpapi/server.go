@@ -121,7 +121,7 @@ type Server struct {
 	GameHost  gameserver.Host
 	gameLocal *gameserver.LocalHost
 	gameMu    sync.Mutex
-	PhysFS          inventory.FS
+	PhysFS    inventory.FS
 }
 
 type principal struct {

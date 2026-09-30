@@ -9,6 +9,14 @@ nodal (1.1.3) UNRELEASED; urgency=medium
     manager, mods and content, backups and restore, and delete. Every
     operation is scoped to the server's own folder under /var/lib/ndl.
     ndl-control keeps no Docker access and no file capabilities.
+  * Installing packages from the No-dal web terminal no longer interrupts
+    dpkg. The terminal is a child of ndl-agent, so the agent restarting
+    during the install killed dpkg part way through ("dpkg was
+    interrupted") and ndl-control was never restarted. When dpkg runs
+    inside the agent, ndl-agent.postinst now defers the restart to its own
+    unit until dpkg and apt have exited.
+  * A game server on a host without Docker Engine says so and names the
+    install command, instead of "fork/exec /usr/bin/docker".
 
  -- No-dal <packaging@no-dal.com>  Wed, 30 Sep 2026 06:00:00 +0000
 

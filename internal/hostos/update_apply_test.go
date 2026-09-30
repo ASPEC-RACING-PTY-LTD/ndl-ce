@@ -123,10 +123,10 @@ func TestApplyClearsFinishedUnitAndRefusesRunningOne(t *testing.T) {
 func TestApplyStatusReadsUnitResult(t *testing.T) {
 	withRepoRoot(t, true)
 	cases := map[string]string{
-		"LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\n":                                               "running",
-		"LoadState=loaded\nActiveState=active\nSubState=exited\nResult=success\nInvocationID=0123456789abcdef0123456789abcdef\n": "succeeded",
+		"LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\n":                                                 "running",
+		"LoadState=loaded\nActiveState=active\nSubState=exited\nResult=success\nInvocationID=0123456789abcdef0123456789abcdef\n":   "succeeded",
 		"LoadState=loaded\nActiveState=failed\nSubState=failed\nResult=exit-code\nInvocationID=0123456789abcdef0123456789abcdef\n": "failed",
-		"LoadState=not-found\nActiveState=inactive\nSubState=dead\nResult=success\n":                                             "not_reported",
+		"LoadState=not-found\nActiveState=inactive\nSubState=dead\nResult=success\n":                                               "not_reported",
 	}
 	for unit, want := range cases {
 		host := &fakeHost{unit: unit}
