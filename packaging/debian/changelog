@@ -1,4 +1,4 @@
-nodal (1.1.0) UNRELEASED; urgency=medium
+nodal (1.1.1) UNRELEASED; urgency=medium
 
   * Updates install from the Updates page. Apply now upgrades every core
     package (nodal, ndl-control, ndl-agent, ndl-ui, nodalctl) instead of
