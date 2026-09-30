@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"crypto/rand"
 	"fmt"
 	"strconv"
 	"strings"
@@ -65,7 +66,26 @@ func mergeEnv(t Template, user map[string]string) map[string]string {
 	for k, val := range user {
 		out[k] = val
 	}
+	for _, v := range t.Variables {
+		if v.Generate == "password" && strings.TrimSpace(out[v.Env]) == "" {
+			out[v.Env] = randomPassword(16)
+		}
+	}
 	return out
+}
+
+// randomPassword returns an alphanumeric secret. Letters and digits only so
+// the value is safe in every game's config syntax and command line.
+func randomPassword(n int) string {
+	const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	for i := range buf {
+		buf[i] = alphabet[int(buf[i])%len(alphabet)]
+	}
+	return string(buf)
 }
 
 func memoryMB(bytes int64) int {

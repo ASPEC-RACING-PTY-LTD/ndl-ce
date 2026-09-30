@@ -76,3 +76,11 @@ func steamLoginVars() []Variable {
 		{Name: "Steam Guard code", Env: "STEAM_GUARD", Description: "One-time Steam Guard code if Steam asks for it during install.", Default: "", Viewable: false, Editable: true, Secret: true, FieldType: "password"},
 	}
 }
+
+// generatedSecret is a required secret that the API fills with a random
+// value at creation when the operator leaves it empty.
+func generatedSecret(name, env, help string) Variable {
+	v := envSecret(name, env, help, true)
+	v.Generate = "password"
+	return v
+}

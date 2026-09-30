@@ -13,9 +13,15 @@ func (r *Runtime) Install(ctx context.Context, srv Server, tmpl Template) error 
 	if err != nil {
 		return err
 	}
+	if err := checkInstallRequirements(tmpl, srv.Env); err != nil {
+		return err
+	}
 	script, image := installPlan(tmpl)
 	if script == "" {
 		return fmt.Errorf("this template has no installer")
+	}
+	if inst, ok := lookupInstaller(tmpl.InstallBuiltin); ok && inst.RuntimeImageInstall && strings.TrimSpace(srv.Image) != "" {
+		image = srv.Image
 	}
 	path := filepath.Join(dir, ".ndl-install.sh")
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
@@ -24,11 +30,56 @@ func (r *Runtime) Install(ctx context.Context, srv Server, tmpl Template) error 
 	if hasCap(tmpl.Capabilities, CapEULA) && strings.EqualFold(strings.TrimSpace(srv.Env["EULA"]), "true") {
 		_ = os.WriteFile(filepath.Join(dir, "eula.txt"), []byte("eula=true\n"), 0o644)
 	}
+	r.progress(srv.ID, "downloading", "installing with "+tmpl.InstallMethod())
+	nativeDone := false
 	if err := r.installNative(ctx, srv, tmpl, dir); err == nil {
-		return nil
+		nativeDone = true
 	} else if !isSkipNative(err) {
 		return err
 	}
+	if !nativeDone {
+		if err := r.runInstallContainer(ctx, srv, dir, image, "/mnt/server/.ndl-install.sh"); err != nil {
+			return err
+		}
+		// SteamCMD templates may overlay extra artifacts (a mod or a
+		// community server build) after the Steam depot is installed.
+		if hasAddonDownloads(tmpl) && r.Run == nil {
+			r.progress(srv.ID, "downloading", "installing add-on files")
+			if err := nativeDownloads(r, ctx, srv, tmpl, dir); err != nil {
+				return err
+			}
+			if extra := strings.TrimSpace(tmpl.InstallScript); extra != "" {
+				r.progress(srv.ID, "configuring", "running post-install steps")
+				post := "#!/bin/sh\nset -e\ncd /mnt/server\n" + extra + "\n"
+				if err := os.WriteFile(filepath.Join(dir, ".ndl-postinstall.sh"), []byte(post), 0o700); err != nil {
+					return err
+				}
+				if err := r.runInstallContainer(ctx, srv, dir, "steamcmd/steamcmd:debian", "/mnt/server/.ndl-postinstall.sh"); err != nil {
+					return err
+				}
+			}
+		}
+	} else if post := postInstallScript(tmpl); post != "" {
+		r.progress(srv.ID, "configuring", "running post-install steps")
+		postPath := filepath.Join(dir, ".ndl-postinstall.sh")
+		if err := os.WriteFile(postPath, []byte(post), 0o700); err != nil {
+			return err
+		}
+		if err := r.runInstallContainer(ctx, srv, dir, firstNonEmpty(tmpl.InstallImage, "debian:bookworm-slim"), "/mnt/server/.ndl-postinstall.sh"); err != nil {
+			return err
+		}
+	}
+	if len(tmpl.Dependencies) > 0 {
+		r.progress(srv.ID, "dependencies", "preparing runtime image with "+strings.Join(tmpl.Dependencies, " "))
+		if _, err := r.EnsureRuntimeImage(ctx, tmpl.DefaultImage, tmpl.Dependencies); err != nil {
+			return fmt.Errorf("runtime dependencies failed: %w", err)
+		}
+	}
+	r.progress(srv.ID, "ready", "install finished")
+	return nil
+}
+
+func (r *Runtime) runInstallContainer(ctx context.Context, srv Server, dir, image, script string) error {
 	args := []string{
 		"run", "--rm",
 		"--name", containerName(srv.ID) + "-install",
@@ -38,10 +89,10 @@ func (r *Runtime) Install(ctx context.Context, srv Server, tmpl Template) error 
 	args = append(args, r.networkArgs()...)
 	args = append(args, "--security-opt", "no-new-privileges")
 	args = append(args, "--entrypoint", "/bin/sh")
-	for k, v := range srv.Env {
-		args = append(args, "-e", k+"="+v)
+	for _, k := range sortedKeys(srv.Env) {
+		args = append(args, "-e", k+"="+srv.Env[k])
 	}
-	args = append(args, image, "/mnt/server/.ndl-install.sh")
+	args = append(args, image, script)
 	out, err := r.run(ctx, r.dockerBin(), args...)
 	r.appendLog(srv.ID, string(out))
 	if err != nil {
@@ -50,28 +101,43 @@ func (r *Runtime) Install(ctx context.Context, srv Server, tmpl Template) error 
 	return nil
 }
 
+// checkInstallRequirements refuses to start an install that cannot succeed,
+// for example a SteamCMD app that only downloads for an owning account.
+func checkInstallRequirements(t Template, env map[string]string) error {
+	for _, req := range t.RequirementsAt(StageInstall) {
+		if req.Env == "" {
+			continue
+		}
+		if strings.TrimSpace(env[req.Env]) == "" {
+			return fmt.Errorf("%s is required to install: %s", req.Env, req.Label)
+		}
+		if req.Kind == ReqSteamAccount && strings.EqualFold(strings.TrimSpace(env[req.Env]), "anonymous") {
+			return fmt.Errorf("%s must be a Steam account that owns the game, not anonymous", req.Env)
+		}
+	}
+	return nil
+}
+
+// postInstallScript is the template snippet that runs after a native
+// install, inside the install image, with the server folder at /mnt/server.
+func postInstallScript(t Template) string {
+	extra := strings.TrimSpace(t.InstallScript)
+	if extra == "" || t.InstallBuiltin == "" || t.InstallBuiltin == "steamcmd" {
+		return ""
+	}
+	return "#!/bin/sh\nset -e\ncd /mnt/server\n" + extra + "\n"
+}
+
 func installPlan(t Template) (script, image string) {
-	switch t.InstallBuiltin {
-	case "paper":
-		return paperInstallScript, "debian:bookworm-slim"
-	case "minecraft-vanilla":
-		return vanillaInstallScript, "debian:bookworm-slim"
-	case "minecraft-fabric":
-		return fabricInstallScript, "debian:bookworm-slim"
-	case "minecraft-purpur":
-		return purpurInstallScript, "debian:bookworm-slim"
-	case "minecraft-velocity":
-		return velocityInstallScript, "debian:bookworm-slim"
-	case "mindustry":
-		return mindustryInstallScript, "debian:bookworm-slim"
-	case "terraria":
-		return terrariaInstallScript, "debian:bookworm-slim"
-	case "factorio":
-		return factorioInstallScript, "debian:bookworm-slim"
-	case "steamcmd":
-		return steamcmdPlan(t)
-	case "fivem":
-		return fivemInstallScript, "alpine:3.21"
+	if inst, ok := lookupInstaller(t.InstallBuiltin); ok && inst.Script != nil {
+		script, image = inst.Script(t)
+		if extra := postInstallScript(t); extra != "" && t.InstallBuiltin != "steamcmd" {
+			script = strings.TrimRight(script, "\n") + "\n" + strings.TrimSpace(t.InstallScript) + "\n"
+		}
+		if t.InstallImage != "" && t.InstallBuiltin != "steamcmd" && image == "debian:bookworm-slim" {
+			image = t.InstallImage
+		}
+		return script, image
 	}
 	if t.InstallScript != "" && t.InstallImage != "" {
 		return sanitizeImportedScript(t.InstallScript), t.InstallImage
@@ -80,11 +146,33 @@ func installPlan(t Template) (script, image string) {
 }
 
 func steamcmdPlan(t Template) (script, image string) {
-	script = steamcmdInstallScript
-	if extra := strings.TrimSpace(t.InstallScript); extra != "" {
+	platform, appConfig, beta := "", "", ""
+	if t.Install != nil {
+		platform, appConfig, beta = t.Install.Platform, t.Install.AppConfig, t.Install.Beta
+	}
+	var pre []string
+	if platform == "windows" {
+		pre = append(pre, "+@sSteamCmdForcePlatformType windows")
+	}
+	var post []string
+	if appConfig != "" {
+		post = append(post, "+app_set_config "+appConfig)
+	}
+	script = strings.NewReplacer(
+		"@@PRE@@", strings.Join(pre, " "),
+		"@@APPCFG@@", strings.Join(post, " "),
+		"@@BETA@@", beta,
+	).Replace(steamcmdInstallScript)
+	if extra := strings.TrimSpace(t.InstallScript); extra != "" && !hasAddonDownloads(t) {
 		script = strings.TrimRight(script, "\n") + "\n" + extra + "\n"
 	}
-	return script, firstNonEmpty(t.DefaultImage, "steamcmd/steamcmd:debian")
+	return script, "steamcmd/steamcmd:debian"
+}
+
+// hasAddonDownloads reports a SteamCMD template that overlays extra files
+// after the depot install. Its InstallScript then runs after the overlay.
+func hasAddonDownloads(t Template) bool {
+	return t.InstallBuiltin == "steamcmd" && t.Install != nil && len(t.Install.Downloads) > 0
 }
 
 func sanitizeImportedScript(s string) string {
@@ -138,31 +226,62 @@ test -s server-release.jar
 echo "installed Mindustry ${VER}"
 `
 
+// steamcmdInstallScript retries app_update because SteamCMD commonly fails
+// the first pass with transient "App state 0x..." errors, then places the
+// Steam client libraries where dedicated servers look for them
+// ($HOME/.steam/sdk32 and sdk64, with HOME set to the server folder).
 const steamcmdInstallScript = `#!/bin/sh
 set -e
 cd /mnt/server
 APP="${SRCDS_APPID:?SRCDS_APPID is required}"
-USER="${STEAM_USER:-anonymous}"
-PASS="${STEAM_PASS:-}"
-GUARD="${STEAM_GUARD:-}"
-BETA="${STEAM_BETA:-}"
+LOGIN_USER="${STEAM_USER:-anonymous}"
+BETA="${STEAM_BETA:-@@BETA@@}"
 if ! [ -x /usr/bin/steamcmd ] && ! command -v steamcmd >/dev/null; then
   echo "steamcmd binary is missing from the installer image" >&2
   exit 1
 fi
-if [ -z "$USER" ] || [ "$USER" = "anonymous" ]; then
-  if [ -n "$BETA" ]; then
-    steamcmd +force_install_dir /mnt/server +login anonymous +app_update "$APP" -beta "$BETA" validate +quit
-  else
-    steamcmd +force_install_dir /mnt/server +login anonymous +app_update "$APP" validate +quit
-  fi
+if [ -z "$LOGIN_USER" ]; then
+  LOGIN_USER=anonymous
+fi
+set -- +force_install_dir /mnt/server
+if [ "$LOGIN_USER" = "anonymous" ]; then
+  set -- "$@" +login anonymous
 else
-  if [ -n "$BETA" ]; then
-    steamcmd +force_install_dir /mnt/server +login "$USER" "$PASS" "$GUARD" +app_update "$APP" -beta "$BETA" validate +quit
-  else
-    steamcmd +force_install_dir /mnt/server +login "$USER" "$PASS" "$GUARD" +app_update "$APP" validate +quit
+  set -- "$@" +login "$LOGIN_USER" "${STEAM_PASS:-}" "${STEAM_GUARD:-}"
+fi
+set -- "$@" @@APPCFG@@ +app_update "$APP"
+if [ -n "$BETA" ]; then
+  set -- "$@" -beta "$BETA"
+  if [ -n "${STEAM_BETA_PASSWORD:-}" ]; then
+    set -- "$@" -betapassword "$STEAM_BETA_PASSWORD"
   fi
 fi
+set -- "$@" validate +quit
+ok=0
+for attempt in 1 2 3; do
+  echo "steamcmd app_update ${APP} attempt ${attempt}"
+  if steamcmd @@PRE@@ "$@"; then
+    if [ -n "$(ls -A /mnt/server 2>/dev/null | grep -v '^\.ndl' | grep -v '^steamapps$' | head -n 1)" ]; then
+      ok=1
+      break
+    fi
+  fi
+  sleep $((attempt * 5))
+done
+if [ "$ok" != 1 ]; then
+  echo "steamcmd could not install app ${APP} after 3 attempts" >&2
+  exit 1
+fi
+for arch in 32 64; do
+  src=""
+  for cand in "$HOME/.local/share/Steam/steamcmd/linux${arch}/steamclient.so" "$HOME/.steam/steamcmd/linux${arch}/steamclient.so" "/root/.local/share/Steam/steamcmd/linux${arch}/steamclient.so"; do
+    if [ -f "$cand" ]; then src="$cand"; break; fi
+  done
+  if [ -n "$src" ]; then
+    mkdir -p "/mnt/server/.steam/sdk${arch}"
+    cp -f "$src" "/mnt/server/.steam/sdk${arch}/steamclient.so"
+  fi
+done
 echo "steamcmd installed app ${APP}"
 `
 

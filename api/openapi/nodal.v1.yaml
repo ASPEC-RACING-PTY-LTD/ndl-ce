@@ -1464,6 +1464,27 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/preflight:
+    post:
+      operationId: preflightGameServer
+      summary: Validate a create request and allocate ports without creating anything
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerEnvelope"
+        "400":
+          description: Invalid request or unknown template
+        "404":
+          description: Feature is not enabled or resource is missing
   /game-servers/search:
     get:
       operationId: searchGameServers

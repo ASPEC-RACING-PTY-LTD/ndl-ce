@@ -311,14 +311,27 @@ func TestGameCatalogueSearchAndRequiredFields(t *testing.T) {
 		t.Fatalf("minecraft group %s", raw)
 	}
 
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/game-servers", strings.NewReader(`{"name":"No Name","template_id":"ndl-valheim","env":{"SERVER_PASSWORD":""}}`))
+	// A required field left empty is refused before anything is created.
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/game-servers", strings.NewReader(`{"name":"No Name","template_id":"ndl-valheim","env":{"WORLD":""}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ = ts.Client().Do(req)
 	raw, _ = io.ReadAll(res.Body)
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusUnprocessableEntity {
-		t.Fatalf("valheim empty password %d %s", res.StatusCode, raw)
+		t.Fatalf("valheim empty world %d %s", res.StatusCode, raw)
+	}
+
+	// A required password marked generate is filled with a random secret
+	// instead of shipping a default credential.
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/game-servers", strings.NewReader(`{"name":"No Name","template_id":"ndl-valheim","env":{"SERVER_PASSWORD":""}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	raw, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusAccepted || !strings.Contains(string(raw), `"SERVER_PASSWORD":"[redacted]"`) {
+		t.Fatalf("valheim generated password %d %s", res.StatusCode, raw)
 	}
 
 	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/game-servers", strings.NewReader(`{"name":"DST Lab","template_id":"ndl-dst","env":{"CLUSTER_TOKEN":""}}`))

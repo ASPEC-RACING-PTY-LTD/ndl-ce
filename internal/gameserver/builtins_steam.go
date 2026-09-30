@@ -3,6 +3,10 @@ package gameserver
 func rustTemplate() Template {
 	return Template{
 		ID:             "ndl-rust",
+		SourceRef:      lgsmRef("rust"),
+		GameTitle:      "Rust",
+		Category:       "survival",
+		Engine:         "unity",
 		Name:           "Rust",
 		Game:           "rust",
 		Implementation: "steamcmd",
@@ -11,14 +15,14 @@ func rustTemplate() Template {
 		Capabilities:   baseCaps(CapSteamCMD, CapWorlds, CapRCON),
 		Images:         steamImage(),
 		DefaultImage:   "steamcmd/steamcmd:debian",
-		Startup:        "./RustDedicated -batchmode +server.port {{SERVER_PORT}} +server.queryport {{QUERY_PORT}} +server.identity \"{{IDENTITY}}\" +server.seed {{SEED}} +server.worldsize {{WORLD_SIZE}} +server.maxplayers {{MAX_PLAYERS}} +server.hostname \"{{SERVER_NAME}}\" +server.description \"{{DESCRIPTION}}\" +rcon.port {{RCON_PORT}} +rcon.password \"{{RCON_PASSWORD}}\" +rcon.web 1",
+		Startup:        "export LD_LIBRARY_PATH=$HOME/RustDedicated_Data/Plugins/x86_64:$LD_LIBRARY_PATH; exec ./RustDedicated -batchmode +server.port {{SERVER_PORT}} +server.queryport {{QUERY_PORT}} +server.identity \"{{IDENTITY}}\" +server.seed {{SEED}} +server.worldsize {{WORLD_SIZE}} +server.maxplayers {{MAX_PLAYERS}} +server.hostname \"{{SERVER_NAME}}\" +server.description \"{{DESCRIPTION}}\" +rcon.port {{RCON_PORT}} +rcon.password \"$RCON_PASSWORD\" +rcon.web 1",
 		Stop:           "quit",
 		WorkingDir:     "/home/container",
 		InstallBuiltin: "steamcmd",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 28015, Protocol: "udp", Primary: true},
-			{Name: "query", ContainerPort: 28017, Protocol: "udp"},
-			{Name: "rcon", ContainerPort: 28016, Protocol: "tcp"},
+			{Name: "game", ContainerPort: 28015, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
+			{Name: "query", ContainerPort: 28017, Protocol: "udp", Env: "QUERY_PORT"},
+			{Name: "rcon", ContainerPort: 28016, Protocol: "tcp", Env: "RCON_PORT"},
 		},
 		DefaultMemoryMB: 8192,
 		DefaultDiskMB:   20480,
@@ -36,7 +40,7 @@ func rustTemplate() Template {
 			envNumber("Game port", "SERVER_PORT", "UDP game port.", "28015", true),
 			envNumber("Query port", "QUERY_PORT", "Steam query port.", "28017", true),
 			envNumber("RCON port", "RCON_PORT", "RCON port.", "28016", true),
-			envSecretDefault("RCON password", "RCON_PASSWORD", "Required by Rust RCON.", "changeme", true),
+			generatedSecret("RCON password", "RCON_PASSWORD", "Required by Rust RCON. Generated when left empty."),
 		}, steamLoginVars()...),
 		FriendlyConfig: []Setting{
 			{ID: "name", Label: "Server name", Help: "Shown in the Rust browser.", Kind: "text", Env: "SERVER_NAME", Restart: true},
@@ -48,6 +52,10 @@ func rustTemplate() Template {
 func palworldTemplate() Template {
 	return Template{
 		ID:              "ndl-palworld",
+		SourceRef:       lgsmRef("pw"),
+		GameTitle:       "Palworld",
+		Category:        "survival",
+		Engine:          "unreal5",
 		Name:            "Palworld",
 		Game:            "palworld",
 		Implementation:  "steamcmd",
@@ -60,7 +68,7 @@ func palworldTemplate() Template {
 		Stop:            "^C",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "steamcmd",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 8211, Protocol: "udp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 8211, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}},
 		DefaultMemoryMB: 8192,
 		DefaultDiskMB:   20480,
 		DefaultCPUs:     4,
@@ -78,6 +86,10 @@ func palworldTemplate() Template {
 func zomboidTemplate() Template {
 	return Template{
 		ID:             "ndl-zomboid",
+		SourceRef:      lgsmRef("pz"),
+		GameTitle:      "Project Zomboid",
+		Category:       "survival",
+		Engine:         "custom",
 		Name:           "Project Zomboid",
 		Game:           "zomboid",
 		Implementation: "steamcmd",
@@ -86,12 +98,12 @@ func zomboidTemplate() Template {
 		Capabilities:   baseCaps(CapSteamCMD, CapWorlds),
 		Images:         steamImage(),
 		DefaultImage:   "steamcmd/steamcmd:debian",
-		Startup:        "./start-server.sh -servername {{SERVER_NAME}} -adminpassword {{ADMIN_PASSWORD}} -port {{SERVER_PORT}}",
+		Startup:        "./start-server.sh -servername \"{{SERVER_NAME}}\" -adminpassword \"$ADMIN_PASSWORD\" -port {{SERVER_PORT}}",
 		Stop:           "quit",
 		WorkingDir:     "/home/container",
 		InstallBuiltin: "steamcmd",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 16261, Protocol: "udp", Primary: true},
+			{Name: "game", ContainerPort: 16261, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
 			{Name: "direct", ContainerPort: 16262, Protocol: "udp"},
 		},
 		DefaultMemoryMB: 4096,
@@ -102,7 +114,7 @@ func zomboidTemplate() Template {
 		Variables: append([]Variable{
 			steamAppVar("380870", "Project Zomboid dedicated server."),
 			envText("Server name", "SERVER_NAME", "Save and browser name.", "servertest", true),
-			envSecretDefault("Admin password", "ADMIN_PASSWORD", "In-game admin password.", "changeme", true),
+			generatedSecret("Admin password", "ADMIN_PASSWORD", "In-game admin password. Generated when left empty."),
 			envNumber("Game port", "SERVER_PORT", "UDP game port.", "16261", true),
 		}, steamLoginVars()...),
 	}
@@ -111,6 +123,10 @@ func zomboidTemplate() Template {
 func sevenDaysTemplate() Template {
 	return Template{
 		ID:             "ndl-7dtd",
+		SourceRef:      lgsmRef("sdtd"),
+		GameTitle:      "7 Days to Die",
+		Category:       "survival",
+		Engine:         "unity",
 		Name:           "7 Days to Die",
 		Game:           "7dtd",
 		Implementation: "steamcmd",
@@ -124,10 +140,10 @@ func sevenDaysTemplate() Template {
 		WorkingDir:     "/home/container",
 		InstallBuiltin: "steamcmd",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 26900, Protocol: "tcp", Primary: true},
-			{Name: "game-udp", ContainerPort: 26900, Protocol: "udp"},
-			{Name: "game-udp-1", ContainerPort: 26901, Protocol: "udp"},
-			{Name: "game-udp-2", ContainerPort: 26902, Protocol: "udp"},
+			{Name: "game", ContainerPort: 26900, Protocol: "tcp", Primary: true, Fixed: true},
+			{Name: "game-udp", ContainerPort: 26900, Protocol: "udp", Fixed: true},
+			{Name: "game-udp-1", ContainerPort: 26901, Protocol: "udp", Fixed: true},
+			{Name: "game-udp-2", ContainerPort: 26902, Protocol: "udp", Fixed: true},
 		},
 		DefaultMemoryMB: 6144,
 		DefaultDiskMB:   20480,
@@ -144,6 +160,10 @@ func sevenDaysTemplate() Template {
 func cs2Template() Template {
 	return Template{
 		ID:             "ndl-cs2",
+		SourceRef:      lgsmRef("cs2"),
+		GameTitle:      "Counter-Strike 2",
+		Category:       "shooter",
+		Engine:         "source2",
 		Name:           "Counter-Strike 2",
 		Game:           "cs2",
 		Implementation: "srcds",
@@ -152,13 +172,14 @@ func cs2Template() Template {
 		Capabilities:   baseCaps(CapSteamCMD),
 		Images:         steamImage(),
 		DefaultImage:   "steamcmd/steamcmd:debian",
-		Startup:        "./game/bin/linuxsteamrt64/cs2 -dedicated -port {{SERVER_PORT}} +map {{MAP}} +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}} +sv_setsteamaccount {{STEAM_TOKEN}}",
+		Startup:        "./game/cs2.sh -dedicated -port {{SERVER_PORT}} +map {{MAP}} +game_type {{GAME_TYPE}} +game_mode {{GAME_MODE}} ${STEAM_TOKEN:++sv_setsteamaccount $STEAM_TOKEN}",
 		Stop:           "quit",
 		WorkingDir:     "/home/container",
 		InstallBuiltin: "steamcmd",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true},
-			{Name: "gotv", ContainerPort: 27020, Protocol: "udp"},
+			{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
+			{Name: "rcon", ContainerPort: 27015, Protocol: "tcp", Env: "SERVER_PORT"},
+			{Name: "gotv", ContainerPort: 27020, Protocol: "udp", Fixed: true},
 		},
 		DefaultMemoryMB: 4096,
 		DefaultDiskMB:   40960,
@@ -183,6 +204,10 @@ func cs2Template() Template {
 func satisfactoryTemplate() Template {
 	return Template{
 		ID:             "ndl-satisfactory",
+		SourceRef:      lgsmRef("sf"),
+		GameTitle:      "Satisfactory",
+		Category:       "simulation",
+		Engine:         "unreal5",
 		Name:           "Satisfactory",
 		Game:           "satisfactory",
 		Implementation: "steamcmd",
@@ -196,8 +221,8 @@ func satisfactoryTemplate() Template {
 		WorkingDir:     "/home/container",
 		InstallBuiltin: "steamcmd",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 7777, Protocol: "udp", Primary: true},
-			{Name: "game-tcp", ContainerPort: 7777, Protocol: "tcp"},
+			{Name: "game", ContainerPort: 7777, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
+			{Name: "game-tcp", ContainerPort: 7777, Protocol: "tcp", Env: "SERVER_PORT"},
 		},
 		DefaultMemoryMB: 8192,
 		DefaultDiskMB:   20480,
@@ -214,6 +239,10 @@ func satisfactoryTemplate() Template {
 func dstTemplate() Template {
 	return Template{
 		ID:             "ndl-dst",
+		SourceRef:      lgsmRef("dst"),
+		GameTitle:      "Don't Starve Together",
+		Category:       "survival",
+		Engine:         "custom",
 		Name:           "Don't Starve Together",
 		Game:           "dst",
 		Implementation: "steamcmd",
@@ -230,8 +259,8 @@ func dstTemplate() Template {
 		StartRequires:  []string{"CLUSTER_TOKEN"},
 		Hint:           "Klei cluster token required to start",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 10999, Protocol: "udp", Primary: true},
-			{Name: "steam", ContainerPort: 27016, Protocol: "udp"},
+			{Name: "game", ContainerPort: 10999, Protocol: "udp", Primary: true, Fixed: true},
+			{Name: "steam", ContainerPort: 27016, Protocol: "udp", Fixed: true},
 		},
 		DefaultMemoryMB: 2048,
 		DefaultDiskMB:   12288,
@@ -251,6 +280,10 @@ func dstTemplate() Template {
 func unturnedTemplate() Template {
 	return Template{
 		ID:              "ndl-unturned",
+		SourceRef:       lgsmRef("unt"),
+		GameTitle:       "Unturned",
+		Category:        "survival",
+		Engine:          "unity",
 		Name:            "Unturned",
 		Game:            "unturned",
 		Implementation:  "steamcmd",
@@ -259,11 +292,11 @@ func unturnedTemplate() Template {
 		Capabilities:    baseCaps(CapSteamCMD, CapWorlds),
 		Images:          steamImage(),
 		DefaultImage:    "steamcmd/steamcmd:debian",
-		Startup:         "./Unturned_Headless.x86_64 -nographics -batchmode -port {{SERVER_PORT}}",
+		Startup:         "./Unturned_Headless.x86_64 -nographics -batchmode -bind 0.0.0.0 -port {{SERVER_PORT}} +InternetServer/ndl",
 		Stop:            "shutdown",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "steamcmd",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}},
 		DefaultMemoryMB: 2048,
 		DefaultDiskMB:   12288,
 		DefaultCPUs:     2,
@@ -279,6 +312,10 @@ func unturnedTemplate() Template {
 func l4d2Template() Template {
 	return Template{
 		ID:              "ndl-l4d2",
+		SourceRef:       lgsmRef("l4d2"),
+		GameTitle:       "Left 4 Dead 2",
+		Category:        "shooter",
+		Engine:          "source",
 		Name:            "Left 4 Dead 2",
 		Game:            "l4d2",
 		Implementation:  "srcds",
@@ -287,11 +324,11 @@ func l4d2Template() Template {
 		Capabilities:    baseCaps(CapSteamCMD),
 		Images:          steamImage(),
 		DefaultImage:    "steamcmd/steamcmd:debian",
-		Startup:         "./srcds_run -game left4dead2 -console -port {{SERVER_PORT}} +map {{MAP}} +maxplayers {{MAX_PLAYERS}} +hostname \"{{SERVER_NAME}}\" +sv_setsteamaccount {{STEAM_TOKEN}}",
+		Startup:         "./srcds_run -game left4dead2 -console -port {{SERVER_PORT}} +map {{MAP}} +maxplayers {{MAX_PLAYERS}} +hostname \"{{SERVER_NAME}}\" ${STEAM_TOKEN:++sv_setsteamaccount $STEAM_TOKEN}",
 		Stop:            "quit",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "steamcmd",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}},
 		DefaultMemoryMB: 2048,
 		DefaultDiskMB:   20480,
 		DefaultCPUs:     2,
@@ -312,6 +349,10 @@ func l4d2Template() Template {
 func arkTemplate() Template {
 	return Template{
 		ID:             "ndl-ark",
+		SourceRef:      lgsmRef("ark"),
+		GameTitle:      "ARK: Survival Evolved",
+		Category:       "survival",
+		Engine:         "unreal4",
 		Name:           "ARK: Survival Evolved",
 		Game:           "ark",
 		Implementation: "steamcmd",
@@ -320,14 +361,14 @@ func arkTemplate() Template {
 		Capabilities:   baseCaps(CapSteamCMD, CapWorlds),
 		Images:         steamImage(),
 		DefaultImage:   "steamcmd/steamcmd:debian",
-		Startup:        "./ShooterGame/Binaries/Linux/ShooterGameServer {{MAP}}?listen?SessionName={{SERVER_NAME}}?ServerPassword={{SERVER_PASSWORD}}?ServerAdminPassword={{ADMIN_PASSWORD}}?Port={{SERVER_PORT}}?QueryPort={{QUERY_PORT}}?MaxPlayers={{MAX_PLAYERS}} -server -log",
+		Startup:        "./ShooterGame/Binaries/Linux/ShooterGameServer {{MAP}}?listen?SessionName={{SERVER_NAME}}?ServerPassword=$SERVER_PASSWORD?ServerAdminPassword=$ADMIN_PASSWORD?Port={{SERVER_PORT}}?QueryPort={{QUERY_PORT}}?MaxPlayers={{MAX_PLAYERS}} -server -log",
 		Stop:           "^C",
 		WorkingDir:     "/home/container",
 		InstallBuiltin: "steamcmd",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 7777, Protocol: "udp", Primary: true},
+			{Name: "game", ContainerPort: 7777, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
 			{Name: "peer", ContainerPort: 7778, Protocol: "udp"},
-			{Name: "query", ContainerPort: 27015, Protocol: "udp"},
+			{Name: "query", ContainerPort: 27015, Protocol: "udp", Env: "QUERY_PORT"},
 		},
 		DefaultMemoryMB: 8192,
 		DefaultDiskMB:   40960,
@@ -339,7 +380,7 @@ func arkTemplate() Template {
 			envText("Map", "MAP", "Map loaded at boot, for example TheIsland.", "TheIsland", true),
 			envText("Session name", "SERVER_NAME", "Name shown in the ARK browser.", "No-DAL ARK", true),
 			envSecret("Join password", "SERVER_PASSWORD", "Optional join password.", false),
-			envSecretDefault("Admin password", "ADMIN_PASSWORD", "In-game admin password.", "changeme", true),
+			generatedSecret("Admin password", "ADMIN_PASSWORD", "In-game admin password. Generated when left empty."),
 			envNumber("Max players", "MAX_PLAYERS", "Slot count.", "20", true),
 			envNumber("Game port", "SERVER_PORT", "UDP game port.", "7777", true),
 			envNumber("Query port", "QUERY_PORT", "Steam query port.", "27015", true),
@@ -350,6 +391,9 @@ func arkTemplate() Template {
 func conanTemplate() Template {
 	return Template{
 		ID:             "ndl-conan",
+		GameTitle:      "Conan Exiles",
+		Category:       "survival",
+		Engine:         "unreal4",
 		Name:           "Conan Exiles",
 		Game:           "conan",
 		Implementation: "steamcmd",
@@ -363,9 +407,11 @@ func conanTemplate() Template {
 		WorkingDir:     "/home/container",
 		InstallBuiltin: "steamcmd",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 7777, Protocol: "udp", Primary: true},
-			{Name: "query", ContainerPort: 27015, Protocol: "udp"},
+			{Name: "game", ContainerPort: 7777, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
+			{Name: "query", ContainerPort: 27015, Protocol: "udp", Env: "QUERY_PORT"},
 		},
+		Hidden:          true,
+		Notes:           []string{"Hidden from the catalogue: the Conan Exiles dedicated server (app 443030) ships only a Windows build and needs Wine or Proton, which No-DAL does not provide. Kept so servers created from it still resolve."},
 		DefaultMemoryMB: 6144,
 		DefaultDiskMB:   20480,
 		DefaultCPUs:     4,
@@ -380,8 +426,12 @@ func conanTemplate() Template {
 }
 
 func dayzTemplate() Template {
-	return Template{
+	return requireSteamOwner(Template{
 		ID:             "ndl-dayz",
+		SourceRef:      lgsmRef("dayz"),
+		GameTitle:      "DayZ",
+		Category:       "survival",
+		Engine:         "enfusion",
 		Name:           "DayZ",
 		Game:           "dayz",
 		Implementation: "steamcmd",
@@ -396,7 +446,7 @@ func dayzTemplate() Template {
 		InstallBuiltin: "steamcmd",
 		InstallScript:  dayzBootstrapScript,
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 2302, Protocol: "udp", Primary: true},
+			{Name: "game", ContainerPort: 2302, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
 			{Name: "reserved", ContainerPort: 2303, Protocol: "udp"},
 			{Name: "battleye", ContainerPort: 2304, Protocol: "udp"},
 			{Name: "rcon", ContainerPort: 2305, Protocol: "udp"},
@@ -411,12 +461,16 @@ func dayzTemplate() Template {
 			envNumber("Game port", "SERVER_PORT", "UDP game port.", "2302", true),
 		}, steamLoginVars()...),
 		ConfigFiles: []ConfigFile{{Path: "serverDZ.cfg", Format: "cfg", Restart: true, Parser: "cfg"}},
-	}
+	}, "Steam account that owns DayZ")
 }
 
 func arma3Template() Template {
-	return Template{
+	return requireSteamOwner(Template{
 		ID:             "ndl-arma3",
+		SourceRef:      lgsmRef("arma3"),
+		GameTitle:      "Arma 3",
+		Category:       "tactical",
+		Engine:         "real-virtuality",
 		Name:           "Arma 3",
 		Game:           "arma3",
 		Implementation: "steamcmd",
@@ -432,7 +486,7 @@ func arma3Template() Template {
 		InstallScript:  arma3BootstrapScript,
 		Hint:           "Steam account often required to install",
 		DefaultPorts: []Port{
-			{Name: "game", ContainerPort: 2302, Protocol: "udp", Primary: true},
+			{Name: "game", ContainerPort: 2302, Protocol: "udp", Primary: true, Env: "SERVER_PORT"},
 			{Name: "reserved", ContainerPort: 2303, Protocol: "udp"},
 			{Name: "steam", ContainerPort: 2304, Protocol: "udp"},
 		},
@@ -446,12 +500,16 @@ func arma3Template() Template {
 			envNumber("Game port", "SERVER_PORT", "UDP game port.", "2302", true),
 		}, steamLoginVars()...),
 		ConfigFiles: []ConfigFile{{Path: "server.cfg", Format: "cfg", Restart: true, Parser: "cfg"}},
-	}
+	}, "Steam account that owns Arma 3")
 }
 
 func tf2Template() Template {
 	return Template{
 		ID:              "ndl-tf2",
+		SourceRef:       lgsmRef("tf2"),
+		GameTitle:       "Team Fortress 2",
+		Category:        "shooter",
+		Engine:          "source",
 		Name:            "Team Fortress 2",
 		Game:            "tf2",
 		Implementation:  "srcds",
@@ -460,11 +518,11 @@ func tf2Template() Template {
 		Capabilities:    baseCaps(CapSteamCMD),
 		Images:          steamImage(),
 		DefaultImage:    "steamcmd/steamcmd:debian",
-		Startup:         "./srcds_run -game tf -console -port {{SERVER_PORT}} +map {{MAP}} +maxplayers {{MAX_PLAYERS}} +hostname \"{{SERVER_NAME}}\" +sv_setsteamaccount {{STEAM_TOKEN}}",
+		Startup:         "./srcds_run -game tf -console -port {{SERVER_PORT}} +map {{MAP}} +maxplayers {{MAX_PLAYERS}} +hostname \"{{SERVER_NAME}}\" ${STEAM_TOKEN:++sv_setsteamaccount $STEAM_TOKEN}",
 		Stop:            "quit",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "steamcmd",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}},
 		DefaultMemoryMB: 2048,
 		DefaultDiskMB:   20480,
 		DefaultCPUs:     2,

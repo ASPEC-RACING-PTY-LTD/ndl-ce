@@ -50,7 +50,8 @@ func (r *Runtime) installVanillaNative(ctx context.Context, srv Server, dir stri
 	}
 	var parsed struct {
 		Downloads map[string]struct {
-			URL string `json:"url"`
+			URL  string `json:"url"`
+			SHA1 string `json:"sha1"`
 		} `json:"downloads"`
 	}
 	if err := json.Unmarshal(meta, &parsed); err != nil {
@@ -60,7 +61,7 @@ func (r *Runtime) installVanillaNative(ctx context.Context, srv Server, dir stri
 	if dl == "" {
 		return fmt.Errorf("Minecraft %s has no server download", ver)
 	}
-	if err := fetchFile(ctx, dl, filepath.Join(dir, jar), maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, dl, filepath.Join(dir, jar), maxBinaryBytes, digest{Algo: "sha1", Hex: parsed.Downloads["server"].SHA1}, 3); err != nil {
 		return fmt.Errorf("vanilla download failed: %w", err)
 	}
 	r.appendLog(srv.ID, "installed "+jar+" vanilla "+ver)
@@ -112,7 +113,7 @@ func (r *Runtime) installFabricNative(ctx context.Context, srv Server, dir strin
 		return fmt.Errorf("could not resolve a stable Fabric loader")
 	}
 	url := "https://meta.fabricmc.net/v2/versions/loader/" + mc + "/" + loader + "/" + installer + "/server/jar"
-	if err := fetchFile(ctx, url, filepath.Join(dir, jar), maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, url, filepath.Join(dir, jar), maxBinaryBytes, digest{}, 3); err != nil {
 		return fmt.Errorf("Fabric download failed: %w", err)
 	}
 	_ = os.MkdirAll(filepath.Join(dir, "mods"), 0o750)
@@ -123,8 +124,17 @@ func (r *Runtime) installFabricNative(ctx context.Context, srv Server, dir strin
 func (r *Runtime) installPurpurNative(ctx context.Context, srv Server, dir string) error {
 	ver := firstNonEmpty(srv.Env["MC_VERSION"], "1.21.8")
 	jar := firstNonEmpty(srv.Env["SERVER_JARFILE"], "server.jar")
+	var sum digest
+	if body, _, err := fetchURL(ctx, defaultHTTPClient(), "https://api.purpurmc.org/v2/purpur/"+ver+"/latest"); err == nil {
+		var meta struct {
+			MD5 string `json:"md5"`
+		}
+		if json.Unmarshal(body, &meta) == nil && meta.MD5 != "" {
+			sum = digest{Algo: "md5", Hex: meta.MD5}
+		}
+	}
 	url := "https://api.purpurmc.org/v2/purpur/" + ver + "/latest/download"
-	if err := fetchFile(ctx, url, filepath.Join(dir, jar), maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, url, filepath.Join(dir, jar), maxBinaryBytes, sum, 3); err != nil {
 		return fmt.Errorf("Purpur download failed: %w", err)
 	}
 	r.appendLog(srv.ID, "installed "+jar+" purpur "+ver)
@@ -150,17 +160,21 @@ func (r *Runtime) installVelocityNative(ctx context.Context, srv Server, dir str
 	var parsed struct {
 		ID        int `json:"id"`
 		Downloads map[string]struct {
-			URL string `json:"url"`
+			URL       string `json:"url"`
+			Checksums struct {
+				SHA256 string `json:"sha256"`
+			} `json:"checksums"`
 		} `json:"downloads"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return fmt.Errorf("could not parse Velocity metadata for %s", ver)
 	}
 	dl := parsed.Downloads["server:default"].URL
+	sum := digest{Algo: "sha256", Hex: parsed.Downloads["server:default"].Checksums.SHA256}
 	if dl == "" {
 		return fmt.Errorf("Velocity %s has no server download", ver)
 	}
-	if err := fetchFile(ctx, dl, filepath.Join(dir, jar), maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, dl, filepath.Join(dir, jar), maxBinaryBytes, sum, 3); err != nil {
 		return fmt.Errorf("Velocity download failed: %w", err)
 	}
 	if parsed.ID > 0 {
@@ -174,7 +188,7 @@ func (r *Runtime) installTerrariaNative(ctx context.Context, srv Server, dir str
 	ver := firstNonEmpty(srv.Env["TERRARIA_VERSION"], "1449")
 	archive := filepath.Join(dir, "terraria.zip")
 	url := "https://terraria.org/api/download/pc-dedicated-server/terraria-server-" + ver + ".zip"
-	if err := fetchFile(ctx, url, archive, maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, url, archive, maxBinaryBytes, digest{}, 3); err != nil {
 		return fmt.Errorf("Terraria download failed: %w", err)
 	}
 	if err := unzipLinuxDedicated(archive, dir, ver); err != nil {
@@ -193,7 +207,7 @@ func (r *Runtime) installFactorioNative(ctx context.Context, srv Server, dir str
 	ver := firstNonEmpty(srv.Env["FACTORIO_VERSION"], "stable")
 	archive := filepath.Join(dir, "factorio.tar.xz")
 	url := "https://factorio.com/get-download/" + ver + "/headless/linux64"
-	if err := fetchFile(ctx, url, archive, maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, url, archive, maxBinaryBytes, digest{}, 3); err != nil {
 		return fmt.Errorf("Factorio download failed: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, "tar", "-xJf", archive, "-C", dir, "--strip-components=1")

@@ -11,6 +11,20 @@ func HumanError(raw string) string {
 		return "FiveM needs a Cfx.re license key. Create one at portal.cfx.re and paste it into License key, then try Start again."
 	case strings.Contains(s, "cluster_token") || strings.Contains(s, "cluster token") || strings.Contains(s, "klei"):
 		return "Don't Starve Together needs a Klei cluster token. Create one at accounts.klei.com and paste it, then try Start again."
+	case strings.Contains(s, "is required to install") && strings.Contains(s, "steam"):
+		return "This server only downloads for a Steam account that owns the game. Enter that account in Steam username and password, then reinstall. Anonymous SteamCMD cannot fetch it."
+	case strings.Contains(s, "is required to install"):
+		return "A key, token or account this server needs to install is missing. Fill that field, then reinstall."
+	case strings.Contains(s, "checksum mismatch"):
+		return "The downloaded file did not match the checksum the upstream publishes, so it was deleted. Retry; if it keeps failing the mirror or release may be corrupt."
+	case strings.Contains(s, "has no asset matching"):
+		return "The upstream release does not contain a Linux server file this template recognises. Pick an older version, or check whether the project changed its release naming."
+	case strings.Contains(s, "needs java"):
+		return "This server needs a newer Java runtime than the one selected. Change the runtime version and reinstall."
+	case strings.Contains(s, "runs on") && strings.Contains(s, "only"):
+		return "This server does not support the node's CPU architecture. Pick a node with a supported architecture."
+	case strings.Contains(s, "runtime dependencies failed"):
+		return "The node could not add the system libraries this server needs to its runtime image. Check that the node can reach the Debian package mirrors, then retry."
 	case strings.Contains(s, "is required to start"):
 		return "This server is installed, but a required key or token is still missing. Fill that field and Start again."
 	case strings.Contains(s, "eula"):

@@ -2,13 +2,20 @@ package gameserver
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -17,6 +24,11 @@ const (
 	maxFetchBytes  = 8 << 20
 	maxBinaryBytes = 1500 << 20
 )
+
+// downloadGuard vets every artifact URL before it is fetched. Tests swap it
+// to reach a loopback httptest server; production always uses
+// validatePublicURL, which refuses private and loopback targets.
+var downloadGuard = validatePublicURL
 
 func defaultHTTPClient() *http.Client {
 	return httpClientWithTimeout(30 * time.Second)
@@ -170,4 +182,179 @@ func fetchURL(ctx context.Context, client *http.Client, raw string) ([]byte, str
 	}
 	ct := res.Header.Get("Content-Type")
 	return body, ct, nil
+}
+
+// digest is an expected checksum published by the upstream.
+type digest struct {
+	Algo string
+	Hex  string
+}
+
+func newHasher(algo string) (hash.Hash, error) {
+	switch strings.ToLower(algo) {
+	case "sha256":
+		return sha256.New(), nil
+	case "sha1":
+		return sha1.New(), nil
+	case "sha512":
+		return sha512.New(), nil
+	case "md5":
+		return md5.New(), nil
+	}
+	return nil, fmt.Errorf("checksum algorithm %s is not supported", algo)
+}
+
+func verifyFileDigest(path string, want digest) error {
+	if strings.TrimSpace(want.Hex) == "" {
+		return nil
+	}
+	h, err := newHasher(want.Algo)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(got, strings.TrimSpace(want.Hex)) {
+		return fmt.Errorf("%s checksum mismatch: expected %s, got %s", want.Algo, want.Hex, got)
+	}
+	return nil
+}
+
+// fetchFileRetry downloads with resume and bounded retries, then verifies
+// the checksum when the upstream published one. A checksum mismatch deletes
+// the file and is not retried with the same bytes.
+func fetchFileRetry(ctx context.Context, raw, dest string, maxBytes int64, want digest, attempts int) error {
+	if attempts <= 0 {
+		attempts = 1
+	}
+	var last error
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(i*i*2) * time.Second):
+			}
+		}
+		last = fetchFileResume(ctx, raw, dest, maxBytes)
+		if last == nil {
+			if err := verifyFileDigest(dest, want); err != nil {
+				_ = os.Remove(dest)
+				last = err
+				continue
+			}
+			return nil
+		}
+		if strings.Contains(last.Error(), "HTTP 404") || strings.Contains(last.Error(), "HTTP 403") || strings.Contains(last.Error(), "HTTP 401") {
+			return last
+		}
+	}
+	return last
+}
+
+// fetchFileResume continues an interrupted .part download with a Range
+// request when the server supports it and starts over otherwise.
+func fetchFileResume(ctx context.Context, raw, dest string, maxBytes int64) error {
+	if maxBytes <= 0 {
+		maxBytes = maxBinaryBytes
+	}
+	if err := downloadGuard(raw); err != nil {
+		return err
+	}
+	tmp := dest + ".part"
+	var offset int64
+	if st, err := os.Stat(tmp); err == nil && st.Size() > 0 {
+		offset = st.Size()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "No-DAL-GameServers/1.0 (https://github.com/ASPEC-RACING-PTY-LTD/ndl-ce)")
+	req.Header.Set("Accept", "*/*")
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
+	res, err := downloadHTTPClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("resume offset rejected; restarting")
+	}
+	if res.StatusCode >= 400 {
+		return fmt.Errorf("remote source returned HTTP %d", res.StatusCode)
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return err
+	}
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if res.StatusCode == http.StatusPartialContent && offset > 0 {
+		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	} else {
+		offset = 0
+	}
+	f, err := os.OpenFile(tmp, flags, 0o640)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(f, io.LimitReader(res.Body, maxBytes-offset+1))
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if offset+n > maxBytes {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("remote file is larger than the allowed download size")
+	}
+	if offset+n == 0 {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("remote file was empty")
+	}
+	return os.Rename(tmp, dest)
+}
+
+var hexDigestPattern = regexp.MustCompile(`\b([a-fA-F0-9]{64})\b`)
+
+// fetchPublishedSHA256 reads a sha256sum-style file and returns the digest
+// for name, or the only digest when the file covers a single artifact.
+func fetchPublishedSHA256(ctx context.Context, raw, name string) (digest, error) {
+	body, _, err := fetchURL(ctx, defaultHTTPClient(), raw)
+	if err != nil {
+		return digest{}, fmt.Errorf("could not read published checksum: %w", err)
+	}
+	return parseSHA256Sums(string(body), name)
+}
+
+// parseSHA256Sums reads sha256sum output (or a bare digest file).
+func parseSHA256Sums(body, name string) (digest, error) {
+	var only string
+	count := 0
+	for _, line := range strings.Split(body, "\n") {
+		m := hexDigestPattern.FindStringSubmatch(line)
+		if len(m) != 2 {
+			continue
+		}
+		count++
+		only = m[1]
+		if name != "" && strings.Contains(line, name) {
+			return digest{Algo: "sha256", Hex: m[1]}, nil
+		}
+	}
+	if count == 1 {
+		return digest{Algo: "sha256", Hex: only}, nil
+	}
+	return digest{}, fmt.Errorf("published checksum file has no entry for %s", name)
 }

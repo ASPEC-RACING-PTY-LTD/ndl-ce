@@ -29,34 +29,78 @@ type githubEntry struct {
 
 // CatalogueItem is a discoverable template card.
 type CatalogueItem struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Game           string   `json:"game"`
-	Implementation string   `json:"implementation"`
-	Family         string   `json:"family"`
-	Summary        string   `json:"summary"`
-	Source         string   `json:"source"`
-	ImportURL      string   `json:"import_url,omitempty"`
-	Builtin        bool     `json:"builtin"`
-	Tags           []string `json:"tags,omitempty"`
-	Capabilities   []string `json:"capabilities,omitempty"`
-	Aliases        []string `json:"aliases,omitempty"`
-	RuntimeKind    string   `json:"runtime_kind,omitempty"`
-	Hint           string   `json:"hint,omitempty"`
+	ID             string        `json:"id"`
+	Name           string        `json:"name"`
+	Game           string        `json:"game"`
+	Implementation string        `json:"implementation"`
+	Family         string        `json:"family"`
+	Summary        string        `json:"summary"`
+	Source         string        `json:"source"`
+	ImportURL      string        `json:"import_url,omitempty"`
+	Builtin        bool          `json:"builtin"`
+	Tags           []string      `json:"tags,omitempty"`
+	Capabilities   []string      `json:"capabilities,omitempty"`
+	Aliases        []string      `json:"aliases,omitempty"`
+	RuntimeKind    string        `json:"runtime_kind,omitempty"`
+	Hint           string        `json:"hint,omitempty"`
+	GameTitle      string        `json:"game_title,omitempty"`
+	Category       string        `json:"category,omitempty"`
+	Engine         string        `json:"engine,omitempty"`
+	InstallMethod  string        `json:"install_method,omitempty"`
+	Architectures  []string      `json:"architectures,omitempty"`
+	Requirements   []Requirement `json:"requirements,omitempty"`
+	DefaultMemory  int           `json:"default_memory_mb,omitempty"`
+	MinMemory      int           `json:"min_memory_mb,omitempty"`
+	DefaultDisk    int           `json:"default_disk_mb,omitempty"`
+	DefaultCPUs    int           `json:"default_cpus,omitempty"`
+	Ports          []string      `json:"ports,omitempty"`
+	Verification   string        `json:"verification,omitempty"`
+	SourceRef      string        `json:"source_ref,omitempty"`
+	DocsURL        string        `json:"docs_url,omitempty"`
+}
+
+// CatalogueItemFromTemplate builds the catalogue card for any template,
+// builtin or imported.
+func CatalogueItemFromTemplate(t Template, source string, builtin bool) CatalogueItem {
+	return catalogueItemFromTemplate(t, source, builtin)
 }
 
 func catalogueItemFromTemplate(t Template, source string, builtin bool) CatalogueItem {
+	var ports []string
+	for _, p := range t.DefaultPorts {
+		ports = append(ports, PortKey(p.ContainerPort, p.Protocol))
+	}
+	reqs := append([]Requirement(nil), t.Requirements...)
+	for _, env := range t.StartRequires {
+		covered := false
+		for _, r := range reqs {
+			if r.Env == env {
+				covered = true
+			}
+		}
+		if !covered {
+			reqs = append(reqs, Requirement{Kind: ReqToken, Stage: StageStart, Env: env, Label: env})
+		}
+	}
 	return CatalogueItem{
 		ID: t.ID, Name: t.Name, Game: t.Game, Implementation: t.Implementation,
 		Family: t.Family, Summary: t.Summary, Source: source, Builtin: builtin,
 		Tags: t.Tags, Capabilities: t.Capabilities, Aliases: t.Aliases,
 		RuntimeKind: t.RuntimeKind(), Hint: t.Hint,
+		GameTitle: firstNonEmpty(t.GameTitle, t.Name), Category: t.Category, Engine: t.Engine,
+		InstallMethod: t.InstallMethod(), Architectures: t.Arches(), Requirements: reqs,
+		DefaultMemory: t.DefaultMemoryMB, MinMemory: t.MinMemoryMB, DefaultDisk: t.DefaultDiskMB,
+		DefaultCPUs: t.DefaultCPUs, Ports: ports, Verification: VerificationLevel(t),
+		SourceRef: t.SourceRef, DocsURL: t.DocsURL,
 	}
 }
 
 func builtinCatalogue() []CatalogueItem {
 	var out []CatalogueItem
 	for _, t := range BuiltinTemplates() {
+		if t.Hidden {
+			continue
+		}
 		out = append(out, catalogueItemFromTemplate(t, "builtin", true))
 	}
 	return out
@@ -80,6 +124,10 @@ func catalogueQueryMatch(item CatalogueItem, q string) bool {
 	parts := []string{
 		item.ID, item.Name, item.Game, item.Implementation, item.Family, item.Summary,
 		item.RuntimeKind, item.Hint, strings.Join(item.Tags, " "), strings.Join(item.Aliases, " "),
+		item.GameTitle, item.Category, item.Engine, item.InstallMethod, strings.Join(item.Architectures, " "),
+	}
+	for _, r := range item.Requirements {
+		parts = append(parts, r.Kind, strings.ReplaceAll(r.Kind, "_", " "))
 	}
 	if item.Builtin {
 		parts = append(parts, "built in", "builtin")
@@ -124,8 +172,19 @@ func filterCatalogue(items []CatalogueItem, group string) []CatalogueItem {
 			if strings.EqualFold(item.RuntimeKind, "Java") {
 				out = append(out, item)
 			}
+		case "arm64", "amd64":
+			for _, a := range item.Architectures {
+				if a == group {
+					out = append(out, item)
+					break
+				}
+			}
+		case "no-credentials", "free":
+			if !needsCredentials(item.Requirements) {
+				out = append(out, item)
+			}
 		default:
-			if catalogueQueryMatch(item, group) {
+			if strings.EqualFold(item.Category, group) || catalogueQueryMatch(item, group) {
 				out = append(out, item)
 			}
 		}
@@ -189,4 +248,14 @@ func prettyName(s string) string {
 		return "Template"
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func needsCredentials(reqs []Requirement) bool {
+	for _, r := range reqs {
+		if r.Stage == StageOptional || r.Kind == ReqEULA {
+			continue
+		}
+		return true
+	}
+	return false
 }

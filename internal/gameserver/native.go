@@ -22,28 +22,11 @@ func (r *Runtime) installNative(ctx context.Context, srv Server, tmpl Template, 
 	if r.Run != nil {
 		return errSkipNative
 	}
-	switch tmpl.InstallBuiltin {
-	case "paper":
-		return r.installPaperNative(ctx, srv, dir)
-	case "minecraft-vanilla":
-		return r.installVanillaNative(ctx, srv, dir)
-	case "minecraft-fabric":
-		return r.installFabricNative(ctx, srv, dir)
-	case "minecraft-purpur":
-		return r.installPurpurNative(ctx, srv, dir)
-	case "minecraft-velocity":
-		return r.installVelocityNative(ctx, srv, dir)
-	case "mindustry":
-		return r.installMindustryNative(ctx, srv, dir)
-	case "terraria":
-		return r.installTerrariaNative(ctx, srv, dir)
-	case "factorio":
-		return r.installFactorioNative(ctx, srv, dir)
-	case "fivem":
-		return r.installFiveMNative(ctx, srv, dir)
-	default:
+	inst, ok := lookupInstaller(tmpl.InstallBuiltin)
+	if !ok || inst.Native == nil {
 		return errSkipNative
 	}
+	return inst.Native(r, ctx, srv, tmpl, dir)
 }
 
 func (r *Runtime) installPaperNative(ctx context.Context, srv Server, dir string) error {
@@ -58,18 +41,22 @@ func (r *Runtime) installPaperNative(ctx context.Context, srv Server, dir string
 	var parsed struct {
 		ID        int `json:"id"`
 		Downloads map[string]struct {
-			URL string `json:"url"`
+			URL       string `json:"url"`
+			Checksums struct {
+				SHA256 string `json:"sha256"`
+			} `json:"checksums"`
 		} `json:"downloads"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return fmt.Errorf("could not parse Paper metadata for %s", ver)
 	}
 	dl := parsed.Downloads["server:default"].URL
+	sum := digest{Algo: "sha256", Hex: parsed.Downloads["server:default"].Checksums.SHA256}
 	if dl == "" {
 		return fmt.Errorf("Paper %s has no server download", ver)
 	}
 	dest := filepath.Join(dir, jar)
-	if err := fetchFile(ctx, dl, dest, maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, dl, dest, maxBinaryBytes, sum, 3); err != nil {
 		return fmt.Errorf("Paper download failed: %w", err)
 	}
 	if parsed.ID > 0 {
@@ -96,7 +83,7 @@ func (r *Runtime) installMindustryNative(ctx context.Context, srv Server, dir st
 	}
 	url := "https://github.com/Anuken/Mindustry/releases/download/" + ver + "/server-release.jar"
 	dest := filepath.Join(dir, "server-release.jar")
-	if err := fetchFile(ctx, url, dest, maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, url, dest, maxBinaryBytes, digest{}, 3); err != nil {
 		return fmt.Errorf("Mindustry download failed: %w", err)
 	}
 	r.appendLog(srv.ID, "installed Mindustry "+ver)
@@ -117,7 +104,7 @@ func (r *Runtime) installFiveMNative(ctx context.Context, srv Server, dir string
 	}
 	url := "https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/" + art + "/fx.tar.xz"
 	archive := filepath.Join(dir, "fx.tar.xz")
-	if err := fetchFile(ctx, url, archive, maxBinaryBytes); err != nil {
+	if err := fetchFileRetry(ctx, url, archive, maxBinaryBytes, digest{}, 3); err != nil {
 		return fmt.Errorf("FiveM download failed: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, "tar", "-xJf", archive, "-C", dir)

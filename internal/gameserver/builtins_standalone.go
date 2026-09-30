@@ -3,6 +3,10 @@ package gameserver
 func terrariaTemplate() Template {
 	return Template{
 		ID:              "ndl-terraria",
+		SourceRef:       "https://terraria.wiki.gg/wiki/Server",
+		GameTitle:       "Terraria",
+		Category:        "sandbox",
+		Engine:          "custom",
 		Name:            "Terraria",
 		Game:            "terraria",
 		Implementation:  "vanilla",
@@ -15,7 +19,7 @@ func terrariaTemplate() Template {
 		Stop:            "exit",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "terraria",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 7777, Protocol: "tcp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 7777, Protocol: "tcp", Primary: true, Env: "SERVER_PORT"}},
 		DefaultMemoryMB: 2048,
 		DefaultDiskMB:   8192,
 		DefaultCPUs:     2,
@@ -40,6 +44,10 @@ func terrariaTemplate() Template {
 func factorioTemplate() Template {
 	return Template{
 		ID:              "ndl-factorio",
+		SourceRef:       "https://wiki.factorio.com/Multiplayer",
+		GameTitle:       "Factorio",
+		Category:        "strategy",
+		Engine:          "custom",
 		Name:            "Factorio",
 		Game:            "factorio",
 		Implementation:  "headless",
@@ -52,7 +60,7 @@ func factorioTemplate() Template {
 		Stop:            "/quit",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "factorio",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 34197, Protocol: "udp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 34197, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}},
 		DefaultMemoryMB: 2048,
 		DefaultDiskMB:   8192,
 		DefaultCPUs:     2,

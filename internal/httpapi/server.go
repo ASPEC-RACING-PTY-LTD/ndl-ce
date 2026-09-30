@@ -115,6 +115,7 @@ type Server struct {
 	docker          *dockerCache
 	destOverride    *destAgentOverride
 	Game            *gameserver.Runtime
+	gameInstalls    sync.Map
 	PhysFS          inventory.FS
 }
 
@@ -234,6 +235,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/game-servers/catalogue/sources", s.createGameSource)
 	mux.HandleFunc("DELETE /api/v1/game-servers/catalogue/sources/{id}", s.deleteGameSource)
 	mux.HandleFunc("GET /api/v1/game-servers/templates", s.listGameTemplates)
+	mux.HandleFunc("POST /api/v1/game-servers/preflight", s.preflightGameServer)
 	mux.HandleFunc("GET /api/v1/game-servers/search", s.searchGameServers)
 	mux.HandleFunc("POST /api/v1/game-servers/fleet", s.gameServerFleet)
 	mux.HandleFunc("GET /api/v1/game-servers/prefs", s.getGameServerPrefs)

@@ -25,6 +25,7 @@ func (s *Server) gameRuntime() *gameserver.Runtime {
 		root = dir
 	}
 	s.Game = gameserver.NewRuntime(root)
+	s.Game.OnProgress = s.onGameProgress
 	return s.Game
 }
 
@@ -135,12 +136,7 @@ func (s *Server) resolveTemplate(ctx context.Context, clusterID, id string) (gam
 }
 
 func builtinByID(id string) (gameserver.Template, bool) {
-	for _, t := range gameserver.BuiltinTemplates() {
-		if t.ID == id {
-			return t, true
-		}
-	}
-	return gameserver.Template{}, false
+	return gameserver.TemplateByID(id)
 }
 
 func (s *Server) listGameServers(w http.ResponseWriter, r *http.Request) {
@@ -211,31 +207,10 @@ func (s *Server) createGameServer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	env := mergeUserEnv(tmpl, req.Env)
-	if err := validateCreate(tmpl, env); err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, err.Error())
+	plan := s.planGameServer(r.Context(), p.User.ClusterID, tmpl, req)
+	if !plan.OK {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": plan.Errors[0], "errors": plan.Errors, "warnings": plan.Warnings})
 		return
-	}
-	node, _ := s.Store.GetNode(r.Context(), p.User.ClusterID)
-	nodeID := strings.TrimSpace(req.NodeID)
-	if nodeID == "" && node != nil {
-		nodeID = node.ID
-	}
-	ports := req.Ports
-	if len(ports) == 0 {
-		ports = tmpl.DefaultPorts
-	}
-	mem := req.MemoryBytes
-	if mem == 0 {
-		mem = int64(tmpl.DefaultMemoryMB) << 20
-	}
-	disk := req.DiskBytes
-	if disk == 0 {
-		disk = int64(tmpl.DefaultDiskMB) << 20
-	}
-	cpus := req.CPUs
-	if cpus == 0 {
-		cpus = tmpl.DefaultCPUs
 	}
 	id := uuid.NewString()
 	rt := s.gameRuntime()
@@ -245,13 +220,13 @@ func (s *Server) createGameServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := appdb.GameServer{
-		ID: id, ClusterID: p.User.ClusterID, NodeID: nodeID, OwnerUserID: p.User.ID,
+		ID: id, ClusterID: p.User.ClusterID, NodeID: plan.nodeID, OwnerUserID: p.User.ID,
 		Name: sanitizeGameName(req.Name), Notes: req.Notes, TemplateID: tmpl.ID, TemplateName: tmpl.Name,
 		Game: tmpl.Game, Implementation: tmpl.Implementation, Family: tmpl.Family,
 		Status: gameserver.StatusPending, DesiredPower: "stopped",
-		Image: tmpl.ImageFor(req.ImageLabel), ImageLabel: req.ImageLabel,
-		Startup: tmpl.Startup, EnvJSON: mustJSON(env), PortsJSON: mustJSON(ports),
-		CPUs: cpus, MemoryBytes: mem, DiskBytes: disk, Capabilities: mustJSON(tmpl.Capabilities),
+		Image: plan.Image, ImageLabel: plan.ImageLabel,
+		Startup: tmpl.Startup, EnvJSON: mustJSON(plan.env), PortsJSON: mustJSON(plan.Ports),
+		CPUs: plan.cpus, MemoryBytes: plan.mem, DiskBytes: plan.disk, Capabilities: mustJSON(tmpl.Capabilities),
 		DataDir: dir, CreatedAt: s.now(), UpdatedAt: s.now(),
 	}
 	if err := s.Store.CreateGameServer(r.Context(), row); err != nil {
@@ -272,8 +247,15 @@ func (s *Server) installGame(row appdb.GameServer, tmpl gameserver.Template) {
 	rt := s.gameRuntime()
 	env := map[string]string{}
 	_ = json.Unmarshal(row.EnvJSON, &env)
-	srv := gameserver.Server{ID: row.ID, Env: env}
-	if err := rt.Install(ctx, srv, tmpl); err != nil {
+	srv := gameserver.Server{ID: row.ID, Env: env, Image: row.Image}
+	if rt.OnProgress == nil {
+		rt.OnProgress = s.onGameProgress
+	}
+	s.gameInstalls.Store(row.ID, &row)
+	defer s.gameInstalls.Delete(row.ID)
+	err := rt.Install(ctx, srv, tmpl)
+	row.InstallLog = rt.LogTail(row.ID, 200)
+	if err != nil {
 		row.Status = gameserver.StatusFailed
 		row.ErrorRaw = err.Error()
 		row.ErrorHuman = gameserver.HumanError(err.Error())
@@ -341,12 +323,12 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 	case "start":
 		err = s.startGame(r.Context(), rt, row)
 	case "stop":
-		err = rt.Stop(r.Context(), row.ID)
+		err = rt.StopGraceful(r.Context(), row.ID, s.gameStopCommand(r.Context(), row), s.gameStopTimeout(r.Context(), row))
 		row.Status = gameserver.StatusStopped
 		row.DesiredPower = "stopped"
 		row.ContainerID = ""
 	case "restart":
-		_ = rt.Stop(r.Context(), row.ID)
+		_ = rt.StopGraceful(r.Context(), row.ID, s.gameStopCommand(r.Context(), row), s.gameStopTimeout(r.Context(), row))
 		err = s.startGame(r.Context(), rt, row)
 	case "kill":
 		err = rt.Kill(r.Context(), row.ID)
@@ -380,6 +362,9 @@ func (s *Server) startGame(ctx context.Context, rt *gameserver.Runtime, row *app
 	if strings.EqualFold(env["EULA"], "false") && hasCapJSON(row.Capabilities, gameserver.CapEULA) {
 		return fmt.Errorf("eula is not accepted")
 	}
+	if err := gameserver.CheckStartRequirements(tmpl, env); err != nil {
+		return err
+	}
 	if hasCapJSON(row.Capabilities, gameserver.CapLicenseKey) && strings.TrimSpace(env["FIVEM_LICENSE"]) == "" {
 		return fmt.Errorf("fivem license key is required")
 	}
@@ -404,6 +389,7 @@ func (s *Server) startGame(ctx context.Context, rt *gameserver.Runtime, row *app
 	cid, err := rt.Start(ctx, gameserver.RunSpec{
 		ID: row.ID, Image: row.Image, Startup: startup, Env: env, Ports: ports,
 		CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, WorkDir: tmpl.WorkingDir,
+		Dependencies: tmpl.Dependencies,
 	})
 	if err != nil {
 		return err
@@ -441,7 +427,7 @@ func (s *Server) gameServerReinstall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	_ = s.gameRuntime().Stop(r.Context(), row.ID)
+	_ = s.gameRuntime().StopGraceful(r.Context(), row.ID, tmpl.Stop, time.Duration(tmpl.StopTimeout)*time.Second)
 	s.createRollback(r.Context(), *row, "pre-reinstall")
 	row.Status = gameserver.StatusPending
 	_ = s.Store.UpdateGameServer(r.Context(), *row)
@@ -579,4 +565,20 @@ func clipGame(s string, n int) string {
 
 func (s *Server) createRollback(ctx context.Context, row appdb.GameServer, reason string) {
 	_, _ = s.snapshotBackup(ctx, row, "Rollback "+reason, reason)
+}
+
+func (s *Server) gameStopCommand(ctx context.Context, row *appdb.GameServer) string {
+	tmpl, err := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID)
+	if err != nil {
+		return ""
+	}
+	return tmpl.Stop
+}
+
+func (s *Server) gameStopTimeout(ctx context.Context, row *appdb.GameServer) time.Duration {
+	tmpl, err := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID)
+	if err != nil || tmpl.StopTimeout <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(tmpl.StopTimeout) * time.Second
 }

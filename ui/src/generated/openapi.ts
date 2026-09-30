@@ -2657,6 +2657,8 @@ export type DeleteGameSourcePath = "/api/v1/game-servers/catalogue/sources/{id}"
 
 export type ListGameTemplatesPath = "/api/v1/game-servers/templates";
 
+export type PreflightGameServerPath = "/api/v1/game-servers/preflight";
+
 export type SearchGameServersPath = "/api/v1/game-servers/search";
 
 export type GameServerFleetPath = "/api/v1/game-servers/fleet";

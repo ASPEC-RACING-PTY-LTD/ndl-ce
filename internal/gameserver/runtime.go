@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,9 +25,13 @@ type Runtime struct {
 	NetworkMode string
 	Run         Runner
 	Now         func() time.Time
-	mu          sync.Mutex
-	logs        map[string][]string
-	input       map[string][]string
+	// OnProgress, when set, receives install phase changes so the API can
+	// persist them for the UI.
+	OnProgress func(id, phase, message string)
+	mu         sync.Mutex
+	logs       map[string][]string
+	input      map[string][]string
+	imageMu    sync.Mutex
 }
 
 func NewRuntime(root string) *Runtime {
@@ -113,6 +118,8 @@ type RunSpec struct {
 	CPUs        int
 	MemoryBytes int64
 	WorkDir     string
+	// Dependencies are Debian packages layered onto Image before start.
+	Dependencies []string
 }
 
 func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
@@ -121,10 +128,21 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 		return "", err
 	}
 	_ = r.Stop(ctx, spec.ID)
+	image := spec.Image
+	if len(spec.Dependencies) > 0 {
+		built, err := r.EnsureRuntimeImage(ctx, spec.Image, spec.Dependencies)
+		if err != nil {
+			return "", fmt.Errorf("runtime dependencies failed: %w", err)
+		}
+		image = built
+	}
+	workdir := firstNonEmpty(spec.WorkDir, "/home/container")
+	// -i keeps stdin open so console commands and graceful stop commands
+	// written to /proc/1/fd/0 reach the server process.
 	args := []string{
-		"run", "-d", "--name", containerName(spec.ID),
-		"--workdir", firstNonEmpty(spec.WorkDir, "/home/container"),
-		"-v", dir + ":" + firstNonEmpty(spec.WorkDir, "/home/container"),
+		"run", "-d", "-i", "--name", containerName(spec.ID),
+		"--workdir", workdir,
+		"-v", dir + ":" + workdir,
 	}
 	args = append(args, r.networkArgs()...)
 	args = append(args,
@@ -150,14 +168,20 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 			args = append(args, "-p", fmt.Sprintf("%d:%d/%s", host, p.ContainerPort, proto))
 		}
 	}
-	for k, v := range spec.Env {
-		args = append(args, "-e", k+"="+v)
+	if _, ok := spec.Env["HOME"]; !ok {
+		// Game servers keep per-user state (Steam client libraries, Klei
+		// clusters, Unity prefs) under $HOME, so it must be the persistent
+		// server folder rather than the image's ephemeral /root.
+		args = append(args, "-e", "HOME="+workdir)
+	}
+	for _, k := range sortedKeys(spec.Env) {
+		args = append(args, "-e", k+"="+spec.Env[k])
 	}
 	if strings.TrimSpace(spec.Startup) != "" {
 		args = append(args, "--entrypoint", "/bin/sh")
-		args = append(args, spec.Image, "-c", spec.Startup)
+		args = append(args, image, "-c", spec.Startup)
 	} else {
-		args = append(args, spec.Image)
+		args = append(args, image)
 	}
 	out, err := r.run(ctx, r.dockerBin(), args...)
 	if err != nil {
@@ -172,6 +196,38 @@ func (r *Runtime) Stop(ctx context.Context, id string) error {
 	_, _ = r.run(ctx, r.dockerBin(), "stop", "-t", "15", containerName(id))
 	_, _ = r.run(ctx, r.dockerBin(), "rm", "-f", containerName(id))
 	return nil
+}
+
+// StopGraceful asks the server to shut down the way the game expects, then
+// falls back to docker stop. stopCmd "^C" sends SIGINT, "^\\" SIGQUIT,
+// "SIGTERM" or "" goes straight to docker stop, anything else is typed into
+// the console. The wait is bounded by timeout.
+func (r *Runtime) StopGraceful(ctx context.Context, id, stopCmd string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	if !r.Running(ctx, id) {
+		return r.Stop(ctx, id)
+	}
+	stopCmd = strings.TrimSpace(stopCmd)
+	switch stopCmd {
+	case "", "SIGTERM":
+	case "^C", "SIGINT":
+		_, _ = r.run(ctx, r.dockerBin(), "kill", "-s", "SIGINT", containerName(id))
+	case "^\\", "SIGQUIT":
+		_, _ = r.run(ctx, r.dockerBin(), "kill", "-s", "SIGQUIT", containerName(id))
+	default:
+		_ = r.Send(ctx, id, stopCmd)
+	}
+	if stopCmd != "" && stopCmd != "SIGTERM" {
+		// docker wait returns as soon as the server exits; the context
+		// bounds how long a server may take to save before docker stop.
+		waitCtx, cancel := context.WithTimeout(ctx, timeout)
+		_, _ = r.run(waitCtx, r.dockerBin(), "wait", containerName(id))
+		cancel()
+	}
+	r.appendLog(id, "stopped with "+firstNonEmpty(stopCmd, "SIGTERM"))
+	return r.Stop(ctx, id)
 }
 
 func (r *Runtime) Kill(ctx context.Context, id string) error {
@@ -211,6 +267,33 @@ func (r *Runtime) Running(ctx context.Context, id string) bool {
 		return false
 	}
 	return strings.TrimSpace(string(out)) == "true"
+}
+
+func (r *Runtime) progress(id, phase, msg string) {
+	r.appendLog(id, "["+phase+"] "+msg)
+	if r.OnProgress != nil {
+		r.OnProgress(id, phase, msg)
+	}
+}
+
+// LogTail returns the buffered install/runtime log lines for a server.
+func (r *Runtime) LogTail(id string, max int) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	lines := r.logs[id]
+	if max > 0 && len(lines) > max {
+		lines = lines[len(lines)-max:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func sortedKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (r *Runtime) appendLog(id, line string) {

@@ -103,8 +103,8 @@ func TestExpandStartupSubstitutes(t *testing.T) {
 
 func TestBuiltinTemplatesHaveCapabilities(t *testing.T) {
 	tmpls := BuiltinTemplates()
-	if len(tmpls) < 24 || len(tmpls) > 28 {
-		t.Fatalf("want about 25 builtins, got %d", len(tmpls))
+	if len(tmpls) < 25 {
+		t.Fatalf("the original 25 builtins must remain, got %d", len(tmpls))
 	}
 	seen := map[string]bool{}
 	for _, tmpl := range tmpls {
@@ -122,7 +122,13 @@ func TestBuiltinTemplatesHaveCapabilities(t *testing.T) {
 		if script == "" || image == "" {
 			t.Fatalf("%s has no installer", tmpl.ID)
 		}
-		if err := validateEnv(tmpl, mergeEnv(tmpl, nil)); err != nil {
+		// Credentials the operator must supply (for example a Steam account
+		// that owns the game) cannot have defaults; everything else must.
+		creds := map[string]string{}
+		for _, req := range tmpl.RequirementsAt(StageInstall) {
+			creds[req.Env] = "operator-supplied"
+		}
+		if err := validateEnv(tmpl, mergeEnv(tmpl, creds)); err != nil {
 			t.Fatalf("%s default env: %v", tmpl.ID, err)
 		}
 		for _, key := range tmpl.StartRequires {

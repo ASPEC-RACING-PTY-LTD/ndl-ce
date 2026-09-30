@@ -1,8 +1,38 @@
 package gameserver
 
+import "sync"
+
 // BuiltinTemplates are No-DAL-owned blueprints. They are not copies of
 // upstream egg JSON. Install paths use documented public APIs and images.
+// The first 25 are the original catalogue; their IDs never change because
+// existing servers resolve their template by ID.
 func BuiltinTemplates() []Template {
+	out := coreTemplates()
+	out = append(out, sourceTemplates()...)
+	out = append(out, steamSurvivalTemplates()...)
+	out = append(out, steamMoreTemplates()...)
+	out = append(out, minecraftMoreTemplates()...)
+	out = append(out, nativeTemplates()...)
+	out = append(out, moddedTemplates()...)
+	return out
+}
+
+var (
+	builtinOnce  sync.Once
+	builtinIndex map[string]Template
+)
+
+func builtinLookup() map[string]Template {
+	builtinOnce.Do(func() {
+		builtinIndex = map[string]Template{}
+		for _, t := range BuiltinTemplates() {
+			builtinIndex[t.ID] = t
+		}
+	})
+	return builtinIndex
+}
+
+func coreTemplates() []Template {
 	return []Template{
 		minecraftPaperTemplate(),
 		minecraftVanillaTemplate(),
@@ -35,6 +65,10 @@ func BuiltinTemplates() []Template {
 func minecraftPaperTemplate() Template {
 	return Template{
 		ID:             "ndl-minecraft-paper",
+		GameTitle:      "Minecraft: Java Edition",
+		Category:       "minecraft",
+		Engine:         "java",
+		Architectures:  []string{"amd64", "arm64"},
 		Name:           "Minecraft Paper",
 		Game:           "minecraft",
 		Implementation: "paper",
@@ -44,14 +78,16 @@ func minecraftPaperTemplate() Template {
 			CapConsole, CapFiles, CapConfig, CapStartup, CapNetwork, CapResources, CapBackups, CapSchedules,
 			CapPlugins, CapPlayers, CapWorlds, CapEULA, CapJava, CapQueries,
 		}),
-		Images:          map[string]string{"Java 21": "eclipse-temurin:21-jre"},
+		Images:          javaImages(),
 		DefaultImage:    "eclipse-temurin:21-jre",
 		Startup:         "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}} --nogui",
 		Stop:            "stop",
 		Done:            "Done",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "paper",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 25565, Protocol: "tcp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 25565, Protocol: "tcp", Primary: true, Fixed: true}},
+		Requirements:    []Requirement{{Kind: ReqEULA, Stage: StageStart, Env: "EULA", Label: "Accept the Minecraft EULA", URL: "https://aka.ms/MinecraftEULA"}},
+		SourceRef:       "https://docs.papermc.io/misc/downloads-service/",
 		DefaultMemoryMB: 2048,
 		DefaultDiskMB:   8192,
 		DefaultCPUs:     2,
@@ -84,6 +120,9 @@ func minecraftPaperTemplate() Template {
 func steamcmdValheimTemplate() Template {
 	return Template{
 		ID:             "ndl-valheim",
+		GameTitle:      "Valheim",
+		Category:       "survival",
+		Engine:         "unity",
 		Name:           "Valheim",
 		Game:           "valheim",
 		Implementation: "steamcmd",
@@ -94,11 +133,12 @@ func steamcmdValheimTemplate() Template {
 		}),
 		Images:          map[string]string{"Debian": "steamcmd/steamcmd:debian"},
 		DefaultImage:    "steamcmd/steamcmd:debian",
-		Startup:         "./valheim_server.x86_64 -name \"{{SERVER_NAME}}\" -port {{SERVER_PORT}} -world \"{{WORLD}}\" -password \"{{SERVER_PASSWORD}}\" -public {{PUBLIC}}",
+		Startup:         "export LD_LIBRARY_PATH=./linux64:$LD_LIBRARY_PATH SteamAppId=892970; exec ./valheim_server.x86_64 -nographics -batchmode -name \"{{SERVER_NAME}}\" -port {{SERVER_PORT}} -world \"{{WORLD}}\" -password \"$SERVER_PASSWORD\" -public {{PUBLIC}} -savedir ./saves",
 		Stop:            "^C",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "steamcmd",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 2456, Protocol: "udp", Primary: true}, {Name: "query", ContainerPort: 2457, Protocol: "udp"}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 2456, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}, {Name: "query", ContainerPort: 2457, Protocol: "udp"}},
+		SourceRef:       "https://github.com/GameServerManagers/LinuxGSM/blob/master/lgsm/config-default/config-lgsm/vhserver/_default.cfg",
 		DefaultMemoryMB: 4096,
 		DefaultDiskMB:   12288,
 		DefaultCPUs:     2,
@@ -108,7 +148,7 @@ func steamcmdValheimTemplate() Template {
 			{Name: "Steam app ID", Env: "SRCDS_APPID", Description: "Valheim dedicated server app.", Default: "896660", Viewable: true, Editable: false, Required: true},
 			{Name: "Server name", Env: "SERVER_NAME", Description: "Name shown in the in-game browser.", Default: "No-DAL Valheim", Viewable: true, Editable: true, Required: true},
 			{Name: "World", Env: "WORLD", Description: "World save name.", Default: "Dedicated", Viewable: true, Editable: true, Required: true},
-			{Name: "Join password", Env: "SERVER_PASSWORD", Description: "Must be at least 5 characters. Valheim requires a password.", Default: "secret", Viewable: false, Editable: true, Required: true, Secret: true, FieldType: "password"},
+			{Name: "Join password", Env: "SERVER_PASSWORD", Description: "Must be at least 5 characters. Valheim requires a password. Generated when left empty.", Default: "", Viewable: false, Editable: true, Required: true, Secret: true, FieldType: "password", Generate: "password"},
 			{Name: "Game port", Env: "SERVER_PORT", Description: "UDP game port.", Default: "2456", Viewable: true, Editable: true, Required: true, FieldType: "number"},
 			{Name: "Listed publicly", Env: "PUBLIC", Description: "1 lists the server. 0 keeps it unlisted.", Default: "1", Viewable: true, Editable: true, FieldType: "number"},
 		},
@@ -124,6 +164,10 @@ func steamcmdValheimTemplate() Template {
 func fivemTemplate() Template {
 	return Template{
 		ID:             "ndl-fivem",
+		SourceRef:      "https://docs.fivem.net/docs/server-manual/setting-up-a-server-vanilla/",
+		GameTitle:      "Grand Theft Auto V",
+		Category:       "roleplay",
+		Engine:         "custom",
 		Name:           "FiveM FXServer",
 		Game:           "fivem",
 		Implementation: "fxserver",
@@ -139,7 +183,8 @@ func fivemTemplate() Template {
 		Stop:            "quit",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "fivem",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 30120, Protocol: "udp", Primary: true}, {Name: "http", ContainerPort: 40120, Protocol: "tcp"}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 30120, Protocol: "udp", Primary: true, Fixed: true}, {Name: "game-tcp", ContainerPort: 30120, Protocol: "tcp", Fixed: true}, {Name: "txadmin", ContainerPort: 40120, Protocol: "tcp", Fixed: true}},
+		Requirements:    []Requirement{{Kind: ReqLicenseKey, Stage: StageStart, Env: "FIVEM_LICENSE", Label: "Cfx.re server license key", URL: "https://portal.cfx.re/"}},
 		DefaultMemoryMB: 4096,
 		DefaultDiskMB:   16384,
 		DefaultCPUs:     2,
@@ -164,6 +209,9 @@ func fivemTemplate() Template {
 func gmodTemplate() Template {
 	return Template{
 		ID:             "ndl-gmod",
+		GameTitle:      "Garry's Mod",
+		Category:       "sandbox",
+		Engine:         "source",
 		Name:           "Garry's Mod",
 		Game:           "gmod",
 		Implementation: "srcds",
@@ -175,11 +223,13 @@ func gmodTemplate() Template {
 		}),
 		Images:          map[string]string{"Debian": "steamcmd/steamcmd:debian"},
 		DefaultImage:    "steamcmd/steamcmd:debian",
-		Startup:         "./srcds_run -game garrysmod -console -port {{SERVER_PORT}} +map {{MAP}} +maxplayers {{MAX_PLAYERS}} +hostname \"{{SERVER_NAME}}\" +gamemode {{GAMEMODE}}",
+		Startup:         "./srcds_run -game garrysmod -console -norestart -port {{SERVER_PORT}} +map {{MAP}} +maxplayers {{MAX_PLAYERS}} +hostname \"{{SERVER_NAME}}\" +gamemode {{GAMEMODE}} ${WORKSHOP_COLLECTION:++host_workshop_collection $WORKSHOP_COLLECTION} ${STEAM_TOKEN:++sv_setsteamaccount $STEAM_TOKEN}",
 		Stop:            "quit",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "steamcmd",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 27015, Protocol: "udp", Primary: true, Env: "SERVER_PORT"}, {Name: "rcon", ContainerPort: 27015, Protocol: "tcp", Env: "SERVER_PORT"}},
+		Requirements:    []Requirement{gsltOptional("4000")},
+		SourceRef:       "https://github.com/GameServerManagers/LinuxGSM/blob/master/lgsm/config-default/config-lgsm/gmodserver/_default.cfg",
 		DefaultMemoryMB: 4096,
 		DefaultDiskMB:   20480,
 		DefaultCPUs:     2,
@@ -209,6 +259,11 @@ func gmodTemplate() Template {
 func mindustryTemplate() Template {
 	return Template{
 		ID:             "ndl-mindustry",
+		SourceRef:      "https://github.com/Anuken/Mindustry/releases",
+		GameTitle:      "Mindustry",
+		Category:       "strategy",
+		Engine:         "java",
+		Architectures:  []string{"amd64", "arm64"},
 		Name:           "Mindustry",
 		Game:           "mindustry",
 		Implementation: "vanilla",
@@ -223,7 +278,7 @@ func mindustryTemplate() Template {
 		Stop:            "exit",
 		WorkingDir:      "/home/container",
 		InstallBuiltin:  "mindustry",
-		DefaultPorts:    []Port{{Name: "game", ContainerPort: 6567, Protocol: "tcp", Primary: true}, {Name: "game-udp", ContainerPort: 6567, Protocol: "udp"}},
+		DefaultPorts:    []Port{{Name: "game", ContainerPort: 6567, Protocol: "tcp", Primary: true, Fixed: true}, {Name: "game-udp", ContainerPort: 6567, Protocol: "udp", Fixed: true}},
 		DefaultMemoryMB: 1024,
 		DefaultDiskMB:   4096,
 		DefaultCPUs:     1,
@@ -242,10 +297,8 @@ func mindustryTemplate() Template {
 }
 
 func templateByID(id string) (Template, bool) {
-	for _, t := range BuiltinTemplates() {
-		if t.ID == id {
-			return cloneTemplate(t), true
-		}
+	if t, ok := builtinLookup()[id]; ok {
+		return cloneTemplate(t), true
 	}
 	return Template{}, false
 }

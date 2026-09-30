@@ -33,15 +33,11 @@ func (s *Server) gameServerCatalogue(w http.ResponseWriter, r *http.Request) {
 	stored, _ := s.Store.ListGameTemplates(r.Context(), p.User.ClusterID)
 	for _, row := range stored {
 		var t gameserver.Template
-		if json.Unmarshal(row.Body, &t) != nil {
+		if json.Unmarshal(row.Body, &t) != nil || t.Hidden {
 			continue
 		}
-		item := gameserver.CatalogueItem{
-			ID: t.ID, Name: t.Name, Game: t.Game, Implementation: t.Implementation,
-			Family: t.Family, Summary: t.Summary, Source: t.SourceURL, Tags: t.Tags,
-			Capabilities: t.Capabilities, ImportURL: t.UpdateURL, Aliases: t.Aliases,
-			RuntimeKind: t.RuntimeKind(), Hint: t.Hint,
-		}
+		item := gameserver.CatalogueItemFromTemplate(t, t.SourceURL, false)
+		item.ImportURL = t.UpdateURL
 		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": gameserver.FilterCatalogue(gameserver.MatchCatalogue(items, q), group)})
@@ -193,16 +189,20 @@ func (s *Server) listGameTemplates(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusNotFound, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, tmpl)
+		writeJSON(w, http.StatusOK, templateView(tmpl))
 		return
 	}
-	items := make([]gameserver.Template, 0)
-	items = append(items, gameserver.BuiltinTemplates()...)
+	items := make([]gameTemplateView, 0)
+	for _, t := range gameserver.BuiltinTemplates() {
+		if !t.Hidden {
+			items = append(items, templateView(t))
+		}
+	}
 	stored, _ := s.Store.ListGameTemplates(r.Context(), p.User.ClusterID)
 	for _, row := range stored {
 		var t gameserver.Template
 		if json.Unmarshal(row.Body, &t) == nil {
-			items = append(items, t)
+			items = append(items, templateView(t))
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -218,7 +218,8 @@ func (s *Server) getGameServerPrefs(w http.ResponseWriter, r *http.Request) {
 		view = "grid"
 	}
 	recents, _ := s.Store.GetGameUserPref(r.Context(), p.User.ClusterID, p.User.ID, "recents")
-	writeJSON(w, http.StatusOK, map[string]any{"view": view, "recents": recents})
+	favorites, _ := s.Store.GetGameUserPref(r.Context(), p.User.ClusterID, p.User.ID, "favorites")
+	writeJSON(w, http.StatusOK, map[string]any{"view": view, "recents": recents, "favorites": favorites})
 }
 
 func (s *Server) putGameServerPrefs(w http.ResponseWriter, r *http.Request) {
@@ -227,8 +228,9 @@ func (s *Server) putGameServerPrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		View    string `json:"view"`
-		Recents string `json:"recents"`
+		View      string  `json:"view"`
+		Recents   string  `json:"recents"`
+		Favorites *string `json:"favorites"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	switch req.View {
@@ -237,6 +239,14 @@ func (s *Server) putGameServerPrefs(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Recents != "" {
 		_ = s.Store.SetGameUserPref(r.Context(), p.User.ClusterID, p.User.ID, "recents", clipGame(req.Recents, 4000))
+	}
+	if req.Favorites != nil {
+		var ids []string
+		if *req.Favorites != "" && json.Unmarshal([]byte(*req.Favorites), &ids) != nil {
+			writeErr(w, http.StatusBadRequest, "favorites must be a JSON array of template ids")
+			return
+		}
+		_ = s.Store.SetGameUserPref(r.Context(), p.User.ClusterID, p.User.ID, "favorites", clipGame(*req.Favorites, 8000))
 	}
 	s.getGameServerPrefs(w, r)
 }

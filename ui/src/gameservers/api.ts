@@ -2,9 +2,11 @@ import { ApiError } from "../api/client";
 import type {
   CatalogueItem,
   GameContentItem,
+  GameCreateBody,
   GameServer,
   GameTemplate,
   GameView,
+  PreflightResult,
 } from "./types";
 
 async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -84,12 +86,61 @@ export async function getGameTemplate(id: string): Promise<GameTemplate> {
   return readJson(`/game-servers/templates?id=${encodeURIComponent(id)}`);
 }
 
-export async function getGamePrefs(): Promise<{ view: GameView; recents: string }> {
+export type GamePrefs = { view: GameView; recents: string; favorites?: string };
+
+export async function getGamePrefs(): Promise<GamePrefs> {
   return readJson("/game-servers/prefs");
 }
 
-export async function putGamePrefs(body: { view?: GameView; recents?: string }): Promise<{ view: GameView; recents: string }> {
+export async function putGamePrefs(body: { view?: GameView; recents?: string; favorites?: string }): Promise<GamePrefs> {
   return readJson("/game-servers/prefs", { method: "PUT", body: JSON.stringify(body) });
+}
+
+/**
+ * Parses a prefs value stored as a JSON array string of template ids.
+ * Returns null when the value is not a JSON string array (older servers
+ * stored free text in `recents`), and [] for an empty value.
+ */
+export function parseTemplateIdList(raw: unknown): string[] | null {
+  if (raw === "") {
+    return [];
+  }
+  if (typeof raw !== "string") {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
+      return parsed as string[];
+    }
+  } catch {
+    // not a JSON array
+  }
+  return null;
+}
+
+/** Catalogue favourites and recents from the prefs API. A null list means the server does not store it. */
+export async function getCataloguePrefs(): Promise<{ favorites: string[] | null; recents: string[] | null }> {
+  const prefs = await getGamePrefs();
+  return {
+    favorites: "favorites" in (prefs ?? {}) ? parseTemplateIdList(prefs.favorites) : null,
+    recents: parseTemplateIdList(prefs?.recents),
+  };
+}
+
+export async function putCataloguePrefs(body: { favorites?: string[]; recents?: string[] }): Promise<void> {
+  const out: { favorites?: string; recents?: string } = {};
+  if (body.favorites) {
+    out.favorites = JSON.stringify(body.favorites);
+  }
+  if (body.recents) {
+    out.recents = JSON.stringify(body.recents);
+  }
+  await putGamePrefs(out);
+}
+
+export async function preflightGameServer(body: GameCreateBody): Promise<PreflightResult> {
+  return readJson("/game-servers/preflight", { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function fleetGameServers(action: string, ids: string[]): Promise<{ items: { id: string; ok: boolean; error?: string }[] }> {
