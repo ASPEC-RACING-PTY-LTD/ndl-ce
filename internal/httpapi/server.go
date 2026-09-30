@@ -115,7 +115,12 @@ type Server struct {
 	docker          *dockerCache
 	destOverride    *destAgentOverride
 	Game            *gameserver.Runtime
-	gameInstalls    sync.Map
+	// GameHost runs game server containers and owns their folders. In
+	// production it is the root agent; when nil, a LocalHost over Game is
+	// used (tests and development).
+	GameHost  gameserver.Host
+	gameLocal *gameserver.LocalHost
+	gameMu    sync.Mutex
 	PhysFS          inventory.FS
 }
 

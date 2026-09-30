@@ -1,19 +1,14 @@
 package httpapi
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -274,14 +269,14 @@ func (s *Server) gameServerFleet(w http.ResponseWriter, r *http.Request) {
 		var ferr error
 		switch req.Action {
 		case "start":
-			ferr = s.startGame(r.Context(), s.gameRuntime(), row)
+			ferr = s.startGame(r.Context(), s.gameHost(), row)
 		case "stop":
-			ferr = s.gameRuntime().Stop(r.Context(), row.ID)
+			ferr = s.gameHost().Stop(r.Context(), row.ID)
 			row.Status = gameserver.StatusStopped
 			row.DesiredPower = "stopped"
 		case "restart":
-			_ = s.gameRuntime().Stop(r.Context(), row.ID)
-			ferr = s.startGame(r.Context(), s.gameRuntime(), row)
+			_ = s.gameHost().Stop(r.Context(), row.ID)
+			ferr = s.startGame(r.Context(), s.gameHost(), row)
 		case "backup":
 			_, ferr = s.snapshotBackup(r.Context(), *row, "Fleet backup", "fleet")
 		default:
@@ -307,7 +302,7 @@ func (s *Server) gameServerConsole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tail, _ := strconv.Atoi(r.URL.Query().Get("tail"))
-	logs, err := s.gameRuntime().Logs(r.Context(), row.ID, tail)
+	logs, err := s.gameHost().Logs(r.Context(), row.ID, tail)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, gameserver.HumanError(err.Error()))
 		return
@@ -317,7 +312,7 @@ func (s *Server) gameServerConsole(w http.ResponseWriter, r *http.Request) {
 	favs, _ := s.Store.ListGameConsoleFavs(r.Context(), row.ID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"log":       gameserver.RedactLog(logs, env),
-		"running":   s.gameRuntime().Running(r.Context(), row.ID),
+		"running":   s.gameHost().Running(r.Context(), row.ID),
 		"favorites": favs,
 	})
 }
@@ -342,7 +337,7 @@ func (s *Server) gameServerConsoleSend(w http.ResponseWriter, r *http.Request) {
 	if len(cmd) > 4000 {
 		cmd = cmd[:4000]
 	}
-	if err := s.gameRuntime().Send(r.Context(), row.ID, cmd); err != nil {
+	if err := s.gameHost().Send(r.Context(), row.ID, cmd); err != nil {
 		writeErr(w, http.StatusBadGateway, gameserver.HumanError(err.Error()))
 		return
 	}
@@ -407,17 +402,6 @@ func (s *Server) gameServerConsoleFavDelete(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
-func (s *Server) gameJail(row *appdb.GameServer) (string, error) {
-	dir := row.DataDir
-	if dir == "" {
-		dir = s.gameRuntime().DataDir(row.ID)
-	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", err
-	}
-	return dir, nil
-}
-
 func (s *Server) gameServerFilesList(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireGameFeature(w, r, rbac.GameServerFiles)
 	if !ok {
@@ -432,41 +416,18 @@ func (s *Server) gameServerFilesList(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	root, err := s.gameJail(row)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	f, _, err := iojail.OpenBeneath(root, rel, os.O_RDONLY, 0)
+	listing, err := s.gameHost().ListDir(r.Context(), row.ID, rel)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "path not found")
 		return
 	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+	if listing.File {
+		writeJSON(w, http.StatusOK, map[string]any{"path": rel, "items": []any{}, "file": true, "size": listing.Size})
 		return
 	}
-	if !info.IsDir() {
-		writeJSON(w, http.StatusOK, map[string]any{"path": rel, "items": []any{}, "file": true, "size": info.Size()})
-		return
-	}
-	entries, err := f.ReadDir(0)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	items := make([]map[string]any, 0, len(entries))
-	for _, e := range entries {
-		st, _ := e.Info()
-		size := int64(0)
-		mod := time.Time{}
-		if st != nil {
-			size = st.Size()
-			mod = st.ModTime()
-		}
-		items = append(items, map[string]any{"name": e.Name(), "dir": e.IsDir(), "size": size, "modified_at": mod})
+	items := make([]map[string]any, 0, len(listing.Items))
+	for _, e := range listing.Items {
+		items = append(items, map[string]any{"name": e.Name, "dir": e.Dir, "size": e.Size, "modified_at": e.ModifiedAt})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"path": rel, "items": items})
 }
@@ -528,12 +489,7 @@ func (s *Server) gameServerFilesMkdir(w http.ResponseWriter, r *http.Request) {
 		Path string `json:"path"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	root, err := s.gameJail(row)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if err := iojail.MkdirBeneath(root, req.Path, 0o750); err != nil {
+	if err := s.gameHost().Mkdir(r.Context(), row.ID, req.Path); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -553,12 +509,7 @@ func (s *Server) gameServerFilesDelete(w http.ResponseWriter, r *http.Request) {
 		Path string `json:"path"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	root, err := s.gameJail(row)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if err := iojail.RemoveBeneath(root, req.Path); err != nil {
+	if err := s.gameHost().Remove(r.Context(), row.ID, req.Path); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -580,12 +531,7 @@ func (s *Server) gameServerFilesMove(w http.ResponseWriter, r *http.Request) {
 		To   string `json:"to"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
-	root, err := s.gameJail(row)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if err := iojail.RenameBeneath(root, req.From, req.To); err != nil {
+	if err := s.gameHost().Rename(r.Context(), row.ID, req.From, req.To); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -606,25 +552,18 @@ func (s *Server) gameServerFilesDownload(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	root, err := s.gameJail(row)
+	body, err := s.gameHost().ReadFile(r.Context(), row.ID, rel, 64<<20)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	f, _, err := iojail.OpenBeneath(root, rel, os.O_RDONLY, 0)
-	if err != nil {
+		if strings.Contains(err.Error(), "directory") {
+			writeErr(w, http.StatusBadRequest, "path is a directory")
+			return
+		}
 		writeErr(w, http.StatusNotFound, "path not found")
-		return
-	}
-	defer f.Close()
-	st, _ := f.Stat()
-	if st != nil && st.IsDir() {
-		writeErr(w, http.StatusBadRequest, "path is a directory")
 		return
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(rel)+`"`)
 	w.Header().Set("Content-Type", "application/octet-stream")
-	_, _ = io.Copy(w, io.LimitReader(f, 64<<20))
+	_, _ = w.Write(body)
 }
 
 func (s *Server) gameServerFilesUpload(w http.ResponseWriter, r *http.Request) {
@@ -669,48 +608,15 @@ func (s *Server) readGameFile(row *appdb.GameServer, path string, max int64) ([]
 	if err != nil {
 		return nil, "", err
 	}
-	root, err := s.gameJail(row)
+	body, err := s.gameHost().ReadFile(context.Background(), row.ID, rel, max)
 	if err != nil {
 		return nil, "", err
-	}
-	f, _, err := iojail.OpenBeneath(root, rel, os.O_RDONLY, 0)
-	if err != nil {
-		return nil, "", err
-	}
-	defer f.Close()
-	body, err := io.ReadAll(io.LimitReader(f, max+1))
-	if err != nil {
-		return nil, "", err
-	}
-	if int64(len(body)) > max {
-		return nil, "", fmt.Errorf("file is larger than the editor limit")
 	}
 	return body, rel, nil
 }
 
 func (s *Server) writeGameFile(row *appdb.GameServer, path string, body []byte) error {
-	rel, err := iojail.CleanRel(path)
-	if err != nil {
-		return err
-	}
-	if rel == "." {
-		return fmt.Errorf("file path is required")
-	}
-	root, err := s.gameJail(row)
-	if err != nil {
-		return err
-	}
-	parent := filepath.Dir(rel)
-	if parent != "." {
-		_ = iojail.MkdirBeneath(root, parent, 0o750)
-	}
-	f, _, err := iojail.OpenBeneath(root, rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o640)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.Write(body)
-	return err
+	return s.gameHost().WriteFile(context.Background(), row.ID, path, body)
 }
 
 func (s *Server) gameServerStartup(w http.ResponseWriter, r *http.Request) {
@@ -1062,9 +968,9 @@ func (s *Server) restoreGameBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "backup not found")
 		return
 	}
-	_ = s.gameRuntime().Stop(r.Context(), row.ID)
+	_ = s.gameHost().Stop(r.Context(), row.ID)
 	s.createRollback(r.Context(), *row, "pre-restore")
-	if err := s.restoreSnapshot(row.DataDir, b.Path); err != nil {
+	if err := s.gameHost().RestoreBackup(r.Context(), row.ID, b.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1086,159 +992,22 @@ func (s *Server) deleteGameBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "backup not found")
 		return
 	}
-	_ = os.Remove(b.Path)
+	_ = s.gameHost().DeleteBackup(r.Context(), row.ID, b.ID)
 	_ = s.Store.DeleteGameBackup(r.Context(), row.ID, b.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
 func (s *Server) snapshotBackup(ctx context.Context, row appdb.GameServer, name, reason string) (*appdb.GameBackup, error) {
-	root := row.DataDir
-	if root == "" {
-		root = s.gameRuntime().DataDir(row.ID)
-	}
-	dir := filepath.Join(s.gameRuntime().Root, "game-backups", row.ID)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, err
-	}
 	id := uuid.NewString()
-	path := filepath.Join(dir, id+".tar.gz")
-	if err := archiveDir(root, path); err != nil {
+	file, err := s.gameHost().Backup(ctx, row.ID, id)
+	if err != nil {
 		return nil, err
 	}
-	st, _ := os.Stat(path)
-	var size int64
-	if st != nil {
-		size = st.Size()
-	}
-	b := appdb.GameBackup{ID: id, ServerID: row.ID, Name: name, Reason: reason, Path: path, Bytes: size, CreatedAt: s.now()}
+	b := appdb.GameBackup{ID: id, ServerID: row.ID, Name: name, Reason: reason, Path: file.Path, Bytes: file.Bytes, CreatedAt: s.now()}
 	if err := s.Store.CreateGameBackup(ctx, b); err != nil {
 		return nil, err
 	}
 	return &b, nil
-}
-
-func archiveDir(src, dest string) error {
-	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
-		return err
-	}
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	gz := gzip.NewWriter(f)
-	defer gz.Close()
-	tw := tar.NewWriter(gz)
-	defer tw.Close()
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			return fmt.Errorf("backup path escapes the jail")
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		hdr, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		hdr.Name = filepath.ToSlash(rel)
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		// Copy exactly the header size. Running servers can grow files
-		// (Minecraft cache downloads) which would otherwise trip
-		// archive/tar: write too long.
-		n, copyErr := io.Copy(tw, io.LimitReader(in, hdr.Size))
-		_ = in.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		if n < hdr.Size {
-			_, copyErr = io.CopyN(tw, zeroReader{}, hdr.Size-n)
-		}
-		return copyErr
-	})
-}
-
-type zeroReader struct{}
-
-func (zeroReader) Read(p []byte) (int, error) {
-	for i := range p {
-		p[i] = 0
-	}
-	return len(p), nil
-}
-
-func (s *Server) restoreSnapshot(dest, archivePath string) error {
-	if dest == "" {
-		return fmt.Errorf("data directory is missing")
-	}
-	f, err := os.Open(archivePath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-	tr := tar.NewReader(gz)
-	entries, _ := os.ReadDir(dest)
-	for _, e := range entries {
-		if e.Name() == ".ndl" {
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(dest, e.Name()))
-	}
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		rel, err := iojail.CleanRel(hdr.Name)
-		if err != nil || rel == "." {
-			continue
-		}
-		abs := filepath.Join(dest, filepath.FromSlash(rel))
-		if relOut, rerr := filepath.Rel(dest, abs); rerr != nil || strings.HasPrefix(relOut, "..") {
-			return fmt.Errorf("restore path escapes the jail")
-		}
-		if hdr.FileInfo().IsDir() {
-			_ = os.MkdirAll(abs, 0o750)
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
-			return err
-		}
-		out, err := os.OpenFile(abs, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
-		if err != nil {
-			return err
-		}
-		_, copyErr := io.Copy(out, io.LimitReader(tr, 128<<20))
-		_ = out.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-	}
 }
 
 func (s *Server) listGameSchedules(w http.ResponseWriter, r *http.Request) {
@@ -1402,7 +1171,7 @@ func (s *Server) installGameContent(w http.ResponseWriter, r *http.Request) {
 	item.Enabled = true
 	item.InstalledAt = s.now()
 	item.ID = uuid.NewString()
-	if err := gameserver.SafeExtract(row.DataDir, tmpl.Content.InstallDir, raw, item.Filename); err != nil {
+	if err := s.gameHost().Extract(r.Context(), row.ID, tmpl.Content.InstallDir, raw, item.Filename); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -1411,7 +1180,7 @@ func (s *Server) installGameContent(w http.ResponseWriter, r *http.Request) {
 	if req.Dependencies {
 		for _, dep := range item.Dependencies {
 			if _, depRaw, derr := prov.Resolve(r.Context(), tmpl.Content, dep, "latest"); derr == nil {
-				_ = gameserver.SafeExtract(row.DataDir, tmpl.Content.InstallDir, depRaw, dep+".bin")
+				_ = s.gameHost().Extract(r.Context(), row.ID, tmpl.Content.InstallDir, depRaw, dep+".bin")
 			} else {
 				missing = append(missing, dep)
 			}
@@ -1459,7 +1228,7 @@ func (s *Server) uploadGameContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.createRollback(r.Context(), *row, "pre-upload")
-	if err := gameserver.SafeExtract(row.DataDir, tmpl.Content.InstallDir, body, name); err != nil {
+	if err := s.gameHost().Extract(r.Context(), row.ID, tmpl.Content.InstallDir, body, name); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -1553,7 +1322,7 @@ func (s *Server) updateGameContent(w http.ResponseWriter, r *http.Request) {
 		warn = "The new version lists different game versions than the installed copy."
 	}
 	s.createRollback(r.Context(), *row, "pre-update")
-	_ = gameserver.SafeExtract(row.DataDir, tmpl.Content.InstallDir, raw, next.Filename)
+	_ = s.gameHost().Extract(r.Context(), row.ID, tmpl.Content.InstallDir, raw, next.Filename)
 	next.ID = item.ID
 	next.Enabled = item.Enabled
 	next.InstalledAt = s.now()
@@ -1588,9 +1357,9 @@ func (s *Server) setContentEnabled(ctx context.Context, row *appdb.GameServer, i
 	if item.Filename != "" && tmpl.Content.InstallDir != "" {
 		from := filepath.ToSlash(filepath.Join(tmpl.Content.InstallDir, item.Filename))
 		if enabled {
-			_ = iojail.RenameBeneath(row.DataDir, from+".disabled", from)
+			_ = s.gameHost().Rename(ctx, row.ID, from+".disabled", from)
 		} else {
-			_ = iojail.RenameBeneath(row.DataDir, from, from+".disabled")
+			_ = s.gameHost().Rename(ctx, row.ID, from, from+".disabled")
 		}
 	}
 	item.Enabled = enabled
@@ -1606,8 +1375,8 @@ func (s *Server) removeContent(ctx context.Context, row *appdb.GameServer, id st
 	_ = json.Unmarshal(cur.Body, &item)
 	tmpl, _ := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID)
 	if item.Filename != "" && tmpl.Content.InstallDir != "" {
-		_ = iojail.RemoveBeneath(row.DataDir, filepath.ToSlash(filepath.Join(tmpl.Content.InstallDir, item.Filename)))
-		_ = iojail.RemoveBeneath(row.DataDir, filepath.ToSlash(filepath.Join(tmpl.Content.InstallDir, item.Filename+".disabled")))
+		_ = s.gameHost().Remove(ctx, row.ID, filepath.ToSlash(filepath.Join(tmpl.Content.InstallDir, item.Filename)))
+		_ = s.gameHost().Remove(ctx, row.ID, filepath.ToSlash(filepath.Join(tmpl.Content.InstallDir, item.Filename+".disabled")))
 	}
 	return s.Store.DeleteGameContent(ctx, row.ID, id)
 }
@@ -1773,7 +1542,7 @@ func (s *Server) gameServerDiagnostics(w http.ResponseWriter, r *http.Request) {
 	env := map[string]string{}
 	_ = json.Unmarshal(row.EnvJSON, &env)
 	events, _ := s.Store.ListGameEvents(r.Context(), p.User.ClusterID, row.ID, 20)
-	logs, _ := s.gameRuntime().Logs(r.Context(), row.ID, 80)
+	logs, _ := s.gameHost().Logs(r.Context(), row.ID, 80)
 	recent := make([]map[string]any, 0, len(events))
 	for _, ev := range events {
 		recent = append(recent, map[string]any{

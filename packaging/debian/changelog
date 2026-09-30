@@ -1,3 +1,17 @@
+nodal (1.1.3) UNRELEASED; urgency=medium
+
+  * Game servers run in the root agent. Creating a game server failed with
+    "mkdir /var/lib/ndl/gameservers: permission denied" because the
+    unprivileged control plane created the server folder, ran Docker and
+    edited server files itself. The control plane now asks ndl-agent for
+    each of these through one typed GameServer method: folder setup,
+    install (with live progress), start, stop, console, logs, the file
+    manager, mods and content, backups and restore, and delete. Every
+    operation is scoped to the server's own folder under /var/lib/ndl.
+    ndl-control keeps no Docker access and no file capabilities.
+
+ -- No-dal <packaging@no-dal.com>  Wed, 30 Sep 2026 06:00:00 +0000
+
 nodal (1.1.2) trixie; urgency=medium
 
   * Updates install from the Updates page. Apply now upgrades every core

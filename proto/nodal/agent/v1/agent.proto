@@ -186,7 +186,20 @@ message ExecuteRequest {
     DiskConvert disk_convert = 40;
     ArchiveExtract archive_extract = 41;
     DockerMgmt docker_mgmt = 42;
+    GameServer game_server = 43;
   }
+}
+
+// GameServer runs one typed game server operation as root: containers and
+// the server's folder under the agent data dir. action is one of the
+// allowlisted operations in internal/agentrpc/gameserver.go. server_id
+// names the folder; paths in spec_json are relative to it and resolved
+// beneath it. There is no command or host path field.
+message GameServer {
+  string action = 1;
+  string server_id = 2;
+  bytes spec_json = 3;
+  bytes data = 4;
 }
 
 message DockerMgmt {

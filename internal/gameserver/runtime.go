@@ -70,7 +70,18 @@ func (r *Runtime) networkMode() string {
 }
 
 func (r *Runtime) networkArgs() []string {
-	mode := r.networkMode()
+	return networkArgsFor(r.networkMode())
+}
+
+func (r *Runtime) specNetworkMode(spec RunSpec) string {
+	switch mode := strings.TrimSpace(spec.NetworkMode); mode {
+	case "bridge", "host":
+		return mode
+	}
+	return r.networkMode()
+}
+
+func networkArgsFor(mode string) []string {
 	args := []string{"--network", mode}
 	if mode != "host" {
 		args = append(args, "--dns", "1.1.1.1", "--dns", "8.8.8.8")
@@ -120,6 +131,8 @@ type RunSpec struct {
 	WorkDir     string
 	// Dependencies are Debian packages layered onto Image before start.
 	Dependencies []string
+	// NetworkMode is "bridge" or "host". Empty uses the runtime default.
+	NetworkMode string `json:",omitempty"`
 }
 
 func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
@@ -144,7 +157,8 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 		"--workdir", workdir,
 		"-v", dir + ":" + workdir,
 	}
-	args = append(args, r.networkArgs()...)
+	netMode := r.specNetworkMode(spec)
+	args = append(args, networkArgsFor(netMode)...)
 	args = append(args,
 		"--security-opt", "no-new-privileges",
 		"--read-only=false",
@@ -155,7 +169,7 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 	if spec.CPUs > 0 {
 		args = append(args, "--cpus", strconv.Itoa(spec.CPUs))
 	}
-	if r.networkMode() != "host" {
+	if netMode != "host" {
 		for _, p := range spec.Ports {
 			proto := p.Protocol
 			if proto == "" {

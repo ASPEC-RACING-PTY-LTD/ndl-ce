@@ -15,6 +15,7 @@ import (
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/backuphost"
 	"github.com/no-dal/ndl-ce/internal/docker"
+	"github.com/no-dal/ndl-ce/internal/gameserver"
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/inventory"
@@ -32,19 +33,23 @@ const version = "0.1.0"
 
 // Handler is the typed agent service.
 type Handler struct {
-	Ident         identity.Files
-	AllowedUID    uint32
-	Lookup        func() (hostos.Platform, error)
-	Peer          func(ctx context.Context) (peercred.Creds, error)
-	Collect       func() inventory.Inventory
-	Metrics       *metrics.Store
-	Storage       *storage.Directory
-	Uploads       *storage.Uploads
-	Nets          *ndnet.Engine
-	Workloads     *lxc.Engine
-	QEMU          *qemu.Engine
-	OCI           *oci.Engine
-	Docker        *docker.Engine
+	Ident      identity.Files
+	AllowedUID uint32
+	Lookup     func() (hostos.Platform, error)
+	Peer       func(ctx context.Context) (peercred.Creds, error)
+	Collect    func() inventory.Inventory
+	Metrics    *metrics.Store
+	Storage    *storage.Directory
+	Uploads    *storage.Uploads
+	Nets       *ndnet.Engine
+	Workloads  *lxc.Engine
+	QEMU       *qemu.Engine
+	OCI        *oci.Engine
+	Docker     *docker.Engine
+	// Games runs game server containers and folders. When nil, a LocalHost
+	// rooted at GameRoot (default /var/lib/ndl) is created on first use.
+	Games         *gameserver.LocalHost
+	GameRoot      string
 	BackupHost    *backuphost.Host
 	ZFS           *storage.ZFSEngine
 	LVM           *storage.LVMEngine
@@ -244,6 +249,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execArchiveExtract(ctx, req.Msg.GetArchiveExtract())
 	case req.Msg.GetDockerMgmt() != nil:
 		return h.execDockerMgmt(ctx, req.Msg.GetDockerMgmt())
+	case req.Msg.GetGameServer() != nil:
+		return h.execGameServer(ctx, req.Msg.GetGameServer())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

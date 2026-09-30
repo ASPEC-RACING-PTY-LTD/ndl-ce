@@ -25,8 +25,21 @@ func (s *Server) gameRuntime() *gameserver.Runtime {
 		root = dir
 	}
 	s.Game = gameserver.NewRuntime(root)
-	s.Game.OnProgress = s.onGameProgress
 	return s.Game
+}
+
+// gameHost is where every host-side game server operation runs.
+func (s *Server) gameHost() gameserver.Host {
+	if s.GameHost != nil {
+		return s.GameHost
+	}
+	rt := s.gameRuntime()
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+	if s.gameLocal == nil || s.gameLocal.RT != rt {
+		s.gameLocal = &gameserver.LocalHost{RT: rt}
+	}
+	return s.gameLocal
 }
 
 func (s *Server) requireGameFeature(w http.ResponseWriter, r *http.Request, perm string) (*principal, bool) {
@@ -213,8 +226,7 @@ func (s *Server) createGameServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := uuid.NewString()
-	rt := s.gameRuntime()
-	dir, err := rt.EnsureData(id)
+	dir, err := s.gameHost().EnsureData(r.Context(), id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -244,17 +256,16 @@ func (s *Server) installGame(row appdb.GameServer, tmpl gameserver.Template) {
 	row.Status = gameserver.StatusInstalling
 	row.InstallPhase = "downloading"
 	_ = s.Store.UpdateGameServer(ctx, row)
-	rt := s.gameRuntime()
+	host := s.gameHost()
 	env := map[string]string{}
 	_ = json.Unmarshal(row.EnvJSON, &env)
 	srv := gameserver.Server{ID: row.ID, Env: env, Image: row.Image}
-	if rt.OnProgress == nil {
-		rt.OnProgress = s.onGameProgress
-	}
-	s.gameInstalls.Store(row.ID, &row)
-	defer s.gameInstalls.Delete(row.ID)
-	err := rt.Install(ctx, srv, tmpl)
-	row.InstallLog = rt.LogTail(row.ID, 200)
+	err := host.Install(ctx, srv, tmpl, func(phase, _ string, logTail string) {
+		row.InstallPhase = phase
+		row.InstallLog = logTail
+		_ = s.Store.UpdateGameServer(context.Background(), row)
+	})
+	row.InstallLog = host.LogTail(ctx, row.ID, 200)
 	if err != nil {
 		row.Status = gameserver.StatusFailed
 		row.ErrorRaw = err.Error()
@@ -317,7 +328,7 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 	if !ok {
 		return
 	}
-	rt := s.gameRuntime()
+	rt := s.gameHost()
 	var err error
 	switch action {
 	case "start":
@@ -350,7 +361,7 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 	writeJSON(w, http.StatusOK, s.gameJSON(r.Context(), *row, true))
 }
 
-func (s *Server) startGame(ctx context.Context, rt *gameserver.Runtime, row *appdb.GameServer) error {
+func (s *Server) startGame(ctx context.Context, rt gameserver.Host, row *appdb.GameServer) error {
 	tmpl, err := s.resolveTemplate(ctx, row.ClusterID, row.TemplateID)
 	if err != nil {
 		return err
@@ -389,7 +400,7 @@ func (s *Server) startGame(ctx context.Context, rt *gameserver.Runtime, row *app
 	cid, err := rt.Start(ctx, gameserver.RunSpec{
 		ID: row.ID, Image: row.Image, Startup: startup, Env: env, Ports: ports,
 		CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, WorkDir: tmpl.WorkingDir,
-		Dependencies: tmpl.Dependencies,
+		Dependencies: tmpl.Dependencies, NetworkMode: s.gameRuntime().NetworkMode,
 	})
 	if err != nil {
 		return err
@@ -427,7 +438,7 @@ func (s *Server) gameServerReinstall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	_ = s.gameRuntime().StopGraceful(r.Context(), row.ID, tmpl.Stop, time.Duration(tmpl.StopTimeout)*time.Second)
+	_ = s.gameHost().StopGraceful(r.Context(), row.ID, tmpl.Stop, time.Duration(tmpl.StopTimeout)*time.Second)
 	s.createRollback(r.Context(), *row, "pre-reinstall")
 	row.Status = gameserver.StatusPending
 	_ = s.Store.UpdateGameServer(r.Context(), *row)
@@ -449,8 +460,8 @@ func (s *Server) gameServerDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = s.gameRuntime().Kill(r.Context(), row.ID)
-	_ = os.RemoveAll(s.gameRuntime().DataDir(row.ID))
+	_ = s.gameHost().Kill(r.Context(), row.ID)
+	_ = s.gameHost().RemoveData(r.Context(), row.ID)
 	if err := s.Store.DeleteGameServer(r.Context(), p.User.ClusterID, row.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

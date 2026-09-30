@@ -8,7 +8,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
@@ -334,15 +333,3 @@ func templateView(t gameserver.Template) gameTemplateView {
 	return v
 }
 
-// installSinks lets runtime progress callbacks update the row being
-// installed. Progress is reported synchronously from the install goroutine.
-func (s *Server) onGameProgress(id, phase, message string) {
-	v, ok := s.gameInstalls.Load(id)
-	if !ok {
-		return
-	}
-	row := v.(*appdb.GameServer)
-	row.InstallPhase = phase
-	row.InstallLog = s.gameRuntime().LogTail(id, 200)
-	_ = s.Store.UpdateGameServer(context.Background(), *row)
-}

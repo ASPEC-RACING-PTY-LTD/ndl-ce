@@ -34,6 +34,7 @@ func main() {
 		Workloads: &lxc.Engine{DataDir: dir},
 		QEMU:      &qemu.Engine{DataDir: dir},
 		OCI:       &oci.Engine{DataDir: dir},
+		GameRoot:  dir,
 	}
 	recoverStaleNetwork(dir)
 	restoreDirectoryRoots(dir)

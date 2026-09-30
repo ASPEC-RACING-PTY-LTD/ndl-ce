@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -369,20 +368,5 @@ func TestGameCatalogueSearchAndRequiredFields(t *testing.T) {
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusBadGateway || !strings.Contains(string(raw), "Klei") {
 		t.Fatalf("dst start without token %d %s", res.StatusCode, raw)
-	}
-}
-
-func TestArchiveDirCopiesExactHeaderSize(t *testing.T) {
-	src := t.TempDir()
-	dest := filepath.Join(t.TempDir(), "snap.tar.gz")
-	if err := os.WriteFile(filepath.Join(src, "server.jar"), bytes.Repeat([]byte("j"), 256<<10), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := archiveDir(src, dest); err != nil {
-		t.Fatal(err)
-	}
-	st, err := os.Stat(dest)
-	if err != nil || st.Size() < 100 {
-		t.Fatalf("archive %v %v", st, err)
 	}
 }
