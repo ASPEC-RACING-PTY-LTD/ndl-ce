@@ -1,3 +1,4 @@
+import { HostDiskPanel } from "../components/HostDisk";
 import { useEffect, useState } from "react";
 import {
   createPool,
@@ -360,6 +361,7 @@ export function StoragePage() {
           {error}
         </p>
       ) : null}
+      {!firstRun ? <HostDiskPanel mutate={mutate} /> : null}
       {firstRun || addKind ? (
       <Dialog
         open={firstRun || Boolean(addKind)}

@@ -10,6 +10,8 @@ import { isWorkloadsContext, selectedTargetFromPath, viewFromPath } from "../nav
 import { isMainNavPreferred, saveLastView } from "../nav/prefs";
 import { useHistoryState, usePath } from "../router";
 import { useSession } from "../session";
+import { hasGrant } from "../rbac";
+import { HostDiskBanner } from "./HostDisk";
 import { storageGet, storageSet } from "../storage";
 import { BrandMark } from "./BrandMark";
 import { CommandPalette } from "./CommandPalette";
@@ -280,6 +282,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </header>
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         <main id="main" className="shell-main">
+          <HostDiskBanner enabled={hasGrant(user, "storage.read")} />
           {children}
         </main>
       </div>

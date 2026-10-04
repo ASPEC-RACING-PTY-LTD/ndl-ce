@@ -3,7 +3,11 @@ package hostos
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/hostos/debian"
 )
@@ -382,7 +386,52 @@ func runCheckpoint(ctx context.Context, req UpdateRequest, res UpdateResult, exe
 	}
 	res.PostgresDump = true
 	res.Status = "succeeded"
+	pruneCheckpoints(checkpointDir, KeepCheckpoints, id)
 	return res, nil
+}
+
+// KeepCheckpoints is how many update checkpoints are kept on disk.
+const KeepCheckpoints = 3
+
+// checkpointDir is replaced in tests.
+var checkpointDir = debian.CheckpointDir
+
+// pruneCheckpoints keeps the newest keep checkpoints (each an <id>.tar and
+// <id>.sql pair) and always the one just written.
+func pruneCheckpoints(dir string, keep int, current string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	newest := map[string]time.Time{}
+	for _, e := range entries {
+		name := e.Name()
+		base := strings.TrimSuffix(strings.TrimSuffix(name, ".tar"), ".sql")
+		if base == name {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newest[base]) {
+			newest[base] = info.ModTime()
+		}
+	}
+	ids := make([]string, 0, len(newest))
+	for id := range newest {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return newest[ids[i]].After(newest[ids[j]]) })
+	kept := 0
+	for _, id := range ids {
+		if id == current || kept < keep {
+			kept++
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, id+".tar"))
+		_ = os.Remove(filepath.Join(dir, id+".sql"))
+	}
 }
 
 func runApply(ctx context.Context, req UpdateRequest, res UpdateResult, exec ExecFunc) (UpdateResult, error) {

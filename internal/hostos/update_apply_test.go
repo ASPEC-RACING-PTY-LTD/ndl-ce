@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/hostos/debian"
 )
@@ -196,5 +197,47 @@ func TestEnableRepositoryRejectsNonKeys(t *testing.T) {
 	}
 	if keyringName([]byte{0x99, 0x01}) != keyringBinary || keyringName([]byte{0xc6, 0x01}) != keyringBinary {
 		t.Fatal("binary public keys must be accepted")
+	}
+}
+
+func TestCheckpointCopiesStateNotDataAndKeepsThree(t *testing.T) {
+	argv, err := debian.CheckpointTarArgv("/var/lib/ndl/update-checkpoints/c.tar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(argv, " ")
+	for _, want := range []string{"--one-file-system", "--exclude=var/lib/ndl/storage", "--exclude=var/lib/ndl/backup-repo",
+		"--exclude=var/lib/ndl/update-checkpoints", "--exclude=*.qcow2", "-cf /var/lib/ndl/update-checkpoints/c.tar var/lib/ndl"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("checkpoint argv missing %q: %s", want, joined)
+		}
+	}
+
+	dir := t.TempDir()
+	prev := checkpointDir
+	checkpointDir = dir
+	t.Cleanup(func() { checkpointDir = prev })
+	for i, id := range []string{"a", "b", "c", "d", "e"} {
+		for _, ext := range []string{".tar", ".sql"} {
+			p := filepath.Join(dir, id+ext)
+			if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			when := time.Now().Add(time.Duration(i) * time.Hour)
+			_ = os.Chtimes(p, when, when)
+		}
+	}
+	host := &fakeHost{}
+	res, err := RunUpdate(context.Background(), debian13(t), UpdateRequest{Action: "checkpoint", CheckpointID: "e"}, host.exec)
+	if err != nil || res.Status != "succeeded" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	left, _ := os.ReadDir(dir)
+	var names []string
+	for _, e := range left {
+		names = append(names, e.Name())
+	}
+	if strings.Join(names, ",") != "c.sql,c.tar,d.sql,d.tar,e.sql,e.tar" {
+		t.Fatalf("only the newest three checkpoints may stay: %v", names)
 	}
 }

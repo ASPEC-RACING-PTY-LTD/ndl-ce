@@ -887,6 +887,30 @@ export async function getWorkload(id: string): Promise<import("./phase5").Worklo
   return readJson(await request(`/workloads/${id}`));
 }
 
+export async function getHostDisk(): Promise<import("../generated/openapi").HostDiskResult> {
+  return readJson(await request("/host/disk"));
+}
+
+export async function getHostDiskUsage(): Promise<import("../generated/openapi").HostDiskResult> {
+  return readJson(await request("/host/disk/usage"));
+}
+
+export async function cleanupHostDisk(
+  category: import("../generated/openapi").HostDiskCleanupRequest["category"],
+): Promise<import("../generated/openapi").HostDiskResult> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "clean-up");
+  return readJson(
+    await request("/host/disk/cleanup", { method: "POST", headers, body: JSON.stringify({ category }) }),
+  );
+}
+
+export async function releaseHostDiskReserve(): Promise<import("../generated/openapi").HostDiskResult> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "release-reserve");
+  return readJson(await request("/host/disk/reserve/release", { method: "POST", headers, body: "{}" }));
+}
+
 export async function getWorkloadStorage(
   id: string,
 ): Promise<import("../generated/openapi").WorkloadStorage> {

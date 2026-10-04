@@ -337,6 +337,63 @@ fieldset.field legend.field-label {
   color: var(--warn);
 }
 
+/* Host disk protection. */
+.shell-banner {
+  margin: var(--space-2) var(--space-3) 0;
+}
+
+.host-disk-fs {
+  margin: var(--space-3) 0;
+}
+
+.host-disk-fs-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.host-disk-level {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.host-disk-level-ok {
+  color: var(--ok);
+}
+
+.host-disk-level-warning {
+  color: var(--warn);
+}
+
+.host-disk-level-critical,
+.host-disk-level-emergency {
+  color: var(--danger);
+}
+
+.host-disk-bar {
+  height: 0.6rem;
+  margin: var(--space-1) 0;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.host-disk-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.host-disk-bar-warning > span {
+  background: var(--warn);
+}
+
+.host-disk-bar-critical > span,
+.host-disk-bar-emergency > span {
+  background: var(--danger);
+}
+
 /* Package-manager output keeps its line breaks. */
 .banner-pre {
   white-space: pre-wrap;

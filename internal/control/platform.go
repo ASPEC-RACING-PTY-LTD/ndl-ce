@@ -4,9 +4,11 @@ import (
 	"context"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/diskguard"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
@@ -17,6 +19,32 @@ func (o observer) reconcilePlatform(ctx context.Context, clusterID, nodeID strin
 	o.reconcileOperations(ctx, clusterID, nodeID)
 	o.sweepOrphanVolumes(ctx, clusterID, nodeID)
 	o.emitHealthAlerts(ctx, clusterID, nodeID)
+	o.reportDisk(ctx, clusterID, nodeID)
+}
+
+// reportDisk raises host disk protection events. The agent does the
+// guarding; this makes it visible before anything stops working.
+func (o observer) reportDisk(ctx context.Context, clusterID, nodeID string) {
+	res, err := o.Agent.HostDisk(ctx, "status", "", nil)
+	if err != nil {
+		return
+	}
+	st := res.Status
+	for _, fs := range st.Filesystems {
+		if fs.Level == diskguard.LevelOK {
+			continue
+		}
+		o.emitThrottled(ctx, clusterID, nodeID, "host.disk."+string(fs.Level), map[string]string{
+			"mount": fs.Mount, "roles": strings.Join(fs.Roles, ","),
+			"used_percent": strconv.FormatFloat(fs.UsedPercent, 'f', 1, 64),
+			"free_bytes":   strconv.FormatInt(fs.FreeBytes, 10),
+		})
+	}
+	if at := st.ReserveReleasedAt; at != nil && time.Since(*at) < 20*time.Minute {
+		o.emitThrottled(ctx, clusterID, nodeID, "host.disk.reserve_released", map[string]string{
+			"released_at": at.UTC().Format(time.RFC3339), "reserve_bytes": strconv.FormatInt(st.ReserveBytes, 10),
+		})
+	}
 }
 
 func (o observer) reconcileOperations(ctx context.Context, clusterID, nodeID string) {

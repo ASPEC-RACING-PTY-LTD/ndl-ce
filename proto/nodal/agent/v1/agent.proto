@@ -187,7 +187,18 @@ message ExecuteRequest {
     ArchiveExtract archive_extract = 41;
     DockerMgmt docker_mgmt = 42;
     GameServer game_server = 43;
+    HostDisk host_disk = 44;
   }
+}
+
+// HostDisk reads and manages host disk protection. action is status,
+// usage, cleanup or release-reserve. cleanup takes one category from the
+// fixed list in internal/diskguard and only removes disposable files;
+// protect names entries a running operation still uses.
+message HostDisk {
+  string action = 1;
+  string category = 2;
+  repeated string protect = 3;
 }
 
 // GameServer runs one typed game server operation as root: containers and

@@ -77,6 +77,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"ArchiveExtract archive_extract =",
 		"DockerMgmt docker_mgmt =",
 		"GameServer game_server =",
+		"HostDisk host_disk =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

@@ -243,12 +243,37 @@ func RollbackControlArgv(version string, dryRun bool) ([]string, error) {
 // CheckpointDir is the only directory used for update checkpoints.
 const CheckpointDir = "/var/lib/ndl/update-checkpoints"
 
-// CheckpointTarArgv archives /var/lib/ndl to dest. Dest must already be a validated absolute path.
+// CheckpointExcludes are data-directory trees a checkpoint never copies.
+// A checkpoint holds control-plane state (config, certificates, secrets,
+// container and network definitions) plus a PostgreSQL dump. Workload
+// disks, pools, backups, staging, game data, image caches and earlier
+// checkpoints are excluded: copying them filled the host disk.
+var CheckpointExcludes = []string{
+	"var/lib/ndl/storage", "var/lib/ndl/storage-extra",
+	"var/lib/ndl/backup-repo", "var/lib/ndl/backups", "var/lib/ndl/backup-staging",
+	"var/lib/ndl/migration", "var/lib/ndl/restore-files", "var/lib/ndl/update-checkpoints",
+	"var/lib/ndl/gameservers", "var/lib/ndl/game-backups", "var/lib/ndl/cache",
+	"var/lib/ndl/runtime/oci", "var/lib/ndl/reserve",
+}
+
+// checkpointExcludeGlobs skip disk images wherever they are.
+var checkpointExcludeGlobs = []string{"*.qcow2", "*.img", "*.raw", "*.iso", "*.vmdk", "*.vhd", "*.vhdx"}
+
+// CheckpointTarArgv archives control-plane state under /var/lib/ndl to
+// dest. It stays on one filesystem, so mounted pools are never read.
+// Dest must already be a validated absolute path.
 func CheckpointTarArgv(dest string) ([]string, error) {
 	if dest == "" || !strings.HasPrefix(dest, "/") || strings.Contains(dest, "..") || strings.ContainsAny(dest, " \n\x00") {
 		return nil, fmt.Errorf("checkpoint locator is invalid")
 	}
-	return []string{"/usr/bin/tar", "-C", "/", "-cf", dest, "var/lib/ndl"}, nil
+	argv := []string{"/usr/bin/tar", "-C", "/", "--one-file-system"}
+	for _, ex := range CheckpointExcludes {
+		argv = append(argv, "--exclude="+ex)
+	}
+	for _, g := range checkpointExcludeGlobs {
+		argv = append(argv, "--exclude="+g)
+	}
+	return append(argv, "-cf", dest, "var/lib/ndl"), nil
 }
 
 // PgDumpArgv writes a PostgreSQL dump to dest.

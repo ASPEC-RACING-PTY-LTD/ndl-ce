@@ -118,6 +118,8 @@ type Server struct {
 	// GameHost runs game server containers and owns their folders. In
 	// production it is the root agent; when nil, a LocalHost over Game is
 	// used (tests and development).
+	// Disk is host disk protection on the agent.
+	Disk      HostDiskRPC
 	GameHost  gameserver.Host
 	gameLocal *gameserver.LocalHost
 	gameMu    sync.Mutex
@@ -489,6 +491,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/stacks/{id}", s.deleteStack)
 	mux.HandleFunc("POST /api/v1/stacks/{id}/apply", s.applyStack)
 	mux.HandleFunc("PATCH /api/v1/stacks/{id}/members/{memberId}", s.patchStackMember)
+	mux.HandleFunc("GET /api/v1/host/disk", s.getHostDisk)
+	mux.HandleFunc("GET /api/v1/host/disk/usage", s.getHostDiskUsage)
+	mux.HandleFunc("POST /api/v1/host/disk/cleanup", s.cleanupHostDisk)
+	mux.HandleFunc("POST /api/v1/host/disk/reserve/release", s.releaseHostDiskReserve)
 	mux.HandleFunc("GET /api/v1/storage/zfs", s.zfsRuntime)
 	mux.HandleFunc("POST /api/v1/storage/zfs/import", s.importZFS)
 	mux.HandleFunc("POST /api/v1/storage/zfs/create", s.createZFS)

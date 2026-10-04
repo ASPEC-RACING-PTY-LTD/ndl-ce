@@ -56,6 +56,9 @@ func (h *Handler) FilesPut(ctx context.Context, stream *connect.ClientStream[age
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	if err := h.diskStreamGate("Uploading a file", root); err != nil {
+		return nil, err
+	}
 	if isGuestJail(root) {
 		var buf []byte
 		var expected string

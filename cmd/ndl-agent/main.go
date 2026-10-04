@@ -9,6 +9,7 @@ import (
 
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/ctbackup"
+	"github.com/no-dal/ndl-ce/internal/diskguard"
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
@@ -35,6 +36,11 @@ func main() {
 		QEMU:      &qemu.Engine{DataDir: dir},
 		OCI:       &oci.Engine{DataDir: dir},
 		GameRoot:  dir,
+		Disk: diskguard.New(filepath.Join(dir, "reserve", "ballast"),
+			diskguard.Watch{Path: "/", Role: "root"},
+			diskguard.Watch{Path: dir, Role: "data"},
+			diskguard.Watch{Path: "/var/lib/postgresql", Role: "postgresql"},
+		),
 	}
 	recoverStaleNetwork(dir)
 	restoreDirectoryRoots(dir)
@@ -43,6 +49,7 @@ func main() {
 	lxc.EnsureHostKeyringQuota()
 	reconcileRuntimeLXC(h.Workloads)
 	go scrapeMetrics(ms, dir)
+	go watchDisk(h.Disk)
 	go h.RefreshLoop(30 * time.Second)
 	go h.SessionLoop(dir, 30*time.Second)
 	go reattachQEMU(h.QEMU)
@@ -83,5 +90,26 @@ func scrapeMetrics(ms *metrics.Store, dataDir string) {
 	_ = col.Scrape(time.Now().UTC())
 	for range t.C {
 		_ = col.Scrape(time.Now().UTC())
+	}
+}
+
+// watchDisk refreshes host disk protection: levels, the gate, and the
+// emergency reserve PostgreSQL relies on.
+func watchDisk(g *diskguard.Guard) {
+	last := diskguard.LevelOK
+	note := ""
+	for {
+		st := g.Refresh()
+		if st.Level != last {
+			for _, fs := range st.Filesystems {
+				log.Printf("disk protection: %s is %s (%.1f%% used, %d bytes free)", fs.Mount, fs.Level, fs.UsedPercent, fs.FreeBytes)
+			}
+			last = st.Level
+		}
+		if st.ReserveNote != "" && st.ReserveNote != note {
+			log.Printf("disk protection: %s", st.ReserveNote)
+		}
+		note = st.ReserveNote
+		time.Sleep(30 * time.Second)
 	}
 }

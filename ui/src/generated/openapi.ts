@@ -1911,6 +1911,65 @@ export interface GPUUnassignResponse {
   message?: string;
 }
 
+export interface HostDiskFilesystem {
+  mount: string;
+  paths: string[];
+  roles: string[];
+  total_bytes: number;
+  free_bytes: number;
+  used_percent: number;
+  level: "ok" | "warning" | "critical" | "emergency";
+  warn_below_bytes?: number;
+  critical_below_bytes?: number;
+  emergency_below_bytes?: number;
+}
+
+export interface HostDiskStatus {
+  level: "ok" | "warning" | "critical" | "emergency";
+  filesystems: HostDiskFilesystem[];
+  reserve_path?: string;
+  reserve_bytes: number;
+  reserve_held: boolean;
+  reserve_note?: string;
+  reserve_released_at?: string;
+  checked_at?: string;
+}
+
+export interface HostDiskCategory {
+  id: string;
+  label: string;
+  dir: string;
+  cleanup?: string;
+  bytes: number;
+  partial?: boolean;
+}
+
+export interface HostDiskUsage {
+  data_dir: string;
+  categories: HostDiskCategory[];
+  other_bytes: number;
+  outside_bytes: number;
+  filesystem?: HostDiskFilesystem;
+  measured_at?: string;
+}
+
+export interface HostDiskCleanResult {
+  category: string;
+  removed_bytes: number;
+  removed?: string[];
+  kept: number;
+}
+
+export interface HostDiskResult {
+  status: HostDiskStatus;
+  usage?: HostDiskUsage;
+  clean?: HostDiskCleanResult;
+}
+
+export interface HostDiskCleanupRequest {
+  category: "update-checkpoints" | "backup-staging" | "migration-staging" | "restore-staging" | "image-cache";
+}
+
 export interface WorkloadMount {
   source: string;
   target: string;
@@ -3130,6 +3189,14 @@ export type AssignGpuPath = "/api/v1/gpus/assign";
 export type UnassignGpuPath = "/api/v1/gpus/unassign";
 
 export type ListWorkloadGpusPath = "/api/v1/workloads/{id}/gpus";
+
+export type GetHostDiskPath = "/api/v1/host/disk";
+
+export type GetHostDiskUsagePath = "/api/v1/host/disk/usage";
+
+export type CleanupHostDiskPath = "/api/v1/host/disk/cleanup";
+
+export type ReleaseHostDiskReservePath = "/api/v1/host/disk/reserve/release";
 
 export type GetWorkloadStoragePath = "/api/v1/workloads/{id}/storage";
 

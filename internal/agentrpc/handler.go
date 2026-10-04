@@ -14,6 +14,7 @@ import (
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/backuphost"
+	"github.com/no-dal/ndl-ce/internal/diskguard"
 	"github.com/no-dal/ndl-ce/internal/docker"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
 	"github.com/no-dal/ndl-ce/internal/hostos"
@@ -48,8 +49,10 @@ type Handler struct {
 	Docker     *docker.Engine
 	// Games runs game server containers and folders. When nil, a LocalHost
 	// rooted at GameRoot (default /var/lib/ndl) is created on first use.
-	Games         *gameserver.LocalHost
-	GameRoot      string
+	Games    *gameserver.LocalHost
+	GameRoot string
+	// Disk protects the host filesystems; nil disables the guard.
+	Disk          *diskguard.Guard
 	BackupHost    *backuphost.Host
 	ZFS           *storage.ZFSEngine
 	LVM           *storage.LVMEngine
@@ -136,6 +139,9 @@ func mustJSON(v any) []byte {
 // Execute handles typed methods only.
 func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.ExecuteRequest]) (*connect.Response[agentv1.ExecuteResponse], error) {
 	if err := h.authorize(ctx); err != nil {
+		return nil, err
+	}
+	if err := h.diskGate(req.Msg); err != nil {
 		return nil, err
 	}
 	switch {
@@ -251,6 +257,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execDockerMgmt(ctx, req.Msg.GetDockerMgmt())
 	case req.Msg.GetGameServer() != nil:
 		return h.execGameServer(ctx, req.Msg.GetGameServer())
+	case req.Msg.GetHostDisk() != nil:
+		return h.execHostDisk(ctx, req.Msg.GetHostDisk())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

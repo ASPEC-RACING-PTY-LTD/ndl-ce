@@ -7253,6 +7253,86 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GPUAssignmentListResponse"
+  /host/disk:
+    get:
+      operationId: getHostDisk
+      summary: Host disk protection status for the root disk, the No-dal data directory and PostgreSQL. Requires storage.read.
+      responses:
+        "200":
+          description: Disk protection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostDiskResult"
+        "502":
+          description: Disk protection is unavailable
+  /host/disk/usage:
+    get:
+      operationId: getHostDiskUsage
+      summary: What fills the No-dal data directory, by category. Requires storage.read.
+      responses:
+        "200":
+          description: Disk usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostDiskResult"
+  /host/disk/cleanup:
+    post:
+      operationId: cleanupHostDisk
+      summary: Remove disposable files in one category (old update checkpoints, staging older than 24 hours, the container image cache). Never touches pools, workload disks, backups or game data. Requires storage.pool.create.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - clean-up
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostDiskCleanupRequest"
+      responses:
+        "200":
+          description: Cleanup result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostDiskResult"
+        "422":
+          description: Confirmation missing or category not cleanable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /host/disk/reserve/release:
+    post:
+      operationId: releaseHostDiskReserve
+      summary: Delete the emergency reserve file now to give PostgreSQL room. It is recreated after six hours once the disk is healthy. Requires storage.pool.create.
+      parameters:
+        - name: X-Nodal-Confirm
+          in: header
+          required: true
+          schema:
+            type: string
+            enum:
+              - release-reserve
+      responses:
+        "200":
+          description: Status after release
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostDiskResult"
+        "422":
+          description: Confirmation missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /workloads/{id}/storage:
     get:
       operationId: getWorkloadStorage
@@ -12178,6 +12258,171 @@ components:
           type: boolean
         message:
           type: string
+    HostDiskFilesystem:
+      type: object
+      required:
+        - mount
+        - paths
+        - roles
+        - total_bytes
+        - free_bytes
+        - used_percent
+        - level
+      properties:
+        mount:
+          type: string
+        paths:
+          type: array
+          items:
+            type: string
+        roles:
+          type: array
+          items:
+            type: string
+        total_bytes:
+          type: integer
+          format: int64
+        free_bytes:
+          type: integer
+          format: int64
+        used_percent:
+          type: number
+        level:
+          type: string
+          enum:
+            - ok
+            - warning
+            - critical
+            - emergency
+        warn_below_bytes:
+          type: integer
+          format: int64
+        critical_below_bytes:
+          type: integer
+          format: int64
+        emergency_below_bytes:
+          type: integer
+          format: int64
+    HostDiskStatus:
+      type: object
+      required:
+        - level
+        - filesystems
+        - reserve_bytes
+        - reserve_held
+      properties:
+        level:
+          type: string
+          enum:
+            - ok
+            - warning
+            - critical
+            - emergency
+        filesystems:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostDiskFilesystem"
+        reserve_path:
+          type: string
+        reserve_bytes:
+          type: integer
+          format: int64
+        reserve_held:
+          type: boolean
+        reserve_note:
+          type: string
+        reserve_released_at:
+          type: string
+        checked_at:
+          type: string
+    HostDiskCategory:
+      type: object
+      required:
+        - id
+        - label
+        - dir
+        - bytes
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        dir:
+          type: string
+        cleanup:
+          type: string
+          description: What cleanup removes. Absent for user data that is never cleaned up here.
+        bytes:
+          type: integer
+          format: int64
+        partial:
+          type: boolean
+    HostDiskUsage:
+      type: object
+      required:
+        - data_dir
+        - categories
+        - other_bytes
+        - outside_bytes
+      properties:
+        data_dir:
+          type: string
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostDiskCategory"
+        other_bytes:
+          type: integer
+          format: int64
+        outside_bytes:
+          type: integer
+          format: int64
+        filesystem:
+          $ref: "#/components/schemas/HostDiskFilesystem"
+        measured_at:
+          type: string
+    HostDiskCleanResult:
+      type: object
+      required:
+        - category
+        - removed_bytes
+        - kept
+      properties:
+        category:
+          type: string
+        removed_bytes:
+          type: integer
+          format: int64
+        removed:
+          type: array
+          items:
+            type: string
+        kept:
+          type: integer
+    HostDiskResult:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: "#/components/schemas/HostDiskStatus"
+        usage:
+          $ref: "#/components/schemas/HostDiskUsage"
+        clean:
+          $ref: "#/components/schemas/HostDiskCleanResult"
+    HostDiskCleanupRequest:
+      type: object
+      required:
+        - category
+      properties:
+        category:
+          type: string
+          enum:
+            - update-checkpoints
+            - backup-staging
+            - migration-staging
+            - restore-staging
+            - image-cache
     WorkloadMount:
       type: object
       required:

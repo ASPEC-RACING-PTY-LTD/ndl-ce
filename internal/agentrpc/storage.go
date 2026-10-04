@@ -136,6 +136,9 @@ func (h *Handler) UploadLibrary(ctx context.Context, stream *connect.ClientStrea
 		case *agentv1.UploadLibraryRequest_Begin:
 			b := p.Begin
 			itemID = b.GetItemId()
+			if err := h.diskStreamGate("Uploading an image", b.GetRootPath()); err != nil {
+				return nil, err
+			}
 			hint := storage.PoolHint{PoolID: b.GetPoolId(), BackendType: storage.BackendDirectory, RootPath: b.GetRootPath()}
 			if len(b.GetBackingJson()) > 0 {
 				_ = json.Unmarshal(b.GetBackingJson(), &hint.Backing)

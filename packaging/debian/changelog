@@ -26,6 +26,23 @@ nodal (1.1.3) UNRELEASED; urgency=medium
     the page offers and confirms first. Unmounting leaves the folder and
     its files on the host. A container whose pool filesystem is not
     mounted refuses to start instead of writing to the host disk.
+  * Host disk protection. A full root disk stopped PostgreSQL and took
+    No-dal down. ndl-agent now watches the root, data and PostgreSQL
+    filesystems. At critical it refuses bulk writes to that disk (backups,
+    restores, conversions, migrations, uploads, new volumes and
+    containers, snapshots, checkpoints, package and game server installs)
+    with a clear message, and never refuses anything that frees space. It
+    keeps a 4 GiB emergency reserve file and releases it automatically
+    when the disk is nearly full so PostgreSQL keeps running. The Storage
+    page shows each disk, what fills the data directory, and offers
+    cleanup only for disposable files: old update checkpoints, stale
+    staging and the image cache. A banner shows on every page while a
+    disk is critical, and warning, critical and emergency events are
+    raised. See docs/host-disk-protection.md.
+  * Update checkpoints copied all of /var/lib/ndl, including workload
+    disks, backups and earlier checkpoints, which could fill the disk on
+    their own. They now hold control-plane state and a PostgreSQL dump
+    only, stay on one filesystem, and only the newest three are kept.
 
  -- No-dal <packaging@no-dal.com>  Wed, 30 Sep 2026 06:00:00 +0000
 
