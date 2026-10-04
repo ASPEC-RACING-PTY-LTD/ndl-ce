@@ -3,6 +3,7 @@ package agentrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -154,6 +155,11 @@ func (h *Handler) execCTLifecycle(ctx context.Context, m *agentv1.CTLifecycle) (
 	if m.GetAutostartSet() {
 		on := m.GetAutostart()
 		req.Autostart = &on
+	}
+	if raw := m.GetMountsJson(); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &req.Mounts); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("mounts are invalid"))
+		}
 	}
 	res, err := h.workloads().Lifecycle(ctx, req)
 	if err != nil {

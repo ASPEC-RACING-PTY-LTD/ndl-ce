@@ -129,6 +129,8 @@ func (e *Engine) Create(ctx context.Context, spec Spec) (Result, error) {
 	if prev, err := e.readApplied(spec.WorkloadID); err == nil && prev.Spec.WorkloadID == spec.WorkloadID {
 		spec.VolumeID = prev.Spec.VolumeID
 		spec.RootfsPath = prev.Spec.RootfsPath
+		// Mounts are managed on the Storage page, never by this path.
+		spec.Mounts = prev.Spec.Mounts
 		if spec.MAC == "" {
 			spec.MAC = prev.Spec.MAC
 		}
@@ -407,6 +409,8 @@ func (e *Engine) Clone(ctx context.Context, req LifecycleRequest) (Result, error
 	}
 	dst := src.Spec
 	dst.WorkloadID = req.CloneID
+	// A clone gets its own storage; it does not share the source's folders.
+	dst.Mounts = nil
 	if req.CloneName != "" {
 		dst.Name = req.CloneName
 	} else {
@@ -550,6 +554,11 @@ func (e *Engine) ensureRootfsMounted(ctx context.Context, id string) {
 		return
 	}
 	e.ensureRootfsPathMounted(ctx, applied.Spec.RootfsPath)
+	// Pool folders on directory pools can be image-backed like the root;
+	// mount them before start so a mount never lands on the host disk.
+	for _, m := range applied.Spec.Mounts {
+		e.ensureRootfsPathMounted(ctx, m.Source)
+	}
 }
 
 func (e *Engine) ensureRootfsPathMounted(ctx context.Context, rootfs string) {
@@ -602,6 +611,10 @@ func (e *Engine) Lifecycle(ctx context.Context, req LifecycleRequest) (Result, e
 		return e.ApplySpec(ctx, req)
 	case ActionGuestSetup:
 		return e.GuestSetup(ctx, req)
+	case ActionMountsGet:
+		return e.Mounts(req.WorkloadID)
+	case ActionMountsSet:
+		return e.SetMounts(req.WorkloadID, req.Mounts)
 	default:
 		return Result{}, fmt.Errorf("unknown lifecycle action %q", req.Action)
 	}

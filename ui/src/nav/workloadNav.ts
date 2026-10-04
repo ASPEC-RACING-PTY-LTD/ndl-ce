@@ -116,6 +116,20 @@ export function buildWorkloadNav(opts: {
     groups.push({ label: "Machine", items: machine });
   }
 
+  if (kind === "system-container") {
+    groups.push({
+      label: "Storage",
+      items: [
+        {
+          href: `/workloads/${id}/storage`,
+          label: "Storage",
+          icon: "storage",
+          current: leaf === "storage",
+        },
+      ],
+    });
+  }
+
   if (kind === "system-container" || kind === "vm") {
     groups.push({
       label: "Protection",

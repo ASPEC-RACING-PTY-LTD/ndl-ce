@@ -475,6 +475,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/gpus/assign", s.assignGPU)
 	mux.HandleFunc("POST /api/v1/gpus/unassign", s.unassignGPU)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/gpus", s.workloadGPUs)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/storage", s.getWorkloadStorage)
+	mux.HandleFunc("PUT /api/v1/workloads/{id}/storage/mounts", s.putWorkloadMounts)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/diagnostics/gpu", s.workloadGPUDiagnostics)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/gpus/reapply", s.reapplyWorkloadGPU)
 	mux.HandleFunc("GET /api/v1/registries", s.listRegistries)

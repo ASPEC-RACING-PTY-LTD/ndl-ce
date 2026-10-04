@@ -17,6 +17,15 @@ nodal (1.1.3) UNRELEASED; urgency=medium
     unit until dpkg and apt have exited.
   * A game server on a host without Docker Engine says so and names the
     install command, instead of "fork/exec /usr/bin/docker".
+  * System containers have a Storage page. Mount a new folder on a
+    directory, ZFS, NFS or SMB pool (on ZFS its own dataset with a quota)
+    or an existing host folder into the container, read-write or
+    read-only. Saving only edits the container's mount list: it never
+    stops, restarts or rebuilds the container and never deletes, formats
+    or re-owns existing data. New mounts load on the next restart, which
+    the page offers and confirms first. Unmounting leaves the folder and
+    its files on the host. A container whose pool filesystem is not
+    mounted refuses to start instead of writing to the host disk.
 
  -- No-dal <packaging@no-dal.com>  Wed, 30 Sep 2026 06:00:00 +0000
 

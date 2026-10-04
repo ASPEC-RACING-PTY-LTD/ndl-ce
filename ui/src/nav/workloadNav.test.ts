@@ -21,12 +21,18 @@ describe("buildWorkloadNav", () => {
       "Files",
       "Machine",
       "GPUs",
+      "Storage",
+      "Storage",
       "Protection",
       "Snapshots",
       "Operations",
       "Clone",
       "Migrate",
     ]);
+    expect(groups.find((g) => g.label === "Storage")?.items[0]).toMatchObject({
+      href: "/workloads/wl-a/storage",
+      current: false,
+    });
     expect(groups[0].items[0].current).toBe(true);
     expect(groups[0].items[1]).toMatchObject({ href: "/workloads/wl-a/diagnostics", current: false });
     const onDiagnostics = buildWorkloadNav({

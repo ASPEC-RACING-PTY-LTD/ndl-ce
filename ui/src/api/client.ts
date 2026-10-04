@@ -887,6 +887,24 @@ export async function getWorkload(id: string): Promise<import("./phase5").Worklo
   return readJson(await request(`/workloads/${id}`));
 }
 
+export async function getWorkloadStorage(
+  id: string,
+): Promise<import("../generated/openapi").WorkloadStorage> {
+  return readJson(await request(`/workloads/${id}/storage`));
+}
+
+export async function setWorkloadMounts(
+  id: string,
+  mounts: import("../generated/openapi").WorkloadMountInput[],
+): Promise<import("../generated/openapi").WorkloadStorage> {
+  return readJson(
+    await request(`/workloads/${id}/storage/mounts`, {
+      method: "PUT",
+      body: JSON.stringify({ mounts }),
+    }),
+  );
+}
+
 export async function getWorkloadGPUDiagnostics(
   id: string,
 ): Promise<import("../generated/openapi").WorkloadGPUDiagnostics> {

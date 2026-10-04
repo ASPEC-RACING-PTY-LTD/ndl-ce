@@ -4349,8 +4349,10 @@ type CTLifecycle struct {
 	AutostartSet    bool                   `protobuf:"varint,13,opt,name=autostart_set,json=autostartSet,proto3" json:"autostart_set,omitempty"`
 	Mac             string                 `protobuf:"bytes,14,opt,name=mac,proto3" json:"mac,omitempty"`
 	Extras          []string               `protobuf:"bytes,15,rep,name=extras,proto3" json:"extras,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// mounts_json is the complete lxc.Mount list for the mounts-set action.
+	MountsJson    string `protobuf:"bytes,16,opt,name=mounts_json,json=mountsJson,proto3" json:"mounts_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CTLifecycle) Reset() {
@@ -4486,6 +4488,13 @@ func (x *CTLifecycle) GetExtras() []string {
 		return x.Extras
 	}
 	return nil
+}
+
+func (x *CTLifecycle) GetMountsJson() string {
+	if x != nil {
+		return x.MountsJson
+	}
+	return ""
 }
 
 type WorkloadHint struct {
@@ -6599,7 +6608,7 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"skip_image\x18\x0e \x01(\bR\tskipImage\x12\x19\n" +
 	"\bno_start\x18\x0f \x01(\bR\anoStart\x12$\n" +
-	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xcf\x03\n" +
+	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xf0\x03\n" +
 	"\vCTLifecycle\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x16\n" +
@@ -6618,7 +6627,9 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\tautostart\x18\f \x01(\bR\tautostart\x12#\n" +
 	"\rautostart_set\x18\r \x01(\bR\fautostartSet\x12\x10\n" +
 	"\x03mac\x18\x0e \x01(\tR\x03mac\x12\x16\n" +
-	"\x06extras\x18\x0f \x03(\tR\x06extras\"\x7f\n" +
+	"\x06extras\x18\x0f \x03(\tR\x06extras\x12\x1f\n" +
+	"\vmounts_json\x18\x10 \x01(\tR\n" +
+	"mountsJson\"\x7f\n" +
 	"\fWorkloadHint\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x12\n" +

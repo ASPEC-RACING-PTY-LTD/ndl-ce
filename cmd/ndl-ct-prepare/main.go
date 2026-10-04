@@ -31,12 +31,23 @@ func prepareCT(e *lxc.Engine, args []string) error {
 	if err != nil {
 		return nil
 	}
+	d := storage.Directory{Run: storage.LiveRun}
 	rootfs := applied.Spec.RootfsPath
 	if rootfs != "" {
-		d := storage.Directory{Run: storage.LiveRun}
 		if err := d.EnsureDirectoryRootMounted(context.Background(), rootfs); err != nil {
 			return err
 		}
+	}
+	// Storage mounts: remount image-backed pool folders, then refuse to
+	// start while a pool filesystem is missing rather than bind the empty
+	// folder underneath it.
+	for _, m := range applied.Spec.Mounts {
+		if err := d.EnsureDirectoryRootMounted(context.Background(), m.Source); err != nil {
+			return err
+		}
+	}
+	if err := lxc.CheckMountsReady(applied.Spec); err != nil {
+		return err
 	}
 	return e.ApplyGuestFiles(args[0])
 }

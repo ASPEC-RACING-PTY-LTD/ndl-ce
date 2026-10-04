@@ -398,6 +398,16 @@ func (c Client) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.
 	} else {
 		msg.IpConfigJson = ""
 	}
+	if req.Action == lxc.ActionMountsSet {
+		raw, err := json.Marshal(req.Mounts)
+		if err != nil {
+			return lxc.Result{}, err
+		}
+		if len(req.Mounts) == 0 {
+			raw = []byte("[]")
+		}
+		msg.MountsJson = string(raw)
+	}
 	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_CtLifecycle{CtLifecycle: msg},
 	}))

@@ -24,6 +24,7 @@ import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
 import { OciCreatePage } from "./pages/OciCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
 import { WorkloadDiagnosticsPage } from "./pages/WorkloadDiagnosticsPage";
+import { WorkloadStoragePage } from "./pages/WorkloadStoragePage";
 import { WorkloadsPage } from "./pages/WorkloadsPage";
 import { VmCreatePage } from "./pages/VmCreatePage";
 import { TemplatesPage } from "./pages/TemplatesPage";
@@ -156,6 +157,9 @@ function matchPage(path: string) {
   }
   if (/^\/workloads\/[^/]+\/diagnostics$/.test(path)) {
     return <WorkloadDiagnosticsPage />;
+  }
+  if (/^\/workloads\/[^/]+\/storage$/.test(path)) {
+    return <WorkloadStoragePage />;
   }
   if (path.startsWith("/workloads/") && path !== "/workloads") {
     return <WorkloadDetailPage />;

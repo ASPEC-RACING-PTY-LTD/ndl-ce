@@ -1911,6 +1911,35 @@ export interface GPUUnassignResponse {
   message?: string;
 }
 
+export interface WorkloadMount {
+  source: string;
+  target: string;
+  read_only: boolean;
+  label?: string;
+  pool_id?: string;
+  pool_name?: string;
+}
+
+export interface WorkloadMountInput {
+  source?: string;
+  target: string;
+  read_only?: boolean;
+  pool_id?: string;
+  size_bytes?: number;
+  label?: string;
+}
+
+export interface WorkloadMountsRequest {
+  mounts: WorkloadMountInput[];
+}
+
+export interface WorkloadStorage {
+  mounts: WorkloadMount[];
+  pools: StoragePool[];
+  mapped_root_uid: number;
+  restart_required: boolean;
+}
+
 export interface WorkloadGPUDiagnostics {
   workload_id: string;
   supported: boolean;
@@ -3101,6 +3130,10 @@ export type AssignGpuPath = "/api/v1/gpus/assign";
 export type UnassignGpuPath = "/api/v1/gpus/unassign";
 
 export type ListWorkloadGpusPath = "/api/v1/workloads/{id}/gpus";
+
+export type GetWorkloadStoragePath = "/api/v1/workloads/{id}/storage";
+
+export type SetWorkloadMountsPath = "/api/v1/workloads/{id}/storage/mounts";
 
 export type WorkloadGpuDiagnosticsPath = "/api/v1/workloads/{id}/diagnostics/gpu";
 

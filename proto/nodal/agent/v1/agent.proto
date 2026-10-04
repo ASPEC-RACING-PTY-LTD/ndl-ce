@@ -497,6 +497,8 @@ message CTLifecycle {
   bool autostart_set = 13;
   string mac = 14;
   repeated string extras = 15;
+  // mounts_json is the complete lxc.Mount list for the mounts-set action.
+  string mounts_json = 16;
 }
 
 message WorkloadHint {

@@ -96,6 +96,7 @@ func RenderConfig(spec Spec) string {
 	if spec.TUN {
 		b.WriteString("lxc.mount.entry = /dev/net/tun dev/net/tun none bind,optional,create=file 0 0\n")
 	}
+	b.WriteString(renderMounts(spec))
 	if !spec.Privileged {
 		uid := spec.UIDMap
 		if uid == "" {

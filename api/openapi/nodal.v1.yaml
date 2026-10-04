@@ -7253,6 +7253,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GPUAssignmentListResponse"
+  /workloads/{id}/storage:
+    get:
+      operationId: getWorkloadStorage
+      summary: Storage folders mounted into a system container, and the pools a new folder can be created on. Requires compute.read.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Mounts and eligible pools
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadStorage"
+        "404":
+          description: Workload not found
+        "422":
+          description: Not a system container
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /workloads/{id}/storage/mounts:
+    put:
+      operationId: setWorkloadMounts
+      summary: Replace a system container's mount list. Edits the container config only; it never stops, restarts or rebuilds the container and never deletes, formats or re-owns existing data. New mounts load on the next restart. Requires compute.modify.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkloadMountsRequest"
+      responses:
+        "200":
+          description: Saved mounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadStorage"
+        "400":
+          description: Invalid mount list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Mount refused by the host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /workloads/{id}/diagnostics/gpu:
     get:
       operationId: workloadGpuDiagnostics
@@ -12118,6 +12178,77 @@ components:
           type: boolean
         message:
           type: string
+    WorkloadMount:
+      type: object
+      required:
+        - source
+        - target
+        - read_only
+      properties:
+        source:
+          type: string
+          description: Absolute host folder.
+        target:
+          type: string
+          description: Absolute path inside the container.
+        read_only:
+          type: boolean
+        label:
+          type: string
+        pool_id:
+          type: string
+        pool_name:
+          type: string
+    WorkloadMountInput:
+      type: object
+      required:
+        - target
+      properties:
+        source:
+          type: string
+          description: An existing host folder. Leave empty and set pool_id to create a new folder on a pool.
+        target:
+          type: string
+        read_only:
+          type: boolean
+        pool_id:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+          description: Size of a new pool folder. On ZFS this is the dataset quota.
+        label:
+          type: string
+    WorkloadMountsRequest:
+      type: object
+      required:
+        - mounts
+      properties:
+        mounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkloadMountInput"
+    WorkloadStorage:
+      type: object
+      required:
+        - mounts
+        - pools
+        - mapped_root_uid
+        - restart_required
+      properties:
+        mounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkloadMount"
+        pools:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoragePool"
+        mapped_root_uid:
+          type: integer
+          description: Host UID that is root inside the container.
+        restart_required:
+          type: boolean
     WorkloadGPUDiagnostics:
       type: object
       additionalProperties: false

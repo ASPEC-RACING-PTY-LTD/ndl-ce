@@ -21,6 +21,8 @@ const (
 	ApplyUnsupported = "unsupported"
 	ActionApplySpec  = "apply-spec"
 	ActionGuestSetup = "guest-setup"
+	ActionMountsGet  = "mounts-get"
+	ActionMountsSet  = "mounts-set"
 )
 
 const (
@@ -97,6 +99,8 @@ type Spec struct {
 	// PythonSystemPIP removes Debian EXTERNALLY-MANAGED markers. Off by default
 	// because it weakens PEP 668. Enable only for installer compatibility.
 	PythonSystemPIP bool `json:"python_system_pip,omitempty"`
+	// Mounts are host folders bind-mounted into the container.
+	Mounts []Mount `json:"mounts,omitempty"`
 }
 
 // SpecWantsNesting reports whether the Docker/nested-container feature set is on.
@@ -133,6 +137,11 @@ type Result struct {
 	ImageSHA256   string         `json:"image_sha256,omitempty"`
 	Status        string         `json:"status"`
 	SetupWarnings []SetupWarning `json:"setup_warnings,omitempty"`
+	// Mounts and RestartRequired answer the mount actions.
+	Mounts          []Mount `json:"mounts,omitempty"`
+	RestartRequired bool    `json:"restart_required,omitempty"`
+	// MappedRootUID is the host UID that is root inside the container.
+	MappedRootUID int `json:"mapped_root_uid,omitempty"`
 }
 
 // Hint is what the control plane sends when observing known workloads.
@@ -183,6 +192,8 @@ type LifecycleRequest struct {
 	MAC             string   `json:"mac,omitempty"`
 	Autostart       *bool    `json:"autostart,omitempty"`
 	Extras          []string `json:"extras,omitempty"`
+	// Mounts is the complete mount list for ActionMountsSet.
+	Mounts []Mount `json:"mounts,omitempty"`
 }
 
 // ApplyClass describes whether a spec change can happen live.

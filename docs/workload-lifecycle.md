@@ -36,6 +36,32 @@ become Pending Restart.
 GPU, nesting, and TUN last-applied flags are preserved across spec
 apply. `CreateCT` is not used to patch a running container.
 
+## System container storage
+
+Open a system container and choose **Storage** in its sidebar to mount extra
+folders into it, for example a large HDD for a media server's library.
+
+- **New folder on a storage pool** creates an empty folder on a directory,
+  ZFS, NFS or SMB pool and gives it to the container's root user. On ZFS it
+  is its own dataset, created on the pool's disks, and the size is its
+  quota. The folder is recorded as an operator-owned volume, so orphan
+  cleanup never removes it.
+- **Existing folder on the host** mounts a folder that is already there.
+  Its files and ownership are not changed. In an unprivileged container,
+  root is host UID 100000 by default, so files must be owned by that UID
+  for the container to write to them.
+
+Saving only edits the container's mount list. It does not stop, restart or
+rebuild the container, and it never deletes, formats or re-owns existing
+data. A running container loads new mounts the next time it restarts; the
+page offers a restart and asks before doing it. Unmounting removes the
+mount from the container only: the host folder and its files stay.
+
+Pool folders that are their own filesystem (a ZFS dataset or a pool image)
+are checked at every start. If one is not mounted, the container does not
+start, so it can never write into the empty folder on the host disk
+underneath it. Clones do not inherit mounts.
+
 ## Virtual machines
 
 CPU, memory, firmware, and most spec fields are Pending Restart while
