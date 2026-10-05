@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DeleteButton } from "../components/DeleteButton";
 import { createAlert, createAlertChannel, listAlertChannels, listAlerts } from "../api/client";
 import type { AlertRule, NotificationChannel } from "../generated/openapi";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -71,7 +72,15 @@ export function AlertsPage() {
           ) : (
             rules.map((rule) => (
               <article className="panel dashboard-card" key={rule.id}>
-                <h3>{rule.name}</h3>
+                <div className="page-header-row">
+                  <h3>{rule.name}</h3>
+                  <DeleteButton
+                    path={`/alerts/${rule.id}`}
+                    name={rule.name}
+                    noun="alert rule"
+                    onDeleted={() => setRules((cur) => (cur ?? []).filter((r) => r.id !== rule.id))}
+                  />
+                </div>
                 <p>
                   {rule.metric} {rule.op} {rule.threshold}
                 </p>
@@ -91,7 +100,16 @@ export function AlertsPage() {
           ) : (
             channels.map((ch) => (
               <article className="panel dashboard-card" key={ch.id}>
-                <h3>{ch.name}</h3>
+                <div className="page-header-row">
+                  <h3>{ch.name}</h3>
+                  <DeleteButton
+                    path={`/alerts/channels/${ch.id}`}
+                    name={ch.name}
+                    noun="notification channel"
+                    description={<p>The channel and its saved credentials are removed. Alert rules stay.</p>}
+                    onDeleted={() => setChannels((cur) => cur.filter((c) => c.id !== ch.id))}
+                  />
+                </div>
                 <p className="muted">
                   {ch.kind} {ch.status}
                   {ch.webhook_configured ? " webhook configured" : ""}

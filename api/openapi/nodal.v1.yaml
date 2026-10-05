@@ -609,6 +609,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/StoragePool"
   /storage/pools/{id}:
+    delete:
+      operationId: deleteStoragePool
+      summary: Forget a storage pool with no volumes or images. Nothing on disk is deleted or unmounted.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
     get:
       operationId: getStoragePool
       summary: Get a Directory storage pool
@@ -653,6 +669,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/StorageVolume"
   /storage/volumes/{id}:
+    delete:
+      operationId: deleteVolume
+      summary: Destroy a volume that no workload uses or mounts.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
     get:
       operationId: getStorageVolume
       summary: Get a volume by UUID
@@ -7583,6 +7615,176 @@ paths:
                 $ref: "#/components/schemas/Workload"
         "409":
           description: VM is running or the disk is the only boot disk
+  /backups/targets/{id}:
+    delete:
+      operationId: deleteBackupTarget
+      summary: Remove a backup target that no policy uses and that holds no restorable backups.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /templates/{id}:
+    delete:
+      operationId: deleteTemplate
+      summary: Delete a VM template.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /groups/{id}:
+    delete:
+      operationId: deleteGroup
+      summary: Delete a group with its memberships and role bindings.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /alerts/{id}:
+    delete:
+      operationId: deleteAlertRule
+      summary: Delete an alert rule.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /alerts/channels/{id}:
+    delete:
+      operationId: deleteAlertChannel
+      summary: Delete a notification channel and its stored credentials.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /registries/{id}:
+    delete:
+      operationId: deleteRegistry
+      summary: Delete a registry and its stored credentials.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /node-groups/{id}:
+    delete:
+      operationId: deleteNodeGroup
+      summary: Delete a node group no placement uses.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /policies/{id}:
+    delete:
+      operationId: deleteAutomationPolicy
+      summary: Delete an automation policy.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /ai/providers/{id}:
+    delete:
+      operationId: deleteAIProvider
+      summary: Delete an AI provider. Profiles using it lose their provider.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /ai/profiles/{id}:
+    delete:
+      operationId: deleteAIProfile
+      summary: Delete an AI profile.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
 components:
   schemas:
     HealthResponse:

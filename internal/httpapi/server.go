@@ -511,6 +511,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/storage/distributed/osds", s.createDistributedOSD)
 	mux.HandleFunc("POST /api/v1/storage/distributed/osds/start", s.startDistributedOSD)
 	mux.HandleFunc("POST /api/v1/storage/distributed/osds/stop", s.stopDistributedOSD)
+	// Deleting configurable resources (deletions.go).
+	mux.HandleFunc("DELETE /api/v1/storage/pools/{id}", s.deleteConfig(appdb.ConfigStoragePool, rbac.StoragePoolCreate, "storage.pool.delete", s.checkPoolUnused))
+	mux.HandleFunc("DELETE /api/v1/storage/volumes/{id}", s.deleteVolume)
+	mux.HandleFunc("DELETE /api/v1/backups/targets/{id}", s.deleteConfig(appdb.ConfigBackupTarget, rbac.BackupCreate, "backup.target.delete", s.checkBackupTargetUnused))
+	mux.HandleFunc("DELETE /api/v1/templates/{id}", s.deleteConfig(appdb.ConfigVMTemplate, rbac.ComputeCreate, "template.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/groups/{id}", s.deleteConfig(appdb.ConfigGroup, rbac.IdentityGroupManage, "group.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/alerts/{id}", s.deleteConfig(appdb.ConfigAlertRule, rbac.AlertManage, "alert.rule.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/alerts/channels/{id}", s.deleteConfig(appdb.ConfigNotifyChannel, rbac.AlertManage, "alert.channel.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/registries/{id}", s.deleteConfig(appdb.ConfigRegistry, rbac.ComputeCreate, "registry.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/node-groups/{id}", s.deleteConfig(appdb.ConfigNodeGroup, rbac.NodeUpdate, "node_group.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/policies/{id}", s.deleteConfig(appdb.ConfigPolicy, rbac.PolicyApply, "policy.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/ai/providers/{id}", s.deleteConfig(appdb.ConfigAIProvider, rbac.AIManage, "ai.provider.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/ai/profiles/{id}", s.deleteConfig(appdb.ConfigAIProfile, rbac.AIManage, "ai.profile.delete", nil))
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

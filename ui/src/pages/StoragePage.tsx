@@ -1,4 +1,6 @@
 import { HostDiskPanel } from "../components/HostDisk";
+import { StatusBadge } from "../components/StatusBadge";
+import { DeleteButton } from "../components/DeleteButton";
 import { useEffect, useState } from "react";
 import {
   createPool,
@@ -752,17 +754,20 @@ export function StoragePage() {
                   <th>Physical available</th>
                   <th>Logical provisioned</th>
                   <th>Usage</th>
+                  {mutate ? <th className="col-tools"><span className="visually-hidden">Actions</span></th> : null}
                 </tr>
               </thead>
               <tbody>
                 {pools.map((p) => (
-                  <tr key={p.id}>
+                  <tr key={p.id} className={p.id === selected ? "is-selected" : undefined}>
                     <td>
-                      <button className="btn btn-ghost" type="button" onClick={() => setSelected(p.id)}>
+                      <button className="linkish pool-name" type="button" onClick={() => setSelected(p.id)}>
                         {p.name}
                       </button>
                     </td>
-                    <td>{p.status}</td>
+                    <td>
+                      <StatusBadge status={p.status} />
+                    </td>
                     <td>{p.backend_type}</td>
                     <td>{capacityLabel(p.total_bytes, p.status)}</td>
                     <td>{capacityLabel(physicalUsedBytes(p), p.status)}</td>
@@ -771,6 +776,29 @@ export function StoragePage() {
                     <td>
                       <CapacityBar used={physicalUsedBytes(p)} total={p.total_bytes} />
                     </td>
+                    {mutate ? (
+                      <td className="col-tools">
+                        <DeleteButton
+                          path={`/storage/pools/${p.id}`}
+                          name={p.name}
+                          noun="pool"
+                          label="Remove"
+                          description={
+                            <p>
+                              No-dal stops managing this pool. Nothing on disk is deleted, formatted or unmounted. A
+                              pool that still holds volumes or images cannot be removed.
+                            </p>
+                          }
+                          onDeleted={() => {
+                            const remaining = pools.filter((x) => x.id !== p.id);
+                            setPools(remaining);
+                            if (selected === p.id) {
+                              setSelected(remaining[0]?.id ?? "");
+                            }
+                          }}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -941,6 +969,7 @@ export function StoragePage() {
                   <th>Status</th>
                   <th>Logical size</th>
                   <th>Physical allocated</th>
+                  {mutate ? <th className="col-tools"><span className="visually-hidden">Actions</span></th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -950,9 +979,27 @@ export function StoragePage() {
                       <code>{v.id}</code>
                     </td>
                     <td>{v.class}</td>
-                    <td>{v.status}</td>
+                    <td>
+                      <StatusBadge status={v.status} />
+                    </td>
                     <td>{capacityLabel(v.size_bytes, v.status)}</td>
                     <td>{capacityLabel(v.allocated_bytes, v.status)}</td>
+                    {mutate ? (
+                      <td className="col-tools">
+                        <DeleteButton
+                          path={`/storage/volumes/${v.id}`}
+                          name={v.id.slice(0, 8)}
+                          noun="volume"
+                          description={
+                            <p>
+                              The volume and its data are destroyed. Volumes attached to a workload or mounted into a
+                              system container cannot be deleted. This cannot be undone.
+                            </p>
+                          }
+                          onDeleted={() => setVolumes((cur) => cur.filter((x) => x.id !== v.id))}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>

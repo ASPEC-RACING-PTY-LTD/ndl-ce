@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { DeleteButton } from "../components/DeleteButton";
 import {
   ApiError,
   createBackupPolicy,
@@ -1237,7 +1238,24 @@ export function BackupsPage() {
                   <article className="panel dashboard-card" key={t.id}>
                     <div className="page-header-row">
                       <h3>{t.name}</h3>
-                      <span className="kind-chip">{t.kind}</span>
+                      <div className="btn-row is-flush">
+                        <span className="kind-chip">{t.kind}</span>
+                        {mutate ? (
+                          <DeleteButton
+                            path={`/backups/targets/${t.id}`}
+                            name={t.name}
+                            noun="backup target"
+                            label="Remove"
+                            description={
+                              <p>
+                                No-dal stops using this target. Files already on it are not deleted. A target that a
+                                policy uses, or that still holds restorable backups, cannot be removed.
+                              </p>
+                            }
+                            onDeleted={() => reload()}
+                          />
+                        ) : null}
+                      </div>
                     </div>
                     <dl className="card-meta">
                       <div>

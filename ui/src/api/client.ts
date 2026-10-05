@@ -2176,3 +2176,15 @@ export async function getSecuritySettings() {
 export async function patchSecuritySettings(body: { mfa_required: boolean }) {
   return readJson<SecuritySettings>(await request("/settings/security", { method: "PATCH", body: JSON.stringify(body) }));
 }
+
+/**
+ * Deletes a configurable resource. The server answers 409 with the reason
+ * when something still depends on it.
+ */
+export async function deleteResource(path: string): Promise<void> {
+  const res = await request(path, { method: "DELETE" });
+  if (res.status === 204 || res.ok) {
+    return;
+  }
+  throw new ApiError(res.status, await readErrorMessage(res));
+}

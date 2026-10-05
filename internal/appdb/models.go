@@ -286,6 +286,8 @@ type Store interface {
 	UpsertUserPrefs(ctx context.Context, p UserPrefs) error
 
 	DeleteVolume(ctx context.Context, clusterID, volumeID string) error
+	// DeleteConfig removes one configuration record (see ConfigKind).
+	DeleteConfig(ctx context.Context, kind ConfigKind, clusterID, id string) error
 
 	CreateVMTemplate(ctx context.Context, t VMTemplate) error
 	ListVMTemplates(ctx context.Context, clusterID string) ([]VMTemplate, error)

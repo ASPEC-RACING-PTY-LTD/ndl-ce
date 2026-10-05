@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DeleteButton } from "../components/DeleteButton";
 import { createTemplate, deployTemplate, listTemplates, listWorkloads } from "../api/client";
 import type { VMTemplate } from "../api/client";
 import type { Workload } from "../api/phase5";
@@ -90,6 +91,13 @@ export function TemplatesPage() {
                   >
                     Deploy
                   </button>
+                  <DeleteButton
+                    path={`/templates/${t.id}`}
+                    name={t.name}
+                    noun="template"
+                    description={<p>The template is removed. Workloads deployed from it are not changed.</p>}
+                    onDeleted={() => reload()}
+                  />
                 </div>
               ) : null}
             </article>

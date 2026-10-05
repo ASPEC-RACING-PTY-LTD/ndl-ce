@@ -3228,3 +3228,23 @@ export type UnassignPhysicalDiskPath = "/api/v1/physical-disks/unassign";
 export type ListWorkloadPhysicalDisksPath = "/api/v1/workloads/{id}/physical-disks";
 
 export type RemoveWorkloadPhysicalDiskPath = "/api/v1/workloads/{id}/physical-disks/{device_id}/remove";
+
+export type DeleteBackupTargetPath = "/api/v1/backups/targets/{id}";
+
+export type DeleteTemplatePath = "/api/v1/templates/{id}";
+
+export type DeleteGroupPath = "/api/v1/groups/{id}";
+
+export type DeleteAlertRulePath = "/api/v1/alerts/{id}";
+
+export type DeleteAlertChannelPath = "/api/v1/alerts/channels/{id}";
+
+export type DeleteRegistryPath = "/api/v1/registries/{id}";
+
+export type DeleteNodeGroupPath = "/api/v1/node-groups/{id}";
+
+export type DeleteAutomationPolicyPath = "/api/v1/policies/{id}";
+
+export type DeleteAIProviderPath = "/api/v1/ai/providers/{id}";
+
+export type DeleteAIProfilePath = "/api/v1/ai/profiles/{id}";

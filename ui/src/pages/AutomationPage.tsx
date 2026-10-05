@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DeleteButton } from "../components/DeleteButton";
 import {
   ApiError,
   applyAutomationPolicy,
@@ -119,14 +120,23 @@ export function AutomationPage() {
                   {item.require_approval ? " Approval required." : ""}
                 </p>
                 {mutate ? (
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void onApply(item)}
-                  >
-                    Apply policy
-                  </button>
+                  <div className="btn-row">
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void onApply(item)}
+                    >
+                      Apply policy
+                    </button>
+                    <DeleteButton
+                      path={`/policies/${item.id ?? ""}`}
+                      name={item.name ?? "policy"}
+                      noun="policy"
+                      description={<p>The policy is removed. Its past runs stay in the history.</p>}
+                      onDeleted={() => reload()}
+                    />
+                  </div>
                 ) : null}
               </li>
             ))}
