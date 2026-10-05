@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   getHealth,
   getNodeMetrics,
@@ -25,77 +25,47 @@ import { metricLabel } from "../labels";
 import { SummaryCard } from "../ui/SummaryCard";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
+import { useQuery } from "../query";
 
 export function DashboardPage() {
   const session = useSession();
   const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
-  const [node, setNode] = useState<NodeSummary | null>(null);
-  const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [pools, setPools] = useState<StoragePool[]>([]);
-  const [networks, setNetworks] = useState<Network[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [needStorage, setNeedStorage] = useState(false);
-  const [needNetwork, setNeedNetwork] = useState(false);
-  const [needWorkload, setNeedWorkload] = useState(false);
-  const [workloadCounts, setWorkloadCounts] = useState({ running: 0, stopped: 0, other: 0 });
-  const [healthOk, setHealthOk] = useState<boolean | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const nodesQ = useQuery("nodes", () => listNodes(), 15000);
+  const node: NodeSummary | null = nodesQ.data?.[0] ?? null;
+  const metricsQ = useQuery(`node-metrics:${node?.id ?? ""}`, () => (node ? getNodeMetrics(node.id) : Promise.resolve(null)), 15000);
+  const metrics: MetricsResponse | null = metricsQ.data ?? null;
+  const eventsQ = useQuery("events", () => listEvents(), 10000);
+  const tasksQ = useQuery("tasks", () => listTasks(), 5000);
+  const poolsQ = useQuery("pools", () => listPools(), 15000);
+  const networksQ = useQuery("networks", () => listNetworks(), 30000);
+  const workloadsQ = useQuery("workloads", () => listWorkloads(), 10000);
+  const healthQ = useQuery("health", () => getHealth(), 30000);
+  const events: EventItem[] = (eventsQ.data ?? []).slice(0, 6);
+  const tasks: TaskItem[] = (tasksQ.data ?? []).slice(0, 6);
+  const pools: StoragePool[] = poolsQ.data?.items ?? [];
+  const networks: Network[] = networksQ.data?.items ?? [];
+  const wlItems = workloadsQ.data?.items ?? [];
+  const nodesLoaded = !nodesQ.loading || nodesQ.data != null;
+  const poolsLoaded = !poolsQ.loading || poolsQ.data != null;
+  const tasksLoaded = !tasksQ.loading || tasksQ.data != null;
+  const eventsLoaded = !eventsQ.loading || eventsQ.data != null;
+  const workloadsLoaded = workloadsQ.data != null;
+  const setupLoaded = poolsLoaded && (!networksQ.loading || networksQ.data != null) && (!workloadsQ.loading || workloadsLoaded);
+  const error = nodesQ.error;
+  const usable = pools.some((p) => p.status === "available" || p.status === "warning");
+  const netReady = networks.some((n) => n.status === "available" || n.status === "warning");
+  const needStorage = setupLoaded && !usable;
+  const needNetwork = setupLoaded && !netReady;
+  const needWorkload = setupLoaded && usable && netReady && wlItems.length === 0;
+  const workloadCounts = {
+    running: wlItems.filter((w) => w.status === "running").length,
+    stopped: wlItems.filter((w) => w.status === "stopped").length,
+    other: wlItems.filter((w) => w.status !== "running" && w.status !== "stopped").length,
+  };
+  const healthOk = healthQ.data ? healthQ.data.status === "ok" : healthQ.error ? false : null;
+  const loaded = setupLoaded && tasksLoaded;
   const [openEvent, setOpenEvent] = useState<string | null>(null);
   const [openTask, setOpenTask] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const nodes = await listNodes();
-        const first = nodes[0] ?? null;
-        if (cancelled) {
-          return;
-        }
-        setNode(first);
-        const [ev, tk, met, listedPools, nets, wls, health] = await Promise.all([
-          listEvents().catch(() => []),
-          listTasks().catch(() => []),
-          first ? getNodeMetrics(first.id).catch(() => null) : Promise.resolve(null),
-          listPools().catch(() => ({ items: [] })),
-          listNetworks().catch(() => ({ items: [] })),
-          listWorkloads().catch(() => ({ items: [] })),
-          getHealth().catch(() => null),
-        ]);
-        if (cancelled) {
-          return;
-        }
-        setEvents(ev.slice(0, 6));
-        setTasks(tk.slice(0, 6));
-        setMetrics(met);
-        setPools(listedPools.items ?? []);
-        setNetworks(nets.items ?? []);
-        const usable = (listedPools.items ?? []).some((p) => p.status === "available" || p.status === "warning");
-        setNeedStorage(!usable);
-        const netReady = (nets.items ?? []).some((n) => n.status === "available" || n.status === "warning");
-        setNeedNetwork(!netReady);
-        const items = wls.items ?? [];
-        setNeedWorkload(usable && netReady && items.length === 0);
-        setWorkloadCounts({
-          running: items.filter((w) => w.status === "running").length,
-          stopped: items.filter((w) => w.status === "stopped").length,
-          other: items.filter((w) => w.status !== "running" && w.status !== "stopped").length,
-        });
-        setHealthOk(health?.status === "ok");
-        setLoaded(true);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unavailable");
-          setLoaded(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const cpuSeries = metrics?.series.find((s) => s.name === "cpu.busy_ratio");
   const memSeries = metrics?.series.find((s) => s.name === "memory.used_bytes");
@@ -129,14 +99,14 @@ export function DashboardPage() {
       <div className="summary-grid">
         <SummaryCard
           label="Node"
-          value={node ? <StatusBadge status={node.status} /> : loaded ? "Not enrolled" : "Loading"}
+          value={node ? <StatusBadge status={node.status} /> : nodesLoaded ? "Not enrolled" : "Loading"}
           meta={`${node?.name || "No local node"}${node?.stale ? " · stale" : ""}`}
         />
         <SummaryCard
           label="Workloads"
-          value={loaded ? `${workloadCounts.running} running` : "Collecting"}
+          value={workloadsLoaded ? `${workloadCounts.running} running` : "Collecting"}
           meta={
-            loaded
+            workloadsLoaded
               ? `${workloadCounts.stopped} stopped${workloadCounts.other ? ` · ${workloadCounts.other} other` : ""}`
               : "Loading workload counts"
           }
@@ -159,9 +129,9 @@ export function DashboardPage() {
         />
         <SummaryCard
           label="Storage"
-          value={!loaded ? "Collecting" : pools.length ? formatBytes(usableBytes) : "Not reported"}
+          value={!poolsLoaded ? "Collecting" : pools.length ? formatBytes(usableBytes) : "Not reported"}
           meta={
-            !loaded
+            !poolsLoaded
               ? "Loading storage"
               : pools.length
                 ? `${formatBytes(physicalUsedBytes)} used · ${formatBytes(provisionedBytes)} logical`
@@ -170,9 +140,9 @@ export function DashboardPage() {
         />
         <SummaryCard
           label="Tasks"
-          value={!loaded ? "Collecting" : `${tasks.filter((t) => t.state === "running").length} running`}
-          meta={!loaded ? "Loading tasks" : failedTasks.length ? `${failedTasks.length} failed` : "No recent failures"}
-          tone={loaded && failedTasks.length ? "danger" : undefined}
+          value={!tasksLoaded ? "Collecting" : `${tasks.filter((t) => t.state === "running").length} running`}
+          meta={!tasksLoaded ? "Loading tasks" : failedTasks.length ? `${failedTasks.length} failed` : "No recent failures"}
+          tone={tasksLoaded && failedTasks.length ? "danger" : undefined}
         />
       </div>
       <div className="meter-grid">
@@ -228,7 +198,7 @@ export function DashboardPage() {
           </p>
         )}
       </section>
-      {!node && loaded ? (
+      {!node && nodesLoaded ? (
         <div className="empty-panel">
           <p className="empty-title">No local node</p>
           <p>The local node has not reported inventory yet.</p>
@@ -285,7 +255,7 @@ export function DashboardPage() {
             <h2>Recent events</h2>
             <Link href="/events">All events</Link>
           </div>
-          {!loaded ? (
+          {!eventsLoaded ? (
             <p>Collecting</p>
           ) : events.length === 0 ? (
             <p>No events yet.</p>
@@ -321,7 +291,7 @@ export function DashboardPage() {
             <h2>Recent tasks</h2>
             <Link href="/tasks">All tasks</Link>
           </div>
-          {!loaded ? (
+          {!tasksLoaded ? (
             <p>Collecting</p>
           ) : tasks.length === 0 ? (
             <p>No tasks yet.</p>

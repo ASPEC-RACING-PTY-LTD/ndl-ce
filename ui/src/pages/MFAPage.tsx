@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { ApiError, confirmMfa, enrollMfa, getMfa } from "../api/client";
 
 export function MFAPage() {
@@ -21,10 +22,11 @@ export function MFAPage() {
 
   return (
     <section className="page" aria-labelledby="mfa-heading">
-      <header className="page-header">
-        <h1 id="mfa-heading">Authenticator</h1>
-        <p className="page-kicker">TOTP is the supported MFA method. WebAuthn is not implemented yet.</p>
-      </header>
+      <PageHeader
+        id="mfa-heading"
+        title="Authenticator"
+        kicker="TOTP is the supported MFA method. WebAuthn is not implemented yet."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

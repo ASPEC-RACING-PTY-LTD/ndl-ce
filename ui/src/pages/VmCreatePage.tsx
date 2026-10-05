@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { createWorkload, listImages, listNetworks, listPhysicalDisks, listPools } from "../api/client";
 import type { PhysicalDisk } from "../api/client";
 import type { LibraryItem, StoragePool } from "../api/phase3";
@@ -136,16 +137,19 @@ export function VmCreatePage() {
 
   return (
     <section className="page page-wide" aria-labelledby="vm-create-heading">
-      <header className="page-header">
-        <h1 id="vm-create-heading">Create VM</h1>
-        <p className="page-kicker">
-          {guided
+      <PageHeader
+        id="vm-create-heading"
+        title="Create VM"
+        kicker={
+          <>
+            {guided
             ? `Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`
             : level === "expert"
-              ? "Expert view. Same create API as Guided and Advanced."
-              : "All fields on one form. Same create API as Guided."}
-        </p>
-      </header>
+            ? "Expert view. Same create API as Guided and Advanced."
+            : "All fields on one form. Same create API as Guided."}
+          </>
+        }
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

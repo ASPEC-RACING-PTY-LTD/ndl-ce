@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { ApiError, askAI } from "../api/client";
 import type { AIAskResponse } from "../generated/openapi";
 import { Field } from "../components/Field";
@@ -31,13 +32,11 @@ export function AskPage() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Ask</h1>
-        <p className="lede">
-          Read-only assistant. BYO providers are optional. Offline install has no AI vendor and the platform still works.
-          Ask cites events and metrics. It cannot Host.Exec and it cannot mutate.
-        </p>
-      </header>
+      <PageHeader
+        id="ask-heading"
+        title="Ask"
+        kicker="Read-only assistant. BYO providers are optional. Offline install has no AI vendor and the platform still works. Ask cites events and metrics. It cannot Host.Exec and it cannot mutate."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

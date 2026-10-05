@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { ApiError, getKubernetes, startKubernetes, stopKubernetes } from "../api/client";
 import type { KubernetesStatus } from "../generated/openapi";
 import { useSession } from "../session";
@@ -57,13 +58,11 @@ export function KubernetesPage() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Kubernetes</h1>
-        <p className="lede">
-          Optional runtime. Virtual machines and system containers do not require Kubernetes. Default install has no
-          kubelet process.
-        </p>
-      </header>
+      <PageHeader
+        id="kubernetes-heading"
+        title="Kubernetes"
+        kicker="Optional runtime. Virtual machines and system containers do not require Kubernetes. Default install has no kubelet process."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

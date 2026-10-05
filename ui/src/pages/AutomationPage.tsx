@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { DeleteButton } from "../components/DeleteButton";
 import {
   ApiError,
@@ -91,14 +92,17 @@ export function AutomationPage() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Automation</h1>
-        <p className="lede">
-          Deterministic policies. This is not an LLM loop. Policies cannot Host.Exec. The agent has no policy engine.
-          Storage pressure above the threshold queues a migrate of the lowest-priority VM. Queued migrate is not live
-          until the dest agent is connected. See <Link href="/tasks">Tasks</Link>.
-        </p>
-      </header>
+      <PageHeader
+        id="automation-heading"
+        title="Automation"
+        kicker={
+          <>
+            Deterministic policies. This is not an LLM loop. Policies cannot Host.Exec. The agent has no policy engine.
+            Storage pressure above the threshold queues a migrate of the lowest-priority VM. Queued migrate is not live
+            until the dest agent is connected. See <Link href="/tasks">Tasks</Link>.
+          </>
+        }
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

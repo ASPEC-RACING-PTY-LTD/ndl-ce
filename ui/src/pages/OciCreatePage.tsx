@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { createWorkload, listNetworks, listRegistries } from "../api/client";
 import type { Network } from "../api/phase4";
 import type { Registry } from "../api/client";
@@ -88,12 +89,11 @@ export function OciCreatePage() {
 
   return (
     <section className="page page-wide" aria-labelledby="create-oci-heading">
-      <header className="page-header">
-        <h1 id="create-oci-heading">Create OCI application</h1>
-        <p className="page-kicker">
-          containerd runtime. Unprivileged by default. Health stays collecting or not configured until observed.
-        </p>
-      </header>
+      <PageHeader
+        id="create-oci-heading"
+        title="Create OCI application"
+        kicker="containerd runtime. Unprivileged by default. Health stays collecting or not configured until observed."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

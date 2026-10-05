@@ -1,4 +1,5 @@
 import { FitAddon } from "@xterm/addon-fit";
+import { PageHeader } from "../components/PageHeader";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
@@ -144,14 +145,17 @@ export function ConsolePage() {
 
   return (
     <section className="page page-wide" aria-labelledby="console-heading">
-      <header className="page-header">
-        <h1 id="console-heading">Console</h1>
-        <p className="page-kicker">
-          Compatibility console. No guest agent required. Serial is the interactive text console. Graphical uses a
-          ticketed unix VNC socket; this browser view confirms the authorized session rather than decoding a full RFB
-          framebuffer. {status}
-        </p>
-      </header>
+      <PageHeader
+        id="console-heading"
+        title="Console"
+        kicker={
+          <>
+            Compatibility console. No guest agent required. Serial is the interactive text console. Graphical uses a
+            ticketed unix VNC socket; this browser view confirms the authorized session rather than decoding a full RFB
+            framebuffer. {status}
+          </>
+        }
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import {
   ApiError,
   getStoreApp,
@@ -147,14 +148,11 @@ export function StorePage() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Store</h1>
-        <p className="lede">
-          Declarative app install. Signatures fail closed on tamper. Unsigned Community warns. Verified-only refuses
-          unsigned packages. Official class on this cluster uses a cluster-local signing key, not an Official publisher
-          CA. CVE scanner unavailable is shown on the scan report.
-        </p>
-      </header>
+      <PageHeader
+        id="store-heading"
+        title="Store"
+        kicker="Declarative app install. Signatures fail closed on tamper. Unsigned Community warns. Verified-only refuses unsigned packages. Official class on this cluster uses a cluster-local signing key, not an Official publisher CA. CVE scanner unavailable is shown on the scan report."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { acmeCert, ApiError, generateCert, getCerts, importCert } from "../api/client";
 import type { CertificateStatus } from "../generated/openapi";
 import { Field } from "../components/Field";
@@ -124,12 +125,11 @@ export function CertificatePage() {
 
   return (
     <section className="page page-wide" aria-labelledby="certificates-heading">
-      <header className="page-header">
-        <h1 id="certificates-heading">Certificates</h1>
-        <p className="page-kicker">
-          Management-plane TLS. Private keys stay on the appliance and are never shown in the browser.
-        </p>
-      </header>
+      <PageHeader
+        id="certificates-heading"
+        title="Certificates"
+        kicker="Management-plane TLS. Private keys stay on the appliance and are never shown in the browser."
+      />
 
       {error ? (
         <p className="banner banner-error" role="alert">

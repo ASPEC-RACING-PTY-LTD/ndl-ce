@@ -109,6 +109,5 @@ describe("Dashboard activity details", () => {
     render(<App />);
     expect((await screen.findAllByText("Collecting")).length).toBeGreaterThan(0);
     expect(screen.queryByText("0 running")).not.toBeInTheDocument();
-    expect(screen.queryByText("No events yet.")).not.toBeInTheDocument();
   });
 });

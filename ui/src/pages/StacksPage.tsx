@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { applyStack, getStack, importStack, listPools, listStacks, patchStackMember, type Stack, type StackMember } from "../api/client";
 import type { StoragePool } from "../api/phase3";
 import { Link } from "../components/Link";
@@ -79,10 +80,11 @@ volumes:
 
   return (
     <section className="page page-wide" aria-labelledby="stacks-heading">
-      <header className="page-header">
-        <h1 id="stacks-heading">Stacks</h1>
-        <p className="page-kicker">Multi-container apps as inspectable No-dal objects. Compose is import only.</p>
-      </header>
+      <PageHeader
+        id="stacks-heading"
+        title="Stacks"
+        kicker="Multi-container apps as inspectable No-dal objects. Compose is import only."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

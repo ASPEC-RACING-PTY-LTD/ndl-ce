@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import {
   ApiError,
   applyUpdates,
@@ -280,13 +281,11 @@ export function UpdatesPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="updates-heading">
-      <header className="page-header">
-        <h1 id="updates-heading">Updates</h1>
-        <p className="page-kicker">
-          Control-plane package bumps must not stop guests. Split packages update the management
-          plane while workloads keep running.
-        </p>
-      </header>
+      <PageHeader
+        id="updates-heading"
+        title="Updates"
+        kicker="Control-plane package bumps must not stop guests. Split packages update the management plane while workloads keep running."
+      />
 
       <div className="btn-row">
         <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onCheck()}>

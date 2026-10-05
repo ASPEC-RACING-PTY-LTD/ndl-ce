@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { ApiError, approveAIPlan, createAIPlan, listAIPlans } from "../api/client";
 import type { AIPlan, AIPlanStep } from "../generated/openapi";
 import { Field } from "../components/Field";
@@ -85,14 +86,11 @@ export function PlansPage() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Plans</h1>
-        <p className="lede">
-          Plans execute existing APIs only after you approve. This is not a live LLM. AI cannot Host.Exec. Approve uses
-          the same RBAC. If the backend still queues a step, the API method and path stay visible. A missing dest agent
-          or create validation can stop the plan. Partial failure stops and audit remains.
-        </p>
-      </header>
+      <PageHeader
+        id="plans-heading"
+        title="Plans"
+        kicker="Plans execute existing APIs only after you approve. This is not a live LLM. AI cannot Host.Exec. Approve uses the same RBAC. If the backend still queues a step, the API method and path stay visible. A missing dest agent or create validation can stop the plan. Partial failure stops and audit remains."
+      />
       {error ? (
         <p className="banner banner-error" role="alert">
           {error}

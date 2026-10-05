@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import {
   cancelMigrationJob,
   cleanupMigrationJob,
@@ -507,13 +508,11 @@ export function ImportExportPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="mig-heading">
-      <header className="page-header">
-        <h1 id="mig-heading">Import / Export</h1>
-        <p className="page-kicker">
-          Copy-first. Source destruction is not a migration operation. A completed migration means: Migration verified.
-          Source remains unchanged.
-        </p>
-      </header>
+      <PageHeader
+        id="mig-heading"
+        title="Import / Export"
+        kicker="Copy-first. Source destruction is not a migration operation. A completed migration means: Migration verified. Source remains unchanged."
+      />
       <p>
         Library qcow2 import remains at <Link href="/workloads/import">Import VM</Link>. CE does not require Cloud.
       </p>

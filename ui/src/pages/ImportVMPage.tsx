@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { importWorkload, listImages, listNetworks, listPools } from "../api/client";
 import type { LibraryItem, StoragePool } from "../api/phase3";
 import type { Network } from "../api/phase4";
@@ -57,13 +58,11 @@ export function ImportVMPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="import-heading">
-      <header className="page-header">
-        <h1 id="import-heading">Import VM</h1>
-        <p className="page-kicker">
-          Import converts a library qcow2 into a new vm-disk with a new UUID. Import is privileged. Failed convert
-          does not leave a half-adopted volume.
-        </p>
-      </header>
+      <PageHeader
+        id="import-heading"
+        title="Import VM"
+        kicker="Import converts a library qcow2 into a new vm-disk with a new UUID. Import is privileged. Failed convert does not leave a half-adopted volume."
+      />
       {!admin ? (
         <p className="banner banner-warn" role="status">
           Import is an admin action. Operator cannot import.

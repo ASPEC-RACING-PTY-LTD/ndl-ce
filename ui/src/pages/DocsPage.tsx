@@ -1,4 +1,5 @@
 import { Link } from "../components/Link";
+import { PageHeader } from "../components/PageHeader";
 
 const DOCS = [
   {
@@ -26,14 +27,11 @@ const DOCS = [
 export function DocsPage() {
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>Docs</h1>
-        <p className="lede">
-          Operator runbooks shipped in the tree under docs/. No license key is required. CE 1.0 hardware gates
-          are not proven on this host. This tree does not ship EE blobs. Ubuntu is not claimed as Tier 1. Signed
-          production packages use the HTTPS apt repo documented in install.md.
-        </p>
-      </header>
+      <PageHeader
+        id="docs-heading"
+        title="Docs"
+        kicker="Operator runbooks shipped in the tree under docs/. No license key is required. CE 1.0 hardware gates are not proven on this host. This tree does not ship EE blobs. Ubuntu is not claimed as Tier 1. Signed production packages use the HTTPS apt repo documented in install.md."
+      />
       <article className="panel">
         <ul className="plain-list">
           {DOCS.map((doc) => (

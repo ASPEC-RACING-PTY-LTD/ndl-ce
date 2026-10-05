@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import { ApiError, assignGpu, listGpus, unassignGpu } from "../api/client";
 import type { GPUListResponse } from "../generated/openapi";
 import { currentPath } from "../router";
@@ -49,13 +50,11 @@ export function GpuPage() {
   const heading = nested ? (
     <h2 id="gpu-heading">GPUs</h2>
   ) : (
-    <header className="page-header">
-      <h1 id="gpu-heading">GPUs</h1>
-      <p className="page-kicker">
-        Workloads receive a GPU only when assigned. gpu=all is refused. ACS override is refused.
-        A Store-driven GPU picker is not part of this release.
-      </p>
-    </header>
+    <PageHeader
+      id="gpu-heading"
+      title="GPUs"
+      kicker="Workloads receive a GPU only when assigned. gpu=all is refused. ACS override is refused. A Store-driven GPU picker is not part of this release."
+    />
   );
   const inner = (
     <>

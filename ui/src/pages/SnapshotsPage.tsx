@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHeader } from "../components/PageHeader";
 import {
   ApiError,
   createWorkloadSnapshot,
@@ -140,10 +141,11 @@ export function SnapshotsPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="snapshots-heading">
-      <header className="page-header">
-        <h1 id="snapshots-heading">Snapshots</h1>
-        <p className="page-kicker">Point-in-time restore on the same pool. This is not a backup.</p>
-      </header>
+      <PageHeader
+        id="snapshots-heading"
+        title="Snapshots"
+        kicker="Point-in-time restore on the same pool. This is not a backup."
+      />
 
       {error ? (
         <p className="banner banner-error" role="alert">
