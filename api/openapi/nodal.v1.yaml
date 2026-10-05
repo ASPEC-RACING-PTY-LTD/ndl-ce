@@ -7683,6 +7683,14 @@ components:
           type: boolean
         expert_ack_at:
           type: string
+        workload_sort:
+          type: string
+          description: Saved Workloads page order, "name" or "custom". Empty is the default.
+        workload_order:
+          type: array
+          description: Workload ids in the user's custom order.
+          items:
+            type: string
     MePatchRequest:
       type: object
       additionalProperties: false
@@ -7695,6 +7703,17 @@ components:
             - expert
         expert_ack:
           type: boolean
+        workload_sort:
+          type: string
+          enum:
+            - ""
+            - name
+            - custom
+        workload_order:
+          type: array
+          maxItems: 5000
+          items:
+            type: string
     MFAChallengeResponse:
       type: object
       additionalProperties: false

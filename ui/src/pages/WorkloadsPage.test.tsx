@@ -211,3 +211,51 @@ describe("Workloads bulk delete", () => {
     expect(screen.queryByText("No workloads yet")).not.toBeInTheDocument();
   });
 });
+
+describe("Workloads ordering", () => {
+  const host = { id: "node-1", name: "zz-host", status: "available" };
+
+  it("keeps the host on top regardless of sorting", async () => {
+    await openWorkloads(admin, { "/api/v1/nodes": { status: 200, body: { items: [host] } } });
+    await screen.findByRole("link", { name: "zz-host" });
+    const rows = () => within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows()[0]).toHaveTextContent("zz-host");
+    expect(rows()[1]).toHaveTextContent("AspecRacing");
+    fireEvent.click(screen.getByRole("button", { name: /^name/i }));
+    expect(rows()[0]).toHaveTextContent("zz-host");
+    expect(rows()[1]).toHaveTextContent("Ubuntu");
+  });
+
+  it("swaps selection checkboxes for drag handles and saves the order to the profile", async () => {
+    const saved: unknown[] = [];
+    await openWorkloads(admin, {
+      "PATCH /api/v1/me": (init) => {
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        saved.push(body);
+        return { status: 200, body: { ...admin, ...body } };
+      },
+    });
+    expect(screen.getByLabelText("Select AspecRacing")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /edit order/i }));
+    expect(screen.queryByLabelText("Select AspecRacing")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Select all")).not.toBeInTheDocument();
+    const handle = screen.getByRole("button", { name: "Move Ubuntu" });
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
+    await waitFor(() =>
+      expect(saved.at(-1)).toEqual({ workload_sort: "custom", workload_order: ["wl-a", "wl-v", "wl-s"] }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /done reordering/i }));
+    expect(screen.getByLabelText("Select AspecRacing")).toBeVisible();
+    const names = within(screen.getByRole("table"))
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.textContent ?? "");
+    expect(names[1]).toContain("Ubuntu");
+  });
+
+  it("opens in the user's saved custom order", async () => {
+    await openWorkloads({ ...admin, workload_sort: "custom", workload_order: ["wl-v", "wl-s", "wl-a"] });
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows.map((row) => row.textContent ?? "").map((t) => t.slice(0, 6))).toEqual(["Ubuntu", "SoundD", "AspecR"]);
+  });
+});

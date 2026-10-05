@@ -99,6 +99,8 @@ export async function getMe(): Promise<MeResponse | null> {
 export async function patchMe(body: {
   ux_level?: "guided" | "advanced" | "expert";
   expert_ack?: boolean;
+  workload_sort?: "" | "name" | "custom";
+  workload_order?: string[];
 }): Promise<MeResponse> {
   return readJson<MeResponse>(
     await request("/me", {

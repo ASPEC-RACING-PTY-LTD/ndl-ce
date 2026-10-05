@@ -1044,6 +1044,14 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	if ackAt != "" {
 		out["expert_ack_at"] = ackAt
 	}
+	out["workload_sort"] = ""
+	out["workload_order"] = []string{}
+	if prefs != nil {
+		out["workload_sort"] = prefs.WorkloadSort
+		if prefs.WorkloadOrder != nil {
+			out["workload_order"] = prefs.WorkloadOrder
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

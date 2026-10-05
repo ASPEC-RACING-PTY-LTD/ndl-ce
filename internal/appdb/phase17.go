@@ -17,7 +17,11 @@ type UserPrefs struct {
 	ClusterID   string
 	UXLevel     string
 	ExpertAckAt *time.Time
-	UpdatedAt   time.Time
+	// WorkloadSort is the saved Workloads page order: "", "name" or "custom".
+	WorkloadSort string
+	// WorkloadOrder is the user's custom Workloads order, by workload id.
+	WorkloadOrder []string
+	UpdatedAt     time.Time
 }
 
 func (m *Memory) GetUserPrefs(_ context.Context, userID string) (*UserPrefs, error) {
@@ -31,6 +35,7 @@ func (m *Memory) GetUserPrefs(_ context.Context, userID string) (*UserPrefs, err
 		return nil, nil
 	}
 	cp := p
+	cp.WorkloadOrder = append([]string(nil), p.WorkloadOrder...)
 	return &cp, nil
 }
 
@@ -43,6 +48,7 @@ func (m *Memory) UpsertUserPrefs(_ context.Context, p UserPrefs) error {
 	if p.UpdatedAt.IsZero() {
 		p.UpdatedAt = time.Now().UTC()
 	}
+	p.WorkloadOrder = append([]string(nil), p.WorkloadOrder...)
 	m.userPrefs[p.UserID] = p
 	return nil
 }

@@ -792,3 +792,24 @@ tr.is-pinned td {
     animation: none;
   }
 }
+
+/* Workloads table ------------------------------------------------------- */
+
+.wl-table th.col-lead,
+.wl-table td.col-lead {
+  width: 2.75rem;
+  padding-right: 0;
+  color: var(--fg-tertiary);
+  text-align: center;
+}
+
+.wl-table th.col-tools,
+.wl-table td.col-tools {
+  width: 3rem;
+  text-align: right;
+}
+
+a.btn,
+a.btn:hover {
+  text-decoration: none;
+}

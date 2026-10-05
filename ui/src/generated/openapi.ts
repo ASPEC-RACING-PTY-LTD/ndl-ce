@@ -38,11 +38,15 @@ export interface MeResponse {
   ux_level: "guided" | "advanced" | "expert";
   expert_ack: boolean;
   expert_ack_at?: string;
+  workload_sort?: string;
+  workload_order?: string[];
 }
 
 export interface MePatchRequest {
   ux_level?: "guided" | "advanced" | "expert";
   expert_ack?: boolean;
+  workload_sort?: "" | "name" | "custom";
+  workload_order?: string[];
 }
 
 export interface MFAChallengeResponse {
