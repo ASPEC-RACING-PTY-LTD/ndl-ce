@@ -828,3 +828,28 @@ a.btn:hover {
   color: var(--danger);
   background: var(--danger-bg);
 }
+
+/* IAM: the content column is at least as tall as the section nav, and the
+   main table grows into that space so row menus are not clipped. */
+.ctx-page {
+  align-items: stretch;
+}
+
+.ctx-page-nav {
+  align-self: start;
+}
+
+.ctx-page-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.ctx-page-body > .page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.ctx-page-body > .page > .table-wrap {
+  flex: 1 1 auto;
+}
