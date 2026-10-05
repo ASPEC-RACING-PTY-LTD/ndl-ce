@@ -813,3 +813,13 @@ a.btn,
 a.btn:hover {
   text-decoration: none;
 }
+
+.audit-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.review-grid dd code {
+  overflow-wrap: anywhere;
+}

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -208,7 +209,11 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	items, err := s.Store.ListAuditEvents(r.Context(), p.User.ClusterID, 200)
+	limit := 200
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = min(v, 2000)
+	}
+	items, err := s.Store.ListAuditEvents(r.Context(), p.User.ClusterID, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "audit log could not be loaded")
 		return
@@ -231,6 +236,9 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		}
 		if e.ActorUserID != "" && appdb.ValidUUID(e.ActorUserID) {
 			row["actor_user_id"] = e.ActorUserID
+		}
+		if e.RemoteAddr != "" {
+			row["remote_addr"] = e.RemoteAddr
 		}
 		if username != "" && auditActorKind(actor, e.ActorUserID) != "system" {
 			row["actor_username"] = username

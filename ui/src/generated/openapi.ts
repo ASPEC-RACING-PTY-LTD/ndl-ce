@@ -1777,6 +1777,13 @@ export interface AuditEvent {
   created_at: string;
   actor_user_id?: string;
   actor_username?: string;
+  actor_kind?: string;
+  actor_label?: string;
+  resource_kind?: string;
+  resource_name?: string;
+  resource_id?: string;
+  remote_addr?: string;
+  detail?: Record<string, unknown>;
 }
 
 export interface GroupListResponse {

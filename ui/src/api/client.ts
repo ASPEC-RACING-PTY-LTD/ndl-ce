@@ -1765,8 +1765,10 @@ export async function confirmMfa(code: string) {
   );
 }
 
-export async function listAudit() {
-  return readJson<import("../generated/openapi").AuditListResponse>(await request("/audit"));
+export async function listAudit(limit?: number) {
+  return readJson<import("../generated/openapi").AuditListResponse>(
+    await request(limit ? `/audit?limit=${encodeURIComponent(String(limit))}` : "/audit"),
+  );
 }
 
 export type APITokenItem = {

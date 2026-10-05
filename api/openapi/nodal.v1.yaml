@@ -6645,6 +6645,13 @@ paths:
     get:
       operationId: listAudit
       summary: Audit browser. Requires audit.read.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Newest events to return, 1 to 2000. Default 200.
+          schema:
+            type: integer
       responses:
         "200":
           description: Audit events
@@ -11915,6 +11922,22 @@ components:
           type: string
         actor_username:
           type: string
+        actor_kind:
+          type: string
+        actor_label:
+          type: string
+        resource_kind:
+          type: string
+        resource_name:
+          type: string
+        resource_id:
+          type: string
+        remote_addr:
+          type: string
+          description: Address the request came from, as recorded.
+        detail:
+          type: object
+          additionalProperties: true
     GroupListResponse:
       type: object
       additionalProperties: false
