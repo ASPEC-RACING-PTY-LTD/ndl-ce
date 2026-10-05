@@ -46,7 +46,7 @@ export function WorkloadsPage() {
   const workloadsQ = useQuery("workloads", () => listWorkloads(), 10000);
   const nodesQ = useQuery("nodes", () => listNodes(), 15000);
   const items = useMemo(() => workloadsQ.data?.items ?? [], [workloadsQ.data]);
-  const nodes = nodesQ.data ?? [];
+  const nodes = useMemo(() => nodesQ.data ?? [], [nodesQ.data]);
   const loading = workloadsQ.loading && !workloadsQ.data;
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
