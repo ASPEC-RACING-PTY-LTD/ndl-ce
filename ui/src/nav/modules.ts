@@ -11,7 +11,35 @@ export type NavModule = {
   capability?: string;
   require?: NavRequire;
   permission?: string;
+  /** Shown when the user holds any of these grants. */
+  anyPermission?: string[];
 };
+
+/** Grants that open at least one IAM section. */
+export const IAM_PERMISSIONS = [
+  "users.read",
+  "roles.manage",
+  "api_access.manage",
+  "settings.security.manage",
+  "identity.group.manage",
+];
+
+/** Paths that belong to IAM (Identity and Access Management). */
+export function isIAMPath(p: string): boolean {
+  return (
+    p === "/iam" ||
+    p === "/users" ||
+    p.startsWith("/users/") ||
+    p === "/roles" ||
+    p.startsWith("/roles/") ||
+    p === "/api-access" ||
+    p === "/settings/security" ||
+    p === "/groups"
+  );
+}
+
+/** Module ids that IAM replaced; saved custom navigation maps them to "iam". */
+export const IAM_LEGACY_MODULES = ["users", "roles", "api-access", "security", "groups"];
 
 export type Capability = {
   id: string;
@@ -46,14 +74,6 @@ export const NAV_MODULES: NavModule[] = [
       p.startsWith("/workloads/game-servers/"),
     simple: false,
     capability: "gameservers",
-  },
-  {
-    id: "import-export",
-    href: "/import-export",
-    label: "Import / Export",
-    group: "Compute",
-    match: (p) => p === "/import-export",
-    simple: true,
   },
   { id: "terminal", href: "/terminal", label: "Terminal", group: "Compute", match: (p) => p === "/terminal", simple: true },
   {
@@ -120,6 +140,14 @@ export const NAV_MODULES: NavModule[] = [
   { id: "alerts", href: "/alerts", label: "Alerts", group: "Operations", match: (p) => p === "/alerts", simple: false },
   { id: "backups", href: "/backups", label: "Backups", group: "Operations", match: (p) => p === "/backups", simple: true },
   {
+    id: "import-export",
+    href: "/import-export",
+    label: "Import / Export",
+    group: "Operations",
+    match: (p) => p === "/import-export",
+    simple: true,
+  },
+  {
     id: "automation",
     href: "/automation",
     label: "Automation",
@@ -157,31 +185,13 @@ export const NAV_MODULES: NavModule[] = [
   },
   { id: "docs", href: "/docs", label: "Docs", group: "Catalog", match: (p) => p === "/docs", simple: false },
   {
-    id: "users",
-    href: "/users",
-    label: "Users",
+    id: "iam",
+    href: "/iam",
+    label: "IAM",
     group: "Management",
-    match: (p) => p === "/users" || p.startsWith("/users/"),
+    match: (p) => isIAMPath(p),
     simple: true,
-    permission: "users.read",
-  },
-  {
-    id: "roles",
-    href: "/roles",
-    label: "Roles & Permissions",
-    group: "Management",
-    match: (p) => p === "/roles",
-    simple: true,
-    permission: "roles.manage",
-  },
-  {
-    id: "api-access",
-    href: "/api-access",
-    label: "API Access",
-    group: "Management",
-    match: (p) => p === "/api-access",
-    simple: true,
-    permission: "api_access.manage",
+    anyPermission: IAM_PERMISSIONS,
   },
   {
     id: "add-features",
@@ -211,15 +221,6 @@ export const NAV_MODULES: NavModule[] = [
     permission: "settings.license.manage",
   },
   {
-    id: "security",
-    href: "/settings/security",
-    label: "Security",
-    group: "Management",
-    match: (p) => p === "/settings/security",
-    simple: true,
-    permission: "settings.security.manage",
-  },
-  {
     id: "audit",
     href: "/audit",
     label: "Audit Log",
@@ -227,15 +228,6 @@ export const NAV_MODULES: NavModule[] = [
     match: (p) => p === "/audit",
     simple: true,
     permission: "audit.read",
-  },
-  {
-    id: "groups",
-    href: "/groups",
-    label: "Groups",
-    group: "Management",
-    match: (p) => p === "/groups",
-    simple: false,
-    permission: "identity.group.manage",
   },
   {
     id: "kubernetes",

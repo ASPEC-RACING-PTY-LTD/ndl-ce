@@ -74,7 +74,7 @@ describe("Roles page", () => {
     window.history.replaceState({}, "", "/roles");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /roles/i })).toBeVisible();
-    fireEvent.click(await screen.findByRole("button", { name: /^permissions$/i }));
+    fireEvent.click(await screen.findByRole("link", { name: /^permissions$/i }));
     expect(await screen.findByText(/view workloads/i)).toBeVisible();
     expect(screen.getByText("compute.read")).toBeVisible();
     expect(screen.getAllByText(/built-in/i).length).toBeGreaterThan(0);

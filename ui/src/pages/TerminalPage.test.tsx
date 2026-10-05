@@ -260,7 +260,7 @@ describe("Terminal sizing", () => {
 describe("Terminal workload switching", () => {
   it("never shows the previous workload's terminal while the next one opens", async () => {
     installIO();
-    let releaseSecond: (() => void) | null = null;
+    const releaseSecond: Array<() => void> = [];
     const base = (globalThis.fetch as unknown as (input: RequestInfo | URL) => Promise<Response>);
     vi.stubGlobal(
       "fetch",
@@ -269,7 +269,7 @@ describe("Terminal workload switching", () => {
         const path = new URL(url, "http://localhost").pathname;
         if (path === "/api/v1/workloads/wl-2") {
           await new Promise<void>((resolve) => {
-            releaseSecond = resolve;
+            releaseSecond.push(resolve);
           });
           return jsonResponse(200, { id: "wl-2", name: "second-ct", kind: "system-container", status: "running" });
         }
@@ -289,8 +289,8 @@ describe("Terminal workload switching", () => {
     expect(screen.getByRole("main")).not.toHaveTextContent("accept-ct");
     expect(screen.queryByTestId("term-identity")).not.toBeInTheDocument();
 
-    await waitFor(() => expect(releaseSecond).not.toBeNull());
-    act(() => releaseSecond?.());
+    await waitFor(() => expect(releaseSecond.length).toBeGreaterThan(0));
+    act(() => releaseSecond.forEach((release) => release()));
     await waitFor(() => expect(screen.getByTestId("term-identity")).toHaveTextContent("second-ct"));
   });
 

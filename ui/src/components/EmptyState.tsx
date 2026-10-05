@@ -1,16 +1,24 @@
 import type { ReactNode } from "react";
+import { Icon, type IconName } from "./Icon";
 
 export function EmptyState({
   title,
   children,
   action,
+  icon,
 }: {
   title: string;
   children?: ReactNode;
   action?: ReactNode;
+  icon?: IconName;
 }) {
   return (
     <div className="empty-panel">
+      {icon ? (
+        <span className="empty-icon" aria-hidden="true">
+          <Icon name={icon} size={18} />
+        </span>
+      ) : null}
       <p className="empty-title">{title}</p>
       {children ? <p className="lede">{children}</p> : null}
       {action}

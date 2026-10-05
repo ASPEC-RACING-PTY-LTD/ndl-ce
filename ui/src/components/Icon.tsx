@@ -1,6 +1,17 @@
 import type { ReactNode } from "react";
 
 export type IconName =
+  | "shield"
+  | "key"
+  | "users"
+  | "grip"
+  | "sort"
+  | "sort-up"
+  | "sort-down"
+  | "transfer"
+  | "lock"
+  | "backups"
+  | "chevron-down"
   | "dashboard"
   | "workloads"
   | "node"
@@ -37,6 +48,46 @@ export type IconName =
   | "game";
 
 const PATHS: Record<IconName, ReactNode> = {
+  shield: <path d="M8 1.8 13 3.6v4c0 3.2-2.1 5.6-5 6.6-2.9-1-5-3.4-5-6.6v-4L8 1.8zM5.8 8l1.6 1.6 2.9-3" />,
+  key: (
+    <>
+      <circle cx="5.5" cy="10.5" r="2.7" />
+      <path d="M7.4 8.6 13.2 2.8M11.2 4.8l1.6 1.6M9.6 6.4l1.2 1.2" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="6" cy="5.6" r="2.3" />
+      <path d="M1.8 13c.5-2.3 2.2-3.6 4.2-3.6s3.7 1.3 4.2 3.6M10.6 3.6a2.2 2.2 0 0 1 0 4.2M12 9.6c1.2.5 2 1.7 2.2 3.4" />
+    </>
+  ),
+  grip: (
+    <>
+      <circle cx="6" cy="4" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="4" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="8" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="8" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="12" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="12" r=".9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  sort: <path d="M5.5 6 8 3.5 10.5 6M5.5 10 8 12.5 10.5 10" />,
+  "sort-up": <path d="M5 9.5 8 6.5 11 9.5" />,
+  "sort-down": <path d="M5 6.5 8 9.5 11 6.5" />,
+  transfer: <path d="M2.8 5.2h9.4L9.6 2.6M13.2 10.8H3.8l2.6 2.6" />,
+  lock: (
+    <>
+      <rect x="3.2" y="7" width="9.6" height="6.6" rx="1.2" />
+      <path d="M5.4 7V5.2a2.6 2.6 0 0 1 5.2 0V7" />
+    </>
+  ),
+  backups: (
+    <>
+      <path d="M2.8 4.2c0-1 2.3-1.8 5.2-1.8s5.2.8 5.2 1.8v7.6c0 1-2.3 1.8-5.2 1.8s-5.2-.8-5.2-1.8V4.2z" />
+      <path d="M2.8 4.2c0 1 2.3 1.8 5.2 1.8s5.2-.8 5.2-1.8M2.8 8c0 1 2.3 1.8 5.2 1.8s5.2-.8 5.2-1.8" />
+    </>
+  ),
+  "chevron-down": <path d="M4.5 6.5 8 10l3.5-3.5" />,
   dashboard: (
     <>
       <rect x="2" y="2" width="5" height="5" rx="0.8" />
@@ -223,9 +274,15 @@ export function navIcon(label: string): IconName {
     case "Add Features":
       return "settings";
     case "API Access":
-      return "settings";
+      return "key";
     case "Users":
-      return "account";
+      return "users";
+    case "IAM":
+      return "shield";
+    case "Import / Export":
+      return "transfer";
+    case "Backups":
+      return "backups";
     case "Roles & Permissions":
       return "settings";
     case "Updates":
@@ -233,11 +290,11 @@ export function navIcon(label: string): IconName {
     case "License":
       return "settings";
     case "Security":
-      return "settings";
+      return "lock";
     case "Audit Log":
       return "events";
     case "Groups":
-      return "settings";
+      return "users";
     default:
       return "info";
   }

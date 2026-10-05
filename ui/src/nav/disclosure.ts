@@ -1,6 +1,6 @@
 import { paletteAllowed, type PaletteRequire } from "../palette";
 import { hasGrant } from "../rbac";
-import { CAPABILITIES, NAV_MODULES, moduleForPath, type NavModule, type NavTemplate } from "./modules";
+import { CAPABILITIES, IAM_LEGACY_MODULES, NAV_MODULES, moduleForPath, type NavModule, type NavTemplate } from "./modules";
 
 export type DisclosurePrefs = {
   version: 1;
@@ -29,12 +29,24 @@ export function parseDisclosurePrefs(raw: string | null): DisclosurePrefs {
       version: 1,
       template: template === "advanced" || template === "custom" || template === "simple" ? template : "simple",
       enabled: Array.isArray(parsed.enabled) ? parsed.enabled.filter((id) => typeof id === "string") : [],
-      customVisible: Array.isArray(parsed.customVisible) ? parsed.customVisible.filter((id) => typeof id === "string") : [],
-      customOrder: Array.isArray(parsed.customOrder) ? parsed.customOrder.filter((id) => typeof id === "string") : [],
+      customVisible: migrateIAM(Array.isArray(parsed.customVisible) ? parsed.customVisible.filter((id) => typeof id === "string") : []),
+      customOrder: migrateIAM(Array.isArray(parsed.customOrder) ? parsed.customOrder.filter((id) => typeof id === "string") : []),
     };
   } catch {
     return { ...EMPTY_PREFS, enabled: [], customVisible: [], customOrder: [] };
   }
+}
+
+// Users, Roles, API Access, Security and Groups became one IAM entry.
+function migrateIAM(ids: string[]): string[] {
+  const out: string[] = [];
+  for (const id of ids) {
+    const next = IAM_LEGACY_MODULES.includes(id) ? "iam" : id;
+    if (!out.includes(next)) {
+      out.push(next);
+    }
+  }
+  return out;
 }
 
 export function isCapabilityEnabled(
@@ -53,6 +65,9 @@ export function isCapabilityEnabled(
 }
 
 export function allowedByRbac(mod: NavModule, roles: string[] | undefined, grants?: string[]): boolean {
+  if (mod.anyPermission) {
+    return mod.anyPermission.some((perm) => hasGrant({ roles, grants }, perm));
+  }
   if (mod.permission) {
     return hasGrant({ roles, grants }, mod.permission);
   }

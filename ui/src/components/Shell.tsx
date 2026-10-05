@@ -2,11 +2,20 @@ import { useEffect, useState, type ReactNode } from "react";
 import { getHealth } from "../api/client";
 import type { HealthResponse } from "../api/types";
 import { useVisibleNav } from "../nav/NavDisclosure";
-import { moduleForPath } from "../nav/modules";
+import { isIAMPath, moduleForPath } from "../nav/modules";
+
+const IAM_CRUMBS: Record<string, string> = {
+  "/users": "Users",
+  "/groups": "Groups",
+  "/roles": "Roles",
+  "/roles/permissions": "Permissions",
+  "/roles/assignments": "Assignments",
+  "/api-access": "API Access",
+  "/settings/security": "Security",
+};
 import { GameServersNavigator } from "../nav/GameServersNavigator";
-import { WorkloadsNavigator } from "../nav/WorkloadsNavigator";
 import { gameServerCrumbs, isGameServersContext } from "../nav/gameServers";
-import { isWorkloadsContext, selectedTargetFromPath, viewFromPath } from "../nav/match";
+import { selectedTargetFromPath, viewFromPath } from "../nav/match";
 import { isMainNavPreferred, saveLastView } from "../nav/prefs";
 import { useHistoryState, usePath } from "../router";
 import { useSession } from "../session";
@@ -112,6 +121,12 @@ function crumbs(path: string): { href: string; label: string }[] {
     }
     return trail;
   }
+  if (isIAMPath(path) && path !== "/iam") {
+    return [
+      { href: "/iam", label: "IAM" },
+      { href: path, label: IAM_CRUMBS[path] ?? "IAM" },
+    ];
+  }
   const top = moduleForPath(path);
   return top ? [{ href: top.href, label: top.label }] : [{ href: path, label: "Page" }];
 }
@@ -121,7 +136,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const historyState = useHistoryState();
   const session = useSession();
   const gameServersCtx = isGameServersContext(path) && !isMainNavPreferred(historyState);
-  const workloadsCtx = isWorkloadsContext(path) && !isMainNavPreferred(historyState);
   const user = session.status === "ready" ? session.user : null;
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -203,11 +217,9 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
           <span className="edition-badge">CE</span>
         </div>
-        <nav className="sidebar-nav" aria-label={gameServersCtx ? "Game Servers" : workloadsCtx ? "Workloads" : "Appliance"}>
+        <nav className="sidebar-nav" aria-label={gameServersCtx ? "Game Servers" : "Appliance"}>
           {gameServersCtx ? (
             <GameServersNavigator />
-          ) : workloadsCtx ? (
-            <WorkloadsNavigator />
           ) : (
             groups.map((group) => (
               <div className="nav-group" key={group.label}>

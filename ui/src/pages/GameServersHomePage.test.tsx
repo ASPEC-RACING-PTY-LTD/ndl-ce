@@ -108,17 +108,17 @@ describe("Game Servers home", () => {
     expect(within(nav).queryByText(/system containers/i)).toBeNull();
   });
 
-  it("keeps Game Servers out of the Workloads contextual sidebar", async () => {
+  it("keeps the main sidebar on Workloads and Game Servers out of the workload list", async () => {
     window.history.replaceState({}, "", "/workloads");
     mockApi({
       "/api/v1/features": { status: 200, body: { items: [gameserversOn] } },
       "/api/v1/game-servers": { status: 200, body: { items: [paper] } },
     });
     render(<App />);
-    const nav = await screen.findByRole("navigation", { name: /^workloads$/i });
-    expect(within(nav).getByRole("link", { name: /^manage$/i })).toBeVisible();
-    expect(within(nav).queryByRole("link", { name: /game servers/i })).toBeNull();
-    expect(within(nav).queryByRole("link", { name: /my minecraft server/i })).toBeNull();
+    const nav = await screen.findByRole("navigation", { name: /^appliance$/i });
+    expect(within(nav).getByRole("link", { name: /^workloads$/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /back to main menu/i })).toBeNull();
+    expect(screen.getByRole("main")).not.toHaveTextContent(/my minecraft server/i);
   });
 
   it("opens capability links for a selected game server", async () => {

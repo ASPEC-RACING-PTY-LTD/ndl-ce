@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
 import { RequireGrant } from "./components/RequireGrant";
@@ -6,6 +6,8 @@ import { APIAccessPage } from "./pages/APIAccessPage";
 import { RolesPage } from "./pages/RolesPage";
 import { SecurityPage } from "./pages/SecurityPage";
 import { UsersPage } from "./pages/UsersPage";
+import { IAMLayout, iamSections } from "./iam/IAMLayout";
+import { ForbiddenPage } from "./pages/ForbiddenPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -58,6 +60,9 @@ import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
 import { isGameServersCreatePath, isGameServersHomePath, legacyGameServersRedirect } from "./nav/gameServers";
 import { NavDisclosureProvider } from "./nav/NavDisclosure";
+import { WorkloadFrame } from "./nav/WorkloadFrame";
+import { selectedTargetFromPath } from "./nav/match";
+import { isGameServersContext } from "./nav/gameServers";
 import { SessionProvider, useSession } from "./session";
 
 function GateNotice({ children }: { children: string }) {
@@ -76,6 +81,16 @@ function Redirect({ to }: { to: string }) {
   }, [to]);
 
   return <GateNotice>Redirecting</GateNotice>;
+}
+
+/** /iam opens the first IAM section the user may see. */
+function IAMHome() {
+  const session = useSession();
+  const first = iamSections(session.status === "ready" ? session.user : null)[0];
+  if (!first) {
+    return <ForbiddenPage />;
+  }
+  return <Redirect to={first.href} />;
 }
 
 function matchPage(path: string) {
@@ -235,9 +250,11 @@ function matchPage(path: string) {
   }
   if (path === "/settings/security") {
     return (
-      <RequireGrant permission="settings.security.manage">
-        <SecurityPage />
-      </RequireGrant>
+      <IAMLayout>
+        <RequireGrant permission="settings.security.manage">
+          <SecurityPage />
+        </RequireGrant>
+      </IAMLayout>
     );
   }
   if (path === "/settings/mfa") {
@@ -245,9 +262,11 @@ function matchPage(path: string) {
   }
   if (path === "/groups") {
     return (
-      <RequireGrant permission="identity.group.manage">
-        <GroupsPage />
-      </RequireGrant>
+      <IAMLayout>
+        <RequireGrant permission="identity.group.manage">
+          <GroupsPage />
+        </RequireGrant>
+      </IAMLayout>
     );
   }
   if (path === "/audit") {
@@ -257,18 +276,25 @@ function matchPage(path: string) {
       </RequireGrant>
     );
   }
+  if (path === "/iam") {
+    return <IAMHome />;
+  }
   if (path === "/users") {
     return (
-      <RequireGrant permission="users.read">
-        <UsersPage />
-      </RequireGrant>
+      <IAMLayout>
+        <RequireGrant permission="users.read">
+          <UsersPage />
+        </RequireGrant>
+      </IAMLayout>
     );
   }
-  if (path === "/roles") {
+  if (path === "/roles" || path === "/roles/permissions" || path === "/roles/assignments") {
     return (
-      <RequireGrant permission="roles.manage">
-        <RolesPage />
-      </RequireGrant>
+      <IAMLayout>
+        <RequireGrant permission="roles.manage">
+          <RolesPage />
+        </RequireGrant>
+      </IAMLayout>
     );
   }
   if (path === "/backups") {
@@ -276,15 +302,26 @@ function matchPage(path: string) {
   }
   if (path === "/api-access") {
     return (
-      <RequireGrant permission="api_access.manage">
-        <APIAccessPage />
-      </RequireGrant>
+      <IAMLayout>
+        <RequireGrant permission="api_access.manage">
+          <APIAccessPage />
+        </RequireGrant>
+      </IAMLayout>
     );
   }
   if (path === "/") {
     return <DashboardPage />;
   }
   return <NotFoundPage />;
+}
+
+/** Workload pages carry the workload's own tab bar. */
+function withFrame(path: string, page: ReactNode): ReactNode {
+  const selected = selectedTargetFromPath(path);
+  if (selected?.kind !== "workload" || isGameServersContext(path)) {
+    return page;
+  }
+  return <WorkloadFrame id={selected.id}>{page}</WorkloadFrame>;
 }
 
 function AppRoutes() {
@@ -333,7 +370,7 @@ function AppRoutes() {
   return (
     <NavDisclosureProvider>
       <Shell>
-        <TerminalWorkspaceProvider>{matchPage(path)}</TerminalWorkspaceProvider>
+        <TerminalWorkspaceProvider>{withFrame(path, matchPage(path))}</TerminalWorkspaceProvider>
       </Shell>
     </NavDisclosureProvider>
   );
