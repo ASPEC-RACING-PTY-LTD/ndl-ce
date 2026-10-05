@@ -1601,7 +1601,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /^groups$/i })).toBeVisible();
     expect(screen.getByText(/admin cannot be granted through a group/i)).toBeVisible();
-    expect(screen.getByText(/not configured/i)).toBeVisible();
+    expect(await screen.findByText(/no groups yet/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^add group$/i })).toBeVisible();
   });
 
