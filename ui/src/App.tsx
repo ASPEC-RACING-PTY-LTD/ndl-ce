@@ -135,7 +135,8 @@ function matchPage(path: string) {
     return <ConsolePage />;
   }
   if (/^\/workloads\/[^/]+\/terminal$/.test(path)) {
-    return <TerminalPage />;
+    // Keyed by path so switching workloads starts from a clean state.
+    return <TerminalPage key={path} />;
   }
   if (/^\/workloads\/[^/]+\/files$/.test(path)) {
     return <FilesPage />;
@@ -144,7 +145,7 @@ function matchPage(path: string) {
     return <SnapshotsPage />;
   }
   if (/^\/nodes\/[^/]+\/terminal$/.test(path)) {
-    return <TerminalPage />;
+    return <TerminalPage key={path} />;
   }
   if (/^\/nodes\/[^/]+\/files$/.test(path)) {
     return <FilesPage />;

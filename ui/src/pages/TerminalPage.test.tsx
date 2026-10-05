@@ -256,3 +256,57 @@ describe("Terminal sizing", () => {
     expect(JSON.parse(localStorage.getItem("ndl-term-size") || "{}").mode).toBe("auto");
   });
 });
+
+describe("Terminal workload switching", () => {
+  it("never shows the previous workload's terminal while the next one opens", async () => {
+    installIO();
+    let releaseSecond: (() => void) | null = null;
+    const base = (globalThis.fetch as unknown as (input: RequestInfo | URL) => Promise<Response>);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(url, "http://localhost").pathname;
+        if (path === "/api/v1/workloads/wl-2") {
+          await new Promise<void>((resolve) => {
+            releaseSecond = resolve;
+          });
+          return jsonResponse(200, { id: "wl-2", name: "second-ct", kind: "system-container", status: "running" });
+        }
+        return base(input);
+      }),
+    );
+    window.history.replaceState({}, "", "/workloads/wl-1/terminal");
+    render(<App />);
+    expect(await screen.findByTestId("term-identity")).toHaveTextContent("accept-ct");
+    await screen.findByText(/connected/i);
+
+    act(() => {
+      window.history.pushState({}, "", "/workloads/wl-2/terminal");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(await screen.findByTestId("term-opening")).toBeVisible();
+    expect(screen.getByRole("main")).not.toHaveTextContent("accept-ct");
+    expect(screen.queryByTestId("term-identity")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(releaseSecond).not.toBeNull());
+    act(() => releaseSecond?.());
+    await waitFor(() => expect(screen.getByTestId("term-identity")).toHaveTextContent("second-ct"));
+  });
+
+  it("returns to an already open session immediately", async () => {
+    installIO();
+    window.history.replaceState({}, "", "/workloads/wl-1/terminal");
+    render(<App />);
+    await screen.findByText(/connected/i);
+    act(() => {
+      window.history.pushState({}, "", "/terminal");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    act(() => {
+      window.history.pushState({}, "", "/workloads/wl-1/terminal");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.getByTestId("term-identity")).toHaveTextContent("accept-ct");
+  });
+});

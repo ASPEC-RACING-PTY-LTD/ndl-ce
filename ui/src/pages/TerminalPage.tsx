@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getNode, getWorkload } from "../api/client";
+import type { Workload } from "../api/phase5";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { TerminalPane } from "../components/TerminalPane";
-import { workloadGuestIOReason } from "../guestIO";
+import { workloadGuestIO } from "../guestIO";
 import { currentPath } from "../router";
 import { canMutate, isAdmin } from "../rbac";
 import { useSession } from "../session";
@@ -29,10 +30,30 @@ export function TerminalPage() {
   const host = kind === "node";
   const canOpen = host ? isAdmin(roles) : canMutate(roles);
   const cwdParam = cwdFromQuery();
-  const { openOrFocus } = useTerminalWorkspace();
+  const { openOrFocus, tabs, setActive } = useTerminalWorkspace();
   const [error, setError] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [ready, setReady] = useState(kind === "node");
+  const loaded = useRef<Workload | null>(null);
+  const existing = [...tabs]
+    .reverse()
+    .find(
+      (t) =>
+        t.target.kind === kind &&
+        t.target.id === id &&
+        (t.state === "active" || t.state === "connecting" || t.state === "reconnecting"),
+    );
+  const existingId = existing?.tabId;
+
+  // A live session for this target is already open: show it now instead of
+  // waiting for the guest checks below.
+  useEffect(() => {
+    if (canOpen && !cwdParam && existingId) {
+      setActive(existingId);
+    }
+    // Only when the page's target changes; later tab updates must not steal focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, id]);
 
   useEffect(() => {
     if (kind !== "workload") {
@@ -43,10 +64,11 @@ export function TerminalPage() {
     let cancelled = false;
     async function check() {
       try {
-        const reason = await workloadGuestIOReason(id);
+        const { workload, reason } = await workloadGuestIO(id);
         if (cancelled) {
           return;
         }
+        loaded.current = workload;
         if (reason) {
           setUnsupported(reason);
           setReady(false);
@@ -80,7 +102,7 @@ export function TerminalPage() {
         const target =
           kind === "node"
             ? targetFromNode(await getNode(id))
-            : targetFromWorkload(await getWorkload(id));
+            : targetFromWorkload(loaded.current?.id === id ? loaded.current : await getWorkload(id));
         if (cancelled) {
           return;
         }
@@ -145,7 +167,7 @@ export function TerminalPage() {
           <Link href="/terminal">Open in Terminal workspace</Link>
         </p>
       )}
-      <TerminalPane workspaceLink />
+      <TerminalPane workspaceLink target={{ kind, id, name: existing?.target.name }} />
     </section>
   );
 }

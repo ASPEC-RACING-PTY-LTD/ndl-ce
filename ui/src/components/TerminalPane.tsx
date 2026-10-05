@@ -86,16 +86,33 @@ function TermSlot({
   );
 }
 
+export type TerminalPaneTarget = {
+  kind: TermTab["target"]["kind"];
+  id: string;
+  name?: string;
+};
+
+function matchesTarget(tab: TermTab, target: TerminalPaneTarget): boolean {
+  return tab.target.kind === target.kind && tab.target.id === target.id;
+}
+
 export function TerminalPane({
   workspaceLink = false,
   heading,
+  target,
 }: {
   workspaceLink?: boolean;
   heading?: string;
+  /**
+   * The target this pane belongs to. When set, the pane only ever shows a
+   * session for this target, never another target's session that happens to
+   * be active in the workspace while this one is still opening.
+   */
+  target?: TerminalPaneTarget;
 }) {
   const {
     tabs,
-    activeId,
+    activeId: workspaceActiveId,
     attach,
     detach,
     reconnect,
@@ -118,7 +135,9 @@ export function TerminalPane({
     originY: number;
   } | null>(null);
   const [limit, setLimit] = useState({ width: 0, height: 0 });
-  const tab = tabs.find((t) => t.tabId === activeId) ?? null;
+  const activeTab = tabs.find((t) => t.tabId === workspaceActiveId) ?? null;
+  const tab = activeTab && (!target || matchesTarget(activeTab, target)) ? activeTab : null;
+  const activeId = tab?.tabId ?? null;
   const lastFit = useRef({ w: 0, h: 0, id: "" });
   const size = termStyle(pref, limit);
 
@@ -324,6 +343,17 @@ export function TerminalPane({
       return;
     }
     endResize();
+  }
+
+  if (!tab && target) {
+    return (
+      <div className="term-empty" role="status" aria-busy="true" data-testid="term-opening">
+        <p className="loading-state">
+          <span className="loading-dot" />
+          Opening terminal{target.name ? ` for ${target.name}` : ""}
+        </p>
+      </div>
+    );
   }
 
   if (!tab) {
