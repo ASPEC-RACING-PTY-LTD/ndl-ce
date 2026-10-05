@@ -124,6 +124,8 @@ type Server struct {
 	gameLocal *gameserver.LocalHost
 	gameMu    sync.Mutex
 	PhysFS    inventory.FS
+	// refresh shares live host observations between concurrent reads.
+	refresh refreshGate
 }
 
 type principal struct {
@@ -512,7 +514,7 @@ func (s *Server) Handler() http.Handler {
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}
-	return mux
+	return s.markReadRequests(mux)
 }
 
 func (s *Server) spa() http.Handler {

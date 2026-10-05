@@ -53,6 +53,10 @@ type dockerCache struct {
 	inv     docker.Inventory
 	at      time.Time
 	enabled bool
+	// inflight is closed when the snapshot being taken finishes. Reads that
+	// arrive meanwhile wait for it instead of starting their own.
+	inflight chan struct{}
+	err      error
 }
 
 func (s *Server) dockerEnabled(ctx context.Context, clusterID string) bool {
@@ -98,22 +102,47 @@ func (s *Server) dockerInventory(ctx context.Context, clusterID string, refresh 
 	if s.docker == nil {
 		s.docker = &dockerCache{}
 	}
-	s.docker.mu.Lock()
-	fresh := !refresh && s.docker.enabled && !s.docker.at.IsZero() && time.Since(s.docker.at) < 3*time.Second
-	cached := s.docker.inv
-	s.docker.mu.Unlock()
-	if fresh {
-		return cached, nil
+	c := s.docker
+	c.mu.Lock()
+	if !refresh && c.enabled && !c.at.IsZero() && time.Since(c.at) < 3*time.Second {
+		inv := c.inv
+		c.mu.Unlock()
+		return inv, nil
 	}
-	inv, err := s.dockerRPC().DockerSnapshot(ctx, s.dockerHints(ctx, clusterID))
+	if wait := c.inflight; wait != nil && !refresh {
+		c.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return docker.Inventory{}, ctx.Err()
+		}
+		c.mu.Lock()
+		inv, err := c.inv, c.err
+		c.mu.Unlock()
+		return inv, err
+	}
+	done := make(chan struct{})
+	c.inflight = done
+	c.mu.Unlock()
+
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	inv, err := s.dockerRPC().DockerSnapshot(sctx, s.dockerHints(sctx, clusterID))
+	cancel()
+	c.mu.Lock()
+	if err == nil {
+		c.inv = inv
+		c.at = s.now()
+		c.enabled = true
+	}
+	c.err = err
+	if c.inflight == done {
+		c.inflight = nil
+	}
+	c.mu.Unlock()
+	close(done)
 	if err != nil {
 		return docker.Inventory{}, err
 	}
-	s.docker.mu.Lock()
-	s.docker.inv = inv
-	s.docker.at = s.now()
-	s.docker.enabled = true
-	s.docker.mu.Unlock()
 	return inv, nil
 }
 

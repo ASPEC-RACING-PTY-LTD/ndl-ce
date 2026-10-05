@@ -1,4 +1,6 @@
 import "@testing-library/jest-dom/vitest";
+import { afterEach, beforeEach } from "vitest";
+import { resetQueryCache } from "../query";
 
 if (typeof globalThis.EventSource === "undefined") {
   globalThis.EventSource = class {
@@ -64,3 +66,8 @@ if (typeof HTMLDialogElement !== "undefined") {
     };
   }
 }
+
+// Query results are cached per module; every test starts from an empty cache.
+
+beforeEach(() => resetQueryCache());
+afterEach(() => resetQueryCache());

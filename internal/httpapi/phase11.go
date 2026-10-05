@@ -227,6 +227,9 @@ func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
 	return out
 }
 
+// backupProbeTimeout bounds one backup target reachability probe.
+const backupProbeTimeout = 5 * time.Second
+
 func (s *Server) probeBackupTarget(ctx context.Context, kind, locator string) string {
 	exists := false
 	if s.Backup != nil {
@@ -262,15 +265,28 @@ func (s *Server) listBackupTargets(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Targets are probed at the same time, each bounded, so one slow or hung
+	// NFS or SMB mount no longer holds up the whole Backups page.
+	statuses := make([]string, len(items))
+	var wg sync.WaitGroup
+	for i, t := range items {
+		wg.Add(1)
+		go func(i int, t appdb.BackupTarget) {
+			defer wg.Done()
+			if isObjectBackupKind(t.Kind) {
+				statuses[i] = s.probeObjectTarget(r.Context(), t)
+				return
+			}
+			pctx, cancel := context.WithTimeout(r.Context(), backupProbeTimeout)
+			defer cancel()
+			statuses[i] = s.probeBackupTarget(pctx, t.Kind, t.Locator)
+		}(i, t)
+	}
+	wg.Wait()
 	out := make([]map[string]any, 0, len(items))
-	for _, t := range items {
-		status := t.Status
-		if isObjectBackupKind(t.Kind) {
-			status = s.probeObjectTarget(r.Context(), t)
-		} else {
-			status = s.probeBackupTarget(r.Context(), t.Kind, t.Locator)
-		}
-		if status != t.Status {
+	for i, t := range items {
+		status := statuses[i]
+		if status != t.Status && r.Context().Err() == nil {
 			_ = s.Store.UpdateBackupTargetStatus(r.Context(), p.User.ClusterID, t.ID, status)
 			t.Status = status
 		}

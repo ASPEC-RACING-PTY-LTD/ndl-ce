@@ -171,25 +171,18 @@ func (e *Engine) Idle() {
 }
 
 // Snapshot discovers Docker engines and returns the grouped inventory.
+// snapshotParallel bounds concurrent Docker API calls in one snapshot.
+// Machines and containers used to be read one after another, so the Docker
+// page waited for an inspect and a stats call per container in turn.
+const snapshotParallel = 8
+
 func (e *Engine) Snapshot(ctx context.Context, hints []MachineHint) (Inventory, error) {
 	now := e.now()
-	var machines []Machine
-	host := Machine{ID: HostMachineID, Name: "Host", Kind: KindHost}
-	if sock, err := firstDialable(e.hostSockets()); err == nil {
-		e.fillMachine(ctx, &host, sock, now)
-	} else if p := firstExisting(e.hostSockets()); p != "" {
-		host.Socket = p
-		host.DaemonOK = false
-		host.DaemonError = "Docker daemon is not reachable"
-		if err != nil {
-			host.DaemonError = err.Error()
-		}
-		host.Health = HealthCritical
-		host.HealthReason = host.DaemonError
+	type slot struct {
+		m  Machine
+		ok bool
 	}
-	if host.Socket != "" || host.DaemonError != "" {
-		machines = append(machines, host)
-	}
+	var guests []MachineHint
 	for _, h := range hints {
 		id := strings.TrimSpace(h.ID)
 		if id == "" || id == HostMachineID {
@@ -202,38 +195,79 @@ func (e *Engine) Snapshot(ctx context.Context, hints []MachineHint) (Inventory, 
 		if kind != KindSystemContainer && kind != "workload" {
 			continue
 		}
-		m := Machine{ID: id, Name: strings.TrimSpace(h.Name), Kind: KindSystemContainer}
-		if m.Name == "" {
-			m.Name = id
-		}
-		pid, ipv4, err := e.lookupLXC(ctx, id)
-		m.IPv4 = ipv4
-		if err != nil || pid <= 0 {
-			continue
-		}
-		paths := guestSockets(pid)
-		sock, derr := firstDialable(paths)
-		if derr != nil {
-			if p := firstExisting(paths); p != "" {
-				m.Socket = p
-				m.DaemonOK = false
-				m.DaemonError = "Docker daemon is not reachable"
-				m.Health = HealthCritical
-				m.HealthReason = m.DaemonError
-				if derr != nil {
-					m.DaemonError = derr.Error()
-					m.HealthReason = m.DaemonError
-				}
-				machines = append(machines, m)
+		guests = append(guests, h)
+	}
+	slots := make([]slot, len(guests)+1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		host := Machine{ID: HostMachineID, Name: "Host", Kind: KindHost}
+		if sock, err := firstDialable(e.hostSockets()); err == nil {
+			e.fillMachine(ctx, &host, sock, now)
+		} else if p := firstExisting(e.hostSockets()); p != "" {
+			host.Socket = p
+			host.DaemonOK = false
+			host.DaemonError = "Docker daemon is not reachable"
+			if err != nil {
+				host.DaemonError = err.Error()
 			}
-			continue
+			host.Health = HealthCritical
+			host.HealthReason = host.DaemonError
 		}
-		e.fillMachine(ctx, &m, sock, now)
-		machines = append(machines, m)
+		slots[0] = slot{m: host, ok: host.Socket != "" || host.DaemonError != ""}
+	}()
+	sem := make(chan struct{}, snapshotParallel)
+	for i, h := range guests {
+		wg.Add(1)
+		go func(i int, h MachineHint) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			m, ok := e.guestMachine(ctx, h, now)
+			slots[i+1] = slot{m: m, ok: ok}
+		}(i, h)
+	}
+	wg.Wait()
+	machines := make([]Machine, 0, len(slots))
+	for _, sl := range slots {
+		if sl.ok {
+			machines = append(machines, sl.m)
+		}
 	}
 	inv := flattenInventory(machines)
 	inv.ObservedAt = now
 	return inv, nil
+}
+
+// guestMachine reads Docker in one system container. ok is false when the
+// container is not running or has no Docker socket.
+func (e *Engine) guestMachine(ctx context.Context, h MachineHint, now time.Time) (Machine, bool) {
+	id := strings.TrimSpace(h.ID)
+	m := Machine{ID: id, Name: strings.TrimSpace(h.Name), Kind: KindSystemContainer}
+	if m.Name == "" {
+		m.Name = id
+	}
+	pid, ipv4, err := e.lookupLXC(ctx, id)
+	m.IPv4 = ipv4
+	if err != nil || pid <= 0 {
+		return m, false
+	}
+	paths := guestSockets(pid)
+	sock, derr := firstDialable(paths)
+	if derr != nil {
+		if p := firstExisting(paths); p != "" {
+			m.Socket = p
+			m.DaemonOK = false
+			m.DaemonError = derr.Error()
+			m.Health = HealthCritical
+			m.HealthReason = m.DaemonError
+			return m, true
+		}
+		return m, false
+	}
+	e.fillMachine(ctx, &m, sock, now)
+	return m, true
 }
 
 func (e *Engine) fillMachine(ctx context.Context, m *Machine, socket string, now time.Time) {
@@ -258,31 +292,40 @@ func (e *Engine) fillMachine(ctx context.Context, m *Machine, socket string, now
 		return
 	}
 	events := e.collectEvents(ctx, cli, socket, now)
-	var pending []Container
-	for _, item := range items {
-		c := e.containerFromList(m, item, now)
-		if ins, ierr := cli.inspect(ctx, item.ID); ierr == nil {
-			applyInspect(&c, ins, now)
-		}
-		if st, serr := cli.stats(ctx, item.ID); serr == nil {
-			pct := cpuPercent(st)
-			c.CPUPercent = &pct
-			mem := st.MemoryStats.Usage
-			lim := st.MemoryStats.Limit
-			c.MemoryBytes = &mem
-			if lim > 0 {
-				c.MemoryLimit = &lim
+	pending := make([]Container, len(items))
+	sem := make(chan struct{}, snapshotParallel)
+	var wg sync.WaitGroup
+	for i, item := range items {
+		wg.Add(1)
+		go func(i int, item listItem) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			c := e.containerFromList(m, item, now)
+			if ins, ierr := cli.inspect(ctx, item.ID); ierr == nil {
+				applyInspect(&c, ins, now)
 			}
-			if st.PidsStats.Current > 0 {
-				p := st.PidsStats.Current
-				c.Pids = &p
+			if st, serr := cli.stats(ctx, item.ID); serr == nil {
+				pct := cpuPercent(st)
+				c.CPUPercent = &pct
+				mem := st.MemoryStats.Usage
+				lim := st.MemoryStats.Limit
+				c.MemoryBytes = &mem
+				if lim > 0 {
+					c.MemoryLimit = &lim
+				}
+				if st.PidsStats.Current > 0 {
+					p := st.PidsStats.Current
+					c.Pids = &p
+				}
 			}
-		}
-		key := containerRef(m.ID, shortID(item.ID))
-		c.RecentEvents = e.mergeEvents(key, eventsFor(events, item.ID, c.Name))
-		e.applyUpdateNote(&c)
-		pending = append(pending, c)
+			key := containerRef(m.ID, shortID(item.ID))
+			c.RecentEvents = e.mergeEvents(key, eventsFor(events, item.ID, c.Name))
+			e.applyUpdateNote(&c)
+			pending[i] = c
+		}(i, item)
 	}
+	wg.Wait()
 	*m = attachAndGroup(*m, pending)
 }
 

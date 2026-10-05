@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
@@ -34,32 +35,10 @@ func decodeWorkloadHints(in []*agentv1.WorkloadHint) []lxc.Hint {
 func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
 	var ct []lxc.Hint
 	var ociHints []oci.Hint
-	var vms []lxc.Observed
+	var vmIDs []string
 	for _, hint := range hints {
 		if hint.Kind == qemu.KindVM {
-			obs := h.qemu().Observe(context.Background(), hint.WorkloadID)
-			ready := false
-			blockers := []string{"frozen argv is missing"}
-			ipv4 := ""
-			if applied, err := h.qemu().ReadApplied(hint.WorkloadID); err == nil {
-				ready, blockers = qemu.MigrateReadiness(applied.Argv)
-				for _, nic := range applied.Launch.NICs {
-					if ip := qemu.IPv4ForMAC(nic.MAC); ip != "" {
-						ipv4 = ip
-						break
-					}
-				}
-			}
-			vms = append(vms, lxc.Observed{
-				WorkloadID:      obs.WorkloadID,
-				Kind:            qemu.KindVM,
-				Status:          obs.Status,
-				Reason:          obs.Reason,
-				UnitActive:      obs.UnitActive,
-				IPv4:            ipv4,
-				MigrateReady:    ready,
-				MigrateBlockers: blockers,
-			})
+			vmIDs = append(vmIDs, hint.WorkloadID)
 			continue
 		}
 		if hint.Kind == oci.KindOCI {
@@ -71,28 +50,87 @@ func (h *Handler) observeWorkloads(hints []lxc.Hint) []byte {
 		}
 		ct = append(ct, hint)
 	}
-	obs, err := h.workloads().Observe(context.Background(), ct)
-	if err != nil {
-		obs = lxc.Observation{}
-	}
-	obs.Workloads = append(obs.Workloads, vms...)
-	if len(ociHints) > 0 {
-		ociObs, err := h.oci().Observe(context.Background(), ociHints)
-		if err == nil {
-			for _, w := range ociObs.Workloads {
-				obs.Workloads = append(obs.Workloads, lxc.Observed{
-					WorkloadID: w.WorkloadID, Kind: oci.KindOCI, Status: w.Status,
-					Reason: w.Reason, UnitActive: w.UnitActive, Warnings: w.Warnings,
-					MigrateReady: false, MigrateBlockers: []string{"OCI migrate recreates the container; live is not supported"},
-					ObservedAt: w.ObservedAt,
-				})
-			}
+	// Containers, VMs and OCI workloads are observed side by side; each
+	// observation shells out to systemctl, so doing them one after another
+	// made every workload read wait for all of them in turn.
+	var (
+		wg    sync.WaitGroup
+		obs   lxc.Observation
+		vms   = make([]lxc.Observed, len(vmIDs))
+		ociWs []lxc.Observed
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		var err error
+		obs, err = h.workloads().Observe(context.Background(), ct)
+		if err != nil {
+			obs = lxc.Observation{}
 		}
+	}()
+	go func() {
+		defer wg.Done()
+		if len(ociHints) == 0 {
+			return
+		}
+		ociObs, err := h.oci().Observe(context.Background(), ociHints)
+		if err != nil {
+			return
+		}
+		for _, w := range ociObs.Workloads {
+			ociWs = append(ociWs, lxc.Observed{
+				WorkloadID: w.WorkloadID, Kind: oci.KindOCI, Status: w.Status,
+				Reason: w.Reason, UnitActive: w.UnitActive, Warnings: w.Warnings,
+				MigrateReady: false, MigrateBlockers: []string{"OCI migrate recreates the container; live is not supported"},
+				ObservedAt: w.ObservedAt,
+			})
+		}
+	}()
+	sem := make(chan struct{}, vmObserveParallel)
+	for i, id := range vmIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, id string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			vms[i] = h.observeVM(id)
+		}(i, id)
 	}
+	wg.Wait()
+	obs.Workloads = append(obs.Workloads, vms...)
+	obs.Workloads = append(obs.Workloads, ociWs...)
 	return mustJSON(obs)
 }
 
-// GetWorkloads observes known system containers. Missing is unavailable.
+// vmObserveParallel bounds concurrent VM observations.
+const vmObserveParallel = 8
+
+func (h *Handler) observeVM(id string) lxc.Observed {
+	obs := h.qemu().Observe(context.Background(), id)
+	ready := false
+	blockers := []string{"frozen argv is missing"}
+	ipv4 := ""
+	if applied, err := h.qemu().ReadApplied(id); err == nil {
+		ready, blockers = qemu.MigrateReadiness(applied.Argv)
+		for _, nic := range applied.Launch.NICs {
+			if ip := qemu.IPv4ForMAC(nic.MAC); ip != "" {
+				ipv4 = ip
+				break
+			}
+		}
+	}
+	return lxc.Observed{
+		WorkloadID:      obs.WorkloadID,
+		Kind:            qemu.KindVM,
+		Status:          obs.Status,
+		Reason:          obs.Reason,
+		UnitActive:      obs.UnitActive,
+		IPv4:            ipv4,
+		MigrateReady:    ready,
+		MigrateBlockers: blockers,
+	}
+}
+
 func (h *Handler) GetWorkloads(ctx context.Context, req *connect.Request[agentv1.GetWorkloadsRequest]) (*connect.Response[agentv1.GetWorkloadsResponse], error) {
 	if err := h.authorize(ctx); err != nil {
 		return nil, err

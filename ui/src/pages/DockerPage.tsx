@@ -17,6 +17,7 @@ import { formatBytes, formatWhen } from "../format";
 import { navigate } from "../router";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
+import { usePoll } from "../query";
 import { useTerminalWorkspace } from "../terminal/workspace";
 import type { TermTarget } from "../terminal/types";
 
@@ -174,11 +175,8 @@ export function DockerPage() {
 
   useEffect(() => {
     void reload();
-    const timer = window.setInterval(() => {
-      void reload();
-    }, 5000);
-    return () => window.clearInterval(timer);
   }, []);
+  usePoll(() => reload(), 5000);
 
   const q = query.trim().toLowerCase();
   const containers = useMemo(() => {

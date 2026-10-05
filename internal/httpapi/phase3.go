@@ -427,7 +427,13 @@ func firstNonEmpty(v ...string) string {
 	return ""
 }
 
+// refreshStorage observes pools on the agents and reconciles them.
+// Concurrent reads share one observation (see refreshGate).
 func (s *Server) refreshStorage(ctx context.Context, clusterID string) {
+	s.refresh.run(ctx, "storage:"+clusterID, func(ctx context.Context) { s.refreshStorageNow(ctx, clusterID) })
+}
+
+func (s *Server) refreshStorageNow(ctx context.Context, clusterID string) {
 	pools, err := s.Store.ListStoragePools(ctx, clusterID)
 	if err != nil || len(pools) == 0 {
 		return

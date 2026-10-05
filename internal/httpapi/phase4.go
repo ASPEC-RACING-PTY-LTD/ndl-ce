@@ -423,7 +423,13 @@ func (s *Server) specFromRequest(ctx context.Context, clusterID, id string, req 
 	return spec
 }
 
+// refreshNetworks observes networks on the agent and reconciles them.
+// Concurrent reads share one observation (see refreshGate).
 func (s *Server) refreshNetworks(ctx context.Context, clusterID string) {
+	s.refresh.run(ctx, "networks:"+clusterID, func(ctx context.Context) { s.refreshNetworksNow(ctx, clusterID) })
+}
+
+func (s *Server) refreshNetworksNow(ctx context.Context, clusterID string) {
 	if s.Network == nil {
 		return
 	}

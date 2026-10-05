@@ -1119,16 +1119,26 @@ func (s *Server) recordClone(ctx context.Context, clusterID string, src appdb.Wo
 	return nil
 }
 
+// refreshWorkloads observes workload state on the agents and reconciles it.
+// Concurrent reads share one observation (see refreshGate).
 func (s *Server) refreshWorkloads(ctx context.Context, clusterID string) {
+	s.refresh.run(ctx, "workloads:"+clusterID, func(ctx context.Context) { s.refreshWorkloadsNow(ctx, clusterID) })
+}
+
+func (s *Server) refreshWorkloadsNow(ctx context.Context, clusterID string) {
 	items, err := s.Store.ListWorkloads(ctx, clusterID)
 	if err != nil || len(items) == 0 {
 		return
 	}
 	var local []appdb.Workload
 	byDest := map[string][]appdb.Workload{}
+	controlID := ""
+	if control, err := s.Store.GetNode(ctx, clusterID); err == nil && control != nil {
+		controlID = control.ID
+	}
 	for _, w := range items {
 		nid := s.ownerNodeID(w)
-		if nid != "" && !s.applyLocal(ctx, clusterID, nid) {
+		if nid != "" && nid != controlID {
 			if w.Kind == lxc.KindSystemContainer {
 				byDest[nid] = append(byDest[nid], w)
 			}

@@ -13,6 +13,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/backuphost"
 	"github.com/no-dal/ndl-ce/internal/diskguard"
 	"github.com/no-dal/ndl-ce/internal/objstore"
+	"github.com/no-dal/ndl-ce/internal/qemu"
 )
 
 // diskGate refuses an Execute method that writes bulk data to a host
@@ -62,7 +63,8 @@ func diskGateFor(m *agentv1.ExecuteRequest, gameRoot string) (string, string, bo
 	case m.GetBackupCopy() != nil:
 		v := m.GetBackupCopy()
 		switch v.GetAction() {
-		case backuphost.ActionStatus, backuphost.ActionPreview, backuphost.ActionExpire:
+		case backuphost.ActionStatus, backuphost.ActionPreview, backuphost.ActionExpire,
+			qemu.BackupStat, qemu.BackupStatFS:
 			return "", "", false
 		}
 		return "Backup", v.GetDestPath(), true

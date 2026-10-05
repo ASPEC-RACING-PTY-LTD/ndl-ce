@@ -462,23 +462,10 @@ export function BackupsPage() {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [restoreNodeId, setRestoreNodeId] = useState("");
 
+  // Everything loads at once. Backups render as soon as the backup lists
+  // arrive; workloads, nodes and workspace settings fill in when they do.
   async function reload() {
-    const [t, p, r, a, w, n] = await Promise.all([
-      listBackupTargets(),
-      listBackupPolicies(),
-      listBackupRuns(),
-      listBackupArtifacts(),
-      listWorkloads(),
-      listNodes(),
-    ]);
-    setTargets(t.items ?? []);
-    setPolicies(p.items ?? []);
-    setRuns(r.items ?? []);
-    setArtifacts(a.items ?? []);
-    setWorkloads(w.items ?? []);
-    setNodes(n ?? []);
-    try {
-      const ws = await getBackupWorkspace();
+    function applyWorkspace(ws: BackupWorkspace) {
       setWorkspace(ws);
       if (ws.max_local_bytes) {
         setMaxLocalGiB(String(Math.round(ws.max_local_bytes / 1024 / 1024 / 1024)));
@@ -498,10 +485,26 @@ export function BackupsPage() {
       if (ws.cache_retention_hours != null) {
         setCacheRetentionHours(String(ws.cache_retention_hours));
       }
-    } catch {
-      setWorkspace(null);
     }
-    setLoadState("ready");
+
+    const backups = Promise.all([
+      listBackupTargets(),
+      listBackupPolicies(),
+      listBackupRuns(),
+      listBackupArtifacts(),
+    ]).then(([t, p, r, a]) => {
+      setTargets(t.items ?? []);
+      setPolicies(p.items ?? []);
+      setRuns(r.items ?? []);
+      setArtifacts(a.items ?? []);
+      setLoadState("ready");
+    });
+    const workloadsLoad = listWorkloads().then((w) => setWorkloads(w.items ?? []));
+    const nodesLoad = listNodes().then((n) => setNodes(n ?? []));
+    const workspaceLoad = getBackupWorkspace()
+      .then(applyWorkspace)
+      .catch(() => setWorkspace(null));
+    await Promise.all([backups, workloadsLoad, nodesLoad, workspaceLoad]);
   }
 
   useEffect(() => {

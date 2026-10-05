@@ -19,7 +19,15 @@ type Store struct {
 	mu        sync.Mutex
 	maxRows   int
 	retention time.Duration
+	// rows is an upper bound on the raw sample count, so a scrape does not
+	// have to COUNT(*) the whole table under the lock that queries wait on.
+	rows      int
+	rowsKnown bool
+	countedAt time.Time
 }
+
+// recountEvery bounds how long the row estimate is trusted.
+const recountEvery = 10 * time.Minute
 
 type metricSample struct {
 	name  string
@@ -136,13 +144,35 @@ func (s *Store) recordBatch(samples []metricSample) error {
 			return fmt.Errorf("metrics: downsample: %w", err)
 		}
 	}
-	if err := pruneTx(tx, time.Now().UTC(), s.retention, s.maxRows); err != nil {
+	now := time.Now().UTC()
+	if s.rowsKnown && s.rows+len(samples) <= s.capRows() && now.Sub(s.countedAt) < recountEvery {
+		if err := pruneAgeTx(tx, now, s.retention); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("metrics: commit: %w", err)
+		}
+		s.rows += len(samples)
+		return nil
+	}
+	n, err := pruneTxCount(tx, now, s.retention, s.maxRows)
+	if err != nil {
+		s.rowsKnown = false
 		return err
 	}
 	if err := tx.Commit(); err != nil {
+		s.rowsKnown = false
 		return fmt.Errorf("metrics: commit: %w", err)
 	}
+	s.rows, s.rowsKnown, s.countedAt = n, true, now
 	return nil
+}
+
+func (s *Store) capRows() int {
+	if s.maxRows <= 0 {
+		return DefaultMaxRows
+	}
+	return s.maxRows
 }
 
 // Query returns only stored rows in [from, to]. It never invents points.
@@ -334,6 +364,11 @@ func (s *Store) Prune(now time.Time) error {
 }
 
 func pruneTx(tx *sql.Tx, now time.Time, retention time.Duration, maxRows int) error {
+	_, err := pruneTxCount(tx, now, retention, maxRows)
+	return err
+}
+
+func pruneAgeTx(tx *sql.Tx, now time.Time, retention time.Duration) error {
 	if retention <= 0 {
 		retention = Retention
 	}
@@ -345,15 +380,24 @@ func pruneTx(tx *sql.Tx, now time.Time, retention time.Duration, maxRows int) er
 	if _, err := tx.Exec(`DELETE FROM samples_1h WHERE bucket < ?`, hourCutoff); err != nil {
 		return fmt.Errorf("metrics: prune hourly: %w", err)
 	}
+	return nil
+}
+
+// pruneTxCount applies retention and the row cap and returns the raw sample
+// count left.
+func pruneTxCount(tx *sql.Tx, now time.Time, retention time.Duration, maxRows int) (int, error) {
+	if err := pruneAgeTx(tx, now, retention); err != nil {
+		return 0, err
+	}
 	if maxRows <= 0 {
 		maxRows = DefaultMaxRows
 	}
 	var n int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM samples`).Scan(&n); err != nil {
-		return fmt.Errorf("metrics: count: %w", err)
+		return 0, fmt.Errorf("metrics: count: %w", err)
 	}
 	if n <= maxRows {
-		return nil
+		return n, nil
 	}
 	extra := n - maxRows
 	if _, err := tx.Exec(
@@ -362,9 +406,9 @@ func pruneTx(tx *sql.Tx, now time.Time, retention time.Duration, maxRows int) er
 		)`,
 		extra,
 	); err != nil {
-		return fmt.Errorf("metrics: prune cap: %w", err)
+		return 0, fmt.Errorf("metrics: prune cap: %w", err)
 	}
-	return nil
+	return maxRows, nil
 }
 
 func makeSeries(name string, points []Point, to, now time.Time) Series {

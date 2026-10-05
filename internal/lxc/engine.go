@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -621,11 +622,25 @@ func (e *Engine) Lifecycle(ctx context.Context, req LifecycleRequest) (Result, e
 }
 
 // Observe reports pid, unit_active, and honest status. Missing is unavailable.
+// observeParallel bounds how many containers are observed at once. Each
+// observation runs systemctl and lxc-info; one after another they made a
+// workload list take seconds on a host with a few dozen containers.
+const observeParallel = 8
+
 func (e *Engine) Observe(ctx context.Context, hints []Hint) (Observation, error) {
-	obs := Observation{ObservedAt: e.now(), Workloads: make([]Observed, 0, len(hints))}
-	for _, h := range hints {
-		obs.Workloads = append(obs.Workloads, e.observeOne(ctx, h))
+	obs := Observation{ObservedAt: e.now(), Workloads: make([]Observed, len(hints))}
+	sem := make(chan struct{}, observeParallel)
+	var wg sync.WaitGroup
+	for i, h := range hints {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, h Hint) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			obs.Workloads[i] = e.observeOne(ctx, h)
+		}(i, h)
 	}
+	wg.Wait()
 	return obs, nil
 }
 
@@ -659,7 +674,8 @@ func (e *Engine) observeOne(ctx context.Context, h Hint) Observed {
 	if e.SkipHostCmds {
 		return out
 	}
-	active, unitErr := e.unitActive(ctx, h.WorkloadID)
+	unitState, unitErr := e.unitState(ctx, h.WorkloadID)
+	active := unitState == "active"
 	out.UnitActive = active
 	pid, ipv4, infoErr := e.lxcInfo(ctx, h.WorkloadID)
 	out.PID = pid
@@ -678,7 +694,7 @@ func (e *Engine) observeOne(ctx context.Context, h Hint) Observed {
 		out.Reason = "unit is active; pid is not reported"
 		return out
 	}
-	if unitState, _ := e.unitState(ctx, h.WorkloadID); unitState == "failed" {
+	if unitState == "failed" {
 		out.Status = StatusFailed
 		out.Reason = "nodal-ct unit failed"
 		return out
