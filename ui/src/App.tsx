@@ -48,6 +48,7 @@ import { BackupsPage } from "./pages/BackupsPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
 import { MFAPage } from "./pages/MFAPage";
 import { GroupsPage } from "./pages/GroupsPage";
+import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { StacksPage, StackDetailPage } from "./pages/StacksPage";
@@ -142,6 +143,9 @@ function matchPage(path: string) {
   }
   if (path === "/templates") {
     return <TemplatesPage />;
+  }
+  if (path === "/registries") {
+    return <RegistriesPage />;
   }
   if (path === "/terminal") {
     return <TerminalWorkspacePage />;

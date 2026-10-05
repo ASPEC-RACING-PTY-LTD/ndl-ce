@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AIProvidersPanel } from "../components/ConfigPanels";
 import { PageHeader } from "../components/PageHeader";
 import { ApiError, askAI } from "../api/client";
 import type { AIAskResponse } from "../generated/openapi";
@@ -80,6 +81,7 @@ export function AskPage() {
           )}
         </article>
       ) : null}
+      <AIProvidersPanel />
     </section>
   );
 }

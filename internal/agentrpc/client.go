@@ -204,6 +204,18 @@ func (c Client) DestroyDirectoryVolume(ctx context.Context, req storage.CreateVo
 	return err
 }
 
+// DeleteLibraryFile removes an uploaded library image from its pool.
+func (c Client) DeleteLibraryFile(ctx context.Context, itemID, backendRef string, hint storage.PoolHint) error {
+	req := storage.CreateVolumeRequest{VolumeID: itemID, PoolID: hint.PoolID, RootPath: hint.RootPath, BackendRef: backendRef}
+	backing, _ := json.Marshal(volumeRPCPayload(hint, req, "library-delete"))
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_CreateDirectoryVolume{CreateDirectoryVolume: &agentv1.CreateDirectoryVolume{
+			VolumeId: itemID, PoolId: hint.PoolID, RootPath: hint.RootPath, BackingJson: backing,
+		}},
+	}))
+	return err
+}
+
 func (c Client) ResizeDirectoryVolume(ctx context.Context, req storage.CreateVolumeRequest, hint storage.PoolHint) error {
 	action := "resize"
 	if req.Live {

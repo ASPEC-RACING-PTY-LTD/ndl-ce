@@ -24,6 +24,11 @@ const (
 	ConfigAIProfile     ConfigKind = "ai_profile"
 	ConfigWGPeer        ConfigKind = "wg_peer"
 	ConfigBackupTarget  ConfigKind = "backup_target"
+	ConfigNetVLAN       ConfigKind = "network_vlan"
+	ConfigNetBond       ConfigKind = "network_bond"
+	ConfigNetPolicy     ConfigKind = "network_policy"
+	ConfigNetOverlay    ConfigKind = "network_overlay"
+	ConfigRemoteNode    ConfigKind = "remote_node"
 )
 
 // ErrConfigNotFound is returned when no record of that kind and id exists in
@@ -45,6 +50,11 @@ var configTables = map[ConfigKind]string{
 	ConfigAIProfile:     "ai_profiles",
 	ConfigWGPeer:        "wg_peers",
 	ConfigBackupTarget:  "backup_targets",
+	ConfigNetVLAN:       "network_vlans",
+	ConfigNetBond:       "network_bonds",
+	ConfigNetPolicy:     "network_policies",
+	ConfigNetOverlay:    "network_overlays",
+	ConfigRemoteNode:    "remote_nodes",
 }
 
 // DeleteConfig removes one configuration record. Rows that only exist for it
@@ -174,6 +184,36 @@ func (m *Memory) DeleteConfig(_ context.Context, kind ConfigKind, clusterID, id 
 			}
 			delete(m.backupTargets, id)
 			delete(m.backupCreds, id)
+			return nil
+		}
+	case ConfigNetVLAN:
+		if v, ok := m.netVLANs[id]; ok && v.ClusterID == clusterID {
+			delete(m.netVLANs, id)
+			return nil
+		}
+	case ConfigNetBond:
+		if v, ok := m.netBonds[id]; ok && v.ClusterID == clusterID {
+			delete(m.netBonds, id)
+			return nil
+		}
+	case ConfigNetPolicy:
+		if v, ok := m.netPolicies[id]; ok && v.ClusterID == clusterID {
+			delete(m.netPolicies, id)
+			return nil
+		}
+	case ConfigNetOverlay:
+		if v, ok := m.netOverlays[id]; ok && v.ClusterID == clusterID {
+			delete(m.netOverlays, id)
+			return nil
+		}
+	case ConfigRemoteNode:
+		if v, ok := m.remoteNodes[id]; ok && v.ClusterID == clusterID {
+			delete(m.remoteNodes, id)
+			for sid, sess := range m.remoteSessions {
+				if sess.NodeID == id {
+					delete(m.remoteSessions, sid)
+				}
+			}
 			return nil
 		}
 	default:

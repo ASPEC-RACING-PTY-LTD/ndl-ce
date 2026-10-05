@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { applyNetwork, applyPolicy, createBond, createNetwork, createPolicy, createVLAN, listNetworks } from "../api/client";
-import type { ConfirmRequired, Network, NetworkBond, NetworkNIC, NetworkPolicy, NetworkVLAN } from "../api/phase4";
+import type { ConfirmRequired, Network, NetworkBond, NetworkNIC, NetworkOverlay, NetworkPolicy, NetworkVLAN } from "../api/phase4";
+import { DeleteButton } from "../components/DeleteButton";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
@@ -29,6 +30,7 @@ export function NetworkPage() {
   const [vlans, setVlans] = useState<NetworkVLAN[]>([]);
   const [bonds, setBonds] = useState<NetworkBond[]>([]);
   const [policies, setPolicies] = useState<NetworkPolicy[]>([]);
+  const [overlays, setOverlays] = useState<NetworkOverlay[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("isolated");
   const [kind, setKind] = useState("isolated");
@@ -54,6 +56,7 @@ export function NetworkPage() {
     setVlans(listed.vlans ?? []);
     setBonds(listed.bonds ?? []);
     setPolicies(listed.policies ?? []);
+    setOverlays(listed.overlays ?? []);
   }
 
   useEffect(() => {
@@ -299,21 +302,42 @@ export function NetworkPage() {
               <StatusBadge status={net.status} />
               {net.danger === "dangerous" ? <p className="field-hint">Dangerous change</p> : null}
               {mutate ? (
-                <button className="btn btn-ghost" type="button" onClick={() => void onApply(net.id)}>
-                  {net.status === "available" ? "Re-apply" : "Apply"}
-                </button>
+                <div className="btn-row is-flush">
+                  <button className="btn btn-ghost" type="button" onClick={() => void onApply(net.id)}>
+                    {net.status === "available" ? "Re-apply" : "Apply"}
+                  </button>
+                  {net.kind !== "lan-bridge" && net.name.trim().toLowerCase() !== "lan" ? (
+                    <DeleteButton
+                      path={`/networks/${net.id}`}
+                      name={net.name}
+                      noun="network"
+                      description={<p>The bridge, DHCP and NAT rules are removed from the host. Workloads must be detached first.</p>}
+                      onDeleted={() => reload()}
+                    />
+                  ) : null}
+                </div>
               ) : null}
             </article>
           ))}
         </div>
       )}
-      {vlans.length + bonds.length + policies.length > 0 ? (
+      {vlans.length + bonds.length + policies.length + overlays.length > 0 ? (
         <div className="content-grid">
           {vlans.map((v) => (
             <article key={v.id} className="compact-card">
               <h3>VLAN {v.vlan_id}</h3>
               <p className="field-hint">{v.locator}</p>
               <StatusBadge status={v.status} />
+              {mutate ? (
+                <DeleteButton
+                  path={`/networks/vlans/${v.id}`}
+                  name={`VLAN ${v.vlan_id}`}
+                  noun="VLAN"
+                  confirmIfName
+                  description={<p>The VLAN interface and its networkd files are removed from the host.</p>}
+                  onDeleted={() => reload()}
+                />
+              ) : null}
             </article>
           ))}
           {bonds.map((b) => (
@@ -323,6 +347,16 @@ export function NetworkPage() {
                 {b.mode} · {b.locator}
               </p>
               <StatusBadge status={b.status} />
+              {mutate ? (
+                <DeleteButton
+                  path={`/networks/bonds/${b.id}`}
+                  name={b.name}
+                  noun="bond"
+                  confirmIfName
+                  description={<p>The bond is removed and its members are released. VLANs or networks on the bond must be deleted first.</p>}
+                  onDeleted={() => reload()}
+                />
+              ) : null}
             </article>
           ))}
           {policies.map((p) => (
@@ -330,6 +364,33 @@ export function NetworkPage() {
               <h3>{p.name}</h3>
               <p className="field-hint">{p.action}</p>
               <StatusBadge status={p.status} />
+              {mutate ? (
+                <DeleteButton
+                  path={`/networks/policies/${p.id}`}
+                  name={p.name}
+                  noun="policy"
+                  description={<p>The rule is removed and the remaining policies are reapplied.</p>}
+                  onDeleted={() => reload()}
+                />
+              ) : null}
+            </article>
+          ))}
+          {overlays.map((o) => (
+            <article key={o.id} className="compact-card">
+              <h3>Overlay {o.name || o.vni}</h3>
+              <p className="field-hint">
+                VNI {o.vni ?? "not set"} · {o.locator || "no locator"}
+              </p>
+              <StatusBadge status={o.status ?? "unknown"} />
+              {mutate ? (
+                <DeleteButton
+                  path={`/networks/overlays/${o.id}`}
+                  name={o.name || `VNI ${o.vni ?? ""}`}
+                  noun="overlay"
+                  description={<p>The prepared VXLAN interface is removed from the host.</p>}
+                  onDeleted={() => reload()}
+                />
+              ) : null}
             </article>
           ))}
         </div>

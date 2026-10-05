@@ -700,7 +700,7 @@ export function StoragePage() {
           formatting.
         </p>
         {hostDisks.length === 0 ? (
-          <p>No whole disks reported.</p>
+          <p className="muted">No whole disks reported.</p>
         ) : (
           <div className="table-wrap">
             <table>
@@ -740,7 +740,7 @@ export function StoragePage() {
         {loadState === "collecting" ? (
           <LoadingState label="Collecting" />
         ) : pools.length === 0 ? (
-          <p>No storage pools.</p>
+          <p className="muted">No storage pools.</p>
         ) : (
           <div className="table-wrap">
             <table>
@@ -958,7 +958,7 @@ export function StoragePage() {
       <article className="panel">
         <h2>Volumes</h2>
         {volumes.length === 0 ? (
-          <p>No volumes.</p>
+          <p className="muted">No volumes.</p>
         ) : (
           <div className="table-wrap">
             <table>
@@ -1010,7 +1010,7 @@ export function StoragePage() {
       <article className="panel">
         <h2>Image library</h2>
         {images.length === 0 ? (
-          <p>No library items.</p>
+          <p className="muted">No library items.</p>
         ) : (
           <div className="table-wrap">
             <table>
@@ -1022,6 +1022,11 @@ export function StoragePage() {
                   <th>Size</th>
                   <th>Checksum</th>
                   <th>Status</th>
+                  {mutate ? (
+                    <th className="col-tools">
+                      <span className="visually-hidden">Actions</span>
+                    </th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -1037,6 +1042,22 @@ export function StoragePage() {
                       <code>{item.checksum_sha256.slice(0, 12)}</code>
                     </td>
                     <td>{item.status}</td>
+                    {mutate ? (
+                      <td className="col-tools">
+                        <DeleteButton
+                          path={`/storage/images/${item.id}`}
+                          name={item.display_name || item.id.slice(0, 8)}
+                          noun="image"
+                          description={
+                            <p>
+                              The image file is removed from the pool. Images attached to a VM as installation media or
+                              used by a template cannot be deleted.
+                            </p>
+                          }
+                          onDeleted={() => setImages((cur) => cur.filter((x) => x.id !== item.id))}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>

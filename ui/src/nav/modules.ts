@@ -95,6 +95,7 @@ export const NAV_MODULES: NavModule[] = [
     capability: "docker",
   },
   { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates", simple: false },
+  { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries", simple: false },
   {
     id: "node",
     href: "/node",

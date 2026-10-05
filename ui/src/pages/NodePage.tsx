@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { LoadingState } from "../components/EmptyState";
+import { DeleteButton } from "../components/DeleteButton";
 import {
   getNode,
   getNodeCapabilities,
@@ -71,7 +73,7 @@ export function NodePage() {
     return (
       <section className="page">
         <h1>Node</h1>
-        <p>Collecting</p>
+        <LoadingState label="Collecting" />
       </section>
     );
   }
@@ -79,7 +81,7 @@ export function NodePage() {
     return (
       <section className="page">
         <h1>Node</h1>
-        <p>No local node is enrolled yet.</p>
+        <p className="muted">No local node is enrolled yet.</p>
       </section>
     );
   }
@@ -273,7 +275,7 @@ function RemoteNodeHelper() {
         worker NotReady; guests keep running.
       </p>
       {workers.length === 0 ? (
-        <p>No remote workers yet.</p>
+        <p className="muted">No remote workers yet.</p>
       ) : (
         <ul className="plain-list">
           {workers.map((n) => (
@@ -281,6 +283,15 @@ function RemoteNodeHelper() {
               <strong>{n.name}</strong> {honestStatus(n.status)}
               {n.reason ? ` ${n.reason}` : ""}
               {n.listen_addr ? ` ${n.listen_addr}` : ""}
+              {mutate && n.wg_peer_id ? (
+                <DeleteButton
+                  path={`/cluster/wg/peers/${n.wg_peer_id}`}
+                  name={n.name}
+                  noun="remote worker"
+                  description={<p>The WireGuard interface on this host and both peer records are removed. The worker loses its tunnel.</p>}
+                  onDeleted={() => reload()}
+                />
+              ) : null}
             </li>
           ))}
         </ul>
@@ -338,7 +349,7 @@ function NodeHardwareView({ id }: { id: string }) {
   }, [id]);
 
   if (!hw) {
-    return <p>Collecting</p>;
+    return <LoadingState label="Collecting" />;
   }
   if (!hw.inventory) {
     return <p>{hw.message || honestStatus(hw.status)}</p>;
@@ -482,7 +493,7 @@ function NodeLogsView({ id }: { id: string }) {
       </label>
       {status === "unavailable" ? <p className="chart-empty">Unavailable</p> : null}
       {message ? <p className="muted">{message}</p> : null}
-      {lines.length === 0 && status !== "unavailable" ? <p>No log lines in this window</p> : null}
+      {lines.length === 0 && status !== "unavailable" ? <p className="muted">No log lines in this window</p> : null}
       {lines.length > 0 ? (
         <pre className="log-view">
           {lines.join("\n")}

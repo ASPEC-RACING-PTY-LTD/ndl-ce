@@ -89,6 +89,14 @@ func (e *Engine) ApplyAdvanced(ctx context.Context, op AdvancedOp) (AdvancedResu
 		return e.applyOverlay(ctx, op)
 	case ActionNetworkDelete:
 		return e.deleteNetworkAdvanced(ctx, op)
+	case ActionVLANRemove:
+		return e.removeVLAN(ctx, op)
+	case ActionBondRemove:
+		return e.removeBond(ctx, op)
+	case ActionOverlayRemove:
+		return e.removeOverlay(ctx, op)
+	case ActionPolicyClear:
+		return e.clearPolicies(ctx, op)
 	default:
 		return AdvancedResult{}, fmt.Errorf("advanced network action is unsupported")
 	}

@@ -524,6 +524,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/policies/{id}", s.deleteConfig(appdb.ConfigPolicy, rbac.PolicyApply, "policy.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/ai/providers/{id}", s.deleteConfig(appdb.ConfigAIProvider, rbac.AIManage, "ai.provider.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/ai/profiles/{id}", s.deleteConfig(appdb.ConfigAIProfile, rbac.AIManage, "ai.profile.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/networks/vlans/{id}", s.deleteVLAN)
+	mux.HandleFunc("DELETE /api/v1/networks/bonds/{id}", s.deleteBond)
+	mux.HandleFunc("DELETE /api/v1/networks/overlays/{id}", s.deleteOverlay)
+	mux.HandleFunc("DELETE /api/v1/networks/policies/{id}", s.deleteNetPolicy)
+	mux.HandleFunc("DELETE /api/v1/cluster/wg/peers/{id}", s.deleteWGPeer)
+	mux.HandleFunc("DELETE /api/v1/storage/images/{id}", s.deleteImage)
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}

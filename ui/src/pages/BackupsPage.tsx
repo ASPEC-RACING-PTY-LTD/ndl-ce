@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { LoadingState } from "../components/EmptyState";
 import { DeleteButton } from "../components/DeleteButton";
 import {
   ApiError,
@@ -1097,7 +1098,7 @@ export function BackupsPage() {
             <div className="card-grid">
               {policies == null ? (
                 <article className="panel dashboard-card empty-card">
-                  <p>Collecting</p>
+                  <LoadingState label="Collecting" />
                 </article>
               ) : policies.length === 0 ? (
                 <article className="panel dashboard-card empty-card">
@@ -1212,7 +1213,7 @@ export function BackupsPage() {
             <div className="card-grid">
               {targets == null ? (
                 <article className="panel dashboard-card empty-card">
-                  <p>Collecting</p>
+                  <LoadingState label="Collecting" />
                 </article>
               ) : targets.length === 0 ? (
                 <article className="panel dashboard-card empty-card">
@@ -1302,7 +1303,7 @@ export function BackupsPage() {
               <div className="card-grid">
                 <article className="panel dashboard-card empty-card">
                   {runs == null ? (
-                    <p>Collecting</p>
+                    <LoadingState label="Collecting" />
                   ) : (
                     <>
                       <p className="empty-title">No backup runs yet</p>
@@ -1362,7 +1363,7 @@ export function BackupsPage() {
               <div className="card-grid">
                 <article className="panel dashboard-card empty-card">
                   {artifacts == null ? (
-                    <p>Collecting</p>
+                    <LoadingState label="Collecting" />
                   ) : (
                     <>
                       <p className="empty-title">No backup artifacts yet</p>

@@ -690,3 +690,29 @@ func (d Directory) writeVolumeXattr(abs, volumeID string) string {
 	}
 	return XattrOK
 }
+
+// DeleteLibraryFile removes one uploaded library image. The path must be the
+// item's own file under the pool's library directory.
+func (d Directory) DeleteLibraryFile(_ context.Context, itemID, backendRef string, hint PoolHint) error {
+	if _, err := uuid.Parse(itemID); err != nil {
+		return fmt.Errorf("item id must be a UUID")
+	}
+	rel := path.Clean(strings.TrimSpace(backendRef))
+	if !strings.HasPrefix(rel, "library/") || !strings.HasPrefix(path.Base(rel), strings.ToLower(itemID)) {
+		return fmt.Errorf("refusing to delete a file outside the item's library path")
+	}
+	if _, err := d.AssertWritablePool(hint); err != nil {
+		return err
+	}
+	abs, err := JoinUnder(hint.RootPath, rel)
+	if err != nil {
+		return err
+	}
+	if err := d.refuseEscape(hint.RootPath, abs); err != nil {
+		return err
+	}
+	if err := os.Remove(abs); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}

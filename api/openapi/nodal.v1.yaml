@@ -780,6 +780,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StorageImage"
+    delete:
+      operationId: deleteStorageImage
+      summary: Delete a library image no VM or template uses.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
   /networks:
     get:
       operationId: listNetworks
@@ -7772,6 +7788,109 @@ paths:
     delete:
       operationId: deleteAIProfile
       summary: Delete an AI profile.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /networks/vlans/{id}:
+    delete:
+      operationId: deleteNetworkVLAN
+      summary: Remove a VLAN from the host and delete it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm_ifname:
+                  type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /networks/bonds/{id}:
+    delete:
+      operationId: deleteNetworkBond
+      summary: Remove a bond no VLAN or network uses.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm_ifname:
+                  type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /networks/overlays/{id}:
+    delete:
+      operationId: deleteNetworkOverlay
+      summary: Remove a prepared overlay.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /networks/policies/{id}:
+    delete:
+      operationId: deleteNetworkPolicy
+      summary: Delete a policy and reapply the remaining set.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+        "409":
+          description: Still in use; the error names what uses it
+  /cluster/wg/peers/{id}:
+    delete:
+      operationId: deleteWGPeer
+      summary: Remove a WireGuard pairing and its remote node.
       parameters:
         - name: id
           in: path

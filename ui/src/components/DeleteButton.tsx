@@ -16,6 +16,7 @@ export function DeleteButton({
   onDeleted,
   small = true,
   confirmLabel,
+  confirmIfName,
 }: {
   path: string;
   name: string;
@@ -25,16 +26,19 @@ export function DeleteButton({
   onDeleted: () => void | Promise<void>;
   small?: boolean;
   confirmLabel?: string;
+  /** Asks for the interface name, sent as confirm_ifname, when the server needs it. */
+  confirmIfName?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ifname, setIfname] = useState("");
 
   async function confirm() {
     setBusy(true);
     setError(null);
     try {
-      await deleteResource(path);
+      await deleteResource(path, confirmIfName && ifname.trim() ? { confirm_ifname: ifname.trim() } : undefined);
       setOpen(false);
       await onDeleted();
     } catch (err) {
@@ -69,6 +73,18 @@ export function DeleteButton({
         onConfirm={() => void confirm()}
       >
         {description ? <div className="stack">{description}</div> : <p>This cannot be undone.</p>}
+        {confirmIfName ? (
+          <label className="field" htmlFor={`delete-ifname-${name}`}>
+            <span className="field-label">Interface confirmation (only needed on the management path)</span>
+            <input
+              id={`delete-ifname-${name}`}
+              className="field-input"
+              value={ifname}
+              onChange={(e) => setIfname(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+        ) : null}
         {error ? (
           <p className="banner banner-error" role="alert">
             {error}

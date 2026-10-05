@@ -379,7 +379,7 @@ export function DockerPage() {
               String(c.restart_count ?? 0),
               containerMenu(c, mutate, (row, action) => void runAction(row, action), (row) => void loadLogs(row), openTerm),
             ])}
-            empty={<p>No containers match the current filters.</p>}
+            empty={<p className="muted">No containers match the current filters.</p>}
           />
         </article>
       ) : (

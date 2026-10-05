@@ -48,7 +48,7 @@ func diskGateFor(m *agentv1.ExecuteRequest, gameRoot string) (string, string, bo
 	switch {
 	case m.GetCreateDirectoryVolume() != nil:
 		v := m.GetCreateDirectoryVolume()
-		if backingAction(v.GetBackingJson()) == "destroy" {
+		if a := backingAction(v.GetBackingJson()); a == "destroy" || a == "library-delete" {
 			return "", "", false
 		}
 		return "Creating or growing a volume", v.GetRootPath(), true

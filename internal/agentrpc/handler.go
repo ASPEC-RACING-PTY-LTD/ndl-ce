@@ -177,6 +177,12 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 			Owner: extra.Owner, OwnerKind: extra.OwnerKind, JobID: extra.JobID, BackendRef: extra.BackendRef,
 			ExpandFS: extra.ExpandFS,
 		}
+		if extra.Action == "library-delete" {
+			if err := h.driver().DeleteLibraryFile(ctx, volReq.VolumeID, volReq.BackendRef, hint); err != nil {
+				return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+			}
+			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "deleted"}), nil
+		}
 		if extra.Action == "destroy" {
 			if err := h.driver().DestroyVolume(ctx, volReq, hint); err != nil {
 				return nil, connect.NewError(connect.CodeFailedPrecondition, err)

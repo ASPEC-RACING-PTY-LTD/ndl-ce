@@ -2181,10 +2181,34 @@ export async function patchSecuritySettings(body: { mfa_required: boolean }) {
  * Deletes a configurable resource. The server answers 409 with the reason
  * when something still depends on it.
  */
-export async function deleteResource(path: string): Promise<void> {
-  const res = await request(path, { method: "DELETE" });
+export async function deleteResource(path: string, body?: Record<string, unknown>): Promise<void> {
+  const res = await request(path, { method: "DELETE", body: body ? JSON.stringify(body) : undefined });
   if (res.status === 204 || res.ok) {
     return;
   }
   throw new ApiError(res.status, await readErrorMessage(res));
+}
+
+export async function createRegistry(body: import("../generated/openapi").CreateRegistryRequest): Promise<Registry> {
+  return readJson(await request("/registries", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function listAIProviders(): Promise<import("../generated/openapi").AIProviderList> {
+  return readJson(await request("/ai/providers"));
+}
+
+export async function createAIProvider(
+  body: import("../generated/openapi").AIProviderCreateRequest,
+): Promise<import("../generated/openapi").AIProvider> {
+  return readJson(await request("/ai/providers", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function listNodeGroups(): Promise<import("../generated/openapi").NodeGroupListResponse> {
+  return readJson(await request("/node-groups"));
+}
+
+export async function createNodeGroup(
+  body: import("../generated/openapi").NodeGroupCreateRequest,
+): Promise<import("../generated/openapi").NodeGroup> {
+  return readJson(await request("/node-groups", { method: "POST", body: JSON.stringify(body) }));
 }

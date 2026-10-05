@@ -3248,3 +3248,13 @@ export type DeleteAutomationPolicyPath = "/api/v1/policies/{id}";
 export type DeleteAIProviderPath = "/api/v1/ai/providers/{id}";
 
 export type DeleteAIProfilePath = "/api/v1/ai/profiles/{id}";
+
+export type DeleteNetworkVLANPath = "/api/v1/networks/vlans/{id}";
+
+export type DeleteNetworkBondPath = "/api/v1/networks/bonds/{id}";
+
+export type DeleteNetworkOverlayPath = "/api/v1/networks/overlays/{id}";
+
+export type DeleteNetworkPolicyPath = "/api/v1/networks/policies/{id}";
+
+export type DeleteWGPeerPath = "/api/v1/cluster/wg/peers/{id}";

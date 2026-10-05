@@ -203,7 +203,7 @@ func (e *Engine) statusWG(ctx context.Context, op WGOp) (WGResult, error) {
 	}, nil
 }
 
-func (e *Engine) removeWG(_ context.Context, op WGOp) (WGResult, error) {
+func (e *Engine) removeWG(ctx context.Context, op WGOp) (WGResult, error) {
 	id := strings.ToLower(strings.TrimSpace(op.PeerID))
 	ifname, err := WGName(id)
 	if err != nil {
@@ -211,6 +211,13 @@ func (e *Engine) removeWG(_ context.Context, op WGOp) (WGResult, error) {
 	}
 	for _, suffix := range []string{"-wg.netdev", "-wg.network"} {
 		_ = os.Remove(filepath.Join(e.networkDir(), persistName(id, suffix)))
+	}
+	if keyPath, err := WGPrivateKeyPath(e.secretDir(), id); err == nil {
+		_ = os.Remove(keyPath)
+	}
+	if !e.SkipHostCmds {
+		// networkd does not delete a netdev on reload.
+		_ = e.run(ctx, ipBin(), "link", "delete", "dev", ifname)
 	}
 	if err := e.reloadNetworkd(); err != nil && !e.SkipHostCmds {
 		return WGResult{}, err

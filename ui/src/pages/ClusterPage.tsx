@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NodeGroupsPanel } from "../components/ConfigPanels";
 import {
   ApiError,
   createJoinToken,
@@ -246,6 +247,7 @@ export function ClusterPage() {
           </pre>
         ) : null}
       </article>
+      <NodeGroupsPanel />
     </section>
   );
 }
