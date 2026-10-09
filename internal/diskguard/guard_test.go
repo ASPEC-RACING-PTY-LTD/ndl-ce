@@ -21,13 +21,13 @@ func TestEvaluateUsesPercentAndFreeFloors(t *testing.T) {
 	}{
 		{868 * gib, 396 * gib, LevelOK},       // the host after cleanup
 		{868 * gib, 100 * gib, LevelWarning},  // 88% used
-		{868 * gib, 60 * gib, LevelCritical},  // 93% used
-		{868 * gib, 10 * gib, LevelEmergency}, // 99% used
+		{868 * gib, 25 * gib, LevelCritical},  // under the 30 GiB cap (the reserve holds 50 more)
+		{868 * gib, 5 * gib, LevelEmergency},  // under the 10 GiB cap
 		{868 * gib, 0, LevelEmergency},        // the outage
 		{4 * tib, 300 * gib, LevelOK},         // big disk, plenty left
 		{4 * tib, 150 * gib, LevelWarning},    // big disk, under the 200 GiB cap
-		{4 * tib, 50 * gib, LevelCritical},    // big disk, under the 75 GiB cap
-		{4 * tib, 10 * gib, LevelEmergency},   // big disk, under the 20 GiB cap
+		{4 * tib, 25 * gib, LevelCritical},    // big disk, under the 30 GiB cap
+		{4 * tib, 5 * gib, LevelEmergency},    // big disk, under the 10 GiB cap
 		{20 * gib, 15 * gib, LevelOK},         // small disk, room left
 		{20 * gib, 8 * gib, LevelWarning},     // small disk, under the 10 GiB floor
 		{20 * gib, 1 * gib, LevelEmergency},   // small disk, under the 2 GiB floor
@@ -53,8 +53,15 @@ func fakeDisk(t *testing.T, total, avail int64) (*Guard, string, *atomic.Int64) 
 		return statInfo{device: 2, total: 4 * tib, avail: 3 * tib}, nil
 	}
 	g.allocate = func(p string, size int64) error {
-		free.Add(-size)
-		return os.WriteFile(p, []byte("reserve"), 0o600)
+		var had int64
+		if fi, err := os.Stat(p); err == nil {
+			had = fi.Size()
+		}
+		free.Add(had - size)
+		if err := os.WriteFile(p, nil, 0o600); err != nil && had == 0 {
+			return err
+		}
+		return os.Truncate(p, size)
 	}
 	return g, root, free
 }
@@ -67,7 +74,7 @@ func TestAllowRefusesBulkWritesOnlyOnTheFullDisk(t *testing.T) {
 	if err := g.Allow("Backup", filepath.Join(root, "x"), 290*gib); err == nil {
 		t.Fatal("a write that would push the disk past critical must be refused")
 	}
-	free.Store(60 * gib)
+	free.Store(25 * gib)
 	err := g.Allow("Backup", filepath.Join(root, "backup-staging"), 0)
 	var full ErrDiskFull
 	if !errors.As(err, &full) || full.Level != LevelCritical || !strings.Contains(err.Error(), "Free space under Storage") {
@@ -84,13 +91,16 @@ func TestAllowRefusesBulkWritesOnlyOnTheFullDisk(t *testing.T) {
 	}
 }
 
-func TestReserveIsHeldThenReleasedInAnEmergency(t *testing.T) {
+func TestReserveHolds50GiBAndIsReleasedInAnEmergency(t *testing.T) {
 	g, _, free := fakeDisk(t, 868*gib, 300*gib)
 	st := g.Refresh()
-	if !st.ReserveHeld {
-		t.Fatalf("reserve must be created with room to spare: %+v", st)
+	if !st.ReserveHeld || st.ReserveBytes != 50*gib || st.ReserveTargetBytes != 50*gib {
+		t.Fatalf("50 GiB must be reserved with room to spare: %+v", st)
 	}
-	free.Store(1 * gib)
+	if free.Load() != 250*gib {
+		t.Fatalf("the reserve must take real space: %d GiB free", free.Load()/gib)
+	}
+	free.Store(5 * gib)
 	st = g.Refresh()
 	if st.ReserveHeld || !strings.Contains(st.ReserveNote, "Released") {
 		t.Fatalf("emergency must release the reserve: %+v", st)
@@ -98,17 +108,45 @@ func TestReserveIsHeldThenReleasedInAnEmergency(t *testing.T) {
 	if _, err := os.Stat(g.ReservePath); !os.IsNotExist(err) {
 		t.Fatal("reserve file must be gone")
 	}
-	free.Store(50 * gib) // critical-free floor passed, but not back to OK
+	free.Store(60 * gib) // room again, but not healthy yet
 	if st = g.Refresh(); st.ReserveHeld {
-		t.Fatal("reserve must not be retaken until the disk is healthy")
+		t.Fatal("after an emergency the reserve waits until the disk is healthy")
 	}
 	free.Store(300 * gib)
-	if st = g.Refresh(); !st.ReserveHeld {
-		t.Fatal("reserve must come back once the disk is healthy")
+	if st = g.Refresh(); !st.ReserveHeld || st.ReserveBytes != 50*gib {
+		t.Fatalf("reserve must come back once the disk is healthy: %+v", st)
 	}
 	if st, err := g.ReleaseReserve(); err != nil || st.ReserveHeld {
 		t.Fatalf("manual release: %+v %v", st, err)
 	}
+	if st = g.Refresh(); st.ReserveHeld {
+		t.Fatal("a manually released reserve stays released for the hold-off")
+	}
+}
+
+func TestReserveGrowsAsSpaceFreesUp(t *testing.T) {
+	// 868 GiB disk with 104 GiB free and a 30 GiB critical threshold:
+	// the full 50 GiB fits and leaves 54 GiB.
+	g, _, free := fakeDisk(t, 868*gib, 104*gib)
+	if st := g.Refresh(); st.ReserveBytes != 50*gib {
+		t.Fatalf("%+v", st)
+	}
+	// A fuller disk holds what fits above the critical threshold.
+	g2, _, free2 := fakeDisk(t, 868*gib, 60*gib)
+	st := g2.Refresh()
+	if st.ReserveBytes != 29*gib || !strings.Contains(st.ReserveNote, "grows as space frees up") {
+		t.Fatalf("partial reserve: %+v (%d GiB free)", st, free2.Load()/gib)
+	}
+	free2.Add(40 * gib)
+	if st = g2.Refresh(); st.ReserveBytes != 50*gib {
+		t.Fatalf("reserve must grow to its target: %+v", st)
+	}
+	// Small disks keep at most 10%.
+	g3, _, _ := fakeDisk(t, 100*gib, 80*gib)
+	if st := g3.Refresh(); st.ReserveTargetBytes != 10*gib || st.ReserveBytes != 10*gib {
+		t.Fatalf("small disk reserve: %+v", st)
+	}
+	_ = free
 }
 
 func TestReserveUnsupportedFilesystemIsReported(t *testing.T) {

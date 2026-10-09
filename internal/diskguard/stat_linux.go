@@ -22,11 +22,12 @@ func statPath(path string) (statInfo, error) {
 	return statInfo{device: uint64(st.Dev), total: int64(fs.Blocks) * bs, avail: int64(fs.Bavail) * bs}, nil
 }
 
-// preallocate reserves real blocks for path without writing them.
-// Filesystems without fallocate (ZFS, some network mounts) are reported as
-// unsupported rather than filled with zeros, which compression would undo.
+// preallocate makes path hold size bytes of real blocks without writing
+// them. Blocks it already holds are kept. Filesystems without fallocate
+// (ZFS, some network mounts) are reported as unsupported rather than filled
+// with zeros, which compression would undo.
 func preallocate(path string, size int64) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}

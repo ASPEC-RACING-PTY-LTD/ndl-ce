@@ -28,7 +28,8 @@ function status(level: HostDiskStatus["level"], free: number): HostDiskStatus {
         critical_below_bytes: 69 * GIB,
       },
     ],
-    reserve_bytes: 4 * GIB,
+    reserve_bytes: 50 * GIB,
+    reserve_target_bytes: 50 * GIB,
     reserve_held: true,
   };
 }
@@ -87,7 +88,7 @@ describe("HostDisk", () => {
     render(<HostDiskPanel mutate />);
 
     expect(await screen.findByRole("meter", { name: "/ used" })).toBeVisible();
-    expect(screen.getByText(/emergency reserve is held/i)).toBeVisible();
+    expect(screen.getByText(/50.0 GiB of the root disk is reserved for No-dal/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /what is using space/i }));
     const table = await screen.findByRole("table", { name: /disk usage by category/i });
     const pools = within(table).getByText(/storage pools on this disk/i).closest("tr")!;

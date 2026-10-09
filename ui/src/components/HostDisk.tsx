@@ -168,10 +168,11 @@ export function HostDiskPanel({ mutate }: { mutate: boolean }) {
   function onRelease() {
     setReleasing(false);
     setBusy(true);
+    const held = status?.reserve_bytes ?? 0;
     releaseHostDiskReserve()
       .then((res) => {
         setStatus(res.status);
-        setNotice(`Released the ${formatBytes(res.status.reserve_bytes)} emergency reserve.`);
+        setNotice(`Released the ${formatBytes(held)} reserve. Free up space now; it is reserved again in a few hours.`);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not release the reserve"))
       .finally(() => setBusy(false));
@@ -200,11 +201,12 @@ export function HostDiskPanel({ mutate }: { mutate: boolean }) {
         </p>
       ) : null}
       {status?.filesystems.map((fs) => <FilesystemRow key={fs.mount} fs={fs} />)}
-      {status && status.reserve_bytes > 0 ? (
+      {status && ((status.reserve_target_bytes ?? 0) > 0 || status.reserve_bytes > 0) ? (
         <p className="field-hint">
           {status.reserve_held
-            ? `A ${formatBytes(status.reserve_bytes)} emergency reserve is held. It is released automatically if the disk nearly fills, so PostgreSQL keeps running.`
-            : status.reserve_note || "No emergency reserve is held right now."}{" "}
+            ? `${formatBytes(status.reserve_bytes)} of the root disk is reserved for No-dal, so the disk can never fill completely. If it nearly fills anyway, the reserve is released automatically so No-dal and PostgreSQL keep running and you can clean up here.`
+            : "No space is reserved right now."}
+          {status.reserve_note ? ` ${status.reserve_note}` : ""}{" "}
           {mutate && status.reserve_held ? (
             <button className="btn btn-sm" type="button" disabled={busy} onClick={() => setReleasing(true)}>
               Release reserve now

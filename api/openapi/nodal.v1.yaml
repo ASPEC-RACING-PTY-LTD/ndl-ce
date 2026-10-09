@@ -13304,6 +13304,11 @@ components:
         reserve_bytes:
           type: integer
           format: int64
+          description: Space reserved for No-dal right now.
+        reserve_target_bytes:
+          type: integer
+          format: int64
+          description: Space that should be reserved for No-dal (50 GiB, at most 10% of a small disk).
         reserve_held:
           type: boolean
         reserve_note:

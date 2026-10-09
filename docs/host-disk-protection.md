@@ -13,10 +13,11 @@ rated:
 | Level     | Free space below                                   |
 | --------- | -------------------------------------------------- |
 | Warning   | 15% of the disk, between 10 GiB and 200 GiB        |
-| Critical  | 8% of the disk, between 5 GiB and 75 GiB           |
-| Emergency | 3% of the disk, between 2 GiB and 20 GiB           |
+| Critical  | 8% of the disk, between 5 GiB and 30 GiB           |
+| Emergency | 3% of the disk, between 2 GiB and 10 GiB           |
 
-On an 868 GiB disk that is roughly 130 GiB, 69 GiB and 20 GiB free.
+On an 868 GiB disk that is roughly 130 GiB, 30 GiB and 10 GiB free, on
+top of the 50 GiB reserved for No-dal (below).
 
 ## What happens
 
@@ -29,14 +30,24 @@ On an 868 GiB disk that is roughly 130 GiB, 69 GiB and 20 GiB free.
   (deleting, expiring backups, cancelling, uploading to remote storage) is
   never refused. Writes to a different disk, such as a ZFS pool on its own
   HDD, are not affected.
-- **Emergency**: the agent deletes its 4 GiB emergency reserve file, so
-  PostgreSQL has room to keep running while you free space.
+- **Emergency**: the agent deletes its reserve file, so No-dal and
+  PostgreSQL have room to keep running and you can free space from the UI.
 
-The reserve (`/var/lib/ndl/reserve/ballast`) is a preallocated file with no
-data in it. It is recreated once the disk is healthy again. Filesystems
-that cannot preallocate (ZFS root) do not keep one. **Release reserve now**
-on the Storage page deletes it immediately; it then stays released for six
-hours.
+## Space reserved for No-dal
+
+50 GiB of the disk holding `/var/lib/ndl` is permanently reserved for
+No-dal (at most 10% of a small disk). The reserve
+(`/var/lib/ndl/reserve/ballast`) is a preallocated file with no data in it:
+nothing else, including workloads on a pool that shares the root disk, can
+use that space. If the disk fills anyway, the agent releases the reserve
+automatically, so the control plane keeps working and you never need SSH to
+recover.
+
+The reserve is taken in steps: on a fuller disk it holds what fits above
+the critical threshold and grows as space frees up. After an emergency it
+is taken again once the disk is healthy. Filesystems that cannot
+preallocate (ZFS root) do not keep one. **Release reserve now** on the
+Storage page deletes it immediately; it then stays released for six hours.
 
 ## Freeing space
 

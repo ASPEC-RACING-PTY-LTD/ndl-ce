@@ -2149,6 +2149,7 @@ export interface HostDiskStatus {
   filesystems: HostDiskFilesystem[];
   reserve_path?: string;
   reserve_bytes: number;
+  reserve_target_bytes?: number;
   reserve_held: boolean;
   reserve_note?: string;
   reserve_released_at?: string;

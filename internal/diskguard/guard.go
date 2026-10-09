@@ -1,8 +1,11 @@
 // Package diskguard protects the host filesystems No-dal and PostgreSQL
 // live on. It watches free space, refuses bulk writes (backups, staging,
 // conversions, uploads, installs) once a filesystem is critically full,
-// and keeps an emergency reserve file it releases automatically when the
-// disk is nearly full, so PostgreSQL can keep writing.
+// and keeps space permanently reserved for No-dal: a preallocated reserve
+// file (50 GiB by default) that nothing else can use. When the disk is
+// nearly full anyway, the reserve is released automatically, so the
+// control plane, the agent and PostgreSQL keep running and the operator can
+// clean up from the UI instead of over SSH.
 //
 // The guard never deletes user data. The only file it removes on its own
 // is its own reserve file.
@@ -61,21 +64,43 @@ type Policy struct {
 	WarnMaxBytes       int64   `json:"warn_max_bytes"`
 	CriticalMaxBytes   int64   `json:"critical_max_bytes"`
 	EmergencyMaxBytes  int64   `json:"emergency_max_bytes"`
-	// ReserveBytes is the emergency reserve file size. 0 disables it.
+	// ReserveBytes is the space permanently reserved for No-dal on the
+	// filesystem that holds its state. 0 disables it.
 	ReserveBytes int64 `json:"reserve_bytes"`
+	// ReserveMaxPercent caps the reserve on small disks.
+	ReserveMaxPercent float64 `json:"reserve_max_percent"`
 }
 
 // DefaultPolicy: warn at 85% used, stop bulk writes at 92%, emergency at
-// 97%, each clamped to sensible byte bounds, with a 4 GiB reserve kept
-// for PostgreSQL.
+// 97%, each clamped to sensible byte bounds, plus 50 GiB reserved for
+// No-dal (at most 10% of a small disk). The reserve is the main safety
+// margin, so the critical and emergency caps stay small.
 func DefaultPolicy() Policy {
 	return Policy{
 		WarnPercent: 85, CriticalPercent: 92, EmergencyPercent: 97,
 		WarnFreeBytes: 10 * gib, CriticalFreeBytes: 5 * gib, EmergencyFreeBytes: 2 * gib,
-		WarnMaxBytes: 200 * gib, CriticalMaxBytes: 75 * gib, EmergencyMaxBytes: 20 * gib,
-		ReserveBytes: 4 * gib,
+		WarnMaxBytes: 200 * gib, CriticalMaxBytes: 30 * gib, EmergencyMaxBytes: 10 * gib,
+		ReserveBytes: 50 * gib, ReserveMaxPercent: 10,
 	}
 }
+
+// ReserveTarget is the reserve kept on a disk of total bytes.
+func (p Policy) ReserveTarget(total int64) int64 {
+	target := p.ReserveBytes
+	if p.ReserveMaxPercent > 0 && total > 0 {
+		if limit := int64(float64(total) * p.ReserveMaxPercent / 100); limit < target {
+			target = limit
+		}
+	}
+	if target < 0 {
+		return 0
+	}
+	return target
+}
+
+// reserveStep is the smallest amount the reserve grows by, and the margin
+// it always leaves above the critical threshold.
+const reserveStep = gib
 
 // threshold is the free bytes below which a level applies.
 func threshold(total int64, percent float64, floor, ceiling int64) int64 {
@@ -137,11 +162,14 @@ type FS struct {
 type Status struct {
 	Level        Level  `json:"level"`
 	Filesystems  []FS   `json:"filesystems"`
-	Policy       Policy `json:"policy"`
-	ReservePath  string `json:"reserve_path"`
-	ReserveBytes int64  `json:"reserve_bytes"`
-	ReserveHeld  bool   `json:"reserve_held"`
-	ReserveNote  string `json:"reserve_note,omitempty"`
+	Policy      Policy `json:"policy"`
+	ReservePath string `json:"reserve_path"`
+	// ReserveBytes is how much is reserved right now.
+	ReserveBytes int64 `json:"reserve_bytes"`
+	// ReserveTargetBytes is how much should be reserved.
+	ReserveTargetBytes int64  `json:"reserve_target_bytes"`
+	ReserveHeld        bool   `json:"reserve_held"`
+	ReserveNote        string `json:"reserve_note,omitempty"`
 	// ReserveReleasedAt is when the reserve was last released, by the
 	// guard in an emergency or by an operator.
 	ReserveReleasedAt *time.Time `json:"reserve_released_at,omitempty"`
@@ -180,6 +208,9 @@ type Guard struct {
 	// released it, so the space stays available while they recover.
 	heldOffUntil time.Time
 	releasedAt   time.Time
+	// autoReleased is set when the guard released the reserve in an
+	// emergency. It is taken again once the disk is healthy.
+	autoReleased bool
 }
 
 // ReleaseHoldOff is how long a manually released reserve stays released.
@@ -289,59 +320,97 @@ func (g *Guard) reserveFS(st *Status) *FS {
 	return nil
 }
 
-// manageReserve releases the reserve file in an emergency and recreates it
-// once the filesystem has room for it and still stays below warning.
+// manageReserve keeps the reserve at its target. It grows the reserve
+// whenever the disk has room for it above the critical threshold (in steps,
+// so a fuller disk holds part of it until space frees up), releases it all
+// in an emergency, and after an emergency takes it again only once the disk
+// is healthy, so it does not immediately fill the space it just freed.
 func (g *Guard) manageReserve(st *Status) {
 	if g.ReservePath == "" || g.Policy.ReserveBytes <= 0 {
 		return
 	}
-	held := false
-	if fi, err := os.Stat(g.ReservePath); err == nil && fi.Mode().IsRegular() {
-		held = true
-	}
+	size := reserveSize(g.ReservePath)
 	fs := g.reserveFS(st)
-	switch {
-	case fs == nil:
-	case held && fs.Level == LevelEmergency:
-		if err := os.Remove(g.ReservePath); err == nil {
-			held = false
-			g.releasedAt = g.clock()
-			st.ReserveNote = fmt.Sprintf("Released the %s emergency reserve because %s is nearly full.", humanBytes(g.Policy.ReserveBytes), fs.Mount)
-		}
-	case !held && g.clock().Before(g.heldOffUntil):
-		st.ReserveNote = "The emergency reserve was released by an operator and is recreated after " + g.heldOffUntil.Format(time.RFC3339) + "."
-	case !held && fs.Level == LevelOK && g.Policy.Evaluate(fs.TotalBytes, fs.FreeBytes-g.Policy.ReserveBytes) == LevelOK:
-		if err := g.createReserve(); err == nil {
-			held = true
-		} else if !errors.Is(err, errReserveUnsupported) {
-			st.ReserveNote = "The emergency reserve could not be created: " + err.Error()
-		} else {
-			st.ReserveNote = "This filesystem cannot preallocate space, so no emergency reserve is kept."
+	now := g.clock()
+	if fs != nil {
+		target := g.Policy.ReserveTarget(fs.TotalBytes)
+		st.ReserveTargetBytes = target
+		switch {
+		case size > 0 && fs.Level == LevelEmergency:
+			if err := os.Remove(g.ReservePath); err == nil {
+				st.ReserveNote = fmt.Sprintf("Released the %s reserve because %s is nearly full. Free up space; it is reserved again once the disk is healthy.", humanBytes(size), fs.Mount)
+				g.adjustFree(fs, size)
+				size = 0
+				g.releasedAt = now
+				g.autoReleased = true
+			}
+		case size >= target:
+		case now.Before(g.heldOffUntil):
+			st.ReserveNote = "The reserve was released by an operator and is taken again after " + g.heldOffUntil.Format(time.RFC3339) + "."
+		case g.autoReleased && fs.Level != LevelOK:
+			st.ReserveNote = "The reserve was released because the disk filled up. It is reserved again once the disk is healthy."
+		default:
+			_, critical, _ := g.Policy.Thresholds(fs.TotalBytes)
+			want := target
+			if room := fs.FreeBytes - critical - reserveStep; size+room < want {
+				want = size + room
+			}
+			if want-size >= reserveStep || (want == target && want > size) {
+				switch err := g.growReserve(want); {
+				case err == nil:
+					g.adjustFree(fs, size-want)
+					size = want
+					g.autoReleased = false
+				case errors.Is(err, errReserveUnsupported):
+					st.ReserveNote = "This filesystem cannot preallocate space, so no reserve is kept."
+				default:
+					st.ReserveNote = "The reserve could not be extended: " + err.Error()
+				}
+			}
+			if size < target && st.ReserveNote == "" {
+				st.ReserveNote = fmt.Sprintf("Holding %s of the %s reserve. It grows as space frees up.", humanBytes(size), humanBytes(target))
+			}
 		}
 	}
-	st.ReserveHeld = held
+	st.ReserveHeld = size > 0
+	st.ReserveBytes = size
 	if !g.releasedAt.IsZero() {
 		at := g.releasedAt
 		st.ReserveReleasedAt = &at
 	}
 }
 
+// adjustFree moves delta bytes into (positive) or out of a filesystem's
+// free space after the reserve changed, and re-judges it.
+func (g *Guard) adjustFree(fs *FS, delta int64) {
+	fs.FreeBytes += delta
+	if fs.TotalBytes > 0 {
+		fs.UsedPercent = 100 * float64(fs.TotalBytes-fs.FreeBytes) / float64(fs.TotalBytes)
+	}
+	fs.Level = g.Policy.Evaluate(fs.TotalBytes, fs.FreeBytes)
+}
+
+func reserveSize(path string) int64 {
+	fi, err := os.Stat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return 0
+	}
+	return fi.Size()
+}
+
 var errReserveUnsupported = errors.New("preallocation is not supported")
 
-func (g *Guard) createReserve() error {
+// growReserve makes the reserve file hold size bytes. Existing blocks are
+// kept, so growing never needs the space twice.
+func (g *Guard) growReserve(size int64) error {
 	if err := os.MkdirAll(filepath.Dir(g.ReservePath), 0o700); err != nil {
 		return err
 	}
-	tmp := g.ReservePath + ".tmp"
 	alloc := g.allocate
 	if alloc == nil {
 		alloc = preallocate
 	}
-	if err := alloc(tmp, g.Policy.ReserveBytes); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, g.ReservePath)
+	return alloc(g.ReservePath, size)
 }
 
 // ReleaseReserve deletes the reserve file now, for an operator who needs
@@ -356,6 +425,7 @@ func (g *Guard) ReleaseReserve() (Status, error) {
 	g.refreshMu.Lock()
 	g.heldOffUntil = g.clock().Add(ReleaseHoldOff)
 	g.releasedAt = g.clock()
+	g.autoReleased = false
 	g.refreshMu.Unlock()
 	st := g.Refresh()
 	return st, nil
