@@ -1,3 +1,47 @@
+nodal (1.1.4) UNRELEASED; urgency=medium
+
+  * Backups: retention is applied the Proxmox way (daily, weekly, monthly,
+    newest always kept) and actually frees space. Garbage collection
+    compacts half-empty packs, expired cloud copies are removed from R2,
+    stale temporary and restore folders are cleaned up, and the backup
+    repository can be moved to another pool from Backups, Storage. Cloud
+    targets have their own retention, backups can be protected, VM disks
+    on Directory pools go through the deduplicating engine, and a cloud
+    target can be wiped to start fresh after typing its name.
+  * Updates: Apply runs a real preflight first (disk space, package locks,
+    unfinished installs, held packages, repository reachable, a newer
+    version available), pauses running backups and runs them again
+    afterwards, saves a checkpoint with a working database dump and
+    records every package version. Rollback moves all five packages back
+    together and restores the database only when the update changed its
+    schema. Failed checkpoints no longer pile up on the root disk.
+  * 50 GiB of the root disk is permanently reserved for No-dal (at most 10%
+    of a small disk) and released automatically if the disk nearly fills,
+    so the control plane stays reachable without SSH.
+  * The agent no longer runs out of file descriptors ("too many open
+    files"): Docker inventory reuses one connection pool per socket.
+  * Errors are shown as a plain sentence with the raw error behind a
+    Technical details toggle. An expired session returns to sign-in.
+  * Terminal: the shell is told the window size on every connect, so
+    recalling history with the arrow keys no longer garbles the screen.
+  * Growing a running container's disk works (resize2fs is pointed at the
+    loop device). CPU and memory a running container cannot take are saved
+    and applied on its next restart instead of failing.
+  * System containers can be moved to another network from Edit.
+  * Stale hosts, stacks (optionally with their containers), snapshots and
+    Docker containers can be deleted. The host No-dal runs on stays
+    protected.
+  * Game servers check that Docker is installed before create and start.
+    The catalogue is a grid of square cover art with a category sidebar.
+  * Provisioning API for an outside hosting platform: idempotent create,
+    suspend, resume, replace and destroy of game servers and containers by
+    the platform's own service id. See docs/aspec-hosting-integration.md.
+  * Tasks are part of the Audit Log, which can be filtered by source and
+    cleared before a date or entirely (admin only, the clear is audited).
+  * Add Features is a searchable list of compact feature rows.
+
+ -- No-dal <packaging@no-dal.com>  Sat, 10 Oct 2026 08:40:00 +1100
+
 nodal (1.1.4) trixie; urgency=medium
 
   * Game servers run in the root agent. Creating a game server failed with
