@@ -1,3 +1,22 @@
+nodal (1.2.0) UNRELEASED; urgency=medium
+
+  * Moving the backup repository to a ZFS pool works. A ZFS pool's own
+    folder is not mounted (each volume is its own dataset), so the old path
+    was really on the root disk and was refused. The move now creates a
+    dedicated dataset (ndl-backup-repo, and ndl-backups for file targets)
+    and moves into it.
+  * A repository that already holds backups can be moved. It is copied in
+    the background with backups paused, checked (same files, sizes and
+    restore points) and only then used; the old folder is removed after
+    that. Backups, Storage shows the progress.
+  * Wiping a cloud target runs in the background. A dropped request no
+    longer cancels it half way.
+  * Single backups can be deleted, backups of deleted workloads can be
+    deleted in one step, and a backup target can be removed together with
+    its backups (for example test targets whose bucket is gone).
+
+ -- No-dal <packaging@no-dal.com>  Sat, 10 Oct 2026 10:30:00 +1100
+
 nodal (1.2.0) trixie; urgency=medium
 
   * Backups: retention is applied the Proxmox way (daily, weekly, monthly,
