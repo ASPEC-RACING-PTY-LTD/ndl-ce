@@ -220,19 +220,26 @@ func (s *Server) dockerContainerAction(w http.ResponseWriter, r *http.Request) {
 		action = strings.ToLower(strings.TrimSpace(r.PathValue("action")))
 	}
 	switch action {
-	case "start", "stop", "restart", "pull", "recreate", "update":
+	case "start", "stop", "restart", "pull", "recreate", "update", "remove":
 	default:
 		writeErr(w, http.StatusBadRequest, "unknown docker action")
 		return
 	}
 	need := rbac.ComputeLifecycle
+	if action == "remove" {
+		need = rbac.ComputeDelete
+		if strings.TrimSpace(r.Header.Get(confirmHeader)) != "remove" {
+			writeErr(w, http.StatusConflict, "removing a container requires X-Nodal-Confirm: remove")
+			return
+		}
+	}
 	if action == "start" {
 		need = rbac.ComputeStart
 	}
 	if action == "stop" {
 		need = rbac.ComputeStop
 	}
-	if !rbac.Authorize(p.Grants, need) && !rbac.Authorize(p.Grants, rbac.ComputeLifecycle) {
+	if !rbac.Authorize(p.Grants, need) && (action == "remove" || !rbac.Authorize(p.Grants, rbac.ComputeLifecycle)) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}

@@ -46,6 +46,7 @@ type engineAPI interface {
 	pull(ctx context.Context, image string) error
 	eventsSince(ctx context.Context, since, until time.Time) ([]dockerEvent, error)
 	recreate(ctx context.Context, id string) error
+	remove(ctx context.Context, id string) error
 }
 
 type updateNote struct {
@@ -615,6 +616,8 @@ func (e *Engine) Action(ctx context.Context, req ActionRequest, hints []MachineH
 		opErr = cli.pull(ctx, ins.Config.Image)
 	case "recreate", "update":
 		opErr = cli.recreate(ctx, containerID)
+	case "remove":
+		opErr = cli.remove(ctx, containerID)
 	default:
 		return ActionResult{}, fmt.Errorf("unknown docker action %s", action)
 	}

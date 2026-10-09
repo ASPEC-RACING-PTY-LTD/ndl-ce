@@ -135,6 +135,26 @@ func (s *Server) deleteStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	// With ?delete_workloads=true the containers the stack created are
+	// deleted too; otherwise they stay as standalone workloads.
+	if r.URL.Query().Get("delete_workloads") == "true" {
+		members, _ := s.Store.ListStackMembers(r.Context(), p.User.ClusterID, id)
+		for _, m := range members {
+			if strings.TrimSpace(m.WorkloadID) == "" {
+				continue
+			}
+			if wl, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, m.WorkloadID); wl == nil {
+				continue
+			}
+			values := map[string]string{"id": m.WorkloadID}
+			_, _ = s.delegate(r, http.MethodPost, "/workloads/"+m.WorkloadID+"/stop", nil, values, "", s.lifecycleWorkload("stop"))
+			if code, body := s.delegate(r, http.MethodPost, "/workloads/"+m.WorkloadID+"/delete", nil, values, "delete", s.lifecycleWorkload("delete")); code >= 300 && code != http.StatusNotFound {
+				msg, _ := body["error"].(string)
+				writeErr(w, code, "could not delete the stack's workload "+m.ServiceName+": "+msg)
+				return
+			}
+		}
+	}
 	if err := s.Store.DeleteStack(r.Context(), p.User.ClusterID, id); err != nil {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return

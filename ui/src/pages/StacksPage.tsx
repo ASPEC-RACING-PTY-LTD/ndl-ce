@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
-import { applyStack, getStack, importStack, listPools, listStacks, patchStackMember, type Stack, type StackMember } from "../api/client";
+import {
+  applyStack,
+  deleteStack,
+  getStack,
+  importStack,
+  listPools,
+  listStacks,
+  patchStackMember,
+  renameStack,
+  type Stack,
+  type StackMember,
+} from "../api/client";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { StoragePool } from "../api/phase3";
 import { Link } from "../components/Link";
 import { honestStatus } from "../format";
@@ -97,13 +109,32 @@ volumes:
             <p>Import a compose file to create editable stack members. Apply turns each member into an OCI workload.</p>
           </div>
         ) : (
-          <ul className="plain-list">
-            {items.map((s) => (
-              <li key={s.id}>
-                <Link href={`/stacks/${s.id}`}>{s.name}</Link> {honestStatus(s.status)}
-              </li>
-            ))}
-          </ul>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Members</th>
+                  <th className="col-tools" />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      <Link href={`/stacks/${s.id}`}>{s.name}</Link>
+                    </td>
+                    <td>{honestStatus(s.status)}</td>
+                    <td className="num">{s.members?.length ?? ""}</td>
+                    <td className="col-tools">
+                      {mutate ? <StackDeleteButton stack={s} onDeleted={() => void refresh()} onError={setError} /> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </article>
       {mutate ? (
@@ -146,6 +177,60 @@ volumes:
   );
 }
 
+/** Deletes a stack after confirmation, optionally with its containers. */
+function StackDeleteButton({
+  stack,
+  onDeleted,
+  onError,
+  label = "Delete",
+}: {
+  stack: Stack;
+  onDeleted: () => void;
+  onError: (msg: string) => void;
+  label?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [withWorkloads, setWithWorkloads] = useState(true);
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-sm btn-ghost btn-danger-text"
+        aria-label={`Delete stack ${stack.name}`}
+        disabled={busy}
+        onClick={() => setOpen(true)}
+      >
+        {label}
+      </button>
+      <ConfirmDialog
+        open={open}
+        title={`Delete stack ${stack.name}`}
+        confirmLabel="Delete"
+        danger
+        confirmDisabled={busy}
+        onClose={() => setOpen(false)}
+        onConfirm={() => {
+          setBusy(true);
+          deleteStack(stack.id, withWorkloads)
+            .then(() => {
+              setOpen(false);
+              onDeleted();
+            })
+            .catch((err) => onError(err instanceof Error ? err.message : "Delete failed"))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <p>This removes the stack definition. This cannot be undone.</p>
+        <label className="check-row">
+          <input type="checkbox" checked={withWorkloads} onChange={(e) => setWithWorkloads(e.target.checked)} />
+          <span>Also delete the containers this stack created, and their data</span>
+        </label>
+      </ConfirmDialog>
+    </>
+  );
+}
+
 export function StackDetailPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
@@ -156,6 +241,21 @@ export function StackDetailPage() {
   const [stack, setStack] = useState<Stack | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  async function onRename() {
+    setBusy(true);
+    setError(null);
+    try {
+      setStack(await renameStack(id, newName.trim()));
+      setRenaming(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -215,8 +315,35 @@ export function StackDetailPage() {
           <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void onApply()}>
             Apply stack
           </button>
+          <button
+            className="btn"
+            type="button"
+            disabled={busy || !stack}
+            onClick={() => {
+              setNewName(stack?.name ?? "");
+              setRenaming(true);
+            }}
+          >
+            Rename
+          </button>
+          {stack ? <StackDeleteButton stack={stack} label="Delete stack" onDeleted={() => navigate("/stacks")} onError={setError} /> : null}
         </p>
       ) : null}
+      <ConfirmDialog
+        open={renaming}
+        title="Rename stack"
+        confirmLabel="Rename"
+        confirmDisabled={busy || !newName.trim()}
+        onClose={() => setRenaming(false)}
+        onConfirm={() => void onRename()}
+      >
+        <div className="field">
+          <label className="field-label" htmlFor="stack-rename">
+            Name
+          </label>
+          <input id="stack-rename" className="field-input" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        </div>
+      </ConfirmDialog>
       <article className="panel">
         <h2>Members</h2>
         {!stack?.members?.length ? (

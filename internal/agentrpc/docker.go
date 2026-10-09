@@ -63,7 +63,7 @@ func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*c
 	case "idle":
 		h.docker().Idle()
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "idle"}), nil
-	case "start", "stop", "restart", "pull", "recreate", "update", "logs":
+	case "start", "stop", "restart", "pull", "recreate", "update", "logs", "remove":
 		res, err := h.docker().Action(ctx, docker.ActionRequest{
 			Action: action, MachineID: m.GetMachineId(), ContainerID: m.GetContainerId(), Tail: spec.Tail,
 		}, spec.Hints)

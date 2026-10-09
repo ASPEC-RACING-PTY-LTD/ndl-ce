@@ -255,6 +255,11 @@ func (c *unixClient) stop(ctx context.Context, id string) error {
 	return c.json(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/stop?t=10", nil, nil)
 }
 
+// remove deletes a container, stopping it first. Named volumes are kept.
+func (c *unixClient) remove(ctx context.Context, id string) error {
+	return c.json(ctx, http.MethodDelete, "/containers/"+url.PathEscape(id)+"?force=true", nil, nil)
+}
+
 func (c *unixClient) restart(ctx context.Context, id string) error {
 	return c.json(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/restart?t=10", nil, nil)
 }

@@ -262,11 +262,16 @@ export async function getDocker(refresh = false): Promise<import("../generated/o
 export async function dockerContainerAction(
   machineId: string,
   containerId: string,
-  action: "start" | "stop" | "restart" | "pull" | "recreate" | "update",
+  action: "start" | "stop" | "restart" | "pull" | "recreate" | "update" | "remove",
 ): Promise<import("../generated/openapi").DockerActionResult> {
+  const headers = new Headers();
+  if (action === "remove") {
+    headers.set("X-Nodal-Confirm", "remove");
+  }
   return readJson(
     await request(`/docker/machines/${encodeURIComponent(machineId)}/containers/${encodeURIComponent(containerId)}/actions`, {
       method: "POST",
+      headers,
       body: JSON.stringify({ action }),
     }),
   );
@@ -1111,6 +1116,18 @@ export async function importStack(body: {
       body: JSON.stringify(body),
     }),
   );
+}
+
+export async function renameStack(id: string, name: string): Promise<Stack> {
+  return readJson(await request(`/stacks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name }) }));
+}
+
+/** deleteStack removes a stack; with deleteWorkloads its containers go too. */
+export async function deleteStack(id: string, deleteWorkloads: boolean): Promise<void> {
+  const res = await request(`/stacks/${encodeURIComponent(id)}${deleteWorkloads ? "?delete_workloads=true" : ""}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
 }
 
 export async function applyStack(id: string): Promise<Stack> {

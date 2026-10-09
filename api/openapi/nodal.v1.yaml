@@ -3939,7 +3939,7 @@ paths:
   /docker/machines/{machine_id}/containers/{container_id}/actions:
     post:
       operationId: dockerContainerAction
-      summary: Start, stop, restart, pull, or recreate a container
+      summary: Start, stop, restart, pull, recreate or remove a container. Remove requires X-Nodal-Confirm remove and keeps named volumes.
       parameters:
         - name: machine_id
           in: path
@@ -6121,6 +6121,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /snapshots/{id}:
+    delete:
+      operationId: deleteSnapshot
+      summary: Delete a snapshot. ZFS snapshots are destroyed; on a Directory pool only the newest overlay snapshot can be deleted and is merged back into the disk.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+        "409":
+          description: A newer snapshot sits on top
+        "422":
+          description: Not supported on this storage
   /snapshots/{id}/rollback:
     post:
       operationId: rollbackSnapshot
@@ -7538,13 +7555,18 @@ paths:
                 $ref: "#/components/schemas/Stack"
     delete:
       operationId: deleteStack
-      summary: Delete a stack (does not delete workloads)
+      summary: Delete a stack. Its workloads stay unless delete_workloads is true.
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: string
+        - name: delete_workloads
+          in: query
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
           description: Deleted
@@ -9841,6 +9863,7 @@ components:
             - pull
             - recreate
             - update
+            - remove
     DockerActionResult:
       type: object
       additionalProperties: false

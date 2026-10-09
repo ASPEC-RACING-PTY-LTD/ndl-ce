@@ -640,7 +640,7 @@ export interface DockerLogs {
 }
 
 export interface DockerActionRequest {
-  action: "start" | "stop" | "restart" | "pull" | "recreate" | "update";
+  action: "start" | "stop" | "restart" | "pull" | "recreate" | "update" | "remove";
 }
 
 export interface DockerActionResult {
@@ -3331,6 +3331,8 @@ export type KillLabQemuProtoPath = "/api/v1/lab/qemu-proto/kill";
 export type ListWorkloadSnapshotsPath = "/api/v1/workloads/{id}/snapshots";
 
 export type FlattenWorkloadSnapshotsPath = "/api/v1/workloads/{id}/snapshots/flatten";
+
+export type DeleteSnapshotPath = "/api/v1/snapshots/{id}";
 
 export type RollbackSnapshotPath = "/api/v1/snapshots/{id}/rollback";
 

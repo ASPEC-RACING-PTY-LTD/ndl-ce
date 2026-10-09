@@ -13,6 +13,7 @@ import { Field } from "../components/Field";
 import { formatWhen, honestStatus } from "../format";
 import { currentPath } from "../router";
 import { useSession } from "../session";
+import { DeleteButton } from "../components/DeleteButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 function workloadIDFromPath(): string {
@@ -249,9 +250,18 @@ export function SnapshotsPage() {
                       <td>{formatWhen(snap.created_at)}</td>
                       <td>
                         {mutate && supported ? (
-                          <button className="btn" type="button" disabled={busy} onClick={() => void onRollback(snap)}>
-                            Rollback
-                          </button>
+                          <span className="btn-row is-flush">
+                            <button className="btn" type="button" disabled={busy} onClick={() => void onRollback(snap)}>
+                              Rollback
+                            </button>
+                            <DeleteButton
+                              path={`/snapshots/${encodeURIComponent(snap.id)}`}
+                              name={snap.name}
+                              noun="snapshot"
+                              description="The workload keeps everything it has now; only this restore point goes. On a Directory pool only the newest snapshot can be deleted."
+                              onDeleted={reload}
+                            />
+                          </span>
                         ) : (
                           <span className="muted">None</span>
                         )}

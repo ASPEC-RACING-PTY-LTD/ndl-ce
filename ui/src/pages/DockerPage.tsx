@@ -83,7 +83,7 @@ function portText(c: DockerContainer): string {
 function containerMenu(
   c: DockerContainer,
   mutate: boolean,
-  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate") => void,
+  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate" | "remove") => void,
   onLogs: (c: DockerContainer) => void,
   onTerm: (c: DockerContainer) => void,
 ): ReactNode {
@@ -100,6 +100,7 @@ function containerMenu(
         { label: "Terminal", onClick: () => onTerm(c) },
         { label: "Pull image", onClick: () => onAction(c, "pull") },
         { label: "Recreate", onClick: () => onAction(c, "recreate") },
+        { label: "Remove", onClick: () => onAction(c, "remove") },
       ]}
     />
   );
@@ -195,7 +196,13 @@ export function DockerPage() {
 
   const selectedRow = (inv?.containers ?? []).find((c) => c.id === selected) ?? null;
 
-  async function runAction(c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate") {
+  async function runAction(c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate" | "remove") {
+    if (
+      action === "remove" &&
+      !window.confirm(`Remove container ${c.name || c.container_id}? It is stopped and deleted. Named volumes are kept.`)
+    ) {
+      return;
+    }
     setBusy(`${c.id}:${action}`);
     setError(null);
     try {
@@ -508,7 +515,7 @@ function MachineBlock({
   onSelect: (id: string) => void;
   mutate: boolean;
   busy: string | null;
-  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate") => void;
+  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate" | "remove") => void;
   onLogs: (c: DockerContainer) => void;
   onTerm: (c: DockerContainer) => void;
 }) {
@@ -619,7 +626,7 @@ function ProjectBlock({
   selected: string | null;
   onSelect: (id: string) => void;
   mutate: boolean;
-  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate") => void;
+  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate" | "remove") => void;
   onLogs: (c: DockerContainer) => void;
   onTerm: (c: DockerContainer) => void;
 }) {
@@ -704,7 +711,7 @@ function ContainerDetail({
   logs: string;
   mutate: boolean;
   busy: string | null;
-  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate") => void;
+  onAction: (c: DockerContainer, action: "start" | "stop" | "restart" | "pull" | "recreate" | "remove") => void;
   onLogs: (c: DockerContainer) => void;
   onTerm: (c: DockerContainer) => void;
   onClose: () => void;

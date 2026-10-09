@@ -447,6 +447,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/snapshots", s.createSnapshot)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/snapshots/flatten", s.flattenSnapshots)
 	mux.HandleFunc("POST /api/v1/snapshots/{id}/rollback", s.rollbackSnapshot)
+	mux.HandleFunc("DELETE /api/v1/snapshots/{id}", s.deleteSnapshot)
 	mux.HandleFunc("GET /api/v1/backups/targets", s.listBackupTargets)
 	mux.HandleFunc("POST /api/v1/backups/targets", s.createBackupTarget)
 	mux.HandleFunc("POST /api/v1/backups/targets/{id}/test", s.testBackupTarget)
