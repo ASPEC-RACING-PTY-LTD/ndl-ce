@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -391,6 +392,8 @@ type storageReport struct {
 	Retention   []map[string]any `json:"retention"`
 	Unmanaged   []map[string]any `json:"unmanaged_restore_points"`
 	OrphanedArt []map[string]any `json:"deleted_workload_backups"`
+	// Move is a running or recent repository move.
+	Move map[string]any `json:"repository_move,omitempty"`
 }
 
 // getBackupStorage reports where backup and workload storage goes, what
@@ -486,6 +489,7 @@ func (s *Server) getBackupStorage(w http.ResponseWriter, r *http.Request) {
 	if len(rep.Unmanaged) > 0 {
 		rep.Warnings = append(rep.Warnings, fmt.Sprintf("%d restore point(s) in the local repository have no backup record, so retention cannot remove them.", len(rep.Unmanaged)))
 	}
+	rep.Move = s.repoMove.status(s.now())
 	writeJSON(w, http.StatusOK, rep)
 }
 
@@ -587,14 +591,73 @@ func (s *Server) relocateBackupRepository(w http.ResponseWriter, r *http.Request
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
-	raw, _ := json.Marshal(backuphost.Request{Action: backuphost.ActionRelocate, Path: path})
-	res, err := s.Backup.CopyBackup(r.Context(), qemu.BackupV2Relocate, "", string(raw))
-	if err != nil {
-		writeErr(w, http.StatusConflict, err.Error())
+	if !s.repoMove.start(path, s.now()) {
+		writeErr(w, http.StatusConflict, "the backup repository is already being moved")
 		return
 	}
-	s.recordStorageEvent("relocate", true, "", "backup repository is now at "+res.Dest)
-	writeJSON(w, http.StatusOK, map[string]any{"root": res.Dest})
+	s.audit(r, p.User.ClusterID, p.User.ID, "backup.repository.move", "started", path)
+	// Moving a full repository copies every pack, which can take far longer
+	// than a request may stay open. It runs in the background with backups
+	// paused; the storage report shows its progress and result.
+	go s.moveRepository(path)
+	writeJSON(w, http.StatusAccepted, map[string]any{"moving": true, "to": path})
+}
+
+type repoMove struct {
+	mu      sync.Mutex
+	to      string
+	started time.Time
+	err     string
+	done    time.Time
+}
+
+func (m *repoMove) start(to string, at time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.to != "" && m.done.IsZero() {
+		return false
+	}
+	m.to, m.started, m.err, m.done = to, at, "", time.Time{}
+	return true
+}
+
+func (m *repoMove) finish(err string, at time.Time) {
+	m.mu.Lock()
+	m.err, m.done = err, at
+	m.mu.Unlock()
+}
+
+// status reports a running move, or one that finished in the last day.
+func (m *repoMove) status(now time.Time) map[string]any {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.to == "" || (!m.done.IsZero() && now.Sub(m.done) > 24*time.Hour) {
+		return nil
+	}
+	out := map[string]any{"to": m.to, "started_at": m.started.UTC().Format(time.RFC3339), "running": m.done.IsZero()}
+	if !m.done.IsZero() {
+		out["finished_at"] = m.done.UTC().Format(time.RFC3339)
+	}
+	if m.err != "" {
+		out["error"] = m.err
+	}
+	return out
+}
+
+func (s *Server) moveRepository(path string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Hour)
+	defer cancel()
+	s.suspendBackups("the backup repository is being moved", backupDrainWait)
+	defer s.resumeBackups()
+	raw, _ := json.Marshal(backuphost.Request{Action: backuphost.ActionRelocate, Path: path})
+	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2Relocate, "", string(raw))
+	if err != nil {
+		s.repoMove.finish(err.Error(), s.now())
+		s.recordStorageEvent("relocate", false, "", "the backup repository was not moved: "+err.Error())
+		return
+	}
+	s.repoMove.finish("", s.now())
+	s.recordStorageEvent("relocate", true, "", "backup repository is now at "+firstNonEmpty(res.Dest, path))
 }
 
 // staleTempPrefixes are the temporary staging directories control creates for

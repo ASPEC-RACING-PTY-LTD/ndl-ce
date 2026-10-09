@@ -116,6 +116,8 @@ func TestCreateLocalTargetOnPool(t *testing.T) {
 	seedPools(t, mem, cluster.ID)
 	fake := &expireBackup{}
 	s.Backup = fake
+	fz := &fakeZFS{}
+	s.ZFS = fz
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
@@ -135,6 +137,10 @@ func TestCreateLocalTargetOnPool(t *testing.T) {
 	code, out := post(`{"name":"Nightly Disk","kind":"local","pool_id":"pool-zfs"}`)
 	if code != http.StatusCreated || out["locator"] != "/var/lib/ndl/storage/zfs/123/backups/nightly-disk" {
 		t.Fatalf("create on pool: %d %v", code, out)
+	}
+	// A ZFS pool's own folder is not mounted: backups get their own dataset.
+	if len(fz.calls) == 0 || fz.calls[len(fz.calls)-1].Action != "ensure-dataset" || fz.calls[len(fz.calls)-1].VolumeID != "ndl-backups" {
+		t.Fatalf("a dedicated backup dataset must be prepared on a ZFS pool: %+v", fz.calls)
 	}
 	code, _ = post(`{"name":"bad","kind":"local","pool_id":"pool-lvm"}`)
 	if code < 400 {
@@ -252,7 +258,7 @@ func TestWipeTargetNeedsNameAndResetsRecords(t *testing.T) {
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 	wipe := func(name string, confirm bool) int {
-		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/backups/targets/"+targetID+"/wipe", strings.NewReader(`{"confirm_name":"`+name+`"}`))
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/backups/targets/"+targetID+"/wipe?wait=true", strings.NewReader(`{"confirm_name":"`+name+`"}`))
 		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 		if confirm {
 			req.Header.Set(confirmHeader, wipeTargetConfirm)

@@ -52,8 +52,10 @@ type Handler struct {
 	Games    *gameserver.LocalHost
 	GameRoot string
 	// Disk protects the host filesystems; nil disables the guard.
-	Disk          *diskguard.Guard
-	BackupHost    *backuphost.Host
+	Disk       *diskguard.Guard
+	BackupHost *backuphost.Host
+	// backupMoving is set while the repository is being copied elsewhere.
+	backupMoving  bool
 	ZFS           *storage.ZFSEngine
 	LVM           *storage.LVMEngine
 	Datastore     *storage.DatastoreEngine

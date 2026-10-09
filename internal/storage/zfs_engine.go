@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -146,6 +147,8 @@ func (e ZFSEngine) Apply(ctx context.Context, op ZFSOp) (ZFSResult, error) {
 		}
 		res.Status = StatusAvailable
 		return res, nil
+	case "ensure-dataset":
+		return e.ensureDataset(ctx, op)
 	case "destroy-snapshot":
 		ds, err := DatasetName(op.Name, op.VolumeID)
 		if err != nil {
@@ -382,6 +385,63 @@ func (e ZFSEngine) sendTo(ctx context.Context, argv []string, dest string) error
 		return err
 	}
 	return os.WriteFile(dest, []byte(out), 0o600)
+}
+
+// BackupDatasets are the fixed datasets No-dal keeps backup data in on a
+// ZFS pool: the deduplicating repository and file-copy targets.
+var BackupDatasets = map[string]bool{"ndl-backup-repo": true, "ndl-backups": true}
+
+// ensureDataset makes sure pool/<VolumeID> exists as its own filesystem,
+// mounted at DestPath, and returns the mount in BackendRef. Pools are
+// imported without mounting their root dataset, so a folder under the pool
+// directory is otherwise on the root disk. An existing dataset is reused.
+func (e ZFSEngine) ensureDataset(ctx context.Context, op ZFSOp) (ZFSResult, error) {
+	if !BackupDatasets[op.VolumeID] {
+		return ZFSResult{}, fmt.Errorf("dataset %q is not a No-dal backup dataset", op.VolumeID)
+	}
+	ds, err := DatasetName(op.Name, op.VolumeID)
+	if err != nil {
+		return ZFSResult{}, err
+	}
+	mount := filepath.Clean(strings.TrimSpace(op.DestPath))
+	if !strings.HasPrefix(mount, ZFSMountRoot+"/") || strings.Contains(op.DestPath, "..") {
+		return ZFSResult{}, fmt.Errorf("dataset mount must be under the ZFS storage root")
+	}
+	res := ZFSResult{PoolID: op.PoolID, Name: op.Name, Dataset: ds}
+	if e.SkipHostCmds {
+		res.Status, res.BackendRef = StatusAvailable, mount
+		return res, nil
+	}
+	pool, _, _ := strings.Cut(ds, "/")
+	// An imported pool has an altroot: mountpoint values are relative to it.
+	prop := mount
+	if out, err := e.output(ctx, []string{ZPoolBin, "get", "-H", "-o", "value", "altroot", pool}); err == nil {
+		if alt := strings.TrimSpace(out); alt != "" && alt != "-" && strings.HasPrefix(mount, strings.TrimSuffix(alt, "/")+"/") {
+			prop = "/" + strings.TrimPrefix(strings.TrimPrefix(mount, strings.TrimSuffix(alt, "/")), "/")
+		}
+	}
+	if _, err := e.output(ctx, []string{ZFSBin, "list", "-H", "-o", "name", ds}); err != nil {
+		argv, aerr := ZFSCreateDatasetArgv(ds, prop, 0)
+		if aerr != nil {
+			argv = []string{ZFSBin, "create", "-o", "mountpoint=" + prop, ds}
+		}
+		if err := e.exec(ctx, argv); err != nil {
+			res.Status, res.Reason = StatusFailed, err.Error()
+			return res, nil
+		}
+	}
+	_, _ = e.output(ctx, []string{ZFSBin, "mount", ds})
+	got, err := e.output(ctx, []string{ZFSBin, "get", "-H", "-o", "value", "mountpoint", ds})
+	if err != nil {
+		res.Status, res.Reason = StatusFailed, err.Error()
+		return res, nil
+	}
+	if mounted, err := e.output(ctx, []string{ZFSBin, "get", "-H", "-o", "value", "mounted", ds}); err != nil || strings.TrimSpace(mounted) != "yes" {
+		res.Status, res.Reason = StatusFailed, "the backup dataset "+ds+" is not mounted"
+		return res, nil
+	}
+	res.Status, res.BackendRef = StatusAvailable, strings.TrimSpace(got)
+	return res, nil
 }
 
 func (e ZFSEngine) exec(ctx context.Context, argv []string) error {

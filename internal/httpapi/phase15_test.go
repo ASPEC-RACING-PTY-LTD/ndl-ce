@@ -55,7 +55,7 @@ func (f *fakeZFS) ZFSPool(_ context.Context, op storage.ZFSOp) (storage.ZFSResul
 	case "snapshot", "rollback":
 		res.Dataset = op.Name + "/" + op.VolumeID
 		res.BackendRef = res.Dataset + "@" + op.Snapshot
-	case "send":
+	case "send", "ensure-dataset":
 		res.BackendRef = op.DestPath
 	}
 	return res, nil

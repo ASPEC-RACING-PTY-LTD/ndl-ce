@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/backup"
@@ -55,12 +57,57 @@ func (s *Server) wipeBackupTarget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "backup agent is unavailable")
 		return
 	}
-	raw, _ := json.Marshal(backuphost.Request{Action: backuphost.ActionWipeRemote, Target: s.v2TargetSpec(ctx, *tgt)})
-	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2WipeRemote, "", string(raw))
+	spec := s.v2TargetSpec(ctx, *tgt)
+	if r.URL.Query().Get("wait") != "true" {
+		// Deleting thousands of objects outlasts a proxied request, and a
+		// dropped request used to cancel the wipe half way. It runs on its
+		// own; the result shows in the storage report's recent activity.
+		s.audit(r, clusterID, p.User.ID, "backup.target.wipe", "started", tgt.ID)
+		target := *tgt
+		go func() {
+			bg, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
+			defer cancel()
+			out, err := s.wipeRemote(bg, clusterID, target, spec)
+			if err != nil {
+				s.recordStorageEvent("wipe", false, "", target.Name+": "+err.Error())
+				return
+			}
+			s.recordStorageEvent("wipe", true, "", wipeMessage(target.Name, out))
+		}()
+		writeJSON(w, http.StatusAccepted, map[string]any{"target_id": tgt.ID, "started": true})
+		return
+	}
+	out, err := s.wipeRemote(context.WithoutCancel(ctx), clusterID, *tgt, spec)
 	if err != nil {
 		s.recordStorageEvent("wipe", false, "", tgt.Name+": "+err.Error())
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	s.recordStorageEvent("wipe", true, "", wipeMessage(tgt.Name, out))
+	s.audit(r, clusterID, p.User.ID, "backup.target.wipe", "ok", tgt.ID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"target_id": tgt.ID, "objects_deleted": out.objects, "bytes_deleted": out.bytes,
+		"records_removed": out.removed, "records_local_only": out.localOnly,
+	})
+}
+
+type wipeOutcome struct {
+	objects, removed, localOnly int
+	bytes                       int64
+}
+
+func wipeMessage(name string, o wipeOutcome) string {
+	return fmt.Sprintf("%s wiped: %d object(s), %s deleted; %d backup record(s) removed, %d kept as local-only",
+		name, o.objects, humanBytes(o.bytes), o.removed, o.localOnly)
+}
+
+// wipeRemote deletes the target's objects through the agent, then fixes the
+// backup records: local copies become local-only, remote-only ones go.
+func (s *Server) wipeRemote(ctx context.Context, clusterID string, tgt appdb.BackupTarget, spec backuphost.TargetSpec) (wipeOutcome, error) {
+	raw, _ := json.Marshal(backuphost.Request{Action: backuphost.ActionWipeRemote, Target: spec})
+	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2WipeRemote, "", string(raw))
+	if err != nil {
+		return wipeOutcome{}, err
 	}
 	var out backuphost.Result
 	_ = json.Unmarshal([]byte(res.Extra), &out)
@@ -100,13 +147,6 @@ func (s *Server) wipeBackupTarget(w http.ResponseWriter, r *http.Request) {
 	if wipe == nil {
 		wipe = &backuphost.WipeResult{}
 	}
-	msg := fmt.Sprintf("%s wiped: %d object(s), %s deleted; %d backup record(s) removed, %d kept as local-only",
-		tgt.Name, wipe.ObjectsDeleted, humanBytes(wipe.BytesDeleted), removed, localOnly)
-	s.recordStorageEvent("wipe", true, "", msg)
-	s.audit(r, clusterID, p.User.ID, "backup.target.wipe", "ok", tgt.ID)
 	_ = s.Store.UpdateBackupTargetStatus(ctx, clusterID, tgt.ID, appdb.BackupUntested)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"target_id": tgt.ID, "objects_deleted": wipe.ObjectsDeleted, "bytes_deleted": wipe.BytesDeleted,
-		"records_removed": removed, "records_local_only": localOnly,
-	})
+	return wipeOutcome{objects: wipe.ObjectsDeleted, bytes: wipe.BytesDeleted, removed: removed, localOnly: localOnly}, nil
 }

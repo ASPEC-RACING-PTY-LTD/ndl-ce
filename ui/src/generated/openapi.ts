@@ -1699,6 +1699,7 @@ export interface BackupUnmanagedPoint {
 }
 
 export interface BackupStorageReport {
+  repository_move?: BackupRepositoryMove;
   workspace?: BackupWorkspace;
   pools?: BackupStoragePool[];
   warnings?: string[];
@@ -1769,6 +1770,16 @@ export interface BackupVerifyResponse {
 
 export interface BackupRelocateResponse {
   root?: string;
+  moving?: boolean;
+  to?: string;
+}
+
+export interface BackupRepositoryMove {
+  to?: string;
+  started_at?: string;
+  finished_at?: string;
+  running?: boolean;
+  error?: string;
 }
 
 export interface BackupRemoteUsage {
@@ -3368,6 +3379,10 @@ export type ExportBackupKeyPath = "/api/v1/backups/key/export";
 export type RunBackupVerifyPath = "/api/v1/backups/workspace/verify";
 
 export type ProtectBackupArtifactPath = "/api/v1/backups/artifacts/{id}/protect";
+
+export type DeleteBackupArtifactPath = "/api/v1/backups/artifacts/{id}";
+
+export type PurgeDeletedWorkloadBackupsPath = "/api/v1/backups/deleted-workloads/purge";
 
 export type WipeBackupTargetPath = "/api/v1/backups/targets/{id}/wipe";
 

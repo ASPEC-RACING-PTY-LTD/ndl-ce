@@ -6544,10 +6544,61 @@ paths:
           description: Forbidden
         "404":
           description: Backup not found
+  /backups/artifacts/{id}:
+    delete:
+      operationId: deleteBackupArtifact
+      summary: Delete one backup and its data. Requires X-Nodal-Confirm delete-backup. Protected backups are refused. forget=true also removes the record when the data cannot be reached.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: forget
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Deleted
+        "409":
+          description: Confirmation missing or the backup is protected
+  /backups/deleted-workloads/purge:
+    post:
+      operationId: purgeDeletedWorkloadBackups
+      summary: Delete every backup of workloads that no longer exist, or of the listed ones. Protected backups stay. Requires X-Nodal-Confirm delete-backup.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workload_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: What was deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+                  data_unreachable:
+                    type: integer
+                  protected_kept:
+                    type: integer
+        "409":
+          description: Confirmation missing
   /backups/targets/{id}/wipe:
     post:
       operationId: wipeBackupTarget
-      summary: Delete every No-dal backup object in a cloud target to start fresh. Requires X-Nodal-Confirm wipe-target and the exact target name.
+      summary: Delete every No-dal backup object in a cloud target to start fresh. Requires X-Nodal-Confirm wipe-target and the exact target name. Runs in the background (202) unless wait=true.
       parameters:
         - name: id
           in: path
@@ -12401,6 +12452,8 @@ components:
       additionalProperties: false
       required: [workspace, pools, warnings, events, retention, unmanaged_restore_points, deleted_workload_backups]
       properties:
+        repository_move:
+          $ref: "#/components/schemas/BackupRepositoryMove"
         workspace:
           $ref: "#/components/schemas/BackupWorkspace"
         pools:
@@ -12544,9 +12597,27 @@ components:
     BackupRelocateResponse:
       type: object
       additionalProperties: false
-      required: [root]
       properties:
         root:
+          type: string
+        moving:
+          type: boolean
+          description: The move runs in the background; the storage report shows repository_move.
+        to:
+          type: string
+    BackupRepositoryMove:
+      type: object
+      additionalProperties: false
+      properties:
+        to:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        running:
+          type: boolean
+        error:
           type: string
     BackupRemoteUsage:
       type: object

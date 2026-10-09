@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   getBackupStorage: vi.fn(),
   getBackupTargetUsage: vi.fn(),
   listBackupLocations: vi.fn(),
+  purgeDeletedWorkloadBackups: vi.fn(),
   relocateBackupRepository: vi.fn(),
   runBackupMaintenance: vi.fn(),
   runBackupVerify: vi.fn(),
@@ -93,7 +94,7 @@ describe("BackupStoragePanel", () => {
         { pool_id: "p2", name: "storage", backend_type: "zfs", usable: true, root_filesystem: false, recommended: true, repo_path: "/tank/backup-repo", usable_bytes: 3700 * GIB },
       ],
     });
-    api.relocateBackupRepository.mockResolvedValue({ root: "/tank/backup-repo" });
+    api.relocateBackupRepository.mockResolvedValue({ moving: true, to: "/tank/backup-repo" });
     render(<BackupStoragePanel mutate targets={[]} />);
     fireEvent.click(await screen.findByRole("button", { name: /move repository/i }));
     const zfs = await screen.findByRole("radio", { name: /storage \(zfs\)/i });
@@ -102,7 +103,7 @@ describe("BackupStoragePanel", () => {
     expect(screen.getByRole("checkbox", { name: /allow the host root disk/i })).not.toBeChecked();
     fireEvent.click(zfs);
     fireEvent.click(screen.getByRole("button", { name: /^move$/i }));
-    expect(await screen.findByText(/repository is now at \/tank\/backup-repo/i)).toBeVisible();
+    expect(await screen.findByText(/moving the backup repository to \/tank\/backup-repo/i)).toBeVisible();
     expect(api.relocateBackupRepository).toHaveBeenCalledWith({ pool_id: "p2", path: undefined, allow_root_filesystem: undefined });
   });
 
@@ -126,7 +127,7 @@ describe("BackupStoragePanel", () => {
 
   it("wipes a cloud target only after its name is typed", async () => {
     api.getBackupStorage.mockResolvedValue(report);
-    api.wipeBackupTarget.mockResolvedValue({ objects_deleted: 900, bytes_deleted: 60 * GIB, records_local_only: 22 });
+    api.wipeBackupTarget.mockResolvedValue({ target_id: "r2", started: true });
     render(<BackupStoragePanel mutate targets={[r2]} />);
     fireEvent.click(await screen.findByRole("button", { name: /wipe r2/i }));
     const confirm = screen.getByRole("button", { name: /^wipe$/i });
@@ -135,7 +136,23 @@ describe("BackupStoragePanel", () => {
     expect(confirm).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/type r2 to confirm/i), { target: { value: "R2" } });
     fireEvent.click(confirm);
-    expect(await screen.findByText(/R2 wiped: 900 object\(s\), 60\.0 GiB deleted/)).toBeVisible();
+    expect(await screen.findByText(/wiping R2 in the background/i)).toBeVisible();
     expect(api.wipeBackupTarget).toHaveBeenCalledWith("r2", "R2");
+  });
+  it("deletes the backups of deleted workloads after confirming", async () => {
+    api.getBackupStorage.mockResolvedValue(report);
+    api.purgeDeletedWorkloadBackups.mockResolvedValue({ deleted: 4, data_unreachable: 1 });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<BackupStoragePanel mutate targets={[]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /delete backups of deleted workloads/i }));
+    expect(confirm).toHaveBeenCalled();
+    expect(await screen.findByText(/deleted 4 backup\(s\) of deleted workloads/i)).toBeVisible();
+    confirm.mockRestore();
+  });
+
+  it("shows a repository move while it runs", async () => {
+    api.getBackupStorage.mockResolvedValue({ ...report, repository_move: { to: "/tank/backup-repo", running: true } });
+    render(<BackupStoragePanel mutate={false} targets={[]} />);
+    expect(await screen.findByText(/backups are paused until it finishes/i)).toBeVisible();
   });
 });

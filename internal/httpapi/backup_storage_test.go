@@ -311,3 +311,57 @@ func TestSweepStaleTempDirsOnlyRemovesOldControlStaging(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteBackupsOfDeletedWorkloadsAndTestTargets(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	fake := &expireBackup{}
+	s.Backup = fake
+	ctx := context.Background()
+	tgt := appdb.BackupTarget{ID: uuid.NewString(), ClusterID: cluster.ID, Name: "cert-test", Kind: "local", Locator: "/var/lib/ndl/test-target", Status: appdb.BackupAvailable}
+	if err := mem.CreateBackupTarget(ctx, tgt, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(workloadID, targetID string) appdb.BackupArtifact {
+		run := appdb.BackupRun{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: workloadID, TargetID: targetID, Status: appdb.BackupSucceeded, StartedAt: time.Now().UTC()}
+		_ = mem.CreateBackupRun(ctx, run)
+		a := appdb.BackupArtifact{ID: uuid.NewString(), ClusterID: cluster.ID, RunID: run.ID, WorkloadID: workloadID,
+			Format: backup.Format, Namespace: "ns-" + workloadID[:4], BackupID: uuid.NewString(), CreatedAt: time.Now().UTC()}
+		if err := mem.CreateBackupArtifact(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	gone := mk(uuid.NewString(), tgt.ID)
+	keepID := uuid.NewString()
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	if code, _ := provCall(t, ts, cookie, "DELETE", "/backups/targets/"+tgt.ID, "", ""); code < 400 {
+		t.Fatal("a target with backups is refused without delete_backups")
+	}
+	if code, _ := provCall(t, ts, cookie, "POST", "/backups/deleted-workloads/purge", "{}", ""); code != http.StatusConflict {
+		t.Fatalf("purge needs confirmation, got %d", code)
+	}
+	code, out := provCall(t, ts, cookie, "POST", "/backups/deleted-workloads/purge", "{}", deleteBackupConfirm)
+	if code != http.StatusOK || out["deleted"] != float64(1) {
+		t.Fatalf("purge %d %v", code, out)
+	}
+	if a, _ := mem.GetBackupArtifact(ctx, cluster.ID, gone.ID); a != nil {
+		t.Fatal("the deleted workload's backup must be gone")
+	}
+	if len(fake.expires) != 1 || fake.expires[0].BackupID != gone.BackupID {
+		t.Fatalf("its data must be expired in the repository: %+v", fake.expires)
+	}
+
+	// A test target goes in one step with its backups.
+	other := mk(keepID, tgt.ID)
+	_ = other
+	if code, out := provCall(t, ts, cookie, "DELETE", "/backups/targets/"+tgt.ID+"?delete_backups=true", "", deleteBackupConfirm); code >= 300 {
+		t.Fatalf("delete target with backups: %d %v", code, out)
+	}
+	if got, _ := mem.GetBackupTarget(ctx, cluster.ID, tgt.ID); got != nil {
+		t.Fatal("the target must be gone")
+	}
+}

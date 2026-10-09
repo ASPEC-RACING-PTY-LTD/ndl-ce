@@ -117,6 +117,7 @@ type Server struct {
 	updateCheckBusy atomic.Bool
 	updateMu        sync.Mutex
 	hold            backupHold
+	repoMove        repoMove
 	applyPreparing  atomic.Bool
 	updateStage     updateStage
 	updateStatus    updateStatusCache
@@ -472,6 +473,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/backups/key/export", s.exportBackupKey)
 	mux.HandleFunc("POST /api/v1/backups/workspace/verify", s.runBackupVerifyAPI)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/protect", s.protectBackupArtifact)
+	mux.HandleFunc("DELETE /api/v1/backups/artifacts/{id}", s.deleteBackupArtifact)
+	mux.HandleFunc("POST /api/v1/backups/deleted-workloads/purge", s.purgeDeletedWorkloadBackups)
 	mux.HandleFunc("POST /api/v1/backups/scope-preview", s.previewBackupScope)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore", s.restoreBackup)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/verify", s.verifyBackupArtifact)
@@ -543,7 +546,7 @@ func (s *Server) Handler() http.Handler {
 	// Deleting configurable resources (deletions.go).
 	mux.HandleFunc("DELETE /api/v1/storage/pools/{id}", s.deleteConfig(appdb.ConfigStoragePool, rbac.StoragePoolCreate, "storage.pool.delete", s.checkPoolUnused))
 	mux.HandleFunc("DELETE /api/v1/storage/volumes/{id}", s.deleteVolume)
-	mux.HandleFunc("DELETE /api/v1/backups/targets/{id}", s.deleteConfig(appdb.ConfigBackupTarget, rbac.BackupCreate, "backup.target.delete", s.checkBackupTargetUnused))
+	mux.HandleFunc("DELETE /api/v1/backups/targets/{id}", s.deleteBackupTarget(s.deleteConfig(appdb.ConfigBackupTarget, rbac.BackupCreate, "backup.target.delete", s.checkBackupTargetUnused)))
 	mux.HandleFunc("DELETE /api/v1/templates/{id}", s.deleteConfig(appdb.ConfigVMTemplate, rbac.ComputeCreate, "template.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/groups/{id}", s.deleteConfig(appdb.ConfigGroup, rbac.IdentityGroupManage, "group.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/alerts/{id}", s.deleteConfig(appdb.ConfigAlertRule, rbac.AlertManage, "alert.rule.delete", nil))

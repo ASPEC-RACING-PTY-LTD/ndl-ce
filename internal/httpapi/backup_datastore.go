@@ -161,7 +161,30 @@ func (s *Server) poolBackupPath(ctx context.Context, clusterID, poolID, name str
 	if !loc.Usable {
 		return "", errUnprocessable(loc.Reason)
 	}
-	return filepath.Join(loc.TargetPath, slugName(name)), nil
+	base := loc.TargetPath
+	if pool.BackendType == storage.BackendZFS {
+		if base, err = s.zfsBackupDataset(ctx, *pool, "ndl-backups", loc.TargetPath); err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(base, slugName(name)), nil
+}
+
+// zfsBackupDataset makes sure a ZFS pool has its own mounted dataset for
+// backup data and returns where it is mounted. A ZFS pool's own folder is not
+// mounted (each volume is its own dataset), so writing backups into it would
+// land on the root disk.
+func (s *Server) zfsBackupDataset(ctx context.Context, pool appdb.StoragePool, leaf, mount string) (string, error) {
+	res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
+		Action: "ensure-dataset", PoolID: pool.ID, Name: s.zfsPoolName(ctx, pool), VolumeID: leaf, DestPath: mount,
+	})
+	if err != nil {
+		return "", errUnavailable("the backup dataset on " + pool.Name + " could not be prepared: " + err.Error())
+	}
+	if res.Status != storage.StatusAvailable || strings.TrimSpace(res.BackendRef) == "" {
+		return "", errUnprocessable("the backup dataset on " + pool.Name + " could not be prepared: " + firstNonEmpty(res.Reason, "zfs did not report a mount"))
+	}
+	return filepath.Clean(res.BackendRef), nil
 }
 
 func slugName(name string) string {
@@ -203,6 +226,11 @@ func (s *Server) resolveRepoPath(ctx context.Context, clusterID string, req relo
 			return "", errUnprocessable(loc.Reason)
 		}
 		path = loc.RepoPath
+		if pool.BackendType == storage.BackendZFS {
+			if path, err = s.zfsBackupDataset(ctx, *pool, "ndl-backup-repo", loc.RepoPath); err != nil {
+				return "", err
+			}
+		}
 	}
 	if path == "" {
 		return "", errBadRequest("choose a storage pool or a path")

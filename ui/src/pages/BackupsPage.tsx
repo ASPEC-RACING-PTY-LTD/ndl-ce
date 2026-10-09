@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { LoadingState } from "../components/EmptyState";
 import { DeleteButton } from "../components/DeleteButton";
 import {
+  deleteBackupArtifact,
+  deleteBackupTargetWithBackups,
   ApiError,
   createBackupPolicy,
   createBackupTarget,
@@ -588,6 +590,42 @@ export function BackupsPage() {
     setCustomPreviewBusy(false);
     setCustomPreviewError(null);
     setDialog({ kind: "policy", policy });
+  }
+
+  async function onDeleteArtifact(art: BackupArtifact) {
+    if (!window.confirm(`Delete the backup from ${formatWhen(art.created_at)}? Its data is removed and it cannot be restored.`)) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteBackupArtifact(art.id, true);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not delete the backup");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRemoveTargetWithBackups(t: BackupTarget) {
+    if (
+      !window.confirm(
+        `Remove ${t.name} and delete every backup No-dal recorded on it? Backups whose data cannot be reached any more are dropped from the list too. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteBackupTargetWithBackups(t.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not remove the target");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onToggleProtect(art: BackupArtifact) {
@@ -1299,6 +1337,17 @@ export function BackupsPage() {
                             onDeleted={() => reload()}
                           />
                         ) : null}
+                        {mutate ? (
+                          <button
+                            className="btn btn-sm btn-ghost btn-danger-text"
+                            type="button"
+                            disabled={busy}
+                            aria-label={`Remove ${t.name} with its backups`}
+                            onClick={() => void onRemoveTargetWithBackups(t)}
+                          >
+                            Remove with backups
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                     <dl className="card-meta">
@@ -1460,6 +1509,17 @@ export function BackupsPage() {
                                   >
                                     {art.protected ? "Unprotect" : "Protect"}
                                   </button>
+                                  {!art.protected ? (
+                                    <button
+                                      className="btn btn-sm btn-ghost btn-danger-text"
+                                      type="button"
+                                      disabled={busy}
+                                      aria-label={`Delete backup from ${formatWhen(art.created_at)}`}
+                                      onClick={() => void onDeleteArtifact(art)}
+                                    >
+                                      Delete
+                                    </button>
+                                  ) : null}
                                 </div>
                               ) : (
                                 <span className="muted">None</span>

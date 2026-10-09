@@ -1644,6 +1644,33 @@ export async function relocateBackupRepository(
   return readJson(await request("/backups/workspace/relocate", { method: "POST", body: JSON.stringify(body) }));
 }
 
+/** deleteBackupArtifact deletes one backup; forget removes the record even when its data cannot be reached. */
+export async function deleteBackupArtifact(id: string, forget = false): Promise<void> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "delete-backup");
+  const res = await request(`/backups/artifacts/${encodeURIComponent(id)}${forget ? "?forget=true" : ""}`, { method: "DELETE", headers });
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+}
+
+/** purgeDeletedWorkloadBackups deletes every backup whose workload no longer exists. */
+export async function purgeDeletedWorkloadBackups(): Promise<{ deleted?: number; data_unreachable?: number; protected_kept?: number }> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "delete-backup");
+  return readJson(await request("/backups/deleted-workloads/purge", { method: "POST", headers, body: "{}" }));
+}
+
+/** deleteBackupTargetWithBackups deletes a target and every backup on it. */
+export async function deleteBackupTargetWithBackups(id: string): Promise<void> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "delete-backup");
+  const res = await request(`/backups/targets/${encodeURIComponent(id)}?delete_backups=true`, { method: "DELETE", headers });
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+}
+
 export async function listBackupLocations(): Promise<import("../generated/openapi").BackupLocationListResponse> {
   return readJson(await request("/backups/locations"));
 }

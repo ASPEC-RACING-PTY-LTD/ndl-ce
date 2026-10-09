@@ -6,6 +6,7 @@ import {
   listBackupLocations,
   relocateBackupRepository,
   runBackupMaintenance,
+  purgeDeletedWorkloadBackups,
   runBackupVerify,
   wipeBackupTarget,
 } from "../api/client";
@@ -188,6 +189,35 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
 
   useEffect(load, []);
 
+  // A repository move runs in the background; follow it until it finishes.
+  const moving = report?.repository_move?.running === true;
+  useEffect(() => {
+    if (!moving) {
+      return;
+    }
+    const timer = window.setInterval(load, 10_000);
+    return () => window.clearInterval(timer);
+  }, [moving]);
+
+  function onPurgeDeleted() {
+    if (!window.confirm("Delete every backup of workloads that no longer exist? Protected backups are kept. This cannot be undone.")) {
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    purgeDeletedWorkloadBackups()
+      .then((res) => {
+        setNotice(
+          `Deleted ${res.deleted ?? 0} backup(s) of deleted workloads.` +
+            (res.data_unreachable ? ` ${res.data_unreachable} had no reachable data and only their records were removed.` : "") +
+            " Space is reclaimed in the background.",
+        );
+        load();
+      })
+      .catch((err) => setError(errorText(err, "Could not delete those backups")))
+      .finally(() => setBusy(false));
+  }
+
   function onMaintenance() {
     setBusy(true);
     setNotice(null);
@@ -238,12 +268,11 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
     setBusy(true);
     setNotice(null);
     wipeBackupTarget(tgt.id, wipeName)
-      .then((res) => {
+      .then(() => {
         setNotice(
-          `${tgt.name} wiped: ${res.objects_deleted ?? 0} object(s), ${formatBytes(res.bytes_deleted ?? 0)} deleted. ` +
-            `${res.records_local_only ?? 0} backup(s) are kept on this host; the next backups upload fresh.`,
+          `Wiping ${tgt.name} in the background. Backups still on this host are kept and upload fresh with the next runs. The result shows under recent activity.`,
         );
-        setRemote((cur) => ({ ...cur, [tgt.id]: "Wiped" }));
+        setRemote((cur) => ({ ...cur, [tgt.id]: "Wiping" }));
         load();
       })
       .catch((err) => setError(errorText(err, "Could not wipe the target")))
@@ -274,7 +303,8 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
       allow_root_filesystem: relocate.allowRoot || undefined,
     })
       .then((res) => {
-        setNotice(`The backup repository is now at ${res.root}.`);
+        const to = (res as { to?: string; root?: string }).to ?? res.root ?? "the new location";
+        setNotice(`Moving the backup repository to ${to}. Backups are paused until the copy is checked and in use; this panel shows when it is done.`);
         load();
       })
       .catch((err) => setError(errorText(err, "Could not move the repository")))
@@ -490,6 +520,24 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
             </tbody>
           </table>
         </div>
+      ) : null}
+
+      {report?.repository_move ? (
+        <p className={"banner " + (report.repository_move.error ? "banner-error" : report.repository_move.running ? "" : "banner-ok")} role="status">
+          {report.repository_move.running
+            ? `Moving the backup repository to ${report.repository_move.to}. Backups are paused until it finishes.`
+            : report.repository_move.error
+              ? `The repository was not moved: ${report.repository_move.error}`
+              : `The backup repository moved to ${report.repository_move.to}.`}
+        </p>
+      ) : null}
+
+      {report && (report.deleted_workload_backups ?? []).length > 0 && mutate ? (
+        <p className="btn-row">
+          <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={onPurgeDeleted}>
+            Delete backups of deleted workloads
+          </button>
+        </p>
       ) : null}
 
       {report && ((report.unmanaged_restore_points ?? []).length > 0 || (report.deleted_workload_backups ?? []).length > 0) ? (
