@@ -918,7 +918,7 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
     fireEvent.click(screen.getByRole("checkbox", { name: /^cluster$/i }));
     expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
-    expect(within(clustering as HTMLElement).getByText(/^enabled\.$/i)).toBeVisible();
+    expect(within(clustering as HTMLElement).getByText(/^enabled$/i)).toBeVisible();
   });
 
   it("renders the kubernetes page with no kube process by default", async () => {

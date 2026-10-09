@@ -436,6 +436,99 @@ fieldset.field legend.field-label {
   overflow-wrap: anywhere;
 }
 
+/* Add Features: one compact row per feature. */
+.feature-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.feature-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.4rem 1rem;
+  align-items: center;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.feature-row.is-on {
+  border-left-color: var(--ok);
+}
+
+.feature-row h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.feature-summary {
+  margin: 0.15rem 0 0;
+  color: var(--fg-secondary);
+  font-size: 0.85rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.feature-state {
+  font-size: 0.78rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+}
+
+.feature-state.is-on {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.feature-actions {
+  display: flex;
+  gap: 0.3rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.feature-included {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.feature-included li {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.feature-templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .feature-row {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-actions {
+    justify-content: flex-start;
+  }
+}
+
 /* A small inline label, for example "Task" beside an Audit Log row. */
 .tag-inline {
   display: inline-block;
