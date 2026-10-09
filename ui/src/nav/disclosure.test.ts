@@ -73,17 +73,16 @@ describe("nav disclosure", () => {
     expect(seeded.customVisible).toEqual(["dashboard", "node"]);
   });
 
-  it("hides audit from non-admins", () => {
+  it("shows the Audit Log, which holds tasks, to everyone and IAM to admins", () => {
     const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "advanced" }));
     const viewer = visibleModules(prefs, {}, ["viewer"]).map((item) => item.id);
     const adminItems = visibleModules(prefs, {}, admin).map((item) => item.id);
-    expect(viewer).not.toContain("audit");
+    expect(viewer).toContain("audit");
     expect(viewer).not.toContain("iam");
     expect(viewer).not.toContain("add-features");
     expect(adminItems).toContain("audit");
     expect(adminItems).toContain("iam");
     expect(groupedModules(visibleModules(prefs, {}, admin)).some((g) => g.label === "Management")).toBe(true);
-    expect(groupedModules(visibleModules(prefs, {}, ["viewer"])).some((g) => g.label === "Management")).toBe(false);
     expect(groupedModules(visibleModules(prefs, {}, admin)).some((g) => g.label === "Settings")).toBe(false);
   });
 
@@ -93,7 +92,7 @@ describe("nav disclosure", () => {
     expect(items).toContain("iam");
     expect(items).toContain("add-features");
     expect(items).toContain("updates");
-    expect(items).not.toContain("audit");
+    expect(items).toContain("audit");
     expect(items).not.toContain("license");
   });
 

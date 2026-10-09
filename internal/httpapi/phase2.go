@@ -193,7 +193,11 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	ops, err := s.Store.ListOperations(r.Context(), p.User.ClusterID, 50)
+	limit := 50
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = min(v, 2000)
+	}
+	ops, err := s.Store.ListOperations(r.Context(), p.User.ClusterID, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

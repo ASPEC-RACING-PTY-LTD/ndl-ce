@@ -565,9 +565,23 @@ export async function createAlertChannel(body: Record<string, unknown>): Promise
   return readJson(await request("/alerts/channels", { method: "POST", body: JSON.stringify(body) }));
 }
 
-export async function listTasks(): Promise<import("./phase2").TaskItem[]> {
-  const body = await readJson<{ items: import("./phase2").TaskItem[] }>(await request("/tasks"));
+export async function listTasks(limit?: number): Promise<import("./phase2").TaskItem[]> {
+  const body = await readJson<{ items: import("./phase2").TaskItem[] }>(
+    await request(limit ? `/tasks?limit=${encodeURIComponent(String(limit))}` : "/tasks"),
+  );
   return body.items ?? [];
+}
+
+/** clearActivityLog deletes audit events and finished tasks before a time, or all of them. */
+export async function clearActivityLog(body: {
+  before?: string;
+  all?: boolean;
+  audit: boolean;
+  tasks: boolean;
+}): Promise<{ audit_deleted?: number; tasks_deleted?: number }> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "clear-log");
+  return readJson(await request("/audit/clear", { method: "POST", headers, body: JSON.stringify(body) }));
 }
 
 export async function listEvents(): Promise<import("./phase2").EventItem[]> {

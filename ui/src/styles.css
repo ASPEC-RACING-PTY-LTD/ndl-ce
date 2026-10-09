@@ -436,6 +436,18 @@ fieldset.field legend.field-label {
   overflow-wrap: anywhere;
 }
 
+/* A small inline label, for example "Task" beside an Audit Log row. */
+.tag-inline {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 0.3rem;
+  font-size: 0.72em;
+  vertical-align: middle;
+  color: var(--fg-secondary);
+  background: var(--bg-hover);
+}
+
 .banner-ok {
   background: var(--ok-bg);
   color: var(--ok);

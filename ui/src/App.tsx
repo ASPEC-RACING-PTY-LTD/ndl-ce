@@ -56,7 +56,6 @@ import { DockerPage } from "./pages/DockerPage";
 import { GameServersHomePage } from "./pages/GameServersHomePage";
 import { GameServerCreatePage } from "./pages/GameServerCreatePage";
 import { GameServerDetailPage } from "./pages/GameServerDetailPage";
-import { TasksPage } from "./pages/TasksPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
 import { isGameServersCreatePath, isGameServersHomePath, legacyGameServersRedirect } from "./nav/gameServers";
@@ -100,7 +99,8 @@ function matchPage(path: string) {
     return <MePage />;
   }
   if (path === "/tasks") {
-    return <TasksPage />;
+    // Tasks live in the Audit Log; this keeps old links working.
+    return <AuditPage initialSource="task" />;
   }
   if (path === "/events" || path === "/node/events") {
     return <EventsPage />;
@@ -275,11 +275,8 @@ function matchPage(path: string) {
     );
   }
   if (path === "/audit") {
-    return (
-      <RequireGrant permission="audit.read">
-        <AuditPage />
-      </RequireGrant>
-    );
+    // Without audit.read the page shows tasks only.
+    return <AuditPage />;
   }
   if (path === "/iam") {
     return <IAMHome />;

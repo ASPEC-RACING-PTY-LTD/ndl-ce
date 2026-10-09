@@ -492,6 +492,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/mfa/enroll", s.enrollMFA)
 	mux.HandleFunc("POST /api/v1/mfa/confirm", s.confirmMFA)
 	mux.HandleFunc("GET /api/v1/audit", s.listAudit)
+	mux.HandleFunc("POST /api/v1/audit/clear", s.clearActivityLog)
 	mux.HandleFunc("GET /api/v1/groups", s.listGroups)
 	mux.HandleFunc("POST /api/v1/groups", s.createGroup)
 	mux.HandleFunc("POST /api/v1/groups/{id}/members", s.addGroupMember)

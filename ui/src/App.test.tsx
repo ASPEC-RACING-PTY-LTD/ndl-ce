@@ -1628,7 +1628,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^audit log$/i })).toBeVisible();
-    expect(screen.getByText(/passwords, token values, and mfa secrets are never stored here/i)).toBeVisible();
+    expect(screen.getByText(/passwords, token values and mfa secrets are never stored/i)).toBeVisible();
     expect(await screen.findByText("auth.login")).toBeVisible();
     expect(screen.queryByText(/activate license/i)).not.toBeInTheDocument();
   });

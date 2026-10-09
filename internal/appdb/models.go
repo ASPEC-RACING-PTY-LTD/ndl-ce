@@ -54,6 +54,8 @@ type Store interface {
 	ListClusterNodes(ctx context.Context, clusterID string) ([]Node, error)
 	RevokeNode(ctx context.Context, clusterID, id string, at time.Time) error
 	DeleteNode(ctx context.Context, clusterID, id string) error
+	ClearAuditEvents(ctx context.Context, clusterID string, before time.Time) (int, error)
+	ClearOperations(ctx context.Context, clusterID string, before time.Time) (int, error)
 
 	GetProvisionedService(ctx context.Context, clusterID, externalID string) (*ProvisionedService, error)
 	UpsertProvisionedService(ctx context.Context, ps ProvisionedService) error

@@ -3414,6 +3414,8 @@ export type EnrollMfaPath = "/api/v1/mfa/enroll";
 
 export type ConfirmMfaPath = "/api/v1/mfa/confirm";
 
+export type ClearActivityLogPath = "/api/v1/audit/clear";
+
 export type ListAuditPath = "/api/v1/audit";
 
 export type ListGroupsPath = "/api/v1/groups";

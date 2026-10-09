@@ -129,7 +129,6 @@ export const NAV_MODULES: NavModule[] = [
     simple: false,
     capability: "clustering",
   },
-  { id: "tasks", href: "/tasks", label: "Tasks", group: "Operations", match: (p) => p === "/tasks", simple: true },
   {
     id: "events",
     href: "/events",
@@ -226,9 +225,8 @@ export const NAV_MODULES: NavModule[] = [
     href: "/audit",
     label: "Audit Log",
     group: "Management",
-    match: (p) => p === "/audit",
+    match: (p) => p === "/audit" || p === "/tasks",
     simple: true,
-    permission: "audit.read",
   },
   {
     id: "kubernetes",

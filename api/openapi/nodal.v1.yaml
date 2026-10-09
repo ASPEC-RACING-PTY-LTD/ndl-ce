@@ -582,7 +582,13 @@ paths:
   /tasks:
     get:
       operationId: listTasks
-      summary: Operations and tasks
+      summary: Operations and tasks, newest first
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
       responses:
         "200":
           description: Tasks
@@ -7091,6 +7097,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MFAStatus"
+  /audit/clear:
+    post:
+      operationId: clearActivityLog
+      summary: Delete audit events and finished tasks before a date, or all of them. Admin only; requires X-Nodal-Confirm clear-log. The clear is recorded as a new audit event.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                before:
+                  type: string
+                  description: RFC 3339 time; entries older than this are deleted.
+                all:
+                  type: boolean
+                audit:
+                  type: boolean
+                tasks:
+                  type: boolean
+      responses:
+        "200":
+          description: How much was deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  audit_deleted:
+                    type: integer
+                  tasks_deleted:
+                    type: integer
+        "403":
+          description: Admin only
+        "409":
+          description: Confirmation missing
   /audit:
     get:
       operationId: listAudit
