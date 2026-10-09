@@ -2,6 +2,7 @@ package lxc
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,6 +123,52 @@ func TestApplySpecLiveCgroupArgv(t *testing.T) {
 	}
 	if strings.Contains(joined, "systemctl start") || strings.Contains(joined, "systemctl restart") {
 		t.Fatalf("apply-spec must not start/restart: %v", ran)
+	}
+}
+
+func TestApplySpecSavesLimitsWhenTheRunningContainerRefusesThem(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	root := filepath.Join(e.dataDir(), "rootfs")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Create(context.Background(), Spec{
+		WorkloadID: id, Name: "ct", ImagePin: "alpine/3.21/amd64/default",
+		RootfsPath: root, CPUs: 1, MemoryBytes: 1 << 30, NoStart: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.LiveUnits = map[string]bool{id: true}
+	e.Run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name == BinLXCCgroup {
+			return nil, errors.New("exit status 1")
+		}
+		return nil, nil
+	}
+	res, err := e.ApplySpec(context.Background(), LifecycleRequest{WorkloadID: id, Action: ActionApplySpec, CPUs: 4, MemoryBytes: 4 << 30})
+	if err != nil {
+		t.Fatalf("a saved change must not be reported as failed: %v", err)
+	}
+	if res.LiveApplyError == "" || !res.RestartRequired {
+		t.Fatalf("the missed live apply must be reported for the next restart: %+v", res)
+	}
+	cfg, _ := os.ReadFile(e.configPath(id))
+	if !strings.Contains(string(cfg), "lxc.cgroup2.memory.max = 4294967296") {
+		t.Fatalf("new limits must be saved: %s", cfg)
+	}
+	var ran []string
+	e.Run = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		ran = append(ran, name)
+		return nil, nil
+	}
+	if _, err := e.ApplySpec(context.Background(), LifecycleRequest{WorkloadID: id, Action: ActionApplySpec, CPUs: 4, MemoryBytes: 4 << 30, Name: "ct"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range ran {
+		if r == BinLXCCgroup {
+			t.Fatal("unchanged limits must not be written to the running container again")
+		}
 	}
 }
 

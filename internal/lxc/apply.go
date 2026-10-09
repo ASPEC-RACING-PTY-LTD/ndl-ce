@@ -63,9 +63,13 @@ func (e *Engine) ApplySpec(ctx context.Context, req LifecycleRequest) (Result, e
 		}
 	}
 	running := e.AlreadyRunning(ctx, id)
-	if running {
+	liveErr := ""
+	if running && (applied.Spec.CPUs != spec.CPUs || applied.Spec.MemoryBytes != spec.MemoryBytes) {
+		// The new limits are saved in the config either way. If the running
+		// container cannot take them now, they apply at its next start,
+		// which is reported instead of failing a change that was saved.
 		if err := e.applyLiveCgroups(ctx, id, spec); err != nil {
-			return Result{}, err
+			liveErr = err.Error()
 		}
 	}
 	status := StatusStopped
@@ -75,7 +79,7 @@ func (e *Engine) ApplySpec(ctx context.Context, req LifecycleRequest) (Result, e
 	return Result{
 		WorkloadID: id, VolumeID: spec.VolumeID, RootfsPath: spec.RootfsPath,
 		MAC: spec.MAC, ImageVerified: applied.ImageVerified, ImageSHA256: applied.ImageSHA256,
-		Status: status,
+		Status: status, LiveApplyError: liveErr, RestartRequired: liveErr != "",
 	}, nil
 }
 

@@ -295,9 +295,18 @@ func TestDirectoryLiveGrowDoesNotUnmount(t *testing.T) {
 	if _, err := d.CreateVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
 		t.Fatal(err)
 	}
+	prev := mountedLoop
+	t.Cleanup(func() { mountedLoop = prev })
+	mountedLoop = func(string) string { return "" }
 	ran = nil
 	req.Size = 10 << 30
 	req.Live = true
+	if err := d.ResizeVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err == nil || !strings.Contains(err.Error(), "not mounted") {
+		t.Fatalf("an unmounted root cannot grow live: %v", err)
+	}
+	mountedLoop = func(string) string { return "/dev/loop7" }
+	ran = nil
+	req.Size = 12 << 30
 	if err := d.ResizeVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +317,11 @@ func TestDirectoryLiveGrowDoesNotUnmount(t *testing.T) {
 	if strings.Contains(joined, BinE2fsck) {
 		t.Fatalf("live grow must not fsck: %v", ran)
 	}
-	if !strings.Contains(joined, BinResize2fs) {
-		t.Fatalf("live grow should expand the mounted filesystem: %v", ran)
+	if !strings.Contains(joined, BinLosetup+" -c /dev/loop7") {
+		t.Fatalf("live grow must refresh the loop device: %v", ran)
+	}
+	// resize2fs given the mount point fails with "Is a directory".
+	if !strings.Contains(joined, BinResize2fs+" /dev/loop7") {
+		t.Fatalf("live grow must resize the mounted filesystem through its loop device: %v", ran)
 	}
 }

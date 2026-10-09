@@ -297,24 +297,31 @@ func (d Directory) growVolumeLive(ctx context.Context, abs, img string, current 
 	if d.Run == nil {
 		return nil
 	}
-	if loop := loopDevFromMounts(abs); loop != "" {
-		argv, err := LosetupRefreshArgv(loop)
-		if err != nil {
-			return err
-		}
-		if err := d.runLimit(ctx, argv[0], argv[1:]...); err != nil {
-			return err
-		}
+	loop := mountedLoop(abs)
+	if loop == "" {
+		return fmt.Errorf("the container disk is not mounted, so it cannot grow while running; stop the container and try again")
+	}
+	argv, err := LosetupRefreshArgv(loop)
+	if err != nil {
+		return err
+	}
+	if err := d.runLimit(ctx, argv[0], argv[1:]...); err != nil {
+		return err
 	}
 	if !expandFilesystem(req) {
 		return nil
 	}
-	resize, err := Resize2fsArgv(abs)
+	// resize2fs grows a mounted ext4 online through its block device; given
+	// the mount point it fails with "Is a directory".
+	resize, err := Resize2fsArgv(loop)
 	if err != nil {
 		return err
 	}
 	return d.runLimit(ctx, resize[0], resize[1:]...)
 }
+
+// mountedLoop is replaced in tests.
+var mountedLoop = loopDevFromMounts
 
 func (d Directory) restoreContainerRoots(root string) {
 	if d.Run == nil {

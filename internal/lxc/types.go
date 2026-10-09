@@ -142,6 +142,9 @@ type Result struct {
 	RestartRequired bool    `json:"restart_required,omitempty"`
 	// MappedRootUID is the host UID that is root inside the container.
 	MappedRootUID int `json:"mapped_root_uid,omitempty"`
+	// LiveApplyError is why new CPU or memory limits could not be applied
+	// to the running container. They are saved and apply at its next start.
+	LiveApplyError string `json:"live_apply_error,omitempty"`
 }
 
 // Hint is what the control plane sends when observing known workloads.

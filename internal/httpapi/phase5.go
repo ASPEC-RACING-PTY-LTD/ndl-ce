@@ -851,7 +851,13 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusConflict, "this spec change requires the container to be stopped")
 			return
 		}
-		needApply := req.CPUs > 0 || req.MemoryBytes > 0 || strings.TrimSpace(req.Name) != "" || patchHasIP(req) || req.Autostart != nil || strings.TrimSpace(req.MAC) != ""
+		// The editor sends every field on save. Autostart is only applied
+		// when it changed, so an unchanged save does not touch systemd.
+		autostart := req.Autostart
+		if autostart != nil && *autostart == row.Autostart {
+			autostart = nil
+		}
+		needApply := req.CPUs > 0 || req.MemoryBytes > 0 || strings.TrimSpace(req.Name) != "" || patchHasIP(req) || autostart != nil || strings.TrimSpace(req.MAC) != ""
 		rpc, rpcOK := s.workloadsOn(r.Context(), p.User.ClusterID, s.ownerNodeID(*row))
 		if !rpcOK || rpc == nil {
 			writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
@@ -861,15 +867,19 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 			applyReq := lxc.LifecycleRequest{
 				WorkloadID: row.ID, Action: lxc.ActionApplySpec,
 				CPUs: next.CPUs, MemoryBytes: next.MemoryBytes, Name: next.Name,
-				Autostart: req.Autostart, MAC: ctMAC,
+				Autostart: autostart, MAC: ctMAC,
 			}
 			if patchHasIP(req) {
 				applyReq.IP = ctIP
 				applyReq.IPSet = true
 			}
-			if _, err := rpc.LifecycleCT(r.Context(), applyReq); err != nil {
+			res, err := rpc.LifecycleCT(r.Context(), applyReq)
+			if err != nil {
 				writeErr(w, statusFor(err), err.Error())
 				return
+			}
+			if res.LiveApplyError != "" {
+				classes = liveMissed(classes, res.LiveApplyError)
 			}
 		}
 		next.PendingRestart = running && lxc.RequiresRestart(classes)
@@ -916,6 +926,20 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		updated = &next
 	}
 	writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *updated))
+}
+
+// liveMissed turns live CPU and memory changes the running container did
+// not take into restart changes: they are saved and apply at the next start.
+func liveMissed(classes []lxc.ApplyClass, reason string) []lxc.ApplyClass {
+	out := make([]lxc.ApplyClass, 0, len(classes))
+	for _, c := range classes {
+		if (c.Field == "cpus" || c.Field == "memory_bytes") && c.Apply == lxc.ApplyLive {
+			c.Apply = lxc.ApplyRestart
+			c.Reason = "saved; the running container could not take it now (" + reason + "), so it applies at the next restart"
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 func (s *Server) applyOCIDesiredPower(ctx context.Context, row appdb.Workload) error {
