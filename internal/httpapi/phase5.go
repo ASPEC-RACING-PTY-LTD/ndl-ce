@@ -100,6 +100,8 @@ type patchWorkloadRequest struct {
 	MAC              string          `json:"mac"`
 	RestartAfterSave bool            `json:"restart_after_save"`
 	ExpandFilesystem *bool           `json:"expand_filesystem"`
+	// NetworkID moves a stopped system container to another network.
+	NetworkID string `json:"network_id"`
 }
 
 type cloneWorkloadRequest struct {
@@ -761,6 +763,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var ctIP lxc.IPConfig
+	var moveNetID, moveBridge string
 	if row.Kind == lxc.KindSystemContainer {
 		ctRoot, ctVolID, ctBridge, ctMAC, ctNetID, err = s.ctApplyLocators(r.Context(), p.User.ClusterID, row.ID)
 		if err != nil {
@@ -775,6 +778,18 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		if next := strings.TrimSpace(req.NetworkID); next != "" && next != ctNetID {
+			if row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning) {
+				writeErr(w, http.StatusConflict, "stop the container before moving it to another network")
+				return
+			}
+			_, bridge, nerr := s.resolveWorkloadNetwork(r.Context(), p.User.ClusterID, next)
+			if nerr != nil {
+				writeErr(w, statusFor(nerr), nerr.Error())
+				return
+			}
+			moveNetID, moveBridge = next, bridge
 		}
 		if strings.TrimSpace(req.MAC) != "" {
 			nextMAC, merr := s.resolveWorkloadMAC(r.Context(), p.User.ClusterID, row.ID, req.MAC)
@@ -857,7 +872,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 		if autostart != nil && *autostart == row.Autostart {
 			autostart = nil
 		}
-		needApply := req.CPUs > 0 || req.MemoryBytes > 0 || strings.TrimSpace(req.Name) != "" || patchHasIP(req) || autostart != nil || strings.TrimSpace(req.MAC) != ""
+		needApply := req.CPUs > 0 || req.MemoryBytes > 0 || strings.TrimSpace(req.Name) != "" || patchHasIP(req) || autostart != nil || strings.TrimSpace(req.MAC) != "" || moveBridge != ""
 		rpc, rpcOK := s.workloadsOn(r.Context(), p.User.ClusterID, s.ownerNodeID(*row))
 		if !rpcOK || rpc == nil {
 			writeErr(w, http.StatusBadGateway, "workload agent is unavailable")
@@ -873,10 +888,33 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 				applyReq.IP = ctIP
 				applyReq.IPSet = true
 			}
+			if moveBridge != "" {
+				applyReq.NetworkID, applyReq.BridgeName = moveNetID, moveBridge
+				if !patchHasIP(req) && ctIP.IPv4Mode == "static" {
+					// A static address from the old network is wrong on the new one.
+					applyReq.IP = lxc.IPConfig{IPv4Mode: "dhcp", IPv6Mode: ctIP.IPv6Mode, DNS: ctIP.DNS}
+					applyReq.IPSet = true
+				}
+			}
 			res, err := rpc.LifecycleCT(r.Context(), applyReq)
 			if err != nil {
 				writeErr(w, statusFor(err), err.Error())
 				return
+			}
+			if moveBridge != "" {
+				if nics, _ := s.Store.ListWorkloadNICs(r.Context(), p.User.ClusterID, row.ID); len(nics) > 0 {
+					nic := nics[0]
+					nic.NetworkID = moveNetID
+					nic.IPv4 = ""
+					if applyReq.IPSet && applyReq.IP.IPv4Mode == "dhcp" {
+						nic.IPv4Mode, nic.IPv4Address, nic.IPv4Gateway = "dhcp", "", ""
+					}
+					if err := s.Store.UpdateWorkloadNIC(r.Context(), nic); err != nil {
+						writeErr(w, http.StatusInternalServerError, "the container moved but the record could not be updated: "+err.Error())
+						return
+					}
+				}
+				s.audit(r, p.User.ClusterID, p.User.ID, "workload.network.move", "ok", row.ID+" "+ctNetID+" -> "+moveNetID)
 			}
 			if res.LiveApplyError != "" {
 				classes = liveMissed(classes, res.LiveApplyError)

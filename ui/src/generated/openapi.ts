@@ -1127,6 +1127,7 @@ export interface OCIVolumeMount {
 }
 
 export interface UpdateWorkloadRequest {
+  network_id?: string;
   name?: string;
   cpus?: number;
   memory_bytes?: number;

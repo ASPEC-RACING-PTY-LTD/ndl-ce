@@ -254,6 +254,9 @@ func (m *Memory) UpdateWorkloadNIC(_ context.Context, n WorkloadNIC) error {
 		return fmt.Errorf("workload nic not found")
 	}
 	cur.IPv4 = n.IPv4
+	if n.NetworkID != "" {
+		cur.NetworkID = n.NetworkID
+	}
 	if n.IPv4Mode != "" {
 		cur.IPv4Mode = n.IPv4Mode
 	}

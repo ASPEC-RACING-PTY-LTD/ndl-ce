@@ -1180,6 +1180,7 @@ export async function getWorkloadLogs(id: string, lines = 200): Promise<{ status
 export async function patchWorkload(
   id: string,
   body: {
+    network_id?: string;
     cpus?: number;
     memory_bytes?: number;
     disk_bytes?: number;

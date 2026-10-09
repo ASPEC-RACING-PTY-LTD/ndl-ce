@@ -194,7 +194,11 @@ type LifecycleRequest struct {
 	IPSet           bool     `json:"ip_set,omitempty"`
 	MAC             string   `json:"mac,omitempty"`
 	Autostart       *bool    `json:"autostart,omitempty"`
-	Extras          []string `json:"extras,omitempty"`
+	// NetworkID and BridgeName move a stopped container to another network
+	// (ActionApplySpec).
+	NetworkID  string   `json:"network_id,omitempty"`
+	BridgeName string   `json:"bridge_name,omitempty"`
+	Extras     []string `json:"extras,omitempty"`
 	// Mounts is the complete mount list for ActionMountsSet.
 	Mounts []Mount `json:"mounts,omitempty"`
 }

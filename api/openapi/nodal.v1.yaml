@@ -11031,6 +11031,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        network_id:
+          type: string
+          description: Move a stopped system container to another network. A static IPv4 address switches to DHCP unless a new one is given.
         name:
           type: string
         cpus:

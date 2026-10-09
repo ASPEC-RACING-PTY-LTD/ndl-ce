@@ -2210,3 +2210,43 @@ func TestResolveRootDiskRejectsPhysicallyExhausted(t *testing.T) {
 		t.Fatal("expected physical free-space error")
 	}
 }
+
+func TestCTPatchMovesAStoppedContainerToAnotherNetwork(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	nodeID := uuid.NewString()
+	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
+	poolID, netID := seedCompute(t, mem, cluster.ID, nodeID)
+	lan := appdb.Network{ID: uuid.NewString(), ClusterID: cluster.ID, NodeID: nodeID, Name: "lan2",
+		Kind: ndnet.KindIsolated, Status: ndnet.StatusAvailable, BridgeName: "ndlcafef00d"}
+	if err := mem.CreateNetwork(context.Background(), lan); err != nil {
+		t.Fatal(err)
+	}
+	fw := &fakeWorkloads{}
+	s.Workloads = fw
+	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
+		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
+		Kind: storage.KindFilesystem, Class: storage.ClassContainerRoot, Format: storage.FormatDirectory,
+	}}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	id := createTestSystemContainer(t, ts, cookie, poolID, netID, "mover")
+	body := `{"network_id":"` + lan.ID + `"}`
+
+	_ = mem.UpdateWorkloadObserved(context.Background(), appdb.Workload{ID: id, Status: lxc.StatusRunning, UnitActive: true})
+	if code, _ := provCall(t, ts, cookie, "PATCH", "/workloads/"+id, body, ""); code != http.StatusConflict {
+		t.Fatalf("a running container must be stopped first, got %d", code)
+	}
+	_ = mem.UpdateWorkloadObserved(context.Background(), appdb.Workload{ID: id, Status: lxc.StatusStopped, UnitActive: false})
+	if code, out := provCall(t, ts, cookie, "PATCH", "/workloads/"+id, body, ""); code != http.StatusOK {
+		t.Fatalf("move %d %v", code, out)
+	}
+	if fw.lastLife.BridgeName != "ndlcafef00d" || fw.lastLife.NetworkID != lan.ID {
+		t.Fatalf("the agent must get the new bridge: %+v", fw.lastLife)
+	}
+	nics, _ := mem.ListWorkloadNICs(context.Background(), cluster.ID, id)
+	if len(nics) != 1 || nics[0].NetworkID != lan.ID {
+		t.Fatalf("the NIC must be on the new network: %+v", nics)
+	}
+}

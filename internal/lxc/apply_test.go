@@ -172,6 +172,34 @@ func TestApplySpecSavesLimitsWhenTheRunningContainerRefusesThem(t *testing.T) {
 	}
 }
 
+func TestApplySpecMovesAStoppedContainerToAnotherBridge(t *testing.T) {
+	e := testEngine(t)
+	id := uuid.NewString()
+	root := filepath.Join(e.dataDir(), "rootfs")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Create(context.Background(), Spec{
+		WorkloadID: id, Name: "ct", ImagePin: "alpine/3.21/amd64/default",
+		RootfsPath: root, CPUs: 1, MemoryBytes: 1 << 30, BridgeName: "ndlold00001", NoStart: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	e.Run = func(context.Context, string, ...string) ([]byte, error) { return nil, nil }
+	e.LiveUnits = map[string]bool{id: true}
+	if _, err := e.ApplySpec(context.Background(), LifecycleRequest{WorkloadID: id, Action: ActionApplySpec, BridgeName: "ndlnew00002", NetworkID: "net-2"}); err == nil {
+		t.Fatal("a running container must not change network")
+	}
+	e.LiveUnits = map[string]bool{}
+	if _, err := e.ApplySpec(context.Background(), LifecycleRequest{WorkloadID: id, Action: ActionApplySpec, BridgeName: "ndlnew00002", NetworkID: "net-2"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := os.ReadFile(e.configPath(id))
+	if !strings.Contains(string(cfg), "ndlnew00002") || strings.Contains(string(cfg), "ndlold00001") {
+		t.Fatalf("config must use the new bridge: %s", cfg)
+	}
+}
+
 func TestApplySpecPreservesGPUAndNesting(t *testing.T) {
 	e := testEngine(t)
 	id := uuid.NewString()

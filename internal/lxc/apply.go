@@ -47,6 +47,13 @@ func (e *Engine) ApplySpec(ctx context.Context, req LifecycleRequest) (Result, e
 		}
 		spec.MAC = mac
 	}
+	if bridge := strings.TrimSpace(req.BridgeName); bridge != "" && bridge != spec.BridgeName {
+		if e.AlreadyRunning(ctx, id) {
+			return Result{}, fmt.Errorf("stop the container before moving it to another network")
+		}
+		spec.BridgeName = bridge
+		spec.NetworkID = strings.TrimSpace(req.NetworkID)
+	}
 	spec, err = normalizeSpec(spec)
 	if err != nil {
 		return Result{}, err

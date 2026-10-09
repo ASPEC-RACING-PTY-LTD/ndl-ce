@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  listNetworks,
   attachWorkloadPhysicalDisk,
   attachWorkloadUSB,
   createTemplate,
@@ -91,6 +92,8 @@ export function WorkloadDetailPage() {
   const [autostart, setAutostart] = useState(false);
   const [ip, setIP] = useState<ContainerIPForm>(defaultContainerIPForm);
   const [mac, setMAC] = useState("");
+  const [networkID, setNetworkID] = useState("");
+  const [networks, setNetworks] = useState<{ id: string; name: string; kind?: string; status?: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [usbs, setUsbs] = useState<USBDeviceRow[]>([]);
@@ -105,6 +108,15 @@ export function WorkloadDetailPage() {
   const [logMessage, setLogMessage] = useState<string>("");
   const [dockerMachine, setDockerMachine] = useState<DockerMachine | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+
+  useEffect(() => {
+    if (!editOpen || item?.kind !== "system-container") {
+      return;
+    }
+    listNetworks()
+      .then((res) => setNetworks((res.items ?? []) as { id: string; name: string; kind?: string; status?: string }[]))
+      .catch(() => setNetworks([]));
+  }, [editOpen, item?.kind]);
   const [restartAfterSave, setRestartAfterSave] = useState(false);
   const [expandFS, setExpandFS] = useState(true);
   const [applyNote, setApplyNote] = useState<{ field: string; apply: string; reason: string }[]>([]);
@@ -123,6 +135,7 @@ export function WorkloadDetailPage() {
     setAutostart(Boolean(w.autostart));
     const nic = w.nics?.[0];
     setMAC(w.mac || nic?.mac || "");
+    setNetworkID(nic?.network_id || "");
     setIP({
       ipv4Mode: nic?.ipv4_mode || "dhcp",
       ipv4Address: nic?.ipv4_address || "",
@@ -250,7 +263,17 @@ export function WorkloadDetailPage() {
     try {
       const diskGrowing =
         item?.kind === "system-container" && parseMemoryGB(diskGB, 8) > parseMemoryGB(origDiskGB, 8);
+      const origNet = item?.nics?.[0]?.network_id || "";
+      const moving = item?.kind === "system-container" && networkID !== "" && networkID !== origNet;
+      const wasRunning = running;
+      if (moving && wasRunning) {
+        if (!window.confirm("Moving to another network restarts the container, and it gets an address on the new network. Continue?")) {
+          return;
+        }
+        await workloadAction(id, "stop");
+      }
       const updated = await patchWorkload(id, {
+        ...(moving ? { network_id: networkID } : {}),
         name: name.trim() || item?.name,
         cpus: Number(cpus) || 1,
         memory_bytes: bytesFromGB(parseMemoryGB(memoryGB, 1)),
@@ -266,6 +289,9 @@ export function WorkloadDetailPage() {
       setApplyNote(Array.isArray(apply) ? apply : []);
       if (diskGrowing) {
         setOrigDiskGB(diskGB);
+      }
+      if (moving && wasRunning) {
+        await workloadAction(id, "start");
       }
       setEditOpen(false);
       setRestartAfterSave(false);
@@ -801,6 +827,21 @@ export function WorkloadDetailPage() {
                 filesystem after grow
               </label>
             ) : null}
+            <div className="field">
+              <label className="field-label" htmlFor="wl-network">
+                Network
+              </label>
+              <select id="wl-network" className="field-input" value={networkID} onChange={(e) => setNetworkID(e.target.value)}>
+                {networks.length === 0 && networkID ? <option value={networkID}>Current network</option> : null}
+                {networks.map((n) => (
+                  <option key={n.id} value={n.id} disabled={n.status !== "available" && n.status !== "warning" && n.id !== networkID}>
+                    {n.name}
+                    {n.kind ? ` (${n.kind})` : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="field-hint">Moving a running container restarts it. It gets an address from the new network.</p>
+            </div>
             <ContainerIPFields id="wl-ip" form={ip} onChange={setIP} />
             <Field
               id="wl-mac"
