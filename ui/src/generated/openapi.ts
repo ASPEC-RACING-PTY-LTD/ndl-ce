@@ -109,6 +109,36 @@ export interface NodeListResponse {
   items: NodeSummary[];
 }
 
+export interface ProvisionRequest {
+  kind: "game" | "container";
+  name?: string;
+  template_id?: string;
+  image_pin?: string;
+  cpus?: number;
+  memory_mb?: number;
+  disk_gb?: number;
+  env?: Record<string, unknown>;
+  pool_id?: string;
+  network_id?: string;
+  labels?: Record<string, unknown>;
+  start?: boolean;
+}
+
+export interface ProvisionedService {
+  external_id?: string;
+  kind?: string;
+  resource_id?: string;
+  template?: string;
+  state?: "provisioning" | "active" | "stopped" | "suspended" | "failed";
+  detail?: string;
+  error?: string;
+  error_detail?: string;
+  desired_power?: string;
+  suspended?: boolean;
+  ipv4?: string;
+  labels?: Record<string, unknown>;
+}
+
 export interface NodeSummary {
   local?: boolean;
   id: string;
@@ -2955,6 +2985,18 @@ export type EnableFeaturePath = "/api/v1/features/{id}/enable";
 export type DisableFeaturePath = "/api/v1/features/{id}/disable";
 
 export type ListGameServersPath = "/api/v1/game-servers";
+
+export type GetProvisioningCapacityPath = "/api/v1/provisioning/capacity";
+
+export type ListProvisionedServicesPath = "/api/v1/provisioning/services";
+
+export type GetProvisionedServicePath = "/api/v1/provisioning/services/{external_id}";
+
+export type SuspendProvisionedServicePath = "/api/v1/provisioning/services/{external_id}/suspend";
+
+export type ResumeProvisionedServicePath = "/api/v1/provisioning/services/{external_id}/resume";
+
+export type ReplaceProvisionedServicePath = "/api/v1/provisioning/services/{external_id}/replace";
 
 export type GetGameServerRuntimePath = "/api/v1/game-servers/runtime";
 

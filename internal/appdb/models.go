@@ -55,6 +55,11 @@ type Store interface {
 	RevokeNode(ctx context.Context, clusterID, id string, at time.Time) error
 	DeleteNode(ctx context.Context, clusterID, id string) error
 
+	GetProvisionedService(ctx context.Context, clusterID, externalID string) (*ProvisionedService, error)
+	UpsertProvisionedService(ctx context.Context, ps ProvisionedService) error
+	DeleteProvisionedService(ctx context.Context, clusterID, externalID string) error
+	ListProvisionedServices(ctx context.Context, clusterID string) ([]ProvisionedService, error)
+
 	CreateJoinToken(ctx context.Context, t JoinToken) error
 	ConsumeJoinToken(ctx context.Context, tokenHash string, nodeID string, at time.Time) (*JoinToken, error)
 	GetJoinTokenByHash(ctx context.Context, tokenHash string) (*JoinToken, error)

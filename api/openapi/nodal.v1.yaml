@@ -1335,6 +1335,167 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /provisioning/capacity:
+    get:
+      operationId: getProvisioningCapacity
+      summary: Host capacity, what is allocated, storage pools and whether game servers can run
+      responses:
+        "200":
+          description: Capacity
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /provisioning/services:
+    get:
+      operationId: listProvisionedServices
+      summary: Services created through the provisioning API
+      responses:
+        "200":
+          description: Services
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProvisionedService"
+  /provisioning/services/{external_id}:
+    put:
+      operationId: putProvisionedService
+      summary: Create a game server or container for an outside service id. Idempotent; a retry returns the existing service.
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProvisionRequest"
+      responses:
+        "200":
+          description: Already provisioned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionedService"
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionedService"
+        "409":
+          description: The id already runs something else
+    get:
+      operationId: getProvisionedService
+      summary: State of one provisioned service. Starts a finished game install that should be running.
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionedService"
+        "404":
+          description: Unknown external id
+    delete:
+      operationId: deleteProvisionedService
+      summary: Destroy the service and its data. Requires X-Nodal-Confirm destroy-service. Unknown ids succeed.
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Destroyed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  external_id:
+                    type: string
+                  deleted:
+                    type: boolean
+                  existed:
+                    type: boolean
+        "409":
+          description: Confirmation missing
+  /provisioning/services/{external_id}/suspend:
+    post:
+      operationId: suspendProvisionedService
+      summary: Stop the service and mark it suspended
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionedService"
+  /provisioning/services/{external_id}/resume:
+    post:
+      operationId: resumeProvisionedService
+      summary: Start a suspended service
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionedService"
+  /provisioning/services/{external_id}/replace:
+    post:
+      operationId: replaceProvisionedService
+      summary: Switch a game service to another template. Deletes the current server and its files. Requires X-Nodal-Confirm replace-service.
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProvisionRequest"
+      responses:
+        "201":
+          description: Replacement created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionedService"
+        "409":
+          description: Confirmation missing
   /game-servers/runtime:
     get:
       operationId: getGameServerRuntime
@@ -8417,6 +8578,81 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NodeSummary"
+    ProvisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          enum:
+            - game
+            - container
+        name:
+          type: string
+        template_id:
+          type: string
+          description: Game template id from GET /game-servers/catalogue (kind game).
+        image_pin:
+          type: string
+          description: System container image, for example debian/13/amd64/default (kind container).
+        cpus:
+          type: integer
+        memory_mb:
+          type: integer
+        disk_gb:
+          type: integer
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        pool_id:
+          type: string
+        network_id:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        start:
+          type: boolean
+    ProvisionedService:
+      type: object
+      additionalProperties: true
+      properties:
+        external_id:
+          type: string
+        kind:
+          type: string
+        resource_id:
+          type: string
+        template:
+          type: string
+        state:
+          type: string
+          enum:
+            - provisioning
+            - active
+            - stopped
+            - suspended
+            - failed
+        detail:
+          type: string
+        error:
+          type: string
+        error_detail:
+          type: string
+        desired_power:
+          type: string
+        suspended:
+          type: boolean
+        ipv4:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
     NodeSummary:
       type: object
       additionalProperties: true
