@@ -512,11 +512,8 @@ func (s *Server) pickQemuPool(ctx context.Context, clusterID, poolID string) (*a
 	if err != nil {
 		return nil, err
 	}
-	for i := range pools {
-		if pools[i].Status == storage.StatusAvailable || pools[i].Status == storage.StatusWarning {
-			cp := pools[i]
-			return &cp, nil
-		}
+	if pool := preferredDefaultPool(pools); pool != nil {
+		return pool, nil
 	}
 	return nil, errConflict("an available storage pool is required")
 }

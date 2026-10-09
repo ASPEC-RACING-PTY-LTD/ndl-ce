@@ -389,13 +389,7 @@ func (s *Server) prepareRoot(ctx context.Context, clusterID, nodeID string, req 
 			return nil, nil, "", nil, errNotFound("storage pool is not found")
 		}
 	} else {
-		for i := range pools {
-			if pools[i].Status == storage.StatusAvailable || pools[i].Status == storage.StatusWarning {
-				cp := pools[i]
-				pool = &cp
-				break
-			}
-		}
+		pool = preferredDefaultPool(pools)
 	}
 	if pool == nil || (pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning) {
 		return nil, nil, "", nil, errConflict("an available storage pool is required")

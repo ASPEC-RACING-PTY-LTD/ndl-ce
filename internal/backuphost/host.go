@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/backup"
@@ -31,6 +30,15 @@ type Host struct {
 	queues   map[string]*backup.UploadQueue
 	pending  int
 	busy     map[string]struct{}
+
+	protectHost bool
+	keyNote     string
+	staleDirs   int
+	staleBytes  int64
+	gcMu        sync.Mutex
+	gcPending   string
+	lastGC      *GCReport
+	keyPath     string
 }
 
 // Options open the host repository.
@@ -38,6 +46,12 @@ type Options struct {
 	Root     string
 	Settings Settings
 	Docker   *docker.Engine
+	// KeyPath keeps a copy of the repository key outside Root so remote
+	// backups stay restorable if the repository directory is deleted.
+	KeyPath string
+	// ProtectHost raises the free-space reserve to the host disk
+	// protection threshold and runs maintenance after crashes.
+	ProtectHost bool
 }
 
 // Open creates or opens the local V2 repository. The master key is created
@@ -50,50 +64,38 @@ func Open(opts Options) (*Host, error) {
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, err
 	}
-	keys, err := loadOrCreateKeys(root)
+	keys, keyNote, err := loadOrCreateKeys(root, opts.KeyPath)
 	if err != nil {
 		return nil, err
 	}
+	staleDirs, staleBytes := removeStaleRestoreDirs(root)
 	repo, err := backup.OpenRepository(root, keys)
 	if err != nil {
 		return nil, err
 	}
-	cfg := backup.Config{
-		MaxLocalBytes:    opts.Settings.withDefaults().MaxLocalBytes,
-		MinHostFreeBytes: opts.Settings.withDefaults().MinHostFreeBytes,
-	}
 	h := &Host{
-		root:     root,
-		repo:     repo,
-		eng:      backup.NewEngine(repo, cfg),
-		docker:   opts.Docker,
-		settings: opts.Settings.withDefaults(),
-		queues:   map[string]*backup.UploadQueue{},
-		busy:     map[string]struct{}{},
+		root:        root,
+		repo:        repo,
+		docker:      opts.Docker,
+		settings:    opts.Settings.withDefaults(),
+		queues:      map[string]*backup.UploadQueue{},
+		busy:        map[string]struct{}{},
+		protectHost: opts.ProtectHost,
+		keyNote:     keyNote,
+		staleDirs:   staleDirs,
+		staleBytes:  staleBytes,
+		keyPath:     opts.KeyPath,
 	}
+	h.eng = backup.NewEngine(repo, h.engineConfig(h.settings))
+	h.loadLastGC()
 	if err := h.resumeTargets(context.Background()); err != nil {
 		return nil, err
 	}
+	if opts.ProtectHost {
+		// Reclaim whatever an earlier crash or failed capture left behind.
+		h.scheduleGC("startup")
+	}
 	return h, nil
-}
-
-func loadOrCreateKeys(root string) (*backup.Keys, error) {
-	path := filepath.Join(root, "master.key")
-	raw, err := os.ReadFile(path)
-	if err == nil {
-		return backup.NewKeys(raw)
-	}
-	if !os.IsNotExist(err) {
-		return nil, err
-	}
-	master, err := backup.GenerateMaster()
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(path, master, 0o600); err != nil {
-		return nil, err
-	}
-	return backup.NewKeys(master)
 }
 
 // Handle dispatches a V2 backup-copy action. dest is request JSON.
@@ -123,9 +125,27 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 	case ActionStatus, ActionWorkspace:
 		out, err = h.status(req)
 	case ActionExpire:
-		out, err = h.expire(req)
+		if req.RemoteOnly {
+			out, err = h.expireRemoteOnly(ctx, req)
+		} else {
+			out, err = h.expire(ctx, req)
+		}
+	case ActionVerify:
+		out.Verify, err = h.verify(ctx)
+	case ActionKey:
+		out.Key, err = h.exportKey()
+	case ActionWipeRemote:
+		out, err = h.wipeRemote(ctx, req)
 	case ActionEnqueue:
 		out, err = h.enqueue(ctx, req)
+	case ActionGC:
+		rep := h.runGC(ctx, firstNonEmpty(req.Reason, "requested"))
+		out, err = h.status(req)
+		out.GC = &rep
+	case ActionRemoteUsage:
+		var u *backup.RemoteUsage
+		u, err = h.remoteUsage(ctx, req.Target)
+		out.RemoteUsage = u
 	default:
 		return storage.CopyResult{}, fmt.Errorf("unsupported backup v2 action")
 	}
@@ -147,9 +167,7 @@ func (h *Host) applySettings(s Settings) {
 	defer h.mu.Unlock()
 	s = s.withDefaults()
 	h.settings = s
-	h.eng = backup.NewEngine(h.repo, backup.Config{
-		MaxLocalBytes: s.MaxLocalBytes, MinHostFreeBytes: s.MinHostFreeBytes,
-	})
+	h.eng = backup.NewEngine(h.repo, h.engineConfig(s))
 	for _, q := range h.queues {
 		if q != nil {
 			q.SetBandwidthLimit(s.BandwidthLimitBPS)
@@ -166,10 +184,16 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 		return Result{}, err
 	}
 	defer h.releaseCapture(req.WorkloadID)
+	h.mu.Lock()
+	eng := h.eng
+	h.mu.Unlock()
 
 	mode := strings.TrimSpace(req.CaptureMode)
 	if mode == "" {
 		mode = backup.CaptureModeFull
+	}
+	if mode == CaptureModeDisk {
+		return h.captureDisk(ctx, eng, req)
 	}
 	dockerInfo, hint := h.dockerInventory(ctx, req.WorkloadID, req.WorkloadName)
 	bp := req.Blueprint
@@ -216,13 +240,26 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 			info.Note = "no guest consistency hook was configured"
 		}
 	}
-	man, state, err := h.eng.Capture(ctx, backup.CaptureOptions{
+	man, state, err := eng.Capture(ctx, backup.CaptureOptions{
 		Source: source, WorkloadID: req.WorkloadID, WorkloadName: req.WorkloadName,
 		Consistency: info.Result, ConsistencyInfo: info, Blueprint: bp, Includes: includes, Excludes: excludes,
 	})
 	if err != nil {
+		// Packs committed before the failure belong to no restore point.
+		h.scheduleGC("failed capture")
 		return Result{}, err
 	}
+	out, err := h.finishCapture(man, state, req)
+	if err != nil {
+		return Result{}, err
+	}
+	out.Preview = prev
+	return out, nil
+}
+
+// finishCapture queues the upload of a captured restore point and builds the
+// result.
+func (h *Host) finishCapture(man *backup.Manifest, state *backup.PointState, req Request) (Result, error) {
 	if req.Target.ID != "" || req.Target.Kind != "" || req.Target.Locator != "" {
 		if err := h.rememberTarget(req.Target); err != nil {
 			return Result{}, err
@@ -240,10 +277,39 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 	out := resultFrom(man, state)
 	out.RepoBytes = repoBytes
 	out.PendingUploads = h.pendingJobs()
-	out.Preview = prev
 	out.Blueprint = man.Blueprint
 	out.Locator = "ndl-cab://backups/" + state.Namespace + "/" + state.BackupID
 	return out, nil
+}
+
+// captureDisk backs up one VM disk image through the deduplicating engine.
+// The caller passes the frozen backing file of a just-created overlay, so the
+// image does not change while it is read.
+func (h *Host) captureDisk(ctx context.Context, eng *backup.Engine, req Request) (Result, error) {
+	stage, cleanup, err := stageDisk(ctx, req.DiskPath, req.Flatten)
+	if err != nil {
+		return Result{}, err
+	}
+	defer cleanup()
+	bp := req.Blueprint
+	bp.CaptureMode = CaptureModeDisk
+	if bp.WorkloadType == "" {
+		bp.WorkloadType = "vm"
+	}
+	info := backup.ConsistencyReport{
+		Requested: firstNonEmpty(req.Consistency, backup.ConsistencyCrash),
+		Result:    firstNonEmpty(req.Consistency, backup.ConsistencyCrash),
+		Note:      "VM disk captured from a point-in-time overlay snapshot",
+	}
+	man, state, err := eng.Capture(ctx, backup.CaptureOptions{
+		Source: stage, WorkloadID: req.WorkloadID, WorkloadName: req.WorkloadName,
+		Consistency: info.Result, ConsistencyInfo: info, Blueprint: bp,
+	})
+	if err != nil {
+		h.scheduleGC("failed capture")
+		return Result{}, err
+	}
+	return h.finishCapture(man, state, req)
 }
 
 func (h *Host) restore(ctx context.Context, dest string, req Request) (Result, error) {
@@ -325,41 +391,90 @@ func (h *Host) status(_ Request) (Result, error) {
 			LocalComplete: s.LocalComplete, Remote: s.Remote, CaptureMode: mode,
 			Consistency: consistency, LogicalBytes: logical, PhysicalNewData: physical,
 			UploadStartedNS: s.UploadStartedNS, UploadEndedNS: s.UploadEndedNS,
+			Recovered: s.Recovered,
 		})
 		if s.Remote == backup.RemoteProtected {
 			protected++
 		}
 	}
-	repoBytes, _ := h.repo.SizeOnDisk()
-	free, _ := hostFreeBytes(h.root)
+	usage, _ := h.repo.Usage()
+	repoBytes := usage.TotalBytes
+	total, free, _ := fsStat(h.root)
 	h.mu.Lock()
 	active := len(h.busy)
 	settings := h.settings
+	lastGC := h.lastGC
+	gcPending := h.gcPending != ""
 	h.mu.Unlock()
 	pending := h.pendingJobs()
+	recovered := 0
+	for _, s := range states {
+		if s.Recovered {
+			recovered++
+		}
+	}
+	usage.RecoveredCount = recovered
+	ws := WorkspaceStatus{
+		Root: h.root, RepoBytes: repoBytes, MaxLocalBytes: settings.MaxLocalBytes,
+		MinHostFreeBytes: settings.MinHostFreeBytes, HostFreeBytes: free, HostTotalBytes: total,
+		EffectiveReserveBytes: h.effectiveReserve(settings.MinHostFreeBytes),
+		PendingUploads:        pending, FailedUploads: h.failedJobs(),
+		CaptureBusy: active > 0, CaptureActive: active,
+		CaptureConcurrency: settings.CaptureConcurrency, UploadWorkers: settings.UploadWorkers,
+		BandwidthLimitBPS: settings.BandwidthLimitBPS, CacheRetentionHours: settings.CacheRetentionHours,
+		Usage: &usage, Recovery: h.repo.Recovery(), LastGC: lastGC, GCPending: gcPending,
+		StaleRestoreDirsRemoved: h.staleDirs, StaleRestoreBytesRemoved: h.staleBytes,
+		KeyNote: h.keyNote, KeyExported: h.keyExported(),
+	}
+	for _, spec := range h.rememberedTargets() {
+		if n := h.repo.PendingSweep(targetKey(spec)); n > 0 {
+			ws.PendingRemoteSweep += n
+		}
+	}
 	return Result{
 		Points: points, Protected: protected, RepoBytes: repoBytes, PendingUploads: pending,
-		Workspace: WorkspaceStatus{
-			Root: h.root, RepoBytes: repoBytes, MaxLocalBytes: settings.MaxLocalBytes,
-			MinHostFreeBytes: settings.MinHostFreeBytes, HostFreeBytes: free,
-			PendingUploads: pending, CaptureBusy: active > 0, CaptureActive: active,
-			CaptureConcurrency: settings.CaptureConcurrency, UploadWorkers: settings.UploadWorkers,
-			BandwidthLimitBPS: settings.BandwidthLimitBPS, CacheRetentionHours: settings.CacheRetentionHours,
-		},
+		Workspace: ws,
 	}, nil
 }
 
-func (h *Host) expire(req Request) (Result, error) {
+// expire removes one restore point locally, drops its pending uploads and,
+// when the request names the target it was uploaded to, removes its manifest
+// from that target. It is idempotent: retrying after a partial failure
+// finishes the job. With DeferGC the caller runs ActionGC once after a batch
+// of expiries instead of collecting after each one.
+func (h *Host) expire(ctx context.Context, req Request) (Result, error) {
 	if req.Namespace == "" || req.BackupID == "" {
 		return Result{}, fmt.Errorf("expire requires namespace and backup_id")
 	}
 	if err := h.repo.DeleteRestorePoint(req.Namespace, req.BackupID); err != nil && !os.IsNotExist(err) {
 		return Result{}, err
 	}
-	if _, err := h.repo.CollectGarbage(); err != nil {
-		return Result{}, err
+	h.mu.Lock()
+	queues := make([]*backup.UploadQueue, 0, len(h.queues))
+	for _, q := range h.queues {
+		queues = append(queues, q)
 	}
-	return h.status(req)
+	h.mu.Unlock()
+	for _, q := range queues {
+		q.RemoveJobs(req.Namespace, req.BackupID)
+	}
+	var remote *backup.RemoteExpireResult
+	if hasTarget(req.Target) {
+		res, err := h.expireRemote(ctx, req.Target, req.Namespace, req.BackupID)
+		if err != nil {
+			return Result{}, fmt.Errorf("the local copy was removed but the remote copy was not: %w", err)
+		}
+		remote = &res
+	}
+	var gc *GCReport
+	if !req.DeferGC {
+		rep := h.runGC(ctx, "expire")
+		gc = &rep
+	}
+	out, err := h.status(req)
+	out.RemoteExpire = remote
+	out.GC = gc
+	return out, err
 }
 
 func (h *Host) enqueue(ctx context.Context, req Request) (Result, error) {
@@ -445,7 +560,11 @@ func (h *Host) releaseCapture(workloadID string) {
 	}
 	h.mu.Lock()
 	delete(h.busy, id)
+	runGC := h.gcPending != "" && len(h.busy) == 0
 	h.mu.Unlock()
+	if runGC {
+		go h.runPendingGC()
+	}
 }
 
 func (h *Host) pruneCachesLocked() {
@@ -486,14 +605,6 @@ func firstNonEmpty(vs ...string) string {
 		}
 	}
 	return ""
-}
-
-func hostFreeBytes(path string) (int64, error) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(path, &st); err != nil {
-		return 0, err
-	}
-	return int64(st.Bavail) * int64(st.Bsize), nil
 }
 
 func isObjectKind(kind string) bool {

@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"time"
@@ -77,5 +78,22 @@ func (m *Memory) UpdateVolumeLocator(_ context.Context, clusterID, id, backendRe
 	v.BackendRef = backendRef
 	v.UpdatedAt = time.Now().UTC()
 	m.volumes[id] = v
+	return nil
+}
+
+func (m *Memory) DeleteSnapshot(_ context.Context, clusterID, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.snapshots[id]
+	if !ok || s.ClusterID != clusterID {
+		return sql.ErrNoRows
+	}
+	delete(m.snapshots, id)
+	for k, other := range m.snapshots {
+		if other.ParentID == id {
+			other.ParentID = ""
+			m.snapshots[k] = other
+		}
+	}
 	return nil
 }

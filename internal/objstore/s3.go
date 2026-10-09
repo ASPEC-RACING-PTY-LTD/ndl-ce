@@ -330,6 +330,10 @@ func (s *S3Transport) newRequest(ctx context.Context, method, bucket, object, ra
 	u := *base
 	if s.PathStyle || !strings.Contains(base.Host, bucket+".") {
 		u.Path = "/" + bucket + "/" + object
+		if object == "" {
+			// Bucket-level request (listing).
+			u.Path = "/" + bucket
+		}
 	} else {
 		u.Host = bucket + "." + base.Host
 		u.Path = "/" + object

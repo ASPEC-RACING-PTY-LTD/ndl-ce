@@ -21,6 +21,10 @@ const (
 	OverlayCreate   = "create"
 	OverlayRollback = "rollback"
 	OverlayFlatten  = "flatten"
+	// OverlayCommit merges an overlay back into its backing file and makes
+	// the backing file the disk again. Backups use it so the snapshot they
+	// take never stays in the chain.
+	OverlayCommit = "commit"
 	ChainMax        = 16
 )
 
@@ -73,6 +77,8 @@ func (e *Engine) OverlayDisk(ctx context.Context, req OverlayRequest) (OverlayRe
 		return e.overlayRollback(ctx, req)
 	case OverlayFlatten:
 		return e.overlayFlatten(ctx, req)
+	case OverlayCommit:
+		return e.overlayCommit(ctx, req)
 	default:
 		return OverlayResult{}, fmt.Errorf("unsupported snapshot action")
 	}

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/no-dal/ndl-ce/internal/objstore"
 )
@@ -30,4 +31,26 @@ func (t TransportTarget) Head(ctx context.Context, key string) (bool, int64, err
 
 func (t TransportTarget) Get(ctx context.Context, key string) ([]byte, error) {
 	return t.T.Get(ctx, t.Bucket, key)
+}
+
+// Delete removes one object.
+func (t TransportTarget) Delete(ctx context.Context, key string) error {
+	return t.T.Delete(ctx, t.Bucket, key)
+}
+
+// List enumerates objects under prefix when the transport supports listing.
+func (t TransportTarget) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	l, ok := t.T.(objstore.Lister)
+	if !ok {
+		return nil, fmt.Errorf("this object store transport cannot list objects")
+	}
+	entries, err := l.List(ctx, t.Bucket, prefix)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ObjectInfo, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, ObjectInfo{Key: e.Key, Size: e.Size})
+	}
+	return out, nil
 }

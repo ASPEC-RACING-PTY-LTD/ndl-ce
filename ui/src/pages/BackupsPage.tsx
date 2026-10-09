@@ -16,6 +16,7 @@ import {
   listWorkloads,
   patchBackupWorkspace,
   previewBackupScope,
+  protectBackupArtifact,
   restoreBackupArtifact,
   restoreBackupFile,
   runBackup,
@@ -37,6 +38,7 @@ import type {
   CreateBackupTargetRequest,
   RestoreBackupRequest,
 } from "../generated/openapi";
+import { BackupLocationPicker, BackupStoragePanel } from "../components/BackupStorage";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
@@ -161,6 +163,8 @@ function captureModeLabel(mode: string | undefined): string {
       return "Custom";
     case "full":
       return "Full Machine / Full LXC";
+    case "disk":
+      return "VM disk";
     default:
       return "Smart Application Data";
   }
@@ -433,6 +437,11 @@ export function BackupsPage() {
   const [targetPrefix, setTargetPrefix] = useState("");
   const [targetRegion, setTargetRegion] = useState("");
   const [targetNoCheckBucket, setTargetNoCheckBucket] = useState(true);
+  const [targetPoolId, setTargetPoolId] = useState("");
+  const [targetAllowRoot, setTargetAllowRoot] = useState(false);
+  const [offsiteDaily, setOffsiteDaily] = useState("0");
+  const [offsiteWeekly, setOffsiteWeekly] = useState("0");
+  const [offsiteMonthly, setOffsiteMonthly] = useState("0");
 
   const [policyName, setPolicyName] = useState("");
   const [policyScope, setPolicyScope] = useState<"all" | "selected">("selected");
@@ -539,6 +548,8 @@ export function BackupsPage() {
     setTargetPrefix("");
     setTargetRegion("");
     setTargetNoCheckBucket(true);
+    setTargetPoolId("");
+    setTargetAllowRoot(false);
   }
 
   function openPolicyDialog(policy?: BackupPolicy) {
@@ -552,6 +563,9 @@ export function BackupsPage() {
       setKeepDaily(String(policy.keep_daily));
       setKeepWeekly(String(policy.keep_weekly));
       setKeepMonthly(String(policy.keep_monthly));
+      setOffsiteDaily(String(policy.offsite_keep_daily ?? 0));
+      setOffsiteWeekly(String(policy.offsite_keep_weekly ?? 0));
+      setOffsiteMonthly(String(policy.offsite_keep_monthly ?? 0));
     } else {
       setPolicyName("");
       setPolicyScope("selected");
@@ -562,6 +576,9 @@ export function BackupsPage() {
       setKeepDaily("7");
       setKeepWeekly("4");
       setKeepMonthly("3");
+      setOffsiteDaily("0");
+      setOffsiteWeekly("0");
+      setOffsiteMonthly("0");
     }
     setWorkloadQuery("");
     setShowAdvancedPaths(false);
@@ -570,6 +587,19 @@ export function BackupsPage() {
     setCustomPreviewBusy(false);
     setCustomPreviewError(null);
     setDialog({ kind: "policy", policy });
+  }
+
+  async function onToggleProtect(art: BackupArtifact) {
+    setBusy(true);
+    setError(null);
+    try {
+      await protectBackupArtifact(art.id, !art.protected);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not change protection");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onCreateTarget() {
@@ -584,8 +614,8 @@ export function BackupsPage() {
         setError("Object targets need endpoint, bucket, access key id, and secret access key");
         return;
       }
-    } else if (!targetLocator.trim()) {
-      setError("Target name and locator are required");
+    } else if (targetKind === "local" ? !targetPoolId && !targetLocator.trim() : !targetLocator.trim()) {
+      setError(targetKind === "local" ? "Choose a storage pool or enter a folder" : "Target name and locator are required");
       return;
     }
     setBusy(true);
@@ -610,7 +640,14 @@ export function BackupsPage() {
         body.password = targetPassword;
         body.no_check_bucket = targetNoCheckBucket;
       } else {
-        body.locator = targetLocator.trim();
+        if (targetKind === "local" && targetPoolId) {
+          body.pool_id = targetPoolId;
+        } else {
+          body.locator = targetLocator.trim();
+        }
+        if (targetKind === "local" && targetAllowRoot) {
+          body.allow_root_filesystem = true;
+        }
         const username = targetUsername.trim();
         if (username) {
           body.username = username;
@@ -656,7 +693,10 @@ export function BackupsPage() {
     const daily = Number(keepDaily);
     const weekly = Number(keepWeekly);
     const monthly = Number(keepMonthly);
-    if (![daily, weekly, monthly].every((n) => Number.isInteger(n) && n >= 0)) {
+    const offDaily = Number(offsiteDaily);
+    const offWeekly = Number(offsiteWeekly);
+    const offMonthly = Number(offsiteMonthly);
+    if (![daily, weekly, monthly, offDaily, offWeekly, offMonthly].every((n) => Number.isInteger(n) && n >= 0)) {
       setError("Retention counts must be non-negative integers");
       return;
     }
@@ -672,6 +712,9 @@ export function BackupsPage() {
         keep_daily: daily,
         keep_weekly: weekly,
         keep_monthly: monthly,
+        offsite_keep_daily: offDaily,
+        offsite_keep_weekly: offWeekly,
+        offsite_keep_monthly: offMonthly,
       };
       if (policyScope === "selected") {
         body.workload_ids = policyWorkloadIds;
@@ -1090,6 +1133,7 @@ export function BackupsPage() {
               <span className="meta">{workspace?.capture_active ? `${workspace.capture_active} capture${workspace.capture_active === 1 ? "" : "s"} active` : "No active captures"}</span>
             </article>
           </div>
+          <BackupStoragePanel mutate={mutate} targets={targets ?? []} />
           <div className="card-grid">
           <section className="section-block" aria-labelledby="backup-policies-heading">
             <div className="page-header-row">
@@ -1396,6 +1440,7 @@ export function BackupsPage() {
                             <td>{artifactBackupType(art)}</td>
                             <td>
                               <span className="status-pill">{protectionLabel(art)}</span>
+                              {art.protected ? <span className="status-pill">Kept by protection</span> : null}
                             </td>
                             <td>{formatBytes(art.logical_bytes || art.size_bytes)}</td>
                             <td>{art.encrypted ? "Client-side" : "No"}</td>
@@ -1403,9 +1448,20 @@ export function BackupsPage() {
                             <td>{formatWhen(art.created_at)}</td>
                             <td>
                               {mutate ? (
-                                <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "artifact", artifact: art })}>
-                                  Restore or verify
-                                </button>
+                                <div className="btn-row is-flush">
+                                  <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "artifact", artifact: art })}>
+                                    Restore or verify
+                                  </button>
+                                  <button
+                                    className="btn btn-sm"
+                                    type="button"
+                                    disabled={busy}
+                                    aria-label={`${art.protected ? "Unprotect" : "Protect"} backup from ${formatWhen(art.created_at)}`}
+                                    onClick={() => void onToggleProtect(art)}
+                                  >
+                                    {art.protected ? "Unprotect" : "Protect"}
+                                  </button>
+                                </div>
                               ) : (
                                 <span className="muted">None</span>
                               )}
@@ -1448,14 +1504,20 @@ export function BackupsPage() {
             value={targetKind}
             onChange={(e) => setTargetKind(e.target.value as CreateBackupTargetRequest["kind"])}
           >
-            <option value="local">local</option>
-            <option value="nfs">nfs</option>
-            <option value="smb">smb</option>
-            <option value="s3">s3</option>
-            <option value="r2">r2</option>
-            <option value="aws">aws</option>
-            <option value="b2">b2</option>
-            <option value="minio">minio</option>
+            <optgroup label="On this host">
+              <option value="local">Storage pool on this host</option>
+            </optgroup>
+            <optgroup label="Network share">
+              <option value="nfs">NFS share</option>
+              <option value="smb">SMB share</option>
+            </optgroup>
+            <optgroup label="Cloud object storage">
+              <option value="r2">Cloudflare R2</option>
+              <option value="s3">S3-compatible</option>
+              <option value="aws">Amazon S3</option>
+              <option value="b2">Backblaze B2</option>
+              <option value="minio">MinIO</option>
+            </optgroup>
           </select>
         </div>
         {objectForm ? (
@@ -1519,14 +1581,29 @@ export function BackupsPage() {
           </>
         ) : (
           <>
-            <Field
-              id="backup-target-locator"
-              label="Locator"
-              value={targetLocator}
-              onChange={(e) => setTargetLocator(e.target.value)}
-              autoComplete="off"
-              hint="Path or share location for the destination."
-            />
+            {targetKind === "local" ? (
+              <BackupLocationPicker
+                idPrefix="backup-target"
+                poolId={targetPoolId}
+                path={targetLocator}
+                allowRoot={targetAllowRoot}
+                pathKind="target"
+                onChange={(next) => {
+                  setTargetPoolId(next.poolId);
+                  setTargetLocator(next.path);
+                  setTargetAllowRoot(next.allowRoot);
+                }}
+              />
+            ) : (
+              <Field
+                id="backup-target-locator"
+                label="Share"
+                value={targetLocator}
+                onChange={(e) => setTargetLocator(e.target.value)}
+                autoComplete="off"
+                hint={targetKind === "nfs" ? "server:/export/path" : "//server/share"}
+              />
+            )}
             {(targetKind === "nfs" || targetKind === "smb") && (
               <>
                 <Field
@@ -1799,6 +1876,39 @@ export function BackupsPage() {
           value={keepMonthly}
           onChange={(e) => setKeepMonthly(e.target.value)}
         />
+        {isObjectKind(targets?.find((t) => t.id === policyTargetId)?.kind ?? "") ? (
+          <fieldset className="field">
+            <legend className="field-label">Offsite copy</legend>
+            <p className="field-hint">
+              How many restore points keep a copy in cloud storage. Leave all at 0 to keep the same points offsite as
+              locally. Lower numbers keep the bucket small; local copies are not affected.
+            </p>
+            <Field
+              id="backup-offsite-daily"
+              label="Offsite daily"
+              type="number"
+              min={0}
+              value={offsiteDaily}
+              onChange={(e) => setOffsiteDaily(e.target.value)}
+            />
+            <Field
+              id="backup-offsite-weekly"
+              label="Offsite weekly"
+              type="number"
+              min={0}
+              value={offsiteWeekly}
+              onChange={(e) => setOffsiteWeekly(e.target.value)}
+            />
+            <Field
+              id="backup-offsite-monthly"
+              label="Offsite monthly"
+              type="number"
+              min={0}
+              value={offsiteMonthly}
+              onChange={(e) => setOffsiteMonthly(e.target.value)}
+            />
+          </fieldset>
+        ) : null}
       </ConfirmDialog>
 
       <ConfirmDialog

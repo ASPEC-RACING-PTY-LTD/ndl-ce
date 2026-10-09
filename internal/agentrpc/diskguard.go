@@ -63,8 +63,10 @@ func diskGateFor(m *agentv1.ExecuteRequest, gameRoot string) (string, string, bo
 	case m.GetBackupCopy() != nil:
 		v := m.GetBackupCopy()
 		switch v.GetAction() {
-		case backuphost.ActionStatus, backuphost.ActionPreview, backuphost.ActionExpire,
-			qemu.BackupStat, qemu.BackupStatFS:
+		case backuphost.ActionStatus, backuphost.ActionWorkspace, backuphost.ActionPreview, backuphost.ActionExpire,
+			backuphost.ActionGC, backuphost.ActionRemoteUsage, backuphost.ActionRelocate,
+			backuphost.ActionVerify, backuphost.ActionKey, backuphost.ActionWipeRemote,
+			qemu.BackupStat, qemu.BackupStatFS, qemu.BackupRootFS:
 			return "", "", false
 		}
 		return "Backup", v.GetDestPath(), true

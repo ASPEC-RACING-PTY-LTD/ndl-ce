@@ -2,6 +2,7 @@ package appdb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -89,6 +90,8 @@ type BackupPolicy struct {
 	KeepDaily   int
 	KeepWeekly  int
 	KeepMonthly int
+	// Offsite is stored in backup_policy_offsite, not in the policy row.
+	Offsite     BackupOffsite
 	CaptureMode string
 	ScopeJSON   string
 	LastRunAt   *time.Time
@@ -669,5 +672,82 @@ func (m *Memory) DeleteBackupArtifact(_ context.Context, clusterID, id string) e
 		return fmt.Errorf("backup artifact not found")
 	}
 	delete(m.backupArtifacts, id)
+	return nil
+}
+
+func (m *Memory) CompactBackupArtifactStats(_ context.Context, clusterID string, minBytes int, compact func(stats, blueprint string) (string, string)) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for id, a := range m.backupArtifacts {
+		if a.ClusterID != clusterID || len(a.StatsJSON)+len(a.BlueprintJSON) < minBytes {
+			continue
+		}
+		ns, nb := compact(a.StatsJSON, a.BlueprintJSON)
+		if ns == a.StatsJSON && nb == a.BlueprintJSON {
+			continue
+		}
+		a.StatsJSON, a.BlueprintJSON = ns, nb
+		m.backupArtifacts[id] = a
+		n++
+	}
+	return n, nil
+}
+
+// BackupOffsite is how many restore points keep their remote copy.
+type BackupOffsite struct {
+	KeepDaily   int
+	KeepWeekly  int
+	KeepMonthly int
+}
+
+// Enabled reports whether offsite retention differs from local retention.
+func (o BackupOffsite) Enabled() bool {
+	return o.KeepDaily > 0 || o.KeepWeekly > 0 || o.KeepMonthly > 0
+}
+
+func (m *Memory) SetBackupArtifactProtected(_ context.Context, clusterID, id string, protected bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.backupArtifacts[id]
+	if !ok || a.ClusterID != clusterID {
+		return sql.ErrNoRows
+	}
+	if m.protectedArtifacts == nil {
+		m.protectedArtifacts = map[string]bool{}
+	}
+	if protected {
+		m.protectedArtifacts[id] = true
+	} else {
+		delete(m.protectedArtifacts, id)
+	}
+	return nil
+}
+
+func (m *Memory) ListProtectedBackupArtifacts(_ context.Context, clusterID string) (map[string]bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]bool{}
+	for id := range m.protectedArtifacts {
+		if a, ok := m.backupArtifacts[id]; ok && a.ClusterID == clusterID {
+			out[id] = true
+		}
+	}
+	return out, nil
+}
+
+func (m *Memory) GetBackupPolicyOffsite(_ context.Context, clusterID, policyID string) (BackupOffsite, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.policyOffsite[clusterID+"/"+policyID], nil
+}
+
+func (m *Memory) UpsertBackupPolicyOffsite(_ context.Context, clusterID, policyID string, o BackupOffsite) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.policyOffsite == nil {
+		m.policyOffsite = map[string]BackupOffsite{}
+	}
+	m.policyOffsite[clusterID+"/"+policyID] = o
 	return nil
 }

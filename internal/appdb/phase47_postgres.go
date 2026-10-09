@@ -200,3 +200,93 @@ FROM backup_upload_jobs WHERE cluster_id=$1 ORDER BY updated_at DESC`, clusterID
 	}
 	return out, rows.Err()
 }
+
+// CompactBackupArtifactStats rewrites oversized stored statistics one row at a
+// time so a table of very large rows is never loaded at once.
+func (p *Postgres) CompactBackupArtifactStats(ctx context.Context, clusterID string, minBytes int, compact func(stats, blueprint string) (string, string)) (int, error) {
+	rows, err := p.DB.QueryContext(ctx, `
+SELECT id::text FROM backup_artifacts
+WHERE cluster_id=$1 AND octet_length(stats_json) + octet_length(blueprint_json) >= $2`, clusterID, minBytes)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, id := range ids {
+		var stats, blueprint string
+		if err := p.DB.QueryRowContext(ctx, `SELECT stats_json, blueprint_json FROM backup_artifacts WHERE cluster_id=$1 AND id=$2`, clusterID, id).Scan(&stats, &blueprint); err != nil {
+			continue
+		}
+		ns, nb := compact(stats, blueprint)
+		if ns == stats && nb == blueprint {
+			continue
+		}
+		if _, err := p.DB.ExecContext(ctx, `UPDATE backup_artifacts SET stats_json=$3, blueprint_json=$4 WHERE cluster_id=$1 AND id=$2`, clusterID, id, ns, nb); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+func (p *Postgres) SetBackupArtifactProtected(ctx context.Context, clusterID, id string, protected bool) error {
+	res, err := p.DB.ExecContext(ctx, `
+INSERT INTO backup_artifact_flags (artifact_id, cluster_id, protected, updated_at)
+SELECT id, cluster_id, $3, now() FROM backup_artifacts WHERE cluster_id=$1 AND id=$2
+ON CONFLICT (artifact_id) DO UPDATE SET protected=EXCLUDED.protected, updated_at=now()`, clusterID, id, protected)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (p *Postgres) ListProtectedBackupArtifacts(ctx context.Context, clusterID string) (map[string]bool, error) {
+	rows, err := p.DB.QueryContext(ctx, `SELECT artifact_id::text FROM backup_artifact_flags WHERE cluster_id=$1 AND protected`, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) GetBackupPolicyOffsite(ctx context.Context, clusterID, policyID string) (BackupOffsite, error) {
+	var o BackupOffsite
+	err := p.DB.QueryRowContext(ctx, `SELECT keep_daily, keep_weekly, keep_monthly FROM backup_policy_offsite WHERE cluster_id=$1 AND policy_id=$2`, clusterID, policyID).
+		Scan(&o.KeepDaily, &o.KeepWeekly, &o.KeepMonthly)
+	if errors.Is(err, sql.ErrNoRows) {
+		return BackupOffsite{}, nil
+	}
+	return o, err
+}
+
+func (p *Postgres) UpsertBackupPolicyOffsite(ctx context.Context, clusterID, policyID string, o BackupOffsite) error {
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO backup_policy_offsite (policy_id, cluster_id, keep_daily, keep_weekly, keep_monthly)
+VALUES ($2, $1, $3, $4, $5)
+ON CONFLICT (policy_id) DO UPDATE SET keep_daily=EXCLUDED.keep_daily, keep_weekly=EXCLUDED.keep_weekly, keep_monthly=EXCLUDED.keep_monthly`,
+		clusterID, policyID, o.KeepDaily, o.KeepWeekly, o.KeepMonthly)
+	return err
+}

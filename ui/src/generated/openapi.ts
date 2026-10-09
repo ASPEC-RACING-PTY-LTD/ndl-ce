@@ -1422,6 +1422,8 @@ export interface CreateBackupTargetRequest {
   prefix?: string;
   no_check_bucket?: boolean;
   encryption_key?: string;
+  pool_id?: string;
+  allow_root_filesystem?: boolean;
 }
 
 export interface BackupPolicy {
@@ -1438,6 +1440,9 @@ export interface BackupPolicy {
   last_run_at?: string;
   capture_mode?: "smart" | "custom" | "full";
   scope_json?: Record<string, unknown>;
+  offsite_keep_daily?: number;
+  offsite_keep_weekly?: number;
+  offsite_keep_monthly?: number;
 }
 
 export interface BackupPolicyListResponse {
@@ -1449,6 +1454,9 @@ export interface CreateBackupPolicyRequest {
   scope?: "all" | "selected";
   capture_mode?: "smart" | "custom" | "full";
   scope_json?: Record<string, unknown>;
+  offsite_keep_daily?: number;
+  offsite_keep_weekly?: number;
+  offsite_keep_monthly?: number;
   workload_id?: string;
   workload_ids?: string[];
   target_id: string;
@@ -1509,6 +1517,7 @@ export interface BackupArtifact {
   checksum_sha256: string;
   size_bytes: number;
   locator: string;
+  protected?: boolean;
   format: string;
   created_at: string;
   encrypted?: boolean;
@@ -1561,6 +1570,194 @@ export interface BackupWorkspace {
   physical_bytes?: number;
   pending_bytes?: number;
   root?: string;
+  host_total_bytes?: number;
+  effective_reserve_bytes?: number;
+  failed_uploads?: number;
+  usage?: BackupRepoUsage;
+  recovery?: Record<string, unknown>;
+  last_gc?: BackupGCReport;
+  gc_pending?: boolean;
+  pending_remote_sweep?: number;
+  warnings?: string[];
+  key_exported?: boolean;
+}
+
+export interface BackupRepoUsage {
+  total_bytes?: number;
+  pack_bytes?: number;
+  pack_count?: number;
+  snapshot_bytes?: number;
+  cache_bytes?: number;
+  state_bytes?: number;
+  temp_bytes?: number;
+  other_bytes?: number;
+  restore_points?: number;
+  recovered_points?: number;
+}
+
+export interface BackupGCReport {
+  reason?: string;
+  started_at?: string;
+  finished_at?: string;
+  local?: BackupGCStats;
+  error?: string;
+  remote?: Record<string, unknown>;
+  remote_errors?: Record<string, unknown>;
+}
+
+export interface BackupGCStats {
+  referenced_chunks?: number;
+  packs_scanned?: number;
+  packs_deleted?: number;
+  bytes_freed?: number;
+  packs_repacked?: number;
+  bytes_repacked?: number;
+  dead_bytes?: number;
+  caches_removed?: number;
+  repack_skipped?: string;
+}
+
+export interface BackupRemoteSweep {
+  candidates?: number;
+  packs_deleted?: number;
+  bytes_freed?: number;
+  still_in_use?: number;
+  foreign_points?: number;
+  unsupported?: string;
+}
+
+export interface BackupStorageEvent {
+  at?: string;
+  kind?: string;
+  ok?: boolean;
+  workload_id?: string;
+  message?: string;
+}
+
+export interface BackupStoragePool {
+  id?: string;
+  name?: string;
+  backend_type?: string;
+  status?: string;
+  root_path?: string;
+  warnings?: string[];
+  total_bytes?: number;
+  usable_bytes?: number;
+  allocated_bytes?: number;
+  provisioned_bytes?: number;
+  root_filesystem?: boolean;
+}
+
+export interface BackupStorageWorkload {
+  workload_id?: string;
+  workload_name?: string;
+  artifacts?: number;
+  logical_bytes?: number;
+  newest?: string;
+}
+
+export interface BackupUnmanagedPoint {
+  backup_id?: string;
+  namespace?: string;
+  workload_id?: string;
+  workload_name?: string;
+  created_at_ns?: number;
+  logical_bytes?: number;
+  recovered?: boolean;
+}
+
+export interface BackupStorageReport {
+  workspace?: BackupWorkspace;
+  pools?: BackupStoragePool[];
+  warnings?: string[];
+  events?: BackupStorageEvent[];
+  retention?: BackupStorageWorkload[];
+  unmanaged_restore_points?: BackupUnmanagedPoint[];
+  deleted_workload_backups?: BackupStorageWorkload[];
+}
+
+export interface BackupMaintenanceResponse {
+  gc?: BackupGCReport;
+}
+
+export interface BackupRelocateRequest {
+  path?: string;
+  pool_id?: string;
+  allow_root_filesystem?: boolean;
+}
+
+export interface BackupLocation {
+  pool_id?: string;
+  name?: string;
+  backend_type?: string;
+  target_path?: string;
+  repo_path?: string;
+  total_bytes?: number;
+  usable_bytes?: number;
+  root_filesystem?: boolean;
+  recommended?: boolean;
+  usable?: boolean;
+  reason?: string;
+}
+
+export interface BackupLocationListResponse {
+  items?: BackupLocation[];
+}
+
+export interface BackupKeyExportResponse {
+  key?: string;
+  format?: string;
+  note?: string;
+}
+
+export interface BackupProtectRequest {
+  protected?: boolean;
+}
+
+export interface BackupProtectResponse {
+  id?: string;
+  protected?: boolean;
+}
+
+export interface BackupWipeRequest {
+  confirm_name?: string;
+}
+
+export interface BackupWipeResponse {
+  target_id?: string;
+  objects_deleted?: number;
+  bytes_deleted?: number;
+  records_removed?: number;
+  records_local_only?: number;
+}
+
+export interface BackupVerifyResponse {
+  verified?: number;
+}
+
+export interface BackupRelocateResponse {
+  root?: string;
+}
+
+export interface BackupRemoteUsage {
+  total_bytes?: number;
+  objects?: number;
+  pack_bytes?: number;
+  pack_count?: number;
+  manifest_bytes?: number;
+  restore_points?: number;
+  foreign_points?: number;
+  unreferenced_pack_bytes?: number;
+  unreferenced_packs?: number;
+  other_bytes?: number;
+  other_objects?: number;
+  other_prefixes?: Record<string, unknown>;
+  pending_sweep?: number;
+}
+
+export interface BackupTargetUsageResponse {
+  target_id?: string;
+  usage?: BackupRemoteUsage;
 }
 
 export interface BackupRestorePoint {
@@ -3094,6 +3291,24 @@ export type ListBackupRunsPath = "/api/v1/backups/runs";
 export type ListBackupArtifactsPath = "/api/v1/backups/artifacts";
 
 export type GetBackupWorkspacePath = "/api/v1/backups/workspace";
+
+export type GetBackupStoragePath = "/api/v1/backups/storage";
+
+export type RunBackupMaintenancePath = "/api/v1/backups/workspace/maintenance";
+
+export type RelocateBackupRepositoryPath = "/api/v1/backups/workspace/relocate";
+
+export type GetBackupTargetUsagePath = "/api/v1/backups/targets/{id}/usage";
+
+export type ListBackupLocationsPath = "/api/v1/backups/locations";
+
+export type ExportBackupKeyPath = "/api/v1/backups/key/export";
+
+export type RunBackupVerifyPath = "/api/v1/backups/workspace/verify";
+
+export type ProtectBackupArtifactPath = "/api/v1/backups/artifacts/{id}/protect";
+
+export type WipeBackupTargetPath = "/api/v1/backups/targets/{id}/wipe";
 
 export type ListBackupRestorePointsPath = "/api/v1/backups/restore-points";
 

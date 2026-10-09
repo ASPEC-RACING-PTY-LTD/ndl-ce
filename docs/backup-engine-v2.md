@@ -141,24 +141,73 @@ location map, fetches only the required packs (including packs written by other
 workloads via dedup), synthesizes local indexes, and restores, all without a
 repository-wide listing. This is exercised end to end in tests.
 
-## Retention and garbage collection (`gc.go`)
+## Retention and garbage collection (`gc.go`, `remote_gc.go`)
 
-Retention selects restore points to keep by daily, weekly, and monthly buckets
-and operates on manifests, never directly on chunks. Deleting a restore point
-removes its manifest; shared chunks are reclaimed only later by GC.
+Retention keeps restore points by daily, weekly and monthly rotation and works
+on manifests, never directly on chunks. Rules apply in that order. Each keeps
+the newest point of its most recent buckets and skips a bucket that a point
+kept by an earlier rule already covers. Keep 1 daily, 1 weekly and 1 monthly
+therefore keeps today's point, the newest point of an earlier week and the
+newest point of an earlier month. The newest point is always kept. Control
+(`retainBackupIDs`) and the engine (`RetainNewest`) share this code.
 
-GC unions the chunk ids of every remaining manifest, then deletes only packs
-whose chunks are all unreferenced. A chunk shared by another restore point
-always survives. The operation is idempotent and safe to re-run after an
-interruption.
+Control applies retention after every policy attempt, successful or not, so a
+run of failing backups cannot leave a full repository full. An artifact
+record is removed only after its data was deleted. A failed deletion keeps the
+record, is shown under Backups, Backup storage, and is retried on the next run.
+
+GC unions the chunk ids of every remaining manifest. A pack with no
+referenced chunk is deleted. A pack that is mostly dead (live bytes below
+`DefaultRepackLiveRatio` of its size) is compacted: its live chunks are copied
+into a new pack before the old pack is removed. Without compaction a pack
+keeps all its bytes while a single chunk in it is referenced. Compaction is
+skipped, and reported, when it would cross the free-space reserve. If any
+manifest cannot be read, GC stops without deleting anything.
+
+Expiring a restore point that was uploaded also removes its manifest and
+location map from the target. Its packs become sweep candidates. The
+maintenance run (`v2-gc`, once after each policy run) deletes a candidate pack
+only when no remote location map this host can read references it and no local
+restore point, including one still uploading, has chunks in it. Only packs this
+host expired are ever considered. Restore points written with another
+repository key are reported, never deleted.
+
+## Repository key
+
+The repository key is stored in the repository (`master.key`) and outside it at
+`<data dir>/keys/backup-master.key`. If the repository directory is deleted,
+the preserved key is reused, so remote backups stay restorable. If the two keys
+differ, the repository key is used, the preserved file is left untouched and a
+warning is shown.
+
+## Crash and failure recovery
+
+Opening the repository removes half-written `.tmp` files, packs without a
+committed index and interrupted `remote-restore-*` staging. It also rebuilds
+the state file of a committed manifest whose capture crashed before writing it,
+and marks that point Recovered. A failed or cancelled capture schedules GC for
+when no capture is running, which reclaims the packs it had committed. Upload
+jobs for expired restore points or compacted packs are dropped. A job that
+exhausts its retries is parked as `.failed` instead of being retried every tick,
+and is re-armed on restart or when the restore point is enqueued again.
 
 ## Workspace safety (`workspace.go`)
 
-Before committing new pack data the engine enforces both a local repository size
-ceiling and a host minimum-free-space reserve. If either would be violated it
-stops accepting data and returns `ErrWorkspaceFull` rather than filling the host
-filesystem. It never deletes production data or corrupts existing backups to
-make room, and it does not preallocate huge files to reserve capacity.
+Before committing new pack data the engine enforces a local repository size
+ceiling and a host minimum-free-space reserve. The ceiling counts everything in
+the repository, not only packs. On the agent the reserve is never below the
+host disk protection critical threshold for the repository's filesystem, so a
+backup stops before disk protection would have to step in. When either limit
+would be crossed, the engine stops accepting data and returns `ErrWorkspaceFull`
+rather than filling the host filesystem. It never deletes production data or
+corrupts existing backups to make room.
+
+The repository can be moved to another directory, for example on a large pool,
+through `POST /backups/workspace/relocate`. Only an empty repository can move,
+so no restore point is stranded. `GET /backups/storage` reports repository
+usage, pools, retention, the last cleanup, failed cleanups, restore points
+without records and backups of deleted workloads. `GET /backups/targets/{id}/usage`
+measures what a target holds without changing it.
 
 ## Consistency
 
@@ -257,3 +306,34 @@ disposable mutation/restore tests is performed on the live host when this
 change is landed, not in CI. The disposable engine lifecycle lives in
 `internal/backup/e2e_cert_test.go`.
 ```
+
+## Datastores, jobs and offsite copies
+
+Backup locations are chosen by storage pool (`GET /backups/locations`). A pool
+on its own disk is recommended; the host root disk, workload disk folders,
+No-dal state and folders overlapping another target are refused, and the root
+disk needs `allow_root_filesystem`. The local repository moves the same way
+(`POST /backups/workspace/relocate` with `pool_id`), only while it is empty.
+
+Maintenance runs daily and verification weekly from the nightly tick, whether
+or not any backup ran. Verification checks every chunk is present and decrypts
+a sample of each restore point. Protected backups
+(`POST /backups/artifacts/{id}/protect`) are skipped by retention.
+
+A policy can keep fewer restore points offsite than locally
+(`offsite_keep_daily/weekly/monthly`). Restore points outside the offsite
+rotation lose only their remote copy; the local copy stays.
+
+The repository key can be exported once confirmed (`POST /backups/key/export`);
+until it is, the Backups page asks for it to be saved.
+
+## Consistent sources
+
+Containers on ZFS pools are captured from a temporary ZFS snapshot
+(`<dataset>/.zfs/snapshot/<tag>`), destroyed afterwards. VMs on Directory pools
+are captured through this engine: the backup takes a qcow2 overlay, captures the
+frozen image beneath it (flattened first if it has a backing chain), then merges
+the overlay back with QMP `block-commit` (or `qemu-img commit` when stopped).
+Overlays left by earlier backups are merged before the next one, so the chain no
+longer grows. Changed-block tracking with dirty bitmaps is not implemented yet;
+each VM backup reads the whole disk and deduplication keeps only changed chunks.

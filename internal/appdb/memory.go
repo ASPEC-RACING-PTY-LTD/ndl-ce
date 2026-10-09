@@ -44,6 +44,8 @@ type Memory struct {
 	backupPolicies     map[string]BackupPolicy
 	backupRuns         map[string]BackupRun
 	backupArtifacts    map[string]BackupArtifact
+	protectedArtifacts map[string]bool
+	policyOffsite      map[string]BackupOffsite
 	backupWorkspace    map[string]BackupWorkspaceSettings
 	backupRepos        map[string]BackupRepository
 	backupPoints       map[string]BackupRestorePoint

@@ -181,6 +181,16 @@ func Run(cfg Config) error {
 		log.Printf("backup: marked %d interrupted run(s) after control restart", n)
 	}
 	recCancel()
+	if n, b := httpapi.SweepStaleTempDirs(os.TempDir()); n > 0 {
+		log.Printf("backup: removed %d interrupted staging folder(s), %d bytes", n, b)
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		if n := srv.CompactStoredBackupStats(ctx); n > 0 {
+			log.Printf("backup: compacted stored statistics of %d backup(s)", n)
+		}
+	}()
 	enabled, err := readCertificateEnabled(st)
 	if err != nil {
 		return fmt.Errorf("tls state is unreadable; refusing to start: %w", err)

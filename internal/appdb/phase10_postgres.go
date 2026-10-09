@@ -80,3 +80,22 @@ func scanSnapshot(row rowScanner) (Snapshot, error) {
 		&s.ParentID, &s.ChainDepth, &s.Status, &s.CreatedAt)
 	return s, err
 }
+
+func (p *Postgres) DeleteSnapshot(ctx context.Context, clusterID, id string) error {
+	tx, err := p.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `UPDATE snapshots SET parent_id=NULL WHERE cluster_id=$1 AND parent_id=$2`, clusterID, id); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM snapshots WHERE cluster_id=$1 AND id=$2`, clusterID, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}

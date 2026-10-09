@@ -109,6 +109,10 @@ type Server struct {
 	policyMu        sync.Mutex
 	policyActive    string
 	nightlyBusy     atomic.Bool
+	storageMu       sync.Mutex
+	storageEvents   []storageEvent
+	lastMaintenance time.Time
+	lastVerify      time.Time
 	alertBusy       atomic.Bool
 	updateCheckBusy atomic.Bool
 	updateMu        sync.Mutex
@@ -444,6 +448,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/backups/workspace", s.getBackupWorkspace)
 	mux.HandleFunc("PATCH /api/v1/backups/workspace", s.patchBackupWorkspace)
 	mux.HandleFunc("GET /api/v1/backups/restore-points", s.listBackupRestorePoints)
+	mux.HandleFunc("GET /api/v1/backups/storage", s.getBackupStorage)
+	mux.HandleFunc("POST /api/v1/backups/workspace/maintenance", s.runBackupMaintenanceAPI)
+	mux.HandleFunc("POST /api/v1/backups/workspace/relocate", s.relocateBackupRepository)
+	mux.HandleFunc("GET /api/v1/backups/targets/{id}/usage", s.getBackupTargetUsage)
+	mux.HandleFunc("POST /api/v1/backups/targets/{id}/wipe", s.wipeBackupTarget)
+	mux.HandleFunc("GET /api/v1/backups/locations", s.listBackupLocations)
+	mux.HandleFunc("POST /api/v1/backups/key/export", s.exportBackupKey)
+	mux.HandleFunc("POST /api/v1/backups/workspace/verify", s.runBackupVerifyAPI)
+	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/protect", s.protectBackupArtifact)
 	mux.HandleFunc("POST /api/v1/backups/scope-preview", s.previewBackupScope)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/restore", s.restoreBackup)
 	mux.HandleFunc("POST /api/v1/backups/artifacts/{id}/verify", s.verifyBackupArtifact)

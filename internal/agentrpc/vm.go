@@ -10,6 +10,7 @@ import (
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/internal/backuphost"
 	"github.com/no-dal/ndl-ce/internal/qemu"
+	"github.com/no-dal/ndl-ce/internal/storage"
 	"github.com/no-dal/ndl-ce/internal/vmspec"
 )
 
@@ -100,6 +101,14 @@ func (h *Handler) execVMSnapshot(ctx context.Context, m *agentv1.VMSnapshot) (*c
 }
 
 func (h *Handler) execBackupCopy(ctx context.Context, m *agentv1.BackupCopy) (*connect.Response[agentv1.ExecuteResponse], error) {
+	if m.GetAction() == backuphost.ActionRelocate {
+		out, err := h.relocateBackupRepo(ctx, m.GetDestPath())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		extra, _ := json.Marshal(out)
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: m.GetAction(), ResultJson: mustJSON(storage.CopyResult{Dest: out.Locator, Extra: string(extra)})}), nil
+	}
 	if backuphost.IsAction(m.GetAction()) {
 		host, err := h.backupHost()
 		if err != nil {

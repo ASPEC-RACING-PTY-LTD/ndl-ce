@@ -93,7 +93,23 @@ const baseRoutes = {
     body: { items: [{ id: "tgt-1", name: "local-disk", kind: "local", locator: "/var/lib/ndl/backups", status: "available" }] },
   },
   "/api/v1/backups/runs": { status: 200, body: { items: [] } },
+  "/api/v1/backups/locations": {
+    status: 200,
+    body: { items: [{ pool_id: "pool-1", name: "local", backend_type: "directory", usable: true, root_filesystem: true, recommended: false, target_path: "/var/lib/ndl/storage/local/backups" }] },
+  },
   "/api/v1/backups/artifacts": { status: 200, body: { items: [] } },
+  "/api/v1/backups/storage": {
+    status: 200,
+    body: {
+      workspace: { root: "/var/lib/ndl/backup-repo", repo_bytes: 8 * 1024 * 1024, max_local_bytes: 50 * 1024 * 1024 * 1024 },
+      pools: [],
+      warnings: ["The local backup repository may grow to 250.0 GiB, more than a quarter of the 867.6 GiB disk it is on."],
+      events: [{ at: "2026-10-09T19:40:00Z", kind: "retention", ok: false, message: "backup a1 was not removed and will be retried" }],
+      retention: [],
+      unmanaged_restore_points: [],
+      deleted_workload_backups: [],
+    },
+  },
   "/api/v1/backups/workspace": {
     status: 200,
     body: {

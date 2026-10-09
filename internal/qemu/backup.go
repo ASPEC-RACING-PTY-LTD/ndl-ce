@@ -30,17 +30,26 @@ const (
 	BackupSyncTree    = "sync-tree"
 	// BackupPack/Unpack wrap legacy backuppack objects. New backups do not
 	// create these; they remain so existing user artifacts can be restored.
-	BackupPack        = "pack"
-	BackupUnpack      = "unpack"
-	BackupStatFS      = "statfs"
-	BackupRmTree      = "rm-tree"
-	BackupV2Capture   = "v2-capture"
-	BackupV2Restore   = "v2-restore"
-	BackupV2Status    = "v2-status"
-	BackupV2Preview   = "v2-preview"
-	BackupV2Expire    = "v2-expire"
-	BackupV2Workspace = "v2-workspace"
-	BackupV2Enqueue   = "v2-enqueue"
+	BackupPack          = "pack"
+	BackupUnpack        = "unpack"
+	BackupStatFS        = "statfs"
+	BackupRmTree        = "rm-tree"
+	BackupV2Capture     = "v2-capture"
+	BackupV2Restore     = "v2-restore"
+	BackupV2Status      = "v2-status"
+	BackupV2Preview     = "v2-preview"
+	BackupV2Expire      = "v2-expire"
+	BackupV2Workspace   = "v2-workspace"
+	BackupV2Enqueue     = "v2-enqueue"
+	BackupV2GC          = "v2-gc"
+	BackupV2RemoteUsage = "v2-remote-usage"
+	BackupV2Relocate    = "v2-relocate"
+	BackupV2Verify      = "v2-verify"
+	BackupV2Key         = "v2-key"
+	BackupV2WipeRemote  = "v2-wipe-remote"
+	// BackupRootFS reports (Size 1) whether a path is on the host root
+	// filesystem. It only stats.
+	BackupRootFS = "root-fs"
 )
 
 // ArchiveAction encodes an optional guest hook identity as archive:<unit>.
@@ -70,6 +79,19 @@ func (e *Engine) CopyOffline(ctx context.Context, action, src, dest string) (sto
 		act = BackupCopy
 	}
 	switch act {
+	case BackupRootFS:
+		if dest == "" || !strings.HasPrefix(dest, "/") || strings.Contains(dest, "..") {
+			return storage.CopyResult{}, storage.ErrForbiddenPath
+		}
+		same, err := storage.SameFilesystem(dest, "/")
+		if err != nil {
+			return storage.CopyResult{}, err
+		}
+		var n int64
+		if same {
+			n = 1
+		}
+		return storage.CopyResult{Dest: dest, Size: n, Format: "rootfs"}, nil
 	case BackupMkdir:
 		if err := storage.AllowedArtifactPath(dest); err != nil {
 			return storage.CopyResult{}, err

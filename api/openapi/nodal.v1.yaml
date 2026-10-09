@@ -6165,6 +6165,181 @@ paths:
           description: Unauthenticated
         "403":
           description: Forbidden
+  /backups/storage:
+    get:
+      operationId: getBackupStorage
+      summary: Where backup and workload storage goes, retention state, cleanup history and warnings
+      responses:
+        "200":
+          description: Storage report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupStorageReport"
+        "401":
+          description: Unauthenticated
+  /backups/workspace/maintenance:
+    post:
+      operationId: runBackupMaintenance
+      summary: Collect garbage, compact the local repository and sweep remote packs of expired restore points now
+      responses:
+        "200":
+          description: Maintenance report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupMaintenanceResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /backups/workspace/relocate:
+    post:
+      operationId: relocateBackupRepository
+      summary: Point the agent at a new, empty backup repository directory. Never moves or deletes backup data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupRelocateRequest"
+      responses:
+        "200":
+          description: The repository location in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupRelocateResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "409":
+          description: The current repository still holds restore points or is busy
+  /backups/targets/{id}/usage:
+    get:
+      operationId: getBackupTargetUsage
+      summary: Measure what a backup target holds. Lists and reads only; never deletes.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Target usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTargetUsageResponse"
+        "401":
+          description: Unauthenticated
+        "404":
+          description: Target not found
+  /backups/locations:
+    get:
+      operationId: listBackupLocations
+      summary: Storage pools that can hold backups, with the root disk flagged and a separate disk recommended
+      responses:
+        "200":
+          description: Backup locations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupLocationListResponse"
+        "401":
+          description: Unauthenticated
+  /backups/key/export:
+    post:
+      operationId: exportBackupKey
+      summary: Export the backup repository key. Requires X-Nodal-Confirm export-backup-key.
+      responses:
+        "200":
+          description: The key, hex encoded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupKeyExportResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "409":
+          description: Confirmation header missing
+  /backups/workspace/verify:
+    post:
+      operationId: runBackupVerify
+      summary: Verify every local restore point now. Read only.
+      responses:
+        "200":
+          description: Number of restore points verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupVerifyResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+  /backups/artifacts/{id}/protect:
+    post:
+      operationId: protectBackupArtifact
+      summary: Protect a backup from retention, or remove the protection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupProtectRequest"
+      responses:
+        "200":
+          description: Protection state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupProtectResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Backup not found
+  /backups/targets/{id}/wipe:
+    post:
+      operationId: wipeBackupTarget
+      summary: Delete every No-dal backup object in a cloud target to start fresh. Requires X-Nodal-Confirm wipe-target and the exact target name.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupWipeRequest"
+      responses:
+        "200":
+          description: What was deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupWipeResponse"
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "409":
+          description: Confirmation missing or the name does not match
   /backups/restore-points:
     get:
       operationId: listBackupRestorePoints
@@ -11262,6 +11437,12 @@ components:
         encryption_key:
           type: string
           description: Write-only 32-byte key or 64 hex chars. Generated if omitted for object targets. Bucket SSE is not sufficient.
+        pool_id:
+          type: string
+          description: For local targets, store backups in a folder on this storage pool instead of a typed locator.
+        allow_root_filesystem:
+          type: boolean
+          description: Confirms a local target on the host root disk. Without it such a location is refused.
     BackupPolicy:
       type: object
       additionalProperties: false
@@ -11319,6 +11500,13 @@ components:
           type: object
           additionalProperties: true
           description: Per-workload include/exclude overrides. Never contains secrets.
+        offsite_keep_daily:
+          type: integer
+          description: Restore points whose remote copy is kept, by day. All three zero means the remote copy follows local retention.
+        offsite_keep_weekly:
+          type: integer
+        offsite_keep_monthly:
+          type: integer
     BackupPolicyListResponse:
       type: object
       additionalProperties: false
@@ -11358,6 +11546,13 @@ components:
         scope_json:
           type: object
           additionalProperties: true
+        offsite_keep_daily:
+          type: integer
+          description: Restore points whose remote copy is kept, by day. All three zero means the remote copy follows local retention.
+        offsite_keep_weekly:
+          type: integer
+        offsite_keep_monthly:
+          type: integer
         workload_id:
           type: string
           description: Legacy single-workload selector. Treated as selected scope.
@@ -11525,6 +11720,9 @@ components:
           type: integer
         locator:
           type: string
+        protected:
+          type: boolean
+          description: Protected backups are never removed by retention.
         format:
           type: string
         created_at:
@@ -11650,6 +11848,391 @@ components:
           type: integer
         root:
           type: string
+        host_total_bytes:
+          type: integer
+        effective_reserve_bytes:
+          type: integer
+          description: Free space backups leave on the repository disk, never below the host disk protection threshold.
+        failed_uploads:
+          type: integer
+        usage:
+          $ref: "#/components/schemas/BackupRepoUsage"
+        recovery:
+          type: object
+          additionalProperties: true
+        last_gc:
+          $ref: "#/components/schemas/BackupGCReport"
+        gc_pending:
+          type: boolean
+        pending_remote_sweep:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+        key_exported:
+          type: boolean
+          description: Whether the backup key was exported. Until it is, losing this host loses every backup.
+    BackupRepoUsage:
+      type: object
+      additionalProperties: false
+      properties:
+        total_bytes:
+          type: integer
+        pack_bytes:
+          type: integer
+        pack_count:
+          type: integer
+        snapshot_bytes:
+          type: integer
+        cache_bytes:
+          type: integer
+        state_bytes:
+          type: integer
+        temp_bytes:
+          type: integer
+        other_bytes:
+          type: integer
+        restore_points:
+          type: integer
+        recovered_points:
+          type: integer
+    BackupGCReport:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        local:
+          $ref: "#/components/schemas/BackupGCStats"
+        error:
+          type: string
+        remote:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BackupRemoteSweep"
+        remote_errors:
+          type: object
+          additionalProperties:
+            type: string
+    BackupGCStats:
+      type: object
+      additionalProperties: false
+      properties:
+        referenced_chunks:
+          type: integer
+        packs_scanned:
+          type: integer
+        packs_deleted:
+          type: integer
+        bytes_freed:
+          type: integer
+        packs_repacked:
+          type: integer
+        bytes_repacked:
+          type: integer
+        dead_bytes:
+          type: integer
+        caches_removed:
+          type: integer
+        repack_skipped:
+          type: string
+    BackupRemoteSweep:
+      type: object
+      additionalProperties: false
+      properties:
+        candidates:
+          type: integer
+        packs_deleted:
+          type: integer
+        bytes_freed:
+          type: integer
+        still_in_use:
+          type: integer
+        foreign_points:
+          type: integer
+        unsupported:
+          type: string
+    BackupStorageEvent:
+      type: object
+      additionalProperties: false
+      required: [at, kind, ok, message]
+      properties:
+        at:
+          type: string
+          format: date-time
+        kind:
+          type: string
+        ok:
+          type: boolean
+        workload_id:
+          type: string
+        message:
+          type: string
+    BackupStoragePool:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        backend_type:
+          type: string
+        status:
+          type: string
+        root_path:
+          type: string
+        warnings:
+          type: array
+          nullable: true
+          items:
+            type: string
+        total_bytes:
+          type: integer
+          nullable: true
+        usable_bytes:
+          type: integer
+          nullable: true
+        allocated_bytes:
+          type: integer
+          nullable: true
+        provisioned_bytes:
+          type: integer
+          nullable: true
+        root_filesystem:
+          type: boolean
+    BackupStorageWorkload:
+      type: object
+      additionalProperties: false
+      properties:
+        workload_id:
+          type: string
+        workload_name:
+          type: string
+        artifacts:
+          type: integer
+        logical_bytes:
+          type: integer
+        newest:
+          type: string
+    BackupUnmanagedPoint:
+      type: object
+      additionalProperties: false
+      properties:
+        backup_id:
+          type: string
+        namespace:
+          type: string
+        workload_id:
+          type: string
+        workload_name:
+          type: string
+        created_at_ns:
+          type: integer
+        logical_bytes:
+          type: integer
+        recovered:
+          type: boolean
+    BackupStorageReport:
+      type: object
+      additionalProperties: false
+      required: [workspace, pools, warnings, events, retention, unmanaged_restore_points, deleted_workload_backups]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/BackupWorkspace"
+        pools:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/BackupStoragePool"
+        warnings:
+          type: array
+          nullable: true
+          items:
+            type: string
+        events:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/BackupStorageEvent"
+        retention:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/BackupStorageWorkload"
+        unmanaged_restore_points:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/BackupUnmanagedPoint"
+        deleted_workload_backups:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/BackupStorageWorkload"
+    BackupMaintenanceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        gc:
+          $ref: "#/components/schemas/BackupGCReport"
+    BackupRelocateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        pool_id:
+          type: string
+          description: Put the repository in a folder on this storage pool.
+        allow_root_filesystem:
+          type: boolean
+    BackupLocation:
+      type: object
+      additionalProperties: false
+      required: [pool_id, name, backend_type, usable, root_filesystem, recommended]
+      properties:
+        pool_id:
+          type: string
+        name:
+          type: string
+        backend_type:
+          type: string
+        target_path:
+          type: string
+        repo_path:
+          type: string
+        total_bytes:
+          type: integer
+          nullable: true
+        usable_bytes:
+          type: integer
+          nullable: true
+        root_filesystem:
+          type: boolean
+        recommended:
+          type: boolean
+        usable:
+          type: boolean
+        reason:
+          type: string
+    BackupLocationListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupLocation"
+    BackupKeyExportResponse:
+      type: object
+      additionalProperties: false
+      required: [key, format]
+      properties:
+        key:
+          type: string
+        format:
+          type: string
+        note:
+          type: string
+    BackupProtectRequest:
+      type: object
+      additionalProperties: false
+      required: [protected]
+      properties:
+        protected:
+          type: boolean
+    BackupProtectResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        protected:
+          type: boolean
+    BackupWipeRequest:
+      type: object
+      additionalProperties: false
+      required: [confirm_name]
+      properties:
+        confirm_name:
+          type: string
+    BackupWipeResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        target_id:
+          type: string
+        objects_deleted:
+          type: integer
+        bytes_deleted:
+          type: integer
+        records_removed:
+          type: integer
+        records_local_only:
+          type: integer
+    BackupVerifyResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        verified:
+          type: integer
+    BackupRelocateResponse:
+      type: object
+      additionalProperties: false
+      required: [root]
+      properties:
+        root:
+          type: string
+    BackupRemoteUsage:
+      type: object
+      additionalProperties: false
+      properties:
+        total_bytes:
+          type: integer
+        objects:
+          type: integer
+        pack_bytes:
+          type: integer
+        pack_count:
+          type: integer
+        manifest_bytes:
+          type: integer
+        restore_points:
+          type: integer
+        foreign_points:
+          type: integer
+        unreferenced_pack_bytes:
+          type: integer
+        unreferenced_packs:
+          type: integer
+        other_bytes:
+          type: integer
+        other_objects:
+          type: integer
+        other_prefixes:
+          type: object
+          additionalProperties:
+            type: integer
+        pending_sweep:
+          type: integer
+    BackupTargetUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [target_id]
+      properties:
+        target_id:
+          type: string
+        usage:
+          $ref: "#/components/schemas/BackupRemoteUsage"
     BackupRestorePoint:
       type: object
       additionalProperties: false

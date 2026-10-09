@@ -648,7 +648,7 @@ func TestPhase18CloneFailsClosedForCatalogExtraDataDisk(t *testing.T) {
 	}
 	bk := s.Backup.(*fakeBackup)
 	for _, c := range bk.copies {
-		if c[0] == qemu.BackupCopy {
+		if c[0] == qemu.BackupCopy || c[0] == qemu.BackupV2Capture {
 			t.Fatalf("CopyBackup must not write a boot-only clone: %+v", bk.copies)
 		}
 	}
@@ -1525,7 +1525,7 @@ func TestPhase18ImportFailsClosedForISOLibrary(t *testing.T) {
 		t.Fatalf("iso import body %s", raw)
 	}
 	for _, c := range fb.copies {
-		if c[0] == qemu.BackupCopy {
+		if c[0] == qemu.BackupCopy || c[0] == qemu.BackupV2Capture {
 			t.Fatalf("CopyBackup must not qemu-img an ISO as qcow2: %+v", fb.copies)
 		}
 	}

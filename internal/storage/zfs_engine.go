@@ -146,6 +146,23 @@ func (e ZFSEngine) Apply(ctx context.Context, op ZFSOp) (ZFSResult, error) {
 		}
 		res.Status = StatusAvailable
 		return res, nil
+	case "destroy-snapshot":
+		ds, err := DatasetName(op.Name, op.VolumeID)
+		if err != nil {
+			return ZFSResult{}, err
+		}
+		argv, err := ZFSDestroySnapshotArgv(ds, op.Snapshot)
+		if err != nil {
+			return ZFSResult{}, err
+		}
+		res.Dataset, res.Argv = ds, argv
+		if err := e.exec(ctx, argv); err != nil {
+			res.Status = StatusFailed
+			res.Reason = err.Error()
+			return res, nil
+		}
+		res.Status = StatusAvailable
+		return res, nil
 	case "rollback":
 		ds, err := DatasetName(op.Name, op.VolumeID)
 		if err != nil {

@@ -309,3 +309,44 @@ func (r *Repository) applyMetadata(target string, e FileEntry, chown bool) {
 	}
 	_ = applyXattrs(target, e.Xattrs)
 }
+
+// VerifySample checks that every chunk of m is present and that up to sample
+// chunks, spread across the restore point, decrypt and authenticate.
+func (r *Repository) VerifySample(m *Manifest, sample int) (int, error) {
+	if err := r.Verify(m); err != nil {
+		return 0, err
+	}
+	var all []KeyID
+	for _, f := range m.Files {
+		all = append(all, f.Chunks...)
+	}
+	if len(all) == 0 || sample <= 0 {
+		return 0, nil
+	}
+	step := len(all) / sample
+	if step < 1 {
+		step = 1
+	}
+	checked := 0
+	for i := 0; i < len(all) && checked < sample; i += step {
+		if _, err := r.GetChunk(all[i]); err != nil {
+			return checked, err
+		}
+		checked++
+	}
+	return checked, nil
+}
+
+// SetRemoteState records where a restore point exists remotely, for example
+// after its remote copy was removed by offsite retention.
+func (r *Repository) SetRemoteState(namespace, backupID string, remote RemoteState) error {
+	st, err := r.LoadState(namespace, backupID)
+	if err != nil {
+		return err
+	}
+	st.Remote = remote
+	if remote == RemoteNone {
+		st.UploadStartedNS, st.UploadEndedNS = 0, 0
+	}
+	return r.writeState(st)
+}

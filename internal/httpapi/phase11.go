@@ -95,7 +95,9 @@ func backupPolicyJSON(p appdb.BackupPolicy) map[string]any {
 		"id": p.ID, "name": p.Name, "target_id": p.TargetID,
 		"scope": p.Scope, "workload_ids": ids,
 		"schedule": p.Schedule, "keep_daily": p.KeepDaily, "keep_weekly": p.KeepWeekly, "keep_monthly": p.KeepMonthly,
-		"capture_mode": firstNonEmpty(p.CaptureMode, appdb.BackupCaptureFull),
+		"capture_mode":        firstNonEmpty(p.CaptureMode, appdb.BackupCaptureFull),
+		"offsite_keep_daily":  p.Offsite.KeepDaily,
+		"offsite_keep_weekly": p.Offsite.KeepWeekly, "offsite_keep_monthly": p.Offsite.KeepMonthly,
 	}
 	if p.ScopeJSON != "" {
 		out["scope_json"] = json.RawMessage(p.ScopeJSON)
@@ -312,6 +314,11 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		Prefix        string `json:"prefix"`
 		NoCheckBucket bool   `json:"no_check_bucket"`
 		EncryptionKey string `json:"encryption_key"`
+		// PoolID stores a local target in a folder on that storage pool
+		// instead of a typed path.
+		PoolID string `json:"pool_id"`
+		// AllowRootFilesystem confirms a local target on the host root disk.
+		AllowRootFilesystem bool `json:"allow_root_filesystem"`
 	}
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
 		writeErr(w, http.StatusBadRequest, "name and kind are required")
@@ -358,6 +365,14 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, backupTargetJSON(row))
 		return
 	}
+	if kind == appdb.BackupLocal && strings.TrimSpace(req.PoolID) != "" {
+		path, err := s.poolBackupPath(r.Context(), p.User.ClusterID, req.PoolID, req.Name)
+		if err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
+		req.Locator = path
+	}
 	if strings.TrimSpace(req.Locator) == "" {
 		writeErr(w, http.StatusBadRequest, "name, kind, and locator are required")
 		return
@@ -398,6 +413,10 @@ func (s *Server) createBackupTarget(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "local locator must be an absolute path")
 			return
 		}
+		if err := s.checkLocalBackupPath(r.Context(), p.User.ClusterID, locator, "", req.AllowRootFilesystem); err != nil {
+			writeErr(w, statusFor(err), err.Error())
+			return
+		}
 		if s.Backup == nil {
 			writeErr(w, http.StatusBadGateway, "backup agent is unavailable")
 			return
@@ -432,6 +451,7 @@ func (s *Server) listBackupPolicies(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
+		item.Offsite, _ = s.Store.GetBackupPolicyOffsite(r.Context(), p.User.ClusterID, item.ID)
 		out = append(out, backupPolicyJSON(item))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
@@ -448,6 +468,10 @@ func (s *Server) createBackupPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.CreateBackupPolicy(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.Store.UpsertBackupPolicyOffsite(r.Context(), p.User.ClusterID, row.ID, row.Offsite); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -473,6 +497,10 @@ func (s *Server) updateBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	row.CreatedAt = existing.CreatedAt
 	row.LastRunAt = existing.LastRunAt
 	if err := s.Store.UpdateBackupPolicy(r.Context(), row); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.Store.UpsertBackupPolicyOffsite(r.Context(), p.User.ClusterID, row.ID, row.Offsite); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -511,6 +539,11 @@ type backupPolicyBody struct {
 	KeepMonthly int             `json:"keep_monthly"`
 	CaptureMode string          `json:"capture_mode"`
 	ScopeJSON   json.RawMessage `json:"scope_json"`
+	// Offsite retention keeps the remote copy of fewer restore points than
+	// are kept locally. All zero follows local retention.
+	OffsiteKeepDaily   int `json:"offsite_keep_daily"`
+	OffsiteKeepWeekly  int `json:"offsite_keep_weekly"`
+	OffsiteKeepMonthly int `json:"offsite_keep_monthly"`
 }
 
 func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID string) (appdb.BackupPolicy, error) {
@@ -555,11 +588,17 @@ func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID st
 	if req.KeepDaily == 0 && req.KeepWeekly == 0 && req.KeepMonthly == 0 {
 		req.KeepDaily, req.KeepWeekly, req.KeepMonthly = 7, 4, 3
 	}
+	if req.OffsiteKeepDaily < 0 || req.OffsiteKeepWeekly < 0 || req.OffsiteKeepMonthly < 0 {
+		return appdb.BackupPolicy{}, errBadRequest("offsite retention counts cannot be negative")
+	}
 	row := appdb.BackupPolicy{
 		ID: existingID, ClusterID: clusterID, Name: strings.TrimSpace(req.Name),
 		Scope: scope, TargetID: req.TargetID, Schedule: req.Schedule,
 		KeepDaily: req.KeepDaily, KeepWeekly: req.KeepWeekly, KeepMonthly: req.KeepMonthly,
 		CaptureMode: captureMode, ScopeJSON: strings.TrimSpace(string(req.ScopeJSON)),
+		Offsite: appdb.BackupOffsite{
+			KeepDaily: req.OffsiteKeepDaily, KeepWeekly: req.OffsiteKeepWeekly, KeepMonthly: req.OffsiteKeepMonthly,
+		},
 	}
 	if existingID == "" {
 		row.ID = uuid.NewString()
@@ -625,9 +664,12 @@ func (s *Server) listBackupArtifacts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	protected, _ := s.Store.ListProtectedBackupArtifacts(r.Context(), p.User.ClusterID)
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		out = append(out, backupArtifactJSON(item))
+		row := backupArtifactJSON(item)
+		row["protected"] = protected[item.ID]
+		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
@@ -661,6 +703,11 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run, err := s.executeBackup(r.Context(), p.User.ClusterID, req.WorkloadID, req.TargetID, req.PolicyID, req.CaptureMode, req.ScopeJSON)
+	if req.PolicyID != "" {
+		if pr := s.afterBackupAttempt(r.Context(), p.User.ClusterID, req.WorkloadID, req.TargetID, req.PolicyID); pr.V2 > 0 {
+			_, _ = s.runBackupMaintenance(r.Context(), "manual backup retention")
+		}
+	}
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -790,10 +837,11 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 		return nil, err
 	}
 	var (
-		mu      sync.Mutex
-		wg      sync.WaitGroup
-		runs    []appdb.BackupRun
-		lastErr error
+		mu        sync.Mutex
+		wg        sync.WaitGroup
+		runs      []appdb.BackupRun
+		lastErr   error
+		expiredV2 int
 	)
 	for _, workloadID := range ids {
 		wg.Add(1)
@@ -810,6 +858,12 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 			}
 			_ = wl
 			run, err := s.executeBackup(ctx, clusterID, workloadID, pol.TargetID, pol.ID, "", nil)
+			// Retention runs whatever the outcome: a failing backup must not
+			// stop expired backups from being removed.
+			pr := s.afterBackupAttempt(ctx, clusterID, workloadID, pol.TargetID, pol.ID)
+			mu.Lock()
+			expiredV2 += pr.V2
+			mu.Unlock()
 			if err != nil {
 				run = s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, err.Error())
 				mu.Lock()
@@ -824,6 +878,9 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 		}(workloadID)
 	}
 	wg.Wait()
+	// One maintenance pass per policy run reclaims what retention expired
+	// and anything failed captures left behind.
+	_, _ = s.runBackupMaintenance(ctx, fmt.Sprintf("policy %s (%d expired)", pol.Name, expiredV2))
 	if len(runs) == 0 {
 		if lastErr != nil {
 			return nil, lastErr
@@ -910,6 +967,7 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 		}
 		_, _ = s.executePolicyBackups(ctx, cluster.ID, pol.ID)
 	}
+	s.runScheduledBackupJobs(ctx, cluster.ID)
 }
 
 func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID, captureMode string, scopeJSON json.RawMessage) (appdb.BackupRun, error) {
@@ -1000,10 +1058,22 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
 			return run, errInternal("could not record backup run")
 		}
-		if policyID != "" {
-			if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
-				s.pruneBackupArtifacts(ctx, clusterID, workloadID, targetID, *pol)
-			}
+		return run, nil
+	}
+	if wl.Kind == vmspec.KindVM && pool != nil && pool.BackendType == storage.BackendDirectory && s.VM != nil {
+		// VM disks on Directory pools go through the deduplicating engine
+		// and leave no snapshot layer behind.
+		if err := s.executeVMBackupV2(ctx, clusterID, *wl, *tgt, &run, artifactID); err != nil {
+			return fail(err.Error())
+		}
+		now := s.now()
+		run.Status = appdb.BackupSucceeded
+		if len(plan.Skipped) > 0 {
+			run.Status = appdb.BackupSucceededWithWarnings
+		}
+		run.FinishedAt = &now
+		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
+			return run, errInternal("could not record backup run")
 		}
 		return run, nil
 	}
@@ -1121,11 +1191,6 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 	if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
 		return run, errInternal("could not record backup run")
 	}
-	if policyID != "" {
-		if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil {
-			s.pruneBackupArtifacts(ctx, clusterID, workloadID, targetID, *pol)
-		}
-	}
 	return run, nil
 }
 
@@ -1202,7 +1267,10 @@ func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row ap
 	}
 	depth := overlayChainDepth(vol.BackendRef, existing)
 	if depth >= qemu.ChainMax {
-		return appdb.Snapshot{}, "", errConflict("qcow2 overlay chain cap is 16")
+		// Each backup of a VM on a Directory pool leaves a qcow2 overlay that
+		// stays in the disk chain. At the cap every later backup fails, so
+		// say what fixes it instead of only naming the limit.
+		return appdb.Snapshot{}, "", errConflict("qcow2 overlay chain cap is 16: this VM's disk already has 16 snapshot layers, most of them left by earlier backups. Stop the VM and flatten its snapshots, or move the VM to a ZFS or LVM pool where backups use native snapshots, then back it up again")
 	}
 	snapID := uuid.NewString()
 	overlayRel := path.Join("volumes", storage.ClassVMDisk, vol.ID+"--"+snapID+".qcow2")
@@ -1238,86 +1306,6 @@ func (s *Server) snapshotForBackup(ctx context.Context, clusterID string, row ap
 		return appdb.Snapshot{}, "", err
 	}
 	return snap, frozen, nil
-}
-
-func (s *Server) pruneBackupArtifacts(ctx context.Context, clusterID, workloadID, targetID string, pol appdb.BackupPolicy) {
-	arts, err := s.Store.ListBackupArtifactsForWorkload(ctx, clusterID, workloadID, targetID)
-	if err != nil {
-		return
-	}
-	keep := retainBackupIDs(arts, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly)
-	for _, a := range arts {
-		if _, ok := keep[a.ID]; ok {
-			continue
-		}
-		if a.Format == "ndl-cab" && a.BackupID != "" && s.Backup != nil {
-			raw, _ := json.Marshal(map[string]string{
-				"action": "v2-expire", "namespace": a.Namespace, "backup_id": a.BackupID,
-			})
-			_, _ = s.Backup.CopyBackup(ctx, qemu.BackupV2Expire, "", string(raw))
-		}
-		if s.Backup != nil && !strings.HasPrefix(a.Locator, "s3://") && a.ObjectKey == "" && a.Format != "ndl-cab" {
-			if a.Format == backuppack.FormatNDLB {
-				_, _ = s.Backup.CopyBackup(ctx, qemu.BackupRmTree, "", a.Locator)
-			} else {
-				_, _ = s.Backup.CopyBackup(ctx, qemu.BackupDelete, "", a.Locator)
-			}
-		}
-		if a.ObjectKey != "" {
-			if tgt, _ := s.Store.GetBackupTarget(ctx, clusterID, targetID); tgt != nil {
-				pass, enc, _ := s.Store.BackupCredentials(ctx, clusterID, tgt.ID)
-				if key, err := objstore.ParseKey(enc); err == nil {
-					action := objstore.ActionDel
-					if isPackArtifact(a) {
-						action = objstore.ActionDelPack
-					}
-					_, _ = s.objectRPC().ObjectBackup(ctx, objstore.Request{
-						Action: action, Provider: tgt.Kind, Endpoint: tgt.Endpoint, Region: tgt.Region,
-						Bucket: tgt.Bucket, Key: a.ObjectKey, AccessKeyID: tgt.Username, SecretAccessKey: pass, EncryptionKey: key,
-					})
-				}
-			}
-		}
-		_ = s.Store.DeleteBackupArtifact(ctx, clusterID, a.ID)
-	}
-}
-
-func retainBackupIDs(arts []appdb.BackupArtifact, keepDaily, keepWeekly, keepMonthly int) map[string]struct{} {
-	keep := map[string]struct{}{}
-	seenDay := map[string]struct{}{}
-	seenWeek := map[string]struct{}{}
-	seenMonth := map[string]struct{}{}
-	daily, weekly, monthly := 0, 0, 0
-	for _, a := range arts {
-		day := a.CreatedAt.UTC().Format("2006-01-02")
-		y, w := a.CreatedAt.UTC().ISOWeek()
-		weekKey := fmt.Sprintf("%d-%d", y, w)
-		month := a.CreatedAt.UTC().Format("2006-01")
-		if daily < keepDaily {
-			if _, ok := seenDay[day]; !ok {
-				keep[a.ID] = struct{}{}
-				seenDay[day] = struct{}{}
-				daily++
-				continue
-			}
-		}
-		if weekly < keepWeekly {
-			if _, ok := seenWeek[weekKey]; !ok {
-				keep[a.ID] = struct{}{}
-				seenWeek[weekKey] = struct{}{}
-				weekly++
-				continue
-			}
-		}
-		if monthly < keepMonthly {
-			if _, ok := seenMonth[month]; !ok {
-				keep[a.ID] = struct{}{}
-				seenMonth[month] = struct{}{}
-				monthly++
-			}
-		}
-	}
-	return keep
 }
 
 func (s *Server) resolveRestoreDest(ctx context.Context, clusterID, targetNodeID string) (*appdb.Node, error) {

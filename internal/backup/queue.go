@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -107,6 +108,7 @@ func (q *UploadQueue) Start(ctx context.Context) error {
 	if err := os.MkdirAll(q.queueDir(), 0o750); err != nil {
 		return err
 	}
+	q.retryFailed()
 	q.ctx, q.cancel = context.WithCancel(ctx)
 	for i := 0; i < q.workers; i++ {
 		q.wg.Add(1)
@@ -139,13 +141,16 @@ func (q *UploadQueue) EnqueueBackup(state *PointState) error {
 	if err := os.MkdirAll(q.queueDir(), 0o750); err != nil {
 		return err
 	}
-	for _, packID := range state.Packs {
+	// The extra job without a pack completes the restore point even when
+	// its capture deduplicated everything and committed no new pack;
+	// without it such a point stayed queued forever.
+	for _, packID := range append(append([]string(nil), state.Packs...), "") {
 		job := uploadJob{Namespace: state.Namespace, BackupID: state.BackupID, PackID: packID}
 		raw, err := json.Marshal(job)
 		if err != nil {
 			return err
 		}
-		name := state.Namespace + "~~" + state.BackupID + "~~" + packID + ".job"
+		name := state.Namespace + "~~" + state.BackupID + "~~" + firstNonEmpty(packID, "manifest") + ".job"
 		if err := writeFileAtomic(filepath.Join(q.queueDir(), name), raw); err != nil {
 			return err
 		}
@@ -156,6 +161,63 @@ func (q *UploadQueue) EnqueueBackup(state *PointState) error {
 	}
 	q.signal()
 	return nil
+}
+
+// retryFailed re-arms jobs that exhausted their attempts in an earlier run.
+func (q *UploadQueue) retryFailed() {
+	entries, err := os.ReadDir(q.queueDir())
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) != ".failed" {
+			continue
+		}
+		old := filepath.Join(q.queueDir(), e.Name())
+		_ = os.Rename(old, strings.TrimSuffix(old, ".failed")+".job")
+	}
+}
+
+// RemoveJobs drops every queued or failed upload job of one restore point.
+// Expiring a restore point calls it so its packs are not uploaded later.
+func (q *UploadQueue) RemoveJobs(namespace, backupID string) int {
+	if q == nil {
+		return 0
+	}
+	return removeJobs(q.queueDir(), namespace, backupID)
+}
+
+func removeJobs(dir, namespace, backupID string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	prefix := namespace + "~~" + backupID + "~~"
+	n := 0
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		if os.Remove(filepath.Join(dir, e.Name())) == nil {
+			n++
+		}
+	}
+	return n
+}
+
+// FailedJobs counts upload jobs that gave up and wait for a retry.
+func (q *UploadQueue) FailedJobs() int {
+	entries, err := os.ReadDir(q.queueDir())
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".failed" {
+			n++
+		}
+	}
+	return n
 }
 
 // PendingJobs counts persisted job files not yet completed.
@@ -241,11 +303,28 @@ func (q *UploadQueue) process(name string) {
 	}
 	var job uploadJob
 	if err := json.Unmarshal(raw, &job); err != nil {
+		// An unreadable job can never succeed; keep it out of the hot loop.
+		_ = os.Rename(path, strings.TrimSuffix(path, ".job")+".failed")
+		return
+	}
+	if _, err := q.repo.LoadState(job.Namespace, job.BackupID); err != nil {
+		// The restore point was expired before it was uploaded.
+		_ = os.Remove(path)
 		return
 	}
 	q.markUploading(job)
+	if job.PackID == "" {
+		_ = os.Remove(path)
+		q.maybeComplete(job)
+		return
+	}
 	data, err := os.ReadFile(filepath.Join(q.repo.packDir(), job.PackID+".pack"))
 	if err != nil {
+		// Compaction moved the pack's live chunks into another pack, or
+		// garbage collection removed it. Completion works out which packs
+		// the restore point still needs and uploads those.
+		_ = os.Remove(path)
+		q.maybeComplete(job)
 		return
 	}
 	if err := throttleBandwidth(q.ctx, int64(len(data)), q.bandwidthLimit()); err != nil {
@@ -269,9 +348,16 @@ func (q *UploadQueue) backoff(name string) {
 	n := q.attempts[name]
 	q.mu.Unlock()
 	if n >= q.maxAttempts {
-		// Leave the job file so a later run or operator can retry, but mark the
-		// restore point failed so UI never claims it is still queued forever.
+		// Park the job so the dispatcher stops retrying it every tick; it is
+		// re-armed on restart or when the restore point is enqueued again.
+		// The restore point is marked failed so the UI never claims it is
+		// still queued.
 		q.markFailed(name)
+		path := filepath.Join(q.queueDir(), name)
+		_ = os.Rename(path, strings.TrimSuffix(path, ".job")+".failed")
+		q.mu.Lock()
+		delete(q.attempts, name)
+		q.mu.Unlock()
 		return
 	}
 	d := q.baseBackoff * time.Duration(1<<uint(min(n, 6)))
@@ -324,9 +410,32 @@ func (q *UploadQueue) maybeComplete(job uploadJob) {
 	if err != nil {
 		return
 	}
-	for _, packID := range state.Packs {
+	if q.jobsPending(job.Namespace, job.BackupID) {
+		return // another worker completes the restore point
+	}
+	// A restore point needs every pack its chunks live in, including packs
+	// written by other captures through deduplication and packs produced by
+	// compaction, not only the packs its own capture committed.
+	needed, err := q.repo.packsFor(job.Namespace, job.BackupID)
+	if err != nil {
+		return
+	}
+	for _, packID := range needed {
 		ok, _, err := q.target.Head(q.ctx, objectKeyPack(packID))
-		if err != nil || !ok {
+		if err != nil {
+			return
+		}
+		if ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(q.repo.packDir(), packID+".pack"))
+		if err != nil {
+			return
+		}
+		if err := throttleBandwidth(q.ctx, int64(len(data)), q.bandwidthLimit()); err != nil {
+			return
+		}
+		if err := q.target.Put(q.ctx, objectKeyPack(packID), data); err != nil {
 			return
 		}
 	}
@@ -358,6 +467,22 @@ func (q *UploadQueue) maybeComplete(job uploadJob) {
 	state.Remote = RemoteProtected
 	state.UploadEndedNS = time.Now().UnixNano()
 	_ = q.repo.writeState(state)
+}
+
+// jobsPending reports whether any upload job of the restore point is still
+// queued or in flight.
+func (q *UploadQueue) jobsPending(namespace, backupID string) bool {
+	entries, err := os.ReadDir(q.queueDir())
+	if err != nil {
+		return false
+	}
+	prefix := namespace + "~~" + backupID + "~~"
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) && filepath.Ext(e.Name()) == ".job" {
+			return true
+		}
+	}
+	return false
 }
 
 func throttleBandwidth(ctx context.Context, n, bps int64) error {

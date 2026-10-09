@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // locEntry is one chunk's physical location, used to make a restore point's
@@ -47,6 +48,50 @@ func (r *Repository) buildLocmap(namespace, backupID string) ([]byte, error) {
 		return nil, err
 	}
 	return r.keys.SealBytes("locmap:"+namespace, raw)
+}
+
+// packsFor returns the packs that hold the chunks of one local restore point.
+func (r *Repository) packsFor(namespace, backupID string) ([]string, error) {
+	m, err := r.LoadManifest(namespace, backupID)
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]struct{}{}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, f := range m.Files {
+		for _, id := range f.Chunks {
+			loc, ok := r.index[id]
+			if !ok {
+				return nil, fmt.Errorf("chunk %s missing from repository", id)
+			}
+			set[loc.pack] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for p := range set {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// locmapPacks authenticates a remote location map and returns the packs it
+// references.
+func (k *Keys) locmapPacks(namespace string, raw []byte) (map[string]struct{}, error) {
+	plain, err := k.OpenBytes("locmap:"+namespace, raw)
+	if err != nil {
+		return nil, err
+	}
+	var entries []locEntry
+	if err := json.Unmarshal(plain, &entries); err != nil {
+		return nil, err
+	}
+	out := map[string]struct{}{}
+	for _, e := range entries {
+		out[e.Pack] = struct{}{}
+	}
+	return out, nil
 }
 
 // FetchRemote reconstructs a local repository containing exactly the data needed

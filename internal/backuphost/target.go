@@ -108,6 +108,18 @@ func (h *Host) remoteTarget(spec TargetSpec) (backup.Target, error) {
 	return backup.LocalTarget{Root: filepath.Join(h.root, "remote-local")}, nil
 }
 
+func (h *Host) failedJobs() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, q := range h.queues {
+		if q != nil {
+			n += q.FailedJobs()
+		}
+	}
+	return n
+}
+
 func (h *Host) pendingJobs() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()

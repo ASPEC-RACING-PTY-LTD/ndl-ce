@@ -14,6 +14,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/rbac"
+	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
 func (s *Server) getBackupWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -200,17 +201,29 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 		},
 		Target: s.v2TargetSpec(ctx, tgt),
 	}
+	source, release := s.zfsCaptureSource(ctx, clusterID, wl, vol, rootfs, run.ID)
+	defer release()
+	if source != rootfs {
+		// A ZFS snapshot is atomic and crash consistent; guest hooks would
+		// run after it was taken, so they are skipped.
+		req.Unit = ""
+		req.Consistency = backup.ConsistencyCrash
+	}
 	raw, _ := json.Marshal(req)
-	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2Capture, rootfs, string(raw))
+	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2Capture, source, string(raw))
 	if err != nil {
 		return err
 	}
+	return s.recordV2Artifact(ctx, clusterID, wl, tgt, run, artifactID, res)
+}
+
+// recordV2Artifact stores the artifact and restore point of a V2 capture.
+func (s *Server) recordV2Artifact(ctx context.Context, clusterID string, wl appdb.Workload, tgt appdb.BackupTarget, run *appdb.BackupRun, artifactID string, res storage.CopyResult) error {
 	var out backuphost.Result
 	if res.Extra != "" {
 		_ = json.Unmarshal([]byte(res.Extra), &out)
 	}
-	stats, _ := json.Marshal(out)
-	blueprint, _ := json.Marshal(out.Blueprint)
+	stats, blueprint := v2StatsJSON(out)
 	art := appdb.BackupArtifact{
 		ID: artifactID, ClusterID: clusterID, RunID: run.ID, WorkloadID: wl.ID,
 		ChecksumSHA256: firstNonEmpty(res.SHA256, out.BackupID), SizeBytes: firstInt64(out.LogicalBytes, res.Size),
@@ -220,7 +233,7 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 		LogicalBytes: out.LogicalBytes, PhysicalNewData: out.PhysicalNewData,
 		ChunksNew: out.ChunksNew, ChunksReused: out.ChunksReused,
 		CaptureDurationNS: out.DurationNanos, Consistency: firstNonEmpty(out.ConsistencyInfo.Result, out.Consistency),
-		CaptureMode: out.CaptureMode, BlueprintJSON: string(blueprint), StatsJSON: string(stats),
+		CaptureMode: out.CaptureMode, BlueprintJSON: blueprint, StatsJSON: stats,
 	}
 	if out.Remote == backup.RemoteProtected || out.Remote == backup.RemoteVerifying || out.Remote == backup.RemoteUploading || out.Remote == backup.RemoteQueued {
 		if isObjectBackupKind(tgt.Kind) {
@@ -398,22 +411,30 @@ func (s *Server) syncV2State(ctx context.Context, clusterID string) {
 			byPoint[p.BackupID] = p
 		}
 	}
+	// Rows are written only when something changed. Rewriting every
+	// artifact on every status sync churned PostgreSQL on the root disk.
 	for _, pt := range st.Points {
 		if a, ok := byBackup[pt.BackupID]; ok {
-			a.RemoteState = string(pt.Remote)
-			a.LocalComplete = pt.LocalComplete
+			b := a
+			b.RemoteState = string(pt.Remote)
+			b.LocalComplete = pt.LocalComplete
 			if pt.UploadEndedNS > pt.UploadStartedNS && pt.UploadStartedNS > 0 {
-				a.UploadDurationNS = pt.UploadEndedNS - pt.UploadStartedNS
+				b.UploadDurationNS = pt.UploadEndedNS - pt.UploadStartedNS
 			}
 			if pt.Consistency != "" {
-				a.Consistency = pt.Consistency
+				b.Consistency = pt.Consistency
 			}
-			_ = s.Store.UpdateBackupArtifact(ctx, a)
+			if b.RemoteState != a.RemoteState || b.LocalComplete != a.LocalComplete ||
+				b.UploadDurationNS != a.UploadDurationNS || b.Consistency != a.Consistency {
+				_ = s.Store.UpdateBackupArtifact(ctx, b)
+			}
 		}
 		if rp, ok := byPoint[pt.BackupID]; ok {
-			rp.RemoteState = string(pt.Remote)
-			rp.LocalComplete = pt.LocalComplete
-			_ = s.Store.UpsertBackupRestorePoint(ctx, rp)
+			if rp.RemoteState != string(pt.Remote) || rp.LocalComplete != pt.LocalComplete {
+				rp.RemoteState = string(pt.Remote)
+				rp.LocalComplete = pt.LocalComplete
+				_ = s.Store.UpsertBackupRestorePoint(ctx, rp)
+			}
 		}
 	}
 }
@@ -465,11 +486,20 @@ func workspaceJSON(s appdb.BackupWorkspaceSettings, st backuphost.Result) map[st
 		"repo_bytes":          st.RepoBytes, "pending_uploads": st.PendingUploads,
 		"protected_workloads": st.Protected, "host_free_bytes": st.Workspace.HostFreeBytes,
 		"capture_busy": st.Workspace.CaptureBusy, "capture_active": st.Workspace.CaptureActive,
-		"root":                  firstNonEmpty(st.Workspace.Root, backuphost.DefaultRoot),
-		"cache_retention_hours": s.CacheRetentionHours,
-		"logical_bytes":         logicalRepoBytes(st),
-		"physical_bytes":        st.RepoBytes,
-		"pending_bytes":         pendingUploadBytes(st),
+		"root":                    firstNonEmpty(st.Workspace.Root, backuphost.DefaultRoot),
+		"cache_retention_hours":   s.CacheRetentionHours,
+		"logical_bytes":           logicalRepoBytes(st),
+		"physical_bytes":          st.RepoBytes,
+		"pending_bytes":           pendingUploadBytes(st),
+		"host_total_bytes":        st.Workspace.HostTotalBytes,
+		"effective_reserve_bytes": st.Workspace.EffectiveReserveBytes,
+		"failed_uploads":          st.Workspace.FailedUploads,
+		"usage":                   st.Workspace.Usage,
+		"recovery":                st.Workspace.Recovery,
+		"last_gc":                 st.Workspace.LastGC,
+		"gc_pending":              st.Workspace.GCPending,
+		"pending_remote_sweep":    st.Workspace.PendingRemoteSweep,
+		"warnings":                workspaceWarnings(s, st),
 	}
 }
 

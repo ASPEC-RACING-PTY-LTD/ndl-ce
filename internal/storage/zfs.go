@@ -202,6 +202,16 @@ func ZFSSnapshotArgv(dataset, snap string) ([]string, error) {
 	return []string{ZFSBin, "snapshot", dataset + "@" + snap}, nil
 }
 
+// ZFSDestroySnapshotArgv destroys exactly one snapshot. It refuses anything
+// that is not dataset@snapshot so it can never destroy a dataset.
+func ZFSDestroySnapshotArgv(dataset, snap string) ([]string, error) {
+	snap = strings.TrimSpace(snap)
+	if snap == "" || strings.ContainsAny(snap, " /@%,") || strings.ContainsAny(dataset, " @%,") || dataset == "" {
+		return nil, fmt.Errorf("snapshot name is invalid")
+	}
+	return []string{ZFSBin, "destroy", dataset + "@" + snap}, nil
+}
+
 // ZFSSendArgv is a BackupSource. Incremental send uses -i when from is set.
 func ZFSSendArgv(dataset, snap, from string) ([]string, error) {
 	full := dataset + "@" + snap

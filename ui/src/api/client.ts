@@ -1588,6 +1588,65 @@ export async function getBackupWorkspace(): Promise<import("../generated/openapi
   return readJson(await request("/backups/workspace"));
 }
 
+export async function getBackupStorage(): Promise<import("../generated/openapi").BackupStorageReport> {
+  return readJson(await request("/backups/storage"));
+}
+
+export async function runBackupMaintenance(): Promise<import("../generated/openapi").BackupMaintenanceResponse> {
+  return readJson(await request("/backups/workspace/maintenance", { method: "POST", body: "{}" }));
+}
+
+export async function relocateBackupRepository(
+  body: import("../generated/openapi").BackupRelocateRequest,
+): Promise<import("../generated/openapi").BackupRelocateResponse> {
+  return readJson(await request("/backups/workspace/relocate", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function listBackupLocations(): Promise<import("../generated/openapi").BackupLocationListResponse> {
+  return readJson(await request("/backups/locations"));
+}
+
+export async function exportBackupKey(): Promise<import("../generated/openapi").BackupKeyExportResponse> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "export-backup-key");
+  return readJson(await request("/backups/key/export", { method: "POST", headers, body: "{}" }));
+}
+
+export async function wipeBackupTarget(
+  id: string,
+  confirmName: string,
+): Promise<import("../generated/openapi").BackupWipeResponse> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "wipe-target");
+  return readJson(
+    await request(`/backups/targets/${encodeURIComponent(id)}/wipe`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ confirm_name: confirmName }),
+    }),
+  );
+}
+
+export async function runBackupVerify(): Promise<import("../generated/openapi").BackupVerifyResponse> {
+  return readJson(await request("/backups/workspace/verify", { method: "POST", body: "{}" }));
+}
+
+export async function protectBackupArtifact(
+  id: string,
+  protectedFlag: boolean,
+): Promise<import("../generated/openapi").BackupProtectResponse> {
+  return readJson(
+    await request(`/backups/artifacts/${encodeURIComponent(id)}/protect`, {
+      method: "POST",
+      body: JSON.stringify({ protected: protectedFlag }),
+    }),
+  );
+}
+
+export async function getBackupTargetUsage(id: string): Promise<import("../generated/openapi").BackupTargetUsageResponse> {
+  return readJson(await request(`/backups/targets/${encodeURIComponent(id)}/usage`));
+}
+
 export async function patchBackupWorkspace(
   body: import("../generated/openapi").BackupWorkspace,
 ): Promise<import("../generated/openapi").BackupWorkspace> {

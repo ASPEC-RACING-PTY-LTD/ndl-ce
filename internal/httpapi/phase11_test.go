@@ -43,6 +43,9 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		}
 		return storage.CopyResult{Dest: dest, Size: 1, Format: "directory"}, nil
 	}
+	if action == qemu.BackupRootFS {
+		return storage.CopyResult{Dest: dest, Size: 0, Format: "rootfs"}, nil
+	}
 	if action == qemu.BackupStatFS {
 		return storage.CopyResult{Dest: dest, Size: 1 << 40, Format: "statfs"}, nil
 	}
@@ -87,7 +90,8 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 		}
 		return storage.CopyResult{Dest: dest, Format: "directory"}, nil
 	}
-	if action == qemu.BackupV2Capture || action == qemu.BackupV2Preview || action == qemu.BackupV2Status || action == qemu.BackupV2Restore || action == qemu.BackupV2Workspace || action == qemu.BackupV2Enqueue || action == qemu.BackupV2Expire {
+	if action == qemu.BackupV2Capture || action == qemu.BackupV2Preview || action == qemu.BackupV2Status || action == qemu.BackupV2Restore || action == qemu.BackupV2Workspace || action == qemu.BackupV2Enqueue || action == qemu.BackupV2Expire ||
+		action == qemu.BackupV2GC || action == qemu.BackupV2RemoteUsage || action == qemu.BackupV2Verify || action == qemu.BackupV2Key || action == qemu.BackupV2WipeRemote {
 		var req struct {
 			WorkloadName string `json:"workload_name"`
 			WorkloadID   string `json:"workload_id"`
@@ -308,7 +312,7 @@ func TestBackupRunRestoreNewAndReplaceConfirm(t *testing.T) {
 		if c[0] == qemu.BackupMkdir {
 			mkdir = true
 		}
-		if c[0] == qemu.BackupCopy {
+		if c[0] == qemu.BackupCopy || c[0] == qemu.BackupV2Capture {
 			copied = true
 			if strings.Contains(c[1], "--") {
 				t.Fatalf("must convert the frozen parent, not the live overlay: %s", c[1])
@@ -640,21 +644,19 @@ func TestBackupOverlayAfterFlattenDoesNotInheritStaleParent(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatal(err)
 	}
-	var backup map[string]any
+	// The backup's overlay is merged back after the capture, so it leaves no
+	// snapshot behind, while the user's own snapshot is untouched.
+	userKept := false
 	for _, item := range listed.Items {
 		if item["purpose_tag"] == "ndl-backup" {
-			backup = item
-			break
+			t.Fatalf("the backup overlay must be merged back, not left in the chain %s", raw)
+		}
+		if item["id"] == first["id"] {
+			userKept = true
 		}
 	}
-	if backup == nil {
-		t.Fatalf("backup snapshot missing %s", raw)
-	}
-	if backup["parent_id"] != "" && backup["parent_id"] != nil {
-		t.Fatalf("backup overlay after flatten must not inherit leftover parent %s", raw)
-	}
-	if backup["id"] == first["id"] {
-		t.Fatalf("backup snapshot must be a new catalog row %s", raw)
+	if !userKept {
+		t.Fatalf("the user snapshot must stay %s", raw)
 	}
 }
 
@@ -718,9 +720,12 @@ func TestBackupRetentionPrunesArtifactsNotLiveSnaps(t *testing.T) {
 	if len(arts) != 1 {
 		t.Fatalf("retention should keep 1 artifact, got %d", len(arts))
 	}
+	// Backups no longer leave overlay layers on the VM disk.
 	snaps, _ := mem.ListSnapshots(context.Background(), cluster.ID, vmID)
-	if len(snaps) < 2 {
-		t.Fatalf("live overlay snaps must not be pruned, got %d", len(snaps))
+	for _, sn := range snaps {
+		if sn.PurposeTag == backupPurpose {
+			t.Fatalf("backup layers must be merged back, found %+v", sn)
+		}
 	}
 }
 
@@ -876,7 +881,7 @@ func TestBackupRunFailsClosedForExtraDataDisk(t *testing.T) {
 	}
 	copied := false
 	for _, c := range bk.copies {
-		if c[0] == qemu.BackupCopy {
+		if c[0] == qemu.BackupCopy || c[0] == qemu.BackupV2Capture {
 			copied = true
 		}
 	}
@@ -2014,7 +2019,7 @@ type gateBackup struct {
 }
 
 func (g *gateBackup) CopyBackup(ctx context.Context, action, src, dest string) (storage.CopyResult, error) {
-	if action == qemu.BackupCopy {
+	if action == qemu.BackupCopy || action == qemu.BackupV2Capture {
 		g.once.Do(func() { close(g.started) })
 		select {
 		case <-g.release:
@@ -2032,7 +2037,7 @@ type clockBackup struct {
 
 func (c *clockBackup) CopyBackup(ctx context.Context, action, src, dest string) (storage.CopyResult, error) {
 	res, err := c.fakeBackup.CopyBackup(ctx, action, src, dest)
-	if action == qemu.BackupCopy && c.advance != nil {
+	if (action == qemu.BackupCopy || action == qemu.BackupV2Capture) && c.advance != nil {
 		c.advance()
 	}
 	return res, err

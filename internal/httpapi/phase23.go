@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/backup"
+	"github.com/no-dal/ndl-ce/internal/backuphost"
 	"github.com/no-dal/ndl-ce/internal/backuppack"
 	"github.com/no-dal/ndl-ce/internal/objstore"
 	"github.com/no-dal/ndl-ce/internal/qemu"
@@ -176,6 +178,9 @@ func (s *Server) testBackupTarget(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) materializeArtifact(ctx context.Context, clusterID string, art appdb.BackupArtifact) (string, func(), error) {
+	if art.Format == backup.Format && art.CaptureMode == backuphost.CaptureModeDisk {
+		return s.materializeV2Disk(ctx, clusterID, art)
+	}
 	if art.Format == backuppack.FormatNDLB && !strings.HasPrefix(art.Locator, "s3://") && art.ObjectKey == "" {
 		dir, err := os.MkdirTemp("", "ndl-restore-")
 		if err != nil {

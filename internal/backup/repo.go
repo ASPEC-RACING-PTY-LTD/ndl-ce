@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -50,7 +51,29 @@ type Repository struct {
 	manifestRead  func(string) ([]byte, error)
 
 	capture sync.RWMutex
+
+	recovery RecoveryReport
 }
+
+// RecoveryReport describes what OpenRepository cleaned up after an earlier
+// crash, interrupted capture or interrupted upload. Nothing in it is a valid
+// restore point: temporary files are half-written copies, and orphan packs
+// have no committed index so no manifest can reference them.
+type RecoveryReport struct {
+	TempFilesRemoved   int   `json:"temp_files_removed,omitempty"`
+	TempBytesRemoved   int64 `json:"temp_bytes_removed,omitempty"`
+	OrphanPacksRemoved int   `json:"orphan_packs_removed,omitempty"`
+	OrphanBytesRemoved int64 `json:"orphan_bytes_removed,omitempty"`
+	// StatesRebuilt counts complete manifests whose state sidecar was lost
+	// in a crash. They are kept and marked Recovered, never deleted.
+	StatesRebuilt int `json:"states_rebuilt,omitempty"`
+}
+
+// Recovery returns what the last Open cleaned up.
+func (r *Repository) Recovery() RecoveryReport { return r.recovery }
+
+// Root is the repository directory.
+func (r *Repository) Root() string { return r.root }
 
 // OpenRepository opens or creates a repository rooted at root.
 func OpenRepository(root string, keys *Keys) (*Repository, error) {
@@ -70,10 +93,73 @@ func OpenRepository(root string, keys *Keys) (*Repository, error) {
 		root: root, keys: keys, index: map[KeyID]location{},
 		manifestCache: map[string]manifestSummaryCacheEntry{},
 	}
+	r.removeTempFiles()
 	if err := r.rebuildIndex(); err != nil {
 		return nil, err
 	}
+	r.rebuildMissingStates()
 	return r, nil
+}
+
+// removeTempFiles deletes half-written ".tmp" files left by a crash during
+// writeFileAtomic. They are never renamed into place, so nothing refers to
+// them.
+func (r *Repository) removeTempFiles() {
+	_ = filepath.WalkDir(r.root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(d.Name()) != ".tmp" {
+			return nil
+		}
+		info, ierr := d.Info()
+		if os.Remove(path) == nil {
+			r.recovery.TempFilesRemoved++
+			if ierr == nil {
+				r.recovery.TempBytesRemoved += info.Size()
+			}
+		}
+		return nil
+	})
+}
+
+// rebuildMissingStates recreates the state sidecar of a committed manifest
+// whose capture crashed before the sidecar was written. Without a sidecar the
+// restore point is invisible to status and retention yet still pins its
+// chunks forever. The rebuilt point is marked Recovered so operators see it.
+func (r *Repository) rebuildMissingStates() {
+	base := filepath.Join(r.root, "snapshots")
+	nsDirs, err := os.ReadDir(base)
+	if err != nil {
+		return
+	}
+	for _, ns := range nsDirs {
+		if !ns.IsDir() {
+			continue
+		}
+		files, err := os.ReadDir(filepath.Join(base, ns.Name()))
+		if err != nil {
+			continue
+		}
+		for _, f := range files {
+			if filepath.Ext(f.Name()) != ".snap" {
+				continue
+			}
+			id := strings.TrimSuffix(f.Name(), ".snap")
+			if _, err := os.Stat(filepath.Join(base, ns.Name(), id+".state")); err == nil {
+				continue
+			}
+			m, err := r.LoadManifest(ns.Name(), id)
+			if err != nil {
+				continue
+			}
+			st := &PointState{
+				BackupID: m.BackupID, Namespace: m.Namespace, WorkloadID: m.WorkloadID,
+				WorkloadName: m.WorkloadName, CreatedAtNS: m.CreatedAtNS,
+				LocalComplete: true, Remote: RemoteNone, Recovered: true,
+			}
+			if r.writeState(st) == nil {
+				r.recovery.StatesRebuilt++
+			}
+		}
+	}
 }
 
 func (r *Repository) packDir() string { return filepath.Join(r.root, "packs") }
@@ -112,7 +198,13 @@ func (r *Repository) rebuildIndex() error {
 		packID := name[:len(name)-5]
 		if !idxByPack[packID] {
 			// Interrupted pack write: discard.
-			_ = os.Remove(filepath.Join(r.packDir(), name))
+			info, ierr := e.Info()
+			if os.Remove(filepath.Join(r.packDir(), name)) == nil {
+				r.recovery.OrphanPacksRemoved++
+				if ierr == nil {
+					r.recovery.OrphanBytesRemoved += info.Size()
+				}
+			}
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(r.packDir(), packID+".idx"))
@@ -192,6 +284,9 @@ type packWriter struct {
 	// guard is called before committing a pack so the workspace ceiling and
 	// host free-space reserve can stop accepting new data safely.
 	guard func() error
+	// rewrite stores chunks even when the index already has them. Compaction
+	// uses it to copy live chunks out of a mostly-dead pack.
+	rewrite bool
 }
 
 func (r *Repository) newPackWriter(target int) *packWriter {
@@ -204,7 +299,7 @@ func (r *Repository) newPackWriter(target int) *packWriter {
 // add stores one sealed chunk unless it is already present in the repository or
 // already staged in the current pack. It returns whether the chunk was new.
 func (w *packWriter) add(id KeyID, sealed []byte) (bool, error) {
-	if w.repo.Has(id) {
+	if !w.rewrite && w.repo.Has(id) {
 		return false, nil
 	}
 	if _, ok := w.staged[id]; ok {
@@ -295,21 +390,75 @@ func (r *Repository) deletePack(packID string) error {
 	return os.Remove(filepath.Join(r.packDir(), packID+".idx"))
 }
 
-// SizeOnDisk returns the total bytes used by pack objects.
+// SizeOnDisk returns the total bytes the repository occupies: packs,
+// manifests, caches, queue state and any leftover temporary files. The
+// workspace ceiling is enforced against this, not only against packs.
 func (r *Repository) SizeOnDisk() (int64, error) {
-	entries, err := os.ReadDir(r.packDir())
+	u, err := r.Usage()
 	if err != nil {
 		return 0, err
 	}
-	var total int64
-	for _, e := range entries {
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		total += info.Size()
+	return u.TotalBytes, nil
+}
+
+// RepoUsage breaks the repository footprint down by area.
+type RepoUsage struct {
+	TotalBytes     int64 `json:"total_bytes"`
+	PackBytes      int64 `json:"pack_bytes"`
+	PackCount      int   `json:"pack_count"`
+	SnapshotBytes  int64 `json:"snapshot_bytes"`
+	CacheBytes     int64 `json:"cache_bytes"`
+	StateBytes     int64 `json:"state_bytes"`
+	TempBytes      int64 `json:"temp_bytes"`
+	OtherBytes     int64 `json:"other_bytes"`
+	RestorePoints  int   `json:"restore_points"`
+	RecoveredCount int   `json:"recovered_points,omitempty"`
+}
+
+// Usage walks the repository and sizes each area.
+func (r *Repository) Usage() (RepoUsage, error) {
+	var u RepoUsage
+	if _, err := os.Stat(r.root); err != nil {
+		return u, err
 	}
-	return total, nil
+	err := filepath.WalkDir(r.root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		n := info.Size()
+		u.TotalBytes += n
+		rel, _ := filepath.Rel(r.root, path)
+		top := strings.SplitN(filepath.ToSlash(rel), "/", 2)[0]
+		switch {
+		case filepath.Ext(path) == ".tmp" || strings.HasPrefix(top, "remote-restore-"):
+			u.TempBytes += n
+		case top == "packs":
+			u.PackBytes += n
+			if filepath.Ext(path) == ".pack" {
+				u.PackCount++
+			}
+		case top == "snapshots":
+			u.SnapshotBytes += n
+			if filepath.Ext(path) == ".snap" {
+				u.RestorePoints++
+			}
+		case top == "cache":
+			u.CacheBytes += n
+		case top == "state":
+			u.StateBytes += n
+		default:
+			u.OtherBytes += n
+		}
+		return nil
+	})
+	return u, err
 }
 
 func writeFileAtomic(path string, data []byte) error {

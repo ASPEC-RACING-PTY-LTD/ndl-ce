@@ -201,6 +201,9 @@ type PointState struct {
 	Packs           []string    `json:"packs"`
 	UploadStartedNS int64       `json:"upload_started_ns,omitempty"`
 	UploadEndedNS   int64       `json:"upload_ended_ns,omitempty"`
+	// Recovered marks a restore point whose sidecar was rebuilt after a
+	// crash; control may not know about it.
+	Recovered bool `json:"recovered,omitempty"`
 }
 
 // CollectedAt returns the creation time.

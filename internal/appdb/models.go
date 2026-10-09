@@ -173,6 +173,8 @@ type Store interface {
 	CreateSnapshot(ctx context.Context, s Snapshot) error
 	ListSnapshots(ctx context.Context, clusterID, workloadID string) ([]Snapshot, error)
 	GetSnapshot(ctx context.Context, clusterID, id string) (*Snapshot, error)
+	// DeleteSnapshot removes one snapshot record after its data was merged.
+	DeleteSnapshot(ctx context.Context, clusterID, id string) error
 	UpdateVolumeLocator(ctx context.Context, clusterID, id, backendRef string) error
 
 	CreateBackupTarget(ctx context.Context, t BackupTarget, password, encryptionKey string) error
@@ -200,6 +202,15 @@ type Store interface {
 	UpdateBackupArtifactVerify(ctx context.Context, a BackupArtifact) error
 	UpdateBackupArtifact(ctx context.Context, a BackupArtifact) error
 	DeleteBackupArtifact(ctx context.Context, clusterID, id string) error
+	// CompactBackupArtifactStats rewrites, one row at a time, the stored
+	// statistics of artifacts whose stats and blueprint exceed minBytes.
+	CompactBackupArtifactStats(ctx context.Context, clusterID string, minBytes int, compact func(stats, blueprint string) (string, string)) (int, error)
+	// Protected backups are skipped by retention.
+	SetBackupArtifactProtected(ctx context.Context, clusterID, id string, protected bool) error
+	ListProtectedBackupArtifacts(ctx context.Context, clusterID string) (map[string]bool, error)
+	// Offsite retention of a policy; a zero value follows local retention.
+	GetBackupPolicyOffsite(ctx context.Context, clusterID, policyID string) (BackupOffsite, error)
+	UpsertBackupPolicyOffsite(ctx context.Context, clusterID, policyID string, o BackupOffsite) error
 
 	GetBackupWorkspaceSettings(ctx context.Context, clusterID string) (*BackupWorkspaceSettings, error)
 	UpsertBackupWorkspaceSettings(ctx context.Context, s BackupWorkspaceSettings) error
