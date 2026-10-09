@@ -89,7 +89,7 @@ func TestLocalHostKeepsEveryOperationInsideTheServerFolder(t *testing.T) {
 }
 
 func TestHumanErrorExplainsMissingDocker(t *testing.T) {
-	if got := HumanError("fork/exec /usr/bin/docker: no such file or directory"); !strings.Contains(got, "apt-get install docker.io") {
+	if got := HumanError("fork/exec /usr/bin/docker: no such file or directory"); !strings.Contains(got, "Docker Engine is not installed") || !strings.Contains(got, "Add Features") {
 		t.Fatal(got)
 	}
 	if got := HumanError("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"); !strings.Contains(got, "not running") {
