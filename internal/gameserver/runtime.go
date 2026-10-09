@@ -1,6 +1,7 @@
 package gameserver
 
 import (
+	"errors"
 	"bytes"
 	"context"
 	"fmt"
@@ -59,6 +60,31 @@ func (r *Runtime) dockerBin() string {
 		return r.Docker
 	}
 	return "/usr/bin/docker"
+}
+
+// ErrNoDocker means the Docker Engine game servers run in is not installed.
+var ErrNoDocker = errors.New("docker engine is not installed on this host")
+
+// Ready reports whether game servers can run here: the Docker CLI exists
+// and its daemon answers. Checked before a server is created or started, so
+// a missing Docker is a clear message instead of a failed install.
+func (r *Runtime) Ready(ctx context.Context) error {
+	if r.Run == nil {
+		if _, err := os.Stat(r.dockerBin()); err != nil {
+			return ErrNoDocker
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := r.run(ctx, r.dockerBin(), "version", "--format", "{{.Server.Version}}")
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("docker engine is not running: %s", clip(msg, 300))
+	}
+	return nil
 }
 
 func (r *Runtime) networkMode() string {

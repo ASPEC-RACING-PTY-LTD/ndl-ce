@@ -30,6 +30,11 @@ async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Whether this host can run game servers (Docker installed and running). */
+export async function getGameRuntime(): Promise<{ ready: boolean; reason?: string; detail?: string }> {
+  return readJson("/game-servers/runtime");
+}
+
 export async function listGameServers(): Promise<{ items: GameServer[] }> {
   return readJson("/game-servers");
 }

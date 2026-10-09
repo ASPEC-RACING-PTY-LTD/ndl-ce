@@ -1335,6 +1335,28 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/runtime:
+    get:
+      operationId: getGameServerRuntime
+      summary: Whether this host can run game servers (Docker installed and running)
+      responses:
+        "200":
+          description: Readiness
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+                  reason:
+                    type: string
+                    description: Plain message when not ready.
+                  detail:
+                    type: string
+                    description: The raw check result.
+        "403":
+          description: Forbidden
   /game-servers/catalogue:
     get:
       operationId: gameServerCatalogue

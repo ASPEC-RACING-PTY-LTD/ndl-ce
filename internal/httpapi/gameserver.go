@@ -42,6 +42,37 @@ func (s *Server) gameHost() gameserver.Host {
 	return s.gameLocal
 }
 
+// gameRuntimeReady reports whether the game host can run servers. Hosts
+// that cannot tell are assumed ready.
+func (s *Server) gameRuntimeReady(ctx context.Context) error {
+	if c, ok := s.gameHost().(interface{ Ready(context.Context) error }); ok {
+		return c.Ready(ctx)
+	}
+	return nil
+}
+
+// gameServerRuntime answers whether game servers can run, so the UI can
+// say so before anyone fills in a create form.
+func (s *Server) gameServerRuntime(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireGameFeature(w, r, rbac.GameServerRead); !ok {
+		return
+	}
+	if err := s.gameRuntimeReady(r.Context()); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ready": false, "reason": gameserver.HumanError(err.Error()), "detail": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ready": true})
+}
+
+// humanGameError recomputes the plain message from the stored raw error, so
+// servers that failed before a message was improved show the current one.
+func humanGameError(row appdb.GameServer) string {
+	if strings.TrimSpace(row.ErrorRaw) != "" {
+		return gameserver.HumanError(row.ErrorRaw)
+	}
+	return row.ErrorHuman
+}
+
 func (s *Server) requireGameFeature(w http.ResponseWriter, r *http.Request, perm string) (*principal, bool) {
 	p, err := s.require(w, r, perm)
 	if err != nil {
@@ -220,6 +251,11 @@ func (s *Server) createGameServer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := s.gameRuntimeReady(r.Context()); err != nil {
+		human := gameserver.HumanError(err.Error())
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": human, "errors": []string{human}, "detail": err.Error()})
+		return
+	}
 	plan := s.planGameServer(r.Context(), p.User.ClusterID, tmpl, req)
 	if !plan.OK {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": plan.Errors[0], "errors": plan.Errors, "warnings": plan.Warnings})
@@ -330,6 +366,12 @@ func (s *Server) powerGame(w http.ResponseWriter, r *http.Request, action string
 	}
 	rt := s.gameHost()
 	var err error
+	if action == "start" || action == "restart" {
+		if rerr := s.gameRuntimeReady(r.Context()); rerr != nil {
+			writeErr(w, http.StatusUnprocessableEntity, gameserver.HumanError(rerr.Error()))
+			return
+		}
+	}
 	switch action {
 	case "start":
 		err = s.startGame(r.Context(), rt, row)
@@ -497,7 +539,7 @@ func (s *Server) gameJSON(ctx context.Context, row appdb.GameServer, detail bool
 		"implementation": row.Implementation, "family": row.Family, "node_id": row.NodeID,
 		"cpus": row.CPUs, "memory_bytes": row.MemoryBytes, "disk_bytes": row.DiskBytes,
 		"ports": ports, "capabilities": caps, "pinned": row.Pinned, "created_at": row.CreatedAt,
-		"updated_at": row.UpdatedAt, "install_phase": row.InstallPhase, "error_human": row.ErrorHuman,
+		"updated_at": row.UpdatedAt, "install_phase": row.InstallPhase, "error_human": humanGameError(row),
 		"image_label": row.ImageLabel, "notes": row.Notes,
 	}
 	if detail {

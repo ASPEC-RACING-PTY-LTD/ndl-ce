@@ -7,8 +7,10 @@ import "strings"
 func HumanError(raw string) string {
 	s := strings.ToLower(raw)
 	switch {
-	case strings.Contains(s, "/docker: no such file") || strings.Contains(s, "docker: executable file not found"):
-		return "Docker Engine is not installed on this host, and game servers run in Docker containers. Install it with apt-get install docker.io, then reinstall this server."
+	case strings.Contains(s, "/docker: no such file") || strings.Contains(s, "docker: executable file not found") || strings.Contains(s, "docker engine is not installed"):
+		return "Docker Engine is not installed on this host, and game servers run in Docker containers. Install the Docker feature from Add Features, then reinstall this server."
+	case strings.Contains(s, "docker engine is not running"):
+		return "Docker Engine is installed but not running on this host. Start it from Add Features (Docker) or with systemctl enable --now docker, then try again."
 	case strings.Contains(s, "cannot connect to the docker daemon") || strings.Contains(s, "docker.sock: connect"):
 		return "Docker Engine is installed but not running on this host. Start it with systemctl enable --now docker, then try again."
 	case strings.Contains(s, "license") && (strings.Contains(s, "fivem") || strings.Contains(s, "cfx") || strings.Contains(s, "sv_license")):

@@ -247,6 +247,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/game-servers", s.listGameServers)
 	mux.HandleFunc("POST /api/v1/game-servers", s.createGameServer)
 	mux.HandleFunc("GET /api/v1/game-servers/catalogue", s.gameServerCatalogue)
+	mux.HandleFunc("GET /api/v1/game-servers/runtime", s.gameServerRuntime)
 	mux.HandleFunc("POST /api/v1/game-servers/catalogue/refresh", s.refreshGameCatalogue)
 	mux.HandleFunc("POST /api/v1/game-servers/catalogue/import", s.importGameTemplate)
 	mux.HandleFunc("GET /api/v1/game-servers/catalogue/sources", s.listGameSources)

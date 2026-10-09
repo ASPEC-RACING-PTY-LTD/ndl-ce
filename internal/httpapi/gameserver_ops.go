@@ -1553,7 +1553,7 @@ func (s *Server) gameServerDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":       row.Status,
-		"error_human":  row.ErrorHuman,
+		"error_human":  humanGameError(*row),
 		"error_raw":    gameserver.RedactLog(row.ErrorRaw, env),
 		"install_log":  gameserver.RedactLog(row.InstallLog, env),
 		"console":      gameserver.RedactLog(logs, env),

@@ -53,6 +53,12 @@ func (g GameHost) call(ctx context.Context, action, id string, spec gameSpec, da
 	return out, nil
 }
 
+// Ready reports whether the agent's host can run game servers.
+func (g GameHost) Ready(ctx context.Context) error {
+	_, err := g.call(ctx, gsReady, "", gameSpec{}, nil)
+	return err
+}
+
 func (g GameHost) EnsureData(ctx context.Context, id string) (string, error) {
 	res, err := g.call(ctx, gsEnsureData, id, gameSpec{}, nil)
 	return res.Dir, err

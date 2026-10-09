@@ -89,6 +89,9 @@ type LocalHost struct {
 	hooked   bool
 }
 
+// Ready reports whether game servers can run on this host.
+func (h *LocalHost) Ready(ctx context.Context) error { return h.RT.Ready(ctx) }
+
 // NewLocalHost wraps a runtime rooted at root.
 func NewLocalHost(root string) *LocalHost {
 	return &LocalHost{RT: NewRuntime(root)}

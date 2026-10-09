@@ -116,108 +116,121 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
 
   return (
     <div className="gs-browser">
-      <div className="gs-browser-bar">
+      <aside className="gs-browser-side" aria-label="Browse the catalogue">
         <label className="gs-browser-search">
           <span className="visually-hidden">Search games</span>
           <input
             className="field-input"
             type="search"
             value={q}
-            placeholder="Search games, server types or engines. Try mc, rust, cs2, paper, gslt"
+            placeholder="Search games or engines"
+            title="Try mc, rust, cs2, paper, gslt"
             aria-label="Search available game templates"
             onChange={(e) => setQ(e.target.value)}
           />
         </label>
+        <div className="gs-browser-cats" role="tablist" aria-orientation="vertical" aria-label="Catalogue categories">
+          {chips
+            .filter((chip) => chip.count > 0 || chip.id === category || chip.id === CATEGORY_ALL)
+            .map((chip) => (
+              <button
+                key={chip.id}
+                type="button"
+                role="tab"
+                className={"gs-cat" + (category === chip.id ? " is-on" : "")}
+                aria-selected={category === chip.id}
+                onClick={() => setCategory(chip.id)}
+              >
+                <span className="gs-cat-label">{chip.label}</span>
+                <span className="gs-chip-count">{chip.count}</span>
+              </button>
+            ))}
+        </div>
         <button
           type="button"
-          className={"btn btn-ghost gs-browser-filter-btn" + (filtersOpen ? " is-on" : "")}
+          className={"btn btn-ghost btn-sm gs-browser-filter-btn" + (filtersOpen ? " is-on" : "")}
           aria-expanded={filtersOpen}
           aria-controls="gs-browser-filters"
           onClick={() => setFiltersOpen((v) => !v)}
         >
           Filters{activeFilters ? ` (${activeFilters})` : ""}
         </button>
-      </div>
-      {filtersOpen ? (
-        <div className="gs-browser-filters" id="gs-browser-filters">
-          <label>
-            <span>Install method</span>
-            <select className="field-input" value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option value="">Any method</option>
-              {methods.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Platform</span>
-            <select className="field-input" value={arch} onChange={(e) => setArch(e.target.value)}>
-              <option value="">Any platform</option>
-              <option value="amd64">amd64 (x86_64)</option>
-              <option value="arm64">arm64</option>
-            </select>
-          </label>
-          <label>
-            <span>Sort</span>
-            <select className="field-input" value={sort} onChange={(e) => setSort(e.target.value as CatalogueSort)}>
-              <option value="popular">Popular</option>
-              <option value="az">A-Z</option>
-            </select>
-          </label>
-          <label className="gs-browser-check">
-            <input type="checkbox" checked={noCredentials} onChange={(e) => setNoCredentials(e.target.checked)} />
-            <span>No credentials needed</span>
-          </label>
-        </div>
-      ) : null}
-      <div className="gs-browser-chips" role="tablist" aria-label="Catalogue categories">
-        {chips
-          .filter((chip) => chip.count > 0 || chip.id === category || chip.id === CATEGORY_ALL)
-          .map((chip) => (
-            <button
-              key={chip.id}
-              type="button"
-              role="tab"
-              className={"gs-chip" + (category === chip.id ? " is-on" : "")}
-              aria-selected={category === chip.id}
-              onClick={() => setCategory(chip.id)}
-            >
-              {chip.label}
-              <span className="gs-chip-count">{chip.count}</span>
-            </button>
+        {filtersOpen ? (
+          <div className="gs-browser-filters" id="gs-browser-filters">
+            <label>
+              <span>Install method</span>
+              <select className="field-input" value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="">Any method</option>
+                {methods.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Platform</span>
+              <select className="field-input" value={arch} onChange={(e) => setArch(e.target.value)}>
+                <option value="">Any platform</option>
+                <option value="amd64">amd64 (x86_64)</option>
+                <option value="arm64">arm64</option>
+              </select>
+            </label>
+            <label>
+              <span>Sort</span>
+              <select className="field-input" value={sort} onChange={(e) => setSort(e.target.value as CatalogueSort)}>
+                <option value="popular">Popular</option>
+                <option value="az">A-Z</option>
+              </select>
+            </label>
+            <label className="gs-browser-check">
+              <input type="checkbox" checked={noCredentials} onChange={(e) => setNoCredentials(e.target.checked)} />
+              <span>No credentials needed</span>
+            </label>
+          </div>
+        ) : null}
+      </aside>
+      <div className="gs-browser-main">
+        <p className="gs-catalogue-count" aria-live="polite">
+          {games.length} {games.length === 1 ? "game" : "games"}, {templateCount} server {templateCount === 1 ? "type" : "types"}
+        </p>
+        <div className="gs-game-grid">
+          {visible.map((entry) => (
+            <GameTile
+              key={entry.key}
+              entry={entry}
+              favorite={isFavoriteGame(entry, favoriteSet)}
+              onOpen={openGame}
+              onToggleFavorite={onToggleFavorite}
+            />
           ))}
-      </div>
-      <p className="gs-catalogue-count" aria-live="polite">
-        {games.length} {games.length === 1 ? "game" : "games"}, {templateCount} server {templateCount === 1 ? "type" : "types"}
-      </p>
-      <div className="gs-game-grid">
-        {visible.map((entry) => (
-          <GameTile
-            key={entry.key}
-            entry={entry}
-            favorite={isFavoriteGame(entry, favoriteSet)}
-            onOpen={openGame}
-            onToggleFavorite={onToggleFavorite}
-          />
-        ))}
-      </div>
-      {games.length === 0 ? <p className="gs-meta">{emptyMessage}</p> : null}
-      {hasMore ? (
-        <div className="gs-catalogue-more">
-          <button type="button" className="btn btn-ghost" onClick={showMore}>
-            Show more ({games.length - visible.length} more)
-          </button>
         </div>
-      ) : null}
+        {games.length === 0 ? <p className="gs-meta">{emptyMessage}</p> : null}
+        {hasMore ? (
+          <div className="gs-catalogue-more">
+            <button type="button" className="btn btn-ghost" onClick={showMore}>
+              Show more ({games.length - visible.length} more)
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 /** Game or template artwork with a monogram fallback when it cannot load. */
-export function GameArt({ url, kind, title, size }: { url?: string; kind?: string; title: string; size: "thumb" | "hero" | "icon" }) {
-  const candidates = useMemo(() => artCandidates(url), [url]);
+export function GameArt({
+  url,
+  kind,
+  title,
+  size,
+}: {
+  url?: string;
+  kind?: string;
+  title: string;
+  size: "thumb" | "hero" | "icon" | "cover";
+}) {
+  const candidates = useMemo(() => artCandidates(url, size === "cover"), [url, size]);
   const [attempt, setAttempt] = useState(0);
   const current = candidates[attempt];
   const show = Boolean(current);
@@ -235,14 +248,22 @@ export function GameArt({ url, kind, title, size }: { url?: string; kind?: strin
 
 const STEAM_ASSET = /^https:\/\/shared\.akamai\.steamstatic\.com\/store_item_assets\/steam\/apps\/(\d+)\/header\.jpg$/;
 
-/** Image URLs to try in order; Steam art also has an older CDN path. */
-export function artCandidates(url?: string): string[] {
+/**
+ * Image URLs to try in order; Steam art also has an older CDN path. Square
+ * covers try the portrait library art first, which crops well to a square,
+ * then the wide store header.
+ */
+export function artCandidates(url?: string, cover = false): string[] {
   if (!url) {
     return [];
   }
   const steam = STEAM_ASSET.exec(url);
   if (steam) {
-    return [url, `https://cdn.cloudflare.steamstatic.com/steam/apps/${steam[1]}/header.jpg`];
+    const header = [url, `https://cdn.cloudflare.steamstatic.com/steam/apps/${steam[1]}/header.jpg`];
+    if (cover) {
+      return [`https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${steam[1]}/library_600x900.jpg`, ...header];
+    }
+    return header;
   }
   return [url];
 }
@@ -262,31 +283,35 @@ type TileProps = {
   onToggleFavorite: (id: string) => void;
 };
 
+// A game is a square cover. Its name shows on hover and focus, and is
+// always its accessible name; what it needs (a token, an account) is a
+// small corner mark.
 const GameTile = memo(function GameTile({ entry, favorite, onOpen, onToggleFavorite }: TileProps) {
   const count = entry.items.length;
   const single = count === 1 ? entry.items[0] : null;
   const needs = sharedRequirements(entry);
   const meta = single ? installMethodOf(single) : `${count} server types`;
   const favKey = single ? single.id : gameFavoriteKey(entry.title);
+  const hint = `${entry.title}\n${categoryLabel(entry.category)} · ${meta}${needs.length ? `\nNeeds: ${needs.map((r) => r.label).join(", ")}` : ""}`;
   return (
     <div className="gs-game">
-      <button type="button" className="gs-game-tile" onClick={() => onOpen(entry)} aria-label={count > 1 ? `${entry.title}, ${count} server types` : entry.title}>
-        <GameArt url={entry.logoUrl} kind={entry.logoKind} title={entry.title} size="thumb" />
-        <span className="gs-game-body">
+      <button
+        type="button"
+        className="gs-game-tile"
+        title={hint}
+        onClick={() => onOpen(entry)}
+        aria-label={count > 1 ? `${entry.title}, ${count} server types` : entry.title}
+      >
+        <GameArt url={entry.logoUrl} kind={entry.logoKind} title={entry.title} size="cover" />
+        <span className="gs-game-label" aria-hidden="true">
           <span className="gs-game-title">{entry.title}</span>
-          <span className="gs-game-meta">
-            {categoryLabel(entry.category)} · {meta}
-          </span>
-          {needs.length ? (
-            <span className="gs-game-flags">
-              {needs.slice(0, 2).map((req) => (
-                <span key={`${req.kind}:${req.stage}`} className="gs-badge is-need" title={req.label}>
-                  {requirementBadge(req)}
-                </span>
-              ))}
-            </span>
-          ) : null}
+          <span className="gs-game-meta">{meta}</span>
         </span>
+        {needs.length ? (
+          <span className="gs-game-need" aria-hidden="true">
+            {requirementBadge(needs[0])}
+          </span>
+        ) : null}
       </button>
       <button
         type="button"

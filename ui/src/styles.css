@@ -2816,6 +2816,19 @@ a.gs-tab {
 .gs-pin.is-on { color: var(--warn); }
 .gs-select { left: 0.85rem; }
 
+/* The select box sits in the top-left corner; the status badge starts
+   after it instead of under it. */
+.gs-card .gs-card-main > .gs-status {
+  margin-left: 1.6rem;
+}
+
+.gs-card .gs-error {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .gs-rail h2 {
   margin: 0 0 var(--space-2);
   font-size: 0.95rem;
@@ -3183,25 +3196,75 @@ a.gs-tab {
 }
 
 /* Game Servers catalogue: one tile per game, server type chooser. */
+/* Catalogue: categories and filters in a sticky side column, games as a
+   grid of square covers. */
 .gs-browser {
   display: grid;
-  gap: 0.85rem;
+  grid-template-columns: 13rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
 }
 
-.gs-browser-bar {
-  display: flex;
-  gap: 0.5rem;
-  align-items: stretch;
+.gs-browser-side {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 0.6rem;
+  max-height: calc(100dvh - var(--header-h, 3rem) - 2rem);
+  overflow-y: auto;
+  padding-bottom: 0.5rem;
 }
 
-.gs-browser-search {
-  flex: 1 1 auto;
+.gs-browser-main {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
 }
 
 .gs-browser-search .field-input {
   width: 100%;
-  min-height: 2.75rem;
-  font-size: 1rem;
+  min-height: 2.4rem;
+}
+
+.gs-browser-cats {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.gs-cat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gs-cat:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.gs-cat.is-on {
+  background: var(--accent-soft);
+  color: var(--fg-primary);
+  font-weight: 650;
+}
+
+.gs-cat-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gs-browser-filter-btn {
+  justify-self: start;
 }
 
 .gs-browser-filter-btn.is-on {
@@ -3209,11 +3272,9 @@ a.gs-tab {
 }
 
 .gs-browser-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-  align-items: end;
-  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.6rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-elevated);
@@ -3230,36 +3291,29 @@ a.gs-tab {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  min-height: var(--control-h);
   color: var(--fg-primary);
-  font-size: 0.9rem;
-}
-
-.gs-browser-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  font-size: 0.85rem;
 }
 
 .gs-game-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(18.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
   gap: 0.6rem;
 }
 
 .gs-game {
   position: relative;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 9rem;
 }
 
 .gs-game-tile {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
+  position: relative;
+  display: block;
   width: 100%;
-  height: 100%;
-  padding: 0.55rem 2.2rem 0.55rem 0.55rem;
+  aspect-ratio: 1;
+  padding: 0;
   overflow: hidden;
-  text-align: left;
   border: 1px solid var(--line);
   border-radius: var(--gs-radius, 0.8rem);
   background: var(--bg-elevated);
@@ -3271,22 +3325,38 @@ a.gs-tab {
 
 .gs-game-tile:hover,
 .gs-game-tile:focus-visible {
-  border-color: color-mix(in oklch, var(--accent) 60%, var(--line));
-  box-shadow: 0 8px 24px oklch(0.1 0.02 var(--ndl-hue, 250) / 0.18);
-  transform: translateY(-1px);
+  border-color: color-mix(in oklch, var(--accent) 70%, var(--line));
+  box-shadow: 0 8px 24px oklch(0.1 0.02 var(--ndl-hue, 250) / 0.25);
+  transform: translateY(-2px);
 }
 
-.gs-game-body {
+/* The name only appears on hover or focus; the art is the tile. */
+.gs-game-label {
+  position: absolute;
+  inset: auto 0 0 0;
   display: grid;
-  align-content: center;
-  gap: 0.15rem;
-  min-width: 0;
+  gap: 0.1rem;
+  padding: 1.6rem 0.55rem 0.5rem;
+  text-align: left;
+  color: #fff;
+  background: linear-gradient(to top, oklch(0.12 0.01 250 / 0.92), transparent);
+  opacity: 0;
+  transform: translateY(0.3rem);
+  transition: opacity 120ms var(--ease, ease), transform 120ms var(--ease, ease);
+  pointer-events: none;
+}
+
+.gs-game-tile:hover .gs-game-label,
+.gs-game-tile:focus-visible .gs-game-label,
+.gs-game-tile:has(.is-mono) .gs-game-label {
+  opacity: 1;
+  transform: none;
 }
 
 .gs-game-title {
   font-weight: 650;
-  font-size: 0.95rem;
-  line-height: 1.25;
+  font-size: 0.85rem;
+  line-height: 1.2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -3294,24 +3364,42 @@ a.gs-tab {
 }
 
 .gs-game-meta {
-  color: var(--fg-secondary);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
+  opacity: 0.8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.gs-game-flags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem;
-  margin-top: 0.15rem;
+.gs-game-need {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: var(--warn);
+  background: oklch(0.15 0.01 250 / 0.8);
 }
 
 .gs-game .gs-catalogue-star {
-  top: 50%;
-  right: 0.35rem;
-  transform: translateY(-50%);
+  top: 0.3rem;
+  right: 0.3rem;
+  background: oklch(0.15 0.01 250 / 0.6);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 120ms var(--ease, ease);
+}
+
+.gs-game:hover .gs-catalogue-star,
+.gs-game .gs-catalogue-star:focus-visible,
+.gs-game .gs-catalogue-star.is-on {
+  opacity: 1;
+}
+
+.gs-game .gs-catalogue-star.is-on {
+  color: var(--warn);
 }
 
 /* Artwork: store banners fill; square marks sit on a tinted panel. */
@@ -3382,6 +3470,25 @@ a.gs-tab {
 
 .gs-art-thumb .gs-art-mono {
   font-size: 0.95rem;
+}
+
+/* Square catalogue covers: art fills and crops to the square. */
+.gs-art-cover {
+  width: 100%;
+  height: 100%;
+}
+
+.gs-art-cover.is-banner img {
+  object-position: center;
+}
+
+.gs-art-cover.is-icon img {
+  width: 52%;
+}
+
+.gs-art-cover .gs-art-mono {
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
 }
 
 .gs-art-hero {
@@ -3523,9 +3630,30 @@ a.gs-tab {
   margin-top: 0.5rem;
 }
 
+@media (max-width: 860px) {
+  .gs-browser {
+    grid-template-columns: 1fr;
+  }
+
+  .gs-browser-side {
+    position: static;
+    max-height: none;
+  }
+
+  .gs-browser-cats {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .gs-cat {
+    flex: none;
+  }
+}
+
 @media (max-width: 640px) {
   .gs-game-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
   }
 
   .gs-variant-list {

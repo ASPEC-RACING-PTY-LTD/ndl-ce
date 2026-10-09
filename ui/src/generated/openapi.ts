@@ -2956,6 +2956,8 @@ export type DisableFeaturePath = "/api/v1/features/{id}/disable";
 
 export type ListGameServersPath = "/api/v1/game-servers";
 
+export type GetGameServerRuntimePath = "/api/v1/game-servers/runtime";
+
 export type GameServerCataloguePath = "/api/v1/game-servers/catalogue";
 
 export type RefreshGameCataloguePath = "/api/v1/game-servers/catalogue/refresh";

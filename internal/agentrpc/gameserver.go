@@ -42,6 +42,7 @@ const (
 	gsBackup          = "backup"
 	gsRestoreBackup   = "restore-backup"
 	gsDeleteBackup    = "delete-backup"
+	gsReady           = "runtime-ready"
 )
 
 // gameSpec carries the typed arguments for every game server action.
@@ -111,6 +112,12 @@ func gameErr(err error) error {
 func (h *Handler) execGameServer(ctx context.Context, m *agentv1.GameServer) (*connect.Response[agentv1.ExecuteResponse], error) {
 	action := strings.TrimSpace(m.GetAction())
 	id := strings.TrimSpace(m.GetServerId())
+	if action == gsReady {
+		if err := h.gameHost().Ready(ctx); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: action, ResultJson: mustJSON(gameResult{})}), nil
+	}
 	if !gameserver.ValidHostID(id) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("game server id is invalid"))
 	}

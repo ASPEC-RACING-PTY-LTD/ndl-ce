@@ -3,12 +3,14 @@ import { ApiError } from "../api/client";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
+import { ErrorNotice } from "../components/ErrorNotice";
 import { familyTone, formatRam, hasCap, statusLabel } from "../gameservers/caps";
 import {
   deleteGameServer,
   favoriteGameServer,
   fleetGameServers,
   getGamePrefs,
+  getGameRuntime,
   listGameServers,
   putGamePrefs,
   gamePower,
@@ -44,7 +46,17 @@ export function GameServersHomePage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [runtime, setRuntime] = useState<{ ready: boolean; reason?: string; detail?: string } | null>(null);
   const filter = gameServersHomeFilter(path);
+
+  useEffect(() => {
+    if (featureEnabled.gameservers === false) {
+      return;
+    }
+    getGameRuntime()
+      .then(setRuntime)
+      .catch(() => setRuntime(null));
+  }, [featureEnabled.gameservers]);
 
   useEffect(() => {
     if (featureEnabled.gameservers === false) {
@@ -251,7 +263,14 @@ export function GameServersHomePage() {
         </div>
       </div>
 
-      {error ? <p className="banner-danger">{error}</p> : null}
+      {runtime && !runtime.ready ? (
+        <ErrorNotice
+          title="Game servers cannot run on this host yet"
+          error={runtime.detail || runtime.reason || "Docker is not available."}
+          action={<Link href="/settings/features">Open Add Features</Link>}
+        />
+      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
 
       {items.length === 0 ? (
         <EmptyState
