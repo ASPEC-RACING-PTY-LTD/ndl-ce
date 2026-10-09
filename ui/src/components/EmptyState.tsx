@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ErrorNotice } from "./ErrorNotice";
 import { Icon, type IconName } from "./Icon";
 
 export function EmptyState({
@@ -36,9 +37,10 @@ export function LoadingState({ label = "Loading" }: { label?: string }) {
 }
 
 export function ErrorState({ children }: { children: ReactNode }) {
+  if (typeof children === "string") {
+    return <ErrorNotice error={children} />;
+  }
   return (
-    <p className="banner banner-error" role="alert">
-      {children}
-    </p>
+    <ErrorNotice error={children} />
   );
 }

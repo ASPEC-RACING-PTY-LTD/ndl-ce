@@ -19,6 +19,7 @@ import type {
 import { formatBytes, formatWhen } from "../format";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Field } from "./Field";
+import { ErrorNotice } from "./ErrorNotice";
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -290,9 +291,7 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
     <article className="panel" id="backup-storage" aria-labelledby="backup-storage-heading">
       <h2 id="backup-storage-heading">Backup storage</h2>
       {error ? (
-        <p className="banner banner-error" role="status">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {notice ? (
         <p className="banner banner-ok" role="status">

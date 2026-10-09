@@ -6,6 +6,7 @@ import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { navigate } from "../router";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function LoginPage() {
   const session = useSession();
@@ -66,9 +67,7 @@ export function LoginPage() {
         </p>
         <form className="form" onSubmit={(event) => void onSubmit(event)} noValidate>
           {formError ? (
-            <p className="banner banner-error" role="alert">
-              {formError}
-            </p>
+            <ErrorNotice error={formError} />
           ) : null}
           {challenge ? (
             <Field

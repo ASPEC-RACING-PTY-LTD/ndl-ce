@@ -10,6 +10,7 @@ import { SummaryCard } from "../ui/SummaryCard";
 import { Dialog } from "../ui/Dialog";
 
 import { hasGrant } from "../rbac";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function LicensePage() {
   const session = useSession();
@@ -91,9 +92,7 @@ export function LicensePage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {status ? (
         <>

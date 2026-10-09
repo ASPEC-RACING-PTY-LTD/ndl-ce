@@ -27,6 +27,7 @@ import { workloadGuestIOReason } from "../guestIO";
 import { fileTypeLabel } from "../labels";
 import { currentPath, navigate } from "../router";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 type Dialog =
   | { kind: "mkdir" }
@@ -365,9 +366,7 @@ export function FilesPage() {
     >
       <PageHeader id="files-heading" title="Files" kicker={displayPath(path)} />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {uploadNote ? (
         <p className="banner" role="status">

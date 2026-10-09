@@ -9,6 +9,7 @@ import { navigate } from "../router";
 import { useSession } from "../session";
 import { canMutate, uxLevel } from "../ux";
 import { bytesFromGB, parseMemoryGB } from "../memory";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function OciCreatePage() {
   const session = useSession();
@@ -95,9 +96,7 @@ export function OciCreatePage() {
         kicker="containerd runtime. Unprivileged by default. Health stays collecting or not configured until observed."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <article className="panel">
         <Field id="oci-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />

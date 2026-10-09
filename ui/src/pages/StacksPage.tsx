@@ -7,6 +7,7 @@ import { honestStatus } from "../format";
 import { navigate, usePath } from "../router";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function StacksPage() {
   const session = useSession();
@@ -86,9 +87,7 @@ volumes:
         kicker="Multi-container apps as inspectable No-dal objects. Compose is import only."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <article className="panel">
         <h2>On this node</h2>
@@ -209,9 +208,7 @@ export function StackDetailPage() {
         </p>
       </header>
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {mutate ? (
         <p className="btn-row">

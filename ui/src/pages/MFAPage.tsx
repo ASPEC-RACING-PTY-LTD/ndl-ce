@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { ApiError, confirmMfa, enrollMfa, getMfa } from "../api/client";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function MFAPage() {
   const [enabled, setEnabled] = useState(false);
@@ -28,9 +29,7 @@ export function MFAPage() {
         kicker="TOTP is the supported MFA method. WebAuthn is not implemented yet."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <article className="panel">
         <p>Status: {enabled ? "Enabled" : "Not configured"} ({kind})</p>

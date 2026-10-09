@@ -65,6 +65,7 @@ import { WorkloadFrame } from "./nav/WorkloadFrame";
 import { selectedTargetFromPath } from "./nav/match";
 import { isGameServersContext } from "./nav/gameServers";
 import { SessionProvider, useSession } from "./session";
+import { ErrorNotice } from "./components/ErrorNotice";
 
 function GateNotice({ children }: { children: string }) {
   return (
@@ -342,9 +343,7 @@ function AppRoutes() {
         <AuthBrand />
         <main className="panel auth-panel" aria-labelledby="session-error-heading">
           <h1 id="session-error-heading">Cannot reach the appliance</h1>
-          <p className="banner banner-error" role="alert">
-            {session.message}
-          </p>
+          <ErrorNotice error={session.message} />
           <button className="btn btn-primary" type="button" onClick={() => void session.refresh()}>
             Try again
           </button>

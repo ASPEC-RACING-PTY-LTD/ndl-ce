@@ -50,6 +50,7 @@ func main() {
 	reconcileRuntimeLXC(h.Workloads)
 	go scrapeMetrics(ms, dir)
 	go watchDisk(h.Disk)
+	go watchFDs()
 	go h.RefreshLoop(30 * time.Second)
 	go h.SessionLoop(dir, 30*time.Second)
 	go reattachQEMU(h.QEMU)

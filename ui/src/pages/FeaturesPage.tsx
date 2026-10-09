@@ -11,6 +11,7 @@ import { hasGrant } from "../rbac";
 import { Checkbox } from "../ui/Checkbox";
 import { SelectionCard } from "../ui/SelectionCard";
 import { featureRuntimeLabel } from "../labels";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function capabilityHref(id: string): string | undefined {
   const cap = CAPABILITIES.find((item) => item.id === id);
@@ -119,9 +120,7 @@ export function FeaturesPage() {
         kicker="Enable optional capabilities here. Sidebar visibility is a separate template. Roles still decide who can change the system."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
 
       <article className="stack">

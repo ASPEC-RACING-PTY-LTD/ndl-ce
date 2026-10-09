@@ -16,6 +16,7 @@ import type { NodeSummary } from "../api/phase2";
 import type { GPU, StoreApp, StoreInstallation, StoreScanCheck, StorePolicy } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -154,9 +155,7 @@ export function StorePage() {
         kicker="Declarative app install. Signatures fail closed on tamper. Unsigned Community warns. Verified-only refuses unsigned packages. Official class on this cluster uses a cluster-local signing key, not an Official publisher CA. CVE scanner unavailable is shown on the scan report."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {policy ? (
         <p>

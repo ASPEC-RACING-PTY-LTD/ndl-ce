@@ -14,6 +14,7 @@ import type { Network } from "../api/phase4";
 import type { StoragePool } from "../api/phase3";
 import { ActivityDetail, fieldsFromRecord } from "../components/ActivityDetail";
 import { ErrorState } from "../components/EmptyState";
+import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { MetricChart, lastPoint } from "../components/MetricChart";
@@ -182,11 +183,16 @@ export function DashboardPage() {
               </p>
             ) : null}
             {failedTasks.map((task) => (
-              <p key={task.id} className="banner banner-error" role="alert">
-                <button type="button" className="linkish" onClick={() => setOpenTask(task.id)}>
-                  {taskIntentTitle(task)} failed{task.message ? `: ${humanTaskMessage(task.message)}` : ""}
-                </button>
-              </p>
+              <ErrorNotice
+                key={task.id}
+                title={`${taskIntentTitle(task)} failed`}
+                error={humanTaskMessage(task.message) || "No reason was reported."}
+                action={
+                  <button type="button" className="linkish" onClick={() => setOpenTask(task.id)}>
+                    View task
+                  </button>
+                }
+              />
             ))}
           </div>
         ) : !loaded ? (

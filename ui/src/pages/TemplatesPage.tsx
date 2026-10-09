@@ -10,6 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function TemplatesPage() {
   const session = useSession();
@@ -53,9 +54,7 @@ export function TemplatesPage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <div className="card-grid">
         {items.length === 0 ? (

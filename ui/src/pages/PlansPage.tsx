@@ -4,6 +4,7 @@ import { ApiError, approveAIPlan, createAIPlan, listAIPlans } from "../api/clien
 import type { AIPlan, AIPlanStep } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canOperate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -92,9 +93,7 @@ export function PlansPage() {
         kicker="Plans execute existing APIs only after you approve. This is not a live LLM. AI cannot Host.Exec. Approve uses the same RBAC. If the backend still queues a step, the API method and path stay visible. A missing dest agent or create validation can stop the plan. Partial failure stops and audit remains."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <article className="panel">
         <form

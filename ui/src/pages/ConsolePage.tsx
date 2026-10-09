@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { createConsoleSession, getWorkload } from "../api/client";
 import { currentPath } from "../router";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function workloadIDFromPath(): string {
   const parts = currentPath().split("/").filter(Boolean);
@@ -157,9 +158,7 @@ export function ConsolePage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <nav className="subnav" aria-label="Console mode">
         <button className="btn" type="button" onClick={() => setMode("serial")}>

@@ -14,6 +14,7 @@ import {
 } from "../api/client";
 import type { HAStatus, RollingUpdatePreview } from "../generated/openapi";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canJoin(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -148,9 +149,7 @@ export function ClusterPage() {
         replica foundations, not multi-master. STONITH is not implemented.
       </p>
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <article className="panel">
         <h2>Nodes</h2>

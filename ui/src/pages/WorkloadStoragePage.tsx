@@ -9,6 +9,7 @@ import { formatBytes } from "../format";
 import { canMutate } from "../rbac";
 import { currentPath } from "../router";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 const GIB = 1024 ** 3;
 
@@ -206,9 +207,7 @@ export function WorkloadStoragePage() {
         </p>
       ) : null}
       {formError ? (
-        <p className="banner banner-error" role="alert">
-          {formError}
-        </p>
+        <ErrorNotice error={formError} />
       ) : null}
       {restartNeeded && running ? (
         <div className="banner banner-warn" role="status">

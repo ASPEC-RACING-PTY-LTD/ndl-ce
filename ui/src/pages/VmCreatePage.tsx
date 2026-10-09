@@ -11,6 +11,7 @@ import { navigate } from "../router";
 import { useSession } from "../session";
 import { canMutate, uxLevel } from "../ux";
 import { buildVmCreateBody } from "../vmCreate";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 const STEPS = ["Basics", "Compute", "Storage", "Network", "Boot", "Cloud-init", "Review"] as const;
 
@@ -151,9 +152,7 @@ export function VmCreatePage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {showBasics && !reviewOnly ? (
         <article className="panel">

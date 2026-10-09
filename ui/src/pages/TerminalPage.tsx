@@ -10,6 +10,7 @@ import { canMutate, isAdmin } from "../rbac";
 import { useSession } from "../session";
 import { targetFromNode, targetFromWorkload } from "../terminal/catalog";
 import { useTerminalWorkspace } from "../terminal/workspace";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function idsFromPath(): { kind: "node" | "workload"; id: string } {
   const parts = currentPath().split("/").filter(Boolean);
@@ -149,9 +150,7 @@ export function TerminalPage() {
     <section className="page page-wide page-term" aria-labelledby="term-heading">
       <PageHeader id="term-heading" title="Terminal" />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {host ? (
         <nav className="subnav" aria-label="IO">

@@ -8,6 +8,7 @@ import { preferredGuestNetwork } from "../components/form/NetworkPicker";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function ImportVMPage() {
   const session = useSession();
@@ -69,9 +70,7 @@ export function ImportVMPage() {
         </p>
       ) : null}
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {images.length === 0 ? <p>No disk-image library items. Upload a qcow2 as a disk-image first.</p> : null}
       <Field id="imp-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />

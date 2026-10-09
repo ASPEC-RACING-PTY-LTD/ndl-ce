@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ApiError, getMe, getSetupStatus, login, logout, claimSetup } from "./api/client";
+import { ApiError, SESSION_EXPIRED, getMe, getSetupStatus, login, logout, claimSetup } from "./api/client";
 import type { LoginRequest, MeResponse, SetupClaimRequest } from "./api/types";
 
 export type SessionReady = {
@@ -51,6 +51,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const expired = () => {
+      setState((prev) => (prev.status === "ready" && prev.user ? { ...prev, user: null } : prev));
+    };
+    window.addEventListener(SESSION_EXPIRED, expired);
+    return () => window.removeEventListener(SESSION_EXPIRED, expired);
+  }, []);
 
   const signIn = useCallback(async (body: LoginRequest) => {
     const result = await login(body);

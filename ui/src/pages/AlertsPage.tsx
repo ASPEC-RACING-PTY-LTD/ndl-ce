@@ -6,6 +6,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
 import { formatWhen } from "../format";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function AlertsPage() {
   const [rules, setRules] = useState<AlertRule[] | null>(null);
@@ -51,9 +52,7 @@ export function AlertsPage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <section className="section-block" aria-labelledby="alert-rules-heading">
         <h2 id="alert-rules-heading">Rules</h2>

@@ -4,6 +4,7 @@ import { AuthBrand } from "../components/AuthBrand";
 import { Field } from "../components/Field";
 import { navigate } from "../router";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function SetupPage() {
   const session = useSession();
@@ -54,9 +55,7 @@ export function SetupPage() {
         </p>
         <form className="form" onSubmit={(event) => void onSubmit(event)} noValidate>
           {formError ? (
-            <p className="banner banner-error" role="alert">
-              {formError}
-            </p>
+            <ErrorNotice error={formError} />
           ) : null}
           <Field
             id="setup-token"

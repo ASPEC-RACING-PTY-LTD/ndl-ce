@@ -23,6 +23,7 @@ import { Dialog } from "../ui/Dialog";
 import { SummaryCard } from "../ui/SummaryCard";
 
 import { hasGrant } from "../rbac";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 // While an apply runs the control plane and agent restart, so status reads
 // fail for a few seconds. Poll quickly and ignore those errors.
@@ -339,9 +340,10 @@ export function UpdatesPage() {
       ) : null}
 
       {applyOutcome?.status === "failed" ? (
-        <p className="banner banner-error banner-pre" role="alert">
-          {applyOutcome.action === "rollback" ? "The rollback failed." : "The update failed."} {applyOutcome.error || ""}
-        </p>
+        <ErrorNotice
+          title={applyOutcome.action === "rollback" ? "The rollback failed" : "The update failed"}
+          error={applyOutcome.error || "No reason was reported."}
+        />
       ) : null}
 
       {repositoryMissing ? (
@@ -357,9 +359,7 @@ export function UpdatesPage() {
       ) : null}
 
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
 
       {loadState === "collecting" ? (

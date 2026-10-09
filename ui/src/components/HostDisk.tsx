@@ -15,6 +15,7 @@ import type {
 import { formatBytes } from "../format";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Link } from "./Link";
+import { ErrorNotice } from "./ErrorNotice";
 
 type Level = HostDiskStatus["level"];
 
@@ -191,9 +192,7 @@ export function HostDiskPanel({ mutate }: { mutate: boolean }) {
         </p>
       ) : null}
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {notice ? (
         <p className="banner banner-ok" role="status">

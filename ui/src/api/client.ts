@@ -31,17 +31,27 @@ async function readErrorMessage(res: Response): Promise<string> {
   return `Request failed (${res.status})`;
 }
 
+/** SESSION_EXPIRED is dispatched on window when any call finds the session gone. */
+export const SESSION_EXPIRED = "ndl:session-expired";
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   if (init.body !== undefined && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  return fetch(`${API_PREFIX}${path}`, {
+  const res = await fetch(`${API_PREFIX}${path}`, {
     ...init,
     credentials: "include",
     headers,
   });
+  // A 401 outside sign-in means the session expired. The app returns to the
+  // sign-in page instead of showing every panel empty with "not
+  // authenticated".
+  if (res.status === 401 && !path.startsWith("/auth/") && path !== "/me" && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SESSION_EXPIRED));
+  }
+  return res;
 }
 
 async function readJson<T>(res: Response): Promise<T> {

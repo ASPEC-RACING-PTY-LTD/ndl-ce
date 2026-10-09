@@ -4,6 +4,7 @@ import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { useSession } from "../session";
 import { uxLevel, type UXLevel } from "../ux";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 const LEVELS: { id: UXLevel; label: string; hint: string }[] = [
   { id: "guided", label: "Guided", hint: "Step through create forms. Same APIs as Advanced." },
@@ -95,9 +96,7 @@ export function MePage() {
           Guided, Advanced, and Expert change how forms are shown. They never change authorization.
         </p>
         {error ? (
-          <p className="banner banner-error" role="alert">
-            {error}
-          </p>
+          <ErrorNotice error={error} />
         ) : null}
         <fieldset className="stack">
           <legend className="field-label">UX level</legend>

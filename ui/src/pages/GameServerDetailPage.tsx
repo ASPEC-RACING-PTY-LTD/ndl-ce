@@ -57,6 +57,7 @@ import type { GameContentItem, GameServer } from "../gameservers/types";
 import { navigate, usePath } from "../router";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 export function GameServerDetailPage() {
   const path = usePath();
@@ -148,13 +149,13 @@ export function GameServerDetailPage() {
           </div>
         }
       />
-      {error ? <p className="banner banner-error">{error}</p> : null}
+      {error ? <ErrorNotice error={error} /> : null}
       {server.status === "installing" || server.status === "pending" ? (
         <p className="gs-progress" role="status">
           Installing{server.install_phase ? ` · ${server.install_phase}` : ""}. This page refreshes itself.
         </p>
       ) : null}
-      {server.error_human ? <p className="banner banner-error">{server.error_human}</p> : null}
+      {server.error_human ? <ErrorNotice error={server.error_human} /> : null}
 
       <nav className="gs-tabs" aria-label="Server sections">
         {tabs.map((item) => (
@@ -714,7 +715,7 @@ function ContentPane({ id, kind }: { id: string; kind: string }) {
           Search
         </button>
       </form>
-      {warn ? <p className="banner banner-error">{warn}</p> : null}
+      {warn ? <ErrorNotice error={warn} /> : null}
       <div className="gs-board is-grid">
         {hits.map((hit) => (
           <article key={hit.external_id || hit.name} className="gs-card">

@@ -20,6 +20,7 @@ import { useSession } from "../session";
 import { usePoll } from "../query";
 import { useTerminalWorkspace } from "../terminal/workspace";
 import type { TermTarget } from "../terminal/types";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 type ViewMode = "hierarchy" | "flat";
 
@@ -538,9 +539,7 @@ function MachineBlock({
         </span>
       </header>
       {machine.daemon_error ? (
-        <p className="banner banner-error" role="alert">
-          {machine.daemon_error}
-        </p>
+        <ErrorNotice error={machine.daemon_error} />
       ) : null}
       {open ? (
         projects.length === 0 ? (

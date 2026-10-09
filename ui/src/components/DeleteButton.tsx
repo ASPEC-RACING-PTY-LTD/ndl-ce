@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { deleteResource } from "../api/client";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./Icon";
+import { ErrorNotice } from "./ErrorNotice";
 
 /**
  * Confirms and deletes one resource. Dependency refusals from the server
@@ -86,9 +87,7 @@ export function DeleteButton({
           </label>
         ) : null}
         {error ? (
-          <p className="banner banner-error" role="alert">
-            {error}
-          </p>
+          <ErrorNotice error={error} />
         ) : null}
       </ConfirmDialog>
     </>

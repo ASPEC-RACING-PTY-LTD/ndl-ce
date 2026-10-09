@@ -19,6 +19,7 @@ import {
 import type { CatalogueItem, GameCreateBody, GameTemplate, PreflightResult } from "../gameservers/types";
 import { GS_ROOT, gameServerHref } from "../nav/gameServers";
 import { navigate, usePath } from "../router";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 const STEPS = ["Game", "Options", "Placement", "Review"];
 const PREFLIGHT_DELAY_MS = 250;
@@ -269,7 +270,7 @@ export function GameServerCreatePage() {
           </li>
         ))}
       </ol>
-      {error ? <p className="banner banner-error">{error}</p> : null}
+      {error ? <ErrorNotice error={error} /> : null}
 
       {step === 0 ? (
         <div className="gs-create" aria-busy={busy}>

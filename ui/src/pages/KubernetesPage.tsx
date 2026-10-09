@@ -3,6 +3,7 @@ import { PageHeader } from "../components/PageHeader";
 import { ApiError, getKubernetes, startKubernetes, stopKubernetes } from "../api/client";
 import type { KubernetesStatus } from "../generated/openapi";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canManage(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -64,9 +65,7 @@ export function KubernetesPage() {
         kicker="Optional runtime. Virtual machines and system containers do not require Kubernetes. Default install has no kubelet process."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {status ? (
         <article className="panel">

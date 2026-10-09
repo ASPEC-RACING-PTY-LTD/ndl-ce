@@ -3,6 +3,7 @@ import { PageHeader } from "../components/PageHeader";
 import { ApiError, assignGpu, listGpus, unassignGpu } from "../api/client";
 import type { GPUListResponse } from "../generated/openapi";
 import { currentPath } from "../router";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function workloadIDFromPath(): string {
   const parts = currentPath().split("/").filter(Boolean);
@@ -60,9 +61,7 @@ export function GpuPage() {
     <>
       {heading}
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {notice ? (
         <p className="banner banner-warn" role="status">

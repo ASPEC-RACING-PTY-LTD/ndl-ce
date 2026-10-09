@@ -47,7 +47,7 @@ func (e *Engine) Exec(ctx context.Context, req ExecRequest) (ExecSession, error)
 		}
 	}
 	if cli == nil {
-		cli = newUnixClient(sock)
+		cli = sharedUnixClient(sock)
 	}
 	body, _ := json.Marshal(map[string]any{
 		"AttachStdin":  true,

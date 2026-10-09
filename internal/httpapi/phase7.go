@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -158,6 +159,8 @@ func (a qemuProtoAdapter) rpc() agentv1connect.AgentServiceClient {
 	}
 	httpClient := &http.Client{Transport: &http2.Transport{
 		AllowHTTP: true,
+		// A client is built per call; idle connections must not outlive it.
+		IdleConnTimeout: 30 * time.Second,
 		DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", path)

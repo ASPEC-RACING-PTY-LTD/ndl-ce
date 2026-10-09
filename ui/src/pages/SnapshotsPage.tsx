@@ -13,6 +13,7 @@ import { Field } from "../components/Field";
 import { formatWhen, honestStatus } from "../format";
 import { currentPath } from "../router";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function workloadIDFromPath(): string {
   const parts = currentPath().split("/").filter(Boolean);
@@ -148,9 +149,7 @@ export function SnapshotsPage() {
       />
 
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
 
       {loadState === "collecting" ? (

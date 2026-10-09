@@ -34,6 +34,7 @@ import {
 import { PVE_TOKEN_EXAMPLE, PVE_TOKEN_FORMAT, pveTokenError } from "../migration/pveToken";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 type Adapter = {
   id: string;
@@ -539,9 +540,7 @@ export function ImportExportPage() {
         </button>
       </div>
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <p className="banner" role="status">
         SOURCE SAFETY PROTECTED. No-dal does not delete or clean up the source workload.

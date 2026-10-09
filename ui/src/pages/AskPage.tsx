@@ -5,6 +5,7 @@ import { ApiError, askAI } from "../api/client";
 import type { AIAskResponse } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canAsk(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator") || roles?.includes("viewer"));
@@ -39,9 +40,7 @@ export function AskPage() {
         kicker="Read-only assistant. BYO providers are optional. Offline install has no AI vendor and the platform still works. Ask cites events and metrics. It cannot Host.Exec and it cannot mutate."
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {allowed ? (
         <article className="panel">

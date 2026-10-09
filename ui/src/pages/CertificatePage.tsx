@@ -5,6 +5,7 @@ import type { CertificateStatus } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { formatWhen } from "../format";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 const CONFIRM_ENABLE = "enable-tls";
 
@@ -132,9 +133,7 @@ export function CertificatePage() {
       />
 
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
 
       {!certs ? (

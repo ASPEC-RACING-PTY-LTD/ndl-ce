@@ -21,6 +21,7 @@ import { useSession } from "../session";
 import { Dialog } from "../ui/Dialog";
 import { Tabs } from "../ui/Tabs";
 import { RelativeTime } from "../ui/RelativeTime";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 type Reveal = { label: string; token: string };
 type Tab = "tokens" | "accounts";
@@ -111,9 +112,7 @@ export function APIAccessPage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {reveal ? (
         <p className="banner banner-warn" role="status">

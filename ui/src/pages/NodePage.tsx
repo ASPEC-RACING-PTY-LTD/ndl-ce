@@ -23,6 +23,7 @@ import { formatBytes, formatWhen, honestStatus } from "../format";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { SummaryCard } from "../ui/SummaryCard";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 type Inventory = {
   host?: Record<string, unknown>;
@@ -318,9 +319,7 @@ function RemoteNodeHelper() {
         </form>
       ) : null}
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {snippet ? (
         <pre className="code-block" tabIndex={0}>

@@ -12,6 +12,7 @@ import type { AutomationPolicy, AutomationPolicyRun } from "../generated/openapi
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canApply(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -104,9 +105,7 @@ export function AutomationPage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       <article className="panel">
         <h2>Policies</h2>

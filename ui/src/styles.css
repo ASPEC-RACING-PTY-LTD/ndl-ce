@@ -337,6 +337,42 @@ fieldset.field legend.field-label {
   color: var(--warn);
 }
 
+/* Errors: a plain message, with the raw error behind a toggle. */
+.error-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.error-notice-main {
+  margin: 0;
+}
+
+.error-notice-hint {
+  color: var(--fg-secondary);
+}
+
+.error-notice-details summary {
+  cursor: pointer;
+  font-size: 0.85em;
+  color: var(--fg-secondary);
+  width: fit-content;
+}
+
+.error-notice-details pre {
+  margin: var(--space-1) 0;
+  padding: var(--space-2);
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8em;
+  color: var(--fg-primary);
+  background: var(--bg-canvas);
+  font-family: var(--mono);
+  border-radius: var(--radius);
+}
+
 /* Host disk protection. */
 .shell-banner {
   margin: var(--space-2) var(--space-3) 0;
@@ -1305,7 +1341,7 @@ fieldset.field legend.field-label {
 
 .activity-toggle:hover,
 .activity-toggle:focus-visible {
-  color: var(--fg);
+  color: var(--fg-primary);
 }
 
 .activity-detail {

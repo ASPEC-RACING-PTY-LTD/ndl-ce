@@ -512,6 +512,9 @@ func webhookHTTPClient() *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
+			// A client is built per delivery; kept-alive connections would
+			// stay open for good.
+			DisableKeepAlives: true,
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				host, port, err := net.SplitHostPort(addr)
 				if err != nil {

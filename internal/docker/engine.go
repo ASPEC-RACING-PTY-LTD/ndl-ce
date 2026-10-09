@@ -65,7 +65,7 @@ func (e *Engine) client(socket string) engineAPI {
 	if e.ClientFor != nil {
 		return e.ClientFor(socket)
 	}
-	return newUnixClient(socket)
+	return sharedUnixClient(socket)
 }
 
 func (e *Engine) hostSockets() []string {

@@ -33,6 +33,7 @@ import { useSession } from "../session";
 import { CapacityBar } from "../ui/CapacityBar";
 import { Dialog } from "../ui/Dialog";
 import { SelectionCard } from "../ui/SelectionCard";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -359,9 +360,7 @@ export function StoragePage() {
         }
       />
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
       {!firstRun ? <HostDiskPanel mutate={mutate} /> : null}
       {firstRun || addKind ? (

@@ -12,6 +12,7 @@ import {
 import type { TermTarget } from "../terminal/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { StatusBadge } from "./StatusBadge";
+import { ErrorNotice } from "./ErrorNotice";
 
 type Row = { key: string; heading?: string; target?: TermTarget };
 
@@ -197,9 +198,7 @@ export function QuickSwitch({
           onChange={(event) => setQuery(event.target.value)}
         />
         {loadError ? (
-          <p className="banner banner-error" role="alert">
-            {loadError}
-          </p>
+          <ErrorNotice error={loadError} />
         ) : null}
         <ul className="palette-list qs-list">
           {rows.length === 0 ? (

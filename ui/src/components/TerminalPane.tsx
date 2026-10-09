@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { mkdirFile, uploadFile } from "../api/client";
+import { ErrorNotice } from "./ErrorNotice";
 import { Link } from "./Link";
 import { joinPath, relName, uploadDirFromCwd } from "../files/paths";
 import { shellEscapeAll } from "../files/shell";
@@ -414,12 +415,14 @@ export function TerminalPane({
         </div>
       </div>
       {tab.error ? (
-        <p className="banner banner-error" role="alert">
-          {tab.error}{" "}
-          <button className="btn btn-ghost btn-sm" type="button" onClick={() => closeTab(tab.tabId)}>
-            Close
-          </button>
-        </p>
+        <ErrorNotice
+          error={tab.error}
+          action={
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => closeTab(tab.tabId)}>
+              Close
+            </button>
+          }
+        />
       ) : null}
       {uploadNote ? (
         <p className="banner" role="status">

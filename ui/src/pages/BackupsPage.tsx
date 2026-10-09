@@ -44,6 +44,7 @@ import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
+import { ErrorNotice } from "../components/ErrorNotice";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -1058,9 +1059,7 @@ export function BackupsPage() {
       />
 
       {error ? (
-        <p className="banner banner-error" role="alert">
-          {error}
-        </p>
+        <ErrorNotice error={error} />
       ) : null}
 
       {loadState === "collecting" ? (

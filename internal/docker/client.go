@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,21 @@ type unixClient struct {
 
 var _ engineAPI = (*unixClient)(nil)
 
+// unixClients holds one client per Docker socket. Each client keeps idle
+// keep-alive connections; a new client per inventory pass left those open
+// for good, and the agent ran out of file descriptors ("too many open
+// files") after a few days of Docker inventory.
+var unixClients sync.Map
+
+// sharedUnixClient returns the client for socket, creating it once.
+func sharedUnixClient(socket string) *unixClient {
+	if c, ok := unixClients.Load(socket); ok {
+		return c.(*unixClient)
+	}
+	c, _ := unixClients.LoadOrStore(socket, newUnixClient(socket))
+	return c.(*unixClient)
+}
+
 func newUnixClient(socket string) *unixClient {
 	dialer := &net.Dialer{Timeout: 4 * time.Second}
 	return &unixClient{
@@ -34,6 +50,10 @@ func newUnixClient(socket string) *unixClient {
 					return dialer.DialContext(ctx, "unix", socket)
 				},
 				ResponseHeaderTimeout: 20 * time.Second,
+				// Idle connections close on their own, so a socket that
+				// goes away (a deleted container) holds nothing open.
+				IdleConnTimeout:     30 * time.Second,
+				MaxIdleConnsPerHost: 4,
 			},
 		},
 	}
