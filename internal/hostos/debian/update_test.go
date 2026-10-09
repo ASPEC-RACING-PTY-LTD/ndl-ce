@@ -24,12 +24,19 @@ func TestUpdateArgvNeverShell(t *testing.T) {
 	if !contains(apply, "--dry-run") || !contains(apply, "nodal") {
 		t.Fatalf("%v", apply)
 	}
-	rb, err := RollbackControlArgv("0.1.10", true)
-	if err != nil || !contains(rb, "ndl-control=0.1.10") {
+	rb, err := RollbackDryRunArgv("0.1.10")
+	if err != nil || !contains(rb, "--allow-downgrades") || !contains(rb, "--dry-run") {
 		t.Fatalf("%v %v", rb, err)
 	}
-	if _, err := RollbackControlArgv("1; rm -rf /", false); err == nil {
-		t.Fatal("injection")
+	for _, name := range PackageNames {
+		if !contains(rb, name+"=0.1.10") {
+			t.Fatalf("rollback must move %s with the rest: %v", name, rb)
+		}
+	}
+	for _, bad := range []string{"1; rm -rf /", "-o", "1 2", "", "1.0$(x)"} {
+		if _, err := RollbackDryRunArgv(bad); err == nil {
+			t.Fatalf("version %q must be refused", bad)
+		}
 	}
 	tar, err := CheckpointTarArgv("/var/lib/ndl/update-checkpoints/x.tar")
 	if err != nil || tar[0] != "/usr/bin/tar" {

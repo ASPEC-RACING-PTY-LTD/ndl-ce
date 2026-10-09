@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/backuphost"
@@ -29,7 +30,12 @@ func (s *Server) executeVMBackupV2(ctx context.Context, clusterID string, wl app
 	}
 	run.SnapshotID = snap.ID
 	defer func() {
-		if err := s.commitBackupLayer(ctx, clusterID, wl, snap); err != nil {
+		// The merge must run even when the backup was cancelled (for example
+		// paused by a platform update), so the guest is not left on a
+		// backup layer.
+		mctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+		defer cancel()
+		if err := s.commitBackupLayer(mctx, clusterID, wl, snap); err != nil {
 			s.recordStorageEvent("vm-backup", false, wl.ID, "the backup snapshot could not be merged back and stays in the disk chain until the next backup: "+err.Error())
 		}
 	}()

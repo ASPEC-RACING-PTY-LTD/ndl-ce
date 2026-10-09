@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/cluster"
-	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
@@ -430,11 +429,11 @@ func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string,
 		}
 		return st, nil
 	}
-	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
-	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	op, err := s.startHostChange(r.Context(), p.User.ClusterID, "apply", nil)
 	if err != nil {
 		return st, err
 	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "update.apply", op.Status, op.ID)
 	st.UpdateOperationID = op.ID
 	st.Status = op.Status
 	st.Reason = op.Error

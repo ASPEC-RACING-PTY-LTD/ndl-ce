@@ -12621,6 +12621,34 @@ components:
           $ref: "#/components/schemas/UpdateOperation"
         last_check:
           $ref: "#/components/schemas/UpdateOperation"
+        stage:
+          type: string
+          description: What a running apply or rollback is doing before it hands over to the host.
+        paused_backups:
+          type: integer
+          description: Backups the running apply or rollback paused. They run again afterwards.
+        backups_paused:
+          type: string
+          description: Why backups are paused right now. Absent when they are not.
+        rollback:
+          $ref: "#/components/schemas/UpdateRollback"
+    UpdateRollback:
+      type: object
+      additionalProperties: false
+      required:
+        - available
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: string
+          description: Why a rollback is not possible.
+        version:
+          type: string
+          description: The version every package moves back to.
+        restores_database:
+          type: boolean
+          description: True when the update changed the database, so the checkpoint taken before it is restored and later changes are lost.
     UpdatePreviewItem:
       type: object
       additionalProperties: false
@@ -12719,6 +12747,9 @@ components:
           type: boolean
         nvidia_ok:
           type: boolean
+        version:
+          type: string
+          description: The version an apply would install.
     UpdateCheckpoint:
       type: object
       additionalProperties: false

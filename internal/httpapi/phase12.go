@@ -145,7 +145,7 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	res, err := s.updater().HostUpdate(r.Context(), hostos.UpdateRequest{Action: "status", Channel: hostos.ChannelStable, DryRun: true})
+	res, err := s.cachedStatus(r.Context())
 	if err != nil {
 		res = hostos.UpdateResult{Supported: false, Reason: "update agent is unavailable", Status: appdb.UpdateUnsupported, Channel: hostos.ChannelStable}
 	}
@@ -163,6 +163,14 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 	if lastCheck, err := s.Store.GetLatestCheckUpdateOperation(r.Context(), p.User.ClusterID); err == nil && lastCheck != nil {
 		body["last_check"] = updateOperationJSON(*lastCheck)
 	}
+	if stage, paused := s.stage(); s.applyPreparing.Load() {
+		body["stage"] = stage
+		body["paused_backups"] = paused
+	}
+	if reason := s.backupsPaused(); reason != "" {
+		body["backups_paused"] = reason
+	}
+	body["rollback"] = rollbackJSON(s.planRollback(r.Context(), p.User.ClusterID))
 	writeJSON(w, http.StatusOK, body)
 }
 
@@ -231,29 +239,30 @@ func (s *Server) preflightUpdates(w http.ResponseWriter, r *http.Request) {
 		writeUpdateErr(w, err)
 		return
 	}
-	checks := make([]map[string]any, 0, len(res.Checks))
-	for _, c := range res.Checks {
-		name, status, detail := c.Name, c.Status, c.Detail
-		if name == "store_compatibility" {
-			if status == "ok" || status == "" {
-				status = "skipped"
-			}
-			if detail == "" {
-				detail = hostos.StoreCompatDetail
-			}
-			if (status == "skipped" || status == "unavailable") && !strings.Contains(strings.ToLower(detail), "not implemented") {
-				detail = "Store compatibility check is not implemented. " + detail
+	ok := res.PreflightOK && res.Supported
+	if res.Supported {
+		for _, c := range s.controlChecks(r.Context(), p.User.ClusterID) {
+			res.Checks = append(res.Checks, c)
+			if c.Status == "failed" {
+				ok = false
 			}
 		}
-		checks = append(checks, map[string]any{"name": name, "status": status, "detail": detail})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":        res.PreflightOK && res.Supported,
+	checks := make([]map[string]any, 0, len(res.Checks))
+	for _, c := range res.Checks {
+		checks = append(checks, map[string]any{"name": c.Name, "status": c.Status, "detail": c.Detail})
+	}
+	body := map[string]any{
+		"ok":        ok,
 		"checks":    checks,
 		"kernel_ok": res.KernelOK,
 		"zfs_ok":    res.ZFSOK,
 		"nvidia_ok": res.NvidiaOK,
-	})
+	}
+	if res.CandidateVersion != "" {
+		body["version"] = res.CandidateVersion
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) checkpointUpdates(w http.ResponseWriter, r *http.Request) {
@@ -291,12 +300,12 @@ func (s *Server) applyUpdates(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "apply requires X-Nodal-Confirm: apply-update")
 		return
 	}
-	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
-	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "apply", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	op, err := s.startHostChange(r.Context(), p.User.ClusterID, "apply", nil)
 	if err != nil {
 		writeUpdateErr(w, err)
 		return
 	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "update.apply", op.Status, op.ID)
 	writeJSON(w, http.StatusOK, updateOperationJSON(op))
 }
 
@@ -309,12 +318,17 @@ func (s *Server) rollbackUpdates(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "rollback requires X-Nodal-Confirm: rollback-update")
 		return
 	}
-	version := s.recordedControlVersion(r.Context(), p.User.ClusterID)
-	_, op, err := s.runUpdateOp(r, p, hostos.UpdateRequest{Action: "rollback", Channel: hostos.ChannelStable, Version: version, DryRun: false})
+	plan, reason := s.planRollback(r.Context(), p.User.ClusterID)
+	if reason != "" {
+		writeErr(w, http.StatusConflict, reason)
+		return
+	}
+	op, err := s.startHostChange(r.Context(), p.User.ClusterID, "rollback", &plan)
 	if err != nil {
 		writeUpdateErr(w, err)
 		return
 	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "update.rollback", op.Status, op.ID)
 	writeJSON(w, http.StatusOK, updateOperationJSON(op))
 }
 
@@ -340,7 +354,7 @@ func (s *Server) enableUpdateRepository(w http.ResponseWriter, r *http.Request) 
 // outcome is read back from the host on the next status read instead of by
 // the request that started it.
 func (s *Server) settleApply(ctx context.Context, op appdb.UpdateOperation) appdb.UpdateOperation {
-	if op.Action != "apply" || op.Status != appdb.UpdateRunning || op.DryRun {
+	if !hostChange(op.Action) || op.Status != appdb.UpdateRunning || op.DryRun || s.applyPreparing.Load() {
 		return op
 	}
 	s.updateMu.Lock()
@@ -355,7 +369,7 @@ func (s *Server) settleApply(ctx context.Context, op appdb.UpdateOperation) appd
 
 // settleApplyLocked is settleApply for callers that hold updateMu.
 func (s *Server) settleApplyLocked(ctx context.Context, op appdb.UpdateOperation) appdb.UpdateOperation {
-	if op.Action != "apply" || op.Status != appdb.UpdateRunning || op.DryRun {
+	if !hostChange(op.Action) || op.Status != appdb.UpdateRunning || op.DryRun || s.applyPreparing.Load() {
 		return op
 	}
 	res, err := s.updater().HostUpdate(ctx, hostos.UpdateRequest{Action: hostos.UpdateApplyStatus, Channel: hostos.ChannelStable})
@@ -374,6 +388,13 @@ func (s *Server) settleApplyLocked(ctx context.Context, op appdb.UpdateOperation
 	case appdb.UpdateRunning:
 		return op
 	default:
+		// No unit result, for example after a reboot. The installed
+		// versions tell whether the packages arrived.
+		if s.installedVersion(ctx, op.Version) {
+			op.Status = appdb.UpdateSucceeded
+			op.Error = ""
+			break
+		}
 		if now.Sub(op.StartedAt) < applyResultGrace {
 			return op
 		}
@@ -388,8 +409,28 @@ func (s *Server) settleApplyLocked(ctx context.Context, op appdb.UpdateOperation
 		log.Printf("settle update apply %s: %v", op.ID, err)
 		return op
 	}
-	s.emitUpdateEvent(ctx, op.ClusterID, "update.apply", map[string]any{"status": op.Status})
+	s.dropStatusCache()
+	s.resumeBackups()
+	s.emitUpdateEvent(ctx, op.ClusterID, "update."+op.Action, map[string]any{"status": op.Status})
 	return op
+}
+
+// installedVersion reports whether every core package is installed at
+// version.
+func (s *Server) installedVersion(ctx context.Context, version string) bool {
+	if strings.TrimSpace(version) == "" {
+		return false
+	}
+	res, err := s.updater().HostUpdate(ctx, hostos.UpdateRequest{Action: "status", Channel: hostos.ChannelStable, DryRun: true})
+	if err != nil || len(res.Packages) == 0 {
+		return false
+	}
+	for _, p := range res.Packages {
+		if p.Version != version {
+			return false
+		}
+	}
+	return true
 }
 
 func applyFailure(res hostos.UpdateResult) string {
@@ -404,14 +445,6 @@ func applyFailure(res hostos.UpdateResult) string {
 		msg += "\n" + tail
 	}
 	return msg
-}
-
-func (s *Server) recordedControlVersion(ctx context.Context, clusterID string) string {
-	op, err := s.Store.GetLatestCheckUpdateOperation(ctx, clusterID)
-	if err != nil || op == nil {
-		return ""
-	}
-	return strings.TrimSpace(op.Version)
 }
 
 func (s *Server) runUpdateOp(r *http.Request, p *principal, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation, error) {
@@ -449,8 +482,11 @@ var errUpdateRunning = errors.New("a platform update is running; wait for it to 
 func (s *Server) runUpdateOperation(ctx context.Context, clusterID string, req hostos.UpdateRequest) (hostos.UpdateResult, appdb.UpdateOperation, error) {
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
+	if s.applyPreparing.Load() {
+		return hostos.UpdateResult{}, appdb.UpdateOperation{}, errUpdateRunning
+	}
 	if last, err := s.Store.GetLatestUpdateOperation(ctx, clusterID); err == nil && last != nil {
-		if settled := s.settleApplyLocked(ctx, *last); settled.Action == "apply" && settled.Status == appdb.UpdateRunning && !settled.DryRun {
+		if settled := s.settleApplyLocked(ctx, *last); hostChange(settled.Action) && settled.Status == appdb.UpdateRunning && !settled.DryRun {
 			return hostos.UpdateResult{}, settled, errUpdateRunning
 		}
 	}
@@ -469,13 +505,6 @@ func (s *Server) runUpdateOperation(ctx context.Context, clusterID string, req h
 		DryRun:    req.DryRun,
 		StartedAt: now,
 		Packages:  append([]string{}, hostos.PackageNames...),
-	}
-	if req.Action == "apply" {
-		op.Packages = []string{"nodal"}
-	}
-	if req.Action == "rollback" {
-		op.Packages = []string{"ndl-control"}
-		op.Version = req.Version
 	}
 	if err := s.Store.CreateUpdateOperation(ctx, op); err != nil {
 		return hostos.UpdateResult{}, op, errInternal("could not record update operation")

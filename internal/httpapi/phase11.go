@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -806,13 +807,19 @@ func (s *Server) ReconcileInterruptedBackupRuns(ctx context.Context) int {
 		return 0
 	}
 	now := s.now()
+	reason := backupInterruptedError
+	if s.updateInProgress(ctx, cluster.ID) {
+		// Control restarted inside a platform update: the backup was paused
+		// for it and runs again when the update finishes.
+		reason = backupSuspendedError
+	}
 	n := 0
 	for _, run := range runs {
 		if run.Status != appdb.BackupRunning {
 			continue
 		}
 		run.Status = appdb.BackupInterrupted
-		run.Error = backupInterruptedError
+		run.Error = reason
 		run.FinishedAt = &now
 		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
 			continue
@@ -864,6 +871,13 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 			mu.Lock()
 			expiredV2 += pr.V2
 			mu.Unlock()
+			if errors.Is(err, errBackupSuspended) {
+				run = s.recordSuspended(ctx, clusterID, pol.ID, pol.TargetID, workloadID)
+				mu.Lock()
+				runs = append(runs, run)
+				mu.Unlock()
+				return
+			}
 			if err != nil {
 				run = s.recordIndependentFailure(ctx, clusterID, pol.ID, pol.TargetID, workloadID, err.Error())
 				mu.Lock()
@@ -935,11 +949,17 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 	if err != nil || cluster == nil || cluster.SetupCompletedAt == nil {
 		return
 	}
+	if s.backupsPaused() != "" || s.updateInProgress(ctx, cluster.ID) {
+		// A platform update is preparing or running. Due policies stay due
+		// and run on the first tick after it.
+		return
+	}
 	policies, err := s.Store.ListBackupPolicies(ctx, cluster.ID)
 	if err != nil {
 		return
 	}
 	s.syncV2State(ctx, cluster.ID)
+	s.ResumeSuspendedBackups(ctx, cluster.ID)
 	now := s.now()
 	for _, pol := range policies {
 		if pol.Schedule != appdb.BackupNightly {
@@ -971,7 +991,15 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 }
 
 func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID, captureMode string, scopeJSON json.RawMessage) (appdb.BackupRun, error) {
+	ctx, untrack, err := s.trackBackup(ctx, workloadID)
+	if err != nil {
+		return appdb.BackupRun{}, err
+	}
+	defer untrack()
 	if err := s.acquireBackupSlot(ctx, clusterID, workloadID); err != nil {
+		if s.backupSuspended(ctx) {
+			return appdb.BackupRun{}, errBackupSuspended
+		}
 		return appdb.BackupRun{}, err
 	}
 	defer s.releaseBackupSlot(workloadID)
@@ -1025,8 +1053,13 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 		now := s.now()
 		run.Status = appdb.BackupFailed
 		run.Error = msg
+		if s.backupSuspended(ctx) {
+			// Paused by a platform update: it runs again afterwards.
+			run.Status = appdb.BackupInterrupted
+			run.Error = backupSuspendedError
+		}
 		run.FinishedAt = &now
-		if err := s.Store.UpdateBackupRun(ctx, run); err != nil {
+		if err := s.Store.UpdateBackupRun(context.WithoutCancel(ctx), run); err != nil {
 			return run, errInternal("could not record backup run")
 		}
 		return run, nil

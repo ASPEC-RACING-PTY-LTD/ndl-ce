@@ -1901,6 +1901,17 @@ export interface UpdateStatus {
   packages: UpdatePackage[];
   last_operation?: UpdateOperation;
   last_check?: UpdateOperation;
+  stage?: string;
+  paused_backups?: number;
+  backups_paused?: string;
+  rollback?: UpdateRollback;
+}
+
+export interface UpdateRollback {
+  available: boolean;
+  reason?: string;
+  version?: string;
+  restores_database?: boolean;
 }
 
 export interface UpdatePreviewItem {
@@ -1931,6 +1942,7 @@ export interface UpdatePreflight {
   kernel_ok: boolean;
   zfs_ok: boolean;
   nvidia_ok: boolean;
+  version?: string;
 }
 
 export interface UpdateCheckpoint {

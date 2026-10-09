@@ -62,7 +62,23 @@ func ChangelogArgv() []string {
 	return []string{"/usr/bin/apt-get", "-qq", "changelog", "nodal"}
 }
 
-// MkdirCheckpointArgv creates the checkpoint directory. Dest is fixed.
+// MkdirCheckpointArgv creates the checkpoint directory. Dest is fixed. Mode
+// 0711 lets the database owner reach its own dump file without listing or
+// reading the archives beside it.
 func MkdirCheckpointArgv() []string {
-	return []string{"/usr/bin/mkdir", "-p", CheckpointDir}
+	return []string{"/usr/bin/install", "-d", "-m", "0711", CheckpointDir}
 }
+
+// HeldPackagesArgv lists packages the administrator has put on hold.
+func HeldPackagesArgv() []string {
+	return []string{"/usr/bin/apt-mark", "showhold"}
+}
+
+// DpkgAuditArgv lists half-installed or unconfigured packages. Output means
+// an earlier package operation did not finish.
+func DpkgAuditArgv() []string {
+	return []string{"/usr/bin/dpkg", "--audit"}
+}
+
+// PackageLocks are the files apt and dpkg lock while they work.
+var PackageLocks = []string{"/var/lib/dpkg/lock-frontend", "/var/lib/dpkg/lock", "/var/lib/apt/lists/lock", "/var/cache/apt/archives/lock"}

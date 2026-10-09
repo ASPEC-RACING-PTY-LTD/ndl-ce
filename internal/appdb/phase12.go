@@ -28,6 +28,11 @@ type UpdateOperation struct {
 	Candidates []UpdateCandidate
 	StartedAt  time.Time
 	FinishedAt *time.Time
+	// CheckpointID is the checkpoint an apply took right before installing.
+	CheckpointID string
+	// SchemaVersion is the newest database migration before an apply. A
+	// rollback restores the checkpoint's database only when it changed.
+	SchemaVersion string
 }
 
 type UpdateCandidate struct {
@@ -94,6 +99,23 @@ func (m *Memory) GetLatestCheckUpdateOperation(_ context.Context, clusterID stri
 		}
 		cp := cloneUpdateOperation(op)
 		if latest == nil || cp.StartedAt.After(latest.StartedAt) || (cp.StartedAt.Equal(latest.StartedAt) && cp.ID < latest.ID) {
+			latest = &cp
+		}
+	}
+	return latest, nil
+}
+
+// GetLatestUpdateOperationByAction returns the newest operation of one action.
+func (m *Memory) GetLatestUpdateOperationByAction(_ context.Context, clusterID, action string) (*UpdateOperation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var latest *UpdateOperation
+	for _, op := range m.updateOps {
+		if op.ClusterID != clusterID || op.Action != action {
+			continue
+		}
+		cp := cloneUpdateOperation(op)
+		if latest == nil || cp.StartedAt.After(latest.StartedAt) {
 			latest = &cp
 		}
 	}

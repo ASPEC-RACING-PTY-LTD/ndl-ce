@@ -17,13 +17,19 @@ import (
 type detachedUpdate struct {
 	applyState string
 	calls      []string
+	reqs       []hostos.UpdateRequest
 }
 
 func (d *detachedUpdate) HostUpdate(_ context.Context, req hostos.UpdateRequest) (hostos.UpdateResult, error) {
 	d.calls = append(d.calls, req.Action)
 	res := hostos.UpdateResult{Supported: true, Action: req.Action, Channel: hostos.ChannelStable, Status: appdb.UpdateSucceeded, RepositoryConfigured: true}
 	switch req.Action {
-	case "apply":
+	case "preflight":
+		res.PreflightOK = true
+		res.CandidateVersion = "1.1.1"
+		res.Items = []hostos.PreviewItem{{Name: "nodal", CurrentVersion: "1.1.0", CandidateVersion: "1.1.1", Action: "upgrade"}}
+	case "apply", "rollback":
+		d.reqs = append(d.reqs, req)
 		res.Status = appdb.UpdateRunning
 	case hostos.UpdateApplyStatus:
 		res.Status = d.applyState
@@ -69,6 +75,13 @@ func TestApplyStaysRunningUntilTheHostUnitFinishes(t *testing.T) {
 	if code != http.StatusOK || op["status"] != "running" || op["finished_at"] != nil {
 		t.Fatalf("apply must be recorded as running: %d %v", code, op)
 	}
+	s.waitHostChange()
+	if strings.Join(host.calls, ",") != "preflight,checkpoint,apply" {
+		t.Fatalf("apply must run preflight and a checkpoint before installing: %v", host.calls)
+	}
+	if host.reqs[0].Version != "1.1.1" {
+		t.Fatalf("apply must install exactly the version preflight checked: %+v", host.reqs[0])
+	}
 
 	// While the unit runs, status reads keep it running and other work is refused.
 	_, status := updatesCall(t, ts, cookie, "GET", "/updates", "")
@@ -104,6 +117,7 @@ func TestFailedApplyCarriesPackageOutput(t *testing.T) {
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 	updatesCall(t, ts, cookie, "POST", "/updates/apply", "apply-update")
+	s.waitHostChange()
 	_, status := updatesCall(t, ts, cookie, "GET", "/updates", "")
 	last := status["last_operation"].(map[string]any)
 	if last["status"] != "failed" || !strings.Contains(last["error"].(string), "Unable to locate package") {

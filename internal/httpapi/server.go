@@ -116,6 +116,10 @@ type Server struct {
 	alertBusy       atomic.Bool
 	updateCheckBusy atomic.Bool
 	updateMu        sync.Mutex
+	hold            backupHold
+	applyPreparing  atomic.Bool
+	updateStage     updateStage
+	updateStatus    updateStatusCache
 	docker          *dockerCache
 	destOverride    *destAgentOverride
 	Game            *gameserver.Runtime

@@ -29,7 +29,7 @@ import { hasGrant } from "../rbac";
 const APPLY_POLL_MS = 3_000;
 
 function applyRunning(op: UpdateOperation | null | undefined): boolean {
-  return op?.action === "apply" && op.status === "running" && !op.dry_run;
+  return (op?.action === "apply" || op?.action === "rollback") && op.status === "running" && !op.dry_run;
 }
 
 function packageStatusLabel(status: string): string {
@@ -155,7 +155,7 @@ export function UpdatesPage() {
     if (updating) {
       watchingApply.current = true;
       setApplyOutcome(null);
-    } else if (watchingApply.current && currentOp?.action === "apply") {
+    } else if (watchingApply.current && (currentOp?.action === "apply" || currentOp?.action === "rollback")) {
       watchingApply.current = false;
       setApplyOutcome(currentOp);
     }
@@ -221,7 +221,7 @@ export function UpdatesPage() {
   async function onApply() {
     if (
       !window.confirm(
-        "Install the latest release? The control plane restarts during the update and this page reconnects on its own. Guests keep running.",
+        "Install the latest release?\n\nPreflight runs first and a checkpoint of the control-plane database is saved, so the update can be rolled back. Running backups are paused and run again automatically afterwards. The control plane restarts during the update and this page reconnects on its own. Guests keep running.",
       )
     ) {
       return;
@@ -250,11 +250,11 @@ export function UpdatesPage() {
   }
 
   async function onRollback() {
-    if (
-      !window.confirm(
-        "Roll back the last control-plane package update? Confirmation is sent as X-Nodal-Confirm: rollback-update.",
-      )
-    ) {
+    const plan = status?.rollback;
+    const db = plan?.restores_database
+      ? " The last update changed the database, so it is restored from the checkpoint saved before the update: changes made since then (new workloads, backups, settings) are lost."
+      : " The database is kept as it is.";
+    if (!window.confirm(`Move every No-dal package back to version ${plan?.version ?? "the previous version"}?${db} Running backups are paused and run again afterwards. Guests keep running.`)) {
       return;
     }
     await runAction(async () => {
@@ -265,6 +265,7 @@ export function UpdatesPage() {
 
   const hostSupported = status?.host_supported === true;
   const actionsEnabled = mutate && hostSupported && !busy && !applyRunning(status?.last_operation ?? lastOp);
+  const rollbackReady = status?.rollback?.available === true;
   const lastCheckCandidates = status?.last_check?.candidates ?? [];
   const available = preview
     ? { version: preview.version, url: preview.release_url }
@@ -300,22 +301,37 @@ export function UpdatesPage() {
         <button className="btn btn-primary" type="button" disabled={!actionsEnabled} onClick={() => void onApply()}>
           Apply update
         </button>
-        <button className="btn" type="button" disabled={!actionsEnabled} onClick={() => void onRollback()}>
+        <button
+          className="btn"
+          type="button"
+          disabled={!actionsEnabled || !rollbackReady}
+          title={rollbackReady ? `Roll back to ${status?.rollback?.version ?? ""}` : status?.rollback?.reason}
+          onClick={() => void onRollback()}
+        >
           Roll back update
         </button>
       </div>
+      {!rollbackReady && status?.rollback?.reason ? <p className="field-hint">{status.rollback.reason}</p> : null}
 
       {updating ? (
         <p className="banner" role="status">
-          Updating. The control plane restarts during the update and this page reconnects on its
-          own. Guests keep running. This is not an infrastructure restart.
+          {currentOp?.action === "rollback" ? "Rolling back" : "Updating"}
+          {status?.stage ? `: ${status.stage.toLowerCase()}` : ""}. The control plane restarts during it and this page
+          reconnects on its own. Guests keep running.
+          {status?.paused_backups ? ` ${status.paused_backups} running backup(s) were paused and run again afterwards.` : ""}
+        </p>
+      ) : null}
+
+      {!updating && status?.backups_paused ? (
+        <p className="banner banner-warn" role="status">
+          Backups are paused: {status.backups_paused}.
         </p>
       ) : null}
 
       {applyOutcome?.status === "succeeded" ? (
         <p className="banner" role="status">
-          Update installed{applyOutcome.version ? ` (${applyOutcome.version})` : ""}. Reload to use
-          the new interface.{" "}
+          {applyOutcome.action === "rollback" ? "Rollback finished" : "Update installed"}
+          {applyOutcome.version ? ` (${applyOutcome.version})` : ""}. Reload to use the matching interface.{" "}
           <button className="btn" type="button" onClick={() => window.location.reload()}>
             Reload
           </button>
@@ -324,7 +340,7 @@ export function UpdatesPage() {
 
       {applyOutcome?.status === "failed" ? (
         <p className="banner banner-error banner-pre" role="alert">
-          The update failed. {applyOutcome.error || ""}
+          {applyOutcome.action === "rollback" ? "The rollback failed." : "The update failed."} {applyOutcome.error || ""}
         </p>
       ) : null}
 

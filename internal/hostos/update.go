@@ -2,6 +2,7 @@ package hostos
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,6 +111,8 @@ type UpdateResult struct {
 	RepositoryConfigured bool `json:"repository_configured"`
 	// Log is the tail of a finished apply's package-manager output.
 	Log string `json:"log,omitempty"`
+	// CandidateVersion is the version an apply would install (preflight).
+	CandidateVersion string `json:"candidate_version,omitempty"`
 }
 
 // ExecFunc runs one validated argv list. argv[0] is an absolute binary path.
@@ -194,7 +197,7 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 	case debian.UpdateCheck:
 		return runCheck(ctx, res, exec)
 	case debian.UpdatePreflight:
-		return runPreflight(res), nil
+		return runPreflight(ctx, res, exec), nil
 	case debian.UpdateCheckpoint:
 		return runCheckpoint(ctx, req, res, exec)
 	case debian.UpdateApply:
@@ -311,32 +314,174 @@ func holdItems(pkgs []PackageStatus) []PreviewItem {
 	return out
 }
 
-func runPreflight(res UpdateResult) UpdateResult {
+// MinUpdateFreeBytes is the free space an update needs on the root
+// filesystem and in the package cache: downloads, unpacked files and a
+// checkpoint.
+const MinUpdateFreeBytes = 3 << 30
+
+// Host probes, replaced in tests.
+var (
+	freeBytes = statFree
+	lockHeld  = packageLockHeld
+)
+
+// runPreflight checks everything that would make an apply fail or leave the
+// host half updated. A failed row fails the whole preflight, and apply does
+// not start. Without exec (tests, SkipHostCmds) only local runtime facts are
+// reported.
+func runPreflight(ctx context.Context, res UpdateResult, exec ExecFunc) UpdateResult {
+	ok := true
+	add := func(name, status, detail string) {
+		res.Checks = append(res.Checks, PreflightCheck{Name: name, Status: status, Detail: detail})
+		if status == "failed" {
+			ok = false
+		}
+	}
 	k, z, n := debian.ObserveRuntime()
-	kernel := PreflightCheck{Name: "kernel", Status: "ok", Detail: "Kernel version is readable."}
-	if !k {
-		kernel = PreflightCheck{Name: "kernel", Status: "failed", Detail: "Kernel version is unreadable."}
+	if k {
+		add("kernel", "ok", "Kernel version is readable.")
+	} else {
+		add("kernel", "failed", "Kernel version is unreadable.")
 	}
-	zfs := PreflightCheck{Name: "zfs", Status: "warning", Detail: "ZFS module is not loaded. Directory storage remains first-class."}
+	if exec != nil {
+		ok = preflightHost(ctx, &res, exec, add) && ok
+	}
 	if z {
-		zfs = PreflightCheck{Name: "zfs", Status: "ok", Detail: "ZFS module is present."}
+		add("zfs", "ok", "ZFS module is present.")
+	} else {
+		add("zfs", "warning", "ZFS module is not loaded. Directory storage remains first-class.")
 	}
-	nv := PreflightCheck{Name: "nvidia", Status: "warning", Detail: "NVIDIA runtime is not present. GPU assignment is a later phase."}
 	if n {
-		nv = PreflightCheck{Name: "nvidia", Status: "ok", Detail: "NVIDIA runtime is present."}
+		add("nvidia", "ok", "NVIDIA runtime is present.")
+	} else {
+		add("nvidia", "warning", "NVIDIA runtime is not present. GPU assignment is a later phase.")
 	}
-	store := PreflightCheck{Name: "store_compatibility", Status: "ok", Detail: StoreCompatDetail}
-	res.Checks = []PreflightCheck{kernel, zfs, nv, store}
+	add("store_compatibility", "ok", StoreCompatDetail)
 	res.KernelOK = k
 	res.ZFSOK = z
 	res.NvidiaOK = n
-	res.PreflightOK = k
-	if k {
+	res.PreflightOK = ok
+	if ok {
 		res.Status = "succeeded"
 	} else {
 		res.Status = "failed"
+		res.Reason = firstFailed(res.Checks)
 	}
 	return res
+}
+
+func preflightHost(ctx context.Context, res *UpdateResult, exec ExecFunc, add func(name, status, detail string)) bool {
+	ok := true
+	fail := func(name, detail string) {
+		add(name, "failed", detail)
+		ok = false
+	}
+	for _, path := range []string{"/", "/var/cache/apt/archives"} {
+		free, err := freeBytes(path)
+		switch {
+		case err != nil:
+			add("disk_space", "warning", "Free space on "+path+" could not be read.")
+		case free < MinUpdateFreeBytes:
+			fail("disk_space", fmt.Sprintf("Only %s free on %s; an update needs %s. Free up space first.", gib(free), path, gib(MinUpdateFreeBytes)))
+		default:
+			add("disk_space", "ok", fmt.Sprintf("%s free on %s.", gib(free), path))
+		}
+	}
+	busy := false
+	for _, l := range debian.PackageLocks {
+		if lockHeld(l) {
+			busy = true
+			break
+		}
+	}
+	if out, err := exec(ctx, debian.ApplyUnitShowArgv()); err == nil && debian.ParseApplyUnit(out).Running() {
+		fail("package_manager", "A platform update or rollback is already running.")
+	} else if busy {
+		fail("package_manager", "Another package manager is running, for example automatic security updates. Try again in a few minutes.")
+	} else {
+		add("package_manager", "ok", "No other package operation is running.")
+	}
+	if out, err := exec(ctx, debian.DpkgAuditArgv()); err != nil || strings.TrimSpace(out) != "" {
+		fail("package_database", "An earlier package operation did not finish. Run 'dpkg --configure -a' on the host, then try again.")
+	} else {
+		add("package_database", "ok", "Installed packages are fully configured.")
+	}
+	held := map[string]bool{}
+	if out, err := exec(ctx, debian.HeldPackagesArgv()); err == nil {
+		for _, name := range strings.Fields(out) {
+			held[name] = true
+		}
+	}
+	var heldCore []string
+	for _, name := range PackageNames {
+		if held[name] {
+			heldCore = append(heldCore, name)
+		}
+	}
+	if len(heldCore) > 0 {
+		fail("held_packages", "These packages are on hold and would not update: "+strings.Join(heldCore, ", ")+".")
+	} else {
+		add("held_packages", "ok", "No No-dal package is on hold.")
+	}
+	res.RepositoryConfigured = RepositoryConfigured()
+	if !res.RepositoryConfigured {
+		fail("repository", RepositoryNotConfigured)
+		return ok
+	}
+	if _, err := exec(ctx, debian.CheckArgv()); err != nil {
+		fail("repository", "The release repository could not be reached. Check the host's internet connection and DNS.")
+		return ok
+	}
+	add("repository", "ok", "The signed release repository is reachable.")
+	pkgs, items, ver := readPolicies(ctx, exec)
+	res.Packages, res.Items, res.Version = pkgs, items, ver
+	res.CandidateVersion = upgradeVersion(items)
+	if res.CandidateVersion == "" {
+		add("update_available", "warning", "This host already runs the newest version.")
+	} else {
+		add("update_available", "ok", "Version "+res.CandidateVersion+" is available.")
+	}
+	return ok
+}
+
+// upgradeVersion is the version an apply installs. Every core package is
+// built from one source, so the nodal metapackage's candidate is preferred.
+func upgradeVersion(items []PreviewItem) string {
+	version := ""
+	for _, it := range items {
+		if it.Action != "upgrade" || it.CandidateVersion == "" {
+			continue
+		}
+		if it.Name == "nodal" {
+			return it.CandidateVersion
+		}
+		if version == "" {
+			version = it.CandidateVersion
+		}
+	}
+	return version
+}
+
+func firstFailed(checks []PreflightCheck) string {
+	for _, c := range checks {
+		if c.Status == "failed" {
+			return c.Detail
+		}
+	}
+	return "preflight failed"
+}
+
+func gib(b uint64) string {
+	return fmt.Sprintf("%.1f GiB", float64(b)/(1<<30))
+}
+
+// exitCode returns a finished command's exit status, or -1.
+func exitCode(err error) int {
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		return coded.ExitCode()
+	}
+	return -1
 }
 
 func runCheckpoint(ctx context.Context, req UpdateRequest, res UpdateResult, exec ExecFunc) (UpdateResult, error) {
@@ -355,39 +500,63 @@ func runCheckpoint(ctx context.Context, req UpdateRequest, res UpdateResult, exe
 		res.Reason = "Checkpoint argv was planned. Host commands were not run."
 		return res, nil
 	}
-	if _, err := exec(ctx, debian.MkdirCheckpointArgv()); err != nil {
+	// Old checkpoints are pruned whatever happens, and a failed one is
+	// removed, so checkpoints can never pile up on the root disk.
+	defer pruneCheckpoints(checkpointDir, KeepCheckpoints, id)
+	failed := func(reason string, out string) (UpdateResult, error) {
+		_ = os.Remove(filepath.Join(checkpointDir, id+".tar"))
+		_ = os.Remove(filepath.Join(checkpointDir, id+".sql"))
 		res.Status = "failed"
-		res.Reason = "checkpoint directory could not be created"
-		return res, nil
-	}
-	tarArgv, err := debian.CheckpointTarArgv(locator)
-	if err != nil {
-		res.Status = "failed"
-		res.Reason = "checkpoint locator is invalid"
-		return res, nil
-	}
-	if _, err := exec(ctx, tarArgv); err != nil {
-		res.Status = "failed"
-		res.Reason = "control-plane checkpoint failed"
-		return res, nil
-	}
-	dumpPath := debian.CheckpointDumpPath(id)
-	dumpArgv, err := debian.PgDumpArgv(dumpPath)
-	if err != nil {
-		res.Status = "failed"
-		res.Reason = "dump locator is invalid"
-		return res, nil
-	}
-	if _, err := exec(ctx, dumpArgv); err != nil {
-		res.Status = "failed"
-		res.Reason = "PostgreSQL dump failed"
+		res.Reason = reason
+		if tail := strings.TrimSpace(out); tail != "" {
+			res.Log = tailText(tail, 2000)
+		}
 		res.PostgresDump = false
 		return res, nil
 	}
+	if out, err := exec(ctx, debian.MkdirCheckpointArgv()); err != nil {
+		return failed("checkpoint directory could not be created", out)
+	}
+	tarArgv, err := debian.CheckpointTarArgv(locator)
+	if err != nil {
+		return failed("checkpoint locator is invalid", "")
+	}
+	// tar exits 1 when a file changed while it was read, which is normal
+	// for a running control plane; the archive is still complete.
+	if out, err := exec(ctx, tarArgv); err != nil && exitCode(err) != 1 {
+		return failed("control-plane checkpoint failed", out)
+	}
+	if argv, err := debian.PrivateFileArgv(locator); err == nil {
+		_, _ = exec(ctx, argv)
+	}
+	dumpPath := debian.CheckpointDumpPath(id)
+	fileArgv, err := debian.DumpFileArgv(dumpPath)
+	if err != nil {
+		return failed("dump locator is invalid", "")
+	}
+	if out, err := exec(ctx, fileArgv); err != nil {
+		return failed("the database dump file could not be created", out)
+	}
+	dumpArgv, err := debian.PgDumpArgv(dumpPath)
+	if err != nil {
+		return failed("dump locator is invalid", "")
+	}
+	if out, err := exec(ctx, dumpArgv); err != nil {
+		return failed("PostgreSQL dump failed", out)
+	}
 	res.PostgresDump = true
 	res.Status = "succeeded"
-	pruneCheckpoints(checkpointDir, KeepCheckpoints, id)
 	return res, nil
+}
+
+// CheckpointDumpExists reports whether a checkpoint holds a database dump.
+func CheckpointDumpExists(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.ContainsAny(id, "/\\. ") {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(checkpointDir, id+".sql"))
+	return err == nil && info.Size() > 0
 }
 
 // KeepCheckpoints is how many update checkpoints are kept on disk.
@@ -472,19 +641,45 @@ func runApply(ctx context.Context, req UpdateRequest, res UpdateResult, exec Exe
 			_, _ = exec(ctx, debian.ApplyUnitResetArgv())
 		}
 	}
+	launch, err := debian.ApplyLaunchVersionArgv(req.Version)
+	if err != nil {
+		res.Status = "failed"
+		res.Reason = "the version to install is invalid"
+		return res, nil
+	}
 	if _, err := exec(ctx, debian.CheckArgv()); err != nil {
 		res.Status = "failed"
 		res.Reason = "package index refresh failed"
 		return res, nil
 	}
-	if _, err := exec(ctx, debian.ApplyLaunchArgv()); err != nil {
+	if out, err := exec(ctx, launch); err != nil {
 		res.Status = "failed"
 		res.Reason = "could not start the platform update"
+		res.Log = tailText(strings.TrimSpace(out), 2000)
 		return res, nil
 	}
+	res.Version = strings.TrimSpace(req.Version)
 	res.Status = "running"
 	res.Reason = "The platform update is running. The control plane and agent restart during it; guests keep running."
 	return res, nil
+}
+
+// clearFinishedUnit frees the shared apply unit name, or reports that an
+// apply or rollback still runs in it.
+func clearFinishedUnit(ctx context.Context, exec ExecFunc) (running bool) {
+	out, err := exec(ctx, debian.ApplyUnitShowArgv())
+	if err != nil {
+		return false
+	}
+	unit := debian.ParseApplyUnit(out)
+	if unit.Running() {
+		return true
+	}
+	if unit.Loaded() {
+		_, _ = exec(ctx, debian.ApplyUnitStopArgv())
+		_, _ = exec(ctx, debian.ApplyUnitResetArgv())
+	}
+	return false
 }
 
 // runApplyStatus reports the state of the last detached apply.
@@ -530,28 +725,76 @@ func runApplyStatus(ctx context.Context, res UpdateResult, exec ExecFunc) (Updat
 	return res, nil
 }
 
+// runRollback moves every core package back to req.Version in the detached
+// update unit. With req.CheckpointID the database is first restored from the
+// dump taken right before the update, because the newer control plane may
+// have changed its schema. Nothing changes unless the dry run resolves.
 func runRollback(ctx context.Context, req UpdateRequest, res UpdateResult, exec ExecFunc) (UpdateResult, error) {
 	res.DryRun = req.DryRun
-	argv, err := debian.RollbackControlArgv(req.Version, req.DryRun)
-	if err != nil {
+	version := strings.TrimSpace(req.Version)
+	if !debian.ValidVersion(version) {
 		res.Status = "failed"
-		res.Reason = "previous ndl-control version is not recorded"
+		res.Reason = "the version to roll back to is not recorded"
 		return res, nil
 	}
-	res.PreviousVersion = req.Version
-	res.Packages = []PackageStatus{{Name: "ndl-control", Version: req.Version, Status: "not_reported"}}
+	res.PreviousVersion = version
+	res.Packages = make([]PackageStatus, 0, len(PackageNames))
+	for _, name := range PackageNames {
+		res.Packages = append(res.Packages, PackageStatus{Name: name, Version: version, Status: "not_reported"})
+	}
+	dump := ""
+	if id := strings.TrimSpace(req.CheckpointID); id != "" {
+		if !CheckpointDumpExists(id) {
+			res.Status = "failed"
+			res.Reason = "the database checkpoint taken before the update is missing, so a rollback cannot restore the database"
+			return res, nil
+		}
+		dump = debian.CheckpointDumpPath(id)
+		res.CheckpointID = id
+	}
 	if exec == nil {
 		res.Status = "planned"
 		res.Reason = "Package rollback argv was planned. Host commands were not run."
 		return res, nil
 	}
-	if _, err := exec(ctx, argv); err != nil {
+	if clearFinishedUnit(ctx, exec) {
 		res.Status = "failed"
-		res.Reason = "control-plane package rollback failed"
+		res.Reason = "a platform update is already running"
 		return res, nil
 	}
-	res.Status = "succeeded"
-	res.Reason = "ndl-control was rolled back through the signed repository."
+	_, _ = exec(ctx, debian.CheckArgv())
+	dry, err := debian.RollbackDryRunArgv(version)
+	if err != nil {
+		res.Status = "failed"
+		res.Reason = "the version to roll back to is invalid"
+		return res, nil
+	}
+	if out, err := exec(ctx, dry); err != nil {
+		res.Status = "failed"
+		res.Reason = "version " + version + " cannot be installed from the release repository"
+		res.Log = tailText(strings.TrimSpace(out), 2000)
+		return res, nil
+	}
+	if req.DryRun {
+		res.Status = "succeeded"
+		res.Reason = "Dry run: every package can move back to " + version + "."
+		return res, nil
+	}
+	launch, err := debian.RollbackLaunchArgv(version, dump)
+	if err != nil {
+		res.Status = "failed"
+		res.Reason = "the rollback could not be planned"
+		return res, nil
+	}
+	if out, err := exec(ctx, launch); err != nil {
+		res.Status = "failed"
+		res.Reason = "could not start the rollback"
+		res.Log = tailText(strings.TrimSpace(out), 2000)
+		return res, nil
+	}
+	res.Version = version
+	res.Status = "running"
+	res.Reason = "The rollback is running. The control plane restarts during it; guests keep running."
 	return res, nil
 }
 

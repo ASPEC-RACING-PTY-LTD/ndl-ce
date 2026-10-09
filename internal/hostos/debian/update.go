@@ -119,15 +119,52 @@ func PolicyArgv(pkg string) ([]string, error) {
 // leaves ndl-control and ndl-agent at their old versions when nodal itself
 // is already current. Dry-run uses --dry-run.
 func ApplyArgv(dryRun bool) []string {
+	argv, _ := InstallArgv(dryRun, "", false)
+	return argv
+}
+
+// InstallArgv installs every core package. With a version, each package is
+// pinned to it, so apply installs exactly what preflight checked and rollback
+// moves all packages together (nodal depends on equal versions of the rest).
+func InstallArgv(dryRun bool, version string, allowDowngrades bool) ([]string, error) {
+	v := strings.TrimSpace(version)
+	if v != "" && !ValidVersion(v) {
+		return nil, fmt.Errorf("version is invalid")
+	}
 	argv := []string{
 		"/usr/bin/apt-get", "-o", "APT::Get::AllowUnauthenticated=false",
 		"-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold",
 		"-y", "--no-install-recommends",
 	}
+	if allowDowngrades {
+		argv = append(argv, "--allow-downgrades")
+	}
 	if dryRun {
 		argv = append(argv, "--dry-run")
 	}
-	return append(append(argv, "install"), PackageNames...)
+	argv = append(argv, "install")
+	for _, name := range PackageNames {
+		if v != "" {
+			name += "=" + v
+		}
+		argv = append(argv, name)
+	}
+	return argv, nil
+}
+
+// ValidVersion accepts Debian version strings and nothing a shell or apt
+// could read as an option or a second argument.
+func ValidVersion(v string) bool {
+	if v == "" || len(v) > 64 || strings.HasPrefix(v, "-") {
+		return false
+	}
+	for _, r := range v {
+		ok := r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || strings.ContainsRune(".+~:-", r)
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // ApplyUnit is the transient systemd unit a real apply runs in. Package
@@ -139,6 +176,16 @@ const ApplyUnit = "ndl-platform-update.service"
 // ApplyLaunchArgv starts ApplyArgv in ApplyUnit and returns at once.
 // RemainAfterExit keeps the unit's result readable after it exits.
 func ApplyLaunchArgv() []string {
+	argv, _ := ApplyLaunchVersionArgv("")
+	return argv
+}
+
+// ApplyLaunchVersionArgv is ApplyLaunchArgv pinned to one version.
+func ApplyLaunchVersionArgv(version string) ([]string, error) {
+	install, err := InstallArgv(false, version, false)
+	if err != nil {
+		return nil, err
+	}
 	argv := []string{
 		"/usr/bin/systemd-run", "--unit=" + ApplyUnit,
 		"--description=No-dal platform update",
@@ -146,7 +193,64 @@ func ApplyLaunchArgv() []string {
 		"--setenv=DEBIAN_FRONTEND=noninteractive",
 		"--",
 	}
-	return append(argv, ApplyArgv(false)...)
+	return append(argv, install...), nil
+}
+
+// ControlUnits are stopped while a rollback restores the database, so
+// nothing writes to it, and started again whatever the outcome.
+var ControlUnits = []string{"ndl-control.socket", "ndl-control.service"}
+
+// RollbackLaunchArgv moves every core package back to version in ApplyUnit.
+// With a dump, the control plane is stopped and the database is replaced by
+// the dump in one transaction before the packages are downgraded: a failed
+// restore leaves the database untouched. The control plane is started again
+// after success (ExecStartPost) and after failure (ExecStopPost).
+func RollbackLaunchArgv(version, dump string) ([]string, error) {
+	install, err := InstallArgv(false, version, true)
+	if err != nil {
+		return nil, err
+	}
+	start := "/usr/bin/systemctl start " + strings.Join(ControlUnits, " ")
+	argv := []string{
+		"/usr/bin/systemd-run", "--unit=" + ApplyUnit,
+		"--description=No-dal platform rollback",
+		"--property=RemainAfterExit=yes",
+		"--setenv=DEBIAN_FRONTEND=noninteractive",
+		"--property=ExecStartPost=" + start,
+		"--property=ExecStopPost=" + start,
+	}
+	if dump != "" {
+		if !safeLocator(dump) {
+			return nil, fmt.Errorf("dump locator is invalid")
+		}
+		argv = append(argv,
+			"--property=ExecStartPre=/usr/bin/systemctl stop "+strings.Join(ControlUnits, " "),
+			"--property=ExecStartPre="+strings.Join(RestoreDumpArgv(dump), " "),
+		)
+	}
+	return append(append(argv, "--"), install...), nil
+}
+
+// RestoreDumpArgv replaces the nodal database with a checkpoint dump as its
+// owner. DROP OWNED and the dump run in one transaction.
+func RestoreDumpArgv(dump string) []string {
+	return []string{
+		"/usr/sbin/runuser", "-u", DBOwner, "--", "/usr/bin/psql", "-X", "-q",
+		"-v", "ON_ERROR_STOP=1", "--single-transaction", "-d", DBName,
+		"-c", "\"DROP OWNED BY CURRENT_USER\"", "-f", dump,
+	}
+}
+
+// DBName and DBOwner are the control-plane database and the role that owns
+// it. PostgreSQL uses peer authentication, so dumps and restores run as the
+// owner: root has no database role.
+const (
+	DBName  = "nodal"
+	DBOwner = "ndl-control"
+)
+
+func safeLocator(p string) bool {
+	return p != "" && strings.HasPrefix(p, "/") && !strings.Contains(p, "..") && !strings.ContainsAny(p, " \n\x00\"'\\;")
 }
 
 // ApplyUnitShowArgv reads the state of the last apply unit.
@@ -226,18 +330,13 @@ func (s ApplyUnitState) Failed() bool {
 	return s.ActiveState == "failed" || (s.Result != "" && s.Result != "success")
 }
 
-// RollbackControlArgv reinstalls a previous ndl-control version. QEMU units are not in this argv.
-func RollbackControlArgv(version string, dryRun bool) ([]string, error) {
-	v := strings.TrimSpace(version)
-	if v == "" || strings.ContainsAny(v, " \n\x00;|&") {
+// RollbackDryRunArgv checks that every core package can move to version
+// without changing anything. QEMU units are not in this argv.
+func RollbackDryRunArgv(version string) ([]string, error) {
+	if !ValidVersion(strings.TrimSpace(version)) {
 		return nil, fmt.Errorf("version is invalid")
 	}
-	pkg := "ndl-control=" + v
-	argv := []string{"/usr/bin/apt-get", "-o", "APT::Get::AllowUnauthenticated=false", "-y"}
-	if dryRun {
-		argv = append(argv, "--dry-run")
-	}
-	return append(argv, "install", pkg), nil
+	return InstallArgv(true, version, true)
 }
 
 // CheckpointDir is the only directory used for update checkpoints.
@@ -276,12 +375,34 @@ func CheckpointTarArgv(dest string) ([]string, error) {
 	return append(argv, "-cf", dest, "var/lib/ndl"), nil
 }
 
-// PgDumpArgv writes a PostgreSQL dump to dest.
+// PgDumpArgv writes a plain SQL dump of the control-plane database to dest
+// as the database owner. Dest must already exist and belong to the owner
+// (DumpFileArgv), because the checkpoint directory belongs to root.
 func PgDumpArgv(dest string) ([]string, error) {
-	if dest == "" || !strings.HasPrefix(dest, "/") || strings.Contains(dest, "..") || strings.ContainsAny(dest, " \n\x00") {
+	if !safeLocator(dest) {
 		return nil, fmt.Errorf("dump locator is invalid")
 	}
-	return []string{"/usr/bin/pg_dump", "-d", "nodal", "-f", dest}, nil
+	return []string{
+		"/usr/sbin/runuser", "-u", DBOwner, "--",
+		"/usr/bin/pg_dump", "--no-owner", "--no-privileges", "-d", DBName, "-f", dest,
+	}, nil
+}
+
+// DumpFileArgv creates an empty dump file the database owner may write.
+func DumpFileArgv(dest string) ([]string, error) {
+	if !safeLocator(dest) {
+		return nil, fmt.Errorf("dump locator is invalid")
+	}
+	return []string{"/usr/bin/install", "-o", DBOwner, "-g", DBOwner, "-m", "0600", "/dev/null", dest}, nil
+}
+
+// PrivateFileArgv makes a checkpoint archive readable by root only: it holds
+// host keys and secrets.
+func PrivateFileArgv(path string) ([]string, error) {
+	if !safeLocator(path) {
+		return nil, fmt.Errorf("locator is invalid")
+	}
+	return []string{"/usr/bin/chmod", "0600", path}, nil
 }
 
 // GRUBPreviousArgv selects the previous kernel for the next reboot. Not used for QEMU guests.

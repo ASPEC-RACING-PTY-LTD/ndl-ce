@@ -1356,7 +1356,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/control plane restarts during the update/i)).toBeVisible();
+    expect(await screen.findByText(/control plane restarts during it/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /^apply update$/i })).toBeDisabled();
 
     routes["GET /api/v1/updates"] = {

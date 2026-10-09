@@ -156,9 +156,10 @@ func TestPhase34RollingUpdateDoesNotStopGuests(t *testing.T) {
 	if !strings.Contains(string(raw), "worker update agent is not connected") {
 		t.Fatalf("honesty %s", raw)
 	}
+	s.waitHostChange()
 	fu := s.Update.(*fakeUpdate)
 	for _, c := range fu.calls {
-		if c.Action == "apply" {
+		if c.Action == "preflight" {
 			goto applied
 		}
 	}

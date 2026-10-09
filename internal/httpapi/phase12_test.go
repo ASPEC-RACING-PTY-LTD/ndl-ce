@@ -228,9 +228,10 @@ func TestUpdatesApplyRequiresConfirm(t *testing.T) {
 	if err := json.Unmarshal(b, &op); err != nil {
 		t.Fatal(err)
 	}
-	if op["status"] != "unsupported" || op["action"] != "apply" || op["dry_run"] != false {
+	if op["status"] != "running" || op["action"] != "apply" || op["dry_run"] != false {
 		t.Fatalf("%s", b)
 	}
+	s.waitHostChange()
 	cluster, _ := mem.GetCluster(context.Background())
 	stored, err := mem.GetLatestUpdateOperation(context.Background(), cluster.ID)
 	if err != nil || stored == nil || stored.Action != "apply" || stored.Status != "unsupported" {
@@ -349,94 +350,42 @@ func TestUpdatesPreflightStoreHook(t *testing.T) {
 	}
 }
 
-func TestUpdatesPreflightStoreNotImplemented(t *testing.T) {
+func TestUpdatesPreflightAddsControlChecks(t *testing.T) {
 	s, _, token := testServer(t)
 	s.Update = &fakeUpdate{supported: true}
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/preflight", strings.NewReader("{}"))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, _ := ts.Client().Do(req)
-	b, _ := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("%d %s", res.StatusCode, b)
+	_, body := updatesCall(t, ts, cookie, "POST", "/updates/preflight", "")
+	names := map[string]string{}
+	for _, c := range body["checks"].([]any) {
+		row := c.(map[string]any)
+		names[row["name"].(string)] = row["status"].(string)
 	}
-	var body struct {
-		Checks []struct {
-			Name   string `json:"name"`
-			Status string `json:"status"`
-			Detail string `json:"detail"`
-		} `json:"checks"`
-	}
-	if err := json.Unmarshal(b, &body); err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, c := range body.Checks {
-		if c.Name != "store_compatibility" {
-			continue
-		}
-		found = true
-		if c.Status == "ok" {
-			t.Fatalf("store check must not be ok: %s", b)
-		}
-		if c.Status != "skipped" && c.Status != "unavailable" {
-			t.Fatalf("store check status %q: %s", c.Status, b)
-		}
-		if !strings.Contains(c.Detail, "not implemented") {
-			t.Fatalf("store detail %q", c.Detail)
-		}
-	}
-	if !found {
-		t.Fatalf("store_compatibility missing: %s", b)
+	if names["store_compatibility"] != "ok" || names["running_work"] != "ok" || names["backups"] != "ok" {
+		t.Fatalf("preflight must report store, running work and backups: %v", names)
 	}
 }
 
 func TestUpdatesApplySupportedDoesNotStopGuests(t *testing.T) {
 	s, _, token := testServer(t)
-	s.Update = &fakeUpdate{supported: true}
+	s.Update = &detachedUpdate{applyState: appdb.UpdateSucceeded}
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/apply", strings.NewReader("{}"))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Nodal-Confirm", "apply-update")
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, _ := ts.Client().Do(req)
-	b, _ := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("%d %s", res.StatusCode, b)
+	code, op := updatesCall(t, ts, cookie, "POST", "/updates/apply", "apply-update")
+	if code != http.StatusOK || op["action"] != "apply" {
+		t.Fatalf("%d %v", code, op)
 	}
-	lower := strings.ToLower(string(b))
-	if strings.Contains(lower, "apt-get") || strings.Contains(lower, "stop") {
-		t.Fatalf("%s", b)
+	s.waitHostChange()
+	raw, _ := json.Marshal(op)
+	if strings.Contains(strings.ToLower(string(raw)), "apt-get") || strings.Contains(strings.ToLower(string(raw)), "stop") {
+		t.Fatalf("%s", raw)
 	}
-	var op map[string]any
-	if err := json.Unmarshal(b, &op); err != nil {
-		t.Fatal(err)
-	}
-	if op["status"] != "succeeded" || op["action"] != "apply" {
-		t.Fatalf("%s", b)
-	}
-	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
-	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	got, _ := ts.Client().Do(get)
-	raw, _ := io.ReadAll(got.Body)
-	_ = got.Body.Close()
-	if got.StatusCode != http.StatusOK {
-		t.Fatalf("get updates %d %s", got.StatusCode, raw)
-	}
-	var listed map[string]any
-	if err := json.Unmarshal(raw, &listed); err != nil {
-		t.Fatal(err)
-	}
+	_, listed := updatesCall(t, ts, cookie, "GET", "/updates", "")
 	last, _ := listed["last_operation"].(map[string]any)
 	if last == nil || last["id"] != op["id"] || last["status"] != "succeeded" {
-		t.Fatalf("apply 200 must match GET last_operation %s", raw)
+		t.Fatalf("apply must settle to the host result: %v", listed)
 	}
 }
 
@@ -455,19 +404,14 @@ func TestUpdatesApplyFailsClosedWhenPersistFails(t *testing.T) {
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 	s.Store = failUpdateUpdateOperationStore{Store: mem}
-
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/apply", strings.NewReader("{}"))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Nodal-Confirm", "apply-update")
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, _ := ts.Client().Do(req)
-	b, _ := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("apply persist %d %s", res.StatusCode, b)
+	code, _ := updatesCall(t, ts, cookie, "POST", "/updates/apply", "apply-update")
+	if code != http.StatusOK {
+		t.Fatalf("apply %d", code)
 	}
-	if !strings.Contains(string(b), "could not record update operation") {
-		t.Fatalf("apply persist body %s", b)
+	s.waitHostChange()
+	_, listed := updatesCall(t, ts, cookie, "GET", "/updates", "")
+	if last, _ := listed["last_operation"].(map[string]any); last == nil || last["status"] == "succeeded" {
+		t.Fatalf("GET must not claim succeeded when the result could not be stored: %v", listed)
 	}
 }
 
@@ -486,39 +430,14 @@ func TestUpdatesApplyFailsClosedWhenPersistMisses(t *testing.T) {
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
 	s.Store = missUpdateUpdateOperationStore{Store: mem}
-
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/apply", strings.NewReader("{}"))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Nodal-Confirm", "apply-update")
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, _ := ts.Client().Do(req)
-	b, _ := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusInternalServerError {
-		t.Fatalf("apply persist miss %d %s", res.StatusCode, b)
+	if code, _ := updatesCall(t, ts, cookie, "POST", "/updates/apply", "apply-update"); code != http.StatusOK {
+		t.Fatalf("apply %d", code)
 	}
-	if !strings.Contains(string(b), "could not record update operation") {
-		t.Fatalf("apply persist miss body %s", b)
-	}
-
-	get, _ := http.NewRequest("GET", ts.URL+"/api/v1/updates", nil)
-	get.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	got, _ := ts.Client().Do(get)
-	raw, _ := io.ReadAll(got.Body)
-	_ = got.Body.Close()
-	if got.StatusCode != http.StatusOK {
-		t.Fatalf("get updates %d %s", got.StatusCode, raw)
-	}
-	var listed map[string]any
-	if err := json.Unmarshal(raw, &listed); err != nil {
-		t.Fatal(err)
-	}
+	s.waitHostChange()
+	_, listed := updatesCall(t, ts, cookie, "GET", "/updates", "")
 	last, _ := listed["last_operation"].(map[string]any)
-	if last == nil || last["status"] == "succeeded" {
-		t.Fatalf("GET must not claim succeeded after persist miss: %s", raw)
-	}
-	if last["status"] != "running" {
-		t.Fatalf("GET must stay running after persist miss: %s", raw)
+	if last == nil || last["status"] != "running" {
+		t.Fatalf("GET must stay running when the result was not stored: %v", listed)
 	}
 }
 
@@ -567,60 +486,76 @@ func TestUpdatesApplyFailsClosedWhenCreatePersistFails(t *testing.T) {
 	}
 }
 
-func TestUpdatesRollbackFindsCheckVersionOutsideClusterWindow(t *testing.T) {
-	s, mem, token := testServer(t)
-	fu := &fakeUpdate{supported: true}
-	s.Update = fu
-	cluster, _ := mem.GetCluster(context.Background())
-	check := appdb.UpdateOperation{
-		ID: uuid.NewString(), ClusterID: cluster.ID, Action: "check", Status: appdb.UpdateSucceeded,
-		Version: "0.1.10", StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+func TestUpdatesRollbackUsesTheVersionsTheApplyReplaced(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		schema    string
+		restoreDB bool
+	}{
+		{"same schema keeps data", latestSchemaVersion(), false},
+		{"changed schema restores database", "0001_init.sql", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, mem, token := testServer(t)
+			host := &detachedUpdate{applyState: appdb.UpdateRunning}
+			s.Update = host
+			cluster, _ := mem.GetCluster(context.Background())
+			apply := appdb.UpdateOperation{
+				ID: uuid.NewString(), ClusterID: cluster.ID, Action: "apply", Status: appdb.UpdateSucceeded,
+				Version: "1.1.5", CheckpointID: "cp-1", SchemaVersion: tc.schema,
+				Candidates: []appdb.UpdateCandidate{
+					{Name: "ndl-control", CurrentVersion: "1.1.4", CandidateVersion: "1.1.5"},
+					{Name: "nodal", CurrentVersion: "1.1.4", CandidateVersion: "1.1.5"},
+				},
+				StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			}
+			if err := mem.CreateUpdateOperation(context.Background(), apply); err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 60; i++ {
+				_ = mem.CreateUpdateOperation(context.Background(), appdb.UpdateOperation{
+					ID: uuid.NewString(), ClusterID: cluster.ID, Action: "check", Status: appdb.UpdateSucceeded,
+					Version: "1.1.5", StartedAt: time.Date(2026, 2, 1, 0, i, 0, 0, time.UTC),
+				})
+			}
+			ts := httptest.NewServer(s.Handler())
+			defer ts.Close()
+			cookie := claimAdmin(t, ts, token)
+			_, status := updatesCall(t, ts, cookie, "GET", "/updates", "")
+			rb := status["rollback"].(map[string]any)
+			if rb["available"] != true || rb["version"] != "1.1.4" || rb["restores_database"] != tc.restoreDB {
+				t.Fatalf("rollback plan %v", rb)
+			}
+			code, op := updatesCall(t, ts, cookie, "POST", "/updates/rollback", "rollback-update")
+			if code != http.StatusOK || op["status"] != "running" {
+				t.Fatalf("rollback %d %v", code, op)
+			}
+			s.waitHostChange()
+			if len(host.reqs) != 1 || host.reqs[0].Action != "rollback" || host.reqs[0].Version != "1.1.4" {
+				t.Fatalf("rollback must move every package back to 1.1.4: %+v", host.reqs)
+			}
+			if wantCP := map[bool]string{true: "cp-1", false: ""}[tc.restoreDB]; host.reqs[0].CheckpointID != wantCP {
+				t.Fatalf("checkpoint %q, want %q", host.reqs[0].CheckpointID, wantCP)
+			}
+		})
 	}
-	if err := mem.CreateUpdateOperation(context.Background(), check); err != nil {
-		t.Fatal(err)
-	}
-	for i := 0; i < 21; i++ {
-		other := appdb.UpdateOperation{
-			ID: uuid.NewString(), ClusterID: cluster.ID, Action: "apply", Status: appdb.UpdateSucceeded,
-			StartedAt: time.Date(2026, 6, 1, 0, 0, i, 0, time.UTC),
-		}
-		if err := mem.CreateUpdateOperation(context.Background(), other); err != nil {
-			t.Fatal(err)
-		}
-	}
-	window, err := mem.ListUpdateOperations(context.Background(), cluster.ID, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, op := range window {
-		if op.ID == check.ID {
-			t.Fatalf("20-row cluster window still contains the check: %+v", window)
-		}
-	}
+}
+
+func TestUpdatesRollbackRefusesWithoutARecordedApply(t *testing.T) {
+	s, _, token := testServer(t)
+	host := &detachedUpdate{}
+	s.Update = host
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	cookie := claimAdmin(t, ts, token)
-	req, _ := http.NewRequest("POST", ts.URL+"/api/v1/updates/rollback", strings.NewReader("{}"))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Nodal-Confirm", "rollback-update")
-	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	res, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
+	_, status := updatesCall(t, ts, cookie, "GET", "/updates", "")
+	if rb := status["rollback"].(map[string]any); rb["available"] != false || rb["reason"] == "" {
+		t.Fatalf("rollback must be unavailable: %v", rb)
 	}
-	raw, _ := io.ReadAll(res.Body)
-	_ = res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("rollback %d %s", res.StatusCode, raw)
+	if code, _ := updatesCall(t, ts, cookie, "POST", "/updates/rollback", "rollback-update"); code != http.StatusConflict {
+		t.Fatalf("rollback without a recorded apply must be refused, got %d", code)
 	}
-	var op map[string]any
-	if err := json.Unmarshal(raw, &op); err != nil {
-		t.Fatal(err)
-	}
-	if op["status"] == "failed" {
-		t.Fatalf("rollback must use the recorded check version: %s", raw)
-	}
-	if len(fu.calls) == 0 || fu.calls[len(fu.calls)-1].Action != "rollback" || fu.calls[len(fu.calls)-1].Version != "0.1.10" {
-		t.Fatalf("rollback must pass the recorded check version: %+v", fu.calls)
+	if len(host.reqs) != 0 {
+		t.Fatalf("nothing may run: %+v", host.reqs)
 	}
 }
