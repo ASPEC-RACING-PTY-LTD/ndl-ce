@@ -2,6 +2,8 @@ export type NodeSummary = {
   id: string;
   name: string;
   status: string;
+  /** The host No-dal runs on. Every other host can be deleted. */
+  local?: boolean;
   role?: string;
   reason?: string;
   listen_addr?: string;

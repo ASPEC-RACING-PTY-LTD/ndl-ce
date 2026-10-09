@@ -26,13 +26,21 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	redact := redactViewer(p)
 	items := []map[string]any{}
 	seenNames := map[string]struct{}{}
+	localID := ""
+	if local, err := s.Store.GetNode(r.Context(), p.User.ClusterID); err == nil && local != nil {
+		localID = local.ID
+	}
 	for i := range nodes {
 		n := nodes[i]
 		if n.RevokedAt != nil {
 			continue
 		}
 		inv, _ := s.Store.GetInventory(r.Context(), n.ID)
-		items = append(items, s.nodeSummary(&n, inv, redact))
+		item := s.nodeSummary(&n, inv, redact)
+		// local is the host No-dal runs on. It is the only host that can
+		// never be deleted.
+		item["local"] = n.ID == localID
+		items = append(items, item)
 		seenNames[n.Name] = struct{}{}
 	}
 	remotes, _ := s.Store.ListRemoteNodes(r.Context(), p.User.ClusterID)

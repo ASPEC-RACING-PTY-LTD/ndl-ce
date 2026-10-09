@@ -3,6 +3,7 @@ import { bulkDeleteWorkloads, listNodes, listWorkloads, patchMe } from "../api/c
 import type { NodeSummary } from "../api/phase2";
 import type { Workload } from "../api/phase5";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DeleteButton } from "../components/DeleteButton";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
@@ -336,7 +337,11 @@ export function WorkloadsPage() {
                   <tr key={`node:${node.id}`} className="is-pinned">
                     {leadCol ? (
                       <td className="col-lead">
-                        <Icon name="lock" size={12} />
+                        {node.local ? (
+                          <span title="The host No-dal runs on cannot be deleted">
+                            <Icon name="lock" size={12} />
+                          </span>
+                        ) : null}
                       </td>
                     ) : null}
                     <td>
@@ -351,7 +356,17 @@ export function WorkloadsPage() {
                     <td className="muted">Not shown</td>
                     <td className="num">{node.cpu_cores ? `${node.cpu_cores}` : ""}</td>
                     <td className="num">{node.memory_bytes ? formatBytes(node.memory_bytes) : ""}</td>
-                    <td className="col-tools" />
+                    <td className="col-tools">
+                      {mutate && !node.local ? (
+                        <DeleteButton
+                          path={`/nodes/${encodeURIComponent(node.id)}`}
+                          name={node.name || node.id}
+                          noun="host"
+                          description="This removes the host record and the storage pools and networks recorded for it. Nothing on the host itself is touched. Hosts that still have workloads are refused."
+                          onDeleted={() => nodesQ.reload()}
+                        />
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
                 {filtered.map((w) => (

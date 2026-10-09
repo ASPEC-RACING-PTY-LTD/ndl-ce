@@ -328,6 +328,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NodeSummary"
+    delete:
+      operationId: deleteNode
+      summary: Delete a node record that is not the host No-dal runs on
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  deleted:
+                    type: boolean
+        "403":
+          description: Forbidden
+        "404":
+          description: Not found
+        "409":
+          description: The host itself, or workloads still on the node
   /nodes/{id}/dest-listen:
     post:
       operationId: setDestListen
@@ -8376,6 +8403,9 @@ components:
         - name
         - status
       properties:
+        local:
+          type: boolean
+          description: True for the host No-dal runs on, which can never be deleted.
         id:
           type: string
         name:

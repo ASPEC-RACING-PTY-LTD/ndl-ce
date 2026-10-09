@@ -53,6 +53,7 @@ type Store interface {
 	GetNodeByID(ctx context.Context, clusterID, id string) (*Node, error)
 	ListClusterNodes(ctx context.Context, clusterID string) ([]Node, error)
 	RevokeNode(ctx context.Context, clusterID, id string, at time.Time) error
+	DeleteNode(ctx context.Context, clusterID, id string) error
 
 	CreateJoinToken(ctx context.Context, t JoinToken) error
 	ConsumeJoinToken(ctx context.Context, tokenHash string, nodeID string, at time.Time) (*JoinToken, error)
@@ -336,6 +337,7 @@ type Store interface {
 	CreateRemoteNode(ctx context.Context, n RemoteNode) error
 	ListRemoteNodes(ctx context.Context, clusterID string) ([]RemoteNode, error)
 	GetRemoteNode(ctx context.Context, clusterID, id string) (*RemoteNode, error)
+	DeleteRemoteNode(ctx context.Context, clusterID, id string) error
 	GetRemoteNodeByPeer(ctx context.Context, clusterID, peerID string) (*RemoteNode, error)
 	UpdateRemoteNodeSession(ctx context.Context, n RemoteNode) error
 

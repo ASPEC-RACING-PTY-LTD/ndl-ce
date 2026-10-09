@@ -184,6 +184,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/nodes/{id}/maintain/exit", s.exitMaintenance)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/dest-listen", s.setDestListen)
 	mux.HandleFunc("GET /api/v1/nodes/{id}", s.getNode)
+	mux.HandleFunc("DELETE /api/v1/nodes/{id}", s.deleteNode)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/hardware", s.nodeHardware)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/usb", s.listNodeUSB)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/pci", s.listNodePCI)

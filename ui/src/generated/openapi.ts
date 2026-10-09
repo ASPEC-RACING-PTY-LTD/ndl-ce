@@ -110,6 +110,7 @@ export interface NodeListResponse {
 }
 
 export interface NodeSummary {
+  local?: boolean;
   id: string;
   name: string;
   status: string;

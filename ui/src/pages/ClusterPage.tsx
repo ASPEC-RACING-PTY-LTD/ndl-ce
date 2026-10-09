@@ -14,6 +14,7 @@ import {
 } from "../api/client";
 import type { HAStatus, RollingUpdatePreview } from "../generated/openapi";
 import { useSession } from "../session";
+import { DeleteButton } from "../components/DeleteButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 function canJoin(roles: string[] | undefined): boolean {
@@ -167,6 +168,18 @@ export function ClusterPage() {
                     <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => void onRevoke(n.id)}>
                       Revoke
                     </button>
+                  </>
+                ) : null}
+                {mutate && (n.role === "worker" || n.revoked) ? (
+                  <>
+                    {" "}
+                    <DeleteButton
+                      path={`/nodes/${encodeURIComponent(n.id)}`}
+                      name={n.name || n.id}
+                      noun="node"
+                      description="This removes the node record and the storage pools and networks recorded for it. Nodes that still have workloads are refused."
+                      onDeleted={reload}
+                    />
                   </>
                 ) : null}
               </li>
