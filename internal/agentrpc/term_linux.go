@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/no-dal/ndl-ce/internal/iojail"
@@ -47,7 +48,10 @@ func startPTYSession(ctx context.Context, req termRequest) (termSession, error) 
 			cmd.Dir = dir
 		}
 	}
-	f, err := pty.Start(cmd)
+	// A PTY starts at 0x0. lxc-attach copies its own size into the
+	// container's terminal when it starts, so the shell there would assume
+	// 80 columns until a resize reaches it.
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
 		return nil, fmt.Errorf("open pty: %w", err)
 	}
@@ -71,8 +75,33 @@ func (s *ptySession) Write(p []byte) (int, error) {
 	return s.file.Write(p)
 }
 
+// Resize sets the PTY size and tells the shell. The kernel only signals
+// SIGWINCH when the size changes, and lxc-attach ignores signals that arrive
+// before its handler is installed; the container's terminal then keeps the
+// old width and line editing (history recall with the arrow keys) redraws
+// over earlier lines. So the signal is sent explicitly, now and once more
+// shortly after, so a just-started lxc-attach still picks the size up.
 func (s *ptySession) Resize(rows, cols uint16) error {
-	return pty.Setsize(s.file, &pty.Winsize{Rows: rows, Cols: cols})
+	if err := pty.Setsize(s.file, &pty.Winsize{Rows: rows, Cols: cols}); err != nil {
+		return err
+	}
+	s.winch()
+	time.AfterFunc(winchRepeat, s.winch)
+	return nil
+}
+
+// winchRepeat is when a resize is signalled a second time.
+const winchRepeat = 750 * time.Millisecond
+
+func (s *ptySession) winch() {
+	select {
+	case <-s.done:
+		return
+	default:
+	}
+	if s.cmd != nil && s.cmd.Process != nil {
+		_ = s.cmd.Process.Signal(syscall.SIGWINCH)
+	}
 }
 
 func (s *ptySession) CWD() (string, bool) {

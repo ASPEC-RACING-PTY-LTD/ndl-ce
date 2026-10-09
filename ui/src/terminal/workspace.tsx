@@ -114,7 +114,11 @@ function makeTerm(): { term: Terminal; fit: FitAddon; holder: HTMLDivElement } {
   return { term, fit, holder };
 }
 
-function sendPtySize(tabId: string): void {
+// sendPtySize tells the remote shell the terminal's size. A shell that
+// believes in another width redraws recalled history lines over the text
+// above them, so every new socket starts from "size unknown" (force) and the
+// size is sent again shortly after the shell starts.
+function sendPtySize(tabId: string, force = false): void {
   const rt = runtimes.get(tabId);
   const socket = rt?.ws;
   const term = rt?.term;
@@ -127,7 +131,7 @@ function sendPtySize(tabId: string): void {
   }
   const cols = term.cols;
   const rows = term.rows;
-  if (!cols || !rows || (cols === rt.lastCols && rows === rt.lastRows)) {
+  if (!cols || !rows || (!force && cols === rt.lastCols && rows === rt.lastRows)) {
     return;
   }
   rt.lastCols = cols;
@@ -314,6 +318,9 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           ]);
           ws.binaryType = "arraybuffer";
           current.ws = ws;
+          // A new shell knows nothing about the size the old one had.
+          current.lastCols = 0;
+          current.lastRows = 0;
           const encoder = new TextEncoder();
           current.send = (data: string) => {
             ws.send(encodeFrame(1, encoder.encode(data)));
@@ -325,7 +332,14 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
             } catch {
               // jsdom has no canvas
             }
-            sendPtySize(tab.tabId);
+            sendPtySize(tab.tabId, true);
+            for (const delay of [400, 1500]) {
+              window.setTimeout(() => {
+                if (runtimes.get(tab.tabId)?.ws === ws) {
+                  sendPtySize(tab.tabId, true);
+                }
+              }, delay);
+            }
           };
           ws.onerror = () => patch(tab.tabId, { error: "Terminal socket failed" });
           ws.onclose = () => {

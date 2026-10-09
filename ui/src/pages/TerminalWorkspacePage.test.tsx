@@ -421,9 +421,13 @@ describe("Terminal workspace", () => {
     await waitFor(() => {
       expect(document.querySelector(".term-conn.is-disconnected")).toHaveTextContent(/disconnected/i);
     });
+    const before = sent.length;
     fireEvent.click(screen.getByRole("button", { name: /^reconnect$/i }));
     await waitFor(() => expect(created.length).toBe(2));
     await waitConnected();
+    // The new shell must learn the terminal size, or recalled history lines
+    // are redrawn over the text above them.
+    await waitFor(() => expect(sent.slice(before).some((s) => s.type === 3)).toBe(true));
   });
 
   it("scopes file-drop cwd to the active session", async () => {
