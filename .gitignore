@@ -19,3 +19,6 @@ packaging/e2e/gocache/
 .idea/
 .vscode/
 *.swp
+
+# Local task list
+/Tasks.md
