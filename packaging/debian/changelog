@@ -1,4 +1,4 @@
-nodal (1.2.0) UNRELEASED; urgency=medium
+nodal (1.2.1) trixie; urgency=medium
 
   * Moving the backup repository to a ZFS pool works. A ZFS pool's own
     folder is not mounted (each volume is its own dataset), so the old path
@@ -15,7 +15,7 @@ nodal (1.2.0) UNRELEASED; urgency=medium
     deleted in one step, and a backup target can be removed together with
     its backups (for example test targets whose bucket is gone).
 
- -- No-dal <packaging@no-dal.com>  Sat, 10 Oct 2026 10:30:00 +1100
+ -- No-dal <packaging@no-dal.com>  Fri, 09 Oct 2026 22:17:42 +0000
 
 nodal (1.2.0) trixie; urgency=medium
 
