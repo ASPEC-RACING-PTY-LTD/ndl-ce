@@ -530,9 +530,20 @@ fieldset.field legend.field-label {
   margin: 0;
 }
 
+/* The app shell scrolls inside .shell-main. The document itself never
+   scrolls under it: a popover or menu attached to <body> below the fold used
+   to make the whole page scroll and show blank space under the app. */
+html:has(body > #root .shell),
+body:has(#root .shell) {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .shell {
   min-height: 100vh;
   height: 100vh;
+  height: 100dvh;
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   grid-template-rows: 1fr;
@@ -551,8 +562,8 @@ fieldset.field legend.field-label {
   padding: var(--space-3) var(--space-2) var(--space-2);
   border-right: 1px solid var(--line);
   background: var(--bg-surface);
-  min-height: 100vh;
-  height: 100vh;
+  min-height: 0;
+  height: 100%;
   position: sticky;
   top: 0;
   overflow: hidden;
