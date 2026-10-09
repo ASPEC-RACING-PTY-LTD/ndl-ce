@@ -1,4 +1,4 @@
-nodal (1.1.4) UNRELEASED; urgency=medium
+nodal (1.2.0) trixie; urgency=medium
 
   * Backups: retention is applied the Proxmox way (daily, weekly, monthly,
     newest always kept) and actually frees space. Garbage collection
@@ -40,7 +40,7 @@ nodal (1.1.4) UNRELEASED; urgency=medium
     cleared before a date or entirely (admin only, the clear is audited).
   * Add Features is a searchable list of compact feature rows.
 
- -- No-dal <packaging@no-dal.com>  Sat, 10 Oct 2026 08:40:00 +1100
+ -- No-dal <packaging@no-dal.com>  Fri, 09 Oct 2026 21:40:43 +0000
 
 nodal (1.1.4) trixie; urgency=medium
 
