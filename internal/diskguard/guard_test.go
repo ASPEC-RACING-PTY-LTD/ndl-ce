@@ -19,18 +19,18 @@ func TestEvaluateUsesPercentAndFreeFloors(t *testing.T) {
 		total, avail int64
 		want         Level
 	}{
-		{868 * gib, 396 * gib, LevelOK},       // the host after cleanup
-		{868 * gib, 100 * gib, LevelWarning},  // 88% used
-		{868 * gib, 25 * gib, LevelCritical},  // under the 30 GiB cap (the reserve holds 50 more)
-		{868 * gib, 5 * gib, LevelEmergency},  // under the 10 GiB cap
-		{868 * gib, 0, LevelEmergency},        // the outage
-		{4 * tib, 300 * gib, LevelOK},         // big disk, plenty left
-		{4 * tib, 150 * gib, LevelWarning},    // big disk, under the 200 GiB cap
-		{4 * tib, 25 * gib, LevelCritical},    // big disk, under the 30 GiB cap
-		{4 * tib, 5 * gib, LevelEmergency},    // big disk, under the 10 GiB cap
-		{20 * gib, 15 * gib, LevelOK},         // small disk, room left
-		{20 * gib, 8 * gib, LevelWarning},     // small disk, under the 10 GiB floor
-		{20 * gib, 1 * gib, LevelEmergency},   // small disk, under the 2 GiB floor
+		{868 * gib, 396 * gib, LevelOK},      // the host after cleanup
+		{868 * gib, 100 * gib, LevelWarning}, // 88% used
+		{868 * gib, 25 * gib, LevelCritical}, // under the 30 GiB cap (the reserve holds 50 more)
+		{868 * gib, 5 * gib, LevelEmergency}, // under the 10 GiB cap
+		{868 * gib, 0, LevelEmergency},       // the outage
+		{4 * tib, 300 * gib, LevelOK},        // big disk, plenty left
+		{4 * tib, 150 * gib, LevelWarning},   // big disk, under the 200 GiB cap
+		{4 * tib, 25 * gib, LevelCritical},   // big disk, under the 30 GiB cap
+		{4 * tib, 5 * gib, LevelEmergency},   // big disk, under the 10 GiB cap
+		{20 * gib, 15 * gib, LevelOK},        // small disk, room left
+		{20 * gib, 8 * gib, LevelWarning},    // small disk, under the 10 GiB floor
+		{20 * gib, 1 * gib, LevelEmergency},  // small disk, under the 2 GiB floor
 	}
 	for _, c := range cases {
 		if got := p.Evaluate(c.total, c.avail); got != c.want {

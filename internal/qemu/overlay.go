@@ -25,7 +25,7 @@ const (
 	// the backing file the disk again. Backups use it so the snapshot they
 	// take never stays in the chain.
 	OverlayCommit = "commit"
-	ChainMax        = 16
+	ChainMax      = 16
 )
 
 // OverlayRequest is a typed Directory qcow2 overlay operation.

@@ -160,8 +160,8 @@ type FS struct {
 
 // Status is the guard's view of the host.
 type Status struct {
-	Level        Level  `json:"level"`
-	Filesystems  []FS   `json:"filesystems"`
+	Level       Level  `json:"level"`
+	Filesystems []FS   `json:"filesystems"`
 	Policy      Policy `json:"policy"`
 	ReservePath string `json:"reserve_path"`
 	// ReserveBytes is how much is reserved right now.
