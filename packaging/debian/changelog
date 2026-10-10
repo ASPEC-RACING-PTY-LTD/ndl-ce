@@ -1,3 +1,27 @@
+nodal (1.2.1) UNRELEASED; urgency=medium
+
+  * OCI containers have real networking: their own IP on a network (DHCP
+    or a fixed address and gateway), the host network, DNS servers and
+    published ports. Existing containers keep running as before until
+    their settings are changed.
+  * OCI containers can be edited in place: image, ports, environment,
+    volumes, network, limits and command. A running container restarts on
+    the new settings and keeps its volumes.
+  * The Stacks page is replaced by OCI Containers. Containers can be
+    grouped, moved between groups, started, stopped and restarted per
+    group, and Docker Compose files import as a group. Existing stacks
+    show as groups; no container or data is changed.
+  * New Files page with tabs, like the Terminal page. Files here in the
+    terminal opens it in the shell's folder.
+  * Terminal tabs can be dragged to reorder and duplicated from the right
+    click menu. The Quick Switch button and shortcut hint are gone.
+  * Docker Management is split into Needs attention, Healthy and Ignored
+    sections in a grid, with right-click tools including a terminal or
+    Files in the Compose folder. Ignored containers and projects are saved
+    until changed.
+
+ -- No-dal <packaging@no-dal.com>  Sun, 11 Oct 2026 03:30:00 +0000
+
 nodal (1.2.1) trixie; urgency=medium
 
   * Moving the backup repository to a ZFS pool works. A ZFS pool's own
