@@ -184,8 +184,8 @@ export function WorkloadsPage() {
               <Link className="btn btn-ghost" href="/templates">
                 Templates
               </Link>
-              <Link className="btn btn-ghost" href="/stacks">
-                Stacks
+              <Link className="btn btn-ghost" href="/oci">
+                OCI Containers
               </Link>
               <Link className="btn btn-ghost" href="/workloads/import">
                 Import VM

@@ -22,6 +22,7 @@ import { HostOperatePage } from "./pages/HostOperatePage";
 import { TerminalPage } from "./pages/TerminalPage";
 import { TerminalWorkspaceProvider } from "./terminal/workspace";
 import { TerminalWorkspacePage } from "./pages/TerminalWorkspacePage";
+import { FilesWorkspacePage } from "./pages/FilesWorkspacePage";
 import { WorkloadCreatePage } from "./pages/WorkloadCreatePage";
 import { OciCreatePage } from "./pages/OciCreatePage";
 import { WorkloadDetailPage } from "./pages/WorkloadDetailPage";
@@ -51,7 +52,7 @@ import { GroupsPage } from "./pages/GroupsPage";
 import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
-import { StacksPage, StackDetailPage } from "./pages/StacksPage";
+import { OciPage } from "./pages/OciPage";
 import { DockerPage } from "./pages/DockerPage";
 import { GameServersHomePage } from "./pages/GameServersHomePage";
 import { GameServerCreatePage } from "./pages/GameServerCreatePage";
@@ -148,6 +149,9 @@ function matchPage(path: string) {
   if (path === "/registries") {
     return <RegistriesPage />;
   }
+  if (path === "/files") {
+    return <FilesWorkspacePage />;
+  }
   if (path === "/terminal") {
     return <TerminalWorkspacePage />;
   }
@@ -188,11 +192,13 @@ function matchPage(path: string) {
   if (path === "/workloads") {
     return <WorkloadsPage />;
   }
-  if (path === "/stacks") {
-    return <StacksPage />;
+  if (path === "/oci") {
+    return <OciPage />;
   }
-  if (path.startsWith("/stacks/")) {
-    return <StackDetailPage />;
+  if (path === "/stacks" || path.startsWith("/stacks/")) {
+    // Stacks became OCI container groups; old links land on the OCI page.
+    window.history.replaceState({}, "", "/oci");
+    return <OciPage />;
   }
   if (path === "/docker" || path.startsWith("/docker/")) {
     return <DockerPage />;

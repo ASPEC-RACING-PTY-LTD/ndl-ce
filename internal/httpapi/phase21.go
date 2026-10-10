@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
-	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/storage"
@@ -135,6 +134,9 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 	if req.Name == "" || req.ImagePin == "" {
 		return appdb.Workload{}, false, errBadRequest("name and image_pin are required")
 	}
+	if len(req.CommandSlice) == 0 && len(req.Args) > 0 {
+		req.CommandSlice = req.Args
+	}
 	if err := oci.ValidateImageRef(req.ImagePin); err != nil {
 		return appdb.Workload{}, false, errBadRequest(err.Error())
 	}
@@ -187,33 +189,9 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 			})
 		}
 	}
-	volumePaths := map[string]string{}
-	for _, m := range vols {
-		if err := oci.ValidateVolumeMount(m); err != nil {
-			return appdb.Workload{}, false, errBadRequest(err.Error())
-		}
-		vol, err := s.Store.GetVolume(ctx, p.User.ClusterID, m.VolumeID)
-		if err != nil || vol == nil {
-			return appdb.Workload{}, false, errNotFound("volume not found")
-		}
-		if vol.Class != storage.ClassContainerRoot {
-			return appdb.Workload{}, false, errConflict("volume is not a container-root")
-		}
-		if vol.Status != storage.StatusAvailable && vol.Status != storage.StatusWarning {
-			return appdb.Workload{}, false, errConflict("storage is unavailable")
-		}
-		pool, err := s.Store.GetStoragePool(ctx, p.User.ClusterID, vol.PoolID)
-		if err != nil || pool == nil {
-			return appdb.Workload{}, false, errUnprocessable("volume pool unavailable")
-		}
-		if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
-			return appdb.Workload{}, false, errConflict("storage is unavailable")
-		}
-		loc, err := storage.HostVolumePath(pool.BackendType, pool.RootPath, vol.BackendRef)
-		if err != nil {
-			return appdb.Workload{}, false, errUnprocessable("volume locator is invalid")
-		}
-		volumePaths[m.VolumeID] = loc
+	volumePaths, err := s.ociVolumePaths(ctx, p.User.ClusterID, vols)
+	if err != nil {
+		return appdb.Workload{}, false, err
 	}
 	if req.CPUs < 1 {
 		req.CPUs = oci.DefaultCPUs
@@ -224,17 +202,11 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 	if req.DesiredPower == "" {
 		req.DesiredPower = "running"
 	}
-	var netw *appdb.Network
-	if req.NetworkID != "" {
-		n, err := s.Store.GetNetwork(ctx, p.User.ClusterID, req.NetworkID)
-		if err != nil || n == nil {
-			return appdb.Workload{}, false, errNotFound("network not found")
-		}
-		if n.Status != ndnet.StatusAvailable && n.Status != ndnet.StatusWarning {
-			return appdb.Workload{}, false, errConflict("an available network is required")
-		}
-		netw = n
+	plan, err := s.planOCINetwork(ctx, p, req.NetworkID, req.NetworkMode, req.IPv4Mode, req.IPv4Address, req.IPv4Gateway, req.DNS)
+	if err != nil {
+		return appdb.Workload{}, false, err
 	}
+	netw := plan.Network
 	ids := s.planCreateIDs(ctx, p.User.ClusterID, node.ID, key, "")
 	spec := oci.Spec{
 		WorkloadID: ids.WorkloadID, Name: req.Name, ImagePin: req.ImagePin,
@@ -243,10 +215,7 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 		VolumePaths: volumePaths, Resources: oci.Resources{CPUs: req.CPUs, MemoryBytes: req.MemoryBytes},
 		PullUsername: specPullUser, PullPassword: specPullPass, Command: req.CommandSlice,
 	}
-	if netw != nil {
-		spec.NetworkID = netw.ID
-		spec.BridgeName = netw.BridgeName
-	}
+	plan.apply(&spec)
 	if err := oci.ValidateSpec(spec); err != nil {
 		return appdb.Workload{}, false, errBadRequest(err.Error())
 	}
@@ -304,10 +273,9 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 		}
 	}
 	if netw != nil {
-		if err := s.Store.CreateWorkloadNIC(ctx, appdb.WorkloadNIC{
-			ID: uuid.NewString(), ClusterID: p.User.ClusterID, WorkloadID: row.ID,
-			NetworkID: netw.ID, CreatedAt: s.now(),
-		}); err != nil {
+		nic := plan.nic(p.User.ClusterID, row.ID)
+		nic.ID, nic.CreatedAt = uuid.NewString(), s.now()
+		if err := s.Store.CreateWorkloadNIC(ctx, nic); err != nil {
 			s.finishOp(ctx, op, "failed", err.Error(), 0)
 			return appdb.Workload{}, false, errInternal("could not record OCI NIC")
 		}

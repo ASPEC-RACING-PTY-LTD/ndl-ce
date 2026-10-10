@@ -261,6 +261,10 @@ export function navIcon(label: string): IconName {
       return "game";
     case "Terminal":
       return "terminal";
+    case "Files":
+      return "files";
+    case "OCI Containers":
+      return "workloads";
     case "Node":
       return "node";
     case "Storage":

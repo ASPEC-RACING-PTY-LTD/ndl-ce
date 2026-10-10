@@ -149,6 +149,8 @@ type Store interface {
 	GetWorkloadByIdempotency(ctx context.Context, clusterID, key string) (*Workload, error)
 	UpdateWorkloadObserved(ctx context.Context, w Workload) error
 	UpdateWorkloadSpec(ctx context.Context, w Workload) error
+	UpdateWorkloadImage(ctx context.Context, clusterID, id, image string, privileged bool) error
+	DeleteWorkloadDisk(ctx context.Context, clusterID, workloadID, volumeID string) error
 
 	CreateWorkloadDisk(ctx context.Context, d WorkloadDisk) error
 	ListWorkloadDisks(ctx context.Context, clusterID, workloadID string) ([]WorkloadDisk, error)
@@ -335,6 +337,11 @@ type Store interface {
 	GetStackMember(ctx context.Context, clusterID, id string) (*StackMember, error)
 	GetStackMemberByService(ctx context.Context, clusterID, stackID, service string) (*StackMember, error)
 	UpdateStackMember(ctx context.Context, m StackMember) error
+	DeleteStackMember(ctx context.Context, clusterID, id string) error
+
+	ListDockerPrefs(ctx context.Context, clusterID string) ([]DockerPref, error)
+	PutDockerPref(ctx context.Context, p DockerPref) error
+	DeleteDockerPref(ctx context.Context, clusterID, machineID, scope, name string) error
 
 	CreateWGPeer(ctx context.Context, p WGPeer) error
 	ListWGPeers(ctx context.Context, clusterID string) ([]WGPeer, error)

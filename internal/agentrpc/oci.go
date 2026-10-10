@@ -34,6 +34,19 @@ func (h *Handler) execOCIRuntime(ctx context.Context, m *agentv1.OCIRuntime) (*c
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "created", ResultJson: mustJSON(res)}), nil
+	case "update":
+		var spec oci.Spec
+		if err := json.Unmarshal(m.GetSpecJson(), &spec); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		if spec.WorkloadID == "" {
+			spec.WorkloadID = m.GetWorkloadId()
+		}
+		res, err := h.oci().Update(ctx, spec)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "updated", ResultJson: mustJSON(res)}), nil
 	case "start", "stop", "restart", "delete":
 		res, err := h.oci().Lifecycle(ctx, oci.LifecycleRequest{WorkloadID: m.GetWorkloadId(), Action: action})
 		if err != nil {

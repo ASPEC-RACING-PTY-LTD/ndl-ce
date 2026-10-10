@@ -57,6 +57,8 @@ type WorkspaceValue = {
   openNew: (target: TermTarget, opts?: OpenTermOpts) => string;
   openOrFocus: (target: TermTarget, opts?: OpenTermOpts) => string;
   newHere: (tabId: string) => string;
+  duplicate: (tabId: string) => string;
+  moveTab: (tabId: string, toIndex: number) => void;
   rename: (tabId: string, title: string) => void;
   closeTab: (tabId: string) => void;
   closeAll: () => void;
@@ -453,6 +455,45 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     [openNew],
   );
 
+  // duplicate opens a second, independent shell on the same target in the
+  // same directory, placed right after the original tab.
+  const duplicate = useCallback(
+    (tabId: string) => {
+      const tab = tabsRef.current.find((t) => t.tabId === tabId);
+      if (!tab) {
+        return tabId;
+      }
+      const next = openNew(tab.target, { cwd: tab.cwd || tab.startCwd || "/" });
+      setTabs((cur) => {
+        const from = cur.findIndex((t) => t.tabId === next);
+        const at = cur.findIndex((t) => t.tabId === tabId);
+        if (from < 0 || at < 0) {
+          return cur;
+        }
+        const out = [...cur];
+        const [moved] = out.splice(from, 1);
+        out.splice(at + 1, 0, moved);
+        return out;
+      });
+      return next;
+    },
+    [openNew],
+  );
+
+  const moveTab = useCallback((tabId: string, toIndex: number) => {
+    setTabs((cur) => {
+      const from = cur.findIndex((t) => t.tabId === tabId);
+      const to = Math.max(0, Math.min(cur.length - 1, toIndex));
+      if (from < 0 || from === to) {
+        return cur;
+      }
+      const out = [...cur];
+      const [moved] = out.splice(from, 1);
+      out.splice(to, 0, moved);
+      return out;
+    });
+  }, []);
+
   const rename = useCallback((tabId: string, title: string) => {
     const next = title.trim();
     if (!next) {
@@ -670,6 +711,8 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       openNew,
       openOrFocus,
       newHere,
+      duplicate,
+      moveTab,
       rename,
       closeTab,
       closeAll,
@@ -695,6 +738,8 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       openNew,
       openOrFocus,
       newHere,
+      duplicate,
+      moveTab,
       rename,
       closeTab,
       closeAll,

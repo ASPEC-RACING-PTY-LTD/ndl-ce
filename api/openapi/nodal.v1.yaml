@@ -3894,6 +3894,56 @@ paths:
                 $ref: "#/components/schemas/DockerInventory"
         "404":
           description: Feature is not enabled
+  /docker/prefs:
+    get:
+      operationId: listDockerPrefs
+      summary: Saved Docker Management choices, such as containers or Compose projects marked as ignored.
+      responses:
+        "200":
+          description: Saved choices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DockerPref"
+    put:
+      operationId: putDockerPref
+      summary: Save a choice for one container or Compose project. It stays until changed. ignored false with no note clears it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - machine_id
+                - scope
+                - name
+              properties:
+                machine_id:
+                  type: string
+                scope:
+                  type: string
+                  enum:
+                    - container
+                    - project
+                name:
+                  type: string
+                ignored:
+                  type: boolean
+                note:
+                  type: string
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerPref"
   /docker/machines/{machine_id}/containers/{container_id}:
     get:
       operationId: getDockerContainer
@@ -7710,6 +7760,204 @@ paths:
                 $ref: "#/components/schemas/Stack"
         "403":
           description: Privileged requires admin
+    delete:
+      operationId: removeOCIGroupMember
+      summary: Take a container out of its group. The container keeps running and keeps its data.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The group after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+        "404":
+          description: Group or member not found
+  /stacks/{id}/members:
+    post:
+      operationId: addOCIGroupMember
+      summary: Put an existing OCI container into this group, moving it out of any other group. The container is not changed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workload_id
+              properties:
+                workload_id:
+                  type: string
+      responses:
+        "200":
+          description: The group after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stack"
+        "409":
+          description: Only OCI containers can be grouped
+  /stacks/{id}/power:
+    post:
+      operationId: ociGroupPower
+      summary: Start, stop or restart every container in a group.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - start
+                    - stop
+                    - restart
+      responses:
+        "200":
+          description: Result per container
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  action:
+                    type: string
+                  failed:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        workload_id:
+                          type: string
+                        name:
+                          type: string
+                        ok:
+                          type: boolean
+                        error:
+                          type: string
+  /workloads/{id}/oci:
+    put:
+      operationId: updateOCIConfig
+      summary: Change an OCI container's image, environment, ports, volumes, network and limits. Fields left out keep their value. A running container restarts on the new configuration.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                image_pin:
+                  type: string
+                registry_id:
+                  type: string
+                env:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                ports:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      container_port:
+                        type: integer
+                      host_port:
+                        type: integer
+                      protocol:
+                        type: string
+                volumes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      volume_id:
+                        type: string
+                      container_path:
+                        type: string
+                      read_only:
+                        type: boolean
+                command:
+                  type: array
+                  items:
+                    type: string
+                privileged:
+                  type: boolean
+                cpus:
+                  type: integer
+                memory_bytes:
+                  type: integer
+                  format: int64
+                network_id:
+                  type: string
+                network_mode:
+                  type: string
+                  enum:
+                    - none
+                    - bridge
+                    - host
+                ipv4_mode:
+                  type: string
+                  enum:
+                    - dhcp
+                    - static
+                ipv4_address:
+                  type: string
+                ipv4_gateway:
+                  type: string
+                dns:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: The updated workload
+        "400":
+          description: Invalid configuration
+        "403":
+          description: Host network and privileged need admin
+        "501":
+          description: The node agent cannot change OCI containers yet
   /gpus:
     get:
       operationId: listGpus
@@ -8406,6 +8654,23 @@ paths:
           description: Still in use; the error names what uses it
 components:
   schemas:
+    DockerPref:
+      type: object
+      properties:
+        machine_id:
+          type: string
+        scope:
+          type: string
+        name:
+          type: string
+        ignored:
+          type: boolean
+        note:
+          type: string
+        updated_by:
+          type: string
+        updated_at:
+          type: string
     HealthResponse:
       type: object
       additionalProperties: false

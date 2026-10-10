@@ -69,6 +69,9 @@ func ValidateSpec(spec Spec) error {
 			return fmt.Errorf("health http_path must start with /")
 		}
 	}
+	if err := ValidateNetwork(spec); err != nil {
+		return err
+	}
 	for _, d := range spec.GPUDevices {
 		if !strings.HasPrefix(d, "/dev/") {
 			return fmt.Errorf("gpu device must be a /dev/ node")

@@ -761,7 +761,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(io.querySelector('a[href$="/terminal"]')).toBeTruthy();
     });
-    expect(screen.getByRole("link", { name: /^files$/i })).toBeVisible();
+    expect(within(io).getByRole("link", { name: /^files$/i })).toBeVisible();
   });
 
   it("renders the certificates settings page for admin", async () => {
@@ -1758,39 +1758,20 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^create vm$/i })).toBeVisible();
   });
 
-  it("edits imported stack members as No-dal objects", async () => {
+  it("shows imported Compose groups on the OCI page instead of a Stacks page", async () => {
     window.history.replaceState({}, "", "/stacks/st-1");
-    const fetchMock = mockApi({
+    mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
-      "/api/v1/stacks/st-1": {
+      "/api/v1/stacks": {
         status: 200,
         body: {
-          id: "st-1",
-          name: "demo",
-          status: "draft",
-          members: [
+          items: [
             {
-              id: "m-1",
-              service_name: "web",
-              status: "pending",
-              desired: { image_pin: "nginx:alpine", env: [{ name: "APP_ENV", value: "prod" }] },
-            },
-          ],
-        },
-      },
-      "PATCH /api/v1/stacks/st-1/members/m-1": {
-        status: 200,
-        body: {
-          id: "st-1",
-          name: "demo",
-          status: "draft",
-          members: [
-            {
-              id: "m-1",
-              service_name: "web",
-              status: "pending",
-              desired: { image_pin: "nginx:1.27-alpine", env: [{ name: "APP_ENV", value: "prod" }] },
+              id: "st-1",
+              name: "demo",
+              status: "draft",
+              members: [{ id: "m-1", service_name: "web", status: "pending", desired: { image_pin: "nginx:alpine" } }],
             },
           ],
         },
@@ -1799,16 +1780,9 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /^demo$/i })).toBeVisible();
-    expect(screen.getByText(/not applied/i)).toBeVisible();
-    const image = await screen.findByLabelText(/^image$/i);
-    fireEvent.change(image, { target: { value: "nginx:1.27-alpine" } });
-    fireEvent.click(screen.getByRole("button", { name: /save member/i }));
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/stacks/st-1/members/m-1"),
-        expect.objectContaining({ method: "PATCH" }),
-      );
-    });
+    expect(await screen.findByRole("heading", { name: /oci containers/i })).toBeVisible();
+    expect(await screen.findByText(/not deployed/i)).toBeVisible();
+    expect(screen.getByRole("article", { name: /group demo/i })).toBeVisible();
+    expect(window.location.pathname).toBe("/oci");
   });
 });

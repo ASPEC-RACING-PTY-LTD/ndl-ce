@@ -51,9 +51,18 @@ func (s *Server) listStacks(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// members=true includes each group's containers, for the OCI page.
+	withMembers := r.URL.Query().Get("members") == "true"
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		out = append(out, s.stackJSON(r.Context(), item, nil))
+		var members []appdb.StackMember
+		if withMembers {
+			members, _ = s.Store.ListStackMembers(r.Context(), p.User.ClusterID, item.ID)
+			if members == nil {
+				members = []appdb.StackMember{}
+			}
+		}
+		out = append(out, s.stackJSON(r.Context(), item, members))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }

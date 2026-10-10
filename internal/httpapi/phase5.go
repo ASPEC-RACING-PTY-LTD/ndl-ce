@@ -59,6 +59,7 @@ type createWorkloadRequest struct {
 	QEMUArgs               []string          `json:"qemu_args"`
 	Command                string            `json:"command"`
 	CommandSlice           []string          `json:"-"`
+	Args                   []string          `json:"args"` // OCI command override, one argument per item
 	SecureBoot             bool              `json:"secure_boot"`
 	Placement              string            `json:"placement"`
 	NodeID                 string            `json:"node_id"`
@@ -67,6 +68,7 @@ type createWorkloadRequest struct {
 	RequireStorageClass    string            `json:"require_storage_class"`
 	AffinityWorkloadID     string            `json:"affinity_workload_id"`
 	AntiAffinityWorkloadID string            `json:"anti_affinity_workload_id"`
+	NetworkMode            string            `json:"network_mode"`
 	IPv4Mode               string            `json:"ipv4_mode"`
 	IPv4Address            string            `json:"ipv4_address"`
 	IPv4Gateway            string            `json:"ipv4_gateway"`

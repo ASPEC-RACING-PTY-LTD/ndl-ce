@@ -180,7 +180,7 @@ export function QuickSwitch({
         }}
       >
         <h2 id="qs-heading" className="palette-heading">
-          Quick Switch
+          New terminal
         </h2>
         <p className="field-hint">
           Enter opens a new terminal session. Existing tabs stay attached. Replace the current session only with the

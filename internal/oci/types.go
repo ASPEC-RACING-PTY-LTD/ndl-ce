@@ -106,6 +106,16 @@ type Spec struct {
 	// Pull credentials are request-scoped. Redact clears them before last-applied.
 	PullUsername string `json:"pull_username,omitempty"`
 	PullPassword string `json:"pull_password,omitempty"`
+
+	// NetworkMode is none, bridge (own address on BridgeName) or host.
+	// Empty keeps the behaviour of containers made before it existed: no network.
+	NetworkMode string   `json:"network_mode,omitempty"`
+	IPv4Address string   `json:"ipv4_address,omitempty"` // CIDR; empty on a bridge means DHCP
+	IPv4Gateway string   `json:"ipv4_gateway,omitempty"`
+	DNS         []string `json:"dns,omitempty"`
+	// Filled in by the launcher for one run; never stored.
+	NetnsPath  string `json:"-"`
+	ResolvPath string `json:"-"`
 }
 
 // Applied is last-applied on disk. Secrets and passwords are never stored here.

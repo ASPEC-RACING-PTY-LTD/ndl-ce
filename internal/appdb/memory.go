@@ -52,6 +52,7 @@ type Memory struct {
 	backupUploadJobs   map[string][]BackupUploadJob
 	updateOps          map[string]UpdateOperation
 	provisioned        map[string]ProvisionedService
+	dockerPrefs        map[string]DockerPref
 	groups             map[string]Group
 	groupMembers       map[string][]string
 	groupRoles         map[string][]string

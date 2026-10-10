@@ -43,7 +43,7 @@ func (c *Containerd) now() time.Time {
 
 func allowedBin(name string) bool {
 	switch name {
-	case BinCTR, BinSystemctl:
+	case BinCTR, BinSystemctl, BinIP, BinNFT:
 		return true
 	default:
 		return false
@@ -232,6 +232,23 @@ func TaskStartArgv(ns string, spec Spec) ([]string, error) {
 			return nil, fmt.Errorf("bridge name contains banned characters")
 		}
 		argv = append(argv, "--label", "ndl.bridge="+spec.BridgeName)
+	}
+	switch EffectiveNetworkMode(spec) {
+	case NetworkHost:
+		argv = append(argv, "--net-host")
+	case NetworkBridge:
+		if spec.NetnsPath != "" {
+			if strings.ContainsAny(spec.NetnsPath, ",=\n\r\x00") || !strings.HasPrefix(spec.NetnsPath, "/var/run/netns/") {
+				return nil, fmt.Errorf("network namespace path is invalid")
+			}
+			argv = append(argv, "--with-ns", "network:"+spec.NetnsPath)
+		}
+	}
+	if spec.ResolvPath != "" {
+		if strings.ContainsAny(spec.ResolvPath, ",=\n\r\x00") || !strings.HasPrefix(spec.ResolvPath, "/") {
+			return nil, fmt.Errorf("resolv.conf path is invalid")
+		}
+		argv = append(argv, "--mount", "type=bind,src="+spec.ResolvPath+",dst=/etc/resolv.conf,options=rbind,ro")
 	}
 	for _, m := range spec.Volumes {
 		host := ""

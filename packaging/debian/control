@@ -55,6 +55,7 @@ Description: No-dal Guest Agent for Linux VMs
 Package: nodal-feature-oci
 Architecture: all
 Depends: ndl-agent, containerd, ${misc:Depends}
+Recommends: isc-dhcp-client | udhcpc
 Description: Optional OCI extras for No-dal
  Not a Phase 1 dependency. Enable with nodalctl feature enable oci.
  Installs containerd so official Store OCI samples can pull and run.

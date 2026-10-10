@@ -289,6 +289,32 @@ export async function dockerContainerLogs(
   );
 }
 
+export type DockerPref = {
+  machine_id: string;
+  scope: "container" | "project";
+  name: string;
+  ignored: boolean;
+  note?: string;
+  updated_by?: string;
+  updated_at?: string;
+};
+
+/** listDockerPrefs returns saved Docker choices, such as ignored containers. */
+export async function listDockerPrefs(): Promise<{ items: DockerPref[] }> {
+  return readJson(await request("/docker/prefs"));
+}
+
+/** putDockerPref saves (or, with ignored false and no note, clears) a Docker choice. */
+export async function putDockerPref(body: {
+  machine_id: string;
+  scope: "container" | "project";
+  name: string;
+  ignored: boolean;
+  note?: string;
+}): Promise<DockerPref> {
+  return readJson(await request("/docker/prefs", { method: "PUT", body: JSON.stringify(body) }));
+}
+
 export async function getKubernetes(): Promise<import("../generated/openapi").KubernetesStatus> {
   return readJson(await request("/kubernetes"));
 }
@@ -1011,6 +1037,11 @@ export async function createWorkload(
     dns?: string[];
     registry_id?: string;
     volume_ids?: string[];
+    network_mode?: string;
+    env?: { name: string; value?: string }[];
+    ports?: { container_port: number; host_port?: number; protocol?: string }[];
+    volumes?: { volume_id: string; container_path: string; read_only?: boolean }[];
+    args?: string[];
     health?: { http_path?: string; port?: number };
     privileged?: boolean;
     extras?: string[];
@@ -1108,8 +1139,64 @@ export type Stack = {
   desired?: Record<string, unknown>;
 };
 
-export async function listStacks(): Promise<{ items: Stack[] }> {
-  return readJson(await request("/stacks"));
+export async function listStacks(withMembers = false): Promise<{ items: Stack[] }> {
+  return readJson(await request(withMembers ? "/stacks?members=true" : "/stacks"));
+}
+
+/** createOCIGroup makes an empty container group. */
+export async function createOCIGroup(name: string): Promise<Stack> {
+  return readJson(await request("/stacks", { method: "POST", body: JSON.stringify({ name }) }));
+}
+
+/** addToOCIGroup puts an existing OCI container into a group, moving it out of any other. */
+export async function addToOCIGroup(groupId: string, workloadId: string): Promise<Stack> {
+  return readJson(
+    await request(`/stacks/${encodeURIComponent(groupId)}/members`, {
+      method: "POST",
+      body: JSON.stringify({ workload_id: workloadId }),
+    }),
+  );
+}
+
+/** removeFromOCIGroup takes a container out of its group; the container keeps running. */
+export async function removeFromOCIGroup(groupId: string, memberId: string): Promise<Stack> {
+  return readJson(
+    await request(`/stacks/${encodeURIComponent(groupId)}/members/${encodeURIComponent(memberId)}`, { method: "DELETE" }),
+  );
+}
+
+/** ociGroupPower starts, stops or restarts every container in a group. */
+export async function ociGroupPower(
+  groupId: string,
+  action: "start" | "stop" | "restart",
+): Promise<{ failed: number; results: { workload_id: string; name: string; ok: boolean; error?: string }[] }> {
+  return readJson(
+    await request(`/stacks/${encodeURIComponent(groupId)}/power`, { method: "POST", body: JSON.stringify({ action }) }),
+  );
+}
+
+export type OCIConfig = {
+  image_pin?: string;
+  registry_id?: string;
+  env?: { name: string; value?: string }[];
+  ports?: { container_port: number; host_port?: number; protocol?: string }[];
+  volumes?: { volume_id: string; container_path: string; read_only?: boolean }[];
+  command?: string[];
+  health?: { http_path?: string; port?: number };
+  privileged?: boolean;
+  cpus?: number;
+  memory_bytes?: number;
+  network_id?: string;
+  network_mode?: "none" | "bridge" | "host";
+  ipv4_mode?: "dhcp" | "static";
+  ipv4_address?: string;
+  ipv4_gateway?: string;
+  dns?: string[];
+};
+
+/** updateOCIConfig changes an existing OCI container; a running one restarts on the new settings. */
+export async function updateOCIConfig(id: string, body: OCIConfig): Promise<import("./phase5").Workload & { applied_status?: string; applied_message?: string }> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/oci`, { method: "PUT", body: JSON.stringify(body) }));
 }
 
 export async function getStack(id: string): Promise<Stack> {

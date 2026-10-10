@@ -3,6 +3,7 @@ import { mkdirFile, uploadFile } from "../api/client";
 import { ErrorNotice } from "./ErrorNotice";
 import { Link } from "./Link";
 import { joinPath, relName, uploadDirFromCwd } from "../files/paths";
+import { filesWorkspaceHref } from "../files/workspace";
 import { shellEscapeAll } from "../files/shell";
 import {
   clampTermSize,
@@ -361,16 +362,16 @@ export function TerminalPane({
     return (
       <div className="term-empty">
         <p>No terminal session open.</p>
-        <p className="muted">Use + or Quick Switch to open a session against any authorized target.</p>
+        <p className="muted">Use + to open a session against any authorized target.</p>
       </div>
     );
   }
 
   const host = tab.target.kind === "node";
-  const filesHref = host
-    ? `/nodes/${encodeURIComponent(tab.target.id)}/files`
-    : `/workloads/${encodeURIComponent(tab.target.id)}/files`;
-  const filesHere = `${filesHref}?path=${encodeURIComponent(tab.cwd || "/")}`;
+  const filesHere =
+    tab.target.kind === "docker"
+      ? ""
+      : filesWorkspaceHref({ kind: host ? "node" : "workload", id: tab.target.id, name: tab.target.name }, tab.cwd || "/");
   const backHref = host
     ? `/nodes/${encodeURIComponent(tab.target.id)}`
     : `/workloads/${encodeURIComponent(tab.target.id)}`;
@@ -409,9 +410,11 @@ export function TerminalPane({
               Reset size
             </button>
           ) : null}
-          <Link className="btn btn-ghost btn-sm" href={filesHere}>
-            Files here
-          </Link>
+          {filesHere ? (
+            <Link className="btn btn-ghost btn-sm" href={filesHere}>
+              Files here
+            </Link>
+          ) : null}
         </div>
       </div>
       {tab.error ? (

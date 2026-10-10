@@ -163,3 +163,34 @@ func TestDockerAPIEnabledSnapshotAndAction(t *testing.T) {
 		t.Fatal("docker still enabled")
 	}
 }
+
+func TestDockerIgnoreIsSavedUntilCleared(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.Update = &fakeUpdate{supported: true}
+	s.Docker = &fakeDocker{}
+	cluster, _ := mem.GetCluster(context.Background())
+	seedNode(t, mem, cluster.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	if code, out := ociCall(t, ts, cookie, "POST", "/features/docker/enable", `{}`); code != http.StatusOK {
+		t.Fatalf("enable %d %v", code, out["_raw"])
+	}
+	code, out := ociCall(t, ts, cookie, "PUT", "/docker/prefs", `{"machine_id":"host","scope":"container","name":"flaky","ignored":true,"note":"always reports unhealthy"}`)
+	if code != http.StatusOK || out["ignored"] != true {
+		t.Fatalf("save %d %v", code, out["_raw"])
+	}
+	_, list := ociCall(t, ts, cookie, "GET", "/docker/prefs", "")
+	items, _ := list["items"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["name"] != "flaky" {
+		t.Fatalf("list %v", list["_raw"])
+	}
+	if code, _ := ociCall(t, ts, cookie, "PUT", "/docker/prefs", `{"machine_id":"host","scope":"bogus","name":"x","ignored":true}`); code != http.StatusBadRequest {
+		t.Fatalf("bad scope %d", code)
+	}
+	ociCall(t, ts, cookie, "PUT", "/docker/prefs", `{"machine_id":"host","scope":"container","name":"flaky","ignored":false}`)
+	_, list = ociCall(t, ts, cookie, "GET", "/docker/prefs", "")
+	if items, _ := list["items"].([]any); len(items) != 0 {
+		t.Fatalf("cleared ignore must be gone: %v", list["_raw"])
+	}
+}

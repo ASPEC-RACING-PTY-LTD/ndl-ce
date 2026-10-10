@@ -22,6 +22,8 @@ type Engine struct {
 	Now          func() time.Time
 	SkipHostCmds bool
 	Creds        func(registryID string) (*RegistryCreds, error)
+	// EtcDir holds per-namespace resolv.conf (default /etc, as ip netns expects).
+	EtcDir string
 }
 
 func (e *Engine) dataDir() string {
@@ -277,5 +279,55 @@ func (e *Engine) LaunchFromApplied(ctx context.Context, id string) error {
 	if applied.Spec.WorkloadID != id {
 		return fmt.Errorf("last-applied workload id does not match")
 	}
-	return e.runtime().Run(ctx, applied.Spec)
+	spec, err := e.PrepareNetwork(ctx, applied.Spec)
+	if err != nil {
+		return err
+	}
+	if EffectiveNetworkMode(spec) == NetworkBridge {
+		defer e.TeardownNetwork(context.Background(), id)
+	}
+	return e.runtime().Run(ctx, spec)
+}
+
+// Update replaces a container's configuration. A new image is pulled first;
+// a running container restarts on the new configuration, a stopped one
+// stays stopped.
+func (e *Engine) Update(ctx context.Context, spec Spec) (Result, error) {
+	spec, err := normalizeSpec(spec)
+	if err != nil {
+		return Result{}, err
+	}
+	prev, err := e.readApplied(spec.WorkloadID)
+	if err != nil {
+		return Result{}, fmt.Errorf("oci last-applied is missing: %w", err)
+	}
+	// Keep GPU devices assigned through the GPU flow.
+	if len(spec.GPUDevices) == 0 {
+		spec.GPUDevices = prev.Spec.GPUDevices
+	}
+	digest, pulled := prev.ImageDigest, prev.Pulled
+	if spec.ImagePin != prev.Spec.ImagePin || !prev.Pulled {
+		var creds *RegistryCreds
+		if spec.PullUsername != "" || spec.PullPassword != "" {
+			creds = &RegistryCreds{Username: spec.PullUsername, Password: spec.PullPassword}
+		} else if spec.RegistryID != "" && e.Creds != nil {
+			if creds, err = e.Creds(spec.RegistryID); err != nil {
+				return Result{}, err
+			}
+		}
+		if digest, err = e.runtime().Pull(ctx, PullRequest{Image: spec.ImagePin, Creds: creds}); err != nil {
+			return Result{}, err
+		}
+		pulled = true
+	}
+	if err := e.writeApplied(spec, digest, pulled); err != nil {
+		return Result{}, err
+	}
+	if _, err := e.runHost(ctx, BinSystemctl, "is-active", "--quiet", unitName(spec.WorkloadID)); err == nil && !e.SkipHostCmds {
+		if err := e.Restart(ctx, spec.WorkloadID); err != nil {
+			return Result{}, err
+		}
+		return Result{WorkloadID: spec.WorkloadID, ImageDigest: digest, Status: StatusRunning, Health: Health{Status: StatusCollecting, Message: "restarted on the new configuration"}}, nil
+	}
+	return Result{WorkloadID: spec.WorkloadID, ImageDigest: digest, Status: StatusStopped, Health: Health{Status: StatusStopped, Message: "the new configuration applies at next start"}}, nil
 }

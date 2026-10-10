@@ -94,12 +94,6 @@ function crumbs(path: string): { href: string; label: string }[] {
     }
     return trail;
   }
-  if (path.startsWith("/stacks/")) {
-    return [
-      { href: "/stacks", label: "Stacks" },
-      { href: path, label: "Stack" },
-    ];
-  }
   if (path.startsWith("/nodes/")) {
     const parts = path.split("/").filter(Boolean);
     const base = `/nodes/${parts[1]}`;

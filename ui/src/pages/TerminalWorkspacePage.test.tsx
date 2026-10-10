@@ -214,8 +214,8 @@ describe("Terminal workspace", () => {
   it("creates independent sessions against the same target and keeps siblings when one closes", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    const dialog = await screen.findByRole("dialog", { name: /quick switch/i });
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
     fireEvent.change(screen.getByLabelText(/^search$/i), { target: { value: "alp" } });
     fireEvent.keyDown(dialog, { key: "Enter" });
     expect(await screen.findByRole("tab", { name: /alpine/i })).toBeVisible();
@@ -249,8 +249,8 @@ describe("Terminal workspace", () => {
   it("closes sessions to either side, other sessions, and middle-clicked tabs from the tab bar", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    const dialog = await screen.findByRole("dialog", { name: /quick switch/i });
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
     fireEvent.change(screen.getByLabelText(/^search$/i), { target: { value: "alp" } });
     fireEvent.keyDown(dialog, { key: "Enter" });
     expect(await screen.findByRole("tab", { name: /alpine/i })).toBeVisible();
@@ -308,12 +308,12 @@ describe("Terminal workspace", () => {
   it("does not reconnect same-target sessions when switching tabs", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("workload", "wl-a");
     await waitConnected();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("workload", "wl-a");
     await waitFor(() => expect(created.length).toBe(2));
     await waitFor(() => expect(sockets.length).toBe(2));
@@ -350,12 +350,12 @@ describe("Terminal workspace", () => {
   it("opens independent host sessions against the same node", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("node", "node-1");
     await waitConnected();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("node", "node-1");
     await waitFor(() => expect(created.length).toBe(2));
     expect(created.every((c) => c.path.includes("/nodes/node-1/terminal/sessions"))).toBe(true);
@@ -373,15 +373,15 @@ describe("Terminal workspace", () => {
   it("opens host and workload sessions together with distinct identity", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await waitFor(() => expect(document.querySelector('[data-target="node:node-1"]')).toBeTruthy());
     await clickTarget("node", "node-1");
     expect(await screen.findByTestId("term-identity")).toHaveAttribute("data-target-kind", "node");
     expect(screen.getByText(/^host$/i, { selector: ".term-host-badge" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    const dialog = await screen.findByRole("dialog", { name: /quick switch/i });
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
     fireEvent.change(screen.getByLabelText(/^search$/i), { target: { value: "ubuntu" } });
     fireEvent.keyDown(dialog, { key: "Enter" });
     await waitFor(() => expect(screen.getAllByRole("tab").length).toBe(2));
@@ -393,8 +393,8 @@ describe("Terminal workspace", () => {
   it("keeps sessions alive when navigating away and restores disconnected after reload metadata", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("workload", "wl-a");
     await waitConnected();
     expect(created).toHaveLength(1);
@@ -413,8 +413,8 @@ describe("Terminal workspace", () => {
   it("shows disconnected honestly after a socket close and reconnects with a new PTY", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("workload", "wl-a");
     await waitConnected();
     sockets[0]?.close();
@@ -433,8 +433,8 @@ describe("Terminal workspace", () => {
   it("scopes file-drop cwd to the active session", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("workload", "wl-a");
     await waitConnected();
     fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
@@ -455,11 +455,62 @@ describe("Terminal workspace", () => {
     expect(sent.map((s) => s.text).join("")).not.toMatch(/[\r\n]/);
   });
 
-  it("does not silently start a stopped workload from Quick Switch", async () => {
+  it("duplicates a session into a new shell in the same directory, next to the original", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    const dialog = await screen.findByRole("dialog", { name: /quick switch/i });
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitConnected();
+    sockets[0]?.pushCwd("/srv/app");
+    await waitFor(() => expect(screen.getByTestId("term-identity").textContent).toMatch(/\/srv\/app/));
+    const filesHere = screen.getByRole("link", { name: /files here/i });
+    expect(filesHere.getAttribute("href")).toMatch(/^\/files\?kind=workload&id=wl-a&path=%2Fsrv%2Fapp/);
+    fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /new terminal here/i }));
+    await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /^alpine connected/i }));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^duplicate$/i }));
+    await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
+    await waitFor(() => expect(created.length).toBe(3));
+    expect(created[2].body).toContain("/srv/app");
+    const titles = screen.getAllByRole("tab").map((t) => t.querySelector(".term-tab-title")?.textContent);
+    expect(titles).toEqual(["Alpine", "Alpine (3)", "Alpine (2)"]);
+    expect(screen.queryByRole("button", { name: /quick switch/i })).toBeNull();
+    expect(screen.queryByText(/alt\+n/i)).toBeNull();
+  });
+
+  it("reorders tabs by dragging one past its neighbours", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
+    fireEvent.change(screen.getByLabelText(/^search$/i), { target: { value: "alp" } });
+    fireEvent.keyDown(dialog, { key: "Enter" });
+    expect(await screen.findByRole("tab", { name: /alpine/i })).toBeVisible();
+    for (let n = 2; n <= 3; n += 1) {
+      fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: /new terminal here/i }));
+      await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(n));
+    }
+    const tabs = screen.getAllByRole("tab");
+    tabs.forEach((el, i) => {
+      el.getBoundingClientRect = () => ({ left: i * 100, width: 90, top: 0, height: 20, right: i * 100 + 90, bottom: 20, x: i * 100, y: 0, toJSON: () => ({}) }) as DOMRect;
+    });
+    fireEvent(tabs[0], new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientX: 10 }));
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 40 }));
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 260 }));
+    window.dispatchEvent(new MouseEvent("pointerup", { clientX: 260 }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("tab").map((t) => t.querySelector(".term-tab-title")?.textContent)).toEqual(["Alpine (2)", "Alpine (3)", "Alpine"]),
+    );
+  });
+
+  it("does not silently start a stopped workload from the new terminal picker", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
     fireEvent.change(screen.getByLabelText(/^search$/i), { target: { value: "test vm" } });
     expect(within(dialog).getAllByText(/stopped/i).length).toBeGreaterThan(0);
     fireEvent.keyDown(dialog, { key: "Enter" });
@@ -474,8 +525,8 @@ describe("Terminal workspace", () => {
     me = operator;
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    const dialog = await screen.findByRole("dialog", { name: /quick switch/i });
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
     expect(dialog.querySelector('[data-target="node:node-1"]')).toBeNull();
     expect(dialog.querySelector('[data-target="workload:wl-a"]')).toBeTruthy();
     cleanup();
@@ -500,8 +551,8 @@ describe("Terminal workspace", () => {
   it("keeps xterm focused in the same slot after cwd and connection updates", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("workload", "wl-a");
     await waitConnected();
     const slot = document.querySelector(".term-slot.is-active") as HTMLElement | null;
@@ -522,8 +573,8 @@ describe("Terminal workspace", () => {
   it("leaves each session xterm in its own slot when switching tabs", async () => {
     installIO();
     await openWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: /^quick switch$/i }));
-    expect(await screen.findByRole("dialog", { name: /quick switch/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
     await clickTarget("workload", "wl-a");
     await waitConnected();
     fireEvent.click(screen.getByRole("button", { name: /session actions/i }));

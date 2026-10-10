@@ -1846,6 +1846,19 @@ body.is-term-resizing {
   flex-direction: column;
 }
 
+.page-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.files-browser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .page-term .term-pane {
   flex: 1;
   min-height: 0;
@@ -1866,7 +1879,7 @@ body.is-term-resizing {
 
 .term-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.2rem;
   min-width: 0;
@@ -1886,6 +1899,21 @@ body.is-term-resizing {
   font: inherit;
   font-size: 0.75rem;
   cursor: pointer;
+  flex-shrink: 0;
+  touch-action: pan-x;
+}
+
+.term-tab.is-dragging {
+  position: relative;
+  z-index: 2;
+  cursor: grabbing;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+}
+
+body.is-tab-dragging,
+body.is-tab-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
 }
 
 .term-tab.is-active {
@@ -1912,10 +1940,6 @@ body.is-term-resizing {
 
 .term-add {
   min-width: 2rem;
-}
-
-.term-hint {
-  margin: 0;
 }
 
 .term-pane {
@@ -3780,4 +3804,249 @@ a.gs-tab {
   width: 100%;
   max-width: none;
   margin-bottom: 0.25rem;
+}
+
+/* Docker Management: sections of group cards in a grid. */
+.docker-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.docker-toolbar > input {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.docker-toolbar > select {
+  flex: 0 1 14rem;
+  min-width: 0;
+}
+
+.docker-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.docker-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: var(--space-2) 0 0;
+  font-size: 0.95rem;
+}
+
+.docker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.docker-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.docker-card.is-issue {
+  border-left-color: var(--danger);
+  background: linear-gradient(var(--danger-bg), var(--danger-bg)), var(--bg-surface);
+}
+
+.docker-card.is-ignored {
+  border-left-color: var(--fg-tertiary);
+  opacity: 0.85;
+}
+
+.docker-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.docker-card-head .docker-head-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-weight: 600;
+}
+
+.docker-card-meta {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.docker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "name status menu"
+    "meta meta menu";
+  align-items: center;
+  column-gap: 0.45rem;
+  padding: 0.25rem 0.3rem;
+  border-radius: var(--radius);
+}
+
+.docker-row:hover {
+  background: var(--bg-elevated);
+}
+
+.docker-row.is-issue {
+  background: var(--danger-bg);
+}
+
+.docker-row.is-ignored {
+  opacity: 0.7;
+}
+
+.docker-row-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.docker-row-status {
+  grid-area: status;
+  min-width: 0;
+}
+
+.docker-row-meta {
+  grid-area: meta;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+
+.docker-row > .menu {
+  grid-area: menu;
+}
+
+.docker-row-more {
+  padding-top: 0.2rem;
+}
+
+.ctx-title {
+  margin: 0 0 0.2rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--fg-tertiary);
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* OCI container form and group drop targets. */
+.oci-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.oci-fieldset {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.oci-fieldset > legend,
+.oci-fieldset > summary {
+  padding: 0 0.3rem;
+  font-weight: 650;
+  font-size: 0.85rem;
+  cursor: default;
+}
+
+details.oci-fieldset > summary {
+  cursor: pointer;
+}
+
+.oci-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.oci-grid .field {
+  margin: 0;
+}
+
+.oci-span2 {
+  grid-column: span 2;
+}
+
+@media (max-width: 40rem) {
+  .oci-span2 {
+    grid-column: auto;
+  }
+}
+
+.oci-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.oci-row > .field-input {
+  flex: 1 1 7rem;
+  min-width: 0;
+  width: auto;
+}
+
+.oci-row > .field-input.oci-narrow {
+  flex: 0 0 5rem;
+}
+
+.oci-row-item[draggable="true"] {
+  cursor: grab;
+}
+
+.docker-card.is-drop {
+  outline: 2px dashed var(--accent, var(--fg-secondary));
+  outline-offset: 2px;
+}
+
+.oci-empty-drop {
+  padding: 0.5rem 0.3rem;
+}
+
+.code-input {
+  font-family: var(--mono);
+  font-size: 0.8rem;
 }

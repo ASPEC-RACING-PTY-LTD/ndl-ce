@@ -1,5 +1,15 @@
 /* Generated from api/openapi/nodal.v1.yaml. Do not edit by hand. */
 
+export interface DockerPref {
+  machine_id?: string;
+  scope?: string;
+  name?: string;
+  ignored?: boolean;
+  note?: string;
+  updated_by?: string;
+  updated_at?: string;
+}
+
 export interface HealthResponse {
   status: "ok" | "starting";
   service: "ndl-control";
@@ -3128,6 +3138,8 @@ export type GameServerTuningPath = "/api/v1/game-servers/{id}/tuning";
 
 export type GetDockerPath = "/api/v1/docker";
 
+export type ListDockerPrefsPath = "/api/v1/docker/prefs";
+
 export type GetDockerContainerPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}";
 
 export type GetDockerContainerLogsPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}/logs";
@@ -3481,6 +3493,12 @@ export type GetStackPath = "/api/v1/stacks/{id}";
 export type ApplyStackPath = "/api/v1/stacks/{id}/apply";
 
 export type PatchStackMemberPath = "/api/v1/stacks/{id}/members/{memberId}";
+
+export type AddOCIGroupMemberPath = "/api/v1/stacks/{id}/members";
+
+export type OciGroupPowerPath = "/api/v1/stacks/{id}/power";
+
+export type UpdateOCIConfigPath = "/api/v1/workloads/{id}/oci";
 
 export type ListGpusPath = "/api/v1/gpus";
 

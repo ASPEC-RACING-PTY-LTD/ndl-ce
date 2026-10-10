@@ -22,6 +22,8 @@ import type { Workload } from "../api/phase5";
 import { metricReading, seriesBySuffix, useWorkloadMetrics, type WorkloadMetricsState } from "../workloadMetrics";
 import type { DockerMachine } from "../generated/openapi";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { OciContainerForm } from "../components/OciContainerForm";
+import { Dialog } from "../ui/Dialog";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import {
   ContainerIPFields,
@@ -121,6 +123,8 @@ export function WorkloadDetailPage() {
   const [expandFS, setExpandFS] = useState(true);
   const [applyNote, setApplyNote] = useState<{ field: string; apply: string; reason: string }[]>([]);
   const [confirm, setConfirm] = useState<"delete" | null>(null);
+  const [ociEdit, setOciEdit] = useState(false);
+  const [ociNote, setOciNote] = useState<string | null>(null);
   const running = item ? item.status === "running" || Boolean(item.unit_active) : false;
   const { series: metrics, state: metricsState } = useWorkloadMetrics(id, running);
 
@@ -558,6 +562,38 @@ export function WorkloadDetailPage() {
 
           {item.kind === "oci" ? (
             <article className="panel">
+              <header className="page-header-row">
+                <h2>Container settings</h2>
+                {mutate ? (
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOciEdit(true)}>
+                    Edit settings
+                  </button>
+                ) : null}
+              </header>
+              {ociNote ? (
+                <p className="banner banner-ok" role="status">
+                  {ociNote}
+                </p>
+              ) : null}
+              <OciSummary item={item} />
+              <Dialog open={ociEdit} title={`Settings for ${item.name}`} wide onClose={() => setOciEdit(false)}>
+                {ociEdit ? (
+                  <OciContainerForm
+                    workload={item}
+                    onCancel={() => setOciEdit(false)}
+                    onDone={(_, message) => {
+                      setOciEdit(false);
+                      setOciNote(message);
+                      void reload();
+                    }}
+                  />
+                ) : null}
+              </Dialog>
+            </article>
+          ) : null}
+
+          {item.kind === "oci" ? (
+            <article className="panel">
               <h2>Logs</h2>
               <p className="page-kicker">
                 Unit {item.unit || `nodal-oci@${item.id}.service`}. Status: {logStatus || "Collecting"}
@@ -883,5 +919,49 @@ export function WorkloadDetailPage() {
         <p>Delete {item.name}? This cannot be undone.</p>
       </ConfirmDialog>
     </section>
+  );
+}
+
+type OciSpecView = {
+  image_pin?: string;
+  network_mode?: string;
+  ipv4_address?: string;
+  ports?: { container_port: number; host_port?: number; protocol?: string }[];
+  env?: { name: string }[];
+  volumes?: { volume_id: string; container_path: string; read_only?: boolean }[];
+};
+
+function OciSummary({ item }: { item: Workload }) {
+  const spec = (item.spec ?? {}) as OciSpecView;
+  const ip = item.nics?.[0]?.ipv4 || (spec.ipv4_address ? spec.ipv4_address.split("/")[0] : "");
+  const network =
+    spec.network_mode === "host" ? "Host network" : spec.network_mode === "bridge" ? (ip ? `Own IP ${ip}` : "Own IP (DHCP)") : "No network";
+  return (
+    <dl className="kv-grid">
+      <div>
+        <dt>Image</dt>
+        <dd>{spec.image_pin || item.image_pin || "Not reported"}</dd>
+      </div>
+      <div>
+        <dt>Network</dt>
+        <dd>{network}</dd>
+      </div>
+      <div>
+        <dt>Ports</dt>
+        <dd>
+          {(spec.ports ?? [])
+            .map((p) => `${p.host_port || p.container_port}→${p.container_port}/${p.protocol || "tcp"}`)
+            .join(", ") || "None"}
+        </dd>
+      </div>
+      <div>
+        <dt>Environment</dt>
+        <dd>{(spec.env ?? []).map((e) => e.name).join(", ") || "None"}</dd>
+      </div>
+      <div>
+        <dt>Volumes</dt>
+        <dd>{(spec.volumes ?? []).map((v) => `${v.container_path}${v.read_only ? " (ro)" : ""}`).join(", ") || "None"}</dd>
+      </div>
+    </dl>
   );
 }

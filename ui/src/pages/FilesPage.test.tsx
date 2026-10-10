@@ -271,4 +271,25 @@ describe("Files manager", () => {
     fireEvent.click(await screen.findByRole("button", { name: "huge.txt" }));
     expect(await screen.findByText(/too large/i)).toBeVisible();
   });
+
+  it("opens a Files workspace tab from a link and duplicates it", async () => {
+    mockApi({
+      ...baseRoutes,
+      "GET /api/v1/workloads/wl-1/files": { status: 200, body: listed },
+    });
+    try {
+      localStorage.clear();
+    } catch {
+      // ignore
+    }
+    window.history.replaceState({}, "", "/files?kind=workload&id=wl-1&path=%2F&name=accept-ct");
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /^files$/i })).toBeVisible();
+    expect(await screen.findByRole("tab", { name: /accept-ct/i })).toBeVisible();
+    expect(await screen.findByText("readme.txt")).toBeVisible();
+    expect(window.location.pathname + window.location.search).toBe("/files");
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /accept-ct/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^duplicate$/i }));
+    await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
+  });
 });

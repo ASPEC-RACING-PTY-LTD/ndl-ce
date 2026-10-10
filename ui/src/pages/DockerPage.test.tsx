@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,8 +107,9 @@ describe("Docker page", () => {
     expect(screen.getAllByRole("link", { name: /add features/i }).length).toBeGreaterThan(0);
   });
 
-  it("renders hierarchy, update-failed label, and restart", async () => {
+  it("sorts groups into needs attention and healthy, restarts, and saves an ignore", async () => {
     const posted: string[] = [];
+    const prefs: string[] = [];
     mockApi({
       ...baseRoutes,
       "/api/v1/docker": {
@@ -229,36 +230,102 @@ describe("Docker page", () => {
         posted.push(String(init?.body ?? ""));
         return { status: 200, body: { ok: true, message: "restart" } };
       },
+      "GET /api/v1/docker/prefs": { status: 200, body: { items: [] } },
+      "PUT /api/v1/docker/prefs": (init) => {
+        prefs.push(String(init?.body ?? ""));
+        return { status: 200, body: JSON.parse(String(init?.body ?? "{}")) };
+      },
     });
+    vi.spyOn(window, "prompt").mockReturnValue("noisy healthcheck");
     window.history.replaceState({}, "", "/docker");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^docker$/i })).toBeVisible();
-    fireEvent.click(await screen.findByRole("button", { name: /machine aspecracing/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /project shop/i }));
-    fireEvent.click(screen.getByRole("button", { name: /project aspecracing/i }));
-    expect(await screen.findByText(/shop-web-1/i)).toBeVisible();
-    expect(screen.getByText(/aspecracing-admin-1/i)).toBeVisible();
-    expect(screen.getAllByRole("columnheader", { name: /^service$/i })).toHaveLength(1);
-    expect(screen.getAllByRole("columnheader", { name: /^status$/i })).toHaveLength(1);
-    expect(screen.getAllByRole("columnheader", { name: /^image$/i })).toHaveLength(1);
-    expect(document.querySelectorAll(".docker-table").length).toBe(1);
-    expect(screen.getAllByText(/running · update failed/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/\/srv\/shop/)).toBeVisible();
+    const attention = await screen.findByRole("region", { name: /needs attention/i });
+    const healthy = screen.getByRole("region", { name: /^healthy/i });
+    expect(await within(attention).findByText(/shop-web-1/i)).toBeVisible();
+    expect(within(attention).getByRole("button", { name: /group shop/i })).toBeVisible();
+    expect(within(healthy).getByText(/aspecracing-admin-1/i)).toBeVisible();
+    expect(within(healthy).queryByText(/shop-web-1/i)).toBeNull();
+    expect(screen.getAllByText(/\/srv\/shop/).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /engines with no containers/i })).toBeVisible();
-    expect(screen.queryByText(/no services match the current filters/i)).toBeNull();
-    expect(screen.queryByRole("button", { name: /cursor/i })).toBeNull();
-    fireEvent.click(screen.getAllByRole("button", { name: /more actions/i })[0]);
+    expect(screen.queryByRole("heading", { name: /^cursor$/i })).toBeNull();
+    expect(document.querySelector(".docker-section.docker-idle .docker-card")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /shop-web-1 actions/i }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^restart$/i }));
     await waitFor(() => expect(posted.some((b) => b.includes("restart"))).toBe(true));
+
+    fireEvent.contextMenu(within(attention).getByText(/shop-web-1/i));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^ignore container$/i }));
+    await waitFor(() => expect(prefs.length).toBe(1));
+    const saved = JSON.parse(prefs[0]);
+    expect(saved).toMatchObject({ machine_id: "host", scope: "container", name: "shop-web-1", ignored: true, note: "noisy healthcheck" });
+  });
+
+  it("keeps an ignored group out of needs attention", async () => {
+    mockApi({
+      ...baseRoutes,
+      "/api/v1/docker": {
+        status: 200,
+        body: {
+          summary: { machines: 1, projects: 1, containers: 1, running: 1, stopped: 0, healthy: 0, degraded: 0, critical: 1, daemons_down: 0, update_failed: 0 },
+          machines: [
+            {
+              id: "ct-1",
+              name: "apps",
+              kind: "system-container",
+              daemon_ok: true,
+              health: "critical",
+              container_count: 1,
+              projects: [
+                {
+                  id: "ct-1/flaky",
+                  machine_id: "ct-1",
+                  name: "flaky",
+                  working_dir: "/opt/flaky",
+                  health: "critical",
+                  status_label: "Unhealthy",
+                  running: 1,
+                  containers: [
+                    {
+                      id: "ct-1/f1",
+                      machine_id: "ct-1",
+                      machine_name: "apps",
+                      container_id: "f1",
+                      name: "flaky-app-1",
+                      project: "flaky",
+                      working_dir: "/opt/flaky",
+                      state: "running",
+                      health: "critical",
+                      status_label: "Unhealthy",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          projects: [],
+          containers: [],
+        },
+      },
+      "GET /api/v1/docker/prefs": {
+        status: 200,
+        body: { items: [{ machine_id: "ct-1", scope: "project", name: "flaky", ignored: true, note: "always red" }] },
+      },
+    });
+    window.history.replaceState({}, "", "/docker");
+    render(<App />);
+    const attention = await screen.findByRole("region", { name: /needs attention/i });
+    expect(await within(attention).findByText(/nothing needs attention/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /ignored groups/i }));
+    expect(await screen.findByText(/flaky-app-1/i)).toBeVisible();
   });
 
   it("pins docker column tracks in CSS so names cannot shift the grid", () => {
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../styles.css"), "utf8").replace(/\r\n/g, "\n");
     expect(css).toContain("table-layout: fixed");
-    expect(css).toContain(".docker-table .docker-col-service");
-    expect(css).toContain(".docker-table .docker-col-status");
-    expect(css).toContain(".docker-table .docker-col-image");
-    expect(css).toContain(".docker-machine-head,\n.docker-project-head");
-    expect(css).toContain(".docker-idle");
+    expect(css).toContain(".docker-table-flat th:nth-child(1)");
+    expect(css).toContain(".docker-grid");
+    expect(css).toContain("grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr))");
   });
 });

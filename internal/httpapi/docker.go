@@ -279,3 +279,78 @@ func findDockerContainer(inv docker.Inventory, machineID, containerID string) *d
 	}
 	return nil
 }
+
+func dockerPrefJSON(p appdb.DockerPref) map[string]any {
+	return map[string]any{
+		"machine_id": p.MachineID, "scope": p.Scope, "name": p.Name, "ignored": p.Ignored,
+		"note": p.Note, "updated_by": p.UpdatedBy, "updated_at": p.UpdatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+// listDockerPrefs returns the saved Docker Management choices, such as
+// containers marked as ignored.
+func (s *Server) listDockerPrefs(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireDocker(w, r, rbac.ComputeRead)
+	if !ok {
+		return
+	}
+	prefs, err := s.Store.ListDockerPrefs(r.Context(), p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]map[string]any, 0, len(prefs))
+	for _, pref := range prefs {
+		out = append(out, dockerPrefJSON(pref))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+// putDockerPref saves or clears a choice for one container or Compose
+// project. It stays until someone changes it, and survives recreation
+// because it is keyed by name.
+func (s *Server) putDockerPref(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireDocker(w, r, rbac.ComputeModify)
+	if !ok {
+		return
+	}
+	var req struct {
+		MachineID string `json:"machine_id"`
+		Scope     string `json:"scope"`
+		Name      string `json:"name"`
+		Ignored   bool   `json:"ignored"`
+		Note      string `json:"note"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	req.MachineID, req.Name, req.Note = strings.TrimSpace(req.MachineID), strings.TrimSpace(req.Name), strings.TrimSpace(req.Note)
+	if req.Scope != "container" && req.Scope != "project" {
+		writeErr(w, http.StatusBadRequest, "scope must be container or project")
+		return
+	}
+	if req.MachineID == "" || req.Name == "" || len(req.Name) > 255 || len(req.Note) > 500 {
+		writeErr(w, http.StatusBadRequest, "machine_id and name are required")
+		return
+	}
+	if !req.Ignored && req.Note == "" {
+		if err := s.Store.DeleteDockerPref(r.Context(), p.User.ClusterID, req.MachineID, req.Scope, req.Name); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "docker.pref.clear", "ok", req.Scope+" "+req.Name)
+		writeJSON(w, http.StatusOK, map[string]any{"machine_id": req.MachineID, "scope": req.Scope, "name": req.Name, "ignored": false})
+		return
+	}
+	pref := appdb.DockerPref{
+		ClusterID: p.User.ClusterID, MachineID: req.MachineID, Scope: req.Scope, Name: req.Name,
+		Ignored: req.Ignored, Note: req.Note, UpdatedBy: p.User.Username, UpdatedAt: s.now(),
+	}
+	if err := s.Store.PutDockerPref(r.Context(), pref); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "docker.pref.set", "ok", req.Scope+" "+req.Name)
+	writeJSON(w, http.StatusOK, dockerPrefJSON(pref))
+}

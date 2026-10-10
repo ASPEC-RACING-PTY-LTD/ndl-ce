@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ActionMenu } from "../components/ActionMenu";
 import { Icon } from "../components/Icon";
 import { QuickSwitch } from "../components/QuickSwitch";
@@ -7,6 +7,7 @@ import { canMutate } from "../rbac";
 import { useSession } from "../session";
 import { statusLabel } from "../terminal/types";
 import { useTerminalWorkspace } from "../terminal/workspace";
+import { useTabDrag } from "../components/useTabDrag";
 
 export function TerminalWorkspacePage() {
   const session = useSession();
@@ -20,6 +21,8 @@ export function TerminalWorkspacePage() {
     setActive,
     openNew,
     newHere,
+    duplicate,
+    moveTab,
     rename,
     closeTab,
     closeAll,
@@ -28,52 +31,14 @@ export function TerminalWorkspacePage() {
     closeDisconnected,
     reconnect,
     replaceCurrent,
-    nextTab,
-    prevTab,
   } = useTerminalWorkspace();
   const [qs, setQs] = useState(false);
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const qsOpen = useRef(false);
-  qsOpen.current = qs;
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (!event.altKey || event.ctrlKey || event.metaKey) {
-        return;
-      }
-      const tag = (event.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-        if (event.key !== "n" && event.key !== "N") {
-          return;
-        }
-      }
-      if (event.key === "n" || event.key === "N") {
-        event.preventDefault();
-        setQs(true);
-        return;
-      }
-      if (qsOpen.current) {
-        return;
-      }
-      if (event.key === "]") {
-        event.preventDefault();
-        nextTab();
-      }
-      if (event.key === "[") {
-        event.preventDefault();
-        prevTab();
-      }
-      if (event.key === "w" || event.key === "W") {
-        event.preventDefault();
-        if (activeId) {
-          closeTab(activeId);
-        }
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [activeId, closeTab, nextTab, prevTab]);
+  const drag = useTabDrag(
+    tabs.map((t) => t.tabId),
+    moveTab,
+  );
 
   useEffect(() => {
     if (!menu) {
@@ -129,19 +94,30 @@ export function TerminalWorkspacePage() {
         <h1 id="term-heading" className="term-page-title">
           Terminal
         </h1>
-        <div className="term-tabs" role="tablist" aria-label="Terminal sessions">
+        <div className="term-tabs" role="tablist" aria-label="Terminal sessions" ref={drag.listRef}>
           {tabs.map((tab) => (
             <button
               key={tab.tabId}
               type="button"
               role="tab"
               aria-selected={tab.tabId === activeId}
-              className={"term-tab" + (tab.tabId === activeId ? " is-active" : "") + (tab.target.kind === "node" ? " is-host" : "")}
+              className={
+                "term-tab" +
+                (tab.tabId === activeId ? " is-active" : "") +
+                (tab.target.kind === "node" ? " is-host" : "") +
+                (drag.draggingId === tab.tabId ? " is-dragging" : "")
+              }
               data-tab-id={tab.tabId}
               data-io-session={tab.ioSessionId || ""}
               data-session-target={`${tab.target.kind}:${tab.target.id}`}
               title={`${tab.title} · ${tab.target.typeLabel} · ${statusLabel(tab.state)}`}
-              onClick={() => setActive(tab.tabId)}
+              onPointerDown={(event: ReactPointerEvent<HTMLButtonElement>) => drag.onPointerDown(event, tab.tabId)}
+              onClick={() => {
+                if (drag.consumeClick()) {
+                  return;
+                }
+                setActive(tab.tabId);
+              }}
               onMouseDown={(event) => {
                 if (event.button === 1) {
                   event.preventDefault();
@@ -169,7 +145,6 @@ export function TerminalWorkspacePage() {
             type="button"
             aria-label="New terminal"
             title="New terminal"
-            aria-keyshortcuts="Alt+N"
             onClick={() => setQs(true)}
           >
             <Icon name="create" size={14} />
@@ -198,6 +173,7 @@ export function TerminalWorkspacePage() {
             label="Session actions"
             items={[
               { label: "Rename", onClick: () => renameTab(active.tabId, active.title) },
+              { label: "Duplicate", onClick: () => duplicate(active.tabId) },
               { label: "New Terminal Here", onClick: () => newHere(active.tabId) },
               ...(active.state === "disconnected" || active.state === "closed"
                 ? [{ label: "Reconnect", onClick: () => reconnect(active.tabId) }]
@@ -219,14 +195,7 @@ export function TerminalWorkspacePage() {
             ]}
           />
         ) : null}
-        <button className="btn btn-sm btn-ghost" type="button" onClick={() => setQs(true)}>
-          Quick Switch
-        </button>
       </div>
-      <p className="term-hint muted">
-        Alt+N new terminal · Alt+[ Alt+] tabs · Alt+W close. Shortcuts skip when a dialog is open. They do not bind Ctrl
-        combinations used by shells, tmux, or Vim.
-      </p>
       <TerminalPane />
       {menu && menuTab ? (
         <div
@@ -240,6 +209,9 @@ export function TerminalWorkspacePage() {
           <button type="button" role="menuitem" onClick={() => menuAction(() => renameTab(menuTab.tabId, menuTab.title))}>
             Rename
           </button>
+          <button type="button" role="menuitem" onClick={() => menuAction(() => duplicate(menuTab.tabId))}>
+            Duplicate
+          </button>
           <button type="button" role="menuitem" onClick={() => menuAction(() => newHere(menuTab.tabId))}>
             New Terminal Here
           </button>
@@ -248,6 +220,23 @@ export function TerminalWorkspacePage() {
               Reconnect
             </button>
           ) : null}
+          <hr />
+          <button
+            type="button"
+            role="menuitem"
+            disabled={menuIndex <= 0}
+            onClick={() => menuAction(() => moveTab(menuTab.tabId, menuIndex - 1))}
+          >
+            Move Left
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={menuIndex < 0 || menuIndex >= tabs.length - 1}
+            onClick={() => menuAction(() => moveTab(menuTab.tabId, menuIndex + 1))}
+          >
+            Move Right
+          </button>
           <hr />
           <button
             type="button"

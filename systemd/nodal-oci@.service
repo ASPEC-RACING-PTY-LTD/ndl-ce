@@ -11,6 +11,7 @@ ExecStart=/usr/sbin/ndl-oci-launch %i
 # Ignore kill when the task is already gone so a stopped OCI workload is
 # not reported as a failed systemd unit.
 ExecStop=-/usr/bin/ctr --namespace nodal tasks kill %i
+ExecStopPost=-/usr/sbin/ndl-oci-launch --teardown %i
 KillMode=mixed
 Restart=no
 TimeoutStartSec=120
