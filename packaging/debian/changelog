@@ -1,4 +1,4 @@
-nodal (1.2.1) UNRELEASED; urgency=medium
+nodal (1.2.2) trixie; urgency=medium
 
   * OCI containers have real networking: their own IP on a network (DHCP
     or a fixed address and gateway), the host network, DNS servers and
@@ -20,7 +20,7 @@ nodal (1.2.1) UNRELEASED; urgency=medium
     Files in the Compose folder. Ignored containers and projects are saved
     until changed.
 
- -- No-dal <packaging@no-dal.com>  Sun, 11 Oct 2026 03:30:00 +0000
+ -- No-dal <packaging@no-dal.com>  Sat, 10 Oct 2026 17:24:30 +0000
 
 nodal (1.2.1) trixie; urgency=medium
 
