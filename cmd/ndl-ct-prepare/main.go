@@ -24,12 +24,17 @@ func prepareCT(e *lxc.Engine, args []string) error {
 	if len(args) != 1 || args[0] == "" {
 		return fmt.Errorf("usage: ndl-ct-prepare WORKLOAD-UUID")
 	}
+	// Without last-applied there is nothing to start. Say so, instead of
+	// letting lxc-start fail with exit 1 and nothing in the journal.
+	if _, err := e.LastApplied(args[0]); err != nil {
+		return fmt.Errorf("workload %s has no last-applied state (%v); it was deleted or its data is missing. If it was deleted, run: systemctl disable nodal-ct@%s.service", args[0], err, args[0])
+	}
 	if err := e.RewriteRuntimeConfig(args[0]); err != nil {
 		return err
 	}
 	applied, err := e.LastApplied(args[0])
 	if err != nil {
-		return nil
+		return err
 	}
 	d := storage.Directory{Run: storage.LiveRun}
 	rootfs := applied.Spec.RootfsPath

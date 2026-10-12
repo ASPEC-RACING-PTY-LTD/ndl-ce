@@ -30,6 +30,9 @@ type Engine struct {
 	FakeUnpack   bool
 	ReadyWait    time.Duration
 	LiveUnits    map[string]bool
+
+	// guestNet holds the last failed guest network probe per workload UUID.
+	guestNet sync.Map
 }
 
 func (e *Engine) dataDir() string {
@@ -687,6 +690,9 @@ func (e *Engine) observeOne(ctx context.Context, h Hint) Observed {
 	}
 	if active && pid > 0 {
 		out.Status = StatusRunning
+		if w := e.GuestNetWarning(h.WorkloadID); w != "" {
+			out.Warnings = append(out.Warnings, w)
+		}
 		return out
 	}
 	if active && pid == 0 {

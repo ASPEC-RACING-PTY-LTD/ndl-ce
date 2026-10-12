@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Runner executes a validated argv vector and returns combined output.
@@ -43,6 +44,9 @@ func (e *Engine) runStdin(ctx context.Context, stdin *os.File, name string, args
 		return nil, nil
 	}
 	cmd := exec.CommandContext(ctx, name, args...)
+	// A process left inside a guest by lxc-attach can hold the output pipe
+	// open after lxc-attach itself is killed. Do not wait on it forever.
+	cmd.WaitDelay = 5 * time.Second
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}

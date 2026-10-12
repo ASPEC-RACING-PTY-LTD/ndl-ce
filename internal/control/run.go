@@ -23,6 +23,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/httpapi"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
+	"github.com/no-dal/ndl-ce/internal/sdnotify"
 	"github.com/no-dal/ndl-ce/internal/store"
 	"github.com/no-dal/ndl-ce/internal/transport"
 	"github.com/no-dal/ndl-ce/migrations"
@@ -87,11 +88,10 @@ func Run(cfg Config) error {
 		return err
 	}
 	defer db.Close()
-	bootCtx, bootCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	if err := db.PingContext(bootCtx); err != nil {
-		bootCancel()
+	if err := waitForDB(db, dbWaitTimeout); err != nil {
 		return fmt.Errorf("postgres: %w", err)
 	}
+	bootCtx, bootCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	files, err := store.List(migrations.FS, ".")
 	if err != nil {
 		bootCancel()
@@ -208,7 +208,48 @@ func Run(cfg Config) error {
 	if err != nil {
 		return err
 	}
+	// The database is migrated and the control socket is open, so API
+	// callers queue on it rather than see connection refused.
+	if err := sdnotify.Ready(); err != nil {
+		log.Printf("sd_notify READY: %v", err)
+	}
 	return serveHTTPServers(runCtx, instances)
+}
+
+// dbWaitTimeout bounds how long control waits for PostgreSQL at startup.
+// At boot postgresql.service reports finished before the cluster accepts
+// connections, so a single ping fails and the unit restart-loops.
+const dbWaitTimeout = 90 * time.Second
+
+type pinger interface {
+	PingContext(ctx context.Context) error
+}
+
+// waitForDB pings until the database answers or the timeout passes.
+func waitForDB(db pinger, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	delay := 250 * time.Millisecond
+	for attempt := 1; ; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := db.PingContext(ctx)
+		cancel()
+		if err == nil {
+			if attempt > 1 {
+				log.Printf("postgres: ready after %d attempt(s)", attempt)
+			}
+			return nil
+		}
+		if time.Now().Add(delay).After(deadline) {
+			return err
+		}
+		if attempt == 1 {
+			log.Printf("postgres: not ready yet (%v); retrying for up to %s", err, timeout)
+		}
+		time.Sleep(delay)
+		if delay < 4*time.Second {
+			delay *= 2
+		}
+	}
 }
 
 func controlHTTPInstances(cfg Config, srv *httpapi.Server, handler http.Handler, challenges *ndltls.ChallengeMem) ([]*httpInstance, error) {

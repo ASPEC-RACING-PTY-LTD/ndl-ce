@@ -651,7 +651,11 @@ func (e *Engine) stopDnsmasq(ctx context.Context, id string) error {
 	if _, err := uuidParse(id); err != nil {
 		return nil
 	}
-	return e.run(ctx, "/usr/bin/systemctl", "stop", "ndl-dnsmasq@"+id+".service")
+	// Disable as well as stop: an instance left enabled after its config is
+	// removed fails on every boot.
+	unit := "ndl-dnsmasq@" + id + ".service"
+	_ = e.run(ctx, "/usr/bin/systemctl", "disable", "--now", unit)
+	return e.run(ctx, "/usr/bin/systemctl", "stop", unit)
 }
 
 func (e *Engine) checkNFT(plan Plan) error {

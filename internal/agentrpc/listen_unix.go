@@ -5,6 +5,7 @@ package agentrpc
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/peercred"
+	"github.com/no-dal/ndl-ce/internal/sdnotify"
 	"github.com/no-dal/ndl-ce/internal/transport"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -42,6 +44,10 @@ func Serve(h *Handler) error {
 	ln, err := listenAgent()
 	if err != nil {
 		return err
+	}
+	// The socket accepts from here on. Type=notify units wait for this.
+	if err := sdnotify.Ready(); err != nil {
+		log.Printf("sd_notify READY: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle(agentv1connect.NewAgentServiceHandler(h))

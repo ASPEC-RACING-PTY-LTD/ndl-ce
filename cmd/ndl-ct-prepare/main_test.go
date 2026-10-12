@@ -131,3 +131,11 @@ func TestPrepareCTUsage(t *testing.T) {
 		t.Fatal("want usage error")
 	}
 }
+
+func TestPrepareCTFailsClearlyWithoutLastApplied(t *testing.T) {
+	id := uuid.NewString()
+	err := prepareCT(&lxc.Engine{DataDir: t.TempDir(), SkipHostCmds: true}, []string{id})
+	if err == nil || !strings.Contains(err.Error(), "no last-applied state") || !strings.Contains(err.Error(), "nodal-ct@"+id) {
+		t.Fatalf("err = %v", err)
+	}
+}

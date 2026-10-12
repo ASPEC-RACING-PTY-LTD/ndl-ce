@@ -5,6 +5,8 @@ Documentation=https://no-dal.com
 After=network.target systemd-networkd.service
 StartLimitIntervalSec=30
 StartLimitBurst=8
+# A deleted network leaves no config. Skip instead of failing every boot.
+ConditionPathExists=/var/lib/ndl/net/dnsmasq/%i.conf
 
 [Service]
 Type=simple

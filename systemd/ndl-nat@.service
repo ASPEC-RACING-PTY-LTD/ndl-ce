@@ -4,6 +4,8 @@ Documentation=https://no-dal.com
 # Isolated NAT only. Do not bind this unit to ndl-control or ndl-agent.
 After=network.target systemd-networkd.service systemd-sysctl.service nftables.service
 Wants=systemd-networkd.service
+# A deleted network leaves no rules. Skip instead of failing every boot.
+ConditionPathExists=/var/lib/ndl/net/nft/%i.nft
 
 [Service]
 Type=oneshot

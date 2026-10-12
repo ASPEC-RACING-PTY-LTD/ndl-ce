@@ -299,3 +299,39 @@ func TestEngineDeleteResetsFailedUnit(t *testing.T) {
 		t.Fatalf("missing reset-failed: %s", joined)
 	}
 }
+
+func TestContainerdRunClearsStaleSnapshot(t *testing.T) {
+	id := uuid.NewString()
+	other := uuid.NewString()
+	for _, tc := range []struct {
+		name  string
+		tasks string
+		clear bool
+	}{
+		{"absent", "TASK PID STATUS\n" + other + " 10 RUNNING\n", true},
+		{"stopped", "TASK PID STATUS\n" + id + " 0 STOPPED\n", true},
+		{"running", "TASK PID STATUS\n" + id + " 42 RUNNING\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			yes := true
+			var calls []string
+			c := &Containerd{Available: &yes, Exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				calls = append(calls, strings.Join(args, " "))
+				if strings.HasSuffix(strings.Join(args, " "), "tasks ls") {
+					return []byte(tc.tasks), nil
+				}
+				return nil, nil
+			}}
+			if err := c.Run(context.Background(), Spec{WorkloadID: id, Name: "x", ImagePin: "busybox:latest"}); err != nil {
+				t.Fatal(err)
+			}
+			all := strings.Join(calls, "\n")
+			if got := strings.Contains(all, "snapshots rm "+id); got != tc.clear {
+				t.Fatalf("snapshot cleared = %v, want %v:\n%s", got, tc.clear, all)
+			}
+			if !strings.Contains(calls[len(calls)-1], " run --rm ") {
+				t.Fatalf("run must come last:\n%s", all)
+			}
+		})
+	}
+}

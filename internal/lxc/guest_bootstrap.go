@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/guestextras"
 )
@@ -22,6 +23,23 @@ func (e *Engine) attach(ctx context.Context, id string, cmd ...string) ([]byte, 
 	}
 	args = append(args, cmd...)
 	return e.run(ctx, BinLXCAttach, args...)
+}
+
+// Reachability probes inside a guest are bounded. With no route out of the
+// guest a resolver lookup can hang far longer than its own timeout, and an
+// unbounded probe stalls whoever called it (agent startup included).
+const (
+	guestDNSProbeTimeout = 3 * time.Second
+	guestNetProbeTimeout = 8 * time.Second
+	guestUnitTimeout     = 15 * time.Second
+)
+
+// probe runs one in-guest check under its own deadline.
+func (e *Engine) probe(ctx context.Context, d time.Duration, id string, cmd ...string) error {
+	ctx, cancel := context.WithTimeout(ctx, d)
+	defer cancel()
+	_, err := e.attach(ctx, id, cmd...)
+	return err
 }
 
 func (e *Engine) waitNeedsIPv4(id string) bool {
@@ -58,7 +76,9 @@ func (e *Engine) bootstrapGuest(ctx context.Context, id string, reconcileOnly bo
 	if guestextras.Family(spec.ImagePin) == "alpine" {
 		return e.bootstrapAlpineGuest(ctx, id, rootfs, spec, first, reconcileOnly)
 	}
-	if err := e.ensureGuestDNS(ctx, id, rootfs, spec); err != nil {
+	err = e.ensureGuestDNS(ctx, id, rootfs, spec)
+	e.noteGuestNet(id, err)
+	if err != nil {
 		if first && !reconcileOnly {
 			return err
 		}
@@ -81,7 +101,9 @@ func (e *Engine) bootstrapGuest(ctx context.Context, id string, reconcileOnly bo
 }
 
 func (e *Engine) bootstrapAlpineGuest(ctx context.Context, id, rootfs string, spec Spec, first, reconcileOnly bool) error {
-	if err := e.ensureAlpineGuestDNS(ctx, id, rootfs, spec); err != nil {
+	err := e.ensureAlpineGuestDNS(ctx, id, rootfs, spec)
+	e.noteGuestNet(id, err)
+	if err != nil {
 		if first && !reconcileOnly {
 			return err
 		}
@@ -111,7 +133,10 @@ func (e *Engine) ensureAlpineGuestDNS(ctx context.Context, id, rootfs string, sp
 
 func (e *Engine) guestAlpineReachable(ctx context.Context, id string) bool {
 	for _, argv := range alpineReachabilityArgv() {
-		if _, err := e.attach(ctx, id, argv...); err == nil {
+		if ctx.Err() != nil {
+			return false
+		}
+		if e.probe(ctx, guestNetProbeTimeout, id, argv...) == nil {
 			return true
 		}
 	}
@@ -138,7 +163,7 @@ func (e *Engine) ensureGuestDNS(ctx context.Context, id, rootfs string, spec Spe
 	if err := writeGuestDNSFallback(rootfs, spec); err != nil {
 		return fmt.Errorf("dns fallback: %w", err)
 	}
-	_, _ = e.attach(ctx, id, "/bin/systemctl", "restart", "systemd-resolved")
+	_ = e.probe(ctx, guestUnitTimeout, id, "/bin/systemctl", "restart", "systemd-resolved")
 	if e.guestDNSOK(ctx, id) {
 		return nil
 	}
@@ -150,19 +175,29 @@ func (e *Engine) ensureGuestDNS(ctx context.Context, id, rootfs string, spec Spe
 
 func (e *Engine) guestDNSOK(ctx context.Context, id string) bool {
 	hosts := []string{"deb.debian.org", "github.com", "raw.githubusercontent.com", "api.github.com"}
+	const need = 2
 	ok := 0
-	for _, host := range hosts {
-		if _, err := e.attach(ctx, id, "/usr/bin/getent", "hosts", host); err == nil {
+	for i, host := range hosts {
+		if ctx.Err() != nil || ok+len(hosts)-i < need {
+			return false
+		}
+		if e.probe(ctx, guestDNSProbeTimeout, id, "/usr/bin/getent", "hosts", host) == nil {
 			ok++
+			if ok >= need {
+				return true
+			}
 		}
 	}
-	return ok >= 2
+	return false
 }
 
 func (e *Engine) guestTCP443OK(ctx context.Context, id string) bool {
 	targets := []string{"deb.debian.org", "github.com", "1.1.1.1"}
 	for _, host := range targets {
-		_, err := e.attach(ctx, id, "/usr/bin/python3", "-c",
+		if ctx.Err() != nil {
+			return false
+		}
+		err := e.probe(ctx, guestNetProbeTimeout, id, "/usr/bin/python3", "-c",
 			"import socket,sys;s=socket.create_connection(('"+host+"',443),5);s.close()")
 		if err == nil {
 			return true

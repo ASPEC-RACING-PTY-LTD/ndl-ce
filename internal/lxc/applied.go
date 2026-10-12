@@ -3,11 +3,14 @@ package lxc
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/no-dal/ndl-ce/internal/guestextras"
 )
 
 func (e *Engine) lastAppliedPath(id string) string {
@@ -119,15 +122,95 @@ func (e *Engine) RewriteRuntimeConfig(id string) error {
 // (network, locale, nano) into the mounted rootfs. Idempotent. Running
 // guests are not stopped; rewritten LXC keys load on the next start, and
 // guest files appear immediately in a mounted rootfs.
+//
+// Each running guest is reconciled under its own deadline and a few at a
+// time, so one guest without a network cannot hold up the others. A guest
+// whose network probes fail is recorded and shown as a workload warning.
 func (e *Engine) ReconcileRuntimeConfigs() {
-	for _, id := range e.ListAppliedIDs() {
-		_ = e.writeAppliedConfig(id)
-		pid, _, err := e.lxcInfo(context.Background(), id)
-		if err == nil && pid > 0 {
-			_ = e.bootstrapGuest(context.Background(), id, true)
-			if applied, aerr := e.readApplied(id); aerr == nil {
-				_ = e.applyLiveCgroups(context.Background(), id, applied.Spec)
-			}
-		}
+	ids := e.ListAppliedIDs()
+	sem := make(chan struct{}, reconcileParallel)
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(id string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			e.reconcileOne(id)
+		}(id)
 	}
+	wg.Wait()
+}
+
+const (
+	reconcileParallel = 4
+	reconcileTimeout  = 60 * time.Second
+)
+
+func (e *Engine) reconcileOne(id string) {
+	_ = e.writeAppliedConfig(id)
+	ctx, cancel := context.WithTimeout(context.Background(), reconcileTimeout)
+	defer cancel()
+	pid, _, err := e.lxcInfo(ctx, id)
+	if err != nil || pid <= 0 {
+		e.guestNet.Delete(id)
+		return
+	}
+	if err := e.bootstrapGuest(ctx, id, true); err != nil {
+		log.Printf("container %s: guest reconcile: %v", id, err)
+	}
+	if applied, aerr := e.readApplied(id); aerr == nil {
+		_ = e.applyLiveCgroups(context.Background(), id, applied.Spec)
+	}
+}
+
+// noteGuestNet records the outcome of the last guest network probe.
+func (e *Engine) noteGuestNet(id string, err error) {
+	if err == nil {
+		e.guestNet.Delete(id)
+		return
+	}
+	e.guestNet.Store(id, "guest network check failed: "+err.Error()+"; the container may not reach its gateway, DNS or the internet")
+}
+
+// GuestNetWarning returns the last failed guest network probe, if any.
+func (e *Engine) GuestNetWarning(id string) string {
+	if v, ok := e.guestNet.Load(id); ok {
+		return v.(string)
+	}
+	return ""
+}
+
+// RecheckGuestNet re-probes guests that last failed a network check and
+// clears the warning once they can resolve or connect out again. It never
+// rewrites guest files.
+func (e *Engine) RecheckGuestNet() {
+	var ids []string
+	e.guestNet.Range(func(k, _ any) bool {
+		ids = append(ids, k.(string))
+		return true
+	})
+	for _, id := range ids {
+		ctx, cancel := context.WithTimeout(context.Background(), reconcileTimeout)
+		pid, _, err := e.lxcInfo(ctx, id)
+		switch {
+		case err != nil || pid <= 0:
+			e.guestNet.Delete(id)
+		case e.guestNetReachable(ctx, id):
+			e.guestNet.Delete(id)
+			log.Printf("container %s: guest network check passes again", id)
+		}
+		cancel()
+	}
+}
+
+func (e *Engine) guestNetReachable(ctx context.Context, id string) bool {
+	applied, err := e.readApplied(id)
+	if err != nil {
+		return false
+	}
+	if guestextras.Family(applied.Spec.ImagePin) == "alpine" {
+		return e.guestAlpineReachable(ctx, id)
+	}
+	return e.guestDNSOK(ctx, id) || e.guestTCP443OK(ctx, id)
 }

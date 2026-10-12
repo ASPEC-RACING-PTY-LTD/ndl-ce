@@ -1,17 +1,24 @@
 [Unit]
 Description=No-dal control plane
 After=network.target postgresql.service ndl-control.socket
+# postgresql.service is a oneshot umbrella that finishes before the cluster
+# accepts connections. Order after the Debian 13 cluster unit too; control
+# also retries the database at startup. Ordering only, no dependency.
+After=postgresql@17-main.service ndl-agent.service
 Requires=ndl-control.socket
 Documentation=https://no-dal.com
 # Workloads must not use BindsTo, PartOf, or Requires against this unit.
 
 [Service]
-Type=simple
+# READY=1 is sent once the database is migrated and the listeners are bound.
+Type=notify
+TimeoutStartSec=300
 User=ndl-control
 Group=ndl-control
 EnvironmentFile=-/etc/ndl/control.env
 ExecStart=/usr/sbin/ndl-control
 Restart=on-failure
+RestartSec=2
 KillSignal=SIGTERM
 # Do not claim RuntimeDirectory=ndl; the agent socket owns /run/ndl.
 AmbientCapabilities=CAP_NET_BIND_SERVICE

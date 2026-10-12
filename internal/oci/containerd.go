@@ -294,8 +294,29 @@ func (c *Containerd) Run(ctx context.Context, spec Spec) error {
 	if err != nil {
 		return err
 	}
+	c.clearStale(ctx, spec.WorkloadID)
 	_, err = c.run(ctx, argv[0], argv[1:]...)
 	return err
+}
+
+// clearStale removes a leftover task, container record and snapshot from a
+// run that did not exit cleanly (host power loss, killed launcher). `ctr run
+// --rm` otherwise refuses with `snapshot "<id>": already exists` on every
+// start. A running task is never touched.
+func (c *Containerd) clearStale(ctx context.Context, workloadID string) {
+	out, err := c.run(ctx, BinCTR, "--namespace", c.ns(), "tasks", "ls")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 3 && f[0] == workloadID && f[2] == "RUNNING" {
+			return
+		}
+	}
+	_, _ = c.run(ctx, BinCTR, "--namespace", c.ns(), "tasks", "delete", workloadID)
+	_, _ = c.run(ctx, BinCTR, "--namespace", c.ns(), "containers", "delete", workloadID)
+	_, _ = c.run(ctx, BinCTR, "--namespace", c.ns(), "snapshots", "rm", workloadID)
 }
 
 func (c *Containerd) Stop(ctx context.Context, workloadID string) error {

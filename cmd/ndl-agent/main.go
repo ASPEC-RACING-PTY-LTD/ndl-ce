@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
@@ -47,7 +48,13 @@ func main() {
 	ctbackup.RecoverOwnedFreezes()
 	go ctbackup.WatchOwnedFreezes(nil)
 	lxc.EnsureHostKeyringQuota()
-	reconcileRuntimeLXC(h.Workloads)
+	// Guest reconcile attaches into every running container and probes its
+	// network. It must never delay serving the agent socket: while it ran
+	// here, control could not poll the agent and the node showed stale.
+	go reconcileRuntimeLXC(h.Workloads)
+	go watchGuestNet(h.Workloads)
+	go watchForward(dir)
+	go disableOrphanUnits(dir)
 	go scrapeMetrics(ms, dir)
 	go watchDisk(h.Disk)
 	go watchFDs()
@@ -82,6 +89,42 @@ func reconcileRuntimeLXC(eng *lxc.Engine) {
 		return
 	}
 	eng.ReconcileRuntimeConfigs()
+}
+
+// watchGuestNet re-probes guests whose network check failed so the warning
+// clears once the network is back.
+func watchGuestNet(eng *lxc.Engine) {
+	if eng == nil {
+		return
+	}
+	for {
+		time.Sleep(2 * time.Minute)
+		eng.RecheckGuestNet()
+	}
+}
+
+// watchForward keeps No-dal bridge traffic accepted ahead of a host
+// FORWARD drop policy (host Docker). Docker can start or restart after the
+// agent, so the rules are re-asserted on a timer, not only at startup.
+func watchForward(dataDir string) {
+	eng := &ndnet.Engine{StateDir: filepath.Join(dataDir, "net")}
+	blocked := false
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		st, err := eng.EnsureForwardAccept(ctx)
+		cancel()
+		switch {
+		case err != nil:
+			log.Printf("bridge forwarding: %v", err)
+		case st.Inserted > 0 || st.Removed > 0:
+			log.Printf("bridge forwarding: added %d and removed %d DOCKER-USER accept rule(s) for %s", st.Inserted, st.Removed, strings.Join(st.Bridges, ", "))
+		}
+		if st.Blocked && !blocked {
+			log.Printf("bridge forwarding: %s; containers on %s have no network", st.Note, strings.Join(st.Bridges, ", "))
+		}
+		blocked = st.Blocked
+		time.Sleep(30 * time.Second)
+	}
 }
 
 func scrapeMetrics(ms *metrics.Store, dataDir string) {

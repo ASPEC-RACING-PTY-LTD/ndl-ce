@@ -411,7 +411,7 @@ if (!agentUnit.includes("NoNewPrivileges=yes")) {
 if (!agentUnit.includes("DevicePolicy=closed")) {
   errors.push("ndl-agent.service must set DevicePolicy=closed");
 }
-if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE\s*$/m.test(agentUnit)) {
+if (!/^CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE\s*$/m.test(agentUnit)) {
   errors.push("ndl-agent.service must use the typed attach and Local Host capability set including CAP_FOWNER, CAP_SETFCAP, and CAP_SYS_PTRACE");
 }
 if (/CAP_FOWNER/.test(controlUnit)) {
