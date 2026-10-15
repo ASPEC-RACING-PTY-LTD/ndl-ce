@@ -11,6 +11,12 @@ import (
 	"github.com/no-dal/ndl-ce/internal/guestextras"
 )
 
+// GuestCommand runs one fixed command inside a running system container.
+// Callers pass a compile-time binary and arguments, never a shell string.
+func (e *Engine) GuestCommand(ctx context.Context, id string, cmd ...string) ([]byte, error) {
+	return e.attach(ctx, id, cmd...)
+}
+
 func (e *Engine) attach(ctx context.Context, id string, cmd ...string) ([]byte, error) {
 	args := []string{
 		"-P", e.lxcPath(), "-n", id,

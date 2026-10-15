@@ -28,6 +28,11 @@ type Engine struct {
 	Now          func() time.Time
 	ClientFor    func(socket string) engineAPI
 
+	// HostRun and GuestRun run a fixed command on the host or inside a
+	// system container (for systemd and journal reads about cloudflared).
+	HostRun  func(ctx context.Context, name string, args ...string) ([]byte, error)
+	GuestRun func(ctx context.Context, id string, argv ...string) ([]byte, error)
+
 	mu      sync.Mutex
 	updates map[string]updateNote
 	events  map[string][]Event
@@ -360,8 +365,11 @@ func (e *Engine) containerFromList(m *Machine, item listItem, now time.Time) Con
 	for _, p := range item.Ports {
 		c.Ports = append(c.Ports, Port{IP: p.IP, PrivatePort: p.PrivatePort, PublicPort: p.PublicPort, Type: p.Type})
 	}
-	for name := range item.NetworkSettings.Networks {
+	for name, n := range item.NetworkSettings.Networks {
 		c.Networks = append(c.Networks, name)
+		if n.IPAddress != "" {
+			c.IPs = append(c.IPs, n.IPAddress)
+		}
 	}
 	for _, mt := range item.Mounts {
 		c.Mounts = append(c.Mounts, Mount{Type: mt.Type, Name: mt.Name, Source: mt.Source, Destination: mt.Destination, RW: mt.RW, Mode: mt.Mode})
@@ -413,6 +421,13 @@ func applyInspect(c *Container, ins inspectJSON, now time.Time) {
 	c.Labels = ins.Config.Labels
 	if c.State == "running" {
 		c.Uptime = formatUptime(ins.State.StartedAt, now)
+	}
+	if len(c.IPs) == 0 {
+		for _, n := range ins.NetworkSettings.Networks {
+			if n.IPAddress != "" {
+				c.IPs = append(c.IPs, n.IPAddress)
+			}
+		}
 	}
 	if len(c.Networks) == 0 {
 		for name := range ins.NetworkSettings.Networks {

@@ -125,6 +125,7 @@ type Container struct {
 	Ports        []Port            `json:"ports,omitempty"`
 	Mounts       []Mount           `json:"mounts,omitempty"`
 	Networks     []string          `json:"networks,omitempty"`
+	IPs          []string          `json:"ips,omitempty"`
 	CPUPercent   *float64          `json:"cpu_percent,omitempty"`
 	MemoryBytes  *uint64           `json:"memory_bytes,omitempty"`
 	MemoryLimit  *uint64           `json:"memory_limit,omitempty"`
@@ -183,6 +184,12 @@ type ActionResult struct {
 	OK      bool   `json:"ok"`
 	Message string `json:"message,omitempty"`
 	Logs    string `json:"logs,omitempty"`
+}
+
+// ExecResult is the output of a one-shot command in a container.
+type ExecResult struct {
+	Output   string `json:"output"`
+	ExitCode int    `json:"exit_code"`
 }
 
 // ExecRequest starts an interactive exec session.

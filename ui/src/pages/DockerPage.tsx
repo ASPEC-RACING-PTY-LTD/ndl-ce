@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   ApiError,
+  dockerBulk,
+  dockerTunnelAction,
+  getDockerTunnels,
+  runDockerScript,
+  type DockerTunnel,
+  type OpsJob,
   dockerContainerAction,
   dockerContainerLogs,
   getDocker,
@@ -19,6 +25,8 @@ import { ResourceTable } from "../components/ResourceTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Dialog } from "../ui/Dialog";
+import { JobLog } from "../components/JobLog";
+import { JsonScriptModal } from "../components/JsonScriptModal";
 import type { DockerContainer, DockerInventory, DockerMachine, DockerProject } from "../generated/openapi";
 import { filesWorkspaceHref } from "../files/workspace";
 import { formatBytes, formatWhen } from "../format";
@@ -34,6 +42,55 @@ type ViewMode = "groups" | "table";
 type Act = "start" | "stop" | "restart" | "pull" | "recreate" | "remove";
 
 const COLLAPSE_KEY = "ndl-docker-collapsed";
+
+const SCRIPT_TEMPLATE = `{
+  "name": "Restart shop in order and check it",
+  "continue_on_error": false,
+  "steps": [
+    { "action": "restart", "machine": "apps", "project": "shop" },
+    { "action": "wait-healthy", "machine": "apps", "container": "shop-web-1", "timeout": 120 },
+    { "action": "tunnel-restart", "machine": "apps" },
+    { "action": "uptime-check" }
+  ]
+}`;
+
+function ScriptHelp() {
+  return (
+    <>
+      <summary>Script reference</summary>
+      <p className="field-hint">
+        A script runs once, top to bottom, and stops at the first failure unless <code>continue_on_error</code> is true. Use
+        Automations to repeat it. <code>machine</code> is a machine name (or <code>host</code>); <code>container</code> is a
+        container name.
+      </p>
+      <ul className="plain-list json-ref">
+        <li>
+          <code>start</code>, <code>stop</code>, <code>restart</code>, <code>pull</code>, <code>recreate</code>: a <code>container</code> or every
+          container in a <code>project</code>, in dependency order.
+        </li>
+        <li>
+          <code>start-all</code>, <code>stop-all</code>, <code>restart-all</code>: everything, or one <code>machine</code> or <code>project</code>.
+        </li>
+        <li>
+          <code>fix</code>: restart unhealthy containers, their dependencies first, then start any stopped tunnel. Ignored containers are skipped
+          unless <code>include_ignored</code> is true.
+        </li>
+        <li>
+          <code>exec</code>: run <code>command</code> (a list, for example <code>["sh","-c","php artisan migrate"]</code>) in a container. Admin only.
+        </li>
+        <li>
+          <code>tunnel-restart</code>, <code>tunnel-start</code>: a cloudflared service on a <code>machine</code> (all of them, or <code>unit</code>). Admin only.
+        </li>
+        <li>
+          <code>wait</code> (<code>seconds</code>), <code>wait-healthy</code> (<code>container</code>, <code>timeout</code>).
+        </li>
+        <li>
+          <code>uptime-check</code>: check Uptime monitors (all, or <code>monitor</code>) and recover failing ones.
+        </li>
+      </ul>
+    </>
+  );
+}
 const ROWS_SHOWN = 6;
 
 function healthTone(health?: string): string {
@@ -134,6 +191,19 @@ export function DockerPage() {
   const [logs, setLogs] = useState<string>("");
   const [logFor, setLogFor] = useState<string | null>(null);
   const [hostNodeId, setHostNodeId] = useState<string | null>(null);
+  const [job, setJob] = useState<OpsJob | null>(null);
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const [tunnels, setTunnels] = useState<DockerTunnel[]>([]);
+  const [tunnelsOpen, setTunnelsOpen] = useState(true);
+
+  async function loadTunnels(refresh = false) {
+    try {
+      const res = await getDockerTunnels(refresh);
+      setTunnels(res.items ?? []);
+    } catch {
+      // Tunnels are optional; the containers still show.
+    }
+  }
 
   async function reload(refresh = false) {
     try {
@@ -157,8 +227,10 @@ export function DockerPage() {
 
   useEffect(() => {
     void reload();
+    void loadTunnels();
   }, []);
   usePoll(() => reload(), 5000);
+  usePoll(() => loadTunnels(), 30000);
 
   const q = query.trim().toLowerCase();
   const machines = inv?.machines ?? [];
@@ -228,22 +300,65 @@ export function DockerPage() {
     }
   }
 
-  async function runGroup(g: Group, action: "start" | "stop" | "restart") {
-    setBusy(`${g.project.name}: ${action}`);
+  async function bulk(action: "start-all" | "stop-all" | "restart-all" | "fix", scope: { machine_id?: string; project?: string } = {}) {
+    const where = scope.project
+      ? `every container in ${scope.project}`
+      : scope.machine_id
+        ? `every container on ${machines.find((m) => m.id === scope.machine_id)?.name ?? scope.machine_id}`
+        : "every container on every machine";
+    if (action === "stop-all" && !window.confirm(`Stop ${where}? Sites they serve go offline until started again.`)) {
+      return;
+    }
+    if (action === "restart-all" && !window.confirm(`Restart ${where}, dependencies first?`)) {
+      return;
+    }
     setError(null);
-    const failed: string[] = [];
-    for (const c of g.project.containers ?? []) {
-      try {
-        await dockerContainerAction(c.machine_id, c.container_id, action);
-      } catch (err) {
-        failed.push(`${c.name}: ${err instanceof Error ? err.message : "failed"}`);
-      }
+    try {
+      setJob(await dockerBulk({ action, ...scope }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start");
     }
-    setBusy(null);
-    if (failed.length) {
-      setError(`Some containers did not ${action}. ${failed.join("; ")}`);
+  }
+
+  function scopeNow(): { machine_id?: string } {
+    return machineFilter !== "all" ? { machine_id: machineFilter } : {};
+  }
+
+  async function runGroup(g: Group, action: "start" | "stop" | "restart") {
+    await bulk(`${action}-all` as "start-all" | "stop-all" | "restart-all", { machine_id: g.machine.id, project: g.project.standalone ? undefined : g.project.name });
+  }
+
+  async function tunnelAction(t: DockerTunnel, action: "start" | "restart") {
+    setError(null);
+    setBusy(`${t.unit}: ${action}`);
+    try {
+      await dockerTunnelAction(t.machine_id, t.unit, action);
+      setNotice(`${t.unit} on ${t.machine_name}: ${action} sent.`);
+      await loadTunnels(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Tunnel action failed");
+    } finally {
+      setBusy(null);
     }
-    await reload(true);
+  }
+
+  function tunnelItems(t: DockerTunnel): ContextItem[] {
+    const m = machines.find((x) => x.id === t.machine_id);
+    const items: ContextItem[] = [];
+    if (admin) {
+      items.push(
+        { label: "Restart tunnel", onClick: () => void tunnelAction(t, "restart") },
+        { label: "Start tunnel", onClick: () => void tunnelAction(t, "start"), disabled: t.active },
+      );
+    }
+    if (mutate) {
+      items.push({ label: "Fix containers on this machine", onClick: () => void bulk("fix", { machine_id: t.machine_id }) });
+    }
+    if (m) {
+      items.push("sep", { label: "Open terminal on machine", onClick: () => void openTerminalAt(m), disabled: !mutate || (m.kind === "host" && !admin) });
+    }
+    items.push({ label: "Copy unit name", onClick: () => copy(t.unit) });
+    return items;
   }
 
   async function setIgnored(machineId: string, scope: "container" | "project", name: string, ignored: boolean) {
@@ -393,6 +508,9 @@ export function DockerPage() {
       { label: dir ? "Open compose folder in Files" : "Open machine files", onClick: () => void openFilesAt(g.machine, dir), disabled: g.machine.kind === "host" && !admin },
     ];
     if (mutate) {
+      if (g.issues.length) {
+        items.push("sep", { label: "Fix this group", onClick: () => void bulk("fix", { machine_id: g.machine.id, project: g.project.standalone ? undefined : g.project.name }) });
+      }
       items.push(
         "sep",
         { label: "Start all", onClick: () => void runGroup(g, "start") },
@@ -440,7 +558,8 @@ export function DockerPage() {
     );
   }
 
-  const issueCount = attention.reduce((n, g) => n + g.issues.length, 0);
+  const badTunnels = tunnels.filter((t) => t.health === "critical" || t.health === "degraded");
+  const issueCount = attention.reduce((n, g) => n + g.issues.length, 0) + badTunnels.length;
 
   function renderCard(g: Group, tone: "issue" | "healthy" | "ignored") {
     const fallback = tone !== "issue" && g.containers.length > ROWS_SHOWN;
@@ -523,9 +642,23 @@ export function DockerPage() {
         title="Docker"
         kicker="Compose projects across the host and system containers. Right-click a group or container for its tools."
         actions={
-          <button className="btn btn-secondary" type="button" onClick={() => void reload(true)}>
-            Refresh
-          </button>
+          <div className="btn-row is-flush">
+            {mutate ? (
+              <button className="btn btn-secondary" type="button" onClick={() => setJsonOpen(true)}>
+                Run JSON
+              </button>
+            ) : null}
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => {
+                void reload(true);
+                void loadTunnels(true);
+              }}
+            >
+              Refresh
+            </button>
+          </div>
         }
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
@@ -550,6 +683,7 @@ export function DockerPage() {
           </span>
           <span className="meta">
             {attention.length} group(s){downEngines.length ? ` · ${downEngines.length} engine(s) down` : ""}
+            {badTunnels.length ? ` · ${badTunnels.length} tunnel(s)` : ""}
           </span>
         </div>
         <div className="status-tile">
@@ -588,6 +722,22 @@ export function DockerPage() {
             </option>
           ))}
         </select>
+        {mutate ? (
+          <div className="btn-row is-flush docker-bulk" role="group" aria-label="Bulk actions">
+            <button className="btn btn-sm btn-primary" type="button" onClick={() => void bulk("fix", scopeNow())}>
+              Fix unhealthy
+            </button>
+            <button className="btn btn-sm btn-secondary" type="button" onClick={() => void bulk("start-all", scopeNow())}>
+              Start all
+            </button>
+            <button className="btn btn-sm btn-secondary" type="button" onClick={() => void bulk("restart-all", scopeNow())}>
+              Restart all
+            </button>
+            <button className="btn btn-sm btn-ghost btn-danger-text" type="button" onClick={() => void bulk("stop-all", scopeNow())}>
+              Stop all
+            </button>
+          </div>
+        ) : null}
         <div className="segmented" role="group" aria-label="View">
           <button type="button" aria-pressed={view === "groups"} onClick={() => setView("groups")}>
             Groups
@@ -597,6 +747,17 @@ export function DockerPage() {
           </button>
         </div>
       </div>
+
+      {job ? (
+        <JobLog
+          job={job}
+          onDone={() => {
+            void reload(true);
+            void loadTunnels(true);
+          }}
+          onClose={() => setJob(null)}
+        />
+      ) : null}
 
       {machines.length === 0 ? (
         <EmptyState title="No Docker engines discovered">
@@ -665,6 +826,26 @@ export function DockerPage() {
               </div>
             )}
           </section>
+          {tunnels.length > 0 ? (
+            <section className="docker-section" aria-labelledby="docker-tunnels">
+              <h2 id="docker-tunnels" className="docker-section-title">
+                <button className="linkish" type="button" aria-expanded={tunnelsOpen} onClick={() => setTunnelsOpen((v) => !v)}>
+                  {tunnelsOpen ? "▾" : "▸"} Cloudflare tunnels
+                </button>{" "}
+                <span className="meta">
+                  {tunnels.length}
+                  {badTunnels.length ? `, ${badTunnels.length} with problems` : ""}
+                </span>
+              </h2>
+              {tunnelsOpen ? (
+                <div className="docker-grid">
+                  {[...badTunnels, ...tunnels.filter((t) => !badTunnels.includes(t))].map((t) => (
+                    <TunnelCard key={`${t.machine_id}/${t.unit}`} tunnel={t} items={tunnelItems(t)} onContext={(e) => ctx.openAt(e, t.unit, tunnelItems(t))} />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
           <section className="docker-section" aria-labelledby="docker-healthy">
             <h2 id="docker-healthy" className="docker-section-title">
               Healthy <span className="meta">{healthy.length}</span>
@@ -726,8 +907,101 @@ export function DockerPage() {
           />
         ) : null}
       </Dialog>
+      <JsonScriptModal
+        open={jsonOpen}
+        onClose={() => setJsonOpen(false)}
+        title="Run a Docker script"
+        kind="docker"
+        template={SCRIPT_TEMPLATE}
+        help={<ScriptHelp />}
+        runLabel="Run once"
+        onTest={async (value) => {
+          const res = await runDockerScript(value, true);
+          if (res.valid === false && res.error) {
+            throw new Error(res.error);
+          }
+          return <PlanView job={res} />;
+        }}
+        onRun={async (value) => {
+          const res = await runDockerScript(value, false);
+          if (res.valid === false && res.error) {
+            throw new Error(res.error);
+          }
+          setJob(res);
+          setJsonOpen(false);
+        }}
+      />
       <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
+  );
+}
+
+function PlanView({ job }: { job: OpsJob }) {
+  const lines = job.lines ?? [];
+  return (
+    <div className={"banner " + (job.failed ? "banner-error" : "banner-ok")} role="status">
+      <strong>{job.failed ? `The script has ${job.failed} problem(s)` : "The script is valid. Nothing was changed."}</strong>
+      <ol className="job-lines">
+        {lines.map((l, i) => (
+          <li key={i} className={`job-line is-${l.level}`}>
+            <span className="job-level">{l.level}</span>
+            <span className="job-msg">{l.message}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function TunnelCard({ tunnel: t, items, onContext }: { tunnel: DockerTunnel; items: ContextItem[]; onContext: (e: ReactMouseEvent) => void }) {
+  const bad = t.health === "critical" || t.health === "degraded";
+  return (
+    <article className={"docker-card" + (bad ? " is-issue" : "")} aria-label={`Tunnel ${t.unit} on ${t.machine_name}`} onContextMenu={onContext}>
+      <header className="docker-card-head">
+        <strong className="docker-head-name" title={t.unit}>
+          {t.unit}
+        </strong>
+        <StatusBadge status={t.health} label={t.active ? (bad ? "Errors" : "Running") : t.sub_state || t.state} />
+        <ActionMenu label={`${t.unit} actions`} items={items.filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
+      </header>
+      <p className="meta docker-card-meta">
+        {t.machine_name} · {t.remote_managed ? "routes set in the Cloudflare dashboard" : t.config_path || "no local config"}
+      </p>
+      {t.reason ? <p className="tunnel-reason">{t.reason}</p> : null}
+      {(t.links ?? []).length ? (
+        <ul className="docker-rows">
+          {(t.links ?? []).map((l) => (
+            <li key={l.origin + l.id} className={"docker-row" + (l.state !== "running" || l.health === "critical" || l.health === "degraded" ? " is-issue" : "")}>
+              <span className="docker-row-name" title={l.origin}>
+                <strong>{(l.hostnames ?? []).join(", ") || l.origin}</strong>
+              </span>
+              <span className="docker-row-status">
+                <StatusBadge status={l.state !== "running" ? "critical" : l.health || "unknown"} label={`${l.name} · ${l.state}`} />
+              </span>
+              <span className="meta docker-row-meta">
+                {l.origin}
+                {l.errors ? ` · ${l.errors} error(s)` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {(t.errors ?? []).length ? (
+        <details className="tunnel-errors">
+          <summary>
+            {t.error_count} origin error(s) in the last 15 minutes
+          </summary>
+          <ul className="plain-list">
+            {(t.errors ?? []).slice(0, 6).map((e, i) => (
+              <li key={i}>
+                <strong>{e.count}×</strong> {e.hostname ? `${e.hostname} → ` : ""}
+                {e.origin || ""} <span className="meta">{e.message}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </article>
   );
 }
 

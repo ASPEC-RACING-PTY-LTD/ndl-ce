@@ -118,6 +118,9 @@ type Server struct {
 	updateMu        sync.Mutex
 	hold            backupHold
 	repoMove        repoMove
+	tunnels         tunnelCache
+	opsJobs         opsJobs
+	uptimeMu        sync.Mutex
 	applyPreparing  atomic.Bool
 	updateStage     updateStage
 	updateStatus    updateStatusCache
@@ -329,6 +332,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/tuning", s.gameServerTuning)
 	mux.HandleFunc("GET /api/v1/docker", s.getDocker)
 	mux.HandleFunc("GET /api/v1/docker/prefs", s.listDockerPrefs)
+	mux.HandleFunc("GET /api/v1/docker/tunnels", s.getDockerTunnels)
+	mux.HandleFunc("POST /api/v1/docker/tunnels/action", s.dockerTunnelAction)
+	mux.HandleFunc("POST /api/v1/docker/bulk", s.dockerBulk)
+	mux.HandleFunc("POST /api/v1/docker/script", s.runDockerScript)
+	mux.HandleFunc("GET /api/v1/ops/jobs", s.listOpsJobs)
+	mux.HandleFunc("GET /api/v1/ops/jobs/{id}", s.getOpsJob)
+	mux.HandleFunc("GET /api/v1/scripts", s.listSavedScripts)
+	mux.HandleFunc("POST /api/v1/scripts", s.saveScript)
+	mux.HandleFunc("PUT /api/v1/scripts/{id}", s.saveScript)
+	mux.HandleFunc("DELETE /api/v1/scripts/{id}", s.deleteSavedScript)
+	mux.HandleFunc("GET /api/v1/uptime/monitors", s.listUptimeMonitors)
+	mux.HandleFunc("POST /api/v1/uptime/monitors", s.createUptimeMonitor)
+	mux.HandleFunc("PUT /api/v1/uptime/monitors/{id}", s.updateUptimeMonitor)
+	mux.HandleFunc("DELETE /api/v1/uptime/monitors/{id}", s.deleteUptimeMonitor)
+	mux.HandleFunc("POST /api/v1/uptime/monitors/{id}/check", s.checkUptimeMonitor)
+	mux.HandleFunc("POST /api/v1/uptime/check", s.checkAllUptime)
+	mux.HandleFunc("POST /api/v1/uptime/import", s.importUptime)
 	mux.HandleFunc("PUT /api/v1/docker/prefs", s.putDockerPref)
 	mux.HandleFunc("GET /api/v1/docker/machines/{machine_id}/containers/{container_id}", s.getDockerContainer)
 	mux.HandleFunc("GET /api/v1/docker/machines/{machine_id}/containers/{container_id}/logs", s.dockerContainerLogs)

@@ -2427,3 +2427,173 @@ export async function createNodeGroup(
 ): Promise<import("../generated/openapi").NodeGroup> {
   return readJson(await request("/node-groups", { method: "POST", body: JSON.stringify(body) }));
 }
+
+// --- Docker bulk tasks, tunnels and JSON scripts ---
+
+export type OpsJobLine = { at: string; level: string; message: string };
+export type OpsJob = {
+  id: string;
+  kind: string;
+  name: string;
+  status: "running" | "succeeded" | "failed" | string;
+  started_by?: string;
+  started_at: string;
+  finished_at?: string;
+  failed: number;
+  valid?: boolean;
+  lines?: OpsJobLine[];
+};
+
+export type DockerTunnel = {
+  machine_id: string;
+  machine_name: string;
+  unit: string;
+  active: boolean;
+  state: string;
+  sub_state?: string;
+  remote_managed: boolean;
+  config_path?: string;
+  error_count: number;
+  health: string;
+  reason?: string;
+  ingress?: { hostname?: string; path?: string; service: string }[];
+  errors?: { origin?: string; hostname?: string; message: string; count: number; last?: string }[];
+  links?: {
+    origin: string;
+    hostnames?: string[];
+    container_id: string;
+    id: string;
+    name: string;
+    project?: string;
+    state: string;
+    health: string;
+    errors: number;
+  }[];
+};
+
+export async function getDockerTunnels(refresh = false): Promise<{ items: DockerTunnel[]; supported: boolean }> {
+  return readJson(await request(refresh ? "/docker/tunnels?refresh=1" : "/docker/tunnels"));
+}
+
+export async function dockerTunnelAction(machineId: string, unit: string, action: "start" | "restart"): Promise<void> {
+  await readJson(await request("/docker/tunnels/action", { method: "POST", body: JSON.stringify({ machine_id: machineId, unit, action }) }));
+}
+
+export async function dockerBulk(body: {
+  action: "start-all" | "stop-all" | "restart-all" | "fix";
+  machine_id?: string;
+  project?: string;
+  include_ignored?: boolean;
+}): Promise<OpsJob> {
+  return readJson(await request("/docker/bulk", { method: "POST", body: JSON.stringify(body) }));
+}
+
+/** sendScript posts a JSON script; a 422 comes back as { valid: false, error }. */
+async function sendScript(path: string, script: unknown, dryRun: boolean): Promise<Record<string, unknown>> {
+  const res = await request(path, { method: "POST", body: JSON.stringify({ script, dry_run: dryRun }) });
+  if (res.status === 422) {
+    return (await res.json()) as Record<string, unknown>;
+  }
+  return readJson(res);
+}
+
+export async function runDockerScript(script: unknown, dryRun: boolean): Promise<OpsJob & { error?: string }> {
+  return (await sendScript("/docker/script", script, dryRun)) as OpsJob & { error?: string };
+}
+
+export async function getOpsJob(id: string): Promise<OpsJob> {
+  return readJson(await request(`/ops/jobs/${encodeURIComponent(id)}`));
+}
+
+export async function listOpsJobs(): Promise<{ items: OpsJob[] }> {
+  return readJson(await request("/ops/jobs"));
+}
+
+export type SavedScript = { id: string; kind: "docker" | "uptime"; name: string; body: string; created_by?: string; updated_at?: string };
+
+export async function listSavedScripts(kind: "docker" | "uptime"): Promise<{ items: SavedScript[] }> {
+  return readJson(await request(`/scripts?kind=${kind}`));
+}
+
+export async function saveScript(body: { id?: string; kind: "docker" | "uptime"; name: string; body: string }): Promise<SavedScript> {
+  const { id, ...rest } = body;
+  return readJson(
+    await request(id ? `/scripts/${encodeURIComponent(id)}` : "/scripts", { method: id ? "PUT" : "POST", body: JSON.stringify(rest) }),
+  );
+}
+
+export async function deleteSavedScript(id: string): Promise<void> {
+  await readJson(await request(`/scripts/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+
+// --- Uptime ---
+
+export type UptimeEvent = { at: string; ok: boolean; status_code: number; latency_ms: number; error?: string; action?: string };
+export type UptimeMonitor = {
+  id: string;
+  name: string;
+  target: string;
+  expect_status: string;
+  keyword: string;
+  containers: { machine_id: string; name: string }[];
+  auto_restart: boolean;
+  enabled: boolean;
+  state: "up" | "down" | "pending" | string;
+  last_check_at?: string | null;
+  last_ok_at?: string | null;
+  last_change_at?: string | null;
+  last_status: number;
+  last_latency_ms: number;
+  last_error: string;
+  failures: number;
+  last_restart_at?: string | null;
+  next_check_at?: string | null;
+  events?: UptimeEvent[];
+  uptime_percent?: number;
+};
+
+export type UptimeMonitorIn = {
+  name: string;
+  target: string;
+  expect_status?: string;
+  keyword?: string;
+  containers: { machine: string; name: string }[];
+  auto_restart: boolean;
+  enabled: boolean;
+};
+
+export async function listUptimeMonitors(): Promise<{ items: UptimeMonitor[] }> {
+  return readJson(await request("/uptime/monitors"));
+}
+
+export async function saveUptimeMonitor(body: UptimeMonitorIn, id?: string): Promise<UptimeMonitor> {
+  return readJson(
+    await request(id ? `/uptime/monitors/${encodeURIComponent(id)}` : "/uptime/monitors", {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function deleteUptimeMonitor(id: string): Promise<void> {
+  await readJson(await request(`/uptime/monitors/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+
+export async function checkUptimeMonitor(id: string, recover = false): Promise<UptimeMonitor> {
+  return readJson(await request(`/uptime/monitors/${encodeURIComponent(id)}/check${recover ? "?recover=true" : ""}`, { method: "POST" }));
+}
+
+export async function checkAllUptime(): Promise<OpsJob> {
+  return readJson(await request("/uptime/check", { method: "POST" }));
+}
+
+export type UptimeImportResult = {
+  valid: boolean;
+  error?: string;
+  dry_run?: boolean;
+  results?: { name: string; change: string; error?: string; check?: { ok: boolean; status_code: number; latency_ms: number; error?: string } }[];
+};
+
+export async function importUptime(script: unknown, dryRun: boolean): Promise<UptimeImportResult> {
+  return (await sendScript("/uptime/import", script, dryRun)) as UptimeImportResult;
+}

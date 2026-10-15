@@ -198,6 +198,7 @@ func Run(cfg Config) error {
 	if enabled {
 		srv.TLSRequired = true
 	}
+	go srv.RunUptime(runCtx)
 	go observer{
 		Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups,
 		Alerts: srv.TickAlerts, UpdateCheck: srv.TickUpdateCheck,

@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/automation"
 	"github.com/no-dal/ndl-ce/internal/rbac"
+	"gopkg.in/yaml.v3"
 )
 
 func (s *Server) listAutomationPolicies(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +42,7 @@ func (s *Server) createAutomationPolicy(w http.ResponseWriter, r *http.Request) 
 		Action           string `json:"action"`
 		ThresholdPercent int    `json:"threshold_percent"`
 		RequireApproval  bool   `json:"require_approval"`
+		Target           string `json:"target"`
 		YAML             string `json:"yaml"`
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -50,7 +53,7 @@ func (s *Server) createAutomationPolicy(w http.ResponseWriter, r *http.Request) 
 	if strings.TrimSpace(req.YAML) != "" {
 		spec, err = automation.ParseYAML([]byte(req.YAML))
 	} else {
-		spec, err = automation.ParseJSONMap(req.Kind, req.Action, req.ThresholdPercent, req.RequireApproval)
+		spec, err = automation.ParseJSONSpec(req.Kind, req.Action, req.ThresholdPercent, req.RequireApproval, req.Target)
 	}
 	if err != nil {
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
@@ -61,10 +64,16 @@ func (s *Server) createAutomationPolicy(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	specYAML := strings.TrimSpace(req.YAML)
+	if specYAML == "" && spec.Kind != automation.KindStoragePressure {
+		// The target lives in the stored spec.
+		raw, _ := yaml.Marshal(spec)
+		specYAML = string(raw)
+	}
 	row := appdb.Policy{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name,
 		Kind: spec.Kind, Action: spec.Action, ThresholdPercent: spec.ThresholdPercent,
-		RequireApproval: spec.RequireApproval, Enabled: true, SpecYAML: strings.TrimSpace(req.YAML),
+		RequireApproval: spec.RequireApproval, Enabled: true, SpecYAML: specYAML,
 	}
 	if err := s.Store.CreatePolicy(r.Context(), row); err != nil {
 		writeErr(w, http.StatusConflict, "could not record policy")
@@ -146,6 +155,9 @@ func (s *Server) listPolicyRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) evaluatePolicy(ctx context.Context, clusterID, actorID string, pol appdb.Policy) (appdb.PolicyRun, error) {
+	if pol.Kind != automation.KindStoragePressure && pol.Kind != "" {
+		return s.evaluateOpsPolicy(ctx, clusterID, actorID, pol)
+	}
 	run := appdb.PolicyRun{
 		ID: uuid.NewString(), ClusterID: clusterID, PolicyID: pol.ID, ActorID: actorID,
 		Status: appdb.PolicySkipped, Reason: "no pool exceeded threshold",
@@ -261,12 +273,89 @@ func (s *Server) ensureAutomationActor(ctx context.Context, clusterID string) (s
 	return "", fmt.Errorf("automation role is not bound")
 }
 
+func policyTarget(p appdb.Policy) string {
+	if strings.TrimSpace(p.SpecYAML) == "" {
+		return ""
+	}
+	var spec automation.Spec
+	if yaml.Unmarshal([]byte(p.SpecYAML), &spec) != nil {
+		return ""
+	}
+	return strings.TrimSpace(spec.Target)
+}
+
 func automationPolicyJSON(p appdb.Policy) map[string]any {
 	return map[string]any{
 		"id": p.ID, "name": p.Name, "kind": p.Kind, "action": p.Action,
 		"threshold_percent": p.ThresholdPercent, "require_approval": p.RequireApproval,
-		"enabled": p.Enabled,
+		"enabled": p.Enabled, "target": policyTarget(p),
 	}
+}
+
+// evaluateOpsPolicy runs the Uptime and Docker automation kinds as the
+// automation service identity. Scripts run without admin rights, so their
+// exec and tunnel steps are refused.
+func (s *Server) evaluateOpsPolicy(ctx context.Context, clusterID, actorID string, pol appdb.Policy) (appdb.PolicyRun, error) {
+	run := appdb.PolicyRun{ID: uuid.NewString(), ClusterID: clusterID, PolicyID: pol.ID, ActorID: actorID}
+	target := policyTarget(pol)
+	switch pol.Kind {
+	case automation.KindUptimeCheck:
+		j := s.newOpsJob("automation", pol.Name, automation.ActorName)
+		s.opsJobs.add(j)
+		err := s.uptimeCheckNamed(ctx, clusterID, target, j)
+		j.mu.Lock()
+		j.FinishedAt, j.Status = time.Now().UTC(), "succeeded"
+		if j.Failed > 0 {
+			j.Status = "failed"
+		}
+		j.mu.Unlock()
+		run.Status, run.Reason = appdb.PolicySucceeded, "every checked monitor is up"
+		if err != nil {
+			run.Status, run.Reason = appdb.PolicyFailed, err.Error()+"; failing containers were restarted where allowed"
+		}
+		return run, nil
+	case automation.KindDockerFix, automation.KindDockerScript:
+		if !s.dockerEnabled(ctx, clusterID) {
+			run.Status, run.Reason = appdb.PolicySkipped, "Docker Management is not enabled"
+			return run, nil
+		}
+		sc := dockerScript{Name: pol.Name, ContinueOnError: true, Steps: []dockerStep{{Action: "fix", Machine: target}}}
+		if pol.Kind == automation.KindDockerScript {
+			saved, err := s.findSavedScript(ctx, clusterID, "docker", target)
+			if err != nil {
+				run.Status, run.Reason = appdb.PolicyFailed, err.Error()
+				return run, nil
+			}
+			if sc, err = parseDockerScript([]byte(saved.Body)); err != nil {
+				run.Status, run.Reason = appdb.PolicyFailed, "saved script "+saved.Name+": "+err.Error()
+				return run, nil
+			}
+		}
+		j := s.startScriptJob(clusterID, automation.ActorName, false, "automation", sc, func(outcome string) {
+			s.auditInternal(clusterID, actorID, "policy."+pol.Kind, outcome, pol.Name)
+		})
+		run.Status, run.Reason = appdb.PolicySucceeded, "started job "+j.ID+"; its progress shows on the Docker page"
+		return run, nil
+	}
+	run.Status, run.Reason = appdb.PolicySkipped, "policy kind is unsupported"
+	return run, nil
+}
+
+// findSavedScript finds a saved script by id or name.
+func (s *Server) findSavedScript(ctx context.Context, clusterID, kind, ref string) (*appdb.SavedScript, error) {
+	if sc, _ := s.Store.GetSavedScript(ctx, clusterID, ref); sc != nil && sc.Kind == kind {
+		return sc, nil
+	}
+	items, err := s.Store.ListSavedScripts(ctx, clusterID, kind)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if strings.EqualFold(items[i].Name, ref) {
+			return &items[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no saved %s script named %q", kind, ref)
 }
 
 func automationPolicyRunJSON(r appdb.PolicyRun) map[string]any {

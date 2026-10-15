@@ -95,6 +95,7 @@ export const NAV_MODULES: NavModule[] = [
     simple: false,
     capability: "docker",
   },
+  { id: "uptime", href: "/uptime", label: "Uptime", group: "Compute", match: (p) => p === "/uptime", simple: true },
   { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates", simple: false },
   { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries", simple: false },
   {

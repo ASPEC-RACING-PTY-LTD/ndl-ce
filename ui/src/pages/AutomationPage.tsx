@@ -7,12 +7,37 @@ import {
   createAutomationPolicy,
   listAutomationPolicies,
   listAutomationPolicyRuns,
+  listSavedScripts,
+  type SavedScript,
 } from "../api/client";
 import type { AutomationPolicy, AutomationPolicyRun } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
+
+type PolicyKind = "storage_pressure" | "uptime_check" | "docker_fix" | "docker_script";
+
+const KIND_LABELS: Record<PolicyKind, string> = {
+  storage_pressure: "Storage pressure: queue a migrate",
+  uptime_check: "Uptime: check sites and recover failing ones",
+  docker_fix: "Docker: fix unhealthy containers",
+  docker_script: "Docker: run a saved script",
+};
+
+function describe(item: AutomationPolicy): string {
+  const target = (item as AutomationPolicy & { target?: string }).target;
+  switch (item.kind) {
+    case "uptime_check":
+      return `Checks ${target ? `the ${target} monitor` : "every Uptime monitor"} and restarts the containers of any that are down.`;
+    case "docker_fix":
+      return `Restarts unhealthy containers ${target ? `on ${target}` : "on every machine"}, dependencies first, and starts stopped tunnels.`;
+    case "docker_script":
+      return `Runs the saved Docker script ${target ?? ""} once.`;
+    default:
+      return `${item.kind} ${item.action} at ${item.threshold_percent} percent.`;
+  }
+}
 
 function canApply(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -29,6 +54,17 @@ export function AutomationPage() {
   const [name, setName] = useState("storage pressure");
   const [threshold, setThreshold] = useState("85");
   const [requireApproval, setRequireApproval] = useState(false);
+  const [kind, setKind] = useState<PolicyKind>("storage_pressure");
+  const [target, setTarget] = useState("");
+  const [scripts, setScripts] = useState<SavedScript[]>([]);
+
+  useEffect(() => {
+    if (kind === "docker_script") {
+      void listSavedScripts("docker")
+        .then((r) => setScripts(r.items ?? []))
+        .catch(() => setScripts([]));
+    }
+  }, [kind]);
 
   async function reload() {
     const [next, history] = await Promise.all([listAutomationPolicies(), listAutomationPolicyRuns()]);
@@ -54,10 +90,10 @@ export function AutomationPage() {
     try {
       await createAutomationPolicy({
         name,
-        kind: "storage_pressure",
-        action: "enqueue_migrate_low_priority",
-        threshold_percent: Number(threshold) || 85,
+        kind,
+        ...(kind === "storage_pressure" ? { action: "enqueue_migrate_low_priority", threshold_percent: Number(threshold) || 85 } : {}),
         require_approval: requireApproval,
+        ...(target.trim() ? { target: target.trim() } : {}),
       });
       await reload();
     } catch (err) {
@@ -119,7 +155,7 @@ export function AutomationPage() {
               <li key={item.id}>
                 <h3>{item.name}</h3>
                 <p>
-                  {item.kind} {item.action} at {item.threshold_percent} percent.
+                  {describe(item)}
                   {item.require_approval ? " Approval required." : ""}
                 </p>
                 {mutate ? (
@@ -154,6 +190,61 @@ export function AutomationPage() {
             }}
           >
             <Field id="policy-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+            <div className="field">
+              <label className="field-label" htmlFor="policy-kind">
+                What it does
+              </label>
+              <select
+                id="policy-kind"
+                className="field-input"
+                value={kind}
+                onChange={(e) => {
+                  setKind(e.target.value as PolicyKind);
+                  setTarget("");
+                }}
+              >
+                {(Object.keys(KIND_LABELS) as PolicyKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {KIND_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {kind === "uptime_check" ? (
+              <Field
+                id="policy-target"
+                label="Monitor name"
+                hint="Leave empty to check every enabled monitor."
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+              />
+            ) : null}
+            {kind === "docker_fix" ? (
+              <Field
+                id="policy-target"
+                label="Machine"
+                hint="Leave empty to fix every machine. Ignored containers are skipped."
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+              />
+            ) : null}
+            {kind === "docker_script" ? (
+              <div className="field">
+                <label className="field-label" htmlFor="policy-target">
+                  Saved script
+                </label>
+                <select id="policy-target" className="field-input" value={target} onChange={(e) => setTarget(e.target.value)}>
+                  <option value="">{scripts.length ? "Choose a script" : "No saved Docker scripts yet (save one from the Docker page)"}</option>
+                  {scripts.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="field-hint">Scripts run as the automation identity: exec and tunnel steps are refused.</p>
+              </div>
+            ) : null}
+            {kind === "storage_pressure" ? (
             <Field
               id="policy-threshold"
               label="Threshold percent"
@@ -161,6 +252,7 @@ export function AutomationPage() {
               value={threshold}
               onChange={(e) => setThreshold(e.target.value)}
             />
+            ) : null}
             <label>
               <input
                 type="checkbox"
@@ -169,7 +261,7 @@ export function AutomationPage() {
               />{" "}
               Require approval
             </label>
-            <button className="btn btn-primary" type="submit" disabled={busy}>
+            <button className="btn btn-primary" type="submit" disabled={busy || (kind === "docker_script" && !target)}>
               Create policy
             </button>
           </form>

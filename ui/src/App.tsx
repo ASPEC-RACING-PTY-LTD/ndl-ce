@@ -53,6 +53,7 @@ import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
+import { UptimePage } from "./pages/UptimePage";
 import { DockerPage } from "./pages/DockerPage";
 import { GameServersHomePage } from "./pages/GameServersHomePage";
 import { GameServerCreatePage } from "./pages/GameServerCreatePage";
@@ -191,6 +192,9 @@ function matchPage(path: string) {
   }
   if (path === "/workloads") {
     return <WorkloadsPage />;
+  }
+  if (path === "/uptime") {
+    return <UptimePage />;
   }
   if (path === "/oci") {
     return <OciPage />;

@@ -1,5 +1,51 @@
 /* Generated from api/openapi/nodal.v1.yaml. Do not edit by hand. */
 
+export interface OpsJob {
+  id?: string;
+  kind?: string;
+  name?: string;
+  status?: string;
+  started_by?: string;
+  started_at?: string;
+  finished_at?: string;
+  failed?: number;
+  valid?: boolean;
+  lines?: Record<string, unknown>[];
+}
+
+export interface SavedScriptIn {
+  kind?: "docker" | "uptime";
+  name: string;
+  body: string;
+}
+
+export interface UptimeMonitorIn {
+  name: string;
+  target: string;
+  expect_status?: string;
+  keyword?: string;
+  containers?: Record<string, unknown>[];
+  auto_restart?: boolean;
+  enabled?: boolean;
+}
+
+export interface DockerTunnel {
+  machine_id?: string;
+  machine_name?: string;
+  unit?: string;
+  active?: boolean;
+  state?: string;
+  sub_state?: string;
+  remote_managed?: boolean;
+  config_path?: string;
+  error_count?: number;
+  health?: string;
+  reason?: string;
+  ingress?: Record<string, unknown>[];
+  errors?: Record<string, unknown>[];
+  links?: Record<string, unknown>[];
+}
+
 export interface DockerPref {
   machine_id?: string;
   scope?: string;
@@ -2625,11 +2671,12 @@ export interface GuestInstallHints {
 export interface AutomationPolicy {
   id?: string;
   name?: string;
-  kind?: "storage_pressure";
-  action?: "enqueue_migrate_low_priority";
+  kind?: "storage_pressure" | "uptime_check" | "docker_fix" | "docker_script";
+  action?: "enqueue_migrate_low_priority" | "check_and_recover" | "fix_unhealthy" | "run_saved_script";
   threshold_percent?: number;
   require_approval?: boolean;
   enabled?: boolean;
+  target?: string;
 }
 
 export interface AutomationPolicyList {
@@ -2642,6 +2689,7 @@ export interface AutomationPolicyCreateRequest {
   action?: string;
   threshold_percent?: number;
   require_approval?: boolean;
+  target?: string;
   yaml?: string;
 }
 
@@ -3139,6 +3187,32 @@ export type GameServerTuningPath = "/api/v1/game-servers/{id}/tuning";
 export type GetDockerPath = "/api/v1/docker";
 
 export type ListDockerPrefsPath = "/api/v1/docker/prefs";
+
+export type GetDockerTunnelsPath = "/api/v1/docker/tunnels";
+
+export type DockerTunnelActionPath = "/api/v1/docker/tunnels/action";
+
+export type DockerBulkPath = "/api/v1/docker/bulk";
+
+export type RunDockerScriptPath = "/api/v1/docker/script";
+
+export type ListOpsJobsPath = "/api/v1/ops/jobs";
+
+export type GetOpsJobPath = "/api/v1/ops/jobs/{id}";
+
+export type ListSavedScriptsPath = "/api/v1/scripts";
+
+export type UpdateSavedScriptPath = "/api/v1/scripts/{id}";
+
+export type ListUptimeMonitorsPath = "/api/v1/uptime/monitors";
+
+export type UpdateUptimeMonitorPath = "/api/v1/uptime/monitors/{id}";
+
+export type CheckUptimeMonitorPath = "/api/v1/uptime/monitors/{id}/check";
+
+export type CheckAllUptimePath = "/api/v1/uptime/check";
+
+export type ImportUptimePath = "/api/v1/uptime/import";
 
 export type GetDockerContainerPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}";
 

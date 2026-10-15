@@ -343,6 +343,19 @@ type Store interface {
 	PutDockerPref(ctx context.Context, p DockerPref) error
 	DeleteDockerPref(ctx context.Context, clusterID, machineID, scope, name string) error
 
+	ListSavedScripts(ctx context.Context, clusterID, kind string) ([]SavedScript, error)
+	GetSavedScript(ctx context.Context, clusterID, id string) (*SavedScript, error)
+	PutSavedScript(ctx context.Context, s SavedScript) error
+	DeleteSavedScript(ctx context.Context, clusterID, id string) error
+
+	// ListUptimeMonitors with an empty clusterID lists every cluster's monitors (for the worker).
+	ListUptimeMonitors(ctx context.Context, clusterID string) ([]UptimeMonitor, error)
+	GetUptimeMonitor(ctx context.Context, clusterID, id string) (*UptimeMonitor, error)
+	PutUptimeMonitor(ctx context.Context, u UptimeMonitor) error
+	DeleteUptimeMonitor(ctx context.Context, clusterID, id string) error
+	AddUptimeEvent(ctx context.Context, e UptimeEvent) error
+	ListUptimeEvents(ctx context.Context, monitorID string, limit int) ([]UptimeEvent, error)
+
 	CreateWGPeer(ctx context.Context, p WGPeer) error
 	ListWGPeers(ctx context.Context, clusterID string) ([]WGPeer, error)
 	GetWGPeer(ctx context.Context, clusterID, id string) (*WGPeer, error)

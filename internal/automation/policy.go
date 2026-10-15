@@ -10,6 +10,14 @@ import (
 const (
 	KindStoragePressure  = "storage_pressure"
 	ActionEnqueueMigrate = "enqueue_migrate_low_priority"
+	// KindUptimeCheck checks Uptime monitors (all, or the one named in
+	// target) and recovers the ones that are down.
+	KindUptimeCheck      = "uptime_check"
+	ActionCheckRecover   = "check_and_recover"
+	KindDockerFix        = "docker_fix"
+	ActionFixUnhealthy   = "fix_unhealthy"
+	KindDockerScript     = "docker_script"
+	ActionRunSavedScript = "run_saved_script"
 	ApplyConfirm         = "apply-policy"
 	ActorName            = "nodal-automation"
 )
@@ -24,6 +32,23 @@ type Spec struct {
 	ThresholdPercent int    `yaml:"threshold_percent" json:"threshold_percent"`
 	Action           string `yaml:"action" json:"action"`
 	RequireApproval  bool   `yaml:"require_approval" json:"require_approval"`
+	// Target is the Uptime monitor name (uptime_check), the Docker machine
+	// (docker_fix) or the saved script id or name (docker_script).
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+}
+
+var kindActions = map[string]string{
+	KindStoragePressure: ActionEnqueueMigrate,
+	KindUptimeCheck:     ActionCheckRecover,
+	KindDockerFix:       ActionFixUnhealthy,
+	KindDockerScript:    ActionRunSavedScript,
+}
+
+// ParseJSONSpec validates a JSON policy body that may name a target.
+func ParseJSONSpec(kind, action string, threshold int, requireApproval bool, target string) (*Spec, error) {
+	return Normalize(Spec{
+		Kind: kind, Action: action, ThresholdPercent: threshold, RequireApproval: requireApproval, Target: target,
+	})
 }
 
 // ParseYAML loads a policy spec and rejects Host.Exec-shaped keys.
@@ -49,17 +74,26 @@ func ParseJSONMap(kind, action string, threshold int, requireApproval bool) (*Sp
 func Normalize(spec Spec) (*Spec, error) {
 	spec.Kind = strings.TrimSpace(spec.Kind)
 	spec.Action = strings.TrimSpace(spec.Action)
+	spec.Target = strings.TrimSpace(spec.Target)
 	if spec.Kind == "" {
 		spec.Kind = KindStoragePressure
 	}
-	if spec.Action == "" {
-		spec.Action = ActionEnqueueMigrate
-	}
-	if spec.Kind != KindStoragePressure {
+	want, ok := kindActions[spec.Kind]
+	if !ok {
 		return nil, fmt.Errorf("policy kind is unsupported")
 	}
-	if spec.Action != ActionEnqueueMigrate {
+	if spec.Action == "" {
+		spec.Action = want
+	}
+	if spec.Action != want {
 		return nil, fmt.Errorf("policy action is unsupported")
+	}
+	if spec.Kind != KindStoragePressure {
+		if spec.Kind == KindDockerScript && spec.Target == "" {
+			return nil, fmt.Errorf("docker_script needs target: the saved script to run")
+		}
+		spec.ThresholdPercent = 0
+		return &spec, nil
 	}
 	if spec.ThresholdPercent == 0 {
 		spec.ThresholdPercent = 85

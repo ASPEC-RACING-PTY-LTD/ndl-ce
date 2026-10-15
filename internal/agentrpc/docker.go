@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
@@ -27,6 +28,12 @@ func (h *Handler) docker() *docker.Engine {
 				}
 				return h.Workloads.InfoPID(ctx, id)
 			},
+			GuestRun: func(ctx context.Context, id string, argv ...string) ([]byte, error) {
+				if h.Workloads == nil {
+					return nil, fmt.Errorf("lxc engine is unavailable")
+				}
+				return h.Workloads.GuestCommand(ctx, id, argv...)
+			},
 		}
 	})
 	return h.Docker
@@ -47,8 +54,11 @@ func startDockerExec(ctx context.Context, h *Handler, req termRequest) (termSess
 func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*connect.Response[agentv1.ExecuteResponse], error) {
 	action := strings.TrimSpace(m.GetAction())
 	var spec struct {
-		Hints []docker.MachineHint `json:"hints"`
-		Tail  int                  `json:"tail"`
+		Hints   []docker.MachineHint `json:"hints"`
+		Tail    int                  `json:"tail"`
+		Unit    string               `json:"unit"`
+		Command []string             `json:"command"`
+		Timeout int                  `json:"timeout"`
 	}
 	if len(m.GetSpecJson()) > 0 {
 		_ = json.Unmarshal(m.GetSpecJson(), &spec)
@@ -60,6 +70,25 @@ func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*c
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "snapshot", ResultJson: mustJSON(inv)}), nil
+	case "tunnels":
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "tunnels", ResultJson: mustJSON(h.docker().Tunnels(ctx, spec.Hints))}), nil
+	case "tunnel-restart", "tunnel-start":
+		if err := h.docker().TunnelUnitAction(ctx, m.GetMachineId(), spec.Unit, strings.TrimPrefix(action, "tunnel-")); err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: action}), nil
+	case "exec-run":
+		timeout := time.Duration(spec.Timeout) * time.Second
+		if timeout <= 0 || timeout > 10*time.Minute {
+			timeout = time.Minute
+		}
+		ectx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		out, code, err := h.docker().ExecRun(ectx, m.GetMachineId(), m.GetContainerId(), spec.Command)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: code == 0, Message: "exec", ResultJson: mustJSON(docker.ExecResult{Output: out, ExitCode: code})}), nil
 	case "idle":
 		h.docker().Idle()
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "idle"}), nil

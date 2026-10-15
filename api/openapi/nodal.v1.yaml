@@ -3944,6 +3944,297 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DockerPref"
+  /docker/tunnels:
+    get:
+      operationId: getDockerTunnels
+      summary: Cloudflared services on the host and in system containers, with recent origin errors linked to the containers behind them.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tunnels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  supported:
+                    type: boolean
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DockerTunnel"
+  /docker/tunnels/action:
+    post:
+      operationId: dockerTunnelAction
+      summary: Start or restart a cloudflared service. Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - machine_id
+                - unit
+                - action
+              properties:
+                machine_id:
+                  type: string
+                unit:
+                  type: string
+                action:
+                  type: string
+                  enum:
+                    - start
+                    - restart
+      responses:
+        "200":
+          description: Done
+  /docker/bulk:
+    post:
+      operationId: dockerBulk
+      summary: Start, stop or restart every container (in dependency order), or fix unhealthy ones, across everything, one machine or one Compose project. Runs as a background job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - start-all
+                    - stop-all
+                    - restart-all
+                    - fix
+                machine_id:
+                  type: string
+                project:
+                  type: string
+                include_ignored:
+                  type: boolean
+      responses:
+        "202":
+          description: The started job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsJob"
+  /docker/script:
+    post:
+      operationId: runDockerScript
+      summary: Test (dry_run) or run a JSON script of Docker steps once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - script
+              properties:
+                script:
+                  type: object
+                  additionalProperties: true
+                dry_run:
+                  type: boolean
+      responses:
+        "200":
+          description: The plan (dry run)
+        "202":
+          description: The started job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsJob"
+        "422":
+          description: The script is not valid
+  /ops/jobs:
+    get:
+      operationId: listOpsJobs
+      summary: Recent bulk, script and uptime jobs.
+      responses:
+        "200":
+          description: Jobs
+  /ops/jobs/{id}:
+    get:
+      operationId: getOpsJob
+      summary: One job with its log.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsJob"
+  /scripts:
+    get:
+      operationId: listSavedScripts
+      summary: Saved JSON scripts.
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scripts
+    post:
+      operationId: saveScript
+      summary: Save a JSON script under a name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedScriptIn"
+      responses:
+        "200":
+          description: Saved
+  /scripts/{id}:
+    put:
+      operationId: updateSavedScript
+      summary: Replace a saved script's name and body.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedScriptIn"
+      responses:
+        "200":
+          description: Saved
+    delete:
+      operationId: deleteSavedScript
+      summary: Delete a saved script.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+  /uptime/monitors:
+    get:
+      operationId: listUptimeMonitors
+      summary: Uptime monitors with their recent checks.
+      responses:
+        "200":
+          description: Monitors
+    post:
+      operationId: createUptimeMonitor
+      summary: Watch a URL, host/path or host:port and restart the listed containers when it fails.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UptimeMonitorIn"
+      responses:
+        "201":
+          description: Created
+  /uptime/monitors/{id}:
+    put:
+      operationId: updateUptimeMonitor
+      summary: Replace a monitor's settings.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UptimeMonitorIn"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      operationId: deleteUptimeMonitor
+      summary: Delete a monitor and its history.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+  /uptime/monitors/{id}/check:
+    post:
+      operationId: checkUptimeMonitor
+      summary: Check one monitor now and recover it if it is down. recover=true skips the five minute gap between restarts.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: recover
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The monitor after the check
+  /uptime/check:
+    post:
+      operationId: checkAllUptime
+      summary: Check every enabled monitor now, in a background job.
+      responses:
+        "202":
+          description: The started job
+  /uptime/import:
+    post:
+      operationId: importUptime
+      summary: Create or update monitors from JSON, matched by name. dry_run checks each target without saving.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - script
+              properties:
+                script:
+                  type: object
+                  additionalProperties: true
+                dry_run:
+                  type: boolean
+      responses:
+        "200":
+          description: Results per monitor
+        "422":
+          description: The JSON is not valid
   /docker/machines/{machine_id}/containers/{container_id}:
     get:
       operationId: getDockerContainer
@@ -8654,6 +8945,156 @@ paths:
           description: Still in use; the error names what uses it
 components:
   schemas:
+    OpsJob:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        started_by:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        failed:
+          type: integer
+        valid:
+          type: boolean
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              at:
+                type: string
+              level:
+                type: string
+              message:
+                type: string
+    SavedScriptIn:
+      type: object
+      required:
+        - name
+        - body
+      properties:
+        kind:
+          type: string
+          enum:
+            - docker
+            - uptime
+        name:
+          type: string
+        body:
+          type: string
+    UptimeMonitorIn:
+      type: object
+      required:
+        - name
+        - target
+      properties:
+        name:
+          type: string
+        target:
+          type: string
+        expect_status:
+          type: string
+        keyword:
+          type: string
+        containers:
+          type: array
+          items:
+            type: object
+            properties:
+              machine:
+                type: string
+              name:
+                type: string
+        auto_restart:
+          type: boolean
+        enabled:
+          type: boolean
+    DockerTunnel:
+      type: object
+      properties:
+        machine_id:
+          type: string
+        machine_name:
+          type: string
+        unit:
+          type: string
+        active:
+          type: boolean
+        state:
+          type: string
+        sub_state:
+          type: string
+        remote_managed:
+          type: boolean
+        config_path:
+          type: string
+        error_count:
+          type: integer
+        health:
+          type: string
+        reason:
+          type: string
+        ingress:
+          type: array
+          items:
+            type: object
+            properties:
+              hostname:
+                type: string
+              path:
+                type: string
+              service:
+                type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              origin:
+                type: string
+              hostname:
+                type: string
+              message:
+                type: string
+              count:
+                type: integer
+              last:
+                type: string
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              origin:
+                type: string
+              hostnames:
+                type: array
+                items:
+                  type: string
+              container_id:
+                type: string
+              id:
+                type: string
+              name:
+                type: string
+              project:
+                type: string
+              state:
+                type: string
+              health:
+                type: string
+              errors:
+                type: integer
     DockerPref:
       type: object
       properties:
@@ -14967,16 +15408,25 @@ components:
           type: string
           enum:
             - storage_pressure
+            - uptime_check
+            - docker_fix
+            - docker_script
         action:
           type: string
           enum:
             - enqueue_migrate_low_priority
+            - check_and_recover
+            - fix_unhealthy
+            - run_saved_script
         threshold_percent:
           type: integer
         require_approval:
           type: boolean
         enabled:
           type: boolean
+        target:
+          type: string
+          description: Uptime monitor name, Docker machine, or saved script id or name.
     AutomationPolicyList:
       type: object
       additionalProperties: false
@@ -15003,6 +15453,8 @@ components:
           type: integer
         require_approval:
           type: boolean
+        target:
+          type: string
         yaml:
           type: string
     AutomationPolicyRun:

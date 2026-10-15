@@ -4050,3 +4050,175 @@ details.oci-fieldset > summary {
   font-family: var(--mono);
   font-size: 0.8rem;
 }
+
+/* Docker bulk actions, job logs, tunnels and the JSON modal. */
+.docker-bulk {
+  flex-wrap: wrap;
+}
+
+.job-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.job-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.job-line {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.job-level {
+  color: var(--fg-tertiary);
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  padding-top: 0.1rem;
+}
+
+.job-line.is-error .job-level,
+.job-line.is-error .job-msg {
+  color: var(--danger);
+}
+
+.job-line.is-warn .job-level {
+  color: var(--warn);
+}
+
+.job-line.is-ok .job-level {
+  color: var(--ok);
+}
+
+.job-line.is-step .job-msg {
+  font-weight: 650;
+}
+
+.tunnel-reason {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.tunnel-errors summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.json-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.json-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.json-toolbar > select {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.json-spacer {
+  flex: 1 1 auto;
+}
+
+.json-editor {
+  min-height: 18rem;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.json-invalid {
+  color: var(--danger);
+}
+
+.json-help summary {
+  cursor: pointer;
+  font-weight: 650;
+  font-size: 0.85rem;
+}
+
+.json-ref li {
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Uptime */
+.uptime-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.8rem;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--fg-secondary);
+}
+
+.uptime-history {
+  display: flex;
+  gap: 2px;
+  height: 1.1rem;
+  align-items: stretch;
+}
+
+.uptime-tick {
+  flex: 1 1 0;
+  max-width: 0.5rem;
+  border-radius: 2px;
+  background: var(--ok);
+  opacity: 0.85;
+}
+
+.uptime-tick.is-down {
+  background: var(--danger);
+}
+
+.uptime-tick.is-action {
+  outline: 2px solid var(--warn);
+  outline-offset: -2px;
+}
+
+.uptime-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.uptime-chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0 0 0 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+
+.uptime-pick {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 12rem;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  gap: 0.1rem 0.75rem;
+}

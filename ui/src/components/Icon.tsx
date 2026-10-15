@@ -263,6 +263,8 @@ export function navIcon(label: string): IconName {
       return "terminal";
     case "Files":
       return "files";
+    case "Uptime":
+      return "activity";
     case "OCI Containers":
       return "workloads";
     case "Node":

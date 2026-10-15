@@ -442,6 +442,35 @@ func compactDockerError(raw string) string {
 	return raw
 }
 
+// execRun runs a command in a container without a terminal and returns
+// its combined output (capped at 64 KiB) and exit code.
+func (c *unixClient) execRun(ctx context.Context, id string, argv []string) (string, int, error) {
+	body, _ := json.Marshal(map[string]any{"AttachStdout": true, "AttachStderr": true, "Tty": false, "Cmd": argv})
+	var created struct {
+		ID string `json:"Id"`
+	}
+	if err := c.json(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/exec", body, &created); err != nil {
+		return "", -1, err
+	}
+	res, err := c.do(ctx, http.MethodPost, "/exec/"+url.PathEscape(created.ID)+"/start", []byte(`{"Detach":false,"Tty":false}`))
+	if err != nil {
+		return "", -1, err
+	}
+	raw, rerr := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	_ = res.Body.Close()
+	if rerr != nil && ctx.Err() != nil {
+		return decodeDockerLogs(raw), -1, ctx.Err()
+	}
+	var ins struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
+	}
+	if err := c.json(ctx, http.MethodGet, "/exec/"+url.PathEscape(created.ID)+"/json", nil, &ins); err != nil {
+		return decodeDockerLogs(raw), -1, err
+	}
+	return decodeDockerLogs(raw), ins.ExitCode, nil
+}
+
 func decodeDockerLogs(raw []byte) string {
 	if len(raw) == 0 {
 		return ""

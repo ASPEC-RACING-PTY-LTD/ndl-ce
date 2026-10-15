@@ -53,6 +53,9 @@ type Memory struct {
 	updateOps          map[string]UpdateOperation
 	provisioned        map[string]ProvisionedService
 	dockerPrefs        map[string]DockerPref
+	savedScripts       map[string]SavedScript
+	uptimeMonitors     map[string]UptimeMonitor
+	uptimeEvents       []UptimeEvent
 	groups             map[string]Group
 	groupMembers       map[string][]string
 	groupRoles         map[string][]string

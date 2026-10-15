@@ -585,6 +585,45 @@ func (c Client) DockerAction(ctx context.Context, req docker.ActionRequest) (doc
 	return out, nil
 }
 
+// DockerTunnels reports cloudflared services on the host and hinted system containers.
+func (c Client) DockerTunnels(ctx context.Context, hints []docker.MachineHint) ([]docker.Tunnel, error) {
+	raw, _ := json.Marshal(dockerSpec{Hints: hints})
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "tunnels", SpecJson: raw}},
+	}))
+	if err != nil {
+		return nil, err
+	}
+	var out []docker.Tunnel
+	if err := json.Unmarshal(res.Msg.GetResultJson(), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DockerTunnelUnit starts or restarts a cloudflared service.
+func (c Client) DockerTunnelUnit(ctx context.Context, machineID, unit, action string) error {
+	raw, _ := json.Marshal(map[string]string{"unit": unit})
+	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "tunnel-" + action, MachineId: machineID, SpecJson: raw}},
+	}))
+	return err
+}
+
+// DockerExecRun runs one command in a container and returns its output.
+func (c Client) DockerExecRun(ctx context.Context, machineID, containerID string, argv []string, timeoutSec int) (docker.ExecResult, error) {
+	raw, _ := json.Marshal(map[string]any{"command": argv, "timeout": timeoutSec})
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "exec-run", MachineId: machineID, ContainerId: containerID, SpecJson: raw}},
+	}))
+	if err != nil {
+		return docker.ExecResult{}, err
+	}
+	var out docker.ExecResult
+	_ = json.Unmarshal(res.Msg.GetResultJson(), &out)
+	return out, nil
+}
+
 // DockerIdle stops Docker discovery caches on the agent.
 func (c Client) DockerIdle(ctx context.Context) error {
 	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
