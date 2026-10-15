@@ -9038,6 +9038,9 @@ components:
           type: boolean
         config_path:
           type: string
+        ingress_source:
+          type: string
+          description: Set to cloudflare when ingress was read from the routes the Cloudflare dashboard pushed to the tunnel.
         error_count:
           type: integer
         health:

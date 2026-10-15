@@ -38,6 +38,7 @@ export interface DockerTunnel {
   sub_state?: string;
   remote_managed?: boolean;
   config_path?: string;
+  ingress_source?: string;
   error_count?: number;
   health?: string;
   reason?: string;

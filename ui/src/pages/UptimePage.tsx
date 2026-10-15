@@ -4,6 +4,7 @@ import {
   checkUptimeMonitor,
   deleteUptimeMonitor,
   getDocker,
+  getDockerTunnels,
   importUptime,
   listUptimeMonitors,
   saveUptimeMonitor,
@@ -21,6 +22,7 @@ import { JsonScriptModal } from "../components/JsonScriptModal";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import type { DockerContainer, DockerMachine } from "../generated/openapi";
+import { discoverMonitors, type UptimeCandidate } from "../uptime/discover";
 import { formatWhen } from "../format";
 import { usePoll } from "../query";
 import { canMutate } from "../rbac";
@@ -269,6 +271,161 @@ function ImportResults({ res }: { res: UptimeImportResult }) {
   );
 }
 
+function ScanDialog({ open, existing, canSave, onClose, onSaved }: {
+  open: boolean;
+  existing: UptimeMonitor[];
+  canSave: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [found, setFound] = useState<UptimeCandidate[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [result, setResult] = useState<UptimeImportResult | null>(null);
+
+  async function scan(refresh: boolean) {
+    setBusy(refresh ? "Rescanning tunnels" : "Reading tunnels");
+    setError(null);
+    setResult(null);
+    try {
+      const list = discoverMonitors((await getDockerTunnels(refresh)).items ?? [], existing);
+      setFound(list);
+      setPicked(new Set(list.filter((c) => !c.existing).map((c) => c.hostname)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read the Docker tunnels");
+      setFound((cur) => cur ?? []);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  useEffect(() => {
+    if (open) {
+      setFound(null);
+      void scan(false);
+    }
+    // existing is read when the dialog opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const chosen = (found ?? []).filter((c) => !c.existing && picked.has(c.hostname));
+  const fresh = (found ?? []).filter((c) => !c.existing);
+
+  async function apply(dryRun: boolean) {
+    setBusy(dryRun ? "Checking each site once" : "Adding monitors");
+    setError(null);
+    try {
+      const res = await importUptime({ monitors: chosen.map((c) => c.monitor), delete: [] }, dryRun);
+      setResult(res);
+      if (!dryRun && res.valid) {
+        onSaved();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the monitors");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function toggle(hostname: string) {
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (next.has(hostname)) {
+        next.delete(hostname);
+      } else {
+        next.add(hostname);
+      }
+      return next;
+    });
+  }
+
+  return (
+    <Dialog
+      open={open}
+      title="Scan Docker for sites"
+      wide
+      onClose={onClose}
+      footer={
+        <div className="btn-row">
+          <button className="btn btn-ghost" type="button" onClick={onClose}>
+            Close
+          </button>
+          <button className="btn btn-secondary" type="button" disabled={busy !== null} onClick={() => void scan(true)}>
+            Rescan
+          </button>
+          {canSave ? (
+            <>
+              <button className="btn btn-secondary" type="button" disabled={busy !== null || chosen.length === 0} onClick={() => void apply(true)}>
+                Test
+              </button>
+              <button className="btn btn-primary" type="button" disabled={busy !== null || chosen.length === 0} onClick={() => void apply(false)}>
+                {chosen.length === 1 ? "Add 1 monitor" : `Add ${chosen.length} monitors`}
+              </button>
+            </>
+          ) : null}
+        </div>
+      }
+    >
+      <p className="field-hint">
+        Every public hostname your Cloudflare tunnels route to a web service becomes a monitor for <code>https://hostname</code>, linked to the
+        container serving it. Sites already watched are left alone. SSH, TCP and wildcard routes are skipped.
+      </p>
+      {busy ? (
+        <p className="banner" role="status">
+          Working: {busy}
+        </p>
+      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
+      {result ? <ImportResults res={result} /> : null}
+      {found === null ? (
+        <LoadingState label="Reading tunnels" />
+      ) : found.length === 0 ? (
+        <EmptyState title="No sites found">
+          No tunnel routes were found. Tunnels configured in the Cloudflare dashboard report their routes after cloudflared starts; try Rescan.
+        </EmptyState>
+      ) : (
+        <>
+          {fresh.length > 0 ? (
+            <div className="btn-row is-flush">
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setPicked(new Set(fresh.map((c) => c.hostname)))}>
+                Select all new
+              </button>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setPicked(new Set())}>
+                Select none
+              </button>
+            </div>
+          ) : null}
+          <ul className="plain-list" aria-label="Sites found">
+            {found.map((c) => (
+              <li key={c.hostname}>
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    disabled={!!c.existing || !canSave}
+                    checked={!c.existing && picked.has(c.hostname)}
+                    onChange={() => toggle(c.hostname)}
+                  />
+                  <span>
+                    <strong>{c.hostname}</strong>{" "}
+                    <span className="meta">
+                      {c.existing
+                        ? `already watched by ${c.existing}`
+                        : c.monitor.containers.length
+                          ? `restarts ${c.monitor.containers.map((x) => `${x.machine}/${x.name}`).join(", ")}`
+                          : `${c.machines.join(", ")} → ${c.services.join(", ")}, no container matched (reports only)`}
+                    </span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
 /** UptimePage watches public URLs and restarts the containers behind them when they fail. */
 export function UptimePage() {
   const session = useSession();
@@ -283,6 +440,7 @@ export function UptimePage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [jsonOpen, setJsonOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [job, setJob] = useState<OpsJob | null>(null);
 
   async function reload() {
@@ -433,6 +591,9 @@ export function UptimePage() {
               <button className="btn btn-primary" type="button" onClick={() => setDraft(emptyDraft())}>
                 New monitor
               </button>
+              <button className="btn btn-secondary" type="button" onClick={() => setScanOpen(true)}>
+                Scan Docker
+              </button>
               <button
                 className="btn btn-secondary"
                 type="button"
@@ -493,7 +654,8 @@ export function UptimePage() {
       {job ? <JobLog job={job} onDone={() => void reload()} onClose={() => setJob(null)} /> : null}
       {items.length === 0 ? (
         <EmptyState title="No monitors yet">
-          Add a site and the containers that serve it. If the site stops answering, those containers are restarted automatically.
+          Add a site and the containers that serve it, or use Scan Docker to add every site your tunnels serve. If a site stops answering,
+          its containers are restarted automatically.
         </EmptyState>
       ) : (
         <div className="docker-grid">
@@ -588,6 +750,7 @@ export function UptimePage() {
           return <ImportResults res={res} />;
         }}
       />
+      <ScanDialog open={scanOpen} existing={items} canSave={mutate} onClose={() => setScanOpen(false)} onSaved={() => void reload()} />
       <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );

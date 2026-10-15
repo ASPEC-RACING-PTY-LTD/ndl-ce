@@ -53,8 +53,7 @@ import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
-import { UptimePage } from "./pages/UptimePage";
-import { DockerPage } from "./pages/DockerPage";
+import { DockerHubPage } from "./pages/DockerHubPage";
 import { GameServersHomePage } from "./pages/GameServersHomePage";
 import { GameServerCreatePage } from "./pages/GameServerCreatePage";
 import { GameServerDetailPage } from "./pages/GameServerDetailPage";
@@ -193,8 +192,12 @@ function matchPage(path: string) {
   if (path === "/workloads") {
     return <WorkloadsPage />;
   }
-  if (path === "/uptime") {
-    return <UptimePage />;
+  if (path === "/uptime" || path === "/docker/uptime") {
+    // Uptime lives on the Docker page; the old address still lands there.
+    if (path === "/uptime") {
+      window.history.replaceState({}, "", "/docker/uptime");
+    }
+    return <DockerHubPage tab="uptime" />;
   }
   if (path === "/oci") {
     return <OciPage />;
@@ -205,7 +208,7 @@ function matchPage(path: string) {
     return <OciPage />;
   }
   if (path === "/docker" || path.startsWith("/docker/")) {
-    return <DockerPage />;
+    return <DockerHubPage tab="docker" />;
   }
   if (path === "/node" || path.startsWith("/node/")) {
     return <NodePage />;

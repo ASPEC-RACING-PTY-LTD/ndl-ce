@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -68,6 +69,7 @@ type Tunnel struct {
 	SubState      string        `json:"sub_state,omitempty"`
 	RemoteManaged bool          `json:"remote_managed"`
 	ConfigPath    string        `json:"config_path,omitempty"`
+	IngressSource string        `json:"ingress_source,omitempty"`
 	Ingress       []IngressRule `json:"ingress,omitempty"`
 	Errors        []TunnelError `json:"errors,omitempty"`
 	ErrorCount    int           `json:"error_count"`
@@ -176,23 +178,61 @@ func (e *Engine) fillTunnelConfig(ctx context.Context, t *Tunnel) {
 			t.RemoteManaged = true
 		}
 	}
-	root := e.machineRoot(ctx, t.MachineID)
-	if root == "" {
-		return
-	}
-	candidates := []string{"/etc/cloudflared/config.yml", "/etc/cloudflared/config.yaml", "/root/.cloudflared/config.yml", "/root/.cloudflared/config.yaml", "/usr/local/etc/cloudflared/config.yml"}
-	if cfg != "" && strings.HasPrefix(cfg, "/") && !strings.Contains(cfg, "..") {
-		candidates = append([]string{cfg}, candidates...)
-	}
-	for _, p := range candidates {
-		raw, err := os.ReadFile(filepath.Join(root, p))
-		if err != nil {
-			continue
+	if root := e.machineRoot(ctx, t.MachineID); root != "" {
+		candidates := []string{"/etc/cloudflared/config.yml", "/etc/cloudflared/config.yaml", "/root/.cloudflared/config.yml", "/root/.cloudflared/config.yaml", "/usr/local/etc/cloudflared/config.yml"}
+		if cfg != "" && strings.HasPrefix(cfg, "/") && !strings.Contains(cfg, "..") {
+			candidates = append([]string{cfg}, candidates...)
 		}
-		t.ConfigPath = p
-		t.Ingress = ParseIngress(raw)
-		return
+		for _, p := range candidates {
+			raw, err := os.ReadFile(filepath.Join(root, p))
+			if err != nil {
+				continue
+			}
+			t.ConfigPath = p
+			t.Ingress = ParseIngress(raw)
+			return
+		}
 	}
+	// A dashboard-managed tunnel logs the routes Cloudflare pushed to it.
+	if raw, err := e.machineRun(ctx, t.MachineID, binJournalctl, "-u", t.Unit, "--no-pager", "-o", "cat", "-g", remoteConfigMarker, "-n", "1", "-r"); err == nil {
+		if rules := ParseRemoteIngress(string(raw)); len(rules) > 0 {
+			t.Ingress = rules
+			t.IngressSource = IngressSourceRemote
+		}
+	}
+}
+
+const (
+	remoteConfigMarker = "Updated to new configuration"
+	// IngressSourceRemote marks ingress read from the routes Cloudflare pushed.
+	IngressSourceRemote = "cloudflare"
+)
+
+var remoteConfigRe = regexp.MustCompile(`config="((?:[^"\\]|\\.)*)"`)
+
+// ParseRemoteIngress reads the ingress rules from cloudflared's
+// "Updated to new configuration" log line. Only hostname, path and service
+// are kept; origin request settings are dropped.
+func ParseRemoteIngress(line string) []IngressRule {
+	m := remoteConfigRe.FindStringSubmatch(line)
+	if m == nil {
+		return nil
+	}
+	raw, err := strconv.Unquote(`"` + m[1] + `"`)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		Ingress []IngressRule `json:"ingress"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil
+	}
+	out := make([]IngressRule, 0, len(doc.Ingress))
+	for _, r := range doc.Ingress {
+		out = append(out, IngressRule{Hostname: r.Hostname, Path: r.Path, Service: r.Service})
+	}
+	return out
 }
 
 // ParseIngress reads the ingress rules from a cloudflared config file.
