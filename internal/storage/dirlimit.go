@@ -164,7 +164,8 @@ func (d Directory) unmountContainerRoot(ctx context.Context, abs string) {
 	}
 }
 
-// ResizeVolume grows a directory-backed container root. Shrink is refused.
+// ResizeVolume grows or shrinks a directory-backed container root. ext4 can
+// only shrink unmounted, so a shrink requires a stopped container.
 func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hint PoolHint) error {
 	if req.Class != ClassContainerRoot {
 		return fmt.Errorf("directory resize is only implemented for container roots")
@@ -180,9 +181,6 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 	}
 	pool, err := d.AssertWritablePool(hint)
 	if err != nil {
-		return err
-	}
-	if err := AdmitPhysicalFree(pool.Capacity.UsableBytes); err != nil {
 		return err
 	}
 	rel := strings.TrimSpace(req.BackendRef)
@@ -202,7 +200,13 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 		return fmt.Errorf("container root image is missing")
 	}
 	if req.Size < st.Size() {
-		return fmt.Errorf("shrinking a container disk is not supported")
+		if req.Live {
+			return fmt.Errorf("a directory-backed disk can only shrink while the container is stopped")
+		}
+		return d.shrinkVolume(ctx, abs, img, req.Size)
+	}
+	if err := AdmitPhysicalFree(pool.Capacity.UsableBytes); err != nil {
+		return err
 	}
 	if req.Live {
 		return d.growVolumeLive(ctx, abs, img, st.Size(), req)
@@ -245,6 +249,102 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 		}
 	}
 	return nil
+}
+
+// Resize2fsToArgv resizes the filesystem in img to size bytes.
+func Resize2fsToArgv(img string, size int64) ([]string, error) {
+	argv, err := Resize2fsArgv(img)
+	if err != nil {
+		return nil, err
+	}
+	if size < MinRootBytes || size > MaxVolumeBytes {
+		return nil, ErrInvalidSize
+	}
+	return append(argv, fmt.Sprintf("%dK", size/1024)), nil
+}
+
+// ext4Bytes is replaced in tests.
+var ext4Bytes = ext4ImageBytes
+
+// shrinkVolume shrinks a stopped container root. The image is truncated only
+// after resize2fs succeeds and the superblock proves the filesystem fits, so a
+// failure at any earlier step leaves the data intact and the disk remounted.
+func (d Directory) shrinkVolume(ctx context.Context, abs, img string, size int64) error {
+	if d.Run == nil {
+		return fmt.Errorf("directory filesystem limit runner is unavailable")
+	}
+	if !d.containerRootMounted(abs) {
+		if err := d.EnsureDirectoryRootMounted(ctx, abs); err != nil {
+			return err
+		}
+	}
+	st, err := d.host().StatFS(abs)
+	if err != nil {
+		return fmt.Errorf("measure container disk usage: %w", err)
+	}
+	var used int64
+	if st.Blocks > st.BlocksFree {
+		used = int64(st.Blocks-st.BlocksFree) * st.BlockSize
+	}
+	if floor := ShrinkFloor(used); size < floor {
+		return ShrinkTooSmallError(used, floor)
+	}
+	umount, err := UmountArgv(abs)
+	if err != nil {
+		return err
+	}
+	if err := d.runLimit(ctx, umount[0], umount[1:]...); err != nil {
+		return fmt.Errorf("the container disk is busy; stop the container and try again: %w", err)
+	}
+	if d.containerRootMounted(abs) {
+		return fmt.Errorf("the container disk is still mounted; stop the container and try again")
+	}
+	remount := func(cause error) error {
+		if mnt, err := MountLoopArgv(img, abs); err == nil {
+			_ = d.runLimit(ctx, mnt[0], mnt[1:]...)
+		}
+		return cause
+	}
+	fsck, err := E2fsckImageArgv(img)
+	if err != nil {
+		return remount(err)
+	}
+	if err := d.runLimit(ctx, fsck[0], fsck[1:]...); err != nil {
+		return remount(fmt.Errorf("filesystem check failed before shrink; nothing was changed: %w", err))
+	}
+	resize, err := Resize2fsToArgv(img, size)
+	if err != nil {
+		return remount(err)
+	}
+	if err := d.runLimit(ctx, resize[0], resize[1:]...); err != nil {
+		return remount(fmt.Errorf("filesystem shrink failed; the disk keeps its old size: %w", err))
+	}
+	fsBytes, err := ext4Bytes(img)
+	if err != nil {
+		return remount(fmt.Errorf("could not confirm the filesystem shrank; the disk keeps its old size: %w", err))
+	}
+	if fsBytes > size {
+		return remount(fmt.Errorf("the filesystem is still %d bytes, larger than %d; the disk keeps its old size", fsBytes, size))
+	}
+	f, err := os.OpenFile(img, os.O_RDWR, 0o640)
+	if err != nil {
+		return remount(err)
+	}
+	if err := f.Truncate(size); err != nil {
+		_ = f.Close()
+		return remount(err)
+	}
+	if err := f.Close(); err != nil {
+		return remount(err)
+	}
+	if err := d.runLimit(ctx, fsck[0], fsck[1:]...); err != nil {
+		return fmt.Errorf("filesystem check failed after shrink; the disk was left unmounted for inspection: %w", err)
+	}
+	mnt, err := MountLoopArgv(img, abs)
+	if err != nil {
+		return err
+	}
+	return d.runLimit(ctx, mnt[0], mnt[1:]...)
 }
 
 func expandFilesystem(req CreateVolumeRequest) bool {

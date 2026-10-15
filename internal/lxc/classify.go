@@ -4,7 +4,8 @@ import "strings"
 
 // ClassifyEdit reports how each changed CT field applies.
 // CPU and memory are live cgroup2 writes. Hostname and IP wait for the next
-// start so LXC net/uts keys load. MAC and shrink require a stopped guest.
+// start so LXC net/uts keys load. MAC requires a stopped guest. A disk shrink
+// is reported once it has been applied; directory roots refuse it while running.
 func ClassifyEdit(prev Spec, next Spec, diskGrow bool, diskShrink bool) []ApplyClass {
 	var out []ApplyClass
 	add := func(field, apply, reason string, changed bool) {
@@ -18,9 +19,7 @@ func ClassifyEdit(prev Spec, next Spec, diskGrow bool, diskShrink bool) []ApplyC
 	add("ip", ApplyRestart, "LXC network keys load at start", !prev.IP.Equal(next.IP))
 	add("mac", ApplyStop, "MAC changes require a stopped container", !sameMACValue(prev.MAC, next.MAC))
 	add("disk_bytes", ApplyLive, "directory roots can grow online without unmounting", diskGrow)
-	if diskShrink {
-		out = append(out, ApplyClass{Field: "disk_bytes", Apply: ApplyUnsupported, Reason: "shrinking a container disk is not supported"})
-	}
+	add("disk_bytes", ApplyLive, "the disk shrank after its usage was checked for headroom", diskShrink)
 	return out
 }
 

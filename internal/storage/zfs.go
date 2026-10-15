@@ -170,7 +170,30 @@ func ZFSCreateDatasetArgv(dataset, mount string, sizeBytes int64) ([]string, err
 	return append(argv, dataset), nil
 }
 
-// ZFSSetQuotaArgv grows a dataset quota. It never lowers the limit.
+// ZFSGetSizeArgv reads a dataset's refquota and referenced bytes, one per line.
+func ZFSGetSizeArgv(dataset string) ([]string, error) {
+	if dataset == "" || strings.Contains(dataset, " ") || strings.Contains(dataset, "..") {
+		return nil, fmt.Errorf("dataset locator is invalid")
+	}
+	return []string{ZFSBin, "get", "-Hp", "-o", "value", "refquota,referenced", dataset}, nil
+}
+
+// ParseZFSSize parses ZFSGetSizeArgv output.
+func ParseZFSSize(out string) (refquota, referenced int64, err error) {
+	fields := strings.Fields(out)
+	if len(fields) != 2 {
+		return 0, 0, fmt.Errorf("unexpected zfs get output")
+	}
+	if refquota, err = strconv.ParseInt(fields[0], 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("refquota is not a number")
+	}
+	if referenced, err = strconv.ParseInt(fields[1], 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("referenced is not a number")
+	}
+	return refquota, referenced, nil
+}
+
+// ZFSSetQuotaArgv sets a dataset's refquota. Callers check usage before lowering it.
 func ZFSSetQuotaArgv(dataset string, sizeBytes int64) ([]string, error) {
 	if strings.Contains(dataset, " ") || strings.Contains(dataset, "..") {
 		return nil, fmt.Errorf("dataset locator is invalid")

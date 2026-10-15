@@ -30,7 +30,9 @@ become Pending Restart.
 | Hostname / name | Pending restart (`lxc.uts.name` and `/etc/hostname`) | Written for next start |
 | IP / DNS | Pending restart | Written for next start |
 | MAC | Requires stop | Applied |
-| Disk shrink | Unsupported | Unsupported |
+| Disk shrink (ZFS) | Live (`refquota` lowered after a usage check) | Same |
+| Disk shrink (directory) | Requires stop | Offline `e2fsck` + `resize2fs`, then truncate |
+| Disk shrink (LVM-thin) | Unsupported | Unsupported |
 | Autostart | Live systemd enable/disable | Same |
 
 GPU, nesting, and TUN last-applied flags are preserved across spec
@@ -79,11 +81,26 @@ OCI lifecycle. Clone and migrate stay on Operations.
 Directory container roots can grow while running. The image is
 extended and `resize2fs` can run on the mounted filesystem. The guest
 is not unmounted. ZFS and LVM-thin grow go through their pool APIs.
-Shrink is refused.
 
-Multi-disk VM growth is not a live CT cgroup path. Stopped shrink is
-only allowed when a later path can prove it is safe; it is not
-implemented here.
+## Disk shrink
+
+A shrink is refused unless the new size holds the data in use plus
+headroom: 10% of the used bytes or 1 GiB, whichever is larger
+(`storage.ShrinkFloor`).
+
+- **ZFS** container roots shrink live. The agent reads `refquota` and
+  `referenced`, checks the floor, then lowers `refquota`. ZFS itself
+  also refuses a limit below current usage.
+- **Directory** container roots shrink only while the container is
+  stopped, because ext4 cannot shrink while mounted. The agent measures
+  usage, unmounts (a busy mount is refused), runs `e2fsck -f`, runs
+  `resize2fs` to the new size, and reads the ext4 superblock to prove
+  the filesystem fits. Only then is the image truncated, checked again,
+  and remounted. Any failure before the truncate remounts the disk at
+  its old size with nothing changed.
+- **LVM-thin** shrink is refused.
+
+Multi-disk VM disk shrink is not implemented.
 
 ## Management updates
 

@@ -260,6 +260,31 @@ func (e ZFSEngine) resizeVolume(ctx context.Context, op ZFSOp) (ZFSResult, error
 		return ZFSResult{}, err
 	}
 	res.Argv = argv
+	if !e.SkipHostCmds {
+		get, err := ZFSGetSizeArgv(ds)
+		if err != nil {
+			return ZFSResult{}, err
+		}
+		out, err := e.output(ctx, get)
+		if err != nil {
+			res.Status = StatusFailed
+			res.Reason = "could not read the dataset size: " + err.Error()
+			return res, nil
+		}
+		refquota, referenced, err := ParseZFSSize(out)
+		if err != nil {
+			res.Status = StatusFailed
+			res.Reason = err.Error()
+			return res, nil
+		}
+		if refquota == 0 || op.SizeBytes < refquota {
+			if floor := ShrinkFloor(referenced); op.SizeBytes < floor {
+				res.Status = StatusFailed
+				res.Reason = ShrinkTooSmallError(referenced, floor).Error()
+				return res, nil
+			}
+		}
+	}
 	if err := e.exec(ctx, argv); err != nil {
 		res.Status = StatusFailed
 		res.Reason = err.Error()
