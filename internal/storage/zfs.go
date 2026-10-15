@@ -170,16 +170,17 @@ func ZFSCreateDatasetArgv(dataset, mount string, sizeBytes int64) ([]string, err
 	return append(argv, dataset), nil
 }
 
-// ZFSGetSizeArgv reads a dataset's refquota and referenced bytes, one per line.
+// ZFSGetSizeArgv reads a dataset's refquota and used bytes, one per line.
+// used includes snapshots, as quota does.
 func ZFSGetSizeArgv(dataset string) ([]string, error) {
 	if dataset == "" || strings.Contains(dataset, " ") || strings.Contains(dataset, "..") {
 		return nil, fmt.Errorf("dataset locator is invalid")
 	}
-	return []string{ZFSBin, "get", "-Hp", "-o", "value", "refquota,referenced", dataset}, nil
+	return []string{ZFSBin, "get", "-Hp", "-o", "value", "refquota,used", dataset}, nil
 }
 
 // ParseZFSSize parses ZFSGetSizeArgv output.
-func ParseZFSSize(out string) (refquota, referenced int64, err error) {
+func ParseZFSSize(out string) (refquota, used int64, err error) {
 	fields := strings.Fields(out)
 	if len(fields) != 2 {
 		return 0, 0, fmt.Errorf("unexpected zfs get output")
@@ -187,13 +188,15 @@ func ParseZFSSize(out string) (refquota, referenced int64, err error) {
 	if refquota, err = strconv.ParseInt(fields[0], 10, 64); err != nil {
 		return 0, 0, fmt.Errorf("refquota is not a number")
 	}
-	if referenced, err = strconv.ParseInt(fields[1], 10, 64); err != nil {
-		return 0, 0, fmt.Errorf("referenced is not a number")
+	if used, err = strconv.ParseInt(fields[1], 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("used is not a number")
 	}
-	return refquota, referenced, nil
+	return refquota, used, nil
 }
 
-// ZFSSetQuotaArgv sets a dataset's refquota. Callers check usage before lowering it.
+// ZFSSetQuotaArgv sets refquota and quota together, as ZFSCreateDatasetArgv
+// does. Raising only refquota left quota at the create size, which capped a
+// grown disk at its original size. Callers check usage before lowering it.
 func ZFSSetQuotaArgv(dataset string, sizeBytes int64) ([]string, error) {
 	if strings.Contains(dataset, " ") || strings.Contains(dataset, "..") {
 		return nil, fmt.Errorf("dataset locator is invalid")
@@ -202,7 +205,7 @@ func ZFSSetQuotaArgv(dataset string, sizeBytes int64) ([]string, error) {
 		return nil, fmt.Errorf("dataset size is too small")
 	}
 	quota := fmt.Sprintf("%d", sizeBytes)
-	return []string{ZFSBin, "set", "refquota=" + quota, dataset}, nil
+	return []string{ZFSBin, "set", "refquota=" + quota, "quota=" + quota, dataset}, nil
 }
 
 // ZFSCreateZVolArgv creates a zvol for a VM disk.

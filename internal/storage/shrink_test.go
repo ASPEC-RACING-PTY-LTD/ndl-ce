@@ -260,8 +260,8 @@ func TestZFSShrinkLiveWithHeadroom(t *testing.T) {
 	if err != nil || res.Status != StatusAvailable {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if !strings.Contains(ran[len(ran)-1], "refquota=6442450944") {
-		t.Fatalf("shrink must lower refquota: %v", ran)
+	if last := ran[len(ran)-1]; !strings.Contains(last, "refquota=6442450944") || !strings.Contains(last, " quota=6442450944") {
+		t.Fatalf("shrink must lower refquota and quota: %v", ran)
 	}
 }
 

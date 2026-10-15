@@ -1584,15 +1584,17 @@ func (s *Server) resizeCTDisk(ctx context.Context, clusterID string, row appdb.W
 	if err != nil || vol == nil {
 		return errConflict("container root volume is unavailable")
 	}
-	if size == vol.SizeBytes {
-		return nil
-	}
-	shrink := size < vol.SizeBytes
-	running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
 	pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
 	if err != nil || pool == nil {
 		return errConflict("storage pool is not found")
 	}
+	// An unchanged ZFS size still reapplies quota and refquota, so saving
+	// heals datasets whose quota was left at the create size.
+	if size == vol.SizeBytes && pool.BackendType != storage.BackendZFS {
+		return nil
+	}
+	shrink := size < vol.SizeBytes
+	running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
 	if shrink {
 		switch pool.BackendType {
 		case storage.BackendZFS:
