@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostDiskResult, HostDiskStatus } from "../generated/openapi";
-import { HostDiskBanner, HostDiskPanel } from "./HostDisk";
+import { HostDiskBanner, HostDiskCleanups, HostDiskPanel } from "./HostDisk";
 
 const api = vi.hoisted(() => ({
   getHostDisk: vi.fn(),
@@ -85,11 +85,18 @@ describe("HostDisk", () => {
       status: status("ok", 220 * GIB),
       clean: { category: "update-checkpoints", removed_bytes: 120 * GIB, kept: 1 },
     });
-    render(<HostDiskPanel mutate />);
+    render(
+      <>
+        <HostDiskPanel mutate />
+        <HostDiskCleanups mutate />
+      </>,
+    );
 
     expect(await screen.findByRole("meter", { name: "/ used" })).toBeVisible();
     expect(screen.getByText(/50.0 GiB of the root disk is reserved for No-dal/i)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /what is using space/i }));
+    // The panel now sends you to the storage manager; measuring lives in Quick clean-ups.
+    expect(screen.getByRole("button", { name: /^find what is using space$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^what is using space$/i }));
     const table = await screen.findByRole("table", { name: /disk usage by category/i });
     const pools = within(table).getByText(/storage pools on this disk/i).closest("tr")!;
     expect(within(pools).queryByRole("button")).not.toBeInTheDocument();

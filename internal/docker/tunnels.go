@@ -61,21 +61,25 @@ type TunnelLink struct {
 
 // Tunnel is one cloudflared service on a machine.
 type Tunnel struct {
-	MachineID     string        `json:"machine_id"`
-	MachineName   string        `json:"machine_name"`
-	Unit          string        `json:"unit"`
-	Active        bool          `json:"active"`
-	State         string        `json:"state"`
-	SubState      string        `json:"sub_state,omitempty"`
-	RemoteManaged bool          `json:"remote_managed"`
-	ConfigPath    string        `json:"config_path,omitempty"`
-	IngressSource string        `json:"ingress_source,omitempty"`
-	Ingress       []IngressRule `json:"ingress,omitempty"`
-	Errors        []TunnelError `json:"errors,omitempty"`
-	ErrorCount    int           `json:"error_count"`
-	Links         []TunnelLink  `json:"links,omitempty"`
-	Health        string        `json:"health"`
-	Reason        string        `json:"reason,omitempty"`
+	MachineID     string `json:"machine_id"`
+	MachineName   string `json:"machine_name"`
+	Unit          string `json:"unit"`
+	Active        bool   `json:"active"`
+	State         string `json:"state"`
+	SubState      string `json:"sub_state,omitempty"`
+	RemoteManaged bool   `json:"remote_managed"`
+	ConfigPath    string `json:"config_path,omitempty"`
+	IngressSource string `json:"ingress_source,omitempty"`
+	// TunnelID is the Cloudflare tunnel this connector runs, from its log.
+	TunnelID string `json:"tunnel_id,omitempty"`
+	// Managed is true for connectors No-dal deployed.
+	Managed    bool          `json:"managed,omitempty"`
+	Ingress    []IngressRule `json:"ingress,omitempty"`
+	Errors     []TunnelError `json:"errors,omitempty"`
+	ErrorCount int           `json:"error_count"`
+	Links      []TunnelLink  `json:"links,omitempty"`
+	Health     string        `json:"health"`
+	Reason     string        `json:"reason,omitempty"`
 }
 
 var (
@@ -153,6 +157,10 @@ func (e *Engine) machineTunnels(ctx context.Context, m MachineHint) []Tunnel {
 		t := Tunnel{MachineID: m.ID, MachineName: firstNonEmptyStr(m.Name, m.ID), Unit: f[0], State: f[2], SubState: f[3]}
 		t.Active = f[2] == "active"
 		e.fillTunnelConfig(ctx, &t)
+		t.Managed = ManagedConnectorUnit(t.Unit)
+		if raw, err := e.machineRun(ctx, m.ID, binJournalctl, "-u", t.Unit, "--no-pager", "-o", "cat", "-g", "tunnelID=", "-n", "1", "-r"); err == nil {
+			t.TunnelID = ParseTunnelID(string(raw))
+		}
 		if jr, err := e.machineRun(ctx, m.ID, binJournalctl, "-u", t.Unit, "--since", "-"+strconv.Itoa(int(TunnelWindow.Minutes()))+"min", "--no-pager", "-o", "short-iso", "-n", "500"); err == nil {
 			t.Errors = ParseTunnelErrors(string(jr))
 			for _, te := range t.Errors {
@@ -200,6 +208,16 @@ func (e *Engine) fillTunnelConfig(ctx context.Context, t *Tunnel) {
 			t.IngressSource = IngressSourceRemote
 		}
 	}
+}
+
+var tunnelIDRe = regexp.MustCompile(`tunnelID=([0-9a-fA-F-]{36})`)
+
+// ParseTunnelID reads the tunnel ID cloudflared logs when it starts.
+func ParseTunnelID(log string) string {
+	if m := tunnelIDRe.FindStringSubmatch(log); m != nil {
+		return strings.ToLower(m[1])
+	}
+	return ""
 }
 
 const (

@@ -344,8 +344,19 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	s.finishOp(r.Context(), op, "succeeded", mustCreateMsg(ids), 100)
 	s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
 	s.emitEvent(r.Context(), p.User.ClusterID, node.ID, "workload.created", map[string]string{"workload_id": row.ID, "kind": row.Kind})
-	warnings := s.applyWorkloadExtras(r.Context(), p.User.ClusterID, node.ID, row, req.Extras, req.DesiredPower)
-	writeJSON(w, http.StatusCreated, s.workloadJSONWithSetup(r.Context(), row, warnings))
+	out := s.workloadJSON(r.Context(), row)
+	if row.NodeID == "" {
+		row.NodeID = node.ID
+	}
+	if op, err := s.startExtensionsJob(p.User.ClusterID, row, req.Extras, extensionInstall); err != nil {
+		out["setup_status"] = "warnings"
+		out["setup_warnings"] = []lxc.SetupWarning{{Extra: "setup", Message: err.Error()}}
+	} else if op != nil {
+		// Extras install in the background; GET .../extensions reports progress.
+		out["setup_status"] = "installing"
+		out["setup_operation_id"] = op.ID
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 func (s *Server) planCreateIDs(ctx context.Context, clusterID, nodeID, key, volumeID string) createIDs {

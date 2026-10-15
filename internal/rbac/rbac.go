@@ -107,7 +107,12 @@ const (
 	GameServerReinstall    = "gameserver.reinstall"
 	GameServerDelete       = "gameserver.delete"
 	GameServerAdmin        = "gameserver.admin"
-	All                    = "*"
+	// Cloudflare: read the unified view; manage tunnels, routes, DNS and
+	// connectors; add, rotate and remove API tokens (admin only by default).
+	CloudflareRead        = "cloudflare.read"
+	CloudflareManage      = "cloudflare.manage"
+	CloudflareCredentials = "cloudflare.credentials"
+	All                   = "*"
 
 	TokenPresetReadonlyDebug = "readonly-debug"
 	TokenPresetFullAudit     = "full-audit"
@@ -142,9 +147,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			GameServerRead, GameServerCreate, GameServerPower, GameServerConsole, GameServerFiles, GameServerConfig,
 			GameServerContent, GameServerBackup, GameServerSchedule, GameServerNetwork, GameServerUsers,
 			GameServerReinstall, GameServerDelete, GameServerAdmin,
+			CloudflareRead, CloudflareManage,
 		}
 	case Viewer:
-		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead, GameServerRead}
+		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead, GameServerRead, CloudflareRead}
 	case Automation:
 		return PermissionsForAutomation()
 	default:

@@ -9,9 +9,23 @@ import (
 	"github.com/no-dal/ndl-ce/internal/guestextras"
 )
 
+type extraMode int
+
+const (
+	extraInstall extraMode = iota
+	extraUpdate
+	extraReinstall
+)
+
 // GuestSetup installs optional extras inside an already created container.
 // Failures are returned as SetupWarnings. The workload is never deleted here.
 func (e *Engine) GuestSetup(ctx context.Context, req LifecycleRequest) (Result, error) {
+	return e.guestExtras(ctx, req, extraInstall)
+}
+
+// guestExtras installs, updates or reinstalls extras and reports what is
+// installed afterwards. One extra failing does not stop the others.
+func (e *Engine) guestExtras(ctx context.Context, req LifecycleRequest, mode extraMode) (Result, error) {
 	out := Result{WorkloadID: req.WorkloadID, Status: StatusRunning}
 	extras := guestextras.Resolve(req.Extras)
 	if len(extras) == 0 {
@@ -27,65 +41,223 @@ func (e *Engine) GuestSetup(ctx context.Context, req LifecycleRequest) (Result, 
 	pin := applied.Spec.ImagePin
 	family := guestextras.Family(pin)
 	var warnings []SetupWarning
+	indexed := false
 	for _, id := range extras {
 		av := guestextras.AvailabilityFor(pin, id)
 		if !av.Available {
 			warnings = append(warnings, SetupWarning{Extra: id, Message: av.Reason})
 			continue
 		}
-		if err := e.installGuestExtra(ctx, req.WorkloadID, family, id, av.Packages); err != nil {
+		if family == "debian" && !indexed {
+			if err := e.aptRetry(ctx, req.WorkloadID, "update"); err != nil {
+				_ = e.repairDPKG(ctx, req.WorkloadID)
+				if err := e.aptRetry(ctx, req.WorkloadID, "update"); err != nil {
+					warnings = append(warnings, SetupWarning{Extra: id, Message: "package index update failed: " + sanitizeGuestSetupErr(err)})
+					continue
+				}
+			}
+			indexed = true
+		}
+		if err := e.installGuestExtra(ctx, req.WorkloadID, family, id, av.Packages, mode); err != nil {
 			warnings = append(warnings, SetupWarning{Extra: id, Message: sanitizeGuestSetupErr(err)})
 		}
 	}
 	out.SetupWarnings = warnings
+	if st, err := e.GuestExtrasStatus(ctx, req.WorkloadID); err == nil {
+		out.Extras = st.Extras
+	}
 	return out, nil
 }
 
-func (e *Engine) installGuestExtra(ctx context.Context, id, family, extra string, pkgs []string) error {
+func aptModeArgs(mode extraMode, pkgs []string) []string {
+	args := []string{"install", "-y"}
+	switch mode {
+	case extraUpdate:
+		args = append(args, "--only-upgrade")
+	case extraReinstall:
+		args = append(args, "--reinstall")
+	}
+	return append(args, pkgs...)
+}
+
+func apkModeArgs(bin string, mode extraMode, pkgs []string) []string {
+	switch mode {
+	case extraUpdate:
+		return append([]string{bin, "add", "--no-cache", "--upgrade"}, pkgs...)
+	case extraReinstall:
+		return append([]string{bin, "fix", "--reinstall"}, pkgs...)
+	}
+	return append([]string{bin, "add", "--no-cache"}, pkgs...)
+}
+
+func (e *Engine) installGuestExtra(ctx context.Context, id, family, extra string, pkgs []string, mode extraMode) error {
 	if extra == guestextras.Compose {
-		return e.installGuestCompose(ctx, id, family, pkgs)
+		return e.installGuestCompose(ctx, id, family, pkgs, mode)
 	}
 	if len(pkgs) == 0 {
 		return fmt.Errorf("no packages for %s", extra)
 	}
 	switch family {
 	case "debian":
-		if err := e.aptNoninteractive(ctx, id, "update"); err != nil {
+		if mode != extraInstall {
+			pkgs = e.installedDebPackages(ctx, id, pkgs)
+			if len(pkgs) == 0 {
+				return fmt.Errorf("%s is not installed; install it first", extra)
+			}
+		}
+		args := aptModeArgs(mode, pkgs)
+		if err := e.aptRetry(ctx, id, args...); err != nil {
 			_ = e.repairDPKG(ctx, id)
-			if err := e.aptNoninteractive(ctx, id, "update"); err != nil {
-				return fmt.Errorf("package index update failed")
+			if err := e.aptRetry(ctx, id, args...); err != nil {
+				return fmt.Errorf("could not install %s: %s", extra, sanitizeGuestSetupErr(err))
 			}
 		}
-		args := append([]string{"install", "-y"}, pkgs...)
-		if err := e.aptNoninteractive(ctx, id, args...); err != nil {
-			_ = e.repairDPKG(ctx, id)
-			if err := e.aptNoninteractive(ctx, id, args...); err != nil {
-				return fmt.Errorf("could not install %s", extra)
-			}
-		}
-		if extra == guestextras.Docker {
-			if err := e.startGuestDocker(ctx, id, family); err != nil {
-				return err
-			}
-		}
-		return nil
 	case "alpine":
-		args := append([]string{"/sbin/apk", "add", "--no-cache"}, pkgs...)
-		if _, err := e.attach(ctx, id, args...); err != nil {
-			args[0] = "/usr/bin/apk"
-			if _, err := e.attach(ctx, id, args...); err != nil {
-				return fmt.Errorf("could not install %s", extra)
-			}
+		if err := e.apk(ctx, id, mode, pkgs); err != nil {
+			return fmt.Errorf("could not install %s: %s", extra, sanitizeGuestSetupErr(err))
 		}
-		if extra == guestextras.Docker {
-			if err := e.startGuestDocker(ctx, id, family); err != nil {
-				return err
-			}
-		}
-		return nil
 	default:
 		return fmt.Errorf("unsupported guest family %s", family)
 	}
+	if extra == guestextras.Docker {
+		if err := e.startGuestDocker(ctx, id, family); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Engine) apk(ctx context.Context, id string, mode extraMode, pkgs []string) error {
+	_, err := e.attach(ctx, id, apkModeArgs("/sbin/apk", mode, pkgs)...)
+	if err != nil {
+		_, err = e.attach(ctx, id, apkModeArgs("/usr/bin/apk", mode, pkgs)...)
+	}
+	return err
+}
+
+// aptRetry runs apt-get, waiting out a package lock held by another apt run
+// (common right after a container first boots). The error carries apt's last
+// output line.
+func (e *Engine) aptRetry(ctx context.Context, id string, aptArgs ...string) error {
+	tries, delay := 12, 10*time.Second
+	if e.Run != nil {
+		tries, delay = 2, time.Millisecond
+	}
+	cmd := append([]string{"/usr/bin/apt-get", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"}, aptArgs...)
+	var last error
+	for i := 0; i < tries; i++ {
+		out, err := e.attach(ctx, id, cmd...)
+		if err == nil {
+			return nil
+		}
+		last = aptError(out, err)
+		text := string(out)
+		if !strings.Contains(text, "Could not get lock") && !strings.Contains(text, "is held by process") {
+			return last
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return last
+}
+
+func aptError(out []byte, err error) error {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if l := strings.TrimSpace(lines[i]); l != "" {
+			return fmt.Errorf("%s", l)
+		}
+	}
+	return err
+}
+
+// installedDebPackages keeps the packages that are installed.
+func (e *Engine) installedDebPackages(ctx context.Context, id string, pkgs []string) []string {
+	var out []string
+	for _, p := range pkgs {
+		if ok, _ := e.debInstalled(ctx, id, p); ok {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (e *Engine) debInstalled(ctx context.Context, id, pkg string) (bool, string) {
+	out, err := e.attach(ctx, id, "/usr/bin/dpkg-query", "-W", "-f=${Status}|${Version}", pkg)
+	if err != nil {
+		return false, ""
+	}
+	parts := strings.SplitN(strings.TrimSpace(string(out)), "|", 2)
+	if len(parts) != 2 || !strings.HasSuffix(parts[0], " installed") {
+		return false, ""
+	}
+	return true, parts[1]
+}
+
+// GuestExtrasStatus reports which catalog extras are installed in the guest.
+func (e *Engine) GuestExtrasStatus(ctx context.Context, workloadID string) (Result, error) {
+	out := Result{WorkloadID: workloadID, Status: StatusRunning}
+	if e.SkipHostCmds || e.FakeUnpack {
+		return out, nil
+	}
+	applied, err := e.readApplied(workloadID)
+	if err != nil {
+		return out, fmt.Errorf("could not read the container's spec")
+	}
+	pin := applied.Spec.ImagePin
+	family := guestextras.Family(pin)
+	for _, extra := range guestextras.Catalog() {
+		st := ExtraStatus{ID: extra.ID}
+		av := guestextras.AvailabilityFor(pin, extra.ID)
+		switch {
+		case extra.ID == guestextras.Compose:
+			if v, ok := e.composeVersion(ctx, workloadID); ok {
+				st.Installed, st.Version = true, v
+			}
+		case family == "debian":
+			for _, p := range av.Packages {
+				if ok, v := e.debInstalled(ctx, workloadID, p); ok {
+					st.Installed, st.Version, st.Package = true, v, p
+					break
+				}
+			}
+		case family == "alpine":
+			for _, p := range av.Packages {
+				if _, err := e.attach(ctx, workloadID, "/sbin/apk", "info", "-e", p); err == nil {
+					st.Installed, st.Package = true, p
+					break
+				}
+			}
+		}
+		if extra.ID == guestextras.Docker && st.Installed {
+			if !e.dockerRunning(ctx, workloadID) {
+				st.Detail = "installed, but the Docker engine is not running"
+			}
+		}
+		out.Extras = append(out.Extras, st)
+	}
+	return out, nil
+}
+
+func (e *Engine) dockerRunning(ctx context.Context, id string) bool {
+	if _, err := e.attach(ctx, id, "/usr/bin/docker", "info"); err == nil {
+		return true
+	}
+	_, err := e.attach(ctx, id, "/bin/docker", "info")
+	return err == nil
+}
+
+func (e *Engine) composeVersion(ctx context.Context, id string) (string, bool) {
+	for _, bin := range []string{"/usr/bin/docker", "/bin/docker"} {
+		out, err := e.attach(ctx, id, bin, "compose", "version", "--short")
+		if err == nil {
+			return strings.TrimSpace(string(out)), true
+		}
+	}
+	return "", false
 }
 
 func (e *Engine) guestComposePluginOK(ctx context.Context, id string) bool {
@@ -113,8 +285,8 @@ func firstAvailableComposePackage(pkgs []string, available func(string) bool) st
 	return ""
 }
 
-func (e *Engine) installGuestCompose(ctx context.Context, id, family string, pkgs []string) error {
-	if e.guestComposePluginOK(ctx, id) {
+func (e *Engine) installGuestCompose(ctx context.Context, id, family string, pkgs []string, mode extraMode) error {
+	if mode == extraInstall && e.guestComposePluginOK(ctx, id) {
 		return nil
 	}
 	if len(pkgs) == 0 {
@@ -122,32 +294,33 @@ func (e *Engine) installGuestCompose(ctx context.Context, id, family string, pkg
 	}
 	switch family {
 	case "debian":
-		if err := e.aptNoninteractive(ctx, id, "update"); err != nil {
-			_ = e.repairDPKG(ctx, id)
-			if err := e.aptNoninteractive(ctx, id, "update"); err != nil {
-				return fmt.Errorf("Docker Compose plugin installation failed: package index update failed")
+		pkg := ""
+		if mode != extraInstall {
+			if installed := e.installedDebPackages(ctx, id, pkgs); len(installed) > 0 {
+				pkg = installed[0]
 			}
 		}
-		pkg := firstAvailableComposePackage(pkgs, func(name string) bool {
-			return e.aptPackageAvailable(ctx, id, name)
-		})
+		if pkg == "" {
+			pkg = firstAvailableComposePackage(pkgs, func(name string) bool {
+				return e.aptPackageAvailable(ctx, id, name)
+			})
+		}
 		if pkg == "" {
 			return fmt.Errorf("Docker Compose plugin installation failed: no Compose v2 package in guest repositories (tried %s)", strings.Join(pkgs, ", "))
 		}
-		args := []string{"install", "-y", pkg}
-		if err := e.aptNoninteractive(ctx, id, args...); err != nil {
+		args := aptModeArgs(mode, []string{pkg})
+		if mode == extraUpdate && len(e.installedDebPackages(ctx, id, []string{pkg})) == 0 {
+			args = aptModeArgs(extraInstall, []string{pkg})
+		}
+		if err := e.aptRetry(ctx, id, args...); err != nil {
 			_ = e.repairDPKG(ctx, id)
-			if err := e.aptNoninteractive(ctx, id, args...); err != nil {
-				return fmt.Errorf("Docker Compose plugin installation failed: could not install %s", pkg)
+			if err := e.aptRetry(ctx, id, args...); err != nil {
+				return fmt.Errorf("Docker Compose plugin installation failed: could not install %s: %s", pkg, sanitizeGuestSetupErr(err))
 			}
 		}
 	case "alpine":
-		args := append([]string{"/sbin/apk", "add", "--no-cache"}, pkgs...)
-		if _, err := e.attach(ctx, id, args...); err != nil {
-			args[0] = "/usr/bin/apk"
-			if _, err := e.attach(ctx, id, args...); err != nil {
-				return fmt.Errorf("Docker Compose plugin installation failed: could not install %s", strings.Join(pkgs, ", "))
-			}
+		if err := e.apk(ctx, id, mode, pkgs); err != nil {
+			return fmt.Errorf("Docker Compose plugin installation failed: could not install %s: %s", strings.Join(pkgs, ", "), sanitizeGuestSetupErr(err))
 		}
 	default:
 		return fmt.Errorf("Docker Compose plugin installation failed: unsupported guest family %s", family)

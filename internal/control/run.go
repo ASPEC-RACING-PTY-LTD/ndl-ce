@@ -164,6 +164,9 @@ func Run(cfg Config) error {
 		ZFS:       httpapi.AdaptZFS(agent),
 		LVM:       httpapi.AdaptLVM(agent),
 		Datastore: httpapi.AdaptDatastore(agent),
+		// Host disk protection (status, usage, clean-up) lives in the agent.
+		Disk: agent,
+		Scan: agent,
 		// Game servers run as root in the agent; the control plane only asks.
 		GameHost:    agentrpc.GameHost{Client: agent},
 		Hub:         hub,

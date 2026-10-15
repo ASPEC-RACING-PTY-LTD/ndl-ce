@@ -72,6 +72,19 @@ func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*c
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "snapshot", ResultJson: mustJSON(inv)}), nil
 	case "tunnels":
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "tunnels", ResultJson: mustJSON(h.docker().Tunnels(ctx, spec.Hints))}), nil
+	case "connector":
+		var req docker.ConnectorRequest
+		if err := json.Unmarshal(m.GetSpecJson(), &req); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("connector request is invalid"))
+		}
+		req.MachineID = m.GetMachineId()
+		cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
+		res, err := h.docker().Connector(cctx, req)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "connector", ResultJson: mustJSON(res)}), nil
 	case "tunnel-restart", "tunnel-start":
 		if err := h.docker().TunnelUnitAction(ctx, m.GetMachineId(), spec.Unit, strings.TrimPrefix(action, "tunnel-")); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)

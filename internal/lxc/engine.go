@@ -615,6 +615,12 @@ func (e *Engine) Lifecycle(ctx context.Context, req LifecycleRequest) (Result, e
 		return e.ApplySpec(ctx, req)
 	case ActionGuestSetup:
 		return e.GuestSetup(ctx, req)
+	case ActionGuestExtrasStatus:
+		return e.GuestExtrasStatus(ctx, req.WorkloadID)
+	case ActionGuestExtrasUpdate:
+		return e.guestExtras(ctx, req, extraUpdate)
+	case ActionGuestExtrasReinstall:
+		return e.guestExtras(ctx, req, extraReinstall)
 	case ActionMountsGet:
 		return e.Mounts(req.WorkloadID)
 	case ActionMountsSet:

@@ -38,6 +38,7 @@ import { Link } from "../components/Link";
 import { MetricChart, lastPoint } from "../components/MetricChart";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import { WorkloadCloudflarePanel } from "../cloudflare/WorkloadCloudflarePanel";
 import { formatBytes, honestStatus } from "../format";
 import { isOperationsLeaf } from "../nav/workloadNav";
 import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
@@ -336,14 +337,19 @@ export function WorkloadDetailPage() {
   const diskGrowing = parseMemoryGB(diskGB, 8) > parseMemoryGB(origDiskGB, 8);
   const diagnosticsLink =
     item.kind === "system-container" ? (
-      <Link
-        className="btn btn-sm btn-ghost btn-icon"
-        href={`/workloads/${item.id}/diagnostics`}
-        aria-label="Diagnostics"
-        title="Diagnostics"
-      >
-        <Icon name="diagnostics" size={14} />
-      </Link>
+      <>
+        <Link className="btn btn-sm btn-ghost" href={`/workloads/${item.id}/extensions`}>
+          Extensions
+        </Link>
+        <Link
+          className="btn btn-sm btn-ghost btn-icon"
+          href={`/workloads/${item.id}/diagnostics`}
+          aria-label="Diagnostics"
+          title="Diagnostics"
+        >
+          <Icon name="diagnostics" size={14} />
+        </Link>
+      </>
     ) : null;
 
   return (
@@ -631,6 +637,7 @@ export function WorkloadDetailPage() {
               )}
             </article>
           ) : null}
+          {item.kind === "system-container" || item.kind === "oci" ? <WorkloadCloudflarePanel workload={{ id: item.id, name: item.name }} /> : null}
         </>
       ) : null}
 

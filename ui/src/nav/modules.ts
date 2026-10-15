@@ -122,6 +122,14 @@ export const NAV_MODULES: NavModule[] = [
     simple: true,
   },
   {
+    id: "cloudflare",
+    href: "/cloudflare",
+    label: "Cloudflare",
+    group: "Infrastructure",
+    match: (p) => p === "/cloudflare",
+    simple: true,
+  },
+  {
     id: "cluster",
     href: "/settings/cluster",
     label: "Cluster",

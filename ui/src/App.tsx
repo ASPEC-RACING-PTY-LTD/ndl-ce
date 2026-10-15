@@ -16,7 +16,6 @@ import { NodePage } from "./pages/NodePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SetupPage } from "./pages/SetupPage";
 import { NetworkPage } from "./pages/NetworkPage";
-import { StoragePage } from "./pages/StoragePage";
 import { FilesPage } from "./pages/FilesPage";
 import { HostOperatePage } from "./pages/HostOperatePage";
 import { TerminalPage } from "./pages/TerminalPage";
@@ -54,6 +53,9 @@ import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
 import { DockerHubPage } from "./pages/DockerHubPage";
+import { CloudflarePage } from "./pages/CloudflarePage";
+import { WorkloadExtensionsPage } from "./pages/WorkloadExtensionsPage";
+import { StorageHubPage } from "./pages/StorageHubPage";
 import { GameServersHomePage } from "./pages/GameServersHomePage";
 import { GameServerCreatePage } from "./pages/GameServerCreatePage";
 import { GameServerDetailPage } from "./pages/GameServerDetailPage";
@@ -109,8 +111,8 @@ function matchPage(path: string) {
   if (path === "/alerts") {
     return <AlertsPage />;
   }
-  if (path === "/storage") {
-    return <StoragePage />;
+  if (path === "/storage" || path === "/storage/manage") {
+    return <StorageHubPage tab={path === "/storage/manage" ? "manage" : "storage"} />;
   }
   if (path === "/network") {
     return <NetworkPage />;
@@ -183,6 +185,9 @@ function matchPage(path: string) {
   if (/^\/workloads\/[^/]+\/diagnostics$/.test(path)) {
     return <WorkloadDiagnosticsPage />;
   }
+  if (/^\/workloads\/[^/]+\/extensions$/.test(path)) {
+    return <WorkloadExtensionsPage />;
+  }
   if (/^\/workloads\/[^/]+\/storage$/.test(path)) {
     return <WorkloadStoragePage />;
   }
@@ -198,6 +203,9 @@ function matchPage(path: string) {
       window.history.replaceState({}, "", "/docker/uptime");
     }
     return <DockerHubPage tab="uptime" />;
+  }
+  if (path === "/cloudflare") {
+    return <CloudflarePage />;
   }
   if (path === "/oci") {
     return <OciPage />;

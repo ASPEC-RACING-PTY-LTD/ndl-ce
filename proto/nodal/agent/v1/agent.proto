@@ -188,6 +188,7 @@ message ExecuteRequest {
     DockerMgmt docker_mgmt = 42;
     GameServer game_server = 43;
     HostDisk host_disk = 44;
+    StorageScan storage_scan = 45;
   }
 }
 
@@ -211,6 +212,15 @@ message GameServer {
   string server_id = 2;
   bytes spec_json = 3;
   bytes data = 4;
+}
+
+// StorageScan measures what uses space under a storage location and deletes
+// chosen items. action is scan-start, scan-status, scan-browse, scan-cancel
+// or delete; spec_json carries the root, scan id, path and items. Paths are
+// resolved beneath the scanned root and protected locations are refused.
+message StorageScan {
+  string action = 1;
+  bytes spec_json = 2;
 }
 
 message DockerMgmt {

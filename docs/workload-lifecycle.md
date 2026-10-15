@@ -82,6 +82,17 @@ Directory container roots can grow while running. The image is
 extended and `resize2fs` can run on the mounted filesystem. The guest
 is not unmounted. ZFS and LVM-thin grow go through their pool APIs.
 
+## Extensions
+
+Optional extras chosen at create time (Docker, Compose, git and others)
+install in a background job after the container starts. The job does not
+depend on the browser request, so a proxy timeout (Cloudflare drops requests
+after 100 seconds) cannot cancel it half way. Each extension's state, version
+and last error are stored, and the workload's Extensions page installs,
+updates (`apt-get install --only-upgrade`) or reinstalls one, a selection, or
+all installed extensions. A held apt lock is waited out. Check what's
+installed asks the container directly.
+
 ## Disk shrink
 
 A shrink is refused unless the new size holds the data in use plus
@@ -107,3 +118,25 @@ Multi-disk VM disk shrink is not implemented.
 Package updates restart the management plane only. Guests keep running.
 The Updates page reports management as temporarily unavailable during an
 apply. It does not say the infrastructure is restarting.
+
+## Storage manager
+
+Storage, Manage measures what uses space under the host root or a storage
+pool, in the agent and in the background. Sizes are space allocated on disk
+(sparse disk images show their apparent size too), hard links count once,
+and by default the scan stays on one filesystem. Each folder keeps its 200
+largest entries; the rest are summed.
+
+Every item is explained by its path: items No-dal tracks (each workload's
+disk, by workload name) are known; well-known locations and file types are
+likely; anything else is unknown and marked "Review first". Importance is
+one of Usually safe, Review first, Important or Keep, with advice on the right
+way to free that space.
+
+Deleting needs `storage.files.delete` (admins by default) and typing the
+number of items. The agent refuses system folders, PostgreSQL, No-dal's
+control, keys and secrets, every workload disk, pool roots, backup folders,
+anything with a filesystem mounted inside it, and paths reached through a
+symlinked folder. The contents of key and credential folders are never
+listed. Quick clean-ups (staging and other disposable No-dal files) are on
+the same page.

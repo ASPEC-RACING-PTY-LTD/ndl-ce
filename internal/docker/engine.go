@@ -33,6 +33,12 @@ type Engine struct {
 	HostRun  func(ctx context.Context, name string, args ...string) ([]byte, error)
 	GuestRun func(ctx context.Context, id string, argv ...string) ([]byte, error)
 
+	// HostRoot overrides the host filesystem root for connector files (tests).
+	HostRoot string
+	// FetchKeyring and ProbeDial replace network access in tests.
+	FetchKeyring func(ctx context.Context) ([]byte, error)
+	ProbeDial    func(ctx context.Context, machineID, addr string) error
+
 	mu      sync.Mutex
 	updates map[string]updateNote
 	events  map[string][]Event

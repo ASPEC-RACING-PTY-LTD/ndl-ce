@@ -121,17 +121,27 @@ type Server struct {
 	tunnels         tunnelCache
 	opsJobs         opsJobs
 	uptimeMu        sync.Mutex
-	applyPreparing  atomic.Bool
-	updateStage     updateStage
-	updateStatus    updateStatusCache
-	docker          *dockerCache
-	destOverride    *destAgentOverride
-	Game            *gameserver.Runtime
+	// CFBaseURL and CFKeyPath override the Cloudflare API root and the token
+	// key file (tests). CFPublicCheck replaces public site checks in tests.
+	CFBaseURL      string
+	CFKeyPath      string
+	CFPublicCheck  func(ctx context.Context, url string) uptimeResult
+	cf             cfState
+	extrasMu       sync.Mutex
+	extrasBusy     map[string]bool
+	applyPreparing atomic.Bool
+	updateStage    updateStage
+	updateStatus   updateStatusCache
+	docker         *dockerCache
+	destOverride   *destAgentOverride
+	Game           *gameserver.Runtime
 	// GameHost runs game server containers and owns their folders. In
 	// production it is the root agent; when nil, a LocalHost over Game is
 	// used (tests and development).
 	// Disk is host disk protection on the agent.
-	Disk      HostDiskRPC
+	Disk HostDiskRPC
+	// Scan measures and cleans up storage in the agent.
+	Scan      StorageScanRPC
 	GameHost  gameserver.Host
 	gameLocal *gameserver.LocalHost
 	gameMu    sync.Mutex
@@ -413,6 +423,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
 	mux.HandleFunc("GET /api/v1/workload-extras", s.listWorkloadExtras)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/setup-extras", s.setupWorkloadExtras)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/extensions", s.listWorkloadExtensions)
+	mux.HandleFunc("GET /api/v1/cloudflare/credentials", s.listCloudflareCredentials)
+	mux.HandleFunc("POST /api/v1/cloudflare/credentials", s.createCloudflareCredential)
+	mux.HandleFunc("PUT /api/v1/cloudflare/credentials/{id}", s.updateCloudflareCredential)
+	mux.HandleFunc("POST /api/v1/cloudflare/credentials/{id}/validate", s.validateCloudflareCredential)
+	mux.HandleFunc("DELETE /api/v1/cloudflare/credentials/{id}", s.deleteCloudflareCredential)
+	mux.HandleFunc("GET /api/v1/cloudflare/inventory", s.getCloudflareInventory)
+	mux.HandleFunc("GET /api/v1/cloudflare/machines", s.listCloudflareMachines)
+	mux.HandleFunc("POST /api/v1/cloudflare/tunnels", s.createCloudflareTunnel)
+	mux.HandleFunc("PATCH /api/v1/cloudflare/tunnels/{id}", s.renameCloudflareTunnel)
+	mux.HandleFunc("POST /api/v1/cloudflare/tunnels/{id}/delete", s.deleteCloudflareTunnel)
+	mux.HandleFunc("POST /api/v1/cloudflare/tunnels/{id}/connectors", s.cloudflareConnector)
+	mux.HandleFunc("POST /api/v1/cloudflare/routes", s.upsertCloudflareRoute)
+	mux.HandleFunc("POST /api/v1/cloudflare/routes/plan", s.planCloudflareRoute)
+	mux.HandleFunc("POST /api/v1/cloudflare/routes/enabled", s.setCloudflareRouteEnabled)
+	mux.HandleFunc("POST /api/v1/cloudflare/routes/delete", s.deleteCloudflareRoute)
+	mux.HandleFunc("POST /api/v1/cloudflare/routes/sync-ip", s.syncCloudflareRouteIP)
+	mux.HandleFunc("POST /api/v1/cloudflare/routes/diagnose", s.diagnoseCloudflareRoute)
+	mux.HandleFunc("POST /api/v1/cloudflare/move/preview", s.previewCloudflareMove)
+	mux.HandleFunc("POST /api/v1/cloudflare/move", s.moveCloudflareRoutes)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/cloudflare", s.cloudflareForWorkload)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/cloudflare/publish", s.publishWorkload)
+	mux.HandleFunc("POST /api/v1/workloads/{id}/extensions", s.changeWorkloadExtensions)
 	mux.HandleFunc("POST /api/v1/workloads/bulk-delete", s.bulkDeleteWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads/import", s.importVM)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/migration-diagnostics", s.getWorkloadMigrationDiagnostics)
@@ -553,6 +586,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/workloads/{id}/oci", s.updateOCIConfig)
 	mux.HandleFunc("GET /api/v1/host/disk", s.getHostDisk)
 	mux.HandleFunc("GET /api/v1/host/disk/usage", s.getHostDiskUsage)
+	mux.HandleFunc("GET /api/v1/storage/scan/targets", s.listScanTargets)
+	mux.HandleFunc("POST /api/v1/storage/scan", s.startStorageScan)
+	mux.HandleFunc("GET /api/v1/storage/scan/{id}", s.getStorageScan)
+	mux.HandleFunc("POST /api/v1/storage/scan/{id}/cancel", s.cancelStorageScan)
+	mux.HandleFunc("POST /api/v1/storage/scan/{id}/delete", s.deleteScannedItems)
 	mux.HandleFunc("POST /api/v1/host/disk/cleanup", s.cleanupHostDisk)
 	mux.HandleFunc("POST /api/v1/host/disk/reserve/release", s.releaseHostDiskReserve)
 	mux.HandleFunc("GET /api/v1/storage/zfs", s.zfsRuntime)

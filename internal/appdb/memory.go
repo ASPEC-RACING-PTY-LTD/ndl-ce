@@ -56,6 +56,12 @@ type Memory struct {
 	savedScripts       map[string]SavedScript
 	uptimeMonitors     map[string]UptimeMonitor
 	uptimeEvents       []UptimeEvent
+	cfCreds            map[string]CloudflareCredential
+	cfTokens           map[string]string
+	cfRoutes           map[string]CloudflareRoute
+	cfPrefs            map[string]CloudflareWorkloadPref
+	cfConnectors       map[string]CloudflareConnector
+	extensions         map[string]WorkloadExtension
 	groups             map[string]Group
 	groupMembers       map[string][]string
 	groupRoles         map[string][]string

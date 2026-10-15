@@ -610,6 +610,21 @@ func (c Client) DockerTunnelUnit(ctx context.Context, machineID, unit, action st
 	return err
 }
 
+// DockerConnector installs, updates, removes or probes a cloudflared
+// connector on one machine. The tunnel token travels only in this request.
+func (c Client) DockerConnector(ctx context.Context, req docker.ConnectorRequest) (docker.ConnectorResult, error) {
+	raw, _ := json.Marshal(req)
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "connector", MachineId: req.MachineID, SpecJson: raw}},
+	}))
+	if err != nil {
+		return docker.ConnectorResult{}, err
+	}
+	var out docker.ConnectorResult
+	_ = json.Unmarshal(res.Msg.GetResultJson(), &out)
+	return out, nil
+}
+
 // DockerExecRun runs one command in a container and returns its output.
 func (c Client) DockerExecRun(ctx context.Context, machineID, containerID string, argv []string, timeoutSec int) (docker.ExecResult, error) {
 	raw, _ := json.Marshal(map[string]any{"command": argv, "timeout": timeoutSec})

@@ -44,6 +44,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "files", label: "Jump to Files", href: "/files", keywords: ["browse", "upload", "download", "editor"] },
   { id: "oci", label: "OCI Containers", href: "/oci", keywords: ["compose", "multi-container", "oci", "containerd", "group", "stack"] },
   { id: "docker", label: "Docker", href: "/docker", keywords: ["docker", "compose", "container", "engine", "tunnel", "cloudflared"] },
+  { id: "cloudflare", label: "Cloudflare", href: "/cloudflare", keywords: ["cloudflare", "tunnel", "dns", "hostname", "domain", "publish", "cloudflared"] },
   { id: "uptime", label: "Uptime", href: "/docker/uptime", keywords: ["monitor", "url", "health", "recover", "restart", "status"] },
   {
     id: "import-stack",

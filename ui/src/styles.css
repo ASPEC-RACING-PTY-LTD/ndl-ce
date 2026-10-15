@@ -4222,3 +4222,39 @@ details.oci-fieldset > summary {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
   gap: 0.1rem 0.75rem;
 }
+
+/* Cloudflare and storage manager */
+tr.is-muted td {
+  opacity: 0.6;
+}
+
+.scan-size {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.scan-bar {
+  display: inline-block;
+  width: 5rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.scan-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent, var(--fg-secondary));
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  font-weight: 600;
+}
