@@ -158,8 +158,8 @@ func (p *Postgres) UpdateWorkloadSpec(ctx context.Context, w Workload) error {
 		applied = nil
 	}
 	_, err := p.DB.ExecContext(ctx, `
-UPDATE workloads SET cpus=COALESCE(NULLIF($2,0), cpus),
-  memory_bytes=COALESCE(NULLIF($3,0), memory_bytes),
+UPDATE workloads SET cpus=COALESCE(NULLIF($2::integer,0), cpus),
+  memory_bytes=COALESCE(NULLIF($3::bigint,0), memory_bytes),
   desired_power=COALESCE(NULLIF($4,''), desired_power),
   spec_json=COALESCE($5, spec_json),
   applied_json=COALESCE($6, applied_json),
