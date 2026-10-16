@@ -241,12 +241,12 @@ func (s *S3Transport) putMultipart(ctx context.Context, bucket, object string, r
 	}
 	complete := completeMultipartXML(parts)
 	cq := "uploadId=" + url.QueryEscape(uploadID)
-	creq, err := s.newRequest(ctx, http.MethodPost, bucket, object, cq, complete)
+	// The content type is signed, so it is set before signing, never after.
+	creq, err := s.newTypedRequest(ctx, http.MethodPost, bucket, object, cq, "application/xml", complete)
 	if err != nil {
 		abort()
 		return err
 	}
-	creq.Header.Set("Content-Type", "application/xml")
 	cres, err := s.client().Do(creq)
 	if err != nil {
 		abort()
@@ -317,6 +317,12 @@ func (s *S3Transport) abortMultipart(ctx context.Context, bucket, object, upload
 }
 
 func (s *S3Transport) newRequest(ctx context.Context, method, bucket, object, rawQuery string, body []byte) (*http.Request, error) {
+	return s.newTypedRequest(ctx, method, bucket, object, rawQuery, "application/octet-stream", body)
+}
+
+// newTypedRequest builds a signed request. Every header is part of the
+// signature, so callers must not change headers on the result.
+func (s *S3Transport) newTypedRequest(ctx context.Context, method, bucket, object, rawQuery, contentType string, body []byte) (*http.Request, error) {
 	if s == nil || strings.TrimSpace(s.Endpoint) == "" {
 		return nil, fmt.Errorf("s3 endpoint is required")
 	}
@@ -347,7 +353,7 @@ func (s *S3Transport) newRequest(ctx context.Context, method, bucket, object, ra
 	}
 	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
 	req.ContentLength = int64(len(body))
-	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Type", contentType)
 	signV4(req, body, s.AccessKey, s.SecretKey, s.Region, "s3", time.Now().UTC())
 	return req, nil
 }
