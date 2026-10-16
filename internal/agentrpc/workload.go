@@ -179,6 +179,19 @@ func (h *Handler) execCTCreate(ctx context.Context, m *agentv1.CTCreate) (*conne
 }
 
 func (h *Handler) execCTLifecycle(ctx context.Context, m *agentv1.CTLifecycle) (*connect.Response[agentv1.ExecuteResponse], error) {
+	req, err := ctLifecycleRequest(m)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	res, err := h.workloads().Lifecycle(ctx, req)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: m.GetAction(), ResultJson: mustJSON(res)}), nil
+}
+
+// ctLifecycleRequest decodes what ctLifecycleMsg encoded.
+func ctLifecycleRequest(m *agentv1.CTLifecycle) (lxc.LifecycleRequest, error) {
 	req := lxc.LifecycleRequest{
 		WorkloadID: m.GetWorkloadId(), Action: m.GetAction(), CloneID: m.GetCloneId(),
 		CloneVolumeID: m.GetCloneVolumeId(), CloneRootfsPath: m.GetCloneRootfsPath(),
@@ -194,16 +207,18 @@ func (h *Handler) execCTLifecycle(ctx context.Context, m *agentv1.CTLifecycle) (
 		on := m.GetAutostart()
 		req.Autostart = &on
 	}
-	if raw := m.GetMountsJson(); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &req.Mounts); err != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("mounts are invalid"))
+	if raw := m.GetCodeholdJson(); raw != "" {
+		req.Codehold = &lxc.CodeholdSource{}
+		if err := json.Unmarshal([]byte(raw), req.Codehold); err != nil {
+			return req, fmt.Errorf("the CodeHold source is invalid")
 		}
 	}
-	res, err := h.workloads().Lifecycle(ctx, req)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	if raw := m.GetMountsJson(); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &req.Mounts); err != nil {
+			return req, fmt.Errorf("mounts are invalid")
+		}
 	}
-	return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: m.GetAction(), ResultJson: mustJSON(res)}), nil
+	return req, nil
 }
 
 func encodeWorkloadHints(hints []lxc.Hint) []*agentv1.WorkloadHint {

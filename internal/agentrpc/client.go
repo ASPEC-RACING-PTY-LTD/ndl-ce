@@ -395,31 +395,9 @@ func (c Client) CreateCT(ctx context.Context, spec lxc.Spec) (lxc.Result, error)
 
 // LifecycleCT is a typed Execute method.
 func (c Client) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
-	msg := &agentv1.CTLifecycle{
-		WorkloadId: req.WorkloadID, Action: req.Action, CloneId: req.CloneID,
-		CloneVolumeId: req.CloneVolumeID, CloneRootfsPath: req.CloneRootfsPath,
-		CloneMac: req.CloneMAC, CloneName: req.CloneName,
-		Cpus: int32(req.CPUs), MemoryBytes: req.MemoryBytes, Name: req.Name,
-		IpConfigJson: mustIPJSON(req.IP), Mac: req.MAC, Extras: append([]string{}, req.Extras...),
-	}
-	if req.Autostart != nil {
-		msg.Autostart = *req.Autostart
-		msg.AutostartSet = true
-	}
-	if req.IPSet {
-		msg.IpConfigJson = mustIPJSON(req.IP)
-	} else {
-		msg.IpConfigJson = ""
-	}
-	if req.Action == lxc.ActionMountsSet {
-		raw, err := json.Marshal(req.Mounts)
-		if err != nil {
-			return lxc.Result{}, err
-		}
-		if len(req.Mounts) == 0 {
-			raw = []byte("[]")
-		}
-		msg.MountsJson = string(raw)
+	msg, err := ctLifecycleMsg(req)
+	if err != nil {
+		return lxc.Result{}, err
 	}
 	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_CtLifecycle{CtLifecycle: msg},
@@ -432,6 +410,44 @@ func (c Client) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.
 		return lxc.Result{}, err
 	}
 	return out, nil
+}
+
+// ctLifecycleMsg encodes req for the agent; ctLifecycleRequest decodes it.
+func ctLifecycleMsg(req lxc.LifecycleRequest) (*agentv1.CTLifecycle, error) {
+	msg := &agentv1.CTLifecycle{
+		WorkloadId: req.WorkloadID, Action: req.Action, CloneId: req.CloneID,
+		CloneVolumeId: req.CloneVolumeID, CloneRootfsPath: req.CloneRootfsPath,
+		CloneMac: req.CloneMAC, CloneName: req.CloneName,
+		Cpus: int32(req.CPUs), MemoryBytes: req.MemoryBytes, Name: req.Name,
+		IpConfigJson: mustIPJSON(req.IP), Mac: req.MAC, Extras: append([]string{}, req.Extras...),
+	}
+	if req.Autostart != nil {
+		msg.Autostart = *req.Autostart
+		msg.AutostartSet = true
+	}
+	if req.Codehold != nil {
+		raw, err := json.Marshal(req.Codehold)
+		if err != nil {
+			return nil, err
+		}
+		msg.CodeholdJson = string(raw)
+	}
+	if req.IPSet {
+		msg.IpConfigJson = mustIPJSON(req.IP)
+	} else {
+		msg.IpConfigJson = ""
+	}
+	if req.Action == lxc.ActionMountsSet {
+		raw, err := json.Marshal(req.Mounts)
+		if err != nil {
+			return nil, err
+		}
+		if len(req.Mounts) == 0 {
+			raw = []byte("[]")
+		}
+		msg.MountsJson = string(raw)
+	}
+	return msg, nil
 }
 
 // CreateOCI is a typed Execute method for OCI application workloads.

@@ -520,6 +520,9 @@ message CTLifecycle {
   repeated string extras = 15;
   // mounts_json is the complete lxc.Mount list for the mounts-set action.
   string mounts_json = 16;
+  // codehold_json is the lxc.CodeholdSource the CodeHold CLI extra is
+  // downloaded from.
+  string codehold_json = 17;
 }
 
 message WorkloadHint {

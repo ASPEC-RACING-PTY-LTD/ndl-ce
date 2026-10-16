@@ -4502,7 +4502,10 @@ type CTLifecycle struct {
 	Mac             string                 `protobuf:"bytes,14,opt,name=mac,proto3" json:"mac,omitempty"`
 	Extras          []string               `protobuf:"bytes,15,rep,name=extras,proto3" json:"extras,omitempty"`
 	// mounts_json is the complete lxc.Mount list for the mounts-set action.
-	MountsJson    string `protobuf:"bytes,16,opt,name=mounts_json,json=mountsJson,proto3" json:"mounts_json,omitempty"`
+	MountsJson string `protobuf:"bytes,16,opt,name=mounts_json,json=mountsJson,proto3" json:"mounts_json,omitempty"`
+	// codehold_json is the lxc.CodeholdSource the CodeHold CLI extra is
+	// downloaded from.
+	CodeholdJson  string `protobuf:"bytes,17,opt,name=codehold_json,json=codeholdJson,proto3" json:"codehold_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4645,6 +4648,13 @@ func (x *CTLifecycle) GetExtras() []string {
 func (x *CTLifecycle) GetMountsJson() string {
 	if x != nil {
 		return x.MountsJson
+	}
+	return ""
+}
+
+func (x *CTLifecycle) GetCodeholdJson() string {
+	if x != nil {
+		return x.CodeholdJson
 	}
 	return ""
 }
@@ -6769,7 +6779,7 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"skip_image\x18\x0e \x01(\bR\tskipImage\x12\x19\n" +
 	"\bno_start\x18\x0f \x01(\bR\anoStart\x12$\n" +
-	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\xf0\x03\n" +
+	"\x0eip_config_json\x18\x10 \x01(\tR\fipConfigJson\"\x95\x04\n" +
 	"\vCTLifecycle\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x16\n" +
@@ -6790,7 +6800,8 @@ const file_nodal_agent_v1_agent_proto_rawDesc = "" +
 	"\x03mac\x18\x0e \x01(\tR\x03mac\x12\x16\n" +
 	"\x06extras\x18\x0f \x03(\tR\x06extras\x12\x1f\n" +
 	"\vmounts_json\x18\x10 \x01(\tR\n" +
-	"mountsJson\"\x7f\n" +
+	"mountsJson\x12#\n" +
+	"\rcodehold_json\x18\x11 \x01(\tR\fcodeholdJson\"\x7f\n" +
 	"\fWorkloadHint\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x12\n" +
