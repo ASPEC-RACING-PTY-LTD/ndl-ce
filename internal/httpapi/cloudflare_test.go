@@ -43,7 +43,7 @@ func (d *cfDocker) DockerTunnels(context.Context, []docker.MachineHint) ([]docke
 	return append([]docker.Tunnel(nil), d.local...), nil
 }
 
-func (d *cfDocker) DockerTunnelUnit(context.Context, string, string, string) error { return nil }
+func (d *cfDocker) DockerTunnelUnit(context.Context, string, string, string, bool) error { return nil }
 
 func (d *cfDocker) DockerConnector(_ context.Context, req docker.ConnectorRequest) (docker.ConnectorResult, error) {
 	d.mu.Lock()
@@ -496,6 +496,36 @@ func TestCloudflarePublishWorkloadAndConnector(t *testing.T) {
 	}
 	if code, _, _ = e.call(e.admin, "POST", "/api/v1/cloudflare/tunnels/"+tA.ID+"/connectors", `{"account_id":"`+cfAcctA+`","machine_id":"`+wid+`","action":"remove"}`); code != 400 {
 		t.Fatal("removing a connector needs confirmation")
+	}
+	// The host's own tunnel is never touched without an Owner's approval.
+	e.dock.mu.Lock()
+	before := len(e.dock.requests)
+	e.dock.mu.Unlock()
+	for _, body := range []string{
+		`{"account_id":"` + cfAcctA + `","machine_id":"host","action":"install"}`,
+		`{"account_id":"` + cfAcctA + `","action":"update"}`,
+		`{"account_id":"` + cfAcctA + `","machine_id":"host","action":"restart","unit":"cloudflared.service"}`,
+	} {
+		code, _, raw = e.call(e.admin, "POST", "/api/v1/cloudflare/tunnels/"+tA.ID+"/connectors", body)
+		if code != 409 || !strings.Contains(raw, hostTunnelCode) || !strings.Contains(raw, "systemctl status") {
+			t.Fatalf("host change without approval: %d %s", code, raw)
+		}
+	}
+	e.dock.mu.Lock()
+	after := len(e.dock.requests)
+	e.dock.mu.Unlock()
+	if after != before {
+		t.Fatal("the agent was asked to change the host's tunnel without approval")
+	}
+	code, _, raw = e.call(e.admin, "POST", "/api/v1/cloudflare/tunnels/"+tA.ID+"/connectors", `{"account_id":"`+cfAcctA+`","machine_id":"host","action":"install","approve_host":true}`)
+	if code != 200 {
+		t.Fatalf("an Owner's approved host install: %d %s", code, raw)
+	}
+	e.dock.mu.Lock()
+	sent = e.dock.requests[len(e.dock.requests)-1]
+	e.dock.mu.Unlock()
+	if !sent.HostApproved {
+		t.Fatal("the approval must reach the agent")
 	}
 }
 

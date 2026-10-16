@@ -41,6 +41,9 @@ type ConnectorRequest struct {
 	// Probe target, for ConnectorProbe.
 	Host string `json:"host,omitempty"`
 	Port int    `json:"port,omitempty"`
+	// HostApproved is set only after an Owner approved changing the host's
+	// own cloudflared; without it install, update and remove refuse the host.
+	HostApproved bool `json:"host_approved,omitempty"`
 }
 
 // ConnectorResult reports what was done.
@@ -98,6 +101,9 @@ WantedBy=multi-user.target
 
 // Connector runs one connector action on a machine.
 func (e *Engine) Connector(ctx context.Context, req ConnectorRequest) (ConnectorResult, error) {
+	if req.Action != ConnectorProbe && IsHostMachine(req.MachineID) && !req.HostApproved {
+		return ConnectorResult{}, ErrHostTunnelProtected
+	}
 	switch req.Action {
 	case ConnectorInstall:
 		return e.installConnector(ctx, req)

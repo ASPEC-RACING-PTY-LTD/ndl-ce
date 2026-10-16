@@ -54,11 +54,12 @@ func startDockerExec(ctx context.Context, h *Handler, req termRequest) (termSess
 func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*connect.Response[agentv1.ExecuteResponse], error) {
 	action := strings.TrimSpace(m.GetAction())
 	var spec struct {
-		Hints   []docker.MachineHint `json:"hints"`
-		Tail    int                  `json:"tail"`
-		Unit    string               `json:"unit"`
-		Command []string             `json:"command"`
-		Timeout int                  `json:"timeout"`
+		Hints        []docker.MachineHint `json:"hints"`
+		Tail         int                  `json:"tail"`
+		Unit         string               `json:"unit"`
+		HostApproved bool                 `json:"host_approved"`
+		Command      []string             `json:"command"`
+		Timeout      int                  `json:"timeout"`
 	}
 	if len(m.GetSpecJson()) > 0 {
 		_ = json.Unmarshal(m.GetSpecJson(), &spec)
@@ -129,7 +130,7 @@ func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*c
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "prune", ResultJson: mustJSON(res)}), nil
 	case "tunnel-restart", "tunnel-start":
-		if err := h.docker().TunnelUnitAction(ctx, m.GetMachineId(), spec.Unit, strings.TrimPrefix(action, "tunnel-")); err != nil {
+		if err := h.docker().TunnelUnitAction(ctx, m.GetMachineId(), spec.Unit, strings.TrimPrefix(action, "tunnel-"), spec.HostApproved); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: action}), nil

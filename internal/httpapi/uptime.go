@@ -241,7 +241,12 @@ func (s *Server) uptimeRecover(ctx context.Context, u appdb.UptimeMonitor) strin
 		if tunnels, _, err := s.dockerTunnels(ctx, u.ClusterID, true); err == nil {
 			for _, t := range tunnels {
 				if !t.Active && machines[t.MachineID] {
-					if err := rpc.DockerTunnelUnit(ctx, t.MachineID, t.Unit, "restart"); err == nil {
+					if docker.IsHostMachine(t.MachineID) {
+						// The host's tunnel is never restarted automatically.
+						done = append(done, "host tunnel "+t.Unit+" is down; left alone. "+docker.HostTunnelAdvice(t.Unit))
+						continue
+					}
+					if err := rpc.DockerTunnelUnit(ctx, t.MachineID, t.Unit, "restart", false); err == nil {
 						done = append(done, "started tunnel "+t.Unit)
 					} else {
 						done = append(done, "could not start tunnel "+t.Unit+": "+err.Error())

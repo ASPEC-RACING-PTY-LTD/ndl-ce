@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -488,10 +489,35 @@ func appendUnique(list []string, v string) []string {
 	return append(list, v)
 }
 
-// TunnelUnitAction starts or restarts a cloudflared unit.
-func (e *Engine) TunnelUnitAction(ctx context.Context, machineID, unit, action string) error {
+// ErrHostTunnelProtected refuses a change to the host's own cloudflared.
+// That tunnel usually carries the panel itself, so No-dal never starts,
+// restarts, installs, updates or removes it unless an Owner approved that
+// one change.
+var ErrHostTunnelProtected = errors.New("No-dal does not manage the host's own cloudflared tunnel; an Owner must approve this change")
+
+// IsHostMachine reports whether machineID names the host itself.
+func IsHostMachine(machineID string) bool {
+	return machineID == "" || machineID == HostMachineID
+}
+
+// HostTunnelAdvice is what to do by hand about the host's tunnel.
+func HostTunnelAdvice(unit string) string {
+	if unit == "" {
+		unit = "cloudflared"
+	}
+	return "Check it on the host as root: systemctl status " + unit + " and journalctl -u " + unit + " -n 100. " +
+		"If it needs a restart, run systemctl restart " + unit + ", or approve the restart here as an Owner. " +
+		"Restarting it briefly drops every connection through the tunnel, including this panel."
+}
+
+// TunnelUnitAction starts or restarts a cloudflared unit. The host's own
+// units need hostApproved.
+func (e *Engine) TunnelUnitAction(ctx context.Context, machineID, unit, action string, hostApproved bool) error {
 	if !ValidTunnelUnit(unit) {
 		return fmt.Errorf("only cloudflared services can be managed here")
+	}
+	if IsHostMachine(machineID) && !hostApproved {
+		return ErrHostTunnelProtected
 	}
 	if action != "restart" && action != "start" {
 		return fmt.Errorf("tunnel action must be start or restart")

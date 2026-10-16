@@ -178,6 +178,8 @@ func (s *Server) cloudflareConnector(w http.ResponseWriter, r *http.Request) {
 		Action    string `json:"action"`
 		Unit      string `json:"unit"`
 		Confirm   bool   `json:"confirm"`
+		// ApproveHost is an Owner's approval to touch the host's own tunnel.
+		ApproveHost bool `json:"approve_host"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
@@ -198,13 +200,17 @@ func (s *Server) cloudflareConnector(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	hostOK, gateOK := s.hostTunnelGate(w, r, p, in.MachineID, in.Unit, in.ApproveHost)
+	if !gateOK {
+		return
+	}
 	if in.Action == "restart" {
 		rpc, ok := s.dockerRPC().(dockerTunnelRPC)
 		if !ok || !docker.ValidTunnelUnit(in.Unit) {
 			writeErr(w, http.StatusBadRequest, "choose a cloudflared service to restart")
 			return
 		}
-		if err := rpc.DockerTunnelUnit(ctx, in.MachineID, in.Unit, "restart"); err != nil {
+		if err := rpc.DockerTunnelUnit(ctx, in.MachineID, in.Unit, "restart", hostOK); err != nil {
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
@@ -217,7 +223,7 @@ func (s *Server) cloudflareConnector(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "this node's agent cannot deploy connectors; update No-dal on the node")
 		return
 	}
-	req := docker.ConnectorRequest{Action: in.Action, MachineID: in.MachineID, TunnelID: t.ID}
+	req := docker.ConnectorRequest{Action: in.Action, MachineID: in.MachineID, TunnelID: t.ID, HostApproved: hostOK}
 	switch in.Action {
 	case docker.ConnectorInstall:
 		err := s.cfWith(ctx, clusterID, t.AccountTag, "", func(c *cf.Client) error {

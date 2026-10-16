@@ -58,7 +58,7 @@ func (f *opsDocker) DockerTunnels(context.Context, []docker.MachineHint) ([]dock
 	return append([]docker.Tunnel(nil), f.tunnels...), nil
 }
 
-func (f *opsDocker) DockerTunnelUnit(_ context.Context, machineID, unit, action string) error {
+func (f *opsDocker) DockerTunnelUnit(_ context.Context, machineID, unit, action string, _ bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tunnelOp = append(f.tunnelOp, action+" "+machineID+" "+unit)

@@ -1,3 +1,4 @@
+import { HOST_TUNNEL_LEFT_ALONE, useHostTunnelApproval } from "../components/HostTunnelApproval";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import {
@@ -163,6 +164,7 @@ type Group = {
 };
 
 export function DockerPage() {
+  const hostGate = useHostTunnelApproval();
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
@@ -333,10 +335,14 @@ export function DockerPage() {
     setError(null);
     setBusy(`${t.unit}: ${action}`);
     try {
-      await dockerTunnelAction(t.machine_id, t.unit, action);
+      await hostGate.guard((approveHost) => dockerTunnelAction(t.machine_id, t.unit, action, approveHost));
       setNotice(`${t.unit} on ${t.machine_name}: ${action} sent.`);
       await loadTunnels(true);
     } catch (err) {
+      if (err instanceof Error && err.message === HOST_TUNNEL_LEFT_ALONE) {
+        setNotice(err.message);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Tunnel action failed");
     } finally {
       setBusy(null);
@@ -638,6 +644,7 @@ export function DockerPage() {
 
   return (
     <section className="page page-wide" aria-labelledby="docker-heading">
+      {hostGate.dialog}
       <PageHeader
         id="docker-heading"
         title="Docker"

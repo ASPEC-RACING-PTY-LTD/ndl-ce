@@ -1,3 +1,4 @@
+import { useHostTunnelApproval } from "../components/HostTunnelApproval";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   addCfCredential,
@@ -320,6 +321,7 @@ const RouteCard = memo(function RouteCard({ r, cols, selected, canManage, onTogg
 
 /** CloudflarePage manages every connected Cloudflare account's tunnels, hostnames and DNS in one place. */
 export function CloudflarePage() {
+  const hostGate = useHostTunnelApproval();
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const canManage = hasGrant(user, "cloudflare.manage");
@@ -486,11 +488,21 @@ export function CloudflarePage() {
       for (const l of t.local) {
         items.push({
           label: `Restart connector on ${l.machine_name}`,
-          onClick: () => void act("Restarting connector", () => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "restart", unit: l.unit })),
+          onClick: () =>
+            void act("Restarting connector", () =>
+              hostGate.guard((approve_host) =>
+                cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "restart", unit: l.unit, approve_host }),
+              ),
+            ),
         });
         items.push({
           label: `Update cloudflared on ${l.machine_name}`,
-          onClick: () => void act("Updating cloudflared", () => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "update" }), "cloudflared updated."),
+          onClick: () =>
+            void act(
+              "Updating cloudflared",
+              () => hostGate.guard((approve_host) => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "update", approve_host })),
+              "cloudflared updated.",
+            ),
         });
         if (l.managed) {
           items.push({
@@ -498,7 +510,11 @@ export function CloudflarePage() {
             danger: true,
             onClick: () => {
               if (window.confirm(`Stop and remove the connector for ${t.name} on ${l.machine_name}? Its hostnames go down unless another connector runs.`)) {
-                void act("Removing connector", () => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "remove", confirm: true }));
+                void act("Removing connector", () =>
+                  hostGate.guard((approve_host) =>
+                    cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "remove", confirm: true, approve_host }),
+                  ),
+                );
               }
             },
           });
@@ -1149,6 +1165,7 @@ export function CloudflarePage() {
           void reload(true);
         }}
       />
+      {hostGate.dialog}
       <DeployDialog
         tunnel={deploy}
         machines={machines}
@@ -1365,12 +1382,17 @@ function NewTunnelDialog({ open, accounts, onClose, onCreated }: { open: boolean
 }
 
 function DeployDialog({ tunnel, machines, supported, onClose, onDone }: { tunnel: CfTunnel | null; machines: CfMachine[]; supported: boolean; onClose: () => void; onDone: (msg: string) => void }) {
-  const [machine, setMachine] = useState("host");
+  // The host's own cloudflared is not No-dal's to manage, so a container is
+  // the default; the host needs an Owner's approval.
+  const firstGuest = machines.find((m) => m.kind !== "host")?.id ?? "host";
+  const [machine, setMachine] = useState(firstGuest);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hostGate = useHostTunnelApproval();
   useEffect(() => {
-    setMachine("host");
+    setMachine(firstGuest);
     setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tunnel]);
   return (
     <Dialog
@@ -1391,7 +1413,8 @@ function DeployDialog({ tunnel, machines, supported, onClose, onDone }: { tunnel
                 return;
               }
               setBusy(true);
-              cfConnectorAction(tunnel.id, { account_id: tunnel.account_tag, machine_id: machine, action: "install" })
+              hostGate
+                .guard((approve_host) => cfConnectorAction(tunnel.id, { account_id: tunnel.account_tag, machine_id: machine, action: "install", approve_host }))
                 .then((res) => onDone(`Connector ${res.unit ?? ""} started (${res.version ?? "cloudflared"}).`))
                 .catch((err) => setError(errText(err, "Could not deploy the connector")))
                 .finally(() => setBusy(false));
@@ -1402,11 +1425,13 @@ function DeployDialog({ tunnel, machines, supported, onClose, onDone }: { tunnel
         </div>
       }
     >
+      {hostGate.dialog}
       {error ? <ErrorNotice error={error} /> : null}
       {!supported ? <p className="banner banner-warn">This node's agent cannot deploy connectors yet; update No-dal on the node.</p> : null}
       <p className="field-hint">
         cloudflared is installed from Cloudflare's signed package repository if it is missing, and runs as its own service. The tunnel token is written
-        only to a root-only file on that machine. Running the connector on the host lets one tunnel reach every container's address.
+        only to a root-only file on that machine. No-dal does not manage the host&apos;s own cloudflared; running a connector there needs an Owner&apos;s
+        approval.
       </p>
       <div className="field">
         <label className="field-label" htmlFor="cf-deploy-machine">
@@ -1416,7 +1441,7 @@ function DeployDialog({ tunnel, machines, supported, onClose, onDone }: { tunnel
           {machines.map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}
-              {m.kind === "host" ? " (this host)" : ""}
+              {m.kind === "host" ? " (this host, needs Owner approval)" : ""}
             </option>
           ))}
         </select>

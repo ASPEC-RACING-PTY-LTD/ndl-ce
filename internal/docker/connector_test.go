@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,7 +44,7 @@ func connectorEngine(t *testing.T, withApt, withBinary bool) (*Engine, string, *
 
 func TestInstallConnectorWritesTokenOnlyToARootFile(t *testing.T) {
 	e, root, ran := connectorEngine(t, true, false)
-	res, err := e.Connector(context.Background(), ConnectorRequest{Action: ConnectorInstall, MachineID: HostMachineID, TunnelID: testTunnel, Token: "eySECRETTOKEN"})
+	res, err := e.Connector(context.Background(), ConnectorRequest{HostApproved: true, Action: ConnectorInstall, MachineID: HostMachineID, TunnelID: testTunnel, Token: "eySECRETTOKEN"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,31 +79,31 @@ func TestInstallConnectorWritesTokenOnlyToARootFile(t *testing.T) {
 
 func TestInstallConnectorUsesExistingBinaryAndNeedsAptOtherwise(t *testing.T) {
 	e, _, ran := connectorEngine(t, false, true)
-	if _, err := e.Connector(context.Background(), ConnectorRequest{Action: ConnectorInstall, TunnelID: testTunnel, Token: "tok"}); err != nil {
+	if _, err := e.Connector(context.Background(), ConnectorRequest{HostApproved: true, Action: ConnectorInstall, TunnelID: testTunnel, Token: "tok"}); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(strings.Join(*ran, "\n"), "apt-get") {
 		t.Fatal("an installed cloudflared must be reused")
 	}
 	e2, _, _ := connectorEngine(t, false, false)
-	if _, err := e2.Connector(context.Background(), ConnectorRequest{Action: ConnectorInstall, TunnelID: testTunnel, Token: "tok"}); err == nil || !strings.Contains(err.Error(), "no apt") {
+	if _, err := e2.Connector(context.Background(), ConnectorRequest{HostApproved: true, Action: ConnectorInstall, TunnelID: testTunnel, Token: "tok"}); err == nil || !strings.Contains(err.Error(), "no apt") {
 		t.Fatalf("no apt and no binary: %v", err)
 	}
-	if _, err := e.Connector(context.Background(), ConnectorRequest{Action: ConnectorInstall, TunnelID: "../../etc", Token: "tok"}); err == nil {
+	if _, err := e.Connector(context.Background(), ConnectorRequest{HostApproved: true, Action: ConnectorInstall, TunnelID: "../../etc", Token: "tok"}); err == nil {
 		t.Fatal("tunnel id must be validated")
 	}
-	if _, err := e.Connector(context.Background(), ConnectorRequest{Action: ConnectorInstall, TunnelID: testTunnel, Token: "a\nExecStart=/bin/sh"}); err == nil {
+	if _, err := e.Connector(context.Background(), ConnectorRequest{HostApproved: true, Action: ConnectorInstall, TunnelID: testTunnel, Token: "a\nExecStart=/bin/sh"}); err == nil {
 		t.Fatal("a token with a newline must be refused")
 	}
 }
 
 func TestRemoveConnectorOnlyTouchesNoDalUnits(t *testing.T) {
 	e, root, ran := connectorEngine(t, false, true)
-	if _, err := e.Connector(context.Background(), ConnectorRequest{Action: ConnectorInstall, TunnelID: testTunnel, Token: "tok"}); err != nil {
+	if _, err := e.Connector(context.Background(), ConnectorRequest{HostApproved: true, Action: ConnectorInstall, TunnelID: testTunnel, Token: "tok"}); err != nil {
 		t.Fatal(err)
 	}
 	*ran = nil
-	res, err := e.Connector(context.Background(), ConnectorRequest{Action: ConnectorRemove, TunnelID: testTunnel})
+	res, err := e.Connector(context.Background(), ConnectorRequest{HostApproved: true, Action: ConnectorRemove, TunnelID: testTunnel})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,5 +150,30 @@ func TestParseTunnelID(t *testing.T) {
 	}
 	if ParseTunnelID("nothing here") != "" {
 		t.Fatal("no id")
+	}
+}
+
+func TestHostTunnelIsLeftAloneWithoutApproval(t *testing.T) {
+	ran := 0
+	e := &Engine{HostRun: func(context.Context, string, ...string) ([]byte, error) { ran++; return nil, nil }}
+	for _, req := range []ConnectorRequest{
+		{Action: ConnectorInstall, TunnelID: testTunnel, Token: "tok"},
+		{Action: ConnectorUpdate, MachineID: HostMachineID},
+		{Action: ConnectorRemove, MachineID: HostMachineID, TunnelID: testTunnel},
+	} {
+		if _, err := e.Connector(context.Background(), req); !errors.Is(err, ErrHostTunnelProtected) {
+			t.Fatalf("%s on the host: got %v, want ErrHostTunnelProtected", req.Action, err)
+		}
+	}
+	for _, action := range []string{"restart", "start"} {
+		if err := e.TunnelUnitAction(context.Background(), HostMachineID, "cloudflared.service", action, false); !errors.Is(err, ErrHostTunnelProtected) {
+			t.Fatalf("%s: got %v", action, err)
+		}
+	}
+	if ran != 0 {
+		t.Fatalf("ran %d host commands without approval", ran)
+	}
+	if err := e.TunnelUnitAction(context.Background(), HostMachineID, "cloudflared.service", "restart", true); err != nil || ran != 1 {
+		t.Fatalf("approved restart: err=%v ran=%d", err, ran)
 	}
 }

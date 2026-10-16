@@ -21,7 +21,7 @@ import (
 // commands implement these; older agents only list and act on containers.
 type dockerTunnelRPC interface {
 	DockerTunnels(ctx context.Context, hints []docker.MachineHint) ([]docker.Tunnel, error)
-	DockerTunnelUnit(ctx context.Context, machineID, unit, action string) error
+	DockerTunnelUnit(ctx context.Context, machineID, unit, action string, hostApproved bool) error
 }
 
 type dockerExecRPC interface {
@@ -91,9 +91,15 @@ func (s *Server) dockerTunnelAction(w http.ResponseWriter, r *http.Request) {
 		MachineID string `json:"machine_id"`
 		Unit      string `json:"unit"`
 		Action    string `json:"action"`
+		// ApproveHost is an Owner's approval to touch the host's own tunnel.
+		ApproveHost bool `json:"approve_host"`
 	}
 	if err := readJSON(r, &req); err != nil || !docker.ValidTunnelUnit(req.Unit) || (req.Action != "start" && req.Action != "restart") {
 		writeErr(w, http.StatusBadRequest, "machine_id, a cloudflared unit and action start or restart are required")
+		return
+	}
+	hostOK, ok := s.hostTunnelGate(w, r, p, req.MachineID, req.Unit, req.ApproveHost)
+	if !ok {
 		return
 	}
 	rpc, supported := s.dockerRPC().(dockerTunnelRPC)
@@ -101,7 +107,7 @@ func (s *Server) dockerTunnelAction(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "this node's agent cannot manage tunnels; update No-dal on the node")
 		return
 	}
-	if err := rpc.DockerTunnelUnit(r.Context(), req.MachineID, req.Unit, req.Action); err != nil {
+	if err := rpc.DockerTunnelUnit(r.Context(), req.MachineID, req.Unit, req.Action, hostOK); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -548,9 +554,13 @@ func (x *scriptRun) fix(ctx context.Context, st dockerStep) error {
 				if t.Active || (mid != "" && t.MachineID != mid) {
 					continue
 				}
+				if docker.IsHostMachine(t.MachineID) {
+					x.job.log("warn", "left the host's tunnel %s alone (it is %s). %s", t.Unit, firstNonEmpty(t.SubState, t.State), docker.HostTunnelAdvice(t.Unit))
+					continue
+				}
 				t := t
 				if err := x.do(fmt.Sprintf("start tunnel %s on %s (it was %s)", t.Unit, t.MachineName, firstNonEmpty(t.SubState, t.State)), func() error {
-					return rpc.DockerTunnelUnit(ctx, t.MachineID, t.Unit, "restart")
+					return rpc.DockerTunnelUnit(ctx, t.MachineID, t.Unit, "restart", false)
 				}); err != nil && firstErr == nil {
 					firstErr = err
 				}
@@ -702,12 +712,17 @@ func (x *scriptRun) step(ctx context.Context, i int, st dockerStep) error {
 			x.job.log("error", "%v", err)
 			return err
 		}
+		if docker.IsHostMachine(mid) {
+			err := fmt.Errorf("No-dal does not manage the host's own tunnel. %s", docker.HostTunnelAdvice(strings.Join(units, " ")))
+			x.job.log("error", "%v", err)
+			return err
+		}
 		action := strings.TrimPrefix(st.Action, "tunnel-")
 		var firstErr error
 		for _, u := range units {
 			u := u
 			if err := x.do(fmt.Sprintf("%s %s on %s", action, u, st.Machine), func() error {
-				return rpc.DockerTunnelUnit(ctx, mid, u, action)
+				return rpc.DockerTunnelUnit(ctx, mid, u, action, false)
 			}); err != nil && firstErr == nil {
 				firstErr = err
 			}

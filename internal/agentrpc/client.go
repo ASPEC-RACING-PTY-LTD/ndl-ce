@@ -602,9 +602,10 @@ func (c Client) DockerTunnels(ctx context.Context, hints []docker.MachineHint) (
 	return out, nil
 }
 
-// DockerTunnelUnit starts or restarts a cloudflared service.
-func (c Client) DockerTunnelUnit(ctx context.Context, machineID, unit, action string) error {
-	raw, _ := json.Marshal(map[string]string{"unit": unit})
+// DockerTunnelUnit starts or restarts a cloudflared service. The agent
+// refuses the host's own units unless hostApproved.
+func (c Client) DockerTunnelUnit(ctx context.Context, machineID, unit, action string, hostApproved bool) error {
+	raw, _ := json.Marshal(map[string]any{"unit": unit, "host_approved": hostApproved})
 	_, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
 		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "tunnel-" + action, MachineId: machineID, SpecJson: raw}},
 	}))

@@ -11,11 +11,14 @@ const API_PREFIX = "/api/v1";
 
 export class ApiError extends Error {
   readonly status: number;
+  /** The JSON error body, when there was one (for codes such as host_tunnel_protected). */
+  readonly body: Record<string, unknown> | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body: Record<string, unknown> | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -56,7 +59,11 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
 
 async function readJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res));
+    const body = (await res
+      .clone()
+      .json()
+      .catch(() => null)) as Record<string, unknown> | null;
+    throw new ApiError(res.status, await readErrorMessage(res), body && typeof body === "object" ? body : null);
   }
   return (await res.json()) as T;
 }
@@ -2481,8 +2488,13 @@ export async function getDockerTunnels(refresh = false): Promise<{ items: Docker
   return readJson(await request(refresh ? "/docker/tunnels?refresh=1" : "/docker/tunnels"));
 }
 
-export async function dockerTunnelAction(machineId: string, unit: string, action: "start" | "restart"): Promise<void> {
-  await readJson(await request("/docker/tunnels/action", { method: "POST", body: JSON.stringify({ machine_id: machineId, unit, action }) }));
+export async function dockerTunnelAction(machineId: string, unit: string, action: "start" | "restart", approveHost = false): Promise<void> {
+  await readJson(
+    await request("/docker/tunnels/action", {
+      method: "POST",
+      body: JSON.stringify({ machine_id: machineId, unit, action, approve_host: approveHost }),
+    }),
+  );
 }
 
 export async function dockerBulk(body: {
@@ -2792,7 +2804,14 @@ export async function deleteCfTunnel(id: string, account_id: string, confirm: st
 }
 export async function cfConnectorAction(
   tunnelId: string,
-  body: { account_id: string; machine_id: string; action: "install" | "update" | "restart" | "remove"; unit?: string; confirm?: boolean },
+  body: {
+    account_id: string;
+    machine_id: string;
+    action: "install" | "update" | "restart" | "remove";
+    unit?: string;
+    confirm?: boolean;
+    approve_host?: boolean;
+  },
 ): Promise<{ unit?: string; version?: string; message?: string }> {
   return readJson(await request(`/cloudflare/tunnels/${encodeURIComponent(tunnelId)}/connectors`, json(body)));
 }

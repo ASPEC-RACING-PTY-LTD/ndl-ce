@@ -3971,7 +3971,7 @@ paths:
   /docker/tunnels/action:
     post:
       operationId: dockerTunnelAction
-      summary: Start or restart a cloudflared service. Admin only.
+      summary: Start or restart a cloudflared service. Admin only. The host's own cloudflared is refused (409, code host_tunnel_protected, with advice) unless an Owner sends approve_host.
       requestBody:
         required: true
         content:
@@ -3992,9 +3992,14 @@ paths:
                   enum:
                     - start
                     - restart
+                approve_host:
+                  type: boolean
+                  description: An Owner's approval to change the host's own cloudflared tunnel.
       responses:
         "200":
           description: Done
+        "409":
+          description: The unit is the host's own tunnel and approve_host was not sent.
   /docker/bulk:
     post:
       operationId: dockerBulk
