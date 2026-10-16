@@ -9618,6 +9618,71 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /codehold-cli:
+    get:
+      operationId: getCodeholdCLI
+      summary: CodeHold CLI ("ch") settings for system containers and the latest rollout.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold-cli/settings:
+    put:
+      operationId: saveCodeholdCLISettings
+      summary: Where ch is downloaded from (https only), whether new containers get it, and bulk install defaults.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeholdCLISettings"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold-cli/rollout:
+    get:
+      operationId: getCodeholdCLIRollout
+      summary: Progress and summary of the latest ch rollout (null when none ran since the control plane started).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: startCodeholdCLIRollout
+      summary: Check (dry run), install or update ch in every running system container, a few at a time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeholdCLIRolloutRequest"
+      responses:
+        "202":
+          description: Started
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "409":
+          description: A rollout is already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /codehold:
     get:
       operationId: getCodehold
@@ -12186,6 +12251,41 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkloadExtra"
+    CodeholdCLISettings:
+      type: object
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          description: CodeHold server (https). Empty means the default.
+        auto_install:
+          type: boolean
+        concurrency:
+          type: integer
+          minimum: 0
+          maximum: 20
+        timeout_seconds:
+          type: integer
+          minimum: 0
+          maximum: 3600
+    CodeholdCLIRolloutRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        dry_run:
+          type: boolean
+        update:
+          type: boolean
+        include_stopped:
+          type: boolean
+        concurrency:
+          type: integer
+        timeout_seconds:
+          type: integer
+        workload_ids:
+          type: array
+          items:
+            type: string
     WorkloadExtra:
       type: object
       additionalProperties: false
@@ -12212,6 +12312,12 @@ components:
           type: boolean
         unavailable_reason:
           type: string
+        download:
+          type: boolean
+          description: Installed from a download, not the guest's package manager.
+        default:
+          type: boolean
+          description: New containers get this extra unless it is turned off for them.
     SetupWorkloadExtrasRequest:
       type: object
       additionalProperties: false
@@ -12289,6 +12395,13 @@ components:
       properties:
         name:
           type: string
+        extras:
+          type: array
+          items:
+            type: string
+        codehold_cli:
+          type: boolean
+          description: false keeps the CodeHold CLI out of this container; omitted follows the setting.
         kind:
           type: string
         image_pin:

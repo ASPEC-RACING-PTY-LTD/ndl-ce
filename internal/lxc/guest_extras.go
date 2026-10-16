@@ -3,6 +3,7 @@ package lxc
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,6 +49,15 @@ func (e *Engine) guestExtras(ctx context.Context, req LifecycleRequest, mode ext
 			warnings = append(warnings, SetupWarning{Extra: id, Message: av.Reason})
 			continue
 		}
+		if av.Extra.Download {
+			change, err := e.installDownloadExtra(ctx, req, pin, family, av, mode)
+			if err != nil {
+				warnings = append(warnings, SetupWarning{Extra: id, Message: sanitizeGuestSetupErr(err)})
+			} else {
+				out.Changes = append(out.Changes, change)
+			}
+			continue
+		}
 		if family == "debian" && !indexed {
 			if err := e.aptRetry(ctx, req.WorkloadID, "update"); err != nil {
 				_ = e.repairDPKG(ctx, req.WorkloadID)
@@ -67,6 +77,16 @@ func (e *Engine) guestExtras(ctx context.Context, req LifecycleRequest, mode ext
 		out.Extras = st.Extras
 	}
 	return out, nil
+}
+
+// installDownloadExtra installs an extra that is not a distribution package.
+// A later opt-in extra (such as a CodeHold Actions runner) adds its case here.
+func (e *Engine) installDownloadExtra(ctx context.Context, req LifecycleRequest, pin, family string, av guestextras.Availability, mode extraMode) (ExtraChange, error) {
+	switch av.Extra.ID {
+	case guestextras.CodeholdCLI:
+		return e.installGuestCodeholdCLI(ctx, req.WorkloadID, pin, family, av.Packages, mode, req.Codehold)
+	}
+	return ExtraChange{Extra: av.Extra.ID}, fmt.Errorf("no installer for %s", av.Extra.ID)
 }
 
 func aptModeArgs(mode extraMode, pkgs []string) []string {
@@ -197,8 +217,9 @@ func (e *Engine) debInstalled(ctx context.Context, id, pkg string) (bool, string
 	return true, parts[1]
 }
 
-// GuestExtrasStatus reports which catalog extras are installed in the guest.
-func (e *Engine) GuestExtrasStatus(ctx context.Context, workloadID string) (Result, error) {
+// GuestExtrasStatus reports which catalog extras are installed in the guest,
+// or only the ones named in only.
+func (e *Engine) GuestExtrasStatus(ctx context.Context, workloadID string, only ...string) (Result, error) {
 	out := Result{WorkloadID: workloadID, Status: StatusRunning}
 	if e.SkipHostCmds || e.FakeUnpack {
 		return out, nil
@@ -210,9 +231,16 @@ func (e *Engine) GuestExtrasStatus(ctx context.Context, workloadID string) (Resu
 	pin := applied.Spec.ImagePin
 	family := guestextras.Family(pin)
 	for _, extra := range guestextras.Catalog() {
+		if len(only) > 0 && !slices.Contains(only, extra.ID) {
+			continue
+		}
 		st := ExtraStatus{ID: extra.ID}
 		av := guestextras.AvailabilityFor(pin, extra.ID)
 		switch {
+		case extra.ID == guestextras.CodeholdCLI:
+			if v, ok := e.guestCHVersion(ctx, workloadID, guestCHPath); ok {
+				st.Installed, st.Version = true, v
+			}
 		case extra.ID == guestextras.Compose:
 			if v, ok := e.composeVersion(ctx, workloadID); ok {
 				st.Installed, st.Version = true, v

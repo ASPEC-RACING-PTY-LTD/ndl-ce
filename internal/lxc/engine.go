@@ -616,7 +616,7 @@ func (e *Engine) Lifecycle(ctx context.Context, req LifecycleRequest) (Result, e
 	case ActionGuestSetup:
 		return e.GuestSetup(ctx, req)
 	case ActionGuestExtrasStatus:
-		return e.GuestExtrasStatus(ctx, req.WorkloadID)
+		return e.GuestExtrasStatus(ctx, req.WorkloadID, req.Extras...)
 	case ActionGuestExtrasUpdate:
 		return e.guestExtras(ctx, req, extraUpdate)
 	case ActionGuestExtrasReinstall:

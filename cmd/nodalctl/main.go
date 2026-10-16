@@ -51,6 +51,10 @@ func run(args []string) error {
   feature list
   feature enable NAME [--confirm enable-k8s]
   feature disable NAME [--confirm disable-feature]
+  codehold-cli show
+  codehold-cli settings [--url URL] [--auto-install true|false] [--concurrency N] [--timeout SECONDS]
+  codehold-cli rollout [--dry-run] [--update] [--include-stopped] [--concurrency N] [--timeout SECONDS] [--only ID,ID] [--json]
+  codehold-cli status [--json]
   docker show
   docker logs MACHINE CONTAINER
   docker start MACHINE CONTAINER
@@ -236,6 +240,8 @@ func run(args []string) error {
 		return cmdFeature(args[1:])
 	case "docker":
 		return cmdDocker(args[1:])
+	case "codehold-cli":
+		return cmdCodeholdCLI(args[1:])
 	case "kubernetes":
 		return cmdKubernetes(args[1:])
 	case "policy":

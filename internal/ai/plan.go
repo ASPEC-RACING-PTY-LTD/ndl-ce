@@ -10,6 +10,9 @@ const (
 	ActionRestart        = "restart_workload"
 	ActionInstallStore   = "install_store_app"
 	ActionCreatePolicy   = "create_policy"
+	// ActionCodeholdCLIRollout checks, installs or updates the CodeHold CLI
+	// ("ch") in every running system container.
+	ActionCodeholdCLIRollout = "codehold_cli_rollout"
 )
 
 // PlanStep is one existing API call. It is never a shell.
@@ -41,6 +44,26 @@ func CompilePlan(prompt, nodeID, nodeName, storeAppID string) ([]PlanStep, error
 		}
 	}
 	var steps []PlanStep
+	if mentionsCodeholdCLI(q) {
+		// A dry run unless the prompt clearly asks for a change and not a dry run.
+		w := planWords(q)
+		update := w["update"] || w["upgrade"] || w["latest"]
+		change := (w["install"] || w["reinstall"] || update) && !strings.Contains(q, "dry run") && !strings.Contains(q, "dry-run")
+		body := map[string]any{"dry_run": !change, "update": update, "include_stopped": strings.Contains(q, "stopped")}
+		title, perm := "Dry run: list containers and whether ch is installed", "compute.read"
+		if change {
+			title, perm = "Install ch in every running container", "compute.modify"
+			if update {
+				title = "Install or update ch in every running container"
+			}
+		}
+		steps = append(steps, PlanStep{
+			Action: ActionCodeholdCLIRollout, Permission: perm, Method: "POST", Path: "/api/v1/codehold-cli/rollout",
+			Title: title, Body: body,
+		})
+		steps[0].Ordinal = 1
+		return steps, nil
+	}
 	if strings.Contains(q, "85") && (strings.Contains(q, "storage") || strings.Contains(q, "pool") || strings.Contains(q, "migrate") || strings.Contains(q, "move")) {
 		steps = append(steps, PlanStep{
 			Action: ActionCreatePolicy, Permission: "policy.apply", Method: "POST", Path: "/api/v1/policies",
@@ -102,7 +125,28 @@ func PlanMutates(steps []PlanStep) bool {
 		switch st.Action {
 		case ActionCreateWorkload, ActionRestart, ActionInstallStore, ActionCreatePolicy:
 			return true
+		case ActionCodeholdCLIRollout:
+			if dry, _ := st.Body["dry_run"].(bool); !dry {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// mentionsCodeholdCLI is true for prompts about CodeHold's "ch" client.
+func mentionsCodeholdCLI(q string) bool {
+	if strings.Contains(q, "codehold cli") || strings.Contains(q, "codehold-cli") || strings.Contains(q, "codehold client") {
+		return true
+	}
+	w := planWords(q)
+	return w["ch"] && (w["lxc"] || w["lxcs"] || w["container"] || w["containers"])
+}
+
+func planWords(q string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(q, func(r rune) bool { return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') }) {
+		out[w] = true
+	}
+	return out
 }

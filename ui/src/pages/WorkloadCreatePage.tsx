@@ -1,5 +1,5 @@
 import { useFeatureOn } from "../nav/NavDisclosure";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   changeWorkloadExtensions,
   createWorkload,
@@ -225,9 +225,20 @@ export function WorkloadCreatePage() {
     };
   }, []);
 
+  // Extras every new container gets (the CodeHold CLI unless turned off in
+  // its settings) start selected once; unticking one keeps it off.
+  const defaultsApplied = useRef(new Set<string>());
   useEffect(() => {
     void listWorkloadExtras(pin)
-      .then((body) => setCatalog(body.items ?? []))
+      .then((body) => {
+        const items = body.items ?? [];
+        setCatalog(items);
+        const fresh = items.filter((item) => item.default && item.available && !defaultsApplied.current.has(item.id)).map((item) => item.id);
+        if (fresh.length) {
+          fresh.forEach((id) => defaultsApplied.current.add(id));
+          setExtras((cur) => [...cur, ...fresh.filter((id) => !cur.includes(id))]);
+        }
+      })
       .catch(() => setCatalog([]));
   }, [pin]);
 
@@ -283,6 +294,7 @@ export function WorkloadCreatePage() {
           privileged: admin ? privileged : false,
           autostart,
           extras,
+          codehold_cli: extras.includes("codehold-cli"),
         },
         `ui-create-${name}`,
       );

@@ -997,6 +997,22 @@ export interface WorkloadExtraListResponse {
   items: WorkloadExtra[];
 }
 
+export interface CodeholdCLISettings {
+  url?: string;
+  auto_install?: boolean;
+  concurrency?: number;
+  timeout_seconds?: number;
+}
+
+export interface CodeholdCLIRolloutRequest {
+  dry_run?: boolean;
+  update?: boolean;
+  include_stopped?: boolean;
+  concurrency?: number;
+  timeout_seconds?: number;
+  workload_ids?: string[];
+}
+
 export interface WorkloadExtra {
   id: string;
   name: string;
@@ -1006,6 +1022,8 @@ export interface WorkloadExtra {
   needs_nesting?: boolean;
   available: boolean;
   unavailable_reason?: string;
+  download?: boolean;
+  default?: boolean;
 }
 
 export interface SetupWorkloadExtrasRequest {
@@ -1041,6 +1059,8 @@ export interface Workload {
 
 export interface CreateWorkloadRequest {
   name: string;
+  extras?: string[];
+  codehold_cli?: boolean;
   kind?: string;
   image_pin?: string;
   cpus?: number;
@@ -3706,6 +3726,12 @@ export type UpsertProxySitePath = "/api/v1/proxies/{kind}/sites";
 export type DeleteProxySitePath = "/api/v1/proxies/{kind}/sites/delete";
 
 export type ProxyServicePath = "/api/v1/proxies/{kind}/service";
+
+export type GetCodeholdCLIPath = "/api/v1/codehold-cli";
+
+export type SaveCodeholdCLISettingsPath = "/api/v1/codehold-cli/settings";
+
+export type GetCodeholdCLIRolloutPath = "/api/v1/codehold-cli/rollout";
 
 export type GetCodeholdPath = "/api/v1/codehold";
 

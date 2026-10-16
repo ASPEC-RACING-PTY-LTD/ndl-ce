@@ -18,6 +18,12 @@ func (e *Engine) GuestCommand(ctx context.Context, id string, cmd ...string) ([]
 }
 
 func (e *Engine) attach(ctx context.Context, id string, cmd ...string) ([]byte, error) {
+	return e.run(ctx, BinLXCAttach, e.attachArgs(id, cmd...)...)
+}
+
+// attachArgs is the lxc-attach argv that runs cmd in the guest with a clean
+// environment.
+func (e *Engine) attachArgs(id string, cmd ...string) []string {
 	args := []string{
 		"-P", e.lxcPath(), "-n", id,
 		"--clear-env",
@@ -27,8 +33,7 @@ func (e *Engine) attach(ctx context.Context, id string, cmd ...string) ([]byte, 
 		"-v", "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
 		"--",
 	}
-	args = append(args, cmd...)
-	return e.run(ctx, BinLXCAttach, args...)
+	return append(args, cmd...)
 }
 
 // Reachability probes inside a guest are bounded. With no route out of the

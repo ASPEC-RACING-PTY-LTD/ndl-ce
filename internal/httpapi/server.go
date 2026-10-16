@@ -132,13 +132,16 @@ type Server struct {
 	ch        chState
 	// CHKeyPath overrides the key that seals the CodeHold credential, and
 	// CodeholdHTTP the client used to reach CodeHold (tests).
-	CHKeyPath      string
-	CodeholdHTTP   *http.Client
-	internalOnce   sync.Once
-	internalMux    http.Handler
-	proxies        proxyCache
-	extrasMu       sync.Mutex
-	extrasBusy     map[string]bool
+	CHKeyPath    string
+	CodeholdHTTP *http.Client
+	internalOnce sync.Once
+	internalMux  http.Handler
+	proxies      proxyCache
+	extrasMu     sync.Mutex
+	extrasBusy   map[string]bool
+	// chCLIRun is the latest CodeHold CLI rollout (codehold_cli.go).
+	chCLIMu        sync.Mutex
+	chCLIRun       *cliRollout
 	applyPreparing atomic.Bool
 	updateStage    updateStage
 	updateStatus   updateStatusCache
@@ -455,6 +458,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/cloudflare/move/preview", s.previewCloudflareMove)
 	mux.HandleFunc("POST /api/v1/cloudflare/move", s.moveCloudflareRoutes)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/cloudflare", s.cloudflareForWorkload)
+	mux.HandleFunc("GET /api/v1/codehold-cli", s.getCodeholdCLI)
+	mux.HandleFunc("PUT /api/v1/codehold-cli/settings", s.putCodeholdCLISettings)
+	mux.HandleFunc("GET /api/v1/codehold-cli/rollout", s.getCodeholdCLIRollout)
+	mux.HandleFunc("POST /api/v1/codehold-cli/rollout", s.startCodeholdCLIRollout)
 	mux.HandleFunc("GET /api/v1/codehold", s.getCodehold)
 	mux.HandleFunc("POST /api/v1/codehold/detect", s.detectCodehold)
 	mux.HandleFunc("POST /api/v1/codehold/connect", s.connectCodehold)

@@ -137,6 +137,14 @@ type ExtraStatus struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// ExtraChange is what an extras run did to a download extra: installed,
+// updated, or current (left alone).
+type ExtraChange struct {
+	Extra   string `json:"extra"`
+	Outcome string `json:"outcome"`
+	Version string `json:"version,omitempty"`
+}
+
 type SetupWarning struct {
 	Extra   string `json:"extra"`
 	Message string `json:"message"`
@@ -153,6 +161,8 @@ type Result struct {
 	SetupWarnings []SetupWarning `json:"setup_warnings,omitempty"`
 	// Extras is what is installed in the guest, after an extras action.
 	Extras []ExtraStatus `json:"extras,omitempty"`
+	// Changes reports per download extra what the run did.
+	Changes []ExtraChange `json:"changes,omitempty"`
 	// Mounts and RestartRequired answer the mount actions.
 	Mounts          []Mount `json:"mounts,omitempty"`
 	RestartRequired bool    `json:"restart_required,omitempty"`
@@ -215,6 +225,8 @@ type LifecycleRequest struct {
 	NetworkID  string   `json:"network_id,omitempty"`
 	BridgeName string   `json:"bridge_name,omitempty"`
 	Extras     []string `json:"extras,omitempty"`
+	// Codehold is where the CodeHold CLI extra is downloaded from.
+	Codehold *CodeholdSource `json:"codehold,omitempty"`
 	// Mounts is the complete mount list for ActionMountsSet.
 	Mounts []Mount `json:"mounts,omitempty"`
 }

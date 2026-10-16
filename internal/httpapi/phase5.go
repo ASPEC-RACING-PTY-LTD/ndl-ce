@@ -78,8 +78,11 @@ type createWorkloadRequest struct {
 	DNS                    []string          `json:"dns"`
 	MAC                    string            `json:"mac"`
 	Extras                 []string          `json:"extras"`
-	volumeOwnerKind        string            `json:"-"`
-	volumeJobID            string            `json:"-"`
+	// CodeholdCLI false keeps the CodeHold CLI out of this container even
+	// when new containers get it by default; nil follows the setting.
+	CodeholdCLI     *bool  `json:"codehold_cli"`
+	volumeOwnerKind string `json:"-"`
+	volumeJobID     string `json:"-"`
 }
 
 type patchWorkloadRequest struct {
@@ -281,6 +284,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	if req.Privileged {
 		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create.privileged", "ok", ids.WorkloadID)
 	}
+	req.Extras = s.withDefaultExtras(r.Context(), p.User.ClusterID, req.ImagePin, req.Extras, req.CodeholdCLI)
 	var nesting *bool
 	if guestextras.NeedsNesting(req.Extras) {
 		on := true

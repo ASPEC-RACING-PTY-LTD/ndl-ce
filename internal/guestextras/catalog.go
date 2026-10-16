@@ -13,7 +13,15 @@ const (
 	CACertificates = "ca-certificates"
 	Unzip          = "unzip"
 	Zip            = "zip"
+	// CodeholdCLI is CodeHold's "ch" command line client. It is not a
+	// distribution package: the binary is downloaded from the configured
+	// CodeHold server (see Download).
+	CodeholdCLI = "codehold-cli"
 )
+
+// DefaultCodeholdURL is the CodeHold server "ch" is downloaded from unless
+// the CodeHold CLI settings name another one.
+const DefaultCodeholdURL = "https://git.aspecracing.com.au"
 
 const (
 	CategoryContainers  = "containers"
@@ -29,6 +37,10 @@ type Extra struct {
 	Category     string
 	Requires     []string
 	NeedsNesting bool
+	// Download marks an extra installed from a download instead of the
+	// guest's package manager. Prereqs are the packages that download needs.
+	Download bool
+	Prereqs  []string
 }
 
 // Availability describes whether an extra can be installed for a guest image.
@@ -52,6 +64,7 @@ func Catalog() []Extra {
 		{ID: CACertificates, Name: "ca-certificates", Description: "TLS trust store", Category: CategoryUtilities},
 		{ID: Unzip, Name: "unzip", Description: "Extract zip archives", Category: CategoryUtilities},
 		{ID: Zip, Name: "zip", Description: "Create zip archives", Category: CategoryUtilities},
+		{ID: CodeholdCLI, Name: "CodeHold CLI (ch)", Description: "CodeHold Git client", Category: CategoryDevelopment, Download: true, Prereqs: []string{Curl, CACertificates}},
 	}
 }
 
@@ -120,6 +133,9 @@ func AvailabilityFor(pin, extraID string) Availability {
 	}
 	av := Availability{Extra: extra, Available: true}
 	family := Family(pin)
+	if extra.Download {
+		return downloadAvailability(av, pin, family)
+	}
 	switch family {
 	case "debian":
 		av.Packages = debianPackages(extra.ID)
@@ -143,6 +159,43 @@ func AvailabilityFor(pin, extraID string) Availability {
 }
 
 // Describe returns catalog rows for an image pin, including availability.
+// downloadAvailability covers extras fetched over HTTPS: they need a
+// supported family and CPU type, and Packages lists the prerequisites.
+func downloadAvailability(av Availability, pin, family string) Availability {
+	if family != "debian" && family != "alpine" {
+		av.Available = false
+		if pin == "" {
+			av.Reason = "Select a guest operating system first"
+		} else {
+			av.Reason = av.Extra.Name + " is not supported on " + family
+		}
+		return av
+	}
+	if a := Arch(pin); a != "" && a != "amd64" && a != "arm64" {
+		av.Available = false
+		av.Reason = av.Extra.Name + " is not built for " + a
+		return av
+	}
+	for _, id := range av.Extra.Prereqs {
+		if family == "alpine" {
+			av.Packages = append(av.Packages, alpinePackages(id)...)
+		} else {
+			av.Packages = append(av.Packages, debianPackages(id)...)
+		}
+	}
+	return av
+}
+
+// Arch is the CPU type in an image pin (family/release/arch/variant), or ""
+// when the pin does not name one.
+func Arch(pin string) string {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(pin)), "/")
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[2]
+}
+
 func Describe(pin string) []map[string]any {
 	out := make([]map[string]any, 0, len(Catalog()))
 	for _, extra := range Catalog() {
@@ -155,6 +208,7 @@ func Describe(pin string) []map[string]any {
 			"requires":      extra.Requires,
 			"needs_nesting": extra.NeedsNesting,
 			"available":     av.Available,
+			"download":      extra.Download,
 		}
 		if av.Reason != "" {
 			item["unavailable_reason"] = av.Reason

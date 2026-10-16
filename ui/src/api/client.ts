@@ -1045,6 +1045,8 @@ export async function createWorkload(
     health?: { http_path?: string; port?: number };
     privileged?: boolean;
     extras?: string[];
+    /** false keeps the CodeHold CLI out of this container. */
+    codehold_cli?: boolean;
     firmware?: string;
     autostart?: boolean;
     cloud_image_id?: string;
@@ -1081,6 +1083,10 @@ export type WorkloadExtra = {
   needs_nesting?: boolean;
   available: boolean;
   unavailable_reason?: string;
+  /** Installed from a download rather than the guest's package manager. */
+  download?: boolean;
+  /** New containers get it unless it is turned off for them. */
+  default?: boolean;
 };
 
 export async function listWorkloadExtras(imagePin?: string) {
@@ -3088,4 +3094,57 @@ export async function deleteScannedItems(
   items: string[],
 ): Promise<{ results: { path: string; deleted: boolean; freed: number; error?: string }[]; deleted: number; freed_bytes: number }> {
   return readJson(await request(`/storage/scan/${encodeURIComponent(id)}/delete`, json({ items, confirm: `delete ${items.length}` })));
+}
+
+// --- CodeHold CLI ("ch") in system containers ---
+
+export type CodeholdCLISettings = { url: string; auto_install: boolean; concurrency: number; timeout_seconds: number };
+
+export type CodeholdCLITarget = {
+  workload_id: string;
+  name: string;
+  status: string;
+  installed: boolean;
+  version?: string;
+  plan?: "install" | "update" | "skip" | "unknown";
+  outcome?: "installed" | "updated" | "current" | "failed" | "not_running" | "unsupported";
+  reason?: string;
+  done: boolean;
+};
+
+export type CodeholdCLIRollout = {
+  id: string;
+  operation_id?: string;
+  dry_run: boolean;
+  update: boolean;
+  include_stopped: boolean;
+  concurrency: number;
+  timeout_seconds: number;
+  url: string;
+  started_at: string;
+  finished_at?: string;
+  running: boolean;
+  targets: CodeholdCLITarget[];
+  skipped: CodeholdCLITarget[] | null;
+  summary: Record<string, number>;
+};
+
+export async function getCodeholdCLI(): Promise<{ settings: CodeholdCLISettings; default_url: string; rollout: CodeholdCLIRollout | null }> {
+  return readJson(await request("/codehold-cli"));
+}
+export async function saveCodeholdCLISettings(body: Partial<CodeholdCLISettings>): Promise<{ settings: CodeholdCLISettings }> {
+  return readJson(await request("/codehold-cli/settings", { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function startCodeholdCLIRollout(body: {
+  dry_run?: boolean;
+  update?: boolean;
+  include_stopped?: boolean;
+  concurrency?: number;
+  timeout_seconds?: number;
+  workload_ids?: string[];
+}): Promise<{ rollout: CodeholdCLIRollout }> {
+  return readJson(await request("/codehold-cli/rollout", json(body)));
+}
+export async function getCodeholdCLIRollout(): Promise<{ rollout: CodeholdCLIRollout | null }> {
+  return readJson(await request("/codehold-cli/rollout"));
 }

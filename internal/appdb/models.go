@@ -362,6 +362,8 @@ type Store interface {
 	PutWorkloadExtension(ctx context.Context, x WorkloadExtension) error
 
 	// CodeHold runners.
+	GetCodeholdCLISettings(ctx context.Context, clusterID string) (*CodeholdCLISettings, error)
+	PutCodeholdCLISettings(ctx context.Context, st CodeholdCLISettings) error
 	GetCodeholdController(ctx context.Context, clusterID string) (*CodeholdController, error)
 	PutCodeholdController(ctx context.Context, c CodeholdController) error
 	DeleteCodeholdController(ctx context.Context, clusterID string) error

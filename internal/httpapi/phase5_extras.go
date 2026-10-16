@@ -15,11 +15,18 @@ import (
 )
 
 func (s *Server) listWorkloadExtras(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.require(w, r, rbac.ComputeRead); err != nil {
+	p, err := s.require(w, r, rbac.ComputeRead)
+	if err != nil {
 		return
 	}
 	pin := strings.TrimSpace(r.URL.Query().Get("image_pin"))
-	writeJSON(w, http.StatusOK, map[string]any{"items": guestextras.Describe(pin)})
+	items := guestextras.Describe(pin)
+	// Extras new containers get unless they opt out (see the create form).
+	cfg := s.codeholdCLIConfig(r.Context(), p.User.ClusterID)
+	for _, item := range items {
+		item["default"] = item["id"] == guestextras.CodeholdCLI && cfg.AutoInstall && item["available"] == true
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Server) setupWorkloadExtras(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +125,7 @@ func (s *Server) startExtensionsJob(clusterID string, row appdb.Workload, select
 		}()
 		jctx, cancel := context.WithTimeout(ctx, extensionsJobTimeout)
 		defer cancel()
-		warnings := s.runExtensions(jctx, clusterID, row, extras, mode)
+		_, warnings := s.runExtensions(jctx, clusterID, row, extras, mode)
 		if len(warnings) > 0 {
 			s.finishOp(ctx, op, "failed", extrasWarningMessage(row.Name, warnings), 100)
 			return
@@ -138,8 +145,9 @@ func (s *Server) extensionMap(ctx context.Context, clusterID, workloadID string)
 }
 
 // runExtensions runs one extras action, starting a stopped container for the
-// duration, and records the outcome of every extra.
-func (s *Server) runExtensions(ctx context.Context, clusterID string, row appdb.Workload, extras []string, mode string) []lxc.SetupWarning {
+// duration, and records the outcome of every extra. It returns what download
+// extras did and the warnings.
+func (s *Server) runExtensions(ctx context.Context, clusterID string, row appdb.Workload, extras []string, mode string) ([]lxc.ExtraChange, []lxc.SetupWarning) {
 	if current, _ := s.Store.GetWorkload(ctx, clusterID, row.ID); current != nil {
 		row = *current
 	}
@@ -152,7 +160,7 @@ func (s *Server) runExtensions(ctx context.Context, clusterID string, row appdb.
 			startedForSetup = true
 		}
 	}
-	res, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: row.ID, Action: mode, Extras: extras})
+	res, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: row.ID, Action: mode, Extras: extras, Codehold: s.codeholdCLISource(ctx, clusterID, extras)})
 	if startedForSetup {
 		_, _ = s.Workloads.LifecycleCT(context.WithoutCancel(ctx), lxc.LifecycleRequest{WorkloadID: row.ID, Action: "stop"})
 	}
@@ -161,7 +169,7 @@ func (s *Server) runExtensions(ctx context.Context, clusterID string, row appdb.
 		warnings = append(warnings, lxc.SetupWarning{Extra: "setup", Message: sanitizeGuestSetupErr(err)})
 	}
 	s.recordExtensions(context.WithoutCancel(ctx), clusterID, row.ID, extras, res.Extras, warnings)
-	return warnings
+	return res.Changes, warnings
 }
 
 // recordExtensions stores what the guest reported. An extra the run was asked

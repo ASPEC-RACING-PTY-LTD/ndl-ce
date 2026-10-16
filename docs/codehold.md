@@ -13,6 +13,9 @@ CodeHold Runners page appears under Compute.
 Runners that run next to CodeHold in its own instance are CodeHold's
 business and are not touched.
 
+The `ch` command line client in containers is separate; see
+[codehold-cli.md](codehold-cli.md).
+
 ## Connecting
 
 1. In CodeHold, open Administration, Actions, Host controllers and create a

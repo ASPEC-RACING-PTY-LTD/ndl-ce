@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent } from
 import { bulkDeleteWorkloads, listNodes, listWorkloads, patchMe } from "../api/client";
 import type { NodeSummary } from "../api/phase2";
 import type { Workload } from "../api/phase5";
+import { CodeholdCLIDialog } from "../components/CodeholdCLIDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeleteButton } from "../components/DeleteButton";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
@@ -163,6 +164,7 @@ export function WorkloadsPage() {
     }
   }
 
+  const [chOpen, setChOpen] = useState(false);
   const showSelect = mutate && !editing;
   const leadCol = showSelect || editing;
   const nameSort = sort === "name" ? "name-desc" : "name";
@@ -181,6 +183,9 @@ export function WorkloadsPage() {
         actions={
           mutate ? (
             <div className="btn-row is-flush">
+              <button className="btn btn-ghost" type="button" onClick={() => setChOpen(true)}>
+                CodeHold CLI
+              </button>
               <Link className="btn btn-ghost" href="/templates">
                 Templates
               </Link>
@@ -204,6 +209,7 @@ export function WorkloadsPage() {
           ) : null
         }
       />
+      <CodeholdCLIDialog open={chOpen} canChange={mutate} onClose={() => setChOpen(false)} />
       {error ? <ErrorState>{error}</ErrorState> : null}
       {saveError ? <ErrorState>{saveError}</ErrorState> : null}
       {results ? (

@@ -244,6 +244,15 @@ func (s *Server) executePlanStep(r *http.Request, clusterID string, st appdb.AIP
 		if err := existingAPIError(code, raw); err != nil {
 			return fail(err)
 		}
+	case ai.ActionCodeholdCLIRollout:
+		payload := st.BodyJSON
+		if strings.TrimSpace(payload) == "" {
+			payload = `{"dry_run":true}`
+		}
+		code, raw := s.invokeExistingAPI(r, s.startCodeholdCLIRollout, http.MethodPost, "/api/v1/codehold-cli/rollout", []byte(payload), "")
+		if err := existingAPIError(code, raw); err != nil {
+			return fail(err)
+		}
 	case ai.ActionInstallStore:
 		appID := storeAppIDFromStep(st, body)
 		if appID == "" {

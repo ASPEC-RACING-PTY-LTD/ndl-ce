@@ -59,3 +59,23 @@ func TestCompilePlanStoreAppID(t *testing.T) {
 		t.Fatal("must use existing store.install")
 	}
 }
+
+func TestCompilePlanCodeholdCLI(t *testing.T) {
+	steps, err := CompilePlan("is ch installed on my LXCs?", "", "", "")
+	if err != nil || len(steps) != 1 || steps[0].Action != ActionCodeholdCLIRollout || steps[0].Body["dry_run"] != true {
+		t.Fatalf("a question must compile to a dry run: %+v %v", steps, err)
+	}
+	if PlanMutates(steps) || steps[0].Permission != "compute.read" {
+		t.Fatal("a dry run does not mutate")
+	}
+	steps, err = CompilePlan("install or update the CodeHold CLI on all containers", "", "", "")
+	if err != nil || len(steps) != 1 || steps[0].Body["dry_run"] != false || steps[0].Body["update"] != true {
+		t.Fatalf("%+v %v", steps, err)
+	}
+	if !PlanMutates(steps) || steps[0].Permission != "compute.modify" {
+		t.Fatal("an install mutates and needs compute.modify")
+	}
+	if steps, _ := CompilePlan("dry run: install ch on all lxcs", "", "", ""); steps[0].Body["dry_run"] != true {
+		t.Fatal("dry run wins")
+	}
+}
