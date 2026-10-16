@@ -14114,6 +14114,11 @@ components:
           items:
             type: string
           description: Selected workload ids. Empty when scope is all.
+        excluded_workload_ids:
+          type: array
+          description: Workloads an all-workloads policy leaves out. Ignored for selected workloads. Omitted on update keeps the current list.
+          items:
+            type: string
         target_id:
           type: string
         schedule:
@@ -14203,6 +14208,11 @@ components:
           description: Legacy single-workload selector. Treated as selected scope.
         workload_ids:
           type: array
+          items:
+            type: string
+        excluded_workload_ids:
+          type: array
+          description: Workloads an all-workloads policy leaves out. Ignored for selected workloads. Omitted on update keeps the current list.
           items:
             type: string
         target_id:

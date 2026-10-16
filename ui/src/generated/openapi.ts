@@ -1586,6 +1586,7 @@ export interface BackupPolicy {
   scope: "all" | "selected";
   workload_id?: string;
   workload_ids: string[];
+  excluded_workload_ids?: string[];
   target_id: string;
   schedule: "nightly";
   keep_daily: number;
@@ -1615,6 +1616,7 @@ export interface CreateBackupPolicyRequest {
   offsite_keep_monthly?: number;
   workload_id?: string;
   workload_ids?: string[];
+  excluded_workload_ids?: string[];
   target_id: string;
   schedule: "nightly";
   keep_daily: number;

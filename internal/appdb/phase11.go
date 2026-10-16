@@ -85,11 +85,13 @@ type BackupPolicy struct {
 	Scope       string
 	WorkloadID  string
 	WorkloadIDs []string
-	TargetID    string
-	Schedule    string
-	KeepDaily   int
-	KeepWeekly  int
-	KeepMonthly int
+	// ExcludedWorkloadIDs are left out of an "all" policy.
+	ExcludedWorkloadIDs []string
+	TargetID            string
+	Schedule            string
+	KeepDaily           int
+	KeepWeekly          int
+	KeepMonthly         int
 	// Offsite is stored in backup_policy_offsite, not in the policy row.
 	Offsite     BackupOffsite
 	CaptureMode string
@@ -117,6 +119,8 @@ func NormalizeBackupPolicy(p *BackupPolicy) {
 		p.WorkloadIDs = nil
 		return
 	}
+	// Exclusions only mean something when every workload is in scope.
+	p.ExcludedWorkloadIDs = nil
 	if len(p.WorkloadIDs) == 0 && p.WorkloadID != "" {
 		p.WorkloadIDs = []string{p.WorkloadID}
 	}
@@ -369,6 +373,9 @@ func copyBackupPolicy(p BackupPolicy) BackupPolicy {
 	NormalizeBackupPolicy(&p)
 	if len(p.WorkloadIDs) > 0 {
 		p.WorkloadIDs = append([]string(nil), p.WorkloadIDs...)
+	}
+	if len(p.ExcludedWorkloadIDs) > 0 {
+		p.ExcludedWorkloadIDs = append([]string(nil), p.ExcludedWorkloadIDs...)
 	}
 	return p
 }

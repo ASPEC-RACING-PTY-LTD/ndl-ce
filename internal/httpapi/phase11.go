@@ -92,9 +92,13 @@ func backupPolicyJSON(p appdb.BackupPolicy) map[string]any {
 	if ids == nil {
 		ids = []string{}
 	}
+	excluded := p.ExcludedWorkloadIDs
+	if excluded == nil {
+		excluded = []string{}
+	}
 	out := map[string]any{
 		"id": p.ID, "name": p.Name, "target_id": p.TargetID,
-		"scope": p.Scope, "workload_ids": ids,
+		"scope": p.Scope, "workload_ids": ids, "excluded_workload_ids": excluded,
 		"schedule": p.Schedule, "keep_daily": p.KeepDaily, "keep_weekly": p.KeepWeekly, "keep_monthly": p.KeepMonthly,
 		"capture_mode":        firstNonEmpty(p.CaptureMode, appdb.BackupCaptureFull),
 		"paused":              p.Paused,
@@ -482,7 +486,7 @@ func (s *Server) createBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, "", false)
+	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, "", false, nil)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -509,7 +513,7 @@ func (s *Server) updateBackupPolicy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "backup policy not found")
 		return
 	}
-	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, existing.ID, existing.Paused)
+	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, existing.ID, existing.Paused, existing.ExcludedWorkloadIDs)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -548,17 +552,20 @@ func (s *Server) deleteBackupPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 type backupPolicyBody struct {
-	Name        string          `json:"name"`
-	Scope       string          `json:"scope"`
-	WorkloadID  string          `json:"workload_id"`
-	WorkloadIDs []string        `json:"workload_ids"`
-	TargetID    string          `json:"target_id"`
-	Schedule    string          `json:"schedule"`
-	KeepDaily   int             `json:"keep_daily"`
-	KeepWeekly  int             `json:"keep_weekly"`
-	KeepMonthly int             `json:"keep_monthly"`
-	CaptureMode string          `json:"capture_mode"`
-	ScopeJSON   json.RawMessage `json:"scope_json"`
+	Name        string   `json:"name"`
+	Scope       string   `json:"scope"`
+	WorkloadID  string   `json:"workload_id"`
+	WorkloadIDs []string `json:"workload_ids"`
+	// ExcludedWorkloadIDs are left out of an "all" policy. Omitted keeps
+	// the current list.
+	ExcludedWorkloadIDs *[]string       `json:"excluded_workload_ids"`
+	TargetID            string          `json:"target_id"`
+	Schedule            string          `json:"schedule"`
+	KeepDaily           int             `json:"keep_daily"`
+	KeepWeekly          int             `json:"keep_weekly"`
+	KeepMonthly         int             `json:"keep_monthly"`
+	CaptureMode         string          `json:"capture_mode"`
+	ScopeJSON           json.RawMessage `json:"scope_json"`
 	// Offsite retention keeps the remote copy of fewer restore points than
 	// are kept locally. All zero follows local retention.
 	OffsiteKeepDaily   int `json:"offsite_keep_daily"`
@@ -568,7 +575,7 @@ type backupPolicyBody struct {
 	Paused *bool `json:"paused"`
 }
 
-func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID string, paused bool) (appdb.BackupPolicy, error) {
+func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID string, paused bool, excluded []string) (appdb.BackupPolicy, error) {
 	var req backupPolicyBody
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" || req.TargetID == "" {
 		return appdb.BackupPolicy{}, errBadRequest("name and target_id are required")
@@ -641,6 +648,17 @@ func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID st
 		}
 		row.WorkloadIDs = ids
 		row.WorkloadID = ids[0]
+	}
+	if scope == appdb.BackupScopeAll {
+		row.ExcludedWorkloadIDs = excluded
+		if req.ExcludedWorkloadIDs != nil {
+			row.ExcludedWorkloadIDs = uniqueTrimmed(*req.ExcludedWorkloadIDs)
+			for _, id := range row.ExcludedWorkloadIDs {
+				if wl, err := s.Store.GetWorkload(r.Context(), clusterID, id); err != nil || wl == nil {
+					return appdb.BackupPolicy{}, errNotFound("excluded workload not found")
+				}
+			}
+		}
 	}
 	appdb.NormalizeBackupPolicy(&row)
 	return row, nil
@@ -946,9 +964,15 @@ func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol ap
 		if err != nil {
 			return nil, err
 		}
+		skip := map[string]bool{}
+		for _, id := range pol.ExcludedWorkloadIDs {
+			skip[id] = true
+		}
 		ids := make([]string, 0, len(items))
 		for _, wl := range items {
-			ids = append(ids, wl.ID)
+			if !skip[wl.ID] {
+				ids = append(ids, wl.ID)
+			}
 		}
 		return ids, nil
 	}

@@ -197,6 +197,37 @@ describe("Backups page", () => {
     ).toBe(false);
   });
 
+  it("leaves workloads out of an All workloads policy, and only offers that for All", async () => {
+    const policy = {
+      id: "pol-1", name: "everything", scope: "all", workload_ids: [], excluded_workload_ids: [],
+      capture_mode: "smart", target_id: "tgt-1", schedule: "nightly", keep_daily: 7, keep_weekly: 4, keep_monthly: 3,
+    };
+    const fetchMock = mockApi({
+      ...baseRoutes,
+      "/api/v1/backups/policies": { status: 200, body: { items: [policy] } },
+      "PATCH /api/v1/backups/policies/pol-1": { status: 200, body: { ...policy, excluded_workload_ids: ["wl-b"] } },
+    });
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^edit$/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(/^all workloads$/i)).toBeChecked();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /leave out bravo/i }));
+    fireEvent.click(within(dialog).getByLabelText(/^selected workloads$/i));
+    expect(within(dialog).queryByRole("checkbox", { name: /leave out/i })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByLabelText(/^all workloads$/i));
+    expect(within(dialog).getByRole("checkbox", { name: /leave out bravo/i })).toBeChecked();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^save/i }));
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find((call) => String(call[0]).includes("/backups/policies/pol-1") && call[1]?.method === "PATCH");
+      expect(patch).toBeTruthy();
+      const body = JSON.parse(String(patch?.[1]?.body));
+      expect(body.scope).toBe("all");
+      expect(body.excluded_workload_ids).toEqual(["wl-b"]);
+      expect(body.workload_ids).toBeUndefined();
+    });
+  });
+
   it("does not scan filesystems for Full Machine and loads Custom discovery one workload at a time", async () => {
     const fetchMock = mockApi({
       ...baseRoutes,

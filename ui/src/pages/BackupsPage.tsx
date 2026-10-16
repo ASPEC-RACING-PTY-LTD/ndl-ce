@@ -130,11 +130,10 @@ function retentionLabel(p: BackupPolicy): string {
 
 function policyScopeLabel(policy: BackupPolicy, workloads: Workload[]): string {
   if (policy.scope === "all") {
-    const n = workloads.length;
-    if (n === 0) {
-      return "All workloads";
-    }
-    return `All workloads (${n} current)`;
+    const excluded = (policy.excluded_workload_ids ?? []).map((id) => workloads.find((w) => w.id === id)?.name ?? id);
+    const n = workloads.length - excluded.length;
+    const base = workloads.length === 0 ? "All workloads" : `All workloads (${n} current)`;
+    return excluded.length ? `${base}, except ${excluded.join(", ")}` : base;
   }
   const ids = policy.workload_ids?.length ? policy.workload_ids : policy.workload_id ? [policy.workload_id] : [];
   if (ids.length === 0) {
@@ -482,6 +481,7 @@ export function BackupsPage() {
 
   const [policyName, setPolicyName] = useState("");
   const [policyScope, setPolicyScope] = useState<"all" | "selected">("selected");
+  const [policyExcludedIds, setPolicyExcludedIds] = useState<string[]>([]);
   const [policyCaptureMode, setPolicyCaptureMode] = useState<CaptureMode>("full");
   const [policyWorkloadIds, setPolicyWorkloadIds] = useState<string[]>([]);
   const [policySelections, setPolicySelections] = useState<Record<string, WorkloadSelection>>({});
@@ -601,6 +601,7 @@ export function BackupsPage() {
       setPolicyScope(policy.scope === "all" ? "all" : "selected");
       setPolicyCaptureMode(policy.capture_mode === "custom" || policy.capture_mode === "smart" ? policy.capture_mode : "full");
       setPolicyWorkloadIds(policy.workload_ids?.length ? [...policy.workload_ids] : policy.workload_id ? [policy.workload_id] : []);
+      setPolicyExcludedIds([...(policy.excluded_workload_ids ?? [])]);
       setPolicySelections(parseSelections(policy.scope_json));
       setPolicyTargetId(policy.target_id);
       setKeepDaily(String(policy.keep_daily));
@@ -614,6 +615,7 @@ export function BackupsPage() {
       setPolicyScope("selected");
       setPolicyCaptureMode("full");
       setPolicyWorkloadIds([]);
+      setPolicyExcludedIds([]);
       setPolicySelections({});
       setPolicyTargetId(targets?.[0]?.id ?? "");
       setKeepDaily("7");
@@ -797,6 +799,8 @@ export function BackupsPage() {
       };
       if (policyScope === "selected") {
         body.workload_ids = policyWorkloadIds;
+      } else {
+        body.excluded_workload_ids = policyExcludedIds;
       }
       if (policyCaptureMode === "custom" && Object.keys(policySelections).length > 0) {
         body.scope_json = { workloads: policySelections };
@@ -1110,7 +1114,9 @@ export function BackupsPage() {
     return w.name.toLowerCase().includes(q) || w.id.toLowerCase().includes(q) || w.kind.toLowerCase().includes(q);
   });
   const customTargets =
-    policyScope === "all" ? workloads : workloads.filter((w) => policyWorkloadIds.includes(w.id));
+    policyScope === "all"
+      ? workloads.filter((w) => !policyExcludedIds.includes(w.id))
+      : workloads.filter((w) => policyWorkloadIds.includes(w.id));
   const recentRuns = (runs ?? []).slice(0, 12);
   const recentArtifacts = artifacts ?? [];
   const protectionSummary = useMemo(() => {
@@ -1850,7 +1856,46 @@ export function BackupsPage() {
               )}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="stack">
+            <p className="field-label" id="backup-policy-exclude-heading">
+              Leave out{policyExcludedIds.length ? ` (${policyExcludedIds.length})` : ""}
+            </p>
+            <p className="field-hint">
+              Workloads ticked here are never backed up by this policy and are not counted as unprotected. Every other
+              workload, including ones created later, is covered.
+            </p>
+            <Field
+              id="backup-policy-exclude-search"
+              label="Search workloads"
+              value={workloadQuery}
+              onChange={(e) => setWorkloadQuery(e.target.value)}
+              autoComplete="off"
+            />
+            <div className="picker-list" aria-labelledby="backup-policy-exclude-heading">
+              {filteredWorkloads.length === 0 ? (
+                <p className="muted">No matching workloads.</p>
+              ) : (
+                filteredWorkloads.map((w) => {
+                  const excluded = policyExcludedIds.includes(w.id);
+                  return (
+                    <label className="field-check" key={w.id}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Leave out ${w.name}`}
+                        checked={excluded}
+                        onChange={() => {
+                          setPolicyExcludedIds((cur) => (excluded ? cur.filter((id) => id !== w.id) : [...cur, w.id]));
+                        }}
+                      />
+                      {w.name} <span className="muted">({w.kind})</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
         <fieldset className="field">
           <legend className="field-label">Backup scope</legend>
           <div className="scope-options">

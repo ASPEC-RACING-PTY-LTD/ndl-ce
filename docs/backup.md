@@ -8,7 +8,12 @@ same pool. A backup copies data to a destination.
 A policy is the operational object. Workload scope is `selected` (an
 explicit workload list; the default) or `all` (the current eligible
 fleet, including workloads created later). All must be chosen
-deliberately. One policy can cover many workloads, and one workload can
+deliberately. An `all` policy can leave workloads out
+(`excluded_workload_ids`, "Leave out" in the policy editor, shown only for
+All workloads): they are never backed up by it and are not counted as
+unprotected in recovery health, while every other workload, new ones
+included, stays covered. Switching a policy to `selected` drops its
+exclusions. One policy can cover many workloads, and one workload can
 belong to more than one policy.
 
 Directory system containers also have a capture mode: `full` (default,
