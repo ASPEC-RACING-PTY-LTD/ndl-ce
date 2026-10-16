@@ -4240,6 +4240,74 @@ paths:
           description: Results per monitor
         "422":
           description: The JSON is not valid
+  /docker/prune:
+    get:
+      operationId: getDockerPrune
+      summary: Docker prune schedule and the result of the last pass. Pruning removes images no container uses and the build cache on every machine with Docker; volumes are kept.
+      responses:
+        "200":
+          description: Prune schedule and status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerPruneStatus"
+    post:
+      operationId: runDockerPrune
+      summary: Prune now. Runs in the background (202) unless wait=true, which returns the finished pass. Refused (409) while a prune is running.
+      parameters:
+        - name: wait
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "true"
+      responses:
+        "200":
+          description: The finished pass (wait=true)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerPruneRun"
+        "202":
+          description: Started in the background
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  started:
+                    type: boolean
+        "409":
+          description: A Docker prune is already running.
+  /docker/prune/settings:
+    put:
+      operationId: putDockerPruneSettings
+      summary: Change the daily prune schedule. Omitted or empty fields keep their current value.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                run_at:
+                  type: string
+                  description: Local time of day, HH:MM (24-hour).
+                timezone:
+                  type: string
+                  description: IANA time zone name, such as Australia/Melbourne.
+      responses:
+        "200":
+          description: Saved schedule and status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DockerPruneStatus"
+        "400":
+          description: run_at is not HH:MM or the time zone is unknown.
   /docker/machines/{machine_id}/containers/{container_id}:
     get:
       operationId: getDockerContainer
@@ -5854,6 +5922,49 @@ paths:
       responses:
         "101":
           description: Switched to WebSocket
+  /io/sessions/{id}/attach:
+    post:
+      operationId: attachIOSession
+      summary: Issue a one-time ticket to reattach to the caller's terminal shell that is still running after its socket closed. With if_free=1 it is refused (409, code terminal_in_use) while another window uses the shell.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: if_free
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "1"
+      responses:
+        "200":
+          description: Session with a new ticket; reattached is true
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IOSession"
+        "409":
+          description: The terminal is open in another window (code terminal_in_use).
+        "410":
+          description: The terminal session has ended.
+  /io/sessions/{id}/end:
+    post:
+      operationId: endIOSession
+      summary: End a terminal shell now, such as when its tab is closed. The owner or an Admin only.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Ended
+        "404":
+          description: Session not found.
   /nodes/{id}/files:
     get:
       operationId: listNodeFiles
@@ -9544,6 +9655,80 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /cloudflare/r2/buckets:
+    get:
+      operationId: listCloudflareR2Buckets
+      summary: R2 buckets of every account a saved Cloudflare token reaches. An account whose buckets cannot be listed carries an error instead.
+      responses:
+        "200":
+          description: Buckets by account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CloudflareR2Account"
+    post:
+      operationId: createCloudflareR2Bucket
+      summary: Create an R2 bucket in an account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - account_id
+                - name
+              properties:
+                account_id:
+                  type: string
+                name:
+                  type: string
+                  description: 3-63 lowercase letters, digits and hyphens, starting and ending with a letter or digit.
+                location:
+                  type: string
+                  description: Optional location hint, such as apac or weur.
+      responses:
+        "201":
+          description: Created bucket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudflareR2Bucket"
+        "400":
+          description: Invalid bucket name.
+  /cloudflare/r2/buckets/delete:
+    post:
+      operationId: deleteCloudflareR2Bucket
+      summary: Delete an empty R2 bucket. Buckets with objects are refused by Cloudflare.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - account_id
+                - name
+              properties:
+                account_id:
+                  type: string
+                name:
+                  type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
   /workloads/{id}/cloudflare:
     get:
       operationId: getWorkloadCloudflare
@@ -10224,6 +10409,101 @@ components:
         updated_by:
           type: string
         updated_at:
+          type: string
+    DockerPruneStatus:
+      type: object
+      required:
+        - enabled
+        - run_at
+        - timezone
+        - next_run_at
+        - running
+      properties:
+        enabled:
+          type: boolean
+        run_at:
+          type: string
+          description: Local time of day, HH:MM (24-hour).
+        timezone:
+          type: string
+        next_run_at:
+          type: string
+          format: date-time
+        running:
+          type: boolean
+        last_run_at:
+          type: string
+          format: date-time
+        last_result:
+          $ref: "#/components/schemas/DockerPruneRun"
+    DockerPruneRun:
+      type: object
+      properties:
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        trigger:
+          type: string
+          enum:
+            - schedule
+            - manual
+        machines:
+          type: array
+          items:
+            $ref: "#/components/schemas/DockerPruneMachine"
+        images_deleted:
+          type: integer
+        bytes_freed:
+          type: integer
+          format: int64
+        failed:
+          type: integer
+    DockerPruneMachine:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        images_deleted:
+          type: integer
+        bytes_freed:
+          type: integer
+          format: int64
+        error:
+          type: string
+    CloudflareR2Account:
+      type: object
+      required:
+        - account_id
+        - account_name
+        - buckets
+      properties:
+        account_id:
+          type: string
+        account_name:
+          type: string
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudflareR2Bucket"
+        error:
+          type: string
+    CloudflareR2Bucket:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        creation_date:
+          type: string
+        location:
+          type: string
+        storage_class:
           type: string
     HealthResponse:
       type: object
@@ -13227,6 +13507,8 @@ components:
           type: string
         jail_root:
           type: string
+        reattached:
+          type: boolean
     FileEntry:
       type: object
       additionalProperties: true

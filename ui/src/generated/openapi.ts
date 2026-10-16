@@ -57,6 +57,48 @@ export interface DockerPref {
   updated_at?: string;
 }
 
+export interface DockerPruneStatus {
+  enabled: boolean;
+  run_at: string;
+  timezone: string;
+  next_run_at: string;
+  running: boolean;
+  last_run_at?: string;
+  last_result?: DockerPruneRun;
+}
+
+export interface DockerPruneRun {
+  started_at?: string;
+  finished_at?: string;
+  trigger?: "schedule" | "manual";
+  machines?: DockerPruneMachine[];
+  images_deleted?: number;
+  bytes_freed?: number;
+  failed?: number;
+}
+
+export interface DockerPruneMachine {
+  id?: string;
+  name?: string;
+  images_deleted?: number;
+  bytes_freed?: number;
+  error?: string;
+}
+
+export interface CloudflareR2Account {
+  account_id: string;
+  account_name: string;
+  buckets: CloudflareR2Bucket[];
+  error?: string;
+}
+
+export interface CloudflareR2Bucket {
+  name: string;
+  creation_date?: string;
+  location?: string;
+  storage_class?: string;
+}
+
 export interface HealthResponse {
   status: "ok" | "starting";
   service: "ndl-control";
@@ -1327,6 +1369,7 @@ export interface IOSession {
   ws_path?: string;
   node_id?: string;
   jail_root?: string;
+  reattached?: boolean;
 }
 
 export interface FileEntry {
@@ -3467,6 +3510,10 @@ export type CheckAllUptimePath = "/api/v1/uptime/check";
 
 export type ImportUptimePath = "/api/v1/uptime/import";
 
+export type GetDockerPrunePath = "/api/v1/docker/prune";
+
+export type PutDockerPruneSettingsPath = "/api/v1/docker/prune/settings";
+
 export type GetDockerContainerPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}";
 
 export type GetDockerContainerLogsPath = "/api/v1/docker/machines/{machine_id}/containers/{container_id}/logs";
@@ -3628,6 +3675,10 @@ export type ListIOSessionsPath = "/api/v1/io/sessions";
 export type GetIOSessionPath = "/api/v1/io/sessions/{id}";
 
 export type ConnectIOSessionPath = "/api/v1/io/sessions/{id}/ws";
+
+export type AttachIOSessionPath = "/api/v1/io/sessions/{id}/attach";
+
+export type EndIOSessionPath = "/api/v1/io/sessions/{id}/end";
 
 export type ListNodeFilesPath = "/api/v1/nodes/{id}/files";
 
@@ -3952,6 +4003,10 @@ export type DiagnoseCloudflareRoutePath = "/api/v1/cloudflare/routes/diagnose";
 export type PreviewCloudflareMovePath = "/api/v1/cloudflare/move/preview";
 
 export type MoveCloudflareRoutesPath = "/api/v1/cloudflare/move";
+
+export type ListCloudflareR2BucketsPath = "/api/v1/cloudflare/r2/buckets";
+
+export type DeleteCloudflareR2BucketPath = "/api/v1/cloudflare/r2/buckets/delete";
 
 export type GetWorkloadCloudflarePath = "/api/v1/workloads/{id}/cloudflare";
 
