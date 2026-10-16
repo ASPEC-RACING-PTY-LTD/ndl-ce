@@ -437,7 +437,7 @@ describe("Terminal workspace", () => {
     await waitFor(() => expect(document.querySelectorAll(".term-grid-cell")).toHaveLength(0));
   });
 
-  it("resumes the same shell when it is still running on the server", async () => {
+  it("reattaches to the same shell on its own after the socket drops", async () => {
     installIO();
     await openWorkspace();
     fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
@@ -446,16 +446,12 @@ describe("Terminal workspace", () => {
     await waitConnected();
     reattachable = true;
     sockets[0]?.close();
-    await waitFor(() => {
-      expect(document.querySelector(".term-conn.is-disconnected")).toHaveTextContent(/disconnected/i);
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^reconnect$/i }));
-    await waitFor(() => expect(attached).toEqual(["s1"]));
+    await waitFor(() => expect(attached).toEqual(["s1"]), { timeout: 3000 });
     await waitFor(() => expect(sockets.length).toBe(2));
     expect(created).toHaveLength(1);
   });
 
-  it("shows disconnected honestly after a socket close and reconnects with a new PTY", async () => {
+  it("shows the shell ended when it is gone after a drop and reconnects with a new PTY", async () => {
     installIO();
     await openWorkspace();
     fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
@@ -463,9 +459,9 @@ describe("Terminal workspace", () => {
     await clickTarget("workload", "wl-a");
     await waitConnected();
     sockets[0]?.close();
-    await waitFor(() => {
-      expect(document.querySelector(".term-conn.is-disconnected")).toHaveTextContent(/disconnected/i);
-    });
+    await waitFor(() => expect(attached).toEqual(["s1"]), { timeout: 3000 });
+    expect(await screen.findByText(/shell ended while the connection was down/i)).toBeInTheDocument();
+    expect(created).toHaveLength(1);
     const before = sent.length;
     fireEvent.click(screen.getByRole("button", { name: /^reconnect$/i }));
     await waitFor(() => expect(created.length).toBe(2));

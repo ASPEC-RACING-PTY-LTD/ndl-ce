@@ -3,6 +3,7 @@ package httpapi
 import (
 	"crypto/subtle"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -16,9 +17,10 @@ import (
 // ticket from POST /io/sessions/{id}/attach. Closing the tab ends it at once.
 
 var (
-	termDetachGrace     = 15 * time.Minute
+	termDetachGrace     = 10 * time.Minute
 	termReplayBytes     = 256 << 10
 	termAttachTicketTTL = time.Minute
+	termWriteWait       = 45 * time.Second
 )
 
 type liveTerm struct {
@@ -29,8 +31,11 @@ type liveTerm struct {
 	frames [][]byte
 	size   int
 	ws     *websocket.Conn
-	timer  *time.Timer
-	ended  bool
+	// cur mirrors ws so attach can close a stalled socket without waiting
+	// for pump's write (which holds mu) to time out.
+	cur   atomic.Pointer[websocket.Conn]
+	timer *time.Timer
+	ended bool
 	// attachHash is the hashed one-time ticket for the next reattach.
 	attachHash string
 	attachExp  time.Time
@@ -72,7 +77,10 @@ func (lt *liveTerm) pump() {
 			lt.frames = lt.frames[1:]
 		}
 		if lt.ws != nil {
-			_ = lt.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			// A burst (docker build redrawing its progress) can stall a slow
+			// link for a while; give it time before dropping the socket. The
+			// page reattaches and the replay fills the gap either way.
+			_ = lt.ws.SetWriteDeadline(time.Now().Add(termWriteWait))
 			if lt.ws.WriteMessage(websocket.BinaryMessage, data) != nil {
 				_ = lt.ws.Close()
 			}
@@ -83,6 +91,9 @@ func (lt *liveTerm) pump() {
 
 // attach makes ws the shell's socket, replaying recent output first.
 func (lt *liveTerm) attach(ws *websocket.Conn) bool {
+	if old := lt.cur.Load(); old != nil && old != ws {
+		_ = old.Close()
+	}
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
 	if lt.ended {
@@ -96,8 +107,9 @@ func (lt *liveTerm) attach(ws *websocket.Conn) bool {
 		_ = lt.ws.Close()
 	}
 	lt.ws = ws
+	lt.cur.Store(ws)
 	for _, f := range lt.frames {
-		_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		_ = ws.SetWriteDeadline(time.Now().Add(termWriteWait))
 		if ws.WriteMessage(websocket.BinaryMessage, f) != nil {
 			break
 		}
@@ -113,6 +125,7 @@ func (lt *liveTerm) detach(ws *websocket.Conn) {
 		return
 	}
 	lt.ws = nil
+	lt.cur.Store(nil)
 	lt.timer = time.AfterFunc(termDetachGrace, lt.end)
 }
 
@@ -128,6 +141,7 @@ func (lt *liveTerm) end() {
 	}
 	ws := lt.ws
 	lt.ws = nil
+	lt.cur.Store(nil)
 	lt.mu.Unlock()
 	liveTerms.mu.Lock()
 	if liveTerms.m[lt.id] == lt {
