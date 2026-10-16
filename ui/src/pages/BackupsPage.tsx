@@ -1,8 +1,10 @@
+import { confirmAction } from "../confirm";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LoadingState } from "../components/EmptyState";
 import { DeleteButton } from "../components/DeleteButton";
 import {
   deleteBackupArtifact,
+  deleteWorkloadBackups,
   deleteBackupTargetWithBackups,
   ApiError,
   createBackupPolicy,
@@ -52,6 +54,8 @@ import { PlatformBackupPanel } from "../components/PlatformBackup";
 import { RecoveryWorkloads } from "../components/RecoveryWorkloads";
 import { KeepImages } from "../components/KeepImages";
 import { BackupSizes } from "../components/BackupSizes";
+import { Box, BoxDock, BoxesProvider, CreateMenu, useBoxes, type BoxInfo } from "../components/BackupBoxes";
+import { WorkloadFiles } from "../components/WorkloadFiles";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -111,17 +115,6 @@ function runStatusLabel(status: BackupRun["status"]): string {
       return "Interrupted";
     default:
       return honestStatus(status);
-  }
-}
-
-function verifyStatusLabel(status: BackupArtifact["verify_status"] | undefined): string {
-  switch (status) {
-    case "verified":
-      return "Verified";
-    case "failed":
-      return "Failed";
-    default:
-      return "Unverified";
   }
 }
 
@@ -192,6 +185,28 @@ function artifactBackupType(art: BackupArtifact): string {
     return "Smart Application Data";
   }
   return "Legacy";
+}
+
+function verifyStatusLabel(status: BackupArtifact["verify_status"] | undefined): string {
+  switch (status) {
+    case "verified":
+      return "Verified";
+    case "failed":
+      return "Failed";
+    default:
+      return "Unverified";
+  }
+}
+
+// shortBackupType is the one-word form of a backup type for tight tables.
+function shortBackupType(label: string): string {
+  if (label.startsWith("Full")) {
+    return "Full";
+  }
+  if (label.startsWith("Smart")) {
+    return "Smart";
+  }
+  return label;
 }
 
 // uploadProgress describes an upload still in flight, e.g. "42% uploaded".
@@ -425,6 +440,37 @@ function latestPolicyRun(runs: BackupRun[], policyId: string): BackupRun | undef
   return runs.find((r) => r.policy_id === policyId);
 }
 
+type RunRange = "latest" | "day" | "all";
+
+// A gap this long between run starts separates one backup round from the
+// next; a round's runs start one after another.
+const ROUND_GAP_MS = 30 * 60 * 1000;
+
+/**
+ * filterRuns keeps, by default, the backup round that is running now or the
+ * last one that ran: runs that started in an unbroken chain back from the
+ * newest, plus anything still running. Older runs stay in the list behind
+ * the wider ranges.
+ */
+export function filterRuns(runs: BackupRun[], range: RunRange, failedOnly: boolean, now = Date.now()): BackupRun[] {
+  const at = (r: BackupRun) => Date.parse(r.started_at ?? "") || 0;
+  const sorted = [...runs].sort((a, b) => at(b) - at(a));
+  let keep = sorted;
+  if (range === "day") {
+    keep = sorted.filter((r) => now - at(r) <= 24 * 60 * 60 * 1000 || r.status === "running");
+  } else if (range === "latest" && sorted.length > 0) {
+    let start = at(sorted[0]);
+    for (const r of sorted.slice(1)) {
+      if (start - at(r) > ROUND_GAP_MS) {
+        break;
+      }
+      start = at(r);
+    }
+    keep = sorted.filter((r) => at(r) >= start || r.status === "running");
+  }
+  return failedOnly ? keep.filter((r) => r.status === "failed" || r.status === "interrupted") : keep;
+}
+
 function runTone(status: BackupRun["status"]): string {
   switch (status) {
     case "succeeded":
@@ -549,6 +595,19 @@ type Dialog =
   | { kind: "workspace" }
   | { kind: "run"; run: BackupRun };
 
+// Boxes of the page, in page order, with the short name their minimized
+// button shows.
+const BOXES: BoxInfo[] = [
+  { id: "images", short: "Image copies" },
+  { id: "files", short: "Files & rules" },
+  { id: "sizes", short: "Size" },
+  { id: "policies", short: "Policies" },
+  { id: "storage", short: "Storage" },
+  { id: "runs", short: "Runs" },
+  { id: "restore", short: "Restore points" },
+  { id: "dr", short: "Recovery" },
+];
+
 export function BackupsPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
@@ -614,8 +673,11 @@ export function BackupsPage() {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [restoreNodeId, setRestoreNodeId] = useState("");
   const [artifactQuery, setArtifactQuery] = useState("");
+  const [runRange, setRunRange] = useState<RunRange>("latest");
+  const [runsFailedOnly, setRunsFailedOnly] = useState(false);
   // refreshKey reloads panels that fetch their own data after a change here.
   const [refreshKey, setRefreshKey] = useState(0);
+  const boxes = useBoxes(["images", "files"]);
 
   // Everything loads at once. Backups render as soon as the backup lists
   // arrive; workloads, nodes and workspace settings fill in when they do.
@@ -740,7 +802,7 @@ export function BackupsPage() {
   }
 
   async function onDeleteArtifact(art: BackupArtifact) {
-    if (!window.confirm(`Delete the backup from ${formatWhen(art.created_at)}? Its data is removed and it cannot be restored.`)) {
+    if (!confirmAction(`Delete the backup from ${formatWhen(art.created_at)}? Its data is removed and it cannot be restored.`)) {
       return;
     }
     setBusy(true);
@@ -759,9 +821,35 @@ export function BackupsPage() {
     }
   }
 
+  async function afterDelete() {
+    setRefreshKey((k) => k + 1);
+    try {
+      await reload();
+    } catch {
+      // The next load shows the result.
+    }
+  }
+
+  async function onDeleteWorkloadBackups(id: string, name: string) {
+    if (!confirmAction(`Delete every backup of ${name}, on this host and in cloud storage? Protected backups are kept.`)) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteWorkloadBackups(id);
+      setArtifacts((cur) => (cur ?? []).filter((a) => a.workload_id !== id || a.protected));
+      await afterDelete();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not delete the backups");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onRemoveTargetWithBackups(t: BackupTarget) {
     if (
-      !window.confirm(
+      !confirmAction(
         `Remove ${t.name} and delete every backup No-dal recorded on it? Backups whose data cannot be reached any more are dropped from the list too. This cannot be undone.`,
       )
     ) {
@@ -1127,14 +1215,14 @@ export function BackupsPage() {
   async function onRestore(artifact: BackupArtifact, mode: "new" | "replace") {
     if (mode === "new") {
       if (
-        !window.confirm(
+        !confirmAction(
           `Restore artifact ${artifact.id} as a new workload? This creates a new workload UUID. The original workload is left unchanged.`,
         )
       ) {
         return;
       }
     } else if (
-      !window.confirm(
+      !confirmAction(
         `Replace the existing workload with artifact ${artifact.id}? This overwrites the current workload. Type confirmation is sent as X-Nodal-Confirm: restore.`,
       )
     ) {
@@ -1216,7 +1304,10 @@ export function BackupsPage() {
   const runnableTargets = (targets ?? []).filter(targetAllowsRun);
   const objectForm = isObjectKind(targetKind);
   const targetById = useMemo(() => new Map((targets ?? []).map((t) => [t.id, t])), [targets]);
-  const filteredWorkloads = workloads.filter((w) => {
+  // Only VMs and system containers can be backed up; OCI containers and
+  // other kinds are never offered.
+  const backupWorkloads = workloads.filter((w) => w.kind === "vm" || w.kind === "system-container");
+  const filteredWorkloads = backupWorkloads.filter((w) => {
     const q = workloadQuery.trim().toLowerCase();
     if (!q) {
       return true;
@@ -1225,10 +1316,11 @@ export function BackupsPage() {
   });
   const customTargets =
     policyScope === "all"
-      ? workloads.filter((w) => !policyExcludedIds.includes(w.id))
-      : workloads.filter((w) => policyWorkloadIds.includes(w.id));
+      ? backupWorkloads.filter((w) => !policyExcludedIds.includes(w.id))
+      : backupWorkloads.filter((w) => policyWorkloadIds.includes(w.id));
   const workloadNames = useMemo(() => new Map(workloads.map((w) => [w.id, w.name])), [workloads]);
   const workloadName = useCallback((id: string) => workloadNames.get(id) ?? id, [workloadNames]);
+  const shownRuns = useMemo(() => filterRuns(runs ?? [], runRange, runsFailedOnly), [runs, runRange, runsFailedOnly]);
   const shownArtifacts = useMemo(() => {
     const q = artifactQuery.trim().toLowerCase();
     const all = artifacts ?? [];
@@ -1258,37 +1350,38 @@ export function BackupsPage() {
   const hasR2Target = (targets ?? []).some((t) => t.kind === "r2");
 
   return (
+    <BoxesProvider value={boxes.value}>
     <section className="page page-wide bk" aria-labelledby="backups-heading">
       <PageHeader
         id="backups-heading"
         title="Backups"
         kicker="Backups are independent copies. Snapshots are not backups."
-        actions={
-          mutate ? (
-            <div className="btn-row is-flush">
-              <button className="btn btn-primary" type="button" onClick={() => openPolicyDialog()}>
-                Create policy
-              </button>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => {
-                  resetTargetForm();
-                  setDialog({ kind: "target" });
-                }}
-              >
-                Add target
-              </button>
-              <button className="btn" type="button" onClick={() => setDialog({ kind: "adhoc" })}>
-                Back up one workload
-              </button>
-              <button className="btn" type="button" onClick={() => setDialog({ kind: "workspace" })}>
-                Settings
-              </button>
-            </div>
-          ) : null
-        }
       />
+
+      <div className="bk-bar">
+        <BoxDock boxes={BOXES} value={boxes.value} />
+        <div className="bk-bar-actions">
+          {mutate ? (
+            <CreateMenu
+              items={[
+                { label: "Policy", onSelect: () => openPolicyDialog() },
+                {
+                  label: "Target",
+                  onSelect: () => {
+                    resetTargetForm();
+                    setDialog({ kind: "target" });
+                  },
+                },
+              ]}
+            />
+          ) : null}
+          {mutate ? (
+            <button className="btn" type="button" onClick={() => setDialog({ kind: "workspace" })}>
+              Settings
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       {error ? <ErrorNotice error={error} /> : null}
 
@@ -1338,14 +1431,35 @@ export function BackupsPage() {
             </span>
           </div>
 
-          <BackupSizes artifacts={artifacts ?? []} workloadName={workloadName} targets={targets ?? []} />
+          {workloads.some((w) => w.kind === "system-container") ? (
+            <Box id="images" title="Container image copies" short="Image copies">
+              <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
+            </Box>
+          ) : null}
+          <Box id="files" title="Workload files and backup rules" short="Files & rules">
+            <WorkloadFiles workloads={workloads} mutate={mutate} onBackupsDeleted={() => void afterDelete()} />
+          </Box>
+          <Box id="sizes" title="Backup size" short="Size">
+            <BackupSizes
+              artifacts={artifacts ?? []}
+              workloadName={workloadName}
+              targets={targets ?? []}
+              onDeleteWorkload={mutate ? (id, name) => void onDeleteWorkloadBackups(id, name) : undefined}
+            />
+          </Box>
           <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
           <RecoveryWorkloads owner={isAdmin(roles)} />
 
+          <Box id="policies" title="Policies" short="Policies">
           <section className="panel bk-panel" aria-labelledby="backup-policies-heading">
             <div className="bk-head">
               <h2 id="backup-policies-heading">Policies</h2>
               <span className="bk-hint">A policy backs up its workloads every night and keeps the copies its rules say.</span>
+              {mutate ? (
+                <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "adhoc" })}>
+                  Back up one workload
+                </button>
+              ) : null}
             </div>
             {policies == null ? (
               <LoadingState label="Collecting" />
@@ -1368,7 +1482,7 @@ export function BackupsPage() {
                           {latest ? <span className={"bk-pill " + runTone(latest.status)}>Last run: {runStatusLabel(latest.status)}</span> : null}
                         </div>
                         <div className="bk-item-meta">
-                          <span>{policyScopeLabel(p, workloads)}</span>
+                          <span>{policyScopeLabel(p, backupWorkloads)}</span>
                           <span>{captureModeLabel(p.capture_mode)}</span>
                           <span>To {targetById.get(p.target_id)?.name ?? p.target_id}</span>
                           <span>Keeps {retentionLabel(p)}</span>
@@ -1410,8 +1524,10 @@ export function BackupsPage() {
               </div>
             )}
           </section>
+          </Box>
 
           <div className="bk-row">
+            <Box id="storage" title="Where backups are stored" short="Storage">
             <BackupStoragePanel
               mutate={mutate}
               targets={targets ?? []}
@@ -1454,10 +1570,29 @@ export function BackupsPage() {
               }
             />
 
+            </Box>
+            <Box id="runs" title="Recent runs" short="Runs">
             <section className="panel bk-panel" aria-labelledby="backup-runs-heading">
               <div className="bk-head">
                 <h2 id="backup-runs-heading">Recent runs</h2>
-                {runs?.length ? <span className="bk-hint">{runs.length} runs, newest first</span> : null}
+                {runs?.length ? (
+                  <div className="bk-actions">
+                    <select
+                      className="field-input bk-select"
+                      aria-label="Which runs to show"
+                      value={runRange}
+                      onChange={(e) => setRunRange(e.target.value as RunRange)}
+                    >
+                      <option value="latest">{runs.some((r) => r.status === "running") ? "Running now" : "Last backup"}</option>
+                      <option value="day">Last 24 hours</option>
+                      <option value="all">All runs ({runs.length})</option>
+                    </select>
+                    <label className="field-check bk-check">
+                      <input type="checkbox" checked={runsFailedOnly} onChange={(e) => setRunsFailedOnly(e.target.checked)} />
+                      Failed only
+                    </label>
+                  </div>
+                ) : null}
               </div>
               {runs == null ? (
                 <LoadingState label="Collecting" />
@@ -1481,7 +1616,7 @@ export function BackupsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {runs.map((r) => (
+                      {shownRuns.map((r) => (
                         <tr key={r.id}>
                           <td>{workloadName(r.workload_id)}</td>
                           <td>
@@ -1491,7 +1626,7 @@ export function BackupsPage() {
                             {r.incremental ? <span className="bk-hint"> incremental</span> : null}
                           </td>
                           <td className="bk-num">{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : ""}</td>
-                          <td title={formatWhen(r.started_at)}>{formatRelative(r.started_at)}</td>
+                          <td className="bk-nowrap" title={formatWhen(r.started_at)}>{formatRelative(r.started_at)}</td>
                           <td className="bk-actions-col">
                             <button
                               className="btn btn-sm btn-ghost"
@@ -1504,13 +1639,23 @@ export function BackupsPage() {
                           </td>
                         </tr>
                       ))}
+                      {shownRuns.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="bk-hint">
+                            No runs match. Choose All runs to see older ones.
+                          </td>
+                        </tr>
+                      ) : null}
                     </tbody>
                   </table>
                 </div>
               )}
             </section>
+            </Box>
           </div>
 
+          <div className="bk-row is-even is-tall">
+          <Box id="restore" title="Restore points" short="Restore points">
           <section className="panel bk-panel" aria-labelledby="backup-artifacts-heading">
             <div className="bk-head">
               <h2 id="backup-artifacts-heading">Restore points</h2>
@@ -1540,15 +1685,13 @@ export function BackupsPage() {
                 <p className="bk-hint">Finished backups show here, ready to restore or check.</p>
               </div>
             ) : (
-              <div className="bk-scroll is-tall">
+              <div className="bk-scroll">
                 <table className="bk-table">
                   <thead>
                     <tr>
                       <th>Workload</th>
-                      <th>Type</th>
                       <th>Status</th>
                       <th className="bk-num">Size</th>
-                      <th>Checked</th>
                       <th>Created</th>
                       <th className="bk-actions-col">
                         <span className="sr-only">Actions</span>
@@ -1558,23 +1701,34 @@ export function BackupsPage() {
                   <tbody>
                     {shownArtifacts.map((art) => (
                       <tr key={art.id}>
-                        <td>{workloadName(art.workload_id)}</td>
-                        <td>{artifactBackupType(art)}</td>
+                        <td>
+                          {workloadName(art.workload_id)}
+                          <div className="bk-hint" title={artifactBackupType(art)}>
+                            {shortBackupType(artifactBackupType(art))}
+                          </div>
+                        </td>
                         <td>
                           <span className={"bk-pill " + protectionTone(art)} title={art.remote_error && art.remote_state !== "protected" ? art.remote_error : undefined}>
                             {protectionLabel(art)}
                           </span>
                           {art.protected ? <span className="bk-pill">Kept</span> : null}
-                          {uploadProgress(art) ? <span className="bk-hint"> {uploadProgress(art)}</span> : null}
+                          {art.verify_status === "verified" ? <span className="bk-pill is-ok">Verified</span> : null}
+                          {art.verify_status === "failed" ? <span className="bk-pill is-danger">Check failed</span> : null}
+                          {uploadProgress(art) ? <div className="bk-hint">{uploadProgress(art)}</div> : null}
                         </td>
                         <td className="bk-num">{formatBytes(art.logical_bytes || art.size_bytes)}</td>
-                        <td>{verifyStatusLabel(art.verify_status)}</td>
-                        <td title={formatWhen(art.created_at)}>{formatRelative(art.created_at)}</td>
+                        <td className="bk-nowrap" title={formatWhen(art.created_at)}>{formatRelative(art.created_at)}</td>
                         <td className="bk-actions-col">
                           {mutate ? (
                             <div className="bk-actions">
-                              <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "artifact", artifact: art })}>
-                                Restore or verify
+                              <button
+                                className="btn btn-sm"
+                                type="button"
+                                aria-label="Restore or verify"
+                                title="Restore or verify"
+                                onClick={() => setDialog({ kind: "artifact", artifact: art })}
+                              >
+                                Restore
                               </button>
                               <button
                                 className="btn btn-sm"
@@ -1603,7 +1757,7 @@ export function BackupsPage() {
                     ))}
                     {shownArtifacts.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="bk-hint">
+                        <td colSpan={5} className="bk-hint">
                           No restore points match.
                         </td>
                       </tr>
@@ -1613,9 +1767,11 @@ export function BackupsPage() {
               </div>
             )}
           </section>
-
-          <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
-          <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
+          </Box>
+          <Box id="dr" title="Disaster recovery" short="Recovery">
+            <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
+          </Box>
+          </div>
         </>
       ) : null}
 
@@ -2162,7 +2318,7 @@ export function BackupsPage() {
             onChange={(e) => setRunWorkloadId(e.target.value)}
           >
             <option value="">Select workload</option>
-            {workloads.map((w) => (
+            {backupWorkloads.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name} ({w.id})
               </option>
@@ -2260,6 +2416,10 @@ export function BackupsPage() {
               <div>
                 <dt>Consistency</dt>
                 <dd>{consistencyLabel(dialog.artifact.consistency)}</dd>
+              </div>
+              <div>
+                <dt>Checked</dt>
+                <dd>{verifyStatusLabel(dialog.artifact.verify_status)}</dd>
               </div>
               <div>
                 <dt>Logical size</dt>
@@ -2499,5 +2659,6 @@ export function BackupsPage() {
         </p>
       </ConfirmDialog>
     </section>
+    </BoxesProvider>
   );
 }

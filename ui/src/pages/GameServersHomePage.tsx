@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { Link } from "../components/Link";
@@ -138,7 +139,7 @@ export function GameServersHomePage() {
   }
 
   async function onDelete(id: string, name: string) {
-    if (!window.confirm(`Delete ${name}? Files and the container are removed. This cannot be undone.`)) {
+    if (!confirmAction(`Delete ${name}? Files and the container are removed. This cannot be undone.`)) {
       return;
     }
     setBusy(true);

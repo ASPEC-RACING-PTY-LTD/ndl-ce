@@ -19,13 +19,22 @@ type httpInstance struct {
 
 func newHTTPInstance(name, addr string, handler http.Handler) *httpInstance {
 	srv := &http.Server{Addr: addr, Handler: handler}
-	return &httpInstance{
+	inst := &httpInstance{
 		name: name,
 		srv:  srv,
 		serve: func() error {
 			return srv.ListenAndServe()
 		},
 	}
+	return inst
+}
+
+// withInherited serves on a listener systemd holds when there is one.
+func (inst *httpInstance) withInherited(ln net.Listener) *httpInstance {
+	if ln != nil {
+		inst.serve = func() error { return inst.srv.Serve(ln) }
+	}
+	return inst
 }
 
 func newTLSInstance(name, addr string, cert tls.Certificate, handler http.Handler) (*httpInstance, error) {

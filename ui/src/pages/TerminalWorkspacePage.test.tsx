@@ -1,3 +1,4 @@
+import { setAutoConfirm } from "../confirm";
 import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -565,6 +566,8 @@ describe("Terminal workspace", () => {
   it("does not silently start a stopped workload from the new terminal picker", async () => {
     installIO();
     await openWorkspace();
+    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    setAutoConfirm(false);
     fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
     const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
     fireEvent.change(screen.getByLabelText(/^search$/i), { target: { value: "test vm" } });

@@ -46,6 +46,13 @@ func TestAllWorkloadsPolicyLeavesOutItsExclusions(t *testing.T) {
 	if code != http.StatusOK || len(pol["excluded_workload_ids"].([]any)) != 1 {
 		t.Fatalf("omitted exclusions are kept: %d %v", code, pol)
 	}
+	// Kinds a backup cannot copy are never attempted.
+	oci := uuid.NewString()
+	_ = mem.CreateWorkload(ctx, appdb.Workload{ID: oci, ClusterID: cluster.ID, Name: "savelocker", Kind: "oci"})
+	row, _ = mem.GetBackupPolicy(ctx, cluster.ID, id)
+	if covered, _ := s.policyWorkloadIDs(ctx, cluster.ID, *row); slices.Contains(covered, oci) {
+		t.Fatal("an OCI container must not be part of All workloads")
+	}
 	// A new workload is covered without editing the policy.
 	newID := uuid.NewString()
 	_ = mem.CreateWorkload(ctx, appdb.Workload{ID: newID, ClusterID: cluster.ID, Name: "new", Kind: "system-container"})

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/no-dal/ndl-ce/internal/buildinfo"
 	"io"
 	"io/fs"
 	"net"
@@ -60,36 +61,38 @@ type LogsRPC interface {
 
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
-	Store           appdb.Store
-	Lockout         *auth.Lockout
-	Agent           Agent
-	Observer        Observer
-	Logs            LogsRPC
-	HTTPClient      *http.Client
-	Storage         StorageRPC
-	Network         NetworkRPC
-	Workloads       WorkloadRPC
-	IO              IORPC
-	QEMU            QemuRPC
-	VM              VMRPC
-	OCI             OCIRPC
-	Docker          DockerRPC
-	Backup          BackupRPC
-	Object          ObjectRPC
-	Verify          VerifyRPC
-	Update          UpdateRPC
-	GPU             GPURPC
-	ZFS             ZFSRPC
-	LVM             LVMRPC
-	Datastore       DatastoreRPC
-	Distributed     DistributedRPC
-	K8sProcs        func() []string
-	OSDProcs        func() []string
-	AICompleter     ai.Completer
-	LicenseProbe    LicenseProbe
-	Hub             *EventHub
-	Migrate         migrate.Runtime
-	UI              fs.FS
+	Store        appdb.Store
+	Lockout      *auth.Lockout
+	Agent        Agent
+	Observer     Observer
+	Logs         LogsRPC
+	HTTPClient   *http.Client
+	Storage      StorageRPC
+	Network      NetworkRPC
+	Workloads    WorkloadRPC
+	IO           IORPC
+	QEMU         QemuRPC
+	VM           VMRPC
+	OCI          OCIRPC
+	Docker       DockerRPC
+	Backup       BackupRPC
+	Object       ObjectRPC
+	Verify       VerifyRPC
+	Update       UpdateRPC
+	GPU          GPURPC
+	ZFS          ZFSRPC
+	LVM          LVMRPC
+	Datastore    DatastoreRPC
+	Distributed  DistributedRPC
+	K8sProcs     func() []string
+	OSDProcs     func() []string
+	AICompleter  ai.Completer
+	LicenseProbe LicenseProbe
+	Hub          *EventHub
+	Migrate      migrate.Runtime
+	UI           fs.FS
+	// LiveUpdates locates live update state, inbox and trusted keys.
+	LiveUpdates     LiveUpdatePaths
 	Now             func() time.Time
 	SetupHash       string
 	AllowedUID      uint32
@@ -576,6 +579,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/backups/targets/{id}/usage", s.getBackupTargetUsage)
 	mux.HandleFunc("POST /api/v1/backups/targets/{id}/wipe", s.wipeBackupTarget)
 	mux.HandleFunc("GET /api/v1/backups/git-holds", s.listBackupGitHolds)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/backup-files", s.getWorkloadBackupFiles)
+	mux.HandleFunc("GET /api/v1/workloads/{id}/backup-rules", s.getWorkloadBackupRules)
+	mux.HandleFunc("PUT /api/v1/workloads/{id}/backup-rules", s.putWorkloadBackupRules)
+	mux.HandleFunc("POST /api/v1/backups/workloads/{id}/delete", s.deleteWorkloadBackups)
+	mux.HandleFunc("GET /api/v1/live-updates", s.getLiveUpdates)
+	mux.HandleFunc("POST /api/v1/live-updates/bundles", s.postLiveUpdateBundle)
+	mux.HandleFunc("POST /api/v1/live-updates/rollback", s.postLiveUpdateRollback)
 	mux.HandleFunc("GET /api/v1/platform-backup", s.getPlatformBackup)
 	mux.HandleFunc("PATCH /api/v1/platform-backup", s.patchPlatformBackup)
 	mux.HandleFunc("POST /api/v1/platform-backup/run", s.runPlatformBackupAPI)
@@ -691,7 +701,7 @@ func (s *Server) Handler() http.Handler {
 	if s.UI != nil {
 		mux.Handle("/", s.spa())
 	}
-	return s.markReadRequests(mux)
+	return countChanges(s.markReadRequests(mux))
 }
 
 func (s *Server) spa() http.Handler {
@@ -746,12 +756,29 @@ func uiLooksLikeStaticAsset(rel string) bool {
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	open, _ := s.setupOpen(r.Context())
 	status := "ok"
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"status":      status,
 		"service":     "ndl-control",
 		"setup_open":  open,
 		"tls_enabled": s.TLSRequired,
-	})
+	}
+	// Builds are for the local updater (root on the control socket), not
+	// for anyone who can reach the public health check.
+	if _, local, _ := s.unixRootPrincipal(r); !local {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	out["version"], out["build"] = buildinfo.Version, buildinfo.ID()
+	if a, ok := s.Agent.(interface {
+		AgentVersion(context.Context) (string, error)
+	}); ok {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		if v, err := a.AgentVersion(ctx); err == nil {
+			out["agent_build"] = v
+		}
+		cancel()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) setupStatus(w http.ResponseWriter, r *http.Request) {

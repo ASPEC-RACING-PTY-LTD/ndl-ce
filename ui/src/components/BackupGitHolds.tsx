@@ -99,10 +99,10 @@ export function BackupGitHolds({ owner, onChanged }: { owner: boolean; onChanged
               <li key={r.path}>
                 <code>{r.path}</code>
                 {r.branch ? ` on ${r.branch}` : ""}
-                {r.unpushed ? " — has commits that are on no remote" : ""}
+                {r.unpushed ? ": has commits that are on no remote" : ""}
                 {r.unsaved?.length ? (
                   <>
-                    {" — not committed: "}
+                    {": not committed: "}
                     {r.unsaved.slice(0, 8).join(", ")}
                     {r.unsaved.length > 8 || r.more_changes ? " and more" : ""}
                   </>

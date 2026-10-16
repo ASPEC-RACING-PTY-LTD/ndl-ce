@@ -22,3 +22,4 @@ packaging/e2e/gocache/
 
 # Local task list
 /Tasks.md
+/out/live/

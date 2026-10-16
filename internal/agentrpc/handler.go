@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/no-dal/ndl-ce/internal/buildinfo"
 	"os"
 	"strings"
 	"sync"
@@ -29,8 +30,6 @@ import (
 	"github.com/no-dal/ndl-ce/internal/qemu"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
-
-const version = "0.1.0"
 
 // Handler is the typed agent service.
 type Handler struct {
@@ -84,7 +83,9 @@ func (h *Handler) Hello(ctx context.Context, _ *connect.Request[agentv1.HelloReq
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&agentv1.HelloResponse{
-		AgentVersion: version,
+		// The build ID lets a live update see that the agent it
+		// installed is the one answering.
+		AgentVersion: buildinfo.ID(),
 		HostPlatform: protoPlatform(p),
 	}), nil
 }

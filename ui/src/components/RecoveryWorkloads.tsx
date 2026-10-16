@@ -28,8 +28,8 @@ function NotBackedUp({ item }: { item: RecoveryWorkloadItem }) {
         {lost.map((r) => (
           <li key={r.path}>
             <code>{r.path}</code>
-            {r.unpushed ? ` — ${r.unpushed_commits || "some"} commit(s) were never pushed` : ""}
-            {r.not_backed_up?.length ? ` — uncommitted: ${r.not_backed_up.slice(0, 10).join(", ")}${r.not_backed_up.length > 10 ? " and more" : ""}` : ""}
+            {r.unpushed ? `: ${r.unpushed_commits || "some"} commit(s) were never pushed` : ""}
+            {r.not_backed_up?.length ? `; uncommitted: ${r.not_backed_up.slice(0, 10).join(", ")}${r.not_backed_up.length > 10 ? " and more" : ""}` : ""}
           </li>
         ))}
       </ul>
@@ -171,7 +171,7 @@ export function RecoveryWorkloads({ owner }: { owner: boolean }) {
               <h3>{w.name}</h3>
               <span>
                 {STATUS_LABEL[st] ?? st}
-                {w.restore?.step && st === "running" ? ` — ${w.restore.step}` : ""}
+                {w.restore?.step && st === "running" ? `: ${w.restore.step}` : ""}
               </span>
             </div>
             <p className="field-hint">

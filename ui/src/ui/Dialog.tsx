@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 type CloseReason = "backdrop" | "escape" | "close";
@@ -53,7 +54,7 @@ export function Dialog({
 
   function requestClose(reason: CloseReason) {
     if (unsaved && reason !== "close") {
-      const ok = window.confirm("Discard unsaved changes?");
+      const ok = confirmAction("Discard unsaved changes?");
       if (!ok) {
         return;
       }

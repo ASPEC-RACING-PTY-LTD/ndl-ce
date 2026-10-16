@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useHostTunnelApproval } from "../components/HostTunnelApproval";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
@@ -509,7 +510,7 @@ export function CloudflarePage() {
             label: `Remove connector on ${l.machine_name}`,
             danger: true,
             onClick: () => {
-              if (window.confirm(`Stop and remove the connector for ${t.name} on ${l.machine_name}? Its hostnames go down unless another connector runs.`)) {
+              if (confirmAction(`Stop and remove the connector for ${t.name} on ${l.machine_name}? Its hostnames go down unless another connector runs.`)) {
                 void act("Removing connector", () =>
                   hostGate.guard((approve_host) =>
                     cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "remove", confirm: true, approve_host }),
@@ -1083,7 +1084,7 @@ export function CloudflarePage() {
                             label: "Remove",
                             danger: true,
                             onClick: () => {
-                              if (window.confirm(`Remove ${c.name} from No-dal? Nothing changes in Cloudflare.`)) {
+                              if (confirmAction(`Remove ${c.name} from No-dal? Nothing changes in Cloudflare.`)) {
                                 void act("Removing token", () => deleteCfCredential(c.id), `${c.name} removed. Cloudflare is unchanged.`);
                               }
                             },

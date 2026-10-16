@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   exportBackupKey,
@@ -213,7 +214,7 @@ export function BackupStoragePanel({
   }, [moving]);
 
   function onPurgeDeleted() {
-    if (!window.confirm("Delete every backup of workloads that no longer exist? Protected backups are kept. This cannot be undone.")) {
+    if (!confirmAction("Delete every backup of workloads that no longer exist? Protected backups are kept. This cannot be undone.")) {
       return;
     }
     setBusy(true);

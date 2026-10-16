@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { Link } from "../components/Link";
@@ -94,7 +95,7 @@ export function GameServerDetailPage() {
   }, [id, server, tab, tabs]);
 
   async function power(action: "start" | "stop" | "restart" | "kill") {
-    if (action === "kill" && !window.confirm("Force stop now? Unsaved world data may be lost.")) {
+    if (action === "kill" && !confirmAction("Force stop now? Unsaved world data may be lost.")) {
       return;
     }
     setBusy(true);
@@ -260,7 +261,7 @@ function DangerRow({ id, name, onReload }: { id: string; name: string; onReload:
           type="button"
           className="btn btn-ghost"
           onClick={() => {
-            if (window.confirm("Reinstall this server? A rollback point is taken first.")) {
+            if (confirmAction("Reinstall this server? A rollback point is taken first.")) {
               void reinstallGameServer(id).then(onReload);
             }
           }}
@@ -271,7 +272,7 @@ function DangerRow({ id, name, onReload }: { id: string; name: string; onReload:
           type="button"
           className="btn btn-ghost"
           onClick={() => {
-            if (window.confirm(`Delete ${name}? This removes the container and files.`)) {
+            if (confirmAction(`Delete ${name}? This removes the container and files.`)) {
               void deleteGameServer(id).then(() => navigate(GS_ROOT));
             }
           }}
@@ -412,7 +413,7 @@ function FilesPane({ id }: { id: string }) {
                   void loadDir(next);
                   return;
                 }
-                if (dirty && !window.confirm("Discard unsaved file changes?")) {
+                if (dirty && !confirmAction("Discard unsaved file changes?")) {
                   return;
                 }
                 void readGameFile(id, next).then((r) => {

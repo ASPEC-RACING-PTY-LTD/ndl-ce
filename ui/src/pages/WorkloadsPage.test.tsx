@@ -1,3 +1,4 @@
+import { setAutoConfirm } from "../confirm";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -132,6 +133,8 @@ describe("Workloads bulk delete", () => {
         };
       },
     });
+    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    setAutoConfirm(false);
     fireEvent.click(screen.getByLabelText("Select AspecRacing"));
     fireEvent.click(screen.getByLabelText("Select SoundDock"));
     expect(screen.queryByLabelText("Select Ubuntu")).not.toBeInTheDocument();

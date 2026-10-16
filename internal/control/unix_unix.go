@@ -9,13 +9,14 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/no-dal/ndl-ce/internal/httpapi"
 )
 
 func listenControlUnix(path string) (net.Listener, error) {
-	if systemdListenFDs() > 0 {
-		f := os.NewFile(3, "control.sock")
+	if fd, ok := systemdFD("ndl-control.socket", true); ok {
+		f := os.NewFile(uintptr(fd), "control.sock")
 		ln, err := net.FileListener(f)
 		_ = f.Close()
 		if err != nil {
@@ -46,6 +47,44 @@ func systemdListenFDs() int {
 		return 0
 	}
 	return n
+}
+
+// systemdFD finds a socket systemd passed by its name (FileDescriptorName,
+// by default the socket unit's name). Without names, the first socket is
+// the control socket, as before named sockets were used.
+func systemdFD(name string, firstWithoutNames bool) (int, bool) {
+	n := systemdListenFDs()
+	if n < 1 {
+		return 0, false
+	}
+	names := strings.Split(os.Getenv("LISTEN_FDNAMES"), ":")
+	if os.Getenv("LISTEN_FDNAMES") == "" {
+		return 3, firstWithoutNames
+	}
+	for i := 0; i < n && i < len(names); i++ {
+		if names[i] == name {
+			return 3 + i, true
+		}
+	}
+	return 0, false
+}
+
+// inheritedTCP returns the HTTP listener systemd holds for the control
+// plane (a socket named "http"), so a restart queues requests instead of
+// refusing them.
+func inheritedTCP(name string) net.Listener {
+	fd, ok := systemdFD(name, false)
+	if !ok {
+		return nil
+	}
+	f := os.NewFile(uintptr(fd), name)
+	ln, err := net.FileListener(f)
+	_ = f.Close()
+	if err != nil {
+		log.Printf("systemd %s socket: %v", name, err)
+		return nil
+	}
+	return ln
 }
 
 func newUnixHTTPInstance(path string, handler http.Handler) *httpInstance {

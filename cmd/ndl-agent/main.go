@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"github.com/no-dal/ndl-ce/internal/buildinfo"
 	"log"
 	"os"
 	"path/filepath"
@@ -21,6 +23,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Println("ndl-agent", buildinfo.Version, buildinfo.ID())
+		return
+	}
 	dir := os.Getenv("NODAL_DATA_DIR")
 	if dir == "" {
 		dir = "/var/lib/ndl"

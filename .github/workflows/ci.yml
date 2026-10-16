@@ -19,6 +19,8 @@ env:
 jobs:
   policy:
     name: Policy
+    # Runs only on GitHub: the CodeHold mirror's runner skips it.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -62,6 +64,8 @@ jobs:
 
   go-vet:
     name: Go Vet
+    # Runs only on GitHub: the CodeHold mirror's runner skips it.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -75,6 +79,8 @@ jobs:
 
   go:
     name: Go
+    # Runs only on GitHub: the CodeHold mirror's runner skips it.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -92,6 +98,8 @@ jobs:
 
   ui:
     name: UI
+    # Runs only on GitHub: the CodeHold mirror's runner skips it.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -116,6 +124,8 @@ jobs:
 
   schema:
     name: Schema
+    # Runs only on GitHub: the CodeHold mirror's runner skips it.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:

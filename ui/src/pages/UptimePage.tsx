@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   checkAllUptime,
@@ -541,7 +542,7 @@ export function UptimePage() {
           label: "Delete",
           danger: true,
           onClick: () => {
-            if (window.confirm(`Delete the monitor ${m.name} and its history?`)) {
+            if (confirmAction(`Delete the monitor ${m.name} and its history?`)) {
               void act(`Deleting ${m.name}`, () => deleteUptimeMonitor(m.id), `${m.name} deleted.`);
             }
           },

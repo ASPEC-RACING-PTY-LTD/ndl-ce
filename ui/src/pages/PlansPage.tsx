@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { ApiError, approveAIPlan, createAIPlan, listAIPlans } from "../api/client";
@@ -67,7 +68,7 @@ export function PlansPage() {
 
   async function onApprove(id: string) {
     if (
-      !window.confirm(
+      !confirmAction(
         "Approve this plan? It executes existing APIs only after approve. This is not a live LLM. Destructive confirm still applies. This is not a shell.",
       )
     ) {

@@ -12,3 +12,6 @@ declare module "node:path" {
 declare module "node:url" {
   export function fileURLToPath(url: string | URL): string;
 }
+
+/** Build ID of this web UI, stamped by vite.config.ts. */
+declare const __NDL_BUILD__: string;

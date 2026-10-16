@@ -1,0 +1,10 @@
+[Unit]
+Description=No-dal live updates: watch for queued updates
+Documentation=https://no-dal.com
+
+[Path]
+PathChanged=/var/lib/ndl/live/inbox
+Unit=ndl-live.service
+
+[Install]
+WantedBy=multi-user.target

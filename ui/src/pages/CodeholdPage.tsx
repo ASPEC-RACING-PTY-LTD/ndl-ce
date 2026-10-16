@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   connectCodehold,
@@ -308,7 +309,7 @@ export function CodeholdPage() {
                     className="btn btn-sm btn-ghost btn-danger-text"
                     type="button"
                     onClick={() => {
-                      if (window.confirm("Disconnect from CodeHold? Runner containers must be gone first; CodeHold will show this controller as offline.")) {
+                      if (confirmAction("Disconnect from CodeHold? Runner containers must be gone first; CodeHold will show this controller as offline.")) {
                         void disconnectCodehold()
                           .then(() => {
                             setNotice("Disconnected from CodeHold.");

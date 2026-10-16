@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import {
@@ -107,7 +108,7 @@ export function SnapshotsPage() {
   }
 
   async function onRollback(snap: Snapshot) {
-    if (!window.confirm(`Roll back to snapshot "${snap.name}"? This restores the volume to that point in time.`)) {
+    if (!confirmAction(`Roll back to snapshot "${snap.name}"? This restores the volume to that point in time.`)) {
       return;
     }
     setBusy(true);
@@ -123,7 +124,7 @@ export function SnapshotsPage() {
   }
 
   async function onFlatten() {
-    if (!window.confirm("Flatten the snapshot chain? This consolidates overlays on the same pool.")) {
+    if (!confirmAction("Flatten the snapshot chain? This consolidates overlays on the same pool.")) {
       return;
     }
     setBusy(true);

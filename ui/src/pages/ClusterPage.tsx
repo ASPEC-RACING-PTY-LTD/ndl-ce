@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useState } from "react";
 import { NodeGroupsPanel } from "../components/ConfigPanels";
 import {
@@ -87,7 +88,7 @@ export function ClusterPage() {
   }
 
   async function onFence() {
-    if (!window.confirm("Fence records that the old writer is isolated. STONITH is not implemented.")) {
+    if (!confirmAction("Fence records that the old writer is isolated. STONITH is not implemented.")) {
       return;
     }
     setBusy(true);
@@ -103,7 +104,7 @@ export function ClusterPage() {
   }
 
   async function onPromote() {
-    if (!window.confirm("Promote this process to the single writer after fence or lease expiry?")) {
+    if (!confirmAction("Promote this process to the single writer after fence or lease expiry?")) {
       return;
     }
     setBusy(true);
@@ -120,7 +121,7 @@ export function ClusterPage() {
 
   async function onRolling() {
     if (
-      !window.confirm(
+      !confirmAction(
         "Roll one node at a time: drain, then apply the package update on this control node. Guests are not stopped. Worker apply stays unavailable until dest agent is connected.",
       )
     ) {

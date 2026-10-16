@@ -32,6 +32,7 @@ import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { usePref } from "../prefs";
 import { NAV_ORDER_KEY, applyNavOrder, moveNavItem, type NavOrder } from "../nav/disclosure";
 import { TaskIndicator } from "./shell/TaskIndicator";
+import { UpdateBanner } from "./shell/UpdateBanner";
 
 const SIDEBAR_KEY = "ndl-sidebar-collapsed";
 
@@ -379,6 +380,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         <ContextMenu menu={navMenu.menu} onClose={navMenu.close} />
         <main id="main" className="shell-main">
+          <UpdateBanner />
           <HostDiskBanner enabled={hasGrant(user, "storage.read")} />
           {children}
         </main>

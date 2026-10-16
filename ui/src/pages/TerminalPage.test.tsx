@@ -1,3 +1,4 @@
+import { setAutoConfirm } from "../confirm";
 import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -176,6 +177,8 @@ describe("Terminal file drop", () => {
   it("asks before pasting three or more lines", async () => {
     installIO();
     await openTerminal();
+    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    setAutoConfirm(false);
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const termEl = await screen.findByTestId("xterm");
     fireEvent.paste(termEl, { clipboardData: { getData: () => "a\nb\nc" } });

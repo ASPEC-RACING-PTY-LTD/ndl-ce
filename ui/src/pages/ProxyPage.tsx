@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   ProxyError,
@@ -223,7 +224,7 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
           label: "Delete",
           danger: true,
           onClick: () => {
-            if (window.confirm(`Remove ${r.domains.join(", ")} from ${title} on ${r.machine_name}? It stops answering after the reload.`)) {
+            if (confirmAction(`Remove ${r.domains.join(", ")} from ${title} on ${r.machine_name}? It stops answering after the reload.`)) {
               void act("Removing site", () => deleteProxySite(kind, r.machine_id, r.name ?? ""));
             }
           },

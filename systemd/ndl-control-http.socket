@@ -1,0 +1,13 @@
+[Unit]
+Description=No-dal control plane web port, held across restarts
+Documentation=https://no-dal.com
+
+# Enabled by "ndl-live enable -http-socket", never by the package: the
+# running control plane must stop first so systemd can take the port.
+[Socket]
+ListenStream=8080
+FileDescriptorName=http
+Service=ndl-control.service
+
+[Install]
+WantedBy=sockets.target

@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { deleteSavedScript, listSavedScripts, saveScript, type SavedScript } from "../api/client";
 import { Dialog } from "../ui/Dialog";
@@ -114,7 +115,7 @@ export function JsonScriptModal({
 
   async function removeSaved() {
     const current = saved.find((s) => s.id === selected);
-    if (!current || !window.confirm(`Delete the saved script ${current.name}?`)) {
+    if (!current || !confirmAction(`Delete the saved script ${current.name}?`)) {
       return;
     }
     try {

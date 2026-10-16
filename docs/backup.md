@@ -88,3 +88,38 @@ refused so generations are not mixed. Restore as new restores the
 included root only.
 
 See also [recovery.md](recovery.md).
+
+## Workload files and backup rules
+
+**Backups → Workload files and backup rules** shows a system container's
+folders and files with their size, when they changed and a plain label
+("Database", "Logs", "Docker: nextcloud", "System"…). Sort by name (default),
+size or date, and open folders to go deeper. Folder sizes are measured on
+request and shown as "≥" when measuring ran out of time.
+
+Each item can be set to:
+
+- **Policy**: follow the policy's backup scope (the default);
+- **Skip**: never back it up;
+- **Keep**: always back it up, even inside a skipped folder or outside the
+  policy's scope.
+
+The most specific path wins, so a kept folder inside a skipped one is still
+backed up. **Save rules** writes them into the container itself at
+`/.ndl-backup/rules.json`, so they travel with the workload and its backups.
+Every backup of the workload reads that file first and applies it on top of
+the policy. A damaged rules file is reported in the agent log and ignored,
+which only means more is backed up. The file is written without following
+links, so a container cannot use it to reach the host.
+
+## Deleting backups
+
+- **Delete** on a restore point removes it here and in cloud storage.
+- **Delete all** in the Backup size details, or **Delete all backups** in the
+  workload files box, removes every backup of one workload in one step
+  (`POST /api/v1/backups/workloads/{id}/delete`). Protected backups are kept
+  unless `include_protected=true` is given.
+- Space is reclaimed in the background by the next cleanup.
+
+Owners are not asked to confirm plain "are you sure" prompts; prompts that
+collect something, such as a password, still open.

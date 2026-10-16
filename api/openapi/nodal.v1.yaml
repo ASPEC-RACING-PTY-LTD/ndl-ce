@@ -7154,6 +7154,157 @@ paths:
                 $ref: "#/components/schemas/PlatformBackupStatus"
         "403":
           description: Not an Owner
+  /workloads/{id}/backup-files:
+    get:
+      operationId: listWorkloadBackupFiles
+      summary: List one folder of a system container with sizes, short labels and the backup rule for each item.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Folder listing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadFileListing"
+        "422":
+          description: Not a system container, or the folder cannot be read
+  /workloads/{id}/backup-rules:
+    get:
+      operationId: getWorkloadBackupRules
+      summary: The workload's own backup rules, kept in the workload at /.ndl-backup/rules.json.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadBackupRules"
+    put:
+      operationId: putWorkloadBackupRules
+      summary: Save the paths every backup of this workload skips or always keeps.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkloadBackupRules"
+      responses:
+        "200":
+          description: Saved rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadBackupRules"
+        "400":
+          description: Invalid rules
+  /backups/workloads/{id}/delete:
+    post:
+      operationId: deleteWorkloadBackups
+      summary: Delete every backup of one workload here and in cloud storage. Requires X-Nodal-Confirm delete-backup.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: include_protected
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+                  data_unreachable:
+                    type: integer
+                  protected_kept:
+                    type: integer
+                  failed:
+                    type: integer
+        "409":
+          description: Missing confirmation
+  /live-updates:
+    get:
+      operationId: getLiveUpdates
+      summary: Owner only. Live update state, history, queued bundles and what an update would wait for.
+      responses:
+        "200":
+          description: Live update status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveUpdateStatus"
+        "403":
+          description: Not an Owner
+  /live-updates/bundles:
+    post:
+      operationId: uploadLiveUpdateBundle
+      summary: Owner only. Queue a signed live update bundle; it is verified before it is accepted.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "202":
+          description: Bundle verified and queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveUpdateQueued"
+        "403":
+          description: Not an Owner
+        "409":
+          description: Live updates are not set up, or no signing key is trusted
+        "422":
+          description: The bundle is damaged, tampered or signed by an untrusted key
+  /live-updates/rollback:
+    post:
+      operationId: rollbackLiveUpdate
+      summary: Owner only. Ask the updater to undo the newest live update.
+      responses:
+        "202":
+          description: Rollback requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requested:
+                    type: boolean
+        "403":
+          description: Not an Owner
+        "409":
+          description: Live updates are not set up
   /platform-backup/run:
     post:
       operationId: runPlatformBackup
@@ -14599,6 +14750,170 @@ components:
           type: string
         bucket:
           type: string
+    WorkloadBackupRules:
+      type: object
+      properties:
+        skip:
+          type: array
+          items:
+            type: string
+        keep:
+          type: array
+          items:
+            type: string
+        path:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: string
+    WorkloadFileEntry:
+      type: object
+      required:
+        - name
+        - path
+        - dir
+        - size
+        - mtime
+        - label
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        dir:
+          type: boolean
+        symlink:
+          type: boolean
+        size:
+          type: integer
+          format: int64
+        files:
+          type: integer
+          format: int64
+        mtime:
+          type: integer
+          format: int64
+        partial:
+          type: boolean
+        label:
+          type: string
+        rule:
+          type: string
+        effective:
+          type: string
+    WorkloadFileListing:
+      type: object
+      required:
+        - path
+        - entries
+      properties:
+        path:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkloadFileEntry"
+        rules:
+          $ref: "#/components/schemas/WorkloadBackupRules"
+    LiveUpdateEntry:
+      type: object
+      required:
+        - id
+        - action
+        - result
+        - at
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        action:
+          type: string
+        result:
+          type: string
+        message:
+          type: string
+        components:
+          type: array
+          items:
+            type: string
+        at:
+          type: string
+          format: date-time
+        rolled_back:
+          type: boolean
+    LiveUpdatePending:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        phase:
+          type: string
+        components:
+          type: array
+          items:
+            type: string
+        started_at:
+          type: string
+          format: date-time
+    LiveUpdateStatus:
+      type: object
+      required:
+        - enabled
+        - history
+        - busy
+      properties:
+        enabled:
+          type: boolean
+        current:
+          type: string
+        pending:
+          $ref: "#/components/schemas/LiveUpdatePending"
+        waiting:
+          type: string
+        queued:
+          type: array
+          items:
+            type: string
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveUpdateEntry"
+        trusted_keys:
+          type: array
+          items:
+            type: string
+        busy:
+          type: array
+          items:
+            type: string
+        applied_migrations:
+          type: array
+          items:
+            type: string
+        package_version:
+          type: string
+        version:
+          type: string
+        build:
+          type: string
+    LiveUpdateQueued:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        components:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
     PlatformBackupStatus:
       type: object
       properties:

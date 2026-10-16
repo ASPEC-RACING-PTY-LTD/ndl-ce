@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { registerTerminal } from "../components/ContextMenu";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
@@ -306,7 +307,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
             ev.preventDefault();
             return;
           }
-          if (shouldConfirmPaste(text) && !window.confirm(`Paste ${text.split("\n").length} lines into the terminal?`)) {
+          if (shouldConfirmPaste(text) && !confirmAction(`Paste ${text.split("\n").length} lines into the terminal?`)) {
             ev.preventDefault();
             return;
           }

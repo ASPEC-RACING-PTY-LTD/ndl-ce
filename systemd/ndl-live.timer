@@ -1,0 +1,11 @@
+[Unit]
+Description=No-dal live updates: retry queued updates and recover after boot
+Documentation=https://no-dal.com
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+Unit=ndl-live.service
+
+[Install]
+WantedBy=timers.target

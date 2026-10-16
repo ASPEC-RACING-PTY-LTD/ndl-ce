@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useState } from "react";
 import { ApiError, activateLicense, clearLicense, getLicense } from "../api/client";
 import type { LicenseStatus } from "../generated/openapi";
@@ -41,7 +42,7 @@ export function LicensePage() {
   }, []);
 
   async function onActivate() {
-    if (!window.confirm("Store this key and contact the licensing API? Workloads will not stop if the API is down.")) {
+    if (!confirmAction("Store this key and contact the licensing API? Workloads will not stop if the API is down.")) {
       return;
     }
     setBusy(true);
@@ -58,7 +59,7 @@ export function LicensePage() {
   }
 
   async function onClear() {
-    if (!window.confirm("Clear the stored key? This returns the surface to Community Edition. Workloads stay running.")) {
+    if (!confirmAction("Clear the stored key? This returns the surface to Community Edition. Workloads stay running.")) {
       return;
     }
     setBusy(true);

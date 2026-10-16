@@ -19,6 +19,10 @@ restart_ui_host() {
 
 case "$1" in
   configure)
+    # A package install replaces live updates: serve the packaged UI.
+    if command -v ndl-live >/dev/null 2>&1; then
+      ndl-live package-installed "$2" >/dev/null 2>&1 || true
+    fi
     restart_ui_host
     ;;
 esac

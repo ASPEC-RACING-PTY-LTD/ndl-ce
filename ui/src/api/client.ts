@@ -1841,6 +1841,46 @@ export async function getBackupTargetUsage(id: string): Promise<import("../gener
   return readJson(await request(`/backups/targets/${encodeURIComponent(id)}/usage`));
 }
 
+export async function listWorkloadBackupFiles(id: string, path: string): Promise<import("../generated/openapi").WorkloadFileListing> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/backup-files?path=${encodeURIComponent(path)}`));
+}
+
+export async function getWorkloadBackupRules(id: string): Promise<import("../generated/openapi").WorkloadBackupRules> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/backup-rules`));
+}
+
+export async function putWorkloadBackupRules(
+  id: string,
+  rules: { skip: string[]; keep: string[] },
+): Promise<import("../generated/openapi").WorkloadBackupRules> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/backup-rules`, { method: "PUT", body: JSON.stringify(rules) }));
+}
+
+/** deleteWorkloadBackups deletes every backup of a workload, here and offsite. */
+export async function deleteWorkloadBackups(
+  id: string,
+  includeProtected = false,
+): Promise<{ deleted?: number; data_unreachable?: number; protected_kept?: number; failed?: number }> {
+  const headers = new Headers();
+  headers.set("X-Nodal-Confirm", "delete-backup");
+  const q = includeProtected ? "?include_protected=true" : "";
+  return readJson(await request(`/backups/workloads/${encodeURIComponent(id)}/delete${q}`, { method: "POST", headers }));
+}
+
+export async function getLiveUpdates(): Promise<import("../generated/openapi").LiveUpdateStatus> {
+  return readJson(await request("/live-updates"));
+}
+
+/** uploadLiveUpdateBundle queues a signed bundle; the host verifies it first. */
+export async function uploadLiveUpdateBundle(file: Blob): Promise<import("../generated/openapi").LiveUpdateQueued> {
+  const headers = new Headers({ "Content-Type": "application/octet-stream" });
+  return readJson(await request("/live-updates/bundles", { method: "POST", body: file, headers }));
+}
+
+export async function rollbackLiveUpdate(): Promise<{ requested?: boolean }> {
+  return readJson(await request("/live-updates/rollback", { method: "POST" }));
+}
+
 export async function getPlatformBackup(): Promise<import("../generated/openapi").PlatformBackupStatus> {
   return readJson(await request("/platform-backup"));
 }

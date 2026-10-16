@@ -1,3 +1,33 @@
+nodal (1.5.0) trixie; urgency=medium
+
+  * Live updates: signed updates of the web UI, control plane and agent
+    apply without a package build. The UI switches instantly; the control
+    plane and agent are checked, swapped, restarted and health-checked, and
+    roll back on their own. Updates wait for running backups and changes.
+    Shipped off; turn on with "ndl-live enable". See docs/live-updates.md.
+  * Backups page redone: one line of summary chips, boxes that line up in
+    pairs, a page bar with Create + and Settings, and every box can be
+    minimized into a button on the bar.
+  * Workload files and backup rules: browse a container's folders with sizes
+    and plain labels, and mark paths to skip or always keep. The rules live
+    in the container at /.ndl-backup/rules.json and every backup follows them.
+  * Delete every backup of a workload, here and in cloud storage, in one step.
+  * Backup size box: sizes before and in the cloud, per backup and in total,
+    against the 10 GB free tier.
+  * Recent runs show the running or last round by default, with filters.
+  * All workloads policies skip workload kinds that cannot be backed up,
+    such as OCI containers.
+  * Fixed: large backup packs failed to upload to R2 (SignatureDoesNotMatch)
+    because the multipart completion was signed with the wrong content type.
+  * Fixed: deleted backup targets kept receiving uploads after an agent
+    restart, and could mark restore points protected without reaching R2.
+  * Local backup locations on the root disk are refused when another disk
+    is available.
+  * Owners skip plain confirmation prompts.
+  * API responses are no longer cacheable, so lists never come back stale.
+
+ -- No-dal <packaging@no-dal.com>  Sat, 17 Oct 2026 03:00:00 +0000
+
 nodal (1.2.2) trixie; urgency=medium
 
   * OCI containers have real networking: their own IP on a network (DHCP

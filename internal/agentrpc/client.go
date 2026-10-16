@@ -44,6 +44,15 @@ func (c Client) Hello(ctx context.Context) error {
 	return err
 }
 
+// AgentVersion is the build the agent reports.
+func (c Client) AgentVersion(ctx context.Context) (string, error) {
+	res, err := c.rpc().Hello(ctx, connect.NewRequest(&agentv1.HelloRequest{}))
+	if err != nil {
+		return "", err
+	}
+	return res.Msg.GetAgentVersion(), nil
+}
+
 // Enroll performs local enroll.
 func (c Client) Enroll(ctx context.Context, clusterID string) (string, json.RawMessage, error) {
 	cli := c.rpc()

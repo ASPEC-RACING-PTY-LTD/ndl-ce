@@ -5,8 +5,21 @@ function fromConfig(rel: string): string {
   return new URL(rel, import.meta.url).pathname;
 }
 
+// The build ID tells an open page that the host now serves a newer UI.
+const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
+const build = env.VITE_NDL_BUILD || `pkg-${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
+
 export default defineConfig({
-  plugins: [react()],
+  define: { __NDL_BUILD__: JSON.stringify(build) },
+  plugins: [
+    react(),
+    {
+      name: "ndl-version",
+      generateBundle() {
+        this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build }) });
+      },
+    },
+  ],
   test: {
     environment: "jsdom",
     globals: true,

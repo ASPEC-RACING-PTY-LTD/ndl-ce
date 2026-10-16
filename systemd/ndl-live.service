@@ -1,0 +1,10 @@
+[Unit]
+Description=No-dal live updates: apply queued signed updates
+Documentation=https://no-dal.com
+After=ndl-control.service ndl-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ndl-live run
+# Applying waits for health checks and running backups; give it time.
+TimeoutStartSec=2h

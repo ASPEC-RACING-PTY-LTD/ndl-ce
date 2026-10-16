@@ -14,7 +14,9 @@ permissions:
 
 jobs:
   release:
-    if: startsWith(github.event.head_commit.message, 'DEPLOY:')
+    # Builds only on GitHub (the CodeHold mirror's runner skips it), and only
+    # for commits whose message starts with DEPLOY:.
+    if: github.server_url == 'https://github.com' && startsWith(github.event.head_commit.message, 'DEPLOY:')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:

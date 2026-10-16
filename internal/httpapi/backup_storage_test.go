@@ -402,3 +402,43 @@ func TestDeleteBackupsOfDeletedWorkloadsAndTestTargets(t *testing.T) {
 		t.Fatal("the target must be gone")
 	}
 }
+
+func TestDeleteEveryBackupOfOneWorkload(t *testing.T) {
+	s, mem, token := testServer(t)
+	cluster, _ := mem.GetCluster(context.Background())
+	fake := &expireBackup{}
+	s.Backup = fake
+	ctx := context.Background()
+	mk := func(workloadID string) appdb.BackupArtifact {
+		run := appdb.BackupRun{ID: uuid.NewString(), ClusterID: cluster.ID, WorkloadID: workloadID, Status: appdb.BackupSucceeded, StartedAt: time.Now().UTC()}
+		_ = mem.CreateBackupRun(ctx, run)
+		a := appdb.BackupArtifact{ID: uuid.NewString(), ClusterID: cluster.ID, RunID: run.ID, WorkloadID: workloadID,
+			Format: backup.Format, Namespace: "ns-" + workloadID[:4], BackupID: uuid.NewString(), CreatedAt: time.Now().UTC()}
+		_ = mem.CreateBackupArtifact(ctx, a)
+		return a
+	}
+	target, other := uuid.NewString(), uuid.NewString()
+	a1, a2, keep := mk(target), mk(target), mk(other)
+	_ = mem.SetBackupArtifactProtected(ctx, cluster.ID, a2.ID, true)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	if code, _ := provCall(t, ts, cookie, "POST", "/backups/workloads/"+target+"/delete", "", ""); code != http.StatusConflict {
+		t.Fatalf("needs the confirmation header, got %d", code)
+	}
+	code, out := provCall(t, ts, cookie, "POST", "/backups/workloads/"+target+"/delete", "", deleteBackupConfirm)
+	if code != http.StatusOK || out["deleted"] != float64(1) || out["protected_kept"] != float64(1) {
+		t.Fatalf("delete %d %v", code, out)
+	}
+	if a, _ := mem.GetBackupArtifact(ctx, cluster.ID, a1.ID); a != nil {
+		t.Fatal("the workload's backup must be gone")
+	}
+	if a, _ := mem.GetBackupArtifact(ctx, cluster.ID, keep.ID); a == nil {
+		t.Fatal("other workloads keep their backups")
+	}
+	code, out = provCall(t, ts, cookie, "POST", "/backups/workloads/"+target+"/delete?include_protected=true", "", deleteBackupConfirm)
+	if code != http.StatusOK || out["deleted"] != float64(1) {
+		t.Fatalf("with protected %d %v", code, out)
+	}
+}

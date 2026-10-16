@@ -1,3 +1,4 @@
+import { setAutoConfirm } from "./confirm";
 import {
   createContext,
   useCallback,
@@ -51,6 +52,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Owners skip "are you sure" prompts (see confirm.ts).
+  const ownerSignedIn = state.status === "ready" && Boolean(state.user?.roles?.includes("admin"));
+  useEffect(() => {
+    setAutoConfirm(ownerSignedIn);
+  }, [ownerSignedIn]);
 
   useEffect(() => {
     const expired = () => {

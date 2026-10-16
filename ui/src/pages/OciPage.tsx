@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useMemo, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import {
   addToOCIGroup,
@@ -212,7 +213,7 @@ export function OciPage() {
         label: "Delete container",
         danger: true,
         onClick: () => {
-          if (window.confirm(`Delete ${w.name}? The container is removed. Volumes are kept and can be attached again.`)) {
+          if (confirmAction(`Delete ${w.name}? The container is removed. Volumes are kept and can be attached again.`)) {
             void act(`Deleting ${w.name}`, () => workloadAction(w.id, "delete"), `${w.name} was deleted.`);
           }
         },

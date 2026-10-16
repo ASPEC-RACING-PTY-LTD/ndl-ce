@@ -1,3 +1,4 @@
+import { setAutoConfirm } from "../confirm";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -226,6 +227,8 @@ describe("Files manager", () => {
     const fetchMock = await openFiles({
       "POST /api/v1/workloads/wl-1/files/delete": { status: 200, body: { ok: true, path: "etc" } },
     });
+    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    setAutoConfirm(false);
     fireEvent.click(await screen.findByLabelText("Select etc"));
     fireEvent.click(await screen.findByRole("button", { name: /delete selected/i }));
     expect(await screen.findByText(/including 1 director/i)).toBeVisible();

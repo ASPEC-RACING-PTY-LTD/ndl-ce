@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useFeatureOn } from "../nav/NavDisclosure";
 import { useEffect, useState } from "react";
 import {
@@ -216,7 +217,7 @@ export function WorkloadDetailPage() {
     setError(null);
     try {
       if (action === "delete" && item?.kind === "vm") {
-        if (!window.confirm("Delete this VM configuration? Attached volumes are preserved.")) {
+        if (!confirmAction("Delete this VM configuration? Attached volumes are preserved.")) {
           setBusy(false);
           setConfirm(null);
           return;
@@ -274,7 +275,7 @@ export function WorkloadDetailPage() {
         item?.kind === "system-container" && parseMemoryGB(diskGB, 8) < parseMemoryGB(origDiskGB, 8);
       if (
         diskShrinking &&
-        !window.confirm(
+        !confirmAction(
           `Shrink the disk from ${origDiskGB} GB to ${diskGB} GB? It is refused if the data would not fit with headroom. Directory disks need the container stopped.`,
         )
       ) {
@@ -284,7 +285,7 @@ export function WorkloadDetailPage() {
       const moving = item?.kind === "system-container" && networkID !== "" && networkID !== origNet;
       const wasRunning = running;
       if (moving && wasRunning) {
-        if (!window.confirm("Moving to another network restarts the container, and it gets an address on the new network. Continue?")) {
+        if (!confirmAction("Moving to another network restarts the container, and it gets an address on the new network. Continue?")) {
           return;
         }
         await workloadAction(id, "stop");

@@ -217,7 +217,7 @@ export function RecoverPage() {
               />
             ))}
             <button className="btn btn-primary" type="submit" disabled={busy}>
-              {busy ? "Restoring — this host restarts the control plane" : "Restore"}
+              {busy ? "Restoring; this host restarts the control plane" : "Restore"}
             </button>
           </form>
         ) : null}

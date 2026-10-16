@@ -6,10 +6,15 @@ import (
 )
 
 const (
-	ActionCapture   = "v2-capture"
-	ActionRestore   = "v2-restore"
-	ActionStatus    = "v2-status"
-	ActionPreview   = "v2-preview"
+	ActionCapture = "v2-capture"
+	ActionRestore = "v2-restore"
+	ActionStatus  = "v2-status"
+	ActionPreview = "v2-preview"
+	// ActionBrowse lists a workload folder; ActionRulesGet and
+	// ActionRulesSet read and write the workload's own backup rules.
+	ActionBrowse    = "v2-browse"
+	ActionRulesGet  = "v2-rules-get"
+	ActionRulesSet  = "v2-rules-set"
 	ActionExpire    = "v2-expire"
 	ActionWorkspace = "v2-workspace"
 	ActionEnqueue   = "v2-enqueue"
@@ -70,6 +75,8 @@ type Request struct {
 	Chown        bool                  `json:"chown,omitempty"`
 	Settings     Settings              `json:"settings,omitempty"`
 	Target       TargetSpec            `json:"target,omitempty"`
+	// Rules are written by ActionRulesSet.
+	Rules *WorkloadRules `json:"rules,omitempty"`
 	// SyncTargets says Targets lists every backup target the control plane
 	// still has; the host stops uploading to, and forgets, any other.
 	SyncTargets bool     `json:"sync_targets,omitempty"`
@@ -173,6 +180,8 @@ type Result struct {
 	Locator         string                     `json:"locator,omitempty"`
 	Blueprint       backup.Blueprint           `json:"blueprint,omitempty"`
 	Preview         backupscope.Preview        `json:"preview,omitempty"`
+	Listing         *Listing                   `json:"listing,omitempty"`
+	Rules           *WorkloadRules             `json:"rules,omitempty"`
 	Workspace       WorkspaceStatus            `json:"workspace,omitempty"`
 	Points          []PointView                `json:"points,omitempty"`
 	Error           string                     `json:"error,omitempty"`
@@ -263,7 +272,8 @@ type WorkspaceStatus struct {
 func IsAction(action string) bool {
 	switch action {
 	case ActionCapture, ActionRestore, ActionStatus, ActionPreview, ActionExpire, ActionWorkspace, ActionEnqueue,
-		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck, ActionKeyImport, ActionExportImages, ActionRehydrate:
+		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck, ActionKeyImport, ActionExportImages, ActionRehydrate,
+		ActionBrowse, ActionRulesGet, ActionRulesSet:
 		return true
 	default:
 		return false

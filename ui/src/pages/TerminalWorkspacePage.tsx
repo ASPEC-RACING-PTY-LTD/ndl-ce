@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ActionMenu } from "../components/ActionMenu";
 import { Icon } from "../components/Icon";
@@ -213,7 +214,7 @@ export function TerminalWorkspacePage() {
                 danger: true,
                 onClick: () => {
                   const live = tabs.some((tab) => tab.state === "active" || tab.state === "connecting");
-                  if (live && !window.confirm("Close all terminal sessions? Connected sessions will disconnect.")) {
+                  if (live && !confirmAction("Close all terminal sessions? Connected sessions will disconnect.")) {
                     return;
                   }
                   closeAll();

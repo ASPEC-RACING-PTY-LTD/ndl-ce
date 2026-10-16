@@ -113,7 +113,7 @@ func extraDiskSkipItems(spec vmspec.Spec, bootVolID string, disks []appdb.Worklo
 
 func (s *Server) planBackup(ctx context.Context, clusterID string, wl appdb.Workload) (appdb.BackupPlan, error) {
 	plan := appdb.BackupPlan{}
-	if wl.Kind != vmspec.KindVM && wl.Kind != lxc.KindSystemContainer {
+	if !backupKind(wl.Kind) {
 		return plan, errUnprocessable("workload kind cannot be backed up")
 	}
 	vol, pool, _, locErr := s.bootVolumeLocator(ctx, clusterID, wl)

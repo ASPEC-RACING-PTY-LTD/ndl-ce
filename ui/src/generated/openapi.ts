@@ -1783,6 +1783,75 @@ export interface PlatformBackupTarget {
   bucket?: string;
 }
 
+export interface WorkloadBackupRules {
+  skip?: string[];
+  keep?: string[];
+  path?: string;
+  updated_at?: string;
+  updated_by?: string;
+}
+
+export interface WorkloadFileEntry {
+  name: string;
+  path: string;
+  dir: boolean;
+  symlink?: boolean;
+  size: number;
+  files?: number;
+  mtime: number;
+  partial?: boolean;
+  label: string;
+  rule?: string;
+  effective?: string;
+}
+
+export interface WorkloadFileListing {
+  path: string;
+  entries: WorkloadFileEntry[];
+  rules?: WorkloadBackupRules;
+}
+
+export interface LiveUpdateEntry {
+  id: string;
+  version?: string;
+  action: string;
+  result: string;
+  message?: string;
+  components?: string[];
+  at: string;
+  rolled_back?: boolean;
+}
+
+export interface LiveUpdatePending {
+  id?: string;
+  version?: string;
+  phase?: string;
+  components?: string[];
+  started_at?: string;
+}
+
+export interface LiveUpdateStatus {
+  enabled: boolean;
+  current?: string;
+  pending?: LiveUpdatePending;
+  waiting?: string;
+  queued?: string[];
+  history: LiveUpdateEntry[];
+  trusted_keys?: string[];
+  busy: string[];
+  applied_migrations?: string[];
+  package_version?: string;
+  version?: string;
+  build?: string;
+}
+
+export interface LiveUpdateQueued {
+  id?: string;
+  version?: string;
+  components?: string[];
+  enabled?: boolean;
+}
+
 export interface PlatformBackupStatus {
   enabled?: boolean;
   target_id?: string;
@@ -3877,6 +3946,18 @@ export type ListBackupGitHoldsPath = "/api/v1/backups/git-holds";
 export type ResolveBackupGitHoldPath = "/api/v1/backups/git-holds/{workload}";
 
 export type GetPlatformBackupPath = "/api/v1/platform-backup";
+
+export type ListWorkloadBackupFilesPath = "/api/v1/workloads/{id}/backup-files";
+
+export type GetWorkloadBackupRulesPath = "/api/v1/workloads/{id}/backup-rules";
+
+export type DeleteWorkloadBackupsPath = "/api/v1/backups/workloads/{id}/delete";
+
+export type GetLiveUpdatesPath = "/api/v1/live-updates";
+
+export type UploadLiveUpdateBundlePath = "/api/v1/live-updates/bundles";
+
+export type RollbackLiveUpdatePath = "/api/v1/live-updates/rollback";
 
 export type RunPlatformBackupPath = "/api/v1/platform-backup/run";
 

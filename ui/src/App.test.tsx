@@ -1483,7 +1483,8 @@ describe("App", () => {
     expect(screen.getByText(/^Unverified$/)).toBeVisible();
     expect(screen.getAllByText("local-disk").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /^create \+$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^policy$/i }));
     const policyDialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     expect(within(policyDialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
     expect(within(policyDialog).getByLabelText(/^full machine \/ full lxc$/i)).toBeChecked();
@@ -1561,7 +1562,8 @@ describe("App", () => {
     expect((await screen.findAllByText("r2-offsite"))[0]).toBeVisible();
     expect(screen.getByText(/ndl-backups/)).toBeVisible();
     expect(screen.getAllByText(/incremental/).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getAllByRole("button", { name: /^add target$/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /^create \+$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^target$/i }));
     const targetDialog = await screen.findByRole("dialog", { name: /add backup target/i });
     fireEvent.change(within(targetDialog).getByLabelText(/^kind$/i), { target: { value: "r2" } });
     expect(within(targetDialog).getByLabelText(/^endpoint$/i)).toBeVisible();

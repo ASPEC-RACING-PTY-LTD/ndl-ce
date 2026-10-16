@@ -970,7 +970,10 @@ func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol ap
 		}
 		ids := make([]string, 0, len(items))
 		for _, wl := range items {
-			if !skip[wl.ID] {
+			// All workloads means every workload a backup can copy: OCI
+			// containers and other kinds are not attempted, so they never
+			// fail a run or count as unprotected.
+			if !skip[wl.ID] && backupKind(wl.Kind) {
 				ids = append(ids, wl.ID)
 			}
 		}
@@ -981,6 +984,11 @@ func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol ap
 		ids = []string{pol.WorkloadID}
 	}
 	return ids, nil
+}
+
+// backupKind reports whether workloads of kind can be backed up.
+func backupKind(kind string) bool {
+	return kind == vmspec.KindVM || kind == lxc.KindSystemContainer
 }
 
 func (s *Server) backupEligible(ctx context.Context, clusterID string, wl appdb.Workload) bool {

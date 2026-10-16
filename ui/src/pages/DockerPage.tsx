@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { HOST_TUNNEL_LEFT_ALONE, useHostTunnelApproval } from "../components/HostTunnelApproval";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -288,7 +289,7 @@ export function DockerPage() {
   }
 
   async function runAction(c: DockerContainer, action: Act) {
-    if (action === "remove" && !window.confirm(`Remove container ${c.name || c.container_id}? It is stopped and deleted. Named volumes are kept.`)) {
+    if (action === "remove" && !confirmAction(`Remove container ${c.name || c.container_id}? It is stopped and deleted. Named volumes are kept.`)) {
       return;
     }
     setBusy(`${c.name}: ${action}`);
@@ -309,10 +310,10 @@ export function DockerPage() {
       : scope.machine_id
         ? `every container on ${machines.find((m) => m.id === scope.machine_id)?.name ?? scope.machine_id}`
         : "every container on every machine";
-    if (action === "stop-all" && !window.confirm(`Stop ${where}? Sites they serve go offline until started again.`)) {
+    if (action === "stop-all" && !confirmAction(`Stop ${where}? Sites they serve go offline until started again.`)) {
       return;
     }
-    if (action === "restart-all" && !window.confirm(`Restart ${where}, dependencies first?`)) {
+    if (action === "restart-all" && !confirmAction(`Restart ${where}, dependencies first?`)) {
       return;
     }
     setError(null);

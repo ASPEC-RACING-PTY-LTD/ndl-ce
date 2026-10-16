@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, disableFeature, enableFeature, listFeatures } from "../api/client";
 import { Link } from "../components/Link";
@@ -74,7 +75,7 @@ export function FeaturesPage() {
         const msg = item.tiny_node
           ? "This node is at or below 8 GiB RAM. Enable Kubernetes anyway? Kubelet is not started."
           : "Enable Kubernetes? Kubelet is not started.";
-        if (!window.confirm(msg)) {
+        if (!confirmAction(msg)) {
           return;
         }
         confirm = "enable-k8s";
@@ -100,7 +101,7 @@ export function FeaturesPage() {
       let confirm: string | undefined;
       if (item.workload_count > 0 || ["k8s", "distributed_storage", "ai", "docker", "gameservers"].includes(item.id)) {
         if (
-          !window.confirm(
+          !confirmAction(
             "Disable does not delete workloads. Turn the module off and leave existing workloads running?",
           )
         ) {

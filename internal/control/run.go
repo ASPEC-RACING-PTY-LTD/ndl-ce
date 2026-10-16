@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/auth"
 	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/httpapi"
+	"github.com/no-dal/ndl-ce/internal/liveupdate"
 	"github.com/no-dal/ndl-ce/internal/ndltls"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/sdnotify"
@@ -42,6 +44,7 @@ type Config struct {
 	ControlSock string
 	CADir       string
 	HolderID    string
+	LiveRoot    string
 }
 
 // LoadConfig reads environment.
@@ -57,6 +60,7 @@ func LoadConfig() Config {
 		AgentSock:   os.Getenv("NODAL_AGENT_SOCKET"),
 		ControlSock: getenv("NODAL_CONTROL_SOCKET", transport.ControlSocket),
 		CADir:       getenv("NODAL_CLUSTER_CA_DIR", "/var/lib/ndl/secrets/cluster-ca"),
+		LiveRoot:    getenv("NODAL_LIVE_ROOT", liveupdate.DefaultRoot),
 	}
 	if c.DSN == "" {
 		c.DSN = "postgresql:///nodal?host=/var/run/postgresql"
@@ -112,6 +116,10 @@ func Run(cfg Config) error {
 		if info, err := os.Stat(cfg.UIDir); err == nil && info.IsDir() {
 			ui = os.DirFS(cfg.UIDir)
 		}
+	}
+	// A live update can replace the packaged UI without a restart.
+	if _, err := os.Lstat(filepath.Join(cfg.LiveRoot, "ui")); ui != nil || err == nil {
+		ui = newLiveUI(cfg.LiveRoot, ui)
 	}
 	holder := cfg.HolderID
 	if holder == "" {
@@ -178,6 +186,7 @@ func Run(cfg Config) error {
 		CertDir:     ndltls.Dir{Root: cfg.CertDir},
 		ClusterCA:   ca,
 		LeaseHolder: holder,
+		LiveUpdates: httpapi.LiveUpdatePaths{Root: cfg.LiveRoot},
 		Challenges:  challenges,
 	}
 	recCtx, recCancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -262,7 +271,7 @@ func waitForDB(db pinger, timeout time.Duration) error {
 
 func controlHTTPInstances(cfg Config, srv *httpapi.Server, handler http.Handler, challenges *ndltls.ChallengeMem) ([]*httpInstance, error) {
 	if !srv.TLSRequired {
-		return appendLocalControlSocket(cfg.ControlSock, handler, []*httpInstance{newHTTPInstance("http", cfg.Listen, handler)}), nil
+		return appendLocalControlSocket(cfg.ControlSock, handler, []*httpInstance{newHTTPInstance("http", cfg.Listen, handler).withInherited(inheritedTCP("http"))}), nil
 	}
 	mat, err := loadEnabledMaterial(cfg.CertDir)
 	if err != nil {
@@ -275,7 +284,7 @@ func controlHTTPInstances(cfg Config, srv *httpapi.Server, handler http.Handler,
 	}
 	redir := redirectHandler("", challenges)
 	instances := []*httpInstance{
-		newHTTPInstance("http-redirect", cfg.Listen, redir),
+		newHTTPInstance("http-redirect", cfg.Listen, redir).withInherited(inheritedTCP("http")),
 		tlsInst,
 	}
 	if cfg.HTTPListen != "" && cfg.HTTPListen != cfg.Listen {

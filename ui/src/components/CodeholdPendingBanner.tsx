@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useState } from "react";
 import { actOnCodeholdPending, getCodeholdPending } from "../api/client";
 import { formatWhen } from "../format";
@@ -34,7 +35,7 @@ export function CodeholdPendingBanner() {
     return null;
   }
   async function act(action: "keep" | "delete") {
-    if (action === "delete" && !window.confirm(`Delete ${items.length} runner container(s) now? This cannot be undone.`)) {
+    if (action === "delete" && !confirmAction(`Delete ${items.length} runner container(s) now? This cannot be undone.`)) {
       return;
     }
     setBusy(true);

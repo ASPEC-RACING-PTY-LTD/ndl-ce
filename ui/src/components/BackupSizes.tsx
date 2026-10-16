@@ -66,10 +66,13 @@ export function BackupSizes({
   artifacts,
   workloadName,
   targets,
+  onDeleteWorkload,
 }: {
   artifacts: BackupArtifact[];
   workloadName: (id: string) => string;
   targets: BackupTarget[];
+  /** onDeleteWorkload deletes every backup of a workload. */
+  onDeleteWorkload?: (id: string, name: string) => void;
 }) {
   const [open, setOpen] = useState(() => readPref(OPEN_KEY) === "1");
   const [unit, setUnit] = useState<Unit>(() => (readPref(UNIT_KEY) === "MiB" ? "MiB" : "MB"));
@@ -136,18 +139,29 @@ export function BackupSizes({
   }
 
   if (stats.count === 0) {
-    return null;
+    return (
+      <section className="panel bk-panel" aria-label="Backup size">
+        <div className="bk-head">
+          <h2>Backup size</h2>
+          <span className="bk-hint">Sizes show after the first backup.</span>
+        </div>
+      </section>
+    );
   }
   const saved = stats.fleetBefore > 0 ? Math.max(0, 1 - cloudTotal / stats.fleetBefore) : 0;
   return (
-    <details className="bk-collapse" open={open} onToggle={(e) => toggle((e.target as HTMLDetailsElement).open)}>
-      <summary aria-label="Backup size">
-        <span className="bk-summary-title">Backup size</span>
+    <section className="panel bk-panel" aria-labelledby="backup-size-heading">
+      <div className="bk-head">
+        <h2 id="backup-size-heading">Backup size</h2>
         <span className="bk-summary-meta">
           ~{gb(stats.fleetBefore)} on your workloads → ~{small(cloudTotal, unit)} in {cloud?.name ?? "cloud storage"}
           {saved > 0 ? ` (${Math.round(saved * 100)}% smaller)` : ""}
         </span>
-      </summary>
+        <button className="btn btn-sm btn-ghost" type="button" aria-expanded={open} onClick={() => toggle(!open)}>
+          {open ? "Hide details" : "Show details"}
+        </button>
+      </div>
+      {open ? (
       <div className="bk-collapse-body">
         <div className="bk-head">
           <p className="bk-hint">
@@ -216,6 +230,7 @@ export function BackupSizes({
                 <th className="bk-num">Latest in the cloud</th>
                 <th className="bk-num">Backups</th>
                 <th className="bk-num">Total in the cloud</th>
+                {onDeleteWorkload ? <th className="bk-actions-col" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -226,12 +241,25 @@ export function BackupSizes({
                   <td className="bk-num">{small(r.latestLanded, unit)}</td>
                   <td className="bk-num">{r.count}</td>
                   <td className="bk-num">{small(r.totalLanded, unit)}</td>
+                  {onDeleteWorkload ? (
+                    <td className="bk-actions-col">
+                      <button
+                        className="btn btn-sm btn-ghost btn-danger-text"
+                        type="button"
+                        aria-label={`Delete all backups of ${r.name}`}
+                        onClick={() => onDeleteWorkload(r.id, r.name)}
+                      >
+                        Delete all
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
-    </details>
+      ) : null}
+    </section>
   );
 }

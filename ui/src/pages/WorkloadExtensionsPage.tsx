@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { changeWorkloadExtensions, getWorkload, listWorkloadExtensions, type WorkloadExtension } from "../api/client";
 import { ActionMenu } from "../components/ActionMenu";
@@ -128,7 +129,7 @@ export function WorkloadExtensionsPage() {
                   type="button"
                   disabled={busy || installedCount === 0}
                   onClick={() => {
-                    if (window.confirm("Reinstall every installed extension? Docker restarts while it is reinstalled.")) {
+                    if (confirmAction("Reinstall every installed extension? Docker restarts while it is reinstalled.")) {
                       void run("reinstall", "all");
                     }
                   }}

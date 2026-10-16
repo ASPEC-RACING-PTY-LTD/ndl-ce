@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import {
@@ -19,6 +20,7 @@ import type {
 } from "../generated/openapi";
 import { formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
+import { LiveUpdatesPanel } from "../components/LiveUpdates";
 import { Dialog } from "../ui/Dialog";
 import { SummaryCard } from "../ui/SummaryCard";
 
@@ -221,7 +223,7 @@ export function UpdatesPage() {
 
   async function onApply() {
     if (
-      !window.confirm(
+      !confirmAction(
         "Install the latest release?\n\nPreflight runs first and a checkpoint of the control-plane database is saved, so the update can be rolled back. Running backups are paused and run again automatically afterwards. The control plane restarts during the update and this page reconnects on its own. Guests keep running.",
       )
     ) {
@@ -235,7 +237,7 @@ export function UpdatesPage() {
 
   async function onEnableRepository() {
     if (
-      !window.confirm(
+      !confirmAction(
         "Add the signed No-dal release repository (packages.no-dal.com) as a package source on this host?",
       )
     ) {
@@ -255,7 +257,7 @@ export function UpdatesPage() {
     const db = plan?.restores_database
       ? " The last update changed the database, so it is restored from the checkpoint saved before the update: changes made since then (new workloads, backups, settings) are lost."
       : " The database is kept as it is.";
-    if (!window.confirm(`Move every No-dal package back to version ${plan?.version ?? "the previous version"}?${db} Running backups are paused and run again afterwards. Guests keep running.`)) {
+    if (!confirmAction(`Move every No-dal package back to version ${plan?.version ?? "the previous version"}?${db} Running backups are paused and run again afterwards. Guests keep running.`)) {
       return;
     }
     await runAction(async () => {
@@ -575,6 +577,7 @@ export function UpdatesPage() {
           </dl>
         ) : null}
       </Dialog>
+      <LiveUpdatesPanel owner={Boolean(user?.roles?.includes("admin"))} />
     </section>
   );
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,6 +127,22 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		out, err = h.restore(ctx, src, req)
 	case ActionPreview:
 		out, err = h.preview(src, req)
+	case ActionBrowse:
+		var l Listing
+		l, err = Browse(ctx, src, req.Path, 0)
+		out.Listing = &l
+	case ActionRulesGet:
+		var r WorkloadRules
+		r, err = LoadRules(src)
+		out.Rules = &r
+	case ActionRulesSet:
+		if req.Rules == nil {
+			err = fmt.Errorf("rules are required")
+			break
+		}
+		var r WorkloadRules
+		r, err = SaveRules(src, *req.Rules)
+		out.Rules = &r
 	case ActionStatus, ActionWorkspace:
 		out, err = h.status(req)
 	case ActionExpire:
@@ -238,6 +255,14 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 	}
 	includes, excludes := backupscope.PlanCapture(prev)
 	excludes = append(excludes, defaultTechnicalExcludes(source)...)
+	// The workload's own rules (/.ndl-backup/rules.json) come last, so an
+	// Owner's skip or keep overrides the policy's scope. A damaged rules
+	// file only means more is kept, so the backup goes on without it.
+	if rules, rerr := LoadRules(source); rerr != nil {
+		log.Printf("backup %s: ignoring workload rules: %v", req.WorkloadName, rerr)
+	} else {
+		includes, excludes = applyRules(includes, excludes, rules)
+	}
 	if req.KeepImages {
 		includes = append(includes, KeptImagesDir)
 	}

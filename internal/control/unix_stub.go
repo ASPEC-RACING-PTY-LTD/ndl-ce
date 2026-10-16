@@ -2,8 +2,13 @@
 
 package control
 
-import "net/http"
+import (
+	"net"
+	"net/http"
+)
 
 func appendLocalControlSocket(_ string, _ http.Handler, instances []*httpInstance) []*httpInstance {
 	return instances
 }
+
+func inheritedTCP(string) net.Listener { return nil }

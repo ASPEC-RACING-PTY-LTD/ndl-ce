@@ -1,3 +1,4 @@
+import { confirmAction } from "../confirm";
 import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { DeleteButton } from "../components/DeleteButton";
@@ -110,7 +111,7 @@ export function AutomationPage() {
       let confirm: string | undefined;
       if (item.require_approval) {
         if (
-          !window.confirm(
+          !confirmAction(
             "Apply this policy? It will enqueue migrate of the lowest-priority VM on pressured pools. Queued migrate is not live until the dest agent is connected.",
           )
         ) {

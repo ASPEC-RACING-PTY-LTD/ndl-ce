@@ -40,7 +40,6 @@ export function PlatformBackupPanel({ owner, targets }: { owner: boolean; target
   const [busy, setBusy] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
   const [password, setPassword] = useState("");
-  const [showItems, setShowItems] = useState(false);
 
   useEffect(() => {
     getPlatformBackup()
@@ -75,18 +74,12 @@ export function PlatformBackupPanel({ owner, targets }: { owner: boolean; target
   const problem = st.snapshot?.error || st.envelope?.error;
   const degraded = (health?.missing ?? 0) + (health?.stale ?? 0) > 0;
   return (
-    <details className={"bk-collapse" + (degraded || problem ? " is-warn" : "")} open={degraded || Boolean(problem) || waiting.length > 0 || undefined}>
-      <summary aria-labelledby="platform-backup-heading">
-        <span className="bk-summary-title" id="platform-backup-heading">
-          Disaster recovery
-        </span>
-        <span className="bk-summary-meta">
-          {recoverySummary(st)}
-          {" · "}
-          {problem ? "platform backup failed" : !st.enabled ? "platform backup off" : last ? `platform backed up ${formatWhen(last.created_at ?? "")}` : "no platform backup yet"}
-        </span>
-      </summary>
-      <div className="bk-collapse-body">
+    <section className={"panel bk-panel" + (degraded || problem ? " is-warn" : "")} aria-labelledby="platform-backup-heading">
+      <div className="bk-head">
+        <h2 id="platform-backup-heading">Disaster recovery</h2>
+        <span className="bk-summary-meta">{recoverySummary(st)}</span>
+      </div>
+      <div className="bk-fill">
         {error ? <ErrorNotice error={error} /> : null}
         {notice ? (
           <p className="banner" role="status">
@@ -114,31 +107,28 @@ export function PlatformBackupPanel({ owner, targets }: { owner: boolean; target
           "Recover an existing NDL-CE" on its setup screen.
         </p>
         {health?.items?.length ? (
-          <>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setShowItems((v) => !v)}>
-              {showItems ? "Hide workloads" : "Show workloads"}
-            </button>
-            {showItems ? (
-              <table className="bk-table" aria-label="Workload recoverability">
-                <thead>
-                  <tr>
-                    <th>Workload</th>
-                    <th>Status</th>
-                    <th>Newest offsite restore point</th>
+          <div className="bk-scroll">
+            <table className="bk-table" aria-label="Workload recoverability">
+              <thead>
+                <tr>
+                  <th>Workload</th>
+                  <th>Status</th>
+                  <th>Newest offsite restore point</th>
+                </tr>
+              </thead>
+              <tbody>
+                {health.items.map((it) => (
+                  <tr key={it.workload_id}>
+                    <td>{it.name}</td>
+                    <td>
+                      <span className={"bk-pill " + (it.status === "recoverable" ? "is-ok" : it.status === "stale" ? "is-warn" : "is-danger")}>{it.status}</span>
+                    </td>
+                    <td>{it.latest_at ? `${formatWhen(it.latest_at)}${it.deep ? " · read back" : ""}` : it.error || "None"}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {health.items.map((it) => (
-                    <tr key={it.workload_id}>
-                      <td>{it.name}</td>
-                      <td>{it.status}</td>
-                      <td>{it.latest_at ? `${formatWhen(it.latest_at)}${it.deep ? " · read back" : ""}` : it.error || "None"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : null}
-          </>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
         {owner ? (
           <div className="bk-actions is-footer">
@@ -200,6 +190,6 @@ export function PlatformBackupPanel({ owner, targets }: { owner: boolean; target
           <Field id="platform-rotate-password" label="Your password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </ConfirmDialog>
       </div>
-    </details>
+    </section>
   );
 }

@@ -22,6 +22,8 @@ GO_OUT := $(CURDIR)/
 endif
 
 HELPER := $(MODROOT)/packaging/lib/ndl/postinst-control.sh
+PKG_VERSION := $(shell dpkg-parsechangelog -l$(MODROOT)/packaging/debian/changelog -SVersion 2>/dev/null)
+LDFLAGS := -X github.com/no-dal/ndl-ce/internal/buildinfo.Version=$(PKG_VERSION)
 
 %:
 	dh $@
@@ -33,8 +35,9 @@ override_dh_auto_clean:
 
 override_dh_auto_build:
 	mkdir -p build
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-control ./cmd/ndl-control
-	$(GO_CD) go build -o $(GO_OUT)build/ndl-agent ./cmd/ndl-agent
+	$(GO_CD) go build -ldflags "$(LDFLAGS)" -o $(GO_OUT)build/ndl-control ./cmd/ndl-control
+	$(GO_CD) go build -ldflags "$(LDFLAGS)" -o $(GO_OUT)build/ndl-agent ./cmd/ndl-agent
+	$(GO_CD) go build -ldflags "$(LDFLAGS)" -o $(GO_OUT)build/ndl-live ./cmd/ndl-live
 	$(GO_CD) go build -o $(GO_OUT)build/nodalctl ./cmd/nodalctl
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-network-rollback ./cmd/ndl-network-rollback
 	$(GO_CD) go build -o $(GO_OUT)build/ndl-ct-prepare ./cmd/ndl-ct-prepare
@@ -54,6 +57,7 @@ override_dh_auto_install:
 	mkdir -p debian/tmp/usr/lib/modules-load.d debian/tmp/usr/lib/sysctl.d
 	install -m 0755 build/ndl-control debian/tmp/usr/sbin/ndl-control
 	install -m 0755 build/ndl-agent debian/tmp/usr/sbin/ndl-agent
+	install -m 0755 build/ndl-live debian/tmp/usr/sbin/ndl-live
 	install -m 0755 build/ndl-qemu-launch debian/tmp/usr/sbin/ndl-qemu-launch
 	install -m 0755 build/ndl-oci-launch debian/tmp/usr/sbin/ndl-oci-launch
 	install -m 0755 build/ndl-guest debian/tmp/usr/sbin/ndl-guest
@@ -80,6 +84,11 @@ override_dh_auto_install:
 	install -m 0644 $(MODROOT)/systemd/nodal-vm@.service debian/tmp/lib/systemd/system/nodal-vm@.service
 	install -m 0644 $(MODROOT)/systemd/nodal-oci@.service debian/tmp/lib/systemd/system/nodal-oci@.service
 	install -m 0644 $(MODROOT)/systemd/ndl-guest.service debian/tmp/lib/systemd/system/ndl-guest.service
+	# Live update units ship disabled; "ndl-live enable" turns them on.
+	install -m 0644 $(MODROOT)/systemd/ndl-live.service debian/tmp/lib/systemd/system/ndl-live.service
+	install -m 0644 $(MODROOT)/systemd/ndl-live.path debian/tmp/lib/systemd/system/ndl-live.path
+	install -m 0644 $(MODROOT)/systemd/ndl-live.timer debian/tmp/lib/systemd/system/ndl-live.timer
+	install -m 0644 $(MODROOT)/systemd/ndl-control-http.socket debian/tmp/lib/systemd/system/ndl-control-http.socket
 	install -m 0644 $(MODROOT)/packaging/apparmor/usr.bin.qemu-system-x86_64.local debian/tmp/etc/apparmor.d/local/usr.bin.qemu-system-x86_64
 	install -m 0644 $(MODROOT)/packaging/modules-load.d/ndl-agent.conf debian/tmp/usr/lib/modules-load.d/ndl-agent.conf
 	install -m 0644 $(MODROOT)/packaging/sysctl.d/ndl-lxc-keys.conf debian/tmp/usr/lib/sysctl.d/ndl-lxc-keys.conf

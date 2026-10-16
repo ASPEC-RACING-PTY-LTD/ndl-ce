@@ -166,7 +166,8 @@ describe("Backups page", () => {
     expect(screen.getByText(/no backup artifacts yet/i)).toBeVisible();
     expect(screen.getByText(/^safe in the cloud/i)).toBeVisible();
     expect(screen.getByText(/^stored on this host/i)).toBeVisible();
-    fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /^create \+$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^policy$/i }));
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     expect(within(dialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
     expect(within(dialog).getByLabelText(/^all workloads$/i)).not.toBeChecked();
@@ -255,7 +256,8 @@ describe("Backups page", () => {
     window.history.replaceState({}, "", "/backups");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^policies$/i })).toBeVisible();
-    fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /^create \+$/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^policy$/i }));
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /alpha/i }));
     fireEvent.click(within(dialog).getByLabelText(/^full machine \/ full lxc$/i));
