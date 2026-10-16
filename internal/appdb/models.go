@@ -231,6 +231,10 @@ type Store interface {
 	PutPlatformBackupState(ctx context.Context, clusterID, stateJSON string) error
 	GetPlatformBackupKeys(ctx context.Context, clusterID string) (string, error)
 	PutPlatformBackupKeys(ctx context.Context, clusterID, keysJSON string) error
+	// Recovery: move a restored cluster onto this host, and point a target
+	// at new credentials.
+	RemapRecoveredHost(ctx context.Context, clusterID string, m HostRemap) (map[string]string, error)
+	ReplaceBackupTargetConnection(ctx context.Context, clusterID, id, endpoint, region, username, password string) error
 	// Workloads whose backup waits on uncommitted Git work.
 	UpsertBackupGitHold(ctx context.Context, h BackupGitHold) error
 	ListBackupGitHolds(ctx context.Context, clusterID string) ([]BackupGitHold, error)

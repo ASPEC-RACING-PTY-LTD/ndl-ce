@@ -126,6 +126,9 @@ type Server struct {
 	// Platform overrides parts of the platform backup (tests).
 	Platform PlatformHooks
 	platform platformRuntime
+	// Recovery overrides parts of recovery (tests).
+	Recovery RecoveryHooks
+	recovery recoveryRuntime
 	// CFBaseURL and CFKeyPath override the Cloudflare API root and the token
 	// key file (tests). CFPublicCheck replaces public site checks in tests.
 	CFBaseURL     string
@@ -190,6 +193,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/health", s.health)
 	mux.HandleFunc("GET /api/v1/setup/status", s.setupStatus)
 	mux.HandleFunc("POST /api/v1/setup/claim", s.setupClaim)
+	mux.HandleFunc("GET /api/v1/setup/recover", s.recoveryStatus)
+	mux.HandleFunc("POST /api/v1/setup/recover/connect", s.recoverConnect)
+	mux.HandleFunc("POST /api/v1/setup/recover/unlock", s.recoverUnlock)
+	mux.HandleFunc("POST /api/v1/setup/recover/restore", s.recoverRestore)
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/v1/me", s.me)
@@ -789,6 +796,10 @@ func (s *Server) setupClaim(w http.ResponseWriter, r *http.Request) {
 	if err != nil || !open {
 		s.audit(r, "", "", "setup.claim", "denied", "replay")
 		writeErr(w, http.StatusConflict, "setup is closed")
+		return
+	}
+	if s.recoveryLocked() {
+		writeErr(w, http.StatusConflict, "this host is being recovered from a platform backup")
 		return
 	}
 	if err := s.ensureCluster(r.Context()); err != nil {

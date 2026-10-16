@@ -35,6 +35,9 @@ const (
 	// ActionRemoteCheck checks restore points exist (and, deep, decrypt)
 	// on a target.
 	ActionRemoteCheck = "v2-remote-check"
+	// ActionKeyImport installs a recovered repository key on a host whose
+	// repository is empty.
+	ActionKeyImport = "v2-key-import"
 
 	DefaultRoot                = "/var/lib/ndl/backup-repo"
 	DefaultMaxLocalBytes       = 50 << 30
@@ -87,6 +90,8 @@ type Request struct {
 	Checks []PointID `json:"checks,omitempty"`
 	Deep   bool      `json:"deep,omitempty"`
 	Sample int       `json:"sample,omitempty"`
+	// ImportKey is the hex repository key for ActionKeyImport.
+	ImportKey string `json:"import_key,omitempty"`
 }
 
 // PointID names a restore point.
@@ -237,7 +242,7 @@ type WorkspaceStatus struct {
 func IsAction(action string) bool {
 	switch action {
 	case ActionCapture, ActionRestore, ActionStatus, ActionPreview, ActionExpire, ActionWorkspace, ActionEnqueue,
-		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck:
+		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck, ActionKeyImport:
 		return true
 	default:
 		return false

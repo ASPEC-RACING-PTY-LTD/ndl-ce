@@ -50,6 +50,7 @@ const (
 	BackupV2GitSave        = "v2-git-save"
 	BackupV2PlatformObject = "v2-platform-object"
 	BackupV2RemoteCheck    = "v2-remote-check"
+	BackupV2KeyImport      = "v2-key-import"
 	// BackupRootFS reports (Size 1) whether a path is on the host root
 	// filesystem. It only stats.
 	BackupRootFS = "root-fs"

@@ -15,6 +15,7 @@ import { MePage } from "./pages/MePage";
 import { NodePage } from "./pages/NodePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SetupPage } from "./pages/SetupPage";
+import { RecoverPage } from "./pages/RecoverPage";
 import { NetworkHubPage, type NetworkTab } from "./pages/NetworkHubPage";
 import { FilesPage } from "./pages/FilesPage";
 import { HostOperatePage } from "./pages/HostOperatePage";
@@ -375,6 +376,12 @@ function AppRoutes() {
         </main>
       </div>
     );
+  }
+
+  if (path === "/setup/recover") {
+    // The page checks for itself whether recovery is still possible, and
+    // stays up through the restart that ends it.
+    return <RecoverPage />;
   }
 
   if (path === "/setup") {

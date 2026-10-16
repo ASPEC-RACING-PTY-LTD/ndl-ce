@@ -1752,6 +1752,99 @@ export interface PlatformBackupStatus {
   error?: string;
 }
 
+export interface RecoveryStatus {
+  available?: boolean;
+  locked?: boolean;
+  schema_level?: number;
+}
+
+export interface RecoveryConnectRequest {
+  token: string;
+  kind?: string;
+  account_id?: string;
+  endpoint?: string;
+  bucket: string;
+  api_token?: string;
+  access_key_id?: string;
+  secret_access_key?: string;
+}
+
+export interface RecoveryConnectResponse {
+  session_id?: string;
+  snapshots?: number;
+  newest?: string;
+  schema_level?: number;
+  local_schema_level?: number;
+  workloads?: number;
+}
+
+export interface RecoveryUnlockRequest {
+  token: string;
+  session_id: string;
+  username: string;
+  password: string;
+}
+
+export interface RecoveryWorkload {
+  id?: string;
+  name?: string;
+  kind?: string;
+  protected?: boolean;
+  offsite_points?: number;
+}
+
+export interface RecoveryTarget {
+  id?: string;
+  name?: string;
+  kind?: string;
+  bucket?: string;
+  this_bucket?: boolean;
+}
+
+export interface RecoveryPool {
+  id?: string;
+  name?: string;
+  backend?: string;
+  path?: string;
+}
+
+export interface RecoveryNetwork {
+  id?: string;
+  name?: string;
+  bridge?: string;
+  cidr?: string;
+}
+
+export interface RecoveryPlan {
+  created_at?: string;
+  hostname?: string;
+  schema_level?: number;
+  local_schema_level?: number;
+  workloads?: RecoveryWorkload[];
+  pools?: RecoveryPool[];
+  networks?: RecoveryNetwork[];
+  targets?: RecoveryTarget[];
+}
+
+export interface RecoveryRestoreRequest {
+  token: string;
+  session_id: string;
+  pools?: Record<string, unknown>;
+  networks?: Record<string, unknown>;
+}
+
+export interface RecoveryRestoreResponse {
+  restored?: boolean;
+  cluster_id?: string;
+  target_id?: string;
+  superseded?: string[];
+  connection_verified?: boolean;
+  connection_error?: string;
+  workloads?: number;
+  restart?: boolean;
+  error?: string;
+}
+
 export interface BackupGitHoldRepo {
   path?: string;
   branch?: string;
@@ -3643,6 +3736,14 @@ export type RunPlatformBackupPath = "/api/v1/platform-backup/run";
 export type VerifyPlatformBackupPath = "/api/v1/platform-backup/verify";
 
 export type RotatePlatformBackupKeyPath = "/api/v1/platform-backup/rotate";
+
+export type GetRecoveryStatusPath = "/api/v1/setup/recover";
+
+export type RecoverConnectPath = "/api/v1/setup/recover/connect";
+
+export type RecoverUnlockPath = "/api/v1/setup/recover/unlock";
+
+export type RecoverRestorePath = "/api/v1/setup/recover/restore";
 
 export type ListBackupRestorePointsPath = "/api/v1/backups/restore-points";
 

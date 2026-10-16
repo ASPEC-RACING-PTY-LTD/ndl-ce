@@ -145,6 +145,8 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		out, err = h.platformObject(ctx, req)
 	case ActionRemoteCheck:
 		out, err = h.remoteCheck(ctx, req)
+	case ActionKeyImport:
+		out, err = h.importKey(req)
 	case ActionGC:
 		rep := h.runGC(ctx, firstNonEmpty(req.Reason, "requested"))
 		out, err = h.status(req)

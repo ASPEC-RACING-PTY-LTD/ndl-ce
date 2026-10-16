@@ -1,7 +1,9 @@
 package backuphost
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,4 +116,52 @@ func (h *Host) remoteCheck(ctx context.Context, req Request) (Result, error) {
 		out.RemoteChecks = append(out.RemoteChecks, backup.CheckRemote(ctx, tgt, h.repo.Keys(), p.Namespace, p.BackupID, req.Deep, req.Sample))
 	}
 	return out, nil
+}
+
+// importKey installs a recovered repository key, so restore points made by
+// the lost host can be read. It refuses when this repository already holds
+// restore points sealed with another key.
+func (h *Host) importKey(req Request) (Result, error) {
+	raw, err := hex.DecodeString(strings.TrimSpace(req.ImportKey))
+	if err != nil || len(raw) < 32 {
+		return Result{}, fmt.Errorf("the recovered key is not valid")
+	}
+	keys, err := backup.NewKeys(raw)
+	if err != nil {
+		return Result{}, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	cur, _ := os.ReadFile(filepath.Join(h.root, "master.key"))
+	if bytes.Equal(cur, raw) {
+		return Result{}, nil
+	}
+	if len(h.busy) > 0 {
+		return Result{}, fmt.Errorf("a backup is running")
+	}
+	if states, _ := h.repo.ListStates(); len(states) > 0 {
+		return Result{}, fmt.Errorf("this host already has %d restore points sealed with its own key; the recovered key was not installed", len(states))
+	}
+	if err := writeKey(filepath.Join(h.root, "master.key"), raw); err != nil {
+		return Result{}, err
+	}
+	if h.keyPath != "" {
+		if err := writeKey(h.keyPath, raw); err != nil {
+			return Result{}, err
+		}
+	}
+	repo, err := backup.OpenRepository(h.root, keys)
+	if err != nil {
+		return Result{}, err
+	}
+	for id, q := range h.queues {
+		if q != nil {
+			q.Stop()
+		}
+		delete(h.queues, id)
+	}
+	h.repo = repo
+	h.eng = backup.NewEngine(repo, h.engineConfig(h.settings))
+	h.keyNote = ""
+	return Result{}, nil
 }

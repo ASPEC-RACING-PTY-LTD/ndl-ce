@@ -99,4 +99,4 @@ Limitations, by design:
 
 ## Recovering
 
-See [Recovery](recovery.md).
+See [Recovery: lost host](recovery.md#lost-host-recover-from-the-platform-backup).

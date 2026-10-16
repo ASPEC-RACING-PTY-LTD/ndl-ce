@@ -1,5 +1,66 @@
 # Recovery
 
+## Lost host: recover from the platform backup
+
+If the host running NDL-CE is lost, a new host can take over everything from
+the [platform backup](platform-backup.md): accounts, settings, secrets,
+workload and game server definitions, storage and network mappings, backup
+targets and policies, and the catalogue of restore points. Workload data then
+comes back from the workload backups.
+
+You need:
+
+- a host with NDL-CE installed, the **same version or newer** than the one that
+  made the backup, and **not yet set up**;
+- its one-time setup token (printed by the installer);
+- **new** Cloudflare credentials for the bucket: an API token with R2 access, or
+  an R2 access key id and secret, plus the account id and the bucket name.
+  Revoke the lost host's credentials; they are not needed and are replaced;
+- the username and password of an Owner of the lost NDL-CE.
+
+### Steps
+
+1. Open the new host. On the setup screen choose **Recover an existing
+   NDL-CE**. It is offered only while the host is unclaimed.
+2. Enter the setup token, account id, bucket and the new credentials. An API
+   token is turned into R2 S3 credentials (its id and the SHA-256 of its
+   value). NDL-CE looks for the backup under `ndl-platform/`.
+3. Enter an Owner's username and password. They unlock the newest snapshot
+   (or, if that envelope does not open, the kept fallback). A wrong password
+   is refused and repeated failures are throttled. A backup from a newer
+   NDL-CE is refused: install the same or a newer version.
+4. Map the lost host's storage pools and networks onto this one. The old
+   paths and bridges are filled in.
+5. **Restore**. From here on setup and further recoveries are locked.
+
+### What restore does
+
+1. Replaces the fresh database with the backup in a single transaction. If
+   anything fails, nothing was changed and you can try again.
+2. Applies this version's migrations.
+3. Gives this host a fresh identity: it enrols with its own node id and
+   certificates, everything that pointed at the lost host's nodes now points
+   at it, and the old nodes are revoked.
+4. Applies the pool paths and network bridges you chose.
+5. Holds every workload and game server stopped, remembering how each was
+   set, so nothing starts without its data.
+6. Revokes every restored session.
+7. Keeps the **new** bucket connection: the restored target for this bucket
+   gets the new endpoint and credentials (its encryption key stays), other
+   restored targets on the same bucket are marked superseded, and the
+   connection is read back as saved and tested by listing the platform backup.
+   The result is shown before any workload is restored.
+8. Installs the lost host's backup repository key, so its restore points
+   can be decrypted.
+9. Restarts the control plane. Sign in with your Owner account.
+
+Access to the bucket and the ability to decrypt stay separate throughout: the
+bucket credentials find and download the backup, and only an Owner's password
+opens it.
+
+After recovery, workload data is restored from Backups; see
+[Backup Engine V2](backup-engine-v2.md).
+
 ## Control plane down
 
 Stopping or killing `ndl-control` leaves the host unchanged.

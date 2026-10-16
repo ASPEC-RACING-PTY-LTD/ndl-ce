@@ -75,6 +75,8 @@ type platformState struct {
 	Snapshot  platformSnapshotState          `json:"snapshot"`
 	Health    platformHealth                 `json:"health"`
 	RotatedAt *time.Time                     `json:"rotated_at,omitempty"`
+	// Recovery is set on a host recovered from this backup.
+	Recovery *recoveryState `json:"recovery,omitempty"`
 }
 
 type platformEnvelopeState struct {
@@ -821,6 +823,7 @@ func (s *Server) platformJSON(ctx context.Context, clusterID string, st platform
 		"owners_ready": ready, "owners_waiting": waiting,
 		"envelope": st.Envelope, "snapshot": st.Snapshot, "health": st.Health,
 		"rotated_at": st.RotatedAt, "schema_level": schemaLevel(),
+		"recovery": st.Recovery,
 	}
 	if tgt != nil {
 		out["target"] = map[string]any{"id": tgt.ID, "name": tgt.Name, "kind": tgt.Kind, "bucket": tgt.Bucket}

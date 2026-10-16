@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { ApiError } from "../api/client";
+import { useEffect, useState, type FormEvent } from "react";
+import { ApiError, getRecoveryStatus } from "../api/client";
 import { AuthBrand } from "../components/AuthBrand";
 import { Field } from "../components/Field";
 import { navigate } from "../router";
@@ -15,6 +15,13 @@ export function SetupPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [canRecover, setCanRecover] = useState(false);
+
+  useEffect(() => {
+    getRecoveryStatus()
+      .then((st) => setCanRecover(st.available === true))
+      .catch(() => setCanRecover(false));
+  }, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -108,6 +115,14 @@ export function SetupPage() {
             {busy ? "Creating administrator" : "Create administrator"}
           </button>
         </form>
+        {canRecover ? (
+          <p className="field-hint">
+            Rebuilding a lost NDL-CE from its platform backup?{" "}
+            <button className="btn btn-ghost" type="button" onClick={() => navigate("/setup/recover")}>
+              Recover an existing NDL-CE
+            </button>
+          </p>
+        ) : null}
       </main>
     </div>
   );

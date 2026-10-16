@@ -51,7 +51,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   // A 401 outside sign-in means the session expired. The app returns to the
   // sign-in page instead of showing every panel empty with "not
   // authenticated".
-  if (res.status === 401 && !path.startsWith("/auth/") && path !== "/me" && typeof window !== "undefined") {
+  if (res.status === 401 && !path.startsWith("/auth/") && !path.startsWith("/setup/") && path !== "/me" && typeof window !== "undefined") {
     window.dispatchEvent(new Event(SESSION_EXPIRED));
   }
   return res;
@@ -74,6 +74,28 @@ export async function getHealth(): Promise<HealthResponse> {
 
 export async function getSetupStatus(): Promise<SetupStatusResponse> {
   return readJson<SetupStatusResponse>(await request("/setup/status"));
+}
+
+export async function getRecoveryStatus(): Promise<import("../generated/openapi").RecoveryStatus> {
+  return readJson(await request("/setup/recover"));
+}
+
+export async function recoverConnect(
+  body: import("../generated/openapi").RecoveryConnectRequest,
+): Promise<import("../generated/openapi").RecoveryConnectResponse> {
+  return readJson(await request("/setup/recover/connect", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function recoverUnlock(
+  body: import("../generated/openapi").RecoveryUnlockRequest,
+): Promise<import("../generated/openapi").RecoveryPlan> {
+  return readJson(await request("/setup/recover/unlock", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function recoverRestore(
+  body: import("../generated/openapi").RecoveryRestoreRequest,
+): Promise<import("../generated/openapi").RecoveryRestoreResponse> {
+  return readJson(await request("/setup/recover/restore", { method: "POST", body: JSON.stringify(body) }));
 }
 
 export async function claimSetup(body: SetupClaimRequest): Promise<MeResponse> {

@@ -7095,6 +7095,84 @@ paths:
           description: Wrong password
         "422":
           description: Rotated, but publishing or the first snapshot failed
+  /setup/recover:
+    get:
+      operationId: getRecoveryStatus
+      summary: Whether this host can still be recovered from a platform backup (only before setup is claimed, and not once a recovery started)
+      security: []
+      responses:
+        "200":
+          description: Recovery availability
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryStatus"
+  /setup/recover/connect:
+    post:
+      operationId: recoverConnect
+      summary: Connect the bucket of a platform backup with new credentials (Cloudflare API token, or R2 access key id and secret) and the setup token, and find the backup under ndl-platform/
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryConnectRequest"
+      responses:
+        "200":
+          description: The backup that was found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryConnectResponse"
+        "401":
+          description: Wrong setup token
+        "409":
+          description: This host is already set up or being recovered
+        "422":
+          description: The bucket could not be read
+  /setup/recover/unlock:
+    post:
+      operationId: recoverUnlock
+      summary: Unlock the newest platform snapshot with an Owner's username and password; returns what will be restored and the pools and networks to map onto this host
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryUnlockRequest"
+      responses:
+        "200":
+          description: The recovery plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryPlan"
+        "401":
+          description: The credentials do not unlock the backup
+        "409":
+          description: This NDL-CE is older than the backup
+  /setup/recover/restore:
+    post:
+      operationId: recoverRestore
+      summary: Restore the database and configuration, keep the new bucket connection over the restored credentials and test it, move pools, networks and the node identity onto this host, hold workloads stopped, then restart the control plane
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryRestoreRequest"
+      responses:
+        "200":
+          description: Restored; the control plane restarts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryRestoreResponse"
+        "422":
+          description: The restore failed; restored says whether the database was replaced
   /backups/restore-points:
     get:
       operationId: listBackupRestorePoints
@@ -14186,6 +14264,187 @@ components:
           format: date-time
         schema_level:
           type: integer
+        error:
+          type: string
+    RecoveryStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+        locked:
+          type: boolean
+        schema_level:
+          type: integer
+    RecoveryConnectRequest:
+      type: object
+      required:
+        - token
+        - bucket
+      properties:
+        token:
+          type: string
+        kind:
+          type: string
+          description: r2 (default) or another object storage kind with endpoint
+        account_id:
+          type: string
+        endpoint:
+          type: string
+        bucket:
+          type: string
+        api_token:
+          type: string
+        access_key_id:
+          type: string
+        secret_access_key:
+          type: string
+    RecoveryConnectResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        snapshots:
+          type: integer
+        newest:
+          type: string
+          format: date-time
+        schema_level:
+          type: integer
+        local_schema_level:
+          type: integer
+        workloads:
+          type: integer
+    RecoveryUnlockRequest:
+      type: object
+      required:
+        - token
+        - session_id
+        - username
+        - password
+      properties:
+        token:
+          type: string
+        session_id:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+    RecoveryWorkload:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        protected:
+          type: boolean
+        offsite_points:
+          type: integer
+    RecoveryTarget:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        bucket:
+          type: string
+        this_bucket:
+          type: boolean
+    RecoveryPool:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        backend:
+          type: string
+        path:
+          type: string
+    RecoveryNetwork:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        bridge:
+          type: string
+        cidr:
+          type: string
+    RecoveryPlan:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        hostname:
+          type: string
+        schema_level:
+          type: integer
+        local_schema_level:
+          type: integer
+        workloads:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryWorkload"
+        pools:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryPool"
+        networks:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryNetwork"
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryTarget"
+    RecoveryRestoreRequest:
+      type: object
+      required:
+        - token
+        - session_id
+      properties:
+        token:
+          type: string
+        session_id:
+          type: string
+        pools:
+          type: object
+          additionalProperties:
+            type: string
+        networks:
+          type: object
+          additionalProperties:
+            type: string
+    RecoveryRestoreResponse:
+      type: object
+      properties:
+        restored:
+          type: boolean
+        cluster_id:
+          type: string
+        target_id:
+          type: string
+        superseded:
+          type: array
+          items:
+            type: string
+        connection_verified:
+          type: boolean
+        connection_error:
+          type: string
+        workloads:
+          type: integer
+        restart:
+          type: boolean
         error:
           type: string
     BackupGitHoldRepo:
