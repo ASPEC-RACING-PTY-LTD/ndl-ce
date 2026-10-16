@@ -420,6 +420,23 @@ describe("Terminal workspace", () => {
     expect(document.querySelector(".term-conn.is-active")).toHaveTextContent(/connected/i);
   });
 
+  it("shows several sessions at once in a grid", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitConnected();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitFor(() => expect(sockets.length).toBe(2));
+    fireEvent.change(screen.getByLabelText(/terminal layout/i), { target: { value: "2x2" } });
+    await waitFor(() => expect(document.querySelectorAll(".term-grid-cell")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText(/terminal layout/i), { target: { value: "1" } });
+    await waitFor(() => expect(document.querySelectorAll(".term-grid-cell")).toHaveLength(0));
+  });
+
   it("resumes the same shell when it is still running on the server", async () => {
     installIO();
     await openWorkspace();

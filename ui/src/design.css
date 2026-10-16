@@ -919,18 +919,23 @@ a.btn:hover {
   transform: rotate(180deg);
 }
 
+/* The sidebar clips overflow, so the panel takes the account button's width
+   instead of a fixed one that ran past the sidebar's edge. */
 .sidebar-account-panel {
   top: auto;
-  right: auto;
+  right: 0;
   bottom: calc(100% + 0.4rem);
   left: 0;
-  width: 15.5rem;
+  width: auto;
+  min-width: 0;
   z-index: 40;
 }
 
 .is-collapsed .sidebar-account-panel {
+  right: auto;
   left: calc(100% + 0.6rem);
   bottom: 0;
+  width: 15.5rem;
 }
 
 .sidebar-account-head {
@@ -971,8 +976,15 @@ a.btn:hover {
 }
 
 .menu-panel .mode-switch .mode-theme-btn {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
   padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+}
+
+.menu-panel .mode-switch .btn-icon {
+  flex: 0 0 auto;
 }
 
 .menu-panel hr,

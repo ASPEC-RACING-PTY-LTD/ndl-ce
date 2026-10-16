@@ -17,7 +17,7 @@ import (
 // LXC userns_exec_minimal maps the agent's uid 0 into a helper user namespace
 // before moving the attach process into the container cgroup.
 // CAP_SYS_PTRACE: setns into another process requires PTRACE_MODE_ATTACH_REALCREDS.
-const requiredAgentCapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_RAW CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE"
+const requiredAgentCapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_RAW CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE CAP_SYS_RESOURCE"
 
 func agentServiceUnit(t *testing.T) string {
 	t.Helper()

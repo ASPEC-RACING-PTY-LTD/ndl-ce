@@ -19,7 +19,7 @@ RestartSec=2
 # The socket unit owns /run/ndl. Do not set RuntimeDirectory=ndl here;
 # a service restart would delete agent.sock.
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID CAP_SETFCAP CAP_SYS_ADMIN CAP_SYS_PTRACE CAP_SYS_RESOURCE
 DevicePolicy=closed
 DeviceAllow=char-pts rw
 DeviceAllow=/dev/ptmx rw

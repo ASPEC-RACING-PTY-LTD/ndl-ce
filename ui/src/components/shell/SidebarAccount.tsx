@@ -76,15 +76,6 @@ export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapse
       </button>
       {open ? (
         <div className="menu-panel sidebar-account-panel" role="menu" aria-label="Account">
-          <div className="sidebar-account-head">
-            <span className="account-initial is-large" aria-hidden="true">
-              {initial}
-            </span>
-            <span>
-              <strong>{name}</strong>
-              <span className="meta">{user.username !== name ? `${user.username} · ` : ""}{user.roles.length ? user.roles.map(roleLabel).join(", ") : "No roles"}</span>
-            </span>
-          </div>
           <div className="mode-switch" role="group" aria-label="Colour mode">
             {MODES.map((m) => (
               <button

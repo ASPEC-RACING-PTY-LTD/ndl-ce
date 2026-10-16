@@ -432,7 +432,12 @@ func (d Directory) growVolumeLive(ctx context.Context, abs, img string, current 
 	if err != nil {
 		return err
 	}
-	return d.runLimit(ctx, resize[0], resize[1:]...)
+	if err := d.runLimit(ctx, resize[0], resize[1:]...); err != nil {
+		// The image is already larger; saving the same size again retries
+		// only the filesystem step, online.
+		return fmt.Errorf("the disk grew but its filesystem could not grow online; save the same size again to retry: %w", err)
+	}
+	return nil
 }
 
 // mountedLoop is replaced in tests.

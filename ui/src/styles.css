@@ -4339,3 +4339,50 @@ thead th[data-autosort="desc"]::after {
   font-size: 0.7em;
   opacity: 0.7;
 }
+
+/* Terminal grid (several sessions at once) */
+.term-grid {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 9rem);
+}
+.term-grid-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: var(--radius, 6px);
+  overflow: hidden;
+  background: #000;
+}
+.term-grid-cell.is-focused {
+  border-color: var(--accent);
+}
+.term-grid-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  background: var(--bg-elevated);
+}
+.term-grid-head .term-tab-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term-grid-slot {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.term-grid-slot .xterm {
+  height: 100%;
+  padding: 4px;
+}

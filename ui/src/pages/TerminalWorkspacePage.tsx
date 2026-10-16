@@ -3,6 +3,7 @@ import { ActionMenu } from "../components/ActionMenu";
 import { Icon } from "../components/Icon";
 import { QuickSwitch } from "../components/QuickSwitch";
 import { TerminalPane } from "../components/TerminalPane";
+import { TERM_GRIDS, TerminalGrid, type TermGridId } from "../components/TerminalGrid";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
 import { statusLabel } from "../terminal/types";
@@ -33,6 +34,22 @@ export function TerminalWorkspacePage() {
     replaceCurrent,
   } = useTerminalWorkspace();
   const [qs, setQs] = useState(false);
+  const [grid, setGrid] = useState<TermGridId>(() => {
+    try {
+      const v = localStorage.getItem("ndl-term-grid");
+      return TERM_GRIDS.some((g) => g.id === v) ? (v as TermGridId) : "1";
+    } catch {
+      return "1";
+    }
+  });
+  function chooseGrid(next: TermGridId) {
+    setGrid(next);
+    try {
+      localStorage.setItem("ndl-term-grid", next);
+    } catch {
+      // The layout is a convenience; it resets when storage is unavailable.
+    }
+  }
   const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const drag = useTabDrag(
@@ -168,6 +185,16 @@ export function TerminalWorkspacePage() {
             </select>
           </label>
         ) : null}
+        <label className="field-hint term-grid-pick">
+          Layout
+          <select className="field-input" value={grid} onChange={(e) => chooseGrid(e.target.value as TermGridId)} aria-label="Terminal layout">
+            {TERM_GRIDS.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
         {active ? (
           <ActionMenu
             label="Session actions"
@@ -196,7 +223,7 @@ export function TerminalWorkspacePage() {
           />
         ) : null}
       </div>
-      <TerminalPane />
+      {grid === "1" ? <TerminalPane /> : <TerminalGrid grid={grid} />}
       {menu && menuTab ? (
         <div
           ref={menuRef}
