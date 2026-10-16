@@ -43,7 +43,7 @@ Nobody is signed in by No-dal. Each user signs in themselves, inside the
 container:
 
 ```sh
-ch auth login --server https://git.aspecracing.com.au
+ch auth login --server https://codehold.example.com
 ```
 
 No tokens or passwords are used, stored or logged by this step.
@@ -52,10 +52,11 @@ No tokens or passwords are used, stored or logged by this step.
 
 On Workloads, choose **CodeHold CLI**. From there you can change:
 
-- **CodeHold address.** The default is `https://git.aspecracing.com.au`. Only
-  `https://` addresses are accepted.
-- **Install on new containers.** This is on by default. Turn it off to stop
-  new containers getting `ch`.
+- **CodeHold address.** There is no default: set your CodeHold server's
+  address first. Only `https://` addresses are accepted. Until it is set,
+  nothing is installed.
+- **Install on new containers.** This is on by default once an address is
+  set. Turn it off to stop new containers getting `ch`.
 - **Containers at a time** (default 5) and **time limit per container**
   (default 600 seconds) for bulk installs.
 

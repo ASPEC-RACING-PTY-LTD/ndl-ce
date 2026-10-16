@@ -111,7 +111,7 @@ func (g *chGuest) ran(prefix string) bool {
 
 const testPin = "debian/trixie/amd64/default"
 
-var chSrc = &CodeholdSource{URL: guestextras.DefaultCodeholdURL}
+var chSrc = &CodeholdSource{URL: "https://codehold.example.com"}
 
 func chPkgs() []string { return guestextras.AvailabilityFor(testPin, guestextras.CodeholdCLI).Packages }
 
@@ -147,7 +147,7 @@ func TestCodeholdCLIInstallsVerifiedBinary(t *testing.T) {
 		t.Fatalf("curl must be limited to https: %v", g.calls)
 	}
 	for _, c := range g.calls {
-		if strings.HasPrefix(c, guestCurl+" -fsS") && !strings.HasSuffix(c, "-o "+guestCHTemp+" https://git.aspecracing.com.au/downloads/ch-linux-amd64") {
+		if strings.HasPrefix(c, guestCurl+" -fsS") && !strings.HasSuffix(c, "-o "+guestCHTemp+" https://codehold.example.com/downloads/ch-linux-amd64") {
 			t.Fatalf("download must go to the temp file from the amd64 URL: %s", c)
 		}
 	}
@@ -196,9 +196,9 @@ func TestCodeholdCLIUpdate(t *testing.T) {
 func TestCodeholdCLIDownloadFailureKeepsCh(t *testing.T) {
 	g := newCHGuest(t)
 	g.files[guestCHPath] = "ch v1"
-	g.curlErr = "curl: (6) Could not resolve host: git.aspecracing.com.au"
+	g.curlErr = "curl: (6) Could not resolve host: codehold.example.com"
 	_, err := g.engine().installGuestCodeholdCLI(context.Background(), "id", testPin, "debian", chPkgs(), extraUpdate, chSrc)
-	if err == nil || !strings.Contains(err.Error(), "could not download ch from https://git.aspecracing.com.au/downloads/ch-linux-amd64") ||
+	if err == nil || !strings.Contains(err.Error(), "could not download ch from https://codehold.example.com/downloads/ch-linux-amd64") ||
 		!strings.Contains(err.Error(), "Could not resolve host") {
 		t.Fatalf("got %v", err)
 	}
@@ -225,7 +225,7 @@ func TestCodeholdCLIBrokenDownloadKeepsCh(t *testing.T) {
 
 func TestCodeholdCLIAccessHeadersStayOffTheCommandLine(t *testing.T) {
 	g := newCHGuest(t)
-	src := &CodeholdSource{URL: guestextras.DefaultCodeholdURL, AccessClientID: "id.access", AccessClientSecret: "s3cret-value"}
+	src := &CodeholdSource{URL: "https://codehold.example.com", AccessClientID: "id.access", AccessClientSecret: "s3cret-value"}
 	if _, err := g.engine().installGuestCodeholdCLI(context.Background(), "id", testPin, "debian", chPkgs(), extraInstall, src); err != nil {
 		t.Fatal(err)
 	}

@@ -3149,7 +3149,7 @@ export type CodeholdCLIRollout = {
   summary: Record<string, number>;
 };
 
-export async function getCodeholdCLI(): Promise<{ settings: CodeholdCLISettings; default_url: string; rollout: CodeholdCLIRollout | null }> {
+export async function getCodeholdCLI(): Promise<{ settings: CodeholdCLISettings; rollout: CodeholdCLIRollout | null }> {
   return readJson(await request("/codehold-cli"));
 }
 export async function saveCodeholdCLISettings(body: Partial<CodeholdCLISettings>): Promise<{ settings: CodeholdCLISettings }> {

@@ -44,10 +44,10 @@ type FakeWS = {
   readyState: number;
   onopen: (() => void) | null;
   onmessage: ((ev: MessageEvent) => void) | null;
-  onclose: (() => void) | null;
+  onclose: ((ev: { code: number }) => void) | null;
   onerror: (() => void) | null;
   send: (data: ArrayBuffer | Uint8Array) => void;
-  close: () => void;
+  close: (code?: number) => void;
   pushCwd: (path: string) => void;
 };
 

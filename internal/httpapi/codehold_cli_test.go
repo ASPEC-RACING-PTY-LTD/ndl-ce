@@ -62,12 +62,21 @@ func TestWorkloadCreateGetsCodeholdCLIUnlessTurnedOff(t *testing.T) {
 		waitExtras(t, s, got["id"].(string))
 	}
 
+	// There is no built-in CodeHold server, so nothing is installed until an
+	// address is set.
+	create("unset", "")
+	if fw.setups != 0 {
+		t.Fatal("with no CodeHold address a new container must not get ch")
+	}
+	if code, b := do("PUT", "/api/v1/codehold-cli/settings", `{"url":"https://codehold.example.com","auto_install":true}`); code != 200 {
+		t.Fatalf("settings %d %s", code, b)
+	}
 	create("default", "")
 	if fw.setups != 1 || !slices.Equal(fw.lastLife.Extras, []string{guestextras.CodeholdCLI}) {
 		t.Fatalf("a new container must get ch by default: setups=%d extras=%v", fw.setups, fw.lastLife.Extras)
 	}
-	if fw.lastLife.Codehold == nil || fw.lastLife.Codehold.URL != guestextras.DefaultCodeholdURL || fw.lastLife.Codehold.AccessClientSecret != "" {
-		t.Fatalf("the default CodeHold address must be passed, without Access headers: %+v", fw.lastLife.Codehold)
+	if fw.lastLife.Codehold == nil || fw.lastLife.Codehold.URL != "https://codehold.example.com" || fw.lastLife.Codehold.AccessClientSecret != "" {
+		t.Fatalf("the configured CodeHold address must be passed, without Access headers: %+v", fw.lastLife.Codehold)
 	}
 
 	create("opted-out", `,"codehold_cli":false`)
@@ -100,7 +109,7 @@ func TestCodeholdCLISettingsValidation(t *testing.T) {
 	do := chcliDo(t, ts, claimAdmin(t, ts, token))
 
 	code, b := do("GET", "/api/v1/codehold-cli", "")
-	if code != 200 || !strings.Contains(string(b), `"url":"`+guestextras.DefaultCodeholdURL+`"`) || !strings.Contains(string(b), `"auto_install":true`) || !strings.Contains(string(b), `"concurrency":5`) {
+	if code != 200 || !strings.Contains(string(b), `"url":""`) || !strings.Contains(string(b), `"auto_install":true`) || !strings.Contains(string(b), `"concurrency":5`) {
 		t.Fatalf("defaults %d %s", code, b)
 	}
 	for _, bad := range []string{`{"url":"http://git.example.com","auto_install":true}`, `{"url":"git.example.com","auto_install":true}`, `{"concurrency":99,"auto_install":true}`} {
@@ -208,13 +217,20 @@ func newCLIFixture(t *testing.T) *cliFixture {
 	add("odd", "fedora/41/amd64/default", lxc.StatusRunning, "running")
 	fw := &cliWorkloads{
 		installed: map[string]string{ids["has-ch"]: "ch v1"},
-		fail:      map[string]string{ids["offline"]: "could not download ch from https://git.aspecracing.com.au/downloads/ch-linux-amd64: curl: (6) Could not resolve host"},
+		fail:      map[string]string{ids["offline"]: "could not download ch from https://codehold.example.com/downloads/ch-linux-amd64: curl: (6) Could not resolve host"},
 		hang:      map[string]bool{},
 	}
 	s.Workloads = fw
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return &cliFixture{s: s, mem: mem, fw: fw, do: chcliDo(t, ts, claimAdmin(t, ts, token)), ids: ids}
+	do := chcliDo(t, ts, claimAdmin(t, ts, token))
+	if code, _ := do("POST", "/api/v1/codehold-cli/rollout", `{"dry_run":true}`); code != http.StatusBadRequest {
+		t.Fatalf("a rollout with no CodeHold address must be refused: %d", code)
+	}
+	if code, b := do("PUT", "/api/v1/codehold-cli/settings", `{"url":"https://codehold.example.com","auto_install":true}`); code != 200 {
+		t.Fatalf("settings %d %s", code, b)
+	}
+	return &cliFixture{s: s, mem: mem, fw: fw, do: do, ids: ids}
 }
 
 func (f *cliFixture) rollout(t *testing.T, body string) *cliRollout {

@@ -19,10 +19,6 @@ const (
 	CodeholdCLI = "codehold-cli"
 )
 
-// DefaultCodeholdURL is the CodeHold server "ch" is downloaded from unless
-// the CodeHold CLI settings name another one.
-const DefaultCodeholdURL = "https://git.aspecracing.com.au"
-
 const (
 	CategoryContainers  = "containers"
 	CategoryDevelopment = "development"

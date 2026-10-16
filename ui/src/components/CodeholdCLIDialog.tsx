@@ -58,7 +58,6 @@ function summaryLine(r: CodeholdCLIRollout): string {
  */
 export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean; onClose: () => void; canChange: boolean }) {
   const [settings, setSettings] = useState<CodeholdCLISettings | null>(null);
-  const [defaultURL, setDefaultURL] = useState("");
   const [rollout, setRollout] = useState<CodeholdCLIRollout | null>(null);
   const [update, setUpdate] = useState(false);
   const [includeStopped, setIncludeStopped] = useState(false);
@@ -78,7 +77,6 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
     getCodeholdCLI()
       .then((body) => {
         setSettings(body.settings);
-        setDefaultURL(body.default_url);
         setRollout(body.rollout);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not read the settings"));
@@ -129,7 +127,7 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
   }
 
   const rows = rollout ? [...rollout.targets, ...(rollout.skipped ?? [])].sort((a, b) => a.name.localeCompare(b.name)) : [];
-  const url = settings?.url || defaultURL;
+  const url = settings?.url.trim().replace(/\/+$/, "") || "";
 
   return (
     <Dialog
@@ -165,17 +163,19 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
       {settings ? (
         <>
           <p>
-            <code>ch</code> is CodeHold's command line client. It is downloaded from <code>{url}/downloads</code> into <code>/usr/local/bin/ch</code>.
-            Nobody is signed in: each user runs <code>ch auth login --server {url}</code> themselves.
+            <code>ch</code> is CodeHold's command line client. It is downloaded from{" "}
+            <code>{url ? `${url}/downloads` : "your CodeHold server's /downloads"}</code> into <code>/usr/local/bin/ch</code>. Nobody is signed in: each
+            user runs <code>ch auth login --server {url || "<your CodeHold address>"}</code> themselves.
           </p>
+          {!url ? <p className="banner banner-warn">Set your CodeHold address and save before installing.</p> : null}
           <div className="form-grid">
             <label className="field">
               <span className="field-label">CodeHold address</span>
               <input
                 className="field-input"
                 type="url"
-                placeholder={defaultURL}
-                value={settings.url === defaultURL ? "" : settings.url}
+                placeholder="https://codehold.example.com"
+                value={settings.url}
                 disabled={!canChange}
                 onChange={(e) => setSettings({ ...settings, url: e.target.value })}
               />

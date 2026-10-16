@@ -42,9 +42,6 @@ func (s *Server) codeholdCLIConfig(ctx context.Context, clusterID string) codeho
 	if st, _ := s.Store.GetCodeholdCLISettings(ctx, clusterID); st != nil {
 		cfg = codeholdCLIConfig{URL: st.URL, AutoInstall: st.AutoInstall, Concurrency: st.Concurrency, TimeoutSeconds: st.TimeoutSeconds}
 	}
-	if strings.TrimSpace(cfg.URL) == "" {
-		cfg.URL = guestextras.DefaultCodeholdURL
-	}
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = chCLIDefaultConcurrency
 	}
@@ -71,6 +68,8 @@ func (s *Server) codeholdCLISource(ctx context.Context, clusterID string, extras
 	if !slices.Contains(extras, guestextras.CodeholdCLI) {
 		return nil
 	}
+	// With no CodeHold address set the install reports "no CodeHold address
+	// is configured" for that container.
 	src := &lxc.CodeholdSource{URL: s.codeholdCLIConfig(ctx, clusterID).URL}
 	src.AccessClientID, src.AccessClientSecret = s.codeholdCLIAccess(ctx, clusterID)
 	return src
@@ -82,7 +81,10 @@ func (s *Server) withDefaultExtras(ctx context.Context, clusterID, pin string, e
 	out := slices.DeleteFunc(slices.Clone(extras), func(id string) bool {
 		return id == guestextras.CodeholdCLI && optIn != nil && !*optIn
 	})
-	want := optIn != nil && *optIn || optIn == nil && s.codeholdCLIConfig(ctx, clusterID).AutoInstall
+	cfg := s.codeholdCLIConfig(ctx, clusterID)
+	// There is no built-in CodeHold server: until an address is set, new
+	// containers do not get the CLI by default.
+	want := optIn != nil && *optIn || optIn == nil && cfg.AutoInstall && cfg.URL != ""
 	if want && !slices.Contains(out, guestextras.CodeholdCLI) && guestextras.AvailabilityFor(pin, guestextras.CodeholdCLI).Available {
 		out = append(out, guestextras.CodeholdCLI)
 	}
@@ -99,7 +101,6 @@ func (s *Server) getCodeholdCLI(w http.ResponseWriter, r *http.Request) {
 	s.chCLIMu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"settings":    s.codeholdCLIConfig(r.Context(), p.User.ClusterID),
-		"default_url": guestextras.DefaultCodeholdURL,
 		"rollout":     last,
 	})
 }
@@ -120,9 +121,6 @@ func (s *Server) putCodeholdCLISettings(w http.ResponseWriter, r *http.Request) 
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-	}
-	if req.URL == guestextras.DefaultCodeholdURL {
-		req.URL = ""
 	}
 	if req.Concurrency < 0 || req.Concurrency > chCLIMaxConcurrency {
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("concurrency must be between 1 and %d", chCLIMaxConcurrency))
@@ -244,6 +242,10 @@ func (s *Server) startCodeholdCLIRollout(w http.ResponseWriter, r *http.Request)
 	}
 	clusterID := p.User.ClusterID
 	cfg := s.codeholdCLIConfig(r.Context(), clusterID)
+	if cfg.URL == "" {
+		writeErr(w, http.StatusBadRequest, "set the CodeHold address first")
+		return
+	}
 	if req.Concurrency <= 0 {
 		req.Concurrency = cfg.Concurrency
 	}

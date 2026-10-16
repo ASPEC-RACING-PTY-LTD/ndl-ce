@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodeholdCLIDialog } from "./CodeholdCLIDialog";
 
-const settings = { url: "https://git.aspecracing.com.au", auto_install: true, concurrency: 5, timeout_seconds: 600 };
+const settings = { url: "https://codehold.example.com", auto_install: true, concurrency: 5, timeout_seconds: 600 };
 
 const dryRun = {
   id: "r1",
@@ -35,7 +35,7 @@ describe("CodeholdCLIDialog", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost");
         let body: unknown = {};
-        if (url.pathname === "/api/v1/codehold-cli") body = { settings, default_url: settings.url, rollout: null };
+        if (url.pathname === "/api/v1/codehold-cli") body = { settings, rollout: null };
         if (url.pathname === "/api/v1/codehold-cli/rollout" && init?.method === "POST") {
           const req = JSON.parse(String(init.body));
           posts.push(req);
@@ -45,7 +45,7 @@ describe("CodeholdCLIDialog", () => {
       }),
     );
     render(<CodeholdCLIDialog open canChange onClose={() => undefined} />);
-    expect(await screen.findByText(/ch auth login --server https:\/\/git.aspecracing.com.au/)).toBeTruthy();
+    expect(await screen.findByText(/ch auth login --server https:\/\/codehold.example.com/)).toBeTruthy();
     const install = screen.getByRole("button", { name: "Install now" }) as HTMLButtonElement;
     expect(install.disabled).toBe(true);
 
@@ -63,7 +63,7 @@ describe("CodeholdCLIDialog", () => {
   it("hides the install button for read-only users", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ settings, default_url: settings.url, rollout: null }), { status: 200, headers: { "Content-Type": "application/json" } })),
+      vi.fn(async () => new Response(JSON.stringify({ settings, rollout: null }), { status: 200, headers: { "Content-Type": "application/json" } })),
     );
     render(<CodeholdCLIDialog open canChange={false} onClose={() => undefined} />);
     await screen.findByText(/each user runs/);
