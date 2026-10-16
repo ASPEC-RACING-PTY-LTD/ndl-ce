@@ -7284,6 +7284,77 @@ paths:
                 $ref: "#/components/schemas/RecoveryRestoreResponse"
         "422":
           description: The restore failed; restored says whether the database was replaced
+  /recovery:
+    get:
+      operationId: getRecovery
+      summary: After recovery from a platform backup, each workload's restore state and what its backup could not bring back (changes neither pushed nor backed up)
+      responses:
+        "200":
+          description: Recovery state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryWorkloads"
+  /recovery/workloads/{id}/restore:
+    post:
+      operationId: restoreRecoveredWorkload
+      summary: Owner only. Bring a recovered workload back (id "all" for every one not restored yet) in the background - base image for Smart and Custom backups, then its data, then repositories at the recorded commit, images by digest and compose projects. A workload that needs attention resumes with the approvals given.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryApprovals"
+      responses:
+        "202":
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryWorkloads"
+        "403":
+          description: Not an Owner
+        "409":
+          description: Not recovered, or the bucket connection is not verified
+  /backups/workload-options:
+    get:
+      operationId: listBackupWorkloadOptions
+      summary: Per-workload backup options
+      responses:
+        "200":
+          description: Options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupWorkloadOptionsList"
+  /backups/workload-options/{id}:
+    put:
+      operationId: setBackupWorkloadOptions
+      summary: Set a workload's backup options. keep_images keeps a copy of the images its containers run in its backups.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupWorkloadOptions"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupWorkloadOptions"
   /backups/restore-points:
     get:
       operationId: listBackupRestorePoints
@@ -14729,6 +14800,187 @@ components:
           type: boolean
         error:
           type: string
+    BackupWorkloadOptions:
+      type: object
+      properties:
+        workload_id:
+          type: string
+        keep_images:
+          type: boolean
+    BackupWorkloadOptionsList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupWorkloadOptions"
+    RecoveryApprovals:
+      type: object
+      properties:
+        use_tags:
+          type: array
+          description: Image references to pull by tag because their recorded digest is gone
+          items:
+            type: string
+        repo_tokens:
+          type: object
+          description: One-time clone tokens by repository path; used once, never stored
+          additionalProperties:
+            type: string
+    RecoveryRepoResult:
+      type: object
+      properties:
+        path:
+          type: string
+        status:
+          type: string
+        commit:
+          type: string
+        wanted:
+          type: string
+        branch:
+          type: string
+        via:
+          type: string
+        warning:
+          type: string
+        not_backed_up:
+          type: array
+          items:
+            type: string
+        unpushed_commits:
+          type: integer
+        error:
+          type: string
+    RecoveryImageResult:
+      type: object
+      properties:
+        ref:
+          type: string
+        digest:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+    RecoveryComposeResult:
+      type: object
+      properties:
+        dir:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+    RecoveryRehydrate:
+      type: object
+      properties:
+        repos:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryRepoResult"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryImageResult"
+        compose:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryComposeResult"
+        needs_attention:
+          type: boolean
+    RecoveryWorkloadRestore:
+      type: object
+      properties:
+        status:
+          type: string
+          description: pending, running, restored, needs_attention or failed
+        step:
+          type: string
+        backup_id:
+          type: string
+        capture_mode:
+          type: string
+        backed_up_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+        rehydrate:
+          $ref: "#/components/schemas/RecoveryRehydrate"
+    RecoveryLostRepo:
+      type: object
+      properties:
+        path:
+          type: string
+        not_backed_up:
+          type: array
+          items:
+            type: string
+        unpushed:
+          type: boolean
+        unpushed_commits:
+          type: integer
+    RecoveryWorkloadItem:
+      type: object
+      properties:
+        workload_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        power_before:
+          type: string
+        backed_up_at:
+          type: string
+          format: date-time
+        capture_mode:
+          type: string
+        no_offsite_point:
+          type: boolean
+        not_backed_up:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryLostRepo"
+        restore:
+          $ref: "#/components/schemas/RecoveryWorkloadRestore"
+    RecoveryRecord:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+        owner:
+          type: string
+        hostname:
+          type: string
+        snapshot_created_at:
+          type: string
+          format: date-time
+        target_id:
+          type: string
+        connection_verified:
+          type: boolean
+        connection_error:
+          type: string
+    RecoveryWorkloads:
+      type: object
+      properties:
+        recovered:
+          type: boolean
+        recovery:
+          $ref: "#/components/schemas/RecoveryRecord"
+        workloads:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecoveryWorkloadItem"
     BackupGitHoldRepo:
       type: object
       properties:

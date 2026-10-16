@@ -228,6 +228,16 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 		// to Git; Full keeps the working tree itself.
 		HoldUncommittedGit: settings.HoldUncommittedGit && bp.CaptureMode != appdb.BackupCaptureFull,
 	}
+	if opts, _ := s.Store.ListBackupWorkloadOptions(ctx, clusterID); opts[wl.ID].KeepImages {
+		req.KeepImages = true
+		if wl.Status == lxc.StatusRunning || wl.UnitActive {
+			// Refresh the kept copies in the live root before any snapshot.
+			raw, _ := json.Marshal(backuphost.Request{Action: backuphost.ActionExportImages, WorkloadID: wl.ID, WorkloadName: wl.Name})
+			if _, err := s.Backup.CopyBackup(ctx, qemu.BackupV2ExportImages, rootfs, string(raw)); err != nil {
+				s.recordStorageEvent("keep-images", false, wl.ID, wl.Name+": the image copies were not refreshed: "+err.Error())
+			}
+		}
+	}
 	source, release := s.zfsCaptureSource(ctx, clusterID, wl, vol, rootfs, run.ID)
 	defer release()
 	if source != rootfs {

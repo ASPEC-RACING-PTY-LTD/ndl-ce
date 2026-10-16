@@ -50,6 +50,7 @@ type Memory struct {
 	backupGitHolds     map[string]BackupGitHold
 	platformBackup     map[string]string
 	platformBackupKeys map[string]string
+	backupWorkloadOpts map[string]BackupWorkloadOptions
 	backupRepos        map[string]BackupRepository
 	backupPoints       map[string]BackupRestorePoint
 	backupUploadJobs   map[string][]BackupUploadJob

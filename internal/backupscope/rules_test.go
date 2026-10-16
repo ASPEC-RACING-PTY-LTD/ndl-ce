@@ -138,6 +138,9 @@ func TestSmartKeepsOnlyUntrackedConfigInGitTrees(t *testing.T) {
 	if r.Path != "/root/viewdock" || r.Branch != "main" || len(r.Commit) != 40 || !r.Dirty || !r.Unpushed {
 		t.Fatalf("repo record %+v", r)
 	}
+	if r.PushedBase != "" || r.UnpushedCommits != 1 {
+		t.Fatalf("a commit on no remote, with no pushed parent: %+v", r)
+	}
 	if len(r.Remotes) != 1 || strings.Contains(r.Remotes[0].URL, "s3cret") || strings.Contains(r.Remotes[0].URL, "user") {
 		t.Fatalf("remote URL must carry no credentials: %+v", r.Remotes)
 	}
@@ -170,5 +173,30 @@ func TestSafeRemoteURL(t *testing.T) {
 		if got := SafeRemoteURL(in); got != want {
 			t.Errorf("%s: %s, want %s", in, got, want)
 		}
+	}
+}
+
+func TestUnpushedCommitsRecordTheNewestPushedAncestor(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "srv/app")
+	mustWrite(t, filepath.Join(repo, "a.txt"), []byte("1"))
+	git(t, repo, "init", "-q", "-b", "main")
+	git(t, repo, "add", ".")
+	git(t, repo, "commit", "-q", "-m", "one")
+	git(t, repo, "remote", "add", "origin", "https://git.example.com/me/app.git")
+	git(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+	out, _ := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	pushed := strings.TrimSpace(string(out))
+	for _, msg := range []string{"two", "three"} {
+		mustWrite(t, filepath.Join(repo, "a.txt"), []byte(msg))
+		git(t, repo, "commit", "-q", "-am", msg)
+	}
+	prev, err := Discover(Options{Root: root, Mode: ModeSmart})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := prev.Repos[0]
+	if !r.Unpushed || r.PushedBase != pushed || r.UnpushedCommits != 2 {
+		t.Fatalf("repo %+v, want base %s", r, pushed)
 	}
 }

@@ -234,3 +234,58 @@ func (m *Memory) ReplaceBackupTargetConnection(_ context.Context, clusterID, id,
 	m.backupCreds[id] = pair
 	return nil
 }
+
+// BackupWorkloadOptions are one workload's backup options.
+type BackupWorkloadOptions struct {
+	ClusterID  string
+	WorkloadID string
+	// KeepImages keeps a copy of the workload's container images in its
+	// backups.
+	KeepImages bool
+}
+
+func (p *Postgres) ListBackupWorkloadOptions(ctx context.Context, clusterID string) (map[string]BackupWorkloadOptions, error) {
+	rows, err := p.DB.QueryContext(ctx, `SELECT workload_id, keep_images FROM backup_workload_options WHERE cluster_id=$1`, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]BackupWorkloadOptions{}
+	for rows.Next() {
+		o := BackupWorkloadOptions{ClusterID: clusterID}
+		if err := rows.Scan(&o.WorkloadID, &o.KeepImages); err != nil {
+			return nil, err
+		}
+		out[o.WorkloadID] = o
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) SetBackupWorkloadOptions(ctx context.Context, o BackupWorkloadOptions) error {
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO backup_workload_options (cluster_id, workload_id, keep_images, updated_at) VALUES ($1,$2,$3,now())
+ON CONFLICT (cluster_id, workload_id) DO UPDATE SET keep_images=EXCLUDED.keep_images, updated_at=now()`, o.ClusterID, o.WorkloadID, o.KeepImages)
+	return err
+}
+
+func (m *Memory) ListBackupWorkloadOptions(_ context.Context, clusterID string) (map[string]BackupWorkloadOptions, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]BackupWorkloadOptions{}
+	for _, o := range m.backupWorkloadOpts {
+		if o.ClusterID == clusterID {
+			out[o.WorkloadID] = o
+		}
+	}
+	return out, nil
+}
+
+func (m *Memory) SetBackupWorkloadOptions(_ context.Context, o BackupWorkloadOptions) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupWorkloadOpts == nil {
+		m.backupWorkloadOpts = map[string]BackupWorkloadOptions{}
+	}
+	m.backupWorkloadOpts[o.ClusterID+"/"+o.WorkloadID] = o
+	return nil
+}

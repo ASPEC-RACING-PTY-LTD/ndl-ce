@@ -113,6 +113,11 @@ type GitRepo struct {
 	// Unpushed is set when Commit is on no remote-tracking branch, so a
 	// fresh clone may not contain it.
 	Unpushed bool `json:"unpushed,omitempty"`
+	// PushedBase is, for an unpushed Commit, the newest first-parent
+	// ancestor that is on a remote: what a fresh clone can check out.
+	// UnpushedCommits counts the commits after it.
+	PushedBase      string `json:"pushed_base,omitempty"`
+	UnpushedCommits int    `json:"unpushed_commits,omitempty"`
 	// Kept are untracked configuration, database and .env files inside the
 	// tree that Smart captured anyway.
 	Kept  []string `json:"kept,omitempty"`

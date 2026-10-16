@@ -147,6 +147,10 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		out, err = h.remoteCheck(ctx, req)
 	case ActionKeyImport:
 		out, err = h.importKey(req)
+	case ActionExportImages:
+		out, err = h.exportImages(ctx, src, req)
+	case ActionRehydrate:
+		out, err = h.rehydrate(ctx, src, req)
 	case ActionGC:
 		rep := h.runGC(ctx, firstNonEmpty(req.Reason, "requested"))
 		out, err = h.status(req)
@@ -231,6 +235,9 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 	}
 	includes, excludes := backupscope.PlanCapture(prev)
 	excludes = append(excludes, defaultTechnicalExcludes(source)...)
+	if req.KeepImages {
+		includes = append(includes, KeptImagesDir)
+	}
 	bp.Includes = includes
 	bp.Excludes = excludes
 	bp.Repos = prev.Repos

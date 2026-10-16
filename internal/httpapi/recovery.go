@@ -395,8 +395,8 @@ type recoveryState struct {
 	// Power is each workload's (and "gs:" game server's) desired power
 	// before recovery held it stopped.
 	Power map[string]string `json:"power,omitempty"`
-	// Restored are the workloads whose data was restored.
-	Restored map[string]time.Time `json:"restored,omitempty"`
+	// Workloads are the restores of each workload since.
+	Workloads map[string]*workloadRestore `json:"workloads,omitempty"`
 }
 
 // recoverRestore restores the database and configuration, then moves the

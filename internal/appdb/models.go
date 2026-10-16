@@ -235,6 +235,9 @@ type Store interface {
 	// at new credentials.
 	RemapRecoveredHost(ctx context.Context, clusterID string, m HostRemap) (map[string]string, error)
 	ReplaceBackupTargetConnection(ctx context.Context, clusterID, id, endpoint, region, username, password string) error
+	// Per-workload backup options, by workload id.
+	ListBackupWorkloadOptions(ctx context.Context, clusterID string) (map[string]BackupWorkloadOptions, error)
+	SetBackupWorkloadOptions(ctx context.Context, o BackupWorkloadOptions) error
 	// Workloads whose backup waits on uncommitted Git work.
 	UpsertBackupGitHold(ctx context.Context, h BackupGitHold) error
 	ListBackupGitHolds(ctx context.Context, clusterID string) ([]BackupGitHold, error)

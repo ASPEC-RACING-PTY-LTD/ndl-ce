@@ -58,8 +58,40 @@ Access to the bucket and the ability to decrypt stay separate throughout: the
 bucket credentials find and download the backup, and only an Owner's password
 opens it.
 
-After recovery, workload data is restored from Backups; see
-[Backup Engine V2](backup-engine-v2.md).
+### Restoring the workloads
+
+After recovery, **Backups → Recovered from a platform backup** lists every
+workload with its newest offsite restore point and, before anything runs,
+**the changes that were not backed up**: commits that were never pushed and
+uncommitted files in its Git repositories. An Owner chooses **Restore all
+workloads** or restores them one by one. For each workload:
+
+1. A system container is created again from its definition. For a Smart or
+   Custom backup that starts from its base image; a Full backup is the whole
+   root. A VM gets its disk back.
+2. Its data is restored from the newest offsite restore point, on top of the
+   base image (paths never leave the workload's root).
+3. It is started, and what Smart left out is put back:
+   - Git repositories are cloned again and checked out at the exact recorded
+     commit. Credentials are tried in order: the workload's own (its
+     `~/.git-credentials`, `~/.ssh`, `ch` login, kept in its backup), then
+     the host's CodeHold login (`ch clone`), then a token the Owner gives for
+     that clone, which is used once and never stored. If none work it stops
+     and asks. A commit that was never pushed cannot be cloned: the newest
+     pushed ancestor is checked out instead, with a warning.
+   - Images come back from a kept copy, else by their recorded digest
+     (`repo@sha256:...`) and are tagged as before. Locally built images are
+     rebuilt from the Dockerfile at the checked-out commit. If a digest is
+     gone, the Owner is asked before the tag is used instead.
+   - Compose projects are started with the images above (no pulls by tag,
+     no builds at start).
+4. It gets back the power it had: running workloads are left running,
+   stopped ones are stopped again.
+
+A workload that needs input shows what it needs (a token for a repository,
+approval to use a tag) and continues from there without restoring its data
+again. A failed one can be tried again; what the failed attempt made is
+cleared first.
 
 ## Control plane down
 

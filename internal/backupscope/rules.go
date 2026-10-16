@@ -354,6 +354,19 @@ func inspectGit(dir, guestPath string) (backup.GitRepo, map[string]bool) {
 	if repo.Commit != "" && len(repo.Remotes) > 0 {
 		out, err := runGit(dir, "branch", "-r", "--contains", repo.Commit)
 		repo.Unpushed = err != nil || strings.TrimSpace(string(out)) == ""
+		if repo.Unpushed {
+			// The commits only this tree has, newest first; the parent of the
+			// oldest is the newest one a clone can get.
+			if out, err := runGit(dir, "rev-list", "--first-parent", repo.Commit, "--not", "--remotes"); err == nil {
+				ids := strings.Fields(string(out))
+				repo.UnpushedCommits = len(ids)
+				if len(ids) > 0 {
+					if base, err := runGit(dir, "rev-parse", "--verify", "-q", ids[len(ids)-1]+"^"); err == nil {
+						repo.PushedBase = strings.TrimSpace(string(base))
+					}
+				}
+			}
+		}
 	} else if repo.Commit != "" {
 		repo.Unpushed = true
 	}

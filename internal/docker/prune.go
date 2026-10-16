@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"io"
 	"net/url"
 )
 
@@ -73,4 +74,23 @@ func (e *Engine) ImageDigests(ctx context.Context, machineID string) (map[string
 		out[im.ID] = im.RepoDigests
 	}
 	return out, nil
+}
+
+// SaveImage writes image (a reference or id) to w as a docker-save tar.
+func (e *Engine) SaveImage(ctx context.Context, machineID, image string, w io.Writer) error {
+	sock, err := e.SocketFor(ctx, machineID)
+	if err != nil {
+		return err
+	}
+	cli, _ := e.client(sock).(*unixClient)
+	if cli == nil {
+		cli = sharedUnixClient(sock)
+	}
+	res, err := cli.do(ctx, "GET", "/images/"+url.PathEscape(image)+"/get", nil)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	_, err = io.Copy(w, res.Body)
+	return err
 }

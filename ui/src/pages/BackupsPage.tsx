@@ -49,6 +49,8 @@ import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { BackupGitHolds } from "../components/BackupGitHolds";
 import { PlatformBackupPanel } from "../components/PlatformBackup";
+import { RecoveryWorkloads } from "../components/RecoveryWorkloads";
+import { KeepImages } from "../components/KeepImages";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -1242,7 +1244,9 @@ export function BackupsPage() {
             </article>
           </div>
           <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
+          <RecoveryWorkloads owner={isAdmin(roles)} />
           <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
+          <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
           <BackupStoragePanel mutate={mutate} targets={targets ?? []} />
           <div className="card-grid">
           <section className="section-block" aria-labelledby="backup-policies-heading">

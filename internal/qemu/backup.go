@@ -51,6 +51,8 @@ const (
 	BackupV2PlatformObject = "v2-platform-object"
 	BackupV2RemoteCheck    = "v2-remote-check"
 	BackupV2KeyImport      = "v2-key-import"
+	BackupV2ExportImages   = "v2-export-images"
+	BackupV2Rehydrate      = "v2-rehydrate"
 	// BackupRootFS reports (Size 1) whether a path is on the host root
 	// filesystem. It only stats.
 	BackupRootFS = "root-fs"

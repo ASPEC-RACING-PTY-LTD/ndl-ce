@@ -1888,6 +1888,100 @@ export interface RecoveryRestoreResponse {
   error?: string;
 }
 
+export interface BackupWorkloadOptions {
+  workload_id?: string;
+  keep_images?: boolean;
+}
+
+export interface BackupWorkloadOptionsList {
+  items?: BackupWorkloadOptions[];
+}
+
+export interface RecoveryApprovals {
+  use_tags?: string[];
+  repo_tokens?: Record<string, unknown>;
+}
+
+export interface RecoveryRepoResult {
+  path?: string;
+  status?: string;
+  commit?: string;
+  wanted?: string;
+  branch?: string;
+  via?: string;
+  warning?: string;
+  not_backed_up?: string[];
+  unpushed_commits?: number;
+  error?: string;
+}
+
+export interface RecoveryImageResult {
+  ref?: string;
+  digest?: string;
+  status?: string;
+  error?: string;
+}
+
+export interface RecoveryComposeResult {
+  dir?: string;
+  status?: string;
+  error?: string;
+}
+
+export interface RecoveryRehydrate {
+  repos?: RecoveryRepoResult[];
+  images?: RecoveryImageResult[];
+  compose?: RecoveryComposeResult[];
+  needs_attention?: boolean;
+}
+
+export interface RecoveryWorkloadRestore {
+  status?: string;
+  step?: string;
+  backup_id?: string;
+  capture_mode?: string;
+  backed_up_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  error?: string;
+  rehydrate?: RecoveryRehydrate;
+}
+
+export interface RecoveryLostRepo {
+  path?: string;
+  not_backed_up?: string[];
+  unpushed?: boolean;
+  unpushed_commits?: number;
+}
+
+export interface RecoveryWorkloadItem {
+  workload_id?: string;
+  name?: string;
+  kind?: string;
+  power_before?: string;
+  backed_up_at?: string;
+  capture_mode?: string;
+  no_offsite_point?: boolean;
+  not_backed_up?: RecoveryLostRepo[];
+  restore?: RecoveryWorkloadRestore;
+}
+
+export interface RecoveryRecord {
+  at?: string;
+  owner?: string;
+  hostname?: string;
+  snapshot_created_at?: string;
+  target_id?: string;
+  connection_verified?: boolean;
+  connection_error?: string;
+}
+
+export interface RecoveryWorkloads {
+  recovered?: boolean;
+  recovery?: RecoveryRecord;
+  workloads?: RecoveryWorkloadItem[];
+}
+
 export interface BackupGitHoldRepo {
   path?: string;
   branch?: string;
@@ -3795,6 +3889,14 @@ export type RecoverConnectPath = "/api/v1/setup/recover/connect";
 export type RecoverUnlockPath = "/api/v1/setup/recover/unlock";
 
 export type RecoverRestorePath = "/api/v1/setup/recover/restore";
+
+export type GetRecoveryPath = "/api/v1/recovery";
+
+export type RestoreRecoveredWorkloadPath = "/api/v1/recovery/workloads/{id}/restore";
+
+export type ListBackupWorkloadOptionsPath = "/api/v1/backups/workload-options";
+
+export type SetBackupWorkloadOptionsPath = "/api/v1/backups/workload-options/{id}";
 
 export type ListBackupRestorePointsPath = "/api/v1/backups/restore-points";
 

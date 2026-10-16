@@ -38,6 +38,12 @@ const (
 	// ActionKeyImport installs a recovered repository key on a host whose
 	// repository is empty.
 	ActionKeyImport = "v2-key-import"
+	// ActionExportImages keeps docker-save copies of a workload's images in
+	// its root before a capture.
+	ActionExportImages = "v2-export-images"
+	// ActionRehydrate puts back what Smart left out of a restored, running
+	// workload: repositories, images and compose projects.
+	ActionRehydrate = "v2-rehydrate"
 
 	DefaultRoot                = "/var/lib/ndl/backup-repo"
 	DefaultMaxLocalBytes       = 50 << 30
@@ -92,6 +98,13 @@ type Request struct {
 	Sample int       `json:"sample,omitempty"`
 	// ImportKey is the hex repository key for ActionKeyImport.
 	ImportKey string `json:"import_key,omitempty"`
+	// KeepImages captures the kept image copies made by ActionExportImages.
+	KeepImages bool `json:"keep_images,omitempty"`
+	// UseTags are image references the Owner approved pulling by tag when
+	// their recorded digest is gone; RepoTokens are one-time clone tokens
+	// by repository path. Never logged or stored.
+	UseTags    []string          `json:"use_tags,omitempty"`
+	RepoTokens map[string]string `json:"repo_tokens,omitempty"`
 }
 
 // PointID names a restore point.
@@ -174,6 +187,10 @@ type Result struct {
 	NotFound     bool                 `json:"not_found,omitempty"`
 	Objects      []backup.ObjectInfo  `json:"objects,omitempty"`
 	RemoteChecks []backup.RemoteCheck `json:"remote_checks,omitempty"`
+	// KeptImages are the image references ActionExportImages kept.
+	KeptImages []string `json:"kept_images,omitempty"`
+	// Rehydrate reports ActionRehydrate.
+	Rehydrate *RehydrateResult `json:"rehydrate,omitempty"`
 }
 
 // GitSaveResult is the outcome of saving one repository.
@@ -242,7 +259,7 @@ type WorkspaceStatus struct {
 func IsAction(action string) bool {
 	switch action {
 	case ActionCapture, ActionRestore, ActionStatus, ActionPreview, ActionExpire, ActionWorkspace, ActionEnqueue,
-		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck, ActionKeyImport:
+		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck, ActionKeyImport, ActionExportImages, ActionRehydrate:
 		return true
 	default:
 		return false

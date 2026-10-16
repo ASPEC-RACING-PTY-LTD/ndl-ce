@@ -279,7 +279,12 @@ whole-rootfs tar format.
     media file of 200 MB or more.
   Git working trees are left to Git: the Blueprint records each repository's
   remotes (credentials stripped), branch, exact commit, whether it is dirty
-  or has unpushed commits, and the changed paths. Only untracked or ignored
+  or has unpushed commits (with the newest pushed ancestor and how many
+  commits follow it), and the changed paths. Docker images are recorded by
+  digest (`repo@sha256:...`), and images built locally as such. Per
+  workload, Backups → Container image copies keeps a docker-save copy of the
+  images it runs in its backups (`/var/lib/ndl-backup/images` in the guest,
+  refreshed before each backup), for images that may leave their registry. Only untracked or ignored
   local files that cannot be re-cloned are kept: `.env*` files, databases
   (with their `-wal`/`-shm`), keys and small config files outside build
   folders. Their contents are never read. Git is run with system and user

@@ -1860,6 +1860,32 @@ export async function rotatePlatformBackupKey(password: string): Promise<import(
   return readJson(await request("/platform-backup/rotate", { method: "POST", body: JSON.stringify({ password }) }));
 }
 
+export async function getRecovery(): Promise<import("../generated/openapi").RecoveryWorkloads> {
+  return readJson(await request("/recovery"));
+}
+
+export async function restoreRecoveredWorkload(
+  id: string,
+  approvals: import("../generated/openapi").RecoveryApprovals = {},
+): Promise<import("../generated/openapi").RecoveryWorkloads> {
+  return readJson(
+    await request(`/recovery/workloads/${encodeURIComponent(id)}/restore`, { method: "POST", body: JSON.stringify(approvals) }),
+  );
+}
+
+export async function listBackupWorkloadOptions(): Promise<import("../generated/openapi").BackupWorkloadOptionsList> {
+  return readJson(await request("/backups/workload-options"));
+}
+
+export async function setBackupWorkloadOptions(
+  id: string,
+  body: import("../generated/openapi").BackupWorkloadOptions,
+): Promise<import("../generated/openapi").BackupWorkloadOptions> {
+  return readJson(
+    await request(`/backups/workload-options/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
+  );
+}
+
 export async function listBackupGitHolds(): Promise<import("../generated/openapi").BackupGitHoldListResponse> {
   return readJson(await request("/backups/git-holds"));
 }
