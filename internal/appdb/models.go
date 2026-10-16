@@ -225,6 +225,10 @@ type Store interface {
 
 	GetBackupWorkspaceSettings(ctx context.Context, clusterID string) (*BackupWorkspaceSettings, error)
 	UpsertBackupWorkspaceSettings(ctx context.Context, s BackupWorkspaceSettings) error
+	// Workloads whose backup waits on uncommitted Git work.
+	UpsertBackupGitHold(ctx context.Context, h BackupGitHold) error
+	ListBackupGitHolds(ctx context.Context, clusterID string) ([]BackupGitHold, error)
+	DeleteBackupGitHold(ctx context.Context, clusterID, workloadID string) error
 	UpsertBackupRepository(ctx context.Context, r BackupRepository) error
 	GetBackupRepository(ctx context.Context, clusterID string) (*BackupRepository, error)
 	UpsertBackupRestorePoint(ctx context.Context, p BackupRestorePoint) error

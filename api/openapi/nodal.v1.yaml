@@ -6970,6 +6970,48 @@ paths:
           description: Forbidden
         "409":
           description: Confirmation missing or the name does not match
+  /backups/git-holds:
+    get:
+      operationId: listBackupGitHolds
+      summary: Workloads whose Smart backup is held for uncommitted or unpushed Git work (only when ignoring uncommitted Git is turned off)
+      responses:
+        "200":
+          description: Held workloads
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupGitHoldListResponse"
+        "401":
+          description: Unauthenticated
+  /backups/git-holds/{workload}:
+    post:
+      operationId: resolveBackupGitHold
+      summary: Owner only. "retry" backs the workload up again after the work was committed and pushed by hand; "save" has NDL-CE commit and push it from inside the guest (secret-like, database and large files are left out and never read), then retries.
+      parameters:
+        - name: workload
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupGitHoldAction"
+      responses:
+        "200":
+          description: The outcome and the retried run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupGitHoldResult"
+        "403":
+          description: Not an Owner
+        "404":
+          description: Not held
+        "422":
+          description: Saving failed; see error and saved
   /backups/restore-points:
     get:
       operationId: listBackupRestorePoints
@@ -13911,6 +13953,102 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BackupArtifact"
+    BackupGitHoldRepo:
+      type: object
+      properties:
+        path:
+          type: string
+        branch:
+          type: string
+        commit:
+          type: string
+        remotes:
+          type: array
+          items:
+            type: string
+        unpushed:
+          type: boolean
+        unsaved:
+          type: array
+          description: Changed paths neither Git nor the backup holds (names only).
+          items:
+            type: string
+        more_changes:
+          type: boolean
+    BackupGitHold:
+      type: object
+      properties:
+        workload_id:
+          type: string
+        workload_name:
+          type: string
+        policy_id:
+          type: string
+        target_id:
+          type: string
+        repos:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupGitHoldRepo"
+        last_action:
+          type: string
+        last_error:
+          type: string
+        held_since:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    BackupGitHoldListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupGitHold"
+    BackupGitHoldAction:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - retry
+            - save
+    BackupGitSaveResult:
+      type: object
+      properties:
+        path:
+          type: string
+        committed:
+          type: boolean
+        pushed:
+          type: boolean
+        commit:
+          type: string
+        skipped:
+          type: array
+          items:
+            type: string
+        error:
+          type: string
+    BackupGitHoldResult:
+      type: object
+      properties:
+        workload_id:
+          type: string
+        held:
+          type: boolean
+        error:
+          type: string
+        saved:
+          type: array
+          items:
+            $ref: "#/components/schemas/BackupGitSaveResult"
+        run:
+          $ref: "#/components/schemas/BackupRun"
     BackupWorkspace:
       type: object
       additionalProperties: false
@@ -13944,6 +14082,9 @@ components:
         compression_level:
           type: integer
           description: zstd level 1-22; 0 uses the default (19), -1 stores chunks uncompressed.
+        ignore_uncommitted_git:
+          type: boolean
+          description: Default true. When false, a Smart or Custom backup of a workload whose Git repositories have uncommitted or unpushed work is held and the Owner is told. Only an Owner may change it.
         physical_bytes:
           type: integer
         pending_bytes:

@@ -39,10 +39,10 @@ WHERE cluster_id=$1 AND id=$2`,
 
 func (p *Postgres) GetBackupWorkspaceSettings(ctx context.Context, clusterID string) (*BackupWorkspaceSettings, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT cluster_id::text, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, COALESCE(cache_retention_hours, 0), COALESCE(compression_level, 0), updated_at
+SELECT cluster_id::text, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, COALESCE(cache_retention_hours, 0), COALESCE(compression_level, 0), COALESCE(hold_uncommitted_git, false), updated_at
 FROM backup_workspace_settings WHERE cluster_id=$1`, clusterID)
 	var s BackupWorkspaceSettings
-	err := row.Scan(&s.ClusterID, &s.MaxLocalBytes, &s.MinHostFreeBytes, &s.CaptureConcurrency, &s.UploadWorkers, &s.BandwidthLimitBPS, &s.CacheRetentionHours, &s.CompressionLevel, &s.UpdatedAt)
+	err := row.Scan(&s.ClusterID, &s.MaxLocalBytes, &s.MinHostFreeBytes, &s.CaptureConcurrency, &s.UploadWorkers, &s.BandwidthLimitBPS, &s.CacheRetentionHours, &s.CompressionLevel, &s.HoldUncommittedGit, &s.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultBackupWorkspaceSettings(clusterID), nil
 	}
@@ -57,8 +57,8 @@ func (p *Postgres) UpsertBackupWorkspaceSettings(ctx context.Context, s BackupWo
 		s.UpdatedAt = time.Now().UTC()
 	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_workspace_settings (cluster_id, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, cache_retention_hours, compression_level, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$8)
+INSERT INTO backup_workspace_settings (cluster_id, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, cache_retention_hours, compression_level, hold_uncommitted_git, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$10,$8)
 ON CONFLICT (cluster_id) DO UPDATE SET
   max_local_bytes=EXCLUDED.max_local_bytes,
   min_host_free_bytes=EXCLUDED.min_host_free_bytes,
@@ -67,8 +67,9 @@ ON CONFLICT (cluster_id) DO UPDATE SET
   bandwidth_limit_bps=EXCLUDED.bandwidth_limit_bps,
   cache_retention_hours=EXCLUDED.cache_retention_hours,
   compression_level=EXCLUDED.compression_level,
+  hold_uncommitted_git=EXCLUDED.hold_uncommitted_git,
   updated_at=EXCLUDED.updated_at`,
-		s.ClusterID, s.MaxLocalBytes, s.MinHostFreeBytes, s.CaptureConcurrency, s.UploadWorkers, s.BandwidthLimitBPS, s.CacheRetentionHours, s.UpdatedAt, s.CompressionLevel)
+		s.ClusterID, s.MaxLocalBytes, s.MinHostFreeBytes, s.CaptureConcurrency, s.UploadWorkers, s.BandwidthLimitBPS, s.CacheRetentionHours, s.UpdatedAt, s.CompressionLevel, s.HoldUncommittedGit)
 	return err
 }
 
@@ -289,5 +290,40 @@ INSERT INTO backup_policy_offsite (policy_id, cluster_id, keep_daily, keep_weekl
 VALUES ($2, $1, $3, $4, $5)
 ON CONFLICT (policy_id) DO UPDATE SET keep_daily=EXCLUDED.keep_daily, keep_weekly=EXCLUDED.keep_weekly, keep_monthly=EXCLUDED.keep_monthly`,
 		clusterID, policyID, o.KeepDaily, o.KeepWeekly, o.KeepMonthly)
+	return err
+}
+
+func (p *Postgres) UpsertBackupGitHold(ctx context.Context, h BackupGitHold) error {
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO backup_git_holds (cluster_id, workload_id, repos_json, fingerprint, last_action, last_error, policy_id, target_id, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now(),now())
+ON CONFLICT (cluster_id, workload_id) DO UPDATE SET
+  policy_id=EXCLUDED.policy_id, target_id=EXCLUDED.target_id, repos_json=EXCLUDED.repos_json, fingerprint=EXCLUDED.fingerprint,
+  last_action=EXCLUDED.last_action, last_error=EXCLUDED.last_error, updated_at=now()`,
+		h.ClusterID, h.WorkloadID, h.ReposJSON, h.Fingerprint, h.LastAction, h.LastError, h.PolicyID, h.TargetID)
+	return err
+}
+
+func (p *Postgres) ListBackupGitHolds(ctx context.Context, clusterID string) ([]BackupGitHold, error) {
+	rows, err := p.DB.QueryContext(ctx, `
+SELECT cluster_id::text, workload_id, policy_id, target_id, repos_json, fingerprint, last_action, last_error, created_at, updated_at
+FROM backup_git_holds WHERE cluster_id=$1 ORDER BY workload_id`, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BackupGitHold{}
+	for rows.Next() {
+		var h BackupGitHold
+		if err := rows.Scan(&h.ClusterID, &h.WorkloadID, &h.PolicyID, &h.TargetID, &h.ReposJSON, &h.Fingerprint, &h.LastAction, &h.LastError, &h.CreatedAt, &h.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) DeleteBackupGitHold(ctx context.Context, clusterID, workloadID string) error {
+	_, err := p.DB.ExecContext(ctx, `DELETE FROM backup_git_holds WHERE cluster_id=$1 AND workload_id=$2`, clusterID, workloadID)
 	return err
 }

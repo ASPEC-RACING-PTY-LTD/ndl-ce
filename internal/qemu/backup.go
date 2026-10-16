@@ -47,6 +47,7 @@ const (
 	BackupV2Verify      = "v2-verify"
 	BackupV2Key         = "v2-key"
 	BackupV2WipeRemote  = "v2-wipe-remote"
+	BackupV2GitSave     = "v2-git-save"
 	// BackupRootFS reports (Size 1) whether a path is on the host root
 	// filesystem. It only stats.
 	BackupRootFS = "root-fs"

@@ -119,6 +119,32 @@ type GitRepo struct {
 	Error string   `json:"error,omitempty"`
 }
 
+// GitChangedLimit caps GitRepo.Changed; a repository with more changes is
+// treated as having unsaved work.
+const GitChangedLimit = 200
+
+// Unsaved lists changed paths that neither Git nor the backup holds: a
+// changed path is covered when Smart kept it as an untracked keep-file.
+func (g GitRepo) Unsaved() []string {
+	kept := map[string]bool{}
+	for _, k := range g.Kept {
+		kept[strings.TrimPrefix(strings.TrimPrefix(k, g.Path), "/")] = true
+	}
+	var out []string
+	for _, c := range g.Changed {
+		if !kept[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// AtRisk reports work a fresh clone would lose: commits on no remote,
+// changes the backup does not keep, or more changes than were listed.
+func (g GitRepo) AtRisk() bool {
+	return g.Unpushed || len(g.Unsaved()) > 0 || len(g.Changed) >= GitChangedLimit
+}
+
 // GitRemote is one configured remote.
 type GitRemote struct {
 	Name string `json:"name"`

@@ -1816,6 +1816,22 @@ export async function getBackupTargetUsage(id: string): Promise<import("../gener
   return readJson(await request(`/backups/targets/${encodeURIComponent(id)}/usage`));
 }
 
+export async function listBackupGitHolds(): Promise<import("../generated/openapi").BackupGitHoldListResponse> {
+  return readJson(await request("/backups/git-holds"));
+}
+
+export async function resolveBackupGitHold(
+  workloadId: string,
+  action: "retry" | "save",
+): Promise<import("../generated/openapi").BackupGitHoldResult> {
+  return readJson(
+    await request(`/backups/git-holds/${encodeURIComponent(workloadId)}`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    }),
+  );
+}
+
 export async function patchBackupWorkspace(
   body: import("../generated/openapi").BackupWorkspace,
 ): Promise<import("../generated/openapi").BackupWorkspace> {

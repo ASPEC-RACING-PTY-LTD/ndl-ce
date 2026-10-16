@@ -287,6 +287,23 @@ whole-rootfs tar format.
   mounts that hold a repository follow the same rule. Uncertain
   classification is protected or flagged. Smart cannot rebuild a complete
   guest by itself.
+
+  **Uncommitted Git work.** Backups → Workspace → *Ignore uncommitted Git
+  repositories* is on by default. When an Owner turns it off, a Smart or
+  Custom backup of a workload with a repository that has commits on no
+  remote, or changes Git and the backup do not hold, is held: no restore
+  point is made, the run fails with "backup held", and the Owner is told
+  once per change (event `backup.git_hold` and notification channels). A
+  changed file the backup keeps anyway (an untracked `.env`, database or
+  small config file) does not hold it. The Backups page lists held workloads
+  with the repositories, branches and changed paths, and an Owner can:
+  - commit and push by hand, then choose *I saved it, back up now*;
+  - choose *Commit and push for me*: the agent runs Git inside the guest,
+    as its root with its own Git credentials, stages tracked changes and new
+    files, never adds `.env`, keys, certificates, databases, files named like
+    secrets or files over 10 MB (they are reported, never read), commits,
+    pushes to the upstream (or `origin`), then retries the backup;
+  - turn ignoring back on, which releases every held workload.
 - `custom`: user include/exclude plus detected-category overrides.
 
 Scope discovery uses filesystem metadata (stat) and does not require a

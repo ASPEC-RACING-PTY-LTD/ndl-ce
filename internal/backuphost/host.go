@@ -139,6 +139,8 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		out, err = h.wipeRemote(ctx, req)
 	case ActionEnqueue:
 		out, err = h.enqueue(ctx, req)
+	case ActionGitSave:
+		out, err = h.gitSave(ctx, src, req)
 	case ActionGC:
 		rep := h.runGC(ctx, firstNonEmpty(req.Reason, "requested"))
 		out, err = h.status(req)
@@ -209,6 +211,17 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 	})
 	if err != nil {
 		return Result{}, err
+	}
+	if req.HoldUncommittedGit {
+		var held []backup.GitRepo
+		for _, r := range prev.Repos {
+			if r.AtRisk() {
+				held = append(held, r)
+			}
+		}
+		if len(held) > 0 {
+			return Result{WorkloadID: req.WorkloadID, WorkloadName: req.WorkloadName, CaptureMode: mode, GitHold: held, Preview: prev}, nil
+		}
 	}
 	includes, excludes := backupscope.PlanCapture(prev)
 	excludes = append(excludes, defaultTechnicalExcludes(source)...)

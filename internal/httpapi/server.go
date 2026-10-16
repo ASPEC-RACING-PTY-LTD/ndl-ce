@@ -563,6 +563,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/backups/workspace/relocate", s.relocateBackupRepository)
 	mux.HandleFunc("GET /api/v1/backups/targets/{id}/usage", s.getBackupTargetUsage)
 	mux.HandleFunc("POST /api/v1/backups/targets/{id}/wipe", s.wipeBackupTarget)
+	mux.HandleFunc("GET /api/v1/backups/git-holds", s.listBackupGitHolds)
+	mux.HandleFunc("POST /api/v1/backups/git-holds/{workload}", s.resolveBackupGitHold)
 	mux.HandleFunc("GET /api/v1/backups/locations", s.listBackupLocations)
 	mux.HandleFunc("POST /api/v1/backups/key/export", s.exportBackupKey)
 	mux.HandleFunc("POST /api/v1/backups/workspace/verify", s.runBackupVerifyAPI)

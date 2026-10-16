@@ -285,8 +285,6 @@ func bindHoldsGit(bind string, gitRoots map[string]string) bool {
 	return false
 }
 
-const gitChangedLimit = 200
-
 // runGit runs git read-only against a working tree that belongs to a
 // workload. Repository configuration is untrusted: hooks, fsmonitor and
 // every transport are disabled, global and system config are ignored, and
@@ -342,13 +340,13 @@ func inspectGit(dir, guestPath string) (backup.GitRepo, map[string]bool) {
 			repo.Remotes = append(repo.Remotes, backup.GitRemote{Name: f[0], URL: SafeRemoteURL(f[1])})
 		}
 	}
-	if out, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=normal"); err == nil {
+	if out, err := runGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=all"); err == nil {
 		for _, e := range bytes.Split(out, []byte{0}) {
 			if len(e) < 4 {
 				continue
 			}
 			repo.Dirty = true
-			if len(repo.Changed) < gitChangedLimit {
+			if len(repo.Changed) < backup.GitChangedLimit {
 				repo.Changed = append(repo.Changed, string(e[3:]))
 			}
 		}
@@ -370,4 +368,51 @@ func SafeRemoteURL(raw string) string {
 		return u.String()
 	}
 	return raw
+}
+
+// secretNames are files that hold credentials whatever their extension.
+var secretNames = map[string]bool{
+	".netrc": true, ".npmrc": true, ".pypirc": true, ".pgpass": true, ".git-credentials": true,
+	".htpasswd": true, "id_rsa": true, "id_dsa": true, "id_ecdsa": true, "id_ed25519": true,
+	"credentials": true, "known_hosts": true, "authorized_keys": true,
+}
+
+var secretExt = map[string]bool{".tfstate": true, ".tfvars": true, ".kdbx": true, ".keystore": true, ".jks": true}
+
+// SecretLike reports whether a path looks like it holds secrets or local
+// state that must never be committed on the owner's behalf: .env files,
+// keys and certificates, databases, credential files, or names that say
+// secret, token, password or credential. Only the name is looked at.
+func SecretLike(rel string) bool {
+	name := strings.ToLower(path.Base(filepath.ToSlash(rel)))
+	if name == ".env" || strings.HasPrefix(name, ".env.") || strings.HasSuffix(name, ".env") || secretNames[name] {
+		return true
+	}
+	for _, w := range []string{"secret", "token", "passw", "credential", "private"} {
+		if strings.Contains(name, w) {
+			return true
+		}
+	}
+	base := name
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	ext := path.Ext(base)
+	return keepKeyExt[ext] || sqliteExt[ext] || ext == ".db3" || secretExt[ext]
+}
+
+// UntrackedFiles lists files in the repository at root/guestRepo that Git
+// neither tracks nor ignores, relative to the repository. Read only.
+func UntrackedFiles(root, guestRepo string) ([]string, error) {
+	out, err := runGit(filepath.Join(root, strings.TrimPrefix(guestRepo, "/")), "ls-files", "-o", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range bytes.Split(out, []byte{0}) {
+		if len(f) > 0 {
+			files = append(files, string(f))
+		}
+	}
+	return files, nil
 }

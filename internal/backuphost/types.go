@@ -26,6 +26,9 @@ const (
 	ActionKey = "v2-key"
 	// ActionWipeRemote deletes every backup object in a target.
 	ActionWipeRemote = "v2-wipe-remote"
+	// ActionGitSave commits and pushes the uncommitted work of a workload's
+	// Git repositories from inside the guest, leaving secret-like files out.
+	ActionGitSave = "v2-git-save"
 
 	DefaultRoot                = "/var/lib/ndl/backup-repo"
 	DefaultMaxLocalBytes       = 50 << 30
@@ -64,6 +67,11 @@ type Request struct {
 	Flatten  bool   `json:"flatten,omitempty"`
 	// RemoteOnly expires only the remote copy and keeps the local one.
 	RemoteOnly bool `json:"remote_only,omitempty"`
+	// HoldUncommittedGit refuses a capture while a Git repository in the
+	// workload has work a fresh clone would lose; the result lists them.
+	HoldUncommittedGit bool `json:"hold_uncommitted_git,omitempty"`
+	// Repos are the guest paths of the repositories ActionGitSave saves.
+	Repos []string `json:"repos,omitempty"`
 }
 
 // TargetSpec describes a destination. Secrets stay on this request only.
@@ -131,6 +139,21 @@ type Result struct {
 	Verify          []VerifyResult             `json:"verify,omitempty"`
 	Key             string                     `json:"key,omitempty"`
 	Wipe            *WipeResult                `json:"wipe,omitempty"`
+	// GitHold is set instead of a restore point when the capture was held
+	// for uncommitted Git work.
+	GitHold []backup.GitRepo `json:"git_hold,omitempty"`
+	// GitSave reports ActionGitSave per repository.
+	GitSave []GitSaveResult `json:"git_save,omitempty"`
+}
+
+// GitSaveResult is the outcome of saving one repository.
+type GitSaveResult struct {
+	Path      string   `json:"path"`
+	Committed bool     `json:"committed,omitempty"`
+	Pushed    bool     `json:"pushed,omitempty"`
+	Commit    string   `json:"commit,omitempty"`
+	Skipped   []string `json:"skipped,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // PointView is a secret-free restore-point summary.
@@ -189,7 +212,7 @@ type WorkspaceStatus struct {
 func IsAction(action string) bool {
 	switch action {
 	case ActionCapture, ActionRestore, ActionStatus, ActionPreview, ActionExpire, ActionWorkspace, ActionEnqueue,
-		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote:
+		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave:
 		return true
 	default:
 		return false

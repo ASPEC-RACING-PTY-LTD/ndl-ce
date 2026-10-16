@@ -214,7 +214,29 @@ type BackupWorkspaceSettings struct {
 	// CompressionLevel is the zstd level for new chunks: 0 default (19),
 	// 1-22, or -1 off.
 	CompressionLevel int
-	UpdatedAt        time.Time
+	// HoldUncommittedGit holds a workload's Smart backup while one of its
+	// Git repositories has uncommitted or unpushed work. Off (ignore) by
+	// default.
+	HoldUncommittedGit bool
+	UpdatedAt          time.Time
+}
+
+// BackupGitHold is a workload whose backup waits on uncommitted Git work.
+type BackupGitHold struct {
+	ClusterID  string
+	WorkloadID string
+	// PolicyID and TargetID are those of the held run, so it can be retried.
+	PolicyID string
+	TargetID string
+	// ReposJSON is the []backup.GitRepo of the held repositories.
+	ReposJSON string
+	// Fingerprint changes when the held work changes, so the Owner is told
+	// once per change rather than on every scheduled run.
+	Fingerprint string
+	LastAction  string
+	LastError   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // BackupRepository is the catalogued local V2 store.
@@ -754,5 +776,43 @@ func (m *Memory) UpsertBackupPolicyOffsite(_ context.Context, clusterID, policyI
 		m.policyOffsite = map[string]BackupOffsite{}
 	}
 	m.policyOffsite[clusterID+"/"+policyID] = o
+	return nil
+}
+
+func (m *Memory) UpsertBackupGitHold(_ context.Context, h BackupGitHold) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.backupGitHolds == nil {
+		m.backupGitHolds = map[string]BackupGitHold{}
+	}
+	now := time.Now().UTC()
+	key := h.ClusterID + "/" + h.WorkloadID
+	if cur, ok := m.backupGitHolds[key]; ok {
+		h.CreatedAt = cur.CreatedAt
+	} else if h.CreatedAt.IsZero() {
+		h.CreatedAt = now
+	}
+	h.UpdatedAt = now
+	m.backupGitHolds[key] = h
+	return nil
+}
+
+func (m *Memory) ListBackupGitHolds(_ context.Context, clusterID string) ([]BackupGitHold, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []BackupGitHold{}
+	for _, h := range m.backupGitHolds {
+		if h.ClusterID == clusterID {
+			out = append(out, h)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].WorkloadID < out[j].WorkloadID })
+	return out, nil
+}
+
+func (m *Memory) DeleteBackupGitHold(_ context.Context, clusterID, workloadID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.backupGitHolds, clusterID+"/"+workloadID)
 	return nil
 }

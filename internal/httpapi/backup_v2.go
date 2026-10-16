@@ -43,6 +43,9 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 		BandwidthLimitBPS   *int64 `json:"bandwidth_limit_bps"`
 		CacheRetentionHours *int   `json:"cache_retention_hours"`
 		CompressionLevel    *int   `json:"compression_level"`
+		// IgnoreUncommittedGit (default true) backs up workloads whatever
+		// the state of their Git repositories. Only an Owner may change it.
+		IgnoreUncommittedGit *bool `json:"ignore_uncommitted_git"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid workspace settings")
@@ -77,6 +80,15 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		cur.CompressionLevel = *req.CompressionLevel
 	}
+	clearHolds := false
+	if req.IgnoreUncommittedGit != nil {
+		if !hasRole(p, rbac.Admin) {
+			writeErr(w, http.StatusForbidden, "only an Owner can change how uncommitted Git work is handled")
+			return
+		}
+		cur.HoldUncommittedGit = !*req.IgnoreUncommittedGit
+		clearHolds = *req.IgnoreUncommittedGit
+	}
 	if cur.MaxLocalBytes < 0 || cur.MinHostFreeBytes < 0 || cur.CaptureConcurrency < 0 || cur.UploadWorkers < 0 || cur.BandwidthLimitBPS < 0 || cur.CacheRetentionHours < 0 {
 		writeErr(w, http.StatusBadRequest, "workspace limits cannot be negative")
 		return
@@ -90,6 +102,14 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.UpsertBackupWorkspaceSettings(r.Context(), *cur); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if clearHolds {
+		// Ignoring again releases every held workload; the next scheduled
+		// run backs them up.
+		holds, _ := s.Store.ListBackupGitHolds(r.Context(), p.User.ClusterID)
+		for _, h := range holds {
+			_ = s.Store.DeleteBackupGitHold(r.Context(), p.User.ClusterID, h.WorkloadID)
+		}
 	}
 	st, _ := s.v2Status(r.Context(), p.User.ClusterID, *cur)
 	writeJSON(w, http.StatusOK, workspaceJSON(*cur, st))
@@ -204,6 +224,9 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 		Unit: unit, CaptureMode: bp.CaptureMode, Blueprint: bp, Selection: sel,
 		Settings: hostSettings(*settings),
 		Target:   s.v2TargetSpec(ctx, tgt),
+		// Holding only matters for Smart and Custom, which leave Git trees
+		// to Git; Full keeps the working tree itself.
+		HoldUncommittedGit: settings.HoldUncommittedGit && bp.CaptureMode != appdb.BackupCaptureFull,
 	}
 	source, release := s.zfsCaptureSource(ctx, clusterID, wl, vol, rootfs, run.ID)
 	defer release()
@@ -218,6 +241,14 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 	if err != nil {
 		return err
 	}
+	var held backuphost.Result
+	if res.Extra != "" {
+		_ = json.Unmarshal([]byte(res.Extra), &held)
+	}
+	if len(held.GitHold) > 0 {
+		return s.recordGitHold(ctx, clusterID, wl, run, held.GitHold)
+	}
+	_ = s.Store.DeleteBackupGitHold(ctx, clusterID, wl.ID)
 	return s.recordV2Artifact(ctx, clusterID, wl, tgt, run, artifactID, res)
 }
 
@@ -496,8 +527,9 @@ func workspaceJSON(s appdb.BackupWorkspaceSettings, st backuphost.Result) map[st
 		"compression_level": backup.NormalizeCompressionLevel(s.CompressionLevel),
 		"max_local_bytes":   s.MaxLocalBytes, "min_host_free_bytes": s.MinHostFreeBytes,
 		"capture_concurrency": s.CaptureConcurrency, "upload_workers": s.UploadWorkers,
-		"bandwidth_limit_bps": s.BandwidthLimitBPS,
-		"repo_bytes":          st.RepoBytes, "pending_uploads": st.PendingUploads,
+		"bandwidth_limit_bps":    s.BandwidthLimitBPS,
+		"ignore_uncommitted_git": !s.HoldUncommittedGit,
+		"repo_bytes":             st.RepoBytes, "pending_uploads": st.PendingUploads,
 		"protected_workloads": st.Protected, "host_free_bytes": st.Workspace.HostFreeBytes,
 		"capture_busy": st.Workspace.CaptureBusy, "capture_active": st.Workspace.CaptureActive,
 		"root":                    firstNonEmpty(st.Workspace.Root, backuphost.DefaultRoot),

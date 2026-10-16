@@ -580,7 +580,7 @@ export function CloudflarePage() {
   function showPermissionsFor(credIDs: string[]) {
     setView("accounts");
     setPermsOpen((cur) => new Set([...cur, ...credIDs]));
-    window.setTimeout(() => document.querySelector(".cf-perms-body")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    window.setTimeout(() => document.querySelector(".cf-perms-body")?.scrollIntoView?.({ behavior: "smooth", block: "start" }), 50);
   }
 
   const pageItems: ContextItem[] = [];

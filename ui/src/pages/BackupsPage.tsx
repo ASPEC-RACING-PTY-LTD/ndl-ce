@@ -47,9 +47,14 @@ import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { BackupGitHolds } from "../components/BackupGitHolds";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+}
+
+function isAdmin(roles: string[] | undefined): boolean {
+  return Boolean(roles?.includes("admin"));
 }
 
 const OBJECT_KINDS = ["s3", "r2", "aws", "b2", "minio"] as const;
@@ -495,6 +500,7 @@ export function BackupsPage() {
   const [bandwidthMBps, setBandwidthMBps] = useState("0");
   const [cacheRetentionHours, setCacheRetentionHours] = useState("0");
   const [compressionLevel, setCompressionLevel] = useState("19");
+  const [ignoreUncommittedGit, setIgnoreUncommittedGit] = useState(true);
 
   const [runWorkloadId, setRunWorkloadId] = useState("");
   const [runTargetId, setRunTargetId] = useState("");
@@ -529,6 +535,7 @@ export function BackupsPage() {
       if (ws.compression_level != null) {
         setCompressionLevel(String(ws.compression_level || 19));
       }
+      setIgnoreUncommittedGit(ws.ignore_uncommitted_git !== false);
     }
 
     const backups = Promise.all([
@@ -909,6 +916,10 @@ export function BackupsPage() {
         bandwidth_limit_bps: Math.round(bandwidth * 1024 * 1024),
         cache_retention_hours: Math.max(0, Math.round(cacheHours)),
         compression_level: Number(compressionLevel),
+        // Only an Owner may change it; others never send it.
+        ...(isAdmin(roles) && ignoreUncommittedGit !== (workspace?.ignore_uncommitted_git !== false)
+          ? { ignore_uncommitted_git: ignoreUncommittedGit }
+          : {}),
       });
       setWorkspace(ws);
       setDialog(null);
@@ -1229,6 +1240,7 @@ export function BackupsPage() {
               <span className="meta">{workspace?.capture_active ? `${workspace.capture_active} capture${workspace.capture_active === 1 ? "" : "s"} active` : "No active captures"}</span>
             </article>
           </div>
+          <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
           <BackupStoragePanel mutate={mutate} targets={targets ?? []} />
           <div className="card-grid">
           <section className="section-block" aria-labelledby="backup-policies-heading">
@@ -2419,6 +2431,21 @@ export function BackupsPage() {
             backups keep their compression.
           </span>
         </label>
+        <label className="field-check">
+          <input
+            id="backup-workspace-ignore-git"
+            type="checkbox"
+            checked={ignoreUncommittedGit}
+            disabled={!isAdmin(roles)}
+            onChange={(e) => setIgnoreUncommittedGit(e.target.checked)}
+          />
+          Ignore uncommitted Git repositories
+        </label>
+        <p className="field-hint">
+            Smart backups leave Git repositories to Git and record the exact commit to re-clone. When this is off, a
+            workload whose repositories have uncommitted or unpushed work is not backed up until an Owner saves it,
+            lets NDL-CE commit and push it, or turns this back on. Only an Owner can change it.
+        </p>
       </ConfirmDialog>
     </section>
   );

@@ -1670,6 +1670,53 @@ export interface BackupArtifactListResponse {
   items: BackupArtifact[];
 }
 
+export interface BackupGitHoldRepo {
+  path?: string;
+  branch?: string;
+  commit?: string;
+  remotes?: string[];
+  unpushed?: boolean;
+  unsaved?: string[];
+  more_changes?: boolean;
+}
+
+export interface BackupGitHold {
+  workload_id?: string;
+  workload_name?: string;
+  policy_id?: string;
+  target_id?: string;
+  repos?: BackupGitHoldRepo[];
+  last_action?: string;
+  last_error?: string;
+  held_since?: string;
+  updated_at?: string;
+}
+
+export interface BackupGitHoldListResponse {
+  items?: BackupGitHold[];
+}
+
+export interface BackupGitHoldAction {
+  action: "retry" | "save";
+}
+
+export interface BackupGitSaveResult {
+  path?: string;
+  committed?: boolean;
+  pushed?: boolean;
+  commit?: string;
+  skipped?: string[];
+  error?: string;
+}
+
+export interface BackupGitHoldResult {
+  workload_id?: string;
+  held?: boolean;
+  error?: string;
+  saved?: BackupGitSaveResult[];
+  run?: BackupRun;
+}
+
 export interface BackupWorkspace {
   max_local_bytes?: number;
   min_host_free_bytes?: number;
@@ -1685,6 +1732,7 @@ export interface BackupWorkspace {
   cache_retention_hours?: number;
   logical_bytes?: number;
   compression_level?: number;
+  ignore_uncommitted_git?: boolean;
   physical_bytes?: number;
   pending_bytes?: number;
   root?: string;
@@ -3501,6 +3549,10 @@ export type DeleteBackupArtifactPath = "/api/v1/backups/artifacts/{id}";
 export type PurgeDeletedWorkloadBackupsPath = "/api/v1/backups/deleted-workloads/purge";
 
 export type WipeBackupTargetPath = "/api/v1/backups/targets/{id}/wipe";
+
+export type ListBackupGitHoldsPath = "/api/v1/backups/git-holds";
+
+export type ResolveBackupGitHoldPath = "/api/v1/backups/git-holds/{workload}";
 
 export type ListBackupRestorePointsPath = "/api/v1/backups/restore-points";
 
