@@ -1,0 +1,536 @@
+/*
+ * Backups page. Every block is full width or one of two equal-height
+ * columns, so edges line up; lists scroll inside their box instead of
+ * stretching the page.
+ */
+
+.page.bk {
+  gap: var(--space-3);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Summary chips ------------------------------------------------------- */
+
+.bk-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.bk-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-height: 1.9rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--fg-secondary);
+  font-size: 0.8125rem;
+}
+
+.bk-stat b {
+  color: var(--fg-primary);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.bk-stat.is-ok b {
+  color: var(--ok);
+}
+
+.bk-stat.is-active {
+  border-color: var(--info);
+  background: var(--info-bg);
+}
+
+.bk-stat.is-warn {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.bk-stat.is-danger {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* Panels and rows ----------------------------------------------------- */
+
+.bk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.bk-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--space-3);
+  align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .bk-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.bk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--control-h);
+}
+
+.bk-head h2 {
+  margin: 0;
+}
+
+.bk-hint {
+  margin: 0;
+  color: var(--fg-secondary);
+  font-size: 0.8125rem;
+}
+
+.bk-hint.is-danger,
+.bk-error-text {
+  color: var(--danger);
+}
+
+.bk-strong {
+  font-weight: 650;
+}
+
+.bk-empty {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+}
+
+.bk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.bk-actions.is-footer {
+  justify-content: flex-start;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.bk-search {
+  width: 14rem;
+  max-width: 100%;
+  min-height: 1.9rem;
+}
+
+/* Policy list --------------------------------------------------------- */
+
+.bk-list {
+  display: grid;
+}
+
+.bk-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.bk-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.bk-item-main {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.bk-item-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bk-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  color: var(--fg-secondary);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 760px) {
+  .bk-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bk-item .bk-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* Pills --------------------------------------------------------------- */
+
+.bk-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.bk-pill + .bk-pill {
+  margin-left: 0.3rem;
+}
+
+.bk-pill.is-ok {
+  border-color: color-mix(in oklch, var(--ok) 50%, transparent);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.bk-pill.is-active {
+  border-color: color-mix(in oklch, var(--info) 50%, transparent);
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.bk-pill.is-warn {
+  border-color: color-mix(in oklch, var(--warn) 50%, transparent);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.bk-pill.is-danger {
+  border-color: color-mix(in oklch, var(--danger) 50%, transparent);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* Tables -------------------------------------------------------------- */
+
+.bk-table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+}
+
+.bk-table th,
+.bk-table td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.bk-table th:first-child,
+.bk-table td:first-child {
+  padding-left: 0;
+}
+
+.bk-table th:last-child,
+.bk-table td:last-child {
+  padding-right: 0;
+}
+
+.bk-table tbody th {
+  height: auto;
+  background: none;
+  color: var(--fg-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  white-space: normal;
+}
+
+.bk-num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bk-actions-col {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.bk-clip {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A scroller fills its box: it takes the height its neighbours give the
+ * row (contain: size keeps its own rows from stretching the page) and the
+ * corner handle resizes it.
+ */
+.bk-scroll {
+  flex: 1 1 0;
+  min-height: 16rem;
+  overflow: auto;
+  contain: size;
+  resize: vertical;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+
+.bk-scroll.is-tall {
+  flex: none;
+  height: 26rem;
+}
+
+.bk-scroll.is-short {
+  flex: none;
+  height: 12rem;
+  min-height: 6rem;
+}
+
+.bk-scroll .bk-table th:first-child,
+.bk-scroll .bk-table td:first-child {
+  padding-left: var(--space-3);
+}
+
+.bk-scroll .bk-table th:last-child,
+.bk-scroll .bk-table td:last-child {
+  padding-right: var(--space-3);
+}
+
+.bk-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.bk-scroll tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+/* Key and value lists -------------------------------------------------- */
+
+.bk-dl {
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.bk-dl dt {
+  color: var(--fg-tertiary);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bk-dl dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bk-plain {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-1) var(--space-4);
+}
+
+.bk-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--fg-secondary);
+  font-size: 0.8125rem;
+}
+
+.bk-inline-field .field-input {
+  min-height: 1.9rem;
+}
+
+/* Collapsible sections ------------------------------------------------ */
+
+.bk-collapse {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.bk-collapse.is-warn {
+  border-color: var(--warn);
+}
+
+.bk-collapse > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 2.6rem;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+}
+
+.bk-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bk-collapse > summary::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid var(--fg-tertiary);
+  border-bottom: 2px solid var(--fg-tertiary);
+  transform: rotate(-45deg);
+  transition: transform var(--ease);
+}
+
+.bk-collapse[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.bk-collapse > summary:hover {
+  background: var(--bg-hover);
+  border-radius: var(--radius-lg);
+}
+
+.bk-summary-title {
+  font-weight: 650;
+}
+
+.bk-summary-meta {
+  color: var(--fg-secondary);
+  font-size: 0.8125rem;
+}
+
+.bk-collapse-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.bk-toggle {
+  display: inline-flex;
+  gap: 0;
+}
+
+.bk-toggle .btn {
+  border-radius: 0;
+  border-color: var(--line);
+}
+
+.bk-toggle .btn:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.bk-toggle .btn:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.bk-toggle .btn.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Free tier meter ----------------------------------------------------- */
+
+.bk-meter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.bk-meter {
+  flex: 1 1 12rem;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
+
+.bk-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.bk-meter.is-warn > span {
+  background: var(--warn);
+}
+
+.bk-meter.is-danger > span {
+  background: var(--danger);
+}
+
+/* Targets and row actions ----------------------------------------------- */
+
+.bk-targets {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-target {
+  display: grid;
+  gap: 0.35rem;
+  padding: var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.bk-target + .bk-target {
+  padding-top: var(--space-3);
+}
+
+.bk-actions.is-start {
+  justify-content: flex-start;
+}
+
+.bk-actions-col .bk-actions {
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 560px) {
+  .bk-dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+
+  .bk-dl dd + dt {
+    margin-top: var(--space-2);
+  }
+}

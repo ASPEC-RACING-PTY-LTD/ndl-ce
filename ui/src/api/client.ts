@@ -43,7 +43,10 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     headers.set("Content-Type", "application/json");
   }
 
+  // API answers change with every action; never let the browser or a proxy
+  // answer a list from cache, or a deleted row returns until a hard refresh.
   const res = await fetch(`${API_PREFIX}${path}`, {
+    cache: "no-store",
     ...init,
     credentials: "include",
     headers,

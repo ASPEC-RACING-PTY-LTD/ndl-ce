@@ -42,7 +42,7 @@ describe("PlatformBackupPanel", () => {
     api.getPlatformBackup.mockResolvedValue(status);
     render(<PlatformBackupPanel owner targets={[]} />);
     expect(await screen.findByText("2 of 3")).toBeTruthy();
-    expect(screen.getByText("Waiting for sam to sign in")).toBeTruthy();
+    expect(screen.getByText(/Waiting for sam to sign in/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Show workloads" }));
     expect(screen.getByText("missing manifest")).toBeTruthy();
     expect(recoverySummary(status)).toBe("2 of 3 workloads recoverable");

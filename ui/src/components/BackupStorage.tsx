@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   exportBackupKey,
   getBackupStorage,
@@ -166,7 +166,21 @@ export function BackupLocationPicker({
  * repository, the pools workloads live on, what retention keeps, what the
  * last cleanup reclaimed, and anything that needs an operator.
  */
-export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targets: BackupTarget[] }) {
+export function BackupStoragePanel({
+  mutate,
+  targets,
+  targetActions,
+  targetStatus,
+  refreshKey = 0,
+}: {
+  mutate: boolean;
+  targets: BackupTarget[];
+  /** targetActions renders the page's own buttons for a target's row. */
+  targetActions?: (t: BackupTarget) => ReactNode;
+  targetStatus?: (t: BackupTarget) => string;
+  /** refreshKey reloads the report when the page changes backups. */
+  refreshKey?: number;
+}) {
   const [report, setReport] = useState<BackupStorageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -186,7 +200,7 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
       .catch((err) => setError(errorText(err, "Backup storage is unavailable")));
   }
 
-  useEffect(load, []);
+  useEffect(load, [refreshKey]);
 
   // A repository move runs in the background; follow it until it finishes.
   const moving = report?.repository_move?.running === true;
@@ -316,11 +330,11 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
   const failedEvents = (report?.events ?? []).filter((e) => !e.ok);
 
   return (
-    <article className="panel" id="backup-storage" aria-labelledby="backup-storage-heading">
-      <h2 id="backup-storage-heading">Backup storage</h2>
-      {error ? (
-        <ErrorNotice error={error} />
-      ) : null}
+    <article className="panel bk-panel" id="backup-storage" aria-labelledby="backup-storage-heading">
+      <div className="bk-head">
+        <h2 id="backup-storage-heading">Where backups are stored</h2>
+      </div>
+      {error ? <ErrorNotice error={error} /> : null}
       {notice ? (
         <p className="banner banner-ok" role="status">
           {notice}
@@ -340,7 +354,7 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
         </div>
       ) : null}
       {keySaved ? (
-        <p className="field-hint">
+        <p className="bk-hint">
           The key was downloaded as ndl-backup-key.txt. Store it away from this host, for example in a password manager.
         </p>
       ) : null}
@@ -351,174 +365,6 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
           ))}
         </ul>
       ) : null}
-
-      {ws ? (
-        <div className="table-wrap">
-          <table aria-label="Local backup repository">
-            <tbody>
-              <tr>
-                <th>Repository</th>
-                <td>
-                  <code>{ws.root}</code>
-                  <div className="field-hint">
-                    {formatBytes(ws.repo_bytes ?? 0)} used of a {formatBytes(ws.max_local_bytes ?? 0)} limit.
-                    {ws.host_total_bytes ? ` The disk holds ${formatBytes(ws.host_total_bytes)}, ${formatBytes(ws.host_free_bytes ?? 0)} free.` : ""}
-                    {ws.effective_reserve_bytes ? ` Backups stop when ${formatBytes(ws.effective_reserve_bytes)} is left.` : ""}
-                  </div>
-                </td>
-              </tr>
-              {usage ? (
-                <tr>
-                  <th>Contents</th>
-                  <td>
-                    {usage.restore_points ?? 0} restore point{usage.restore_points === 1 ? "" : "s"}: data{" "}
-                    {formatBytes(usage.pack_bytes ?? 0)}, manifests {formatBytes(usage.snapshot_bytes ?? 0)}, caches{" "}
-                    {formatBytes(usage.cache_bytes ?? 0)}, queue and state {formatBytes(usage.state_bytes ?? 0)}
-                    {usage.temp_bytes ? `, temporary ${formatBytes(usage.temp_bytes)}` : ""}.
-                    {usage.recovered_points ? (
-                      <div className="field-hint">{usage.recovered_points} restore point(s) were recovered after a crash.</div>
-                    ) : null}
-                  </td>
-                </tr>
-              ) : null}
-              <tr>
-                <th>Last cleanup</th>
-                <td>
-                  {gc ? (
-                    <>
-                      {formatWhen(gc.finished_at)} ({gc.reason}): freed {formatBytes(gc.local?.bytes_freed ?? 0)} locally
-                      {gc.local?.packs_repacked ? `, compacted ${gc.local.packs_repacked} pack(s)` : ""}
-                      {(Object.values(gc.remote ?? {}) as BackupRemoteSweep[]).map((r) => `, ${formatBytes(r.bytes_freed ?? 0)} remotely`).join("")}.
-                      {gc.local?.dead_bytes ? (
-                        <div className="field-hint">{formatBytes(gc.local.dead_bytes)} of expired data is still inside packs that hold live data.</div>
-                      ) : null}
-                      {gc.error ? <div className="field-hint">Error: {gc.error}</div> : null}
-                    </>
-                  ) : (
-                    "Not run yet."
-                  )}
-                  {ws.gc_pending ? <div className="field-hint">A cleanup is queued after the running backups.</div> : null}
-                  {ws.pending_remote_sweep ? (
-                    <div className="field-hint">{ws.pending_remote_sweep} remote pack(s) of expired backups wait for cleanup.</div>
-                  ) : null}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ) : report == null && !error ? (
-        <p className="field-hint">Collecting</p>
-      ) : null}
-
-      {mutate ? (
-        <div className="btn-row is-flush">
-          <button className="btn" type="button" disabled={busy} onClick={onMaintenance}>
-            {busy ? "Working" : "Clean up now"}
-          </button>
-          <button className="btn" type="button" disabled={busy} onClick={onVerify}>
-            Verify backups
-          </button>
-          <button className="btn" type="button" disabled={busy} onClick={() => setRelocating(true)}>
-            Move repository
-          </button>
-          {ws?.key_exported ? (
-            <button className="btn" type="button" disabled={busy} onClick={onExportKey}>
-              Download backup key
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {report && (report.pools ?? []).length > 0 ? (
-        <div className="table-wrap">
-          <table aria-label="Storage pools">
-            <thead>
-              <tr>
-                <th>Pool</th>
-                <th>Used</th>
-                <th>Free</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(report.pools ?? []).map((p) => (
-                <tr key={p.id}>
-                  <td>
-                    {p.name} <span className="field-hint">{p.backend_type}</span>
-                    {p.root_filesystem ? <div className="field-hint">Shares the host root disk.</div> : null}
-                  </td>
-                  <td>{p.allocated_bytes != null ? formatBytes(p.allocated_bytes) : "Unknown"}</td>
-                  <td>
-                    {p.usable_bytes != null ? formatBytes(p.usable_bytes) : "Unknown"}
-                    {p.total_bytes != null ? ` of ${formatBytes(p.total_bytes)}` : ""}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
-      {objectTargets.length > 0 ? (
-        <div className="table-wrap">
-          <table aria-label="Backup target usage">
-            <thead>
-              <tr>
-                <th>Target</th>
-                <th>Holds</th>
-              </tr>
-            </thead>
-            <tbody>
-              {objectTargets.map((t) => {
-                const u = remote[t.id];
-                return (
-                  <tr key={t.id}>
-                    <td>
-                      {`${t.name} (${t.kind.toUpperCase()})`}
-                      {mutate ? (
-                        <div>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            type="button"
-                            disabled={busy}
-                            aria-label={`Wipe ${t.name}`}
-                            onClick={() => {
-                              setWiping(t);
-                            }}
-                          >
-                            Wipe
-                          </button>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      {u == null ? (
-                        <button className="btn btn-sm" type="button" onClick={() => measureTarget(t.id)}>
-                          Measure
-                        </button>
-                      ) : typeof u === "string" ? (
-                        <span className="field-hint">{u}</span>
-                      ) : (
-                        <>
-                          {formatBytes(u.total_bytes ?? 0)} in {u.objects ?? 0} objects: {u.restore_points ?? 0} restore point(s),
-                          backup data {formatBytes(u.pack_bytes ?? 0)}
-                          {u.other_bytes ? `, older whole-disk and archive backups ${formatBytes(u.other_bytes)}` : ""}.
-                          {u.unreferenced_pack_bytes ? (
-                            <div className="field-hint">
-                              {formatBytes(u.unreferenced_pack_bytes)} of data no readable restore point needs
-                              {u.foreign_points ? `; ${u.foreign_points} restore point(s) use another repository key, so some of it may be theirs` : ""}.
-                            </div>
-                          ) : null}
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
       {report?.repository_move ? (
         <p className={"banner " + (report.repository_move.error ? "banner-error" : report.repository_move.running ? "" : "banner-ok")} role="status">
           {report.repository_move.running
@@ -529,16 +375,126 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
         </p>
       ) : null}
 
-      {report && (report.deleted_workload_backups ?? []).length > 0 && mutate ? (
-        <p className="btn-row">
-          <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={onPurgeDeleted}>
-            Delete backups of deleted workloads
-          </button>
-        </p>
+      {targets.length > 0 ? (
+        <ul className="bk-targets" aria-label="Backup targets">
+          {targets.map((t) => {
+            const u = remote[t.id];
+            const object = objectTargets.includes(t);
+            return (
+              <li className="bk-target" key={t.id}>
+                <div className="bk-item-title">
+                  <span className="bk-strong">{t.name}</span>
+                  <span className="bk-hint">
+                    {t.kind.toUpperCase()}
+                    {object && t.bucket ? ` · ${t.bucket}` : ""}
+                  </span>
+                  {targetStatus ? <span className="bk-pill">{targetStatus(t)}</span> : null}
+                </div>
+                <div className="bk-hint">
+                  {!object ? (
+                    <code>{t.locator}</code>
+                  ) : u == null ? (
+                    "Size in the bucket not measured yet."
+                  ) : typeof u === "string" ? (
+                    u
+                  ) : (
+                    <>
+                      Holds {formatBytes(u.total_bytes ?? 0)} in {u.objects ?? 0} objects: {u.restore_points ?? 0} restore point(s),
+                      backup data {formatBytes(u.pack_bytes ?? 0)}
+                      {u.other_bytes ? `, older whole-disk and archive backups ${formatBytes(u.other_bytes)}` : ""}.
+                      {u.unreferenced_pack_bytes ? (
+                        <>
+                          {" "}
+                          {formatBytes(u.unreferenced_pack_bytes)} of data no readable restore point needs
+                          {u.foreign_points ? `; ${u.foreign_points} restore point(s) use another repository key, so some of it may be theirs` : ""}.
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+                <div className="bk-actions is-start">
+                  {object && (u == null || typeof u !== "string") ? (
+                    <button className="btn btn-sm" type="button" onClick={() => measureTarget(t.id)}>
+                      Measure
+                    </button>
+                  ) : null}
+                  {targetActions?.(t)}
+                  {mutate && object ? (
+                    <button className="btn btn-sm btn-ghost btn-danger-text" type="button" disabled={busy} aria-label={`Wipe ${t.name}`} onClick={() => setWiping(t)}>
+                      Wipe
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      {ws ? (
+        <dl className="bk-dl" aria-label="Local backup repository">
+          <dt>On this host</dt>
+          <dd>
+            <code>{ws.root}</code>
+            <div className="bk-hint">
+              {formatBytes(ws.repo_bytes ?? 0)} used of a {formatBytes(ws.max_local_bytes ?? 0)} limit.
+              {ws.host_total_bytes ? ` The disk holds ${formatBytes(ws.host_total_bytes)}, ${formatBytes(ws.host_free_bytes ?? 0)} free.` : ""}
+              {ws.effective_reserve_bytes ? ` Backups stop when ${formatBytes(ws.effective_reserve_bytes)} is left.` : ""}
+            </div>
+          </dd>
+          {usage ? (
+            <>
+              <dt>Contents</dt>
+              <dd>
+                {usage.restore_points ?? 0} restore point{usage.restore_points === 1 ? "" : "s"}: data{" "}
+                {formatBytes(usage.pack_bytes ?? 0)}, manifests {formatBytes(usage.snapshot_bytes ?? 0)}, caches{" "}
+                {formatBytes(usage.cache_bytes ?? 0)}, queue and state {formatBytes(usage.state_bytes ?? 0)}
+                {usage.temp_bytes ? `, temporary ${formatBytes(usage.temp_bytes)}` : ""}.
+                {usage.recovered_points ? <div className="bk-hint">{usage.recovered_points} restore point(s) were recovered after a crash.</div> : null}
+              </dd>
+            </>
+          ) : null}
+          <dt>Last cleanup</dt>
+          <dd>
+            {gc ? (
+              <>
+                {formatWhen(gc.finished_at)} ({gc.reason}): freed {formatBytes(gc.local?.bytes_freed ?? 0)} locally
+                {gc.local?.packs_repacked ? `, compacted ${gc.local.packs_repacked} pack(s)` : ""}
+                {(Object.values(gc.remote ?? {}) as BackupRemoteSweep[]).map((r) => `, ${formatBytes(r.bytes_freed ?? 0)} remotely`).join("")}.
+                {gc.local?.dead_bytes ? <div className="bk-hint">{formatBytes(gc.local.dead_bytes)} of expired data is still inside packs that hold live data.</div> : null}
+                {gc.error ? <div className="bk-hint">Error: {gc.error}</div> : null}
+              </>
+            ) : (
+              "Not run yet."
+            )}
+            {ws.gc_pending ? <div className="bk-hint">A cleanup is queued after the running backups.</div> : null}
+            {ws.pending_remote_sweep ? <div className="bk-hint">{ws.pending_remote_sweep} remote pack(s) of expired backups wait for cleanup.</div> : null}
+          </dd>
+          {(report?.pools ?? []).length > 0 ? (
+            <>
+              <dt>Disks</dt>
+              <dd>
+                <ul className="bk-plain">
+                  {(report?.pools ?? []).map((p) => (
+                    <li key={p.id}>
+                      {p.name} <span className="bk-hint">{p.backend_type}</span>:{" "}
+                      {p.usable_bytes != null ? `${formatBytes(p.usable_bytes)} free` : "free space unknown"}
+                      {p.total_bytes != null ? ` of ${formatBytes(p.total_bytes)}` : ""}
+                      {p.allocated_bytes != null ? `, ${formatBytes(p.allocated_bytes)} used by workloads` : ""}
+                      {p.root_filesystem ? <span className="bk-hint"> Shares the host root disk.</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      ) : report == null && !error ? (
+        <p className="bk-hint">Collecting</p>
       ) : null}
 
       {report && ((report.unmanaged_restore_points ?? []).length > 0 || (report.deleted_workload_backups ?? []).length > 0) ? (
-        <p className="field-hint">
+        <p className="bk-hint">
           {(report.unmanaged_restore_points ?? []).length > 0
             ? `${(report.unmanaged_restore_points ?? []).length} local restore point(s) have no backup record. `
             : ""}
@@ -551,23 +507,45 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
       ) : null}
 
       {failedEvents.length > 0 ? (
-        <div className="table-wrap">
-          <table aria-label="Failed cleanup operations">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>What failed</th>
+        <table className="bk-table" aria-label="Failed cleanup operations">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>What failed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {failedEvents.slice(0, 10).map((e) => (
+              <tr key={`${e.at}-${e.message}`}>
+                <td>{formatWhen(e.at)}</td>
+                <td>{e.message}</td>
               </tr>
-            </thead>
-            <tbody>
-              {failedEvents.slice(0, 10).map((e) => (
-                <tr key={`${e.at}-${e.message}`}>
-                  <td>{formatWhen(e.at)}</td>
-                  <td>{e.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+
+      {mutate ? (
+        <div className="bk-actions is-footer">
+          <button className="btn btn-sm" type="button" disabled={busy} onClick={onMaintenance}>
+            {busy ? "Working" : "Clean up now"}
+          </button>
+          <button className="btn btn-sm" type="button" disabled={busy} onClick={onVerify}>
+            Verify backups
+          </button>
+          <button className="btn btn-sm" type="button" disabled={busy} onClick={() => setRelocating(true)}>
+            Move repository
+          </button>
+          {ws?.key_exported ? (
+            <button className="btn btn-sm" type="button" disabled={busy} onClick={onExportKey}>
+              Download backup key
+            </button>
+          ) : null}
+          {report && (report.deleted_workload_backups ?? []).length > 0 ? (
+            <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={onPurgeDeleted}>
+              Delete backups of deleted workloads
+            </button>
+          ) : null}
         </div>
       ) : null}
 

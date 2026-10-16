@@ -35,19 +35,28 @@ export function KeepImages({ workloads, mutate }: { workloads: Workload[]; mutat
     return null;
   }
   return (
-    <details className="section-block">
-      <summary>Container image copies</summary>
-      <p className="field-hint">
-        Smart backups record each Docker image by its exact digest and pull it again on restore. Keep a copy when an image
-        may disappear from its registry or was built by hand: the backup grows by the image's size, deduplicated.
-      </p>
-      {error ? <ErrorNotice error={error} /> : null}
-      {containers.map((w) => (
-        <label className="field-check" key={w.id}>
-          <input type="checkbox" checked={!!keep[w.id]} disabled={!mutate} onChange={(e) => void toggle(w.id, e.target.checked)} />
-          Keep a copy of {w.name}'s images
-        </label>
-      ))}
+    <details className="bk-collapse">
+      <summary>
+        <span className="bk-summary-title">Container image copies</span>
+        <span className="bk-summary-meta">
+          {containers.filter((w) => keep[w.id]).length} of {containers.length} containers keep a copy of their images
+        </span>
+      </summary>
+      <div className="bk-collapse-body">
+        <p className="bk-hint">
+          Smart backups record each Docker image by its exact digest and pull it again on restore. Keep a copy when an
+          image may disappear from its registry or was built by hand: the backup grows by the image's size, deduplicated.
+        </p>
+        {error ? <ErrorNotice error={error} /> : null}
+        <div className="bk-checks">
+          {containers.map((w) => (
+            <label className="field-check" key={w.id}>
+              <input type="checkbox" checked={!!keep[w.id]} disabled={!mutate} onChange={(e) => void toggle(w.id, e.target.checked)} />
+              Keep a copy of {w.name}'s images
+            </label>
+          ))}
+        </div>
+      </div>
     </details>
   );
 }

@@ -1558,10 +1558,9 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^backups$/i })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: "r2-offsite" })).toBeVisible();
-    expect(screen.getByText("ndl-backups")).toBeVisible();
-    expect(screen.getByText("Client-side")).toBeVisible();
-    expect(screen.getByText("Yes")).toBeVisible();
+    expect((await screen.findAllByText("r2-offsite"))[0]).toBeVisible();
+    expect(screen.getByText(/ndl-backups/)).toBeVisible();
+    expect(screen.getAllByText(/incremental/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getAllByRole("button", { name: /^add target$/i })[0]);
     const targetDialog = await screen.findByRole("dialog", { name: /add backup target/i });
     fireEvent.change(within(targetDialog).getByLabelText(/^kind$/i), { target: { value: "r2" } });

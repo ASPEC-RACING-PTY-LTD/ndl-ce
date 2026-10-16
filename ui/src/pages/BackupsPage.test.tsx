@@ -164,8 +164,8 @@ describe("Backups page", () => {
     expect(screen.getByText(/no backup policies yet/i)).toBeVisible();
     expect(screen.getByText(/no backup runs yet/i)).toBeVisible();
     expect(screen.getByText(/no backup artifacts yet/i)).toBeVisible();
-    expect(screen.getByText(/^remote protected$/i)).toBeVisible();
-    expect(screen.getByText(/^local repository$/i)).toBeVisible();
+    expect(screen.getByText(/^safe in the cloud/i)).toBeVisible();
+    expect(screen.getByText(/^stored on this host/i)).toBeVisible();
     fireEvent.click(screen.getAllByRole("button", { name: /^create policy$/i })[0]);
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     expect(within(dialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
@@ -389,7 +389,7 @@ describe("Backups page", () => {
     });
     window.history.replaceState({}, "", "/backups");
     render(<App />);
-    expect(await screen.findByText("R2")).toBeVisible();
+    expect((await screen.findAllByText("R2"))[0]).toBeVisible();
     expect(screen.getByText("Untested")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^test connection$/i }));
     await waitFor(() => {
@@ -398,8 +398,8 @@ describe("Backups page", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
-    fireEvent.click(screen.getByRole("button", { name: /^workspace$/i }));
-    const workspace = await screen.findByRole("dialog", { name: /backup workspace/i });
+    fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    const workspace = await screen.findByRole("dialog", { name: /backup settings/i });
     expect(within(workspace).getByText(/r2 local uploads/i)).toBeVisible();
     expect(within(workspace).getByLabelText(/^capture concurrency$/i)).toHaveValue(2);
     expect(within(workspace).getByLabelText(/^upload bandwidth limit \(mib\/s\)$/i)).toBeVisible();
@@ -538,16 +538,15 @@ describe("Backups page", () => {
     window.history.replaceState({}, "", "/backups");
     render(<App />);
     expect(await screen.findByText("nightly")).toBeVisible();
-    expect(screen.getByLabelText(/^protection summary$/i)).toBeVisible();
-    expect(screen.getByLabelText(/^repository statistics$/i)).toBeVisible();
-    expect(screen.getByText(/^remote protected$/i)).toBeVisible();
-    expect(screen.getByText(/^local pending$/i)).toBeVisible();
-    expect(screen.getByText(/^logical protected data$/i)).toBeVisible();
-    expect(screen.getByText(/^physical stored data$/i)).toBeVisible();
-    expect(screen.getAllByText(/^queued$/i).length).toBeGreaterThan(1);
-    expect(screen.getAllByText(/^uploading$/i).length).toBeGreaterThan(1);
-    expect(screen.getAllByText(/^failed$/i).length).toBeGreaterThan(1);
-    expect(screen.getAllByText(/^legacy$/i).length).toBeGreaterThan(1);
+    const summary = screen.getByLabelText(/^backup summary$/i);
+    expect(summary).toBeVisible();
+    for (const label of [/^safe in the cloud/i, /^only on this host/i, /^waiting to upload/i, /^uploading/i, /^failed/i, /^old format/i, /^stored on this host/i, /^left to upload/i]) {
+      expect(within(summary).getByText(label)).toBeVisible();
+    }
+    expect(screen.getAllByText(/^queued$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^uploading$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^failed$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^legacy$/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/crash-consistent/i)).toBeVisible();
     expect(screen.getAllByText("Protected").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Local complete").length).toBeGreaterThan(0);
@@ -578,13 +577,13 @@ describe("Backups page", () => {
     window.history.replaceState({}, "", "/backups");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^policies$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^workspace$/i }));
-    const dialog = await screen.findByRole("dialog", { name: /backup workspace/i });
+    fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /backup settings/i });
     fireEvent.change(within(dialog).getByLabelText(/^capture concurrency$/i), { target: { value: "4" } });
     fireEvent.change(within(dialog).getByLabelText(/^upload workers$/i), { target: { value: "6" } });
     fireEvent.change(within(dialog).getByLabelText(/^upload bandwidth limit \(mib\/s\)$/i), { target: { value: "8" } });
     fireEvent.change(within(dialog).getByLabelText(/^local cache retention \(hours\)$/i), { target: { value: "12" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: /^save workspace$/i }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^save settings$/i }));
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find((call) => {
         const url = String(call[0]);
@@ -597,5 +596,62 @@ describe("Backups page", () => {
       expect(body.bandwidth_limit_bps).toBe(8 * 1024 * 1024);
       expect(body.cache_retention_hours).toBe(12);
     });
+  });
+  it("removes a deleted restore point at once, explains a run, and sums backup sizes", async () => {
+    const routes: Record<string, { status: number; body?: unknown }> = {
+      ...baseRoutes,
+      "/api/v1/backups/targets": { status: 200, body: { items: [{ id: "tgt-r2", name: "R2", kind: "r2", status: "available", bucket: "b" }] } },
+      "/api/v1/backups/policies": { status: 200, body: { items: [] } },
+      "/api/v1/backups/runs": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "run-1",
+              target_id: "tgt-r2",
+              workload_id: "wl-a",
+              status: "succeeded",
+              incremental: true,
+              transferred_bytes: 38_000_000,
+              started_at: "2026-10-16T10:00:00Z",
+              plan: { method: "content-addressed", consistency: "cgroup-freezer" },
+            },
+          ],
+        },
+      },
+      "/api/v1/backups/artifacts": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "art-1",
+              run_id: "run-1",
+              workload_id: "wl-a",
+              format: "ndl-cab",
+              remote_state: "protected",
+              logical_bytes: 2_000_000_000,
+              upload_total_bytes: 40_000_000,
+              created_at: "2026-10-16T10:00:00Z",
+            },
+          ],
+        },
+      },
+      "DELETE /api/v1/backups/artifacts/art-1": { status: 200, body: { id: "art-1", deleted: true } },
+    };
+    mockApi(routes);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+
+    expect(await screen.findByLabelText(/^backup size$/i)).toHaveTextContent("~2.0 GB on your workloads → ~40.0 MB in R2");
+
+    fireEvent.click(screen.getByRole("button", { name: /^details of alpha run/i }));
+    const run = await screen.findByRole("dialog", { name: /backup run details/i });
+    expect(within(run).getByText(/storing only data not already backed up, paused for a moment/i)).toBeVisible();
+    fireEvent.click(within(run).getByRole("button", { name: /close/i }));
+
+    routes["/api/v1/backups/artifacts"] = { status: 200, body: { items: [] } };
+    fireEvent.click(screen.getByRole("button", { name: /^delete backup from/i }));
+    expect(await screen.findByText(/no backup artifacts yet/i)).toBeVisible();
   });
 });

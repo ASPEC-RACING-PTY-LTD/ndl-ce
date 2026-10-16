@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { LoadingState } from "../components/EmptyState";
 import { DeleteButton } from "../components/DeleteButton";
 import {
@@ -44,13 +44,14 @@ import { BackupLocationPicker, BackupStoragePanel } from "../components/BackupSt
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
-import { formatBytes, formatWhen, honestStatus } from "../format";
+import { formatBytes, formatRelative, formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { BackupGitHolds } from "../components/BackupGitHolds";
 import { PlatformBackupPanel } from "../components/PlatformBackup";
 import { RecoveryWorkloads } from "../components/RecoveryWorkloads";
 import { KeepImages } from "../components/KeepImages";
+import { BackupSizes } from "../components/BackupSizes";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -420,22 +421,122 @@ function groupCategories(items: ScopeCategory[]): CategoryGroup[] {
   return [...map.values()].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
 }
 
-function planLabel(plan: BackupRun["plan"]): string {
-  if (!plan) {
-    return "None";
-  }
-  const included = plan.included?.length ?? 0;
-  const skipped = plan.skipped?.length ?? 0;
-  const method = plan.method ?? "copy";
-  const warning = plan.warning ? `; ${plan.warning}` : "";
-  if (skipped > 0) {
-    return `${method}: ${included} included, ${skipped} skipped${warning}`;
-  }
-  return `${method}${warning}`;
-}
-
 function latestPolicyRun(runs: BackupRun[], policyId: string): BackupRun | undefined {
   return runs.find((r) => r.policy_id === policyId);
+}
+
+function runTone(status: BackupRun["status"]): string {
+  switch (status) {
+    case "succeeded":
+      return "is-ok";
+    case "running":
+      return "is-active";
+    case "failed":
+    case "interrupted":
+      return "is-danger";
+    case "succeeded_with_warnings":
+      return "is-warn";
+    default:
+      return "";
+  }
+}
+
+function protectionTone(art: BackupArtifact): string {
+  switch (protectionBucket(art)) {
+    case "protected":
+      return "is-ok";
+    case "failed":
+      return "is-danger";
+    case "uploading":
+    case "queued":
+      return "is-active";
+    case "localPending":
+      return "is-warn";
+    default:
+      return "";
+  }
+}
+
+const PLAN_METHODS: Record<string, string> = {
+  "content-addressed": "Copied the files, storing only data not already backed up",
+  "directory-archive": "Copied the files into one archive",
+  "zfs-send": "Sent a ZFS snapshot of the disk",
+  "qcow2-copy": "Copied the virtual machine disk",
+};
+
+const PLAN_CONSISTENCY: Record<string, string> = {
+  "live-copy": "copied while running",
+  application: "the application flushed its data first",
+  "cgroup-freezer": "paused for a moment while it was copied",
+  stopped: "copied while stopped",
+  "zfs-snapshot": "copied from a ZFS snapshot",
+  "lvm-snapshot": "copied from an LVM snapshot",
+  "qcow2-overlay": "copied from a frozen disk image",
+};
+
+/** RunDetails explains one backup run, including how it chose what to copy. */
+function RunDetails({ run, workload, target }: { run: BackupRun; workload: string; target: string }) {
+  const plan = run.plan;
+  const items = (list?: { kind?: string; id?: string; role?: string; reason?: string }[]) =>
+    (list ?? []).map((it, i) => (
+      <li key={`${it.id ?? it.kind ?? ""}-${i}`}>
+        {[it.role, it.kind, it.id].filter(Boolean).join(" ")}
+        {it.reason ? <span className="bk-hint"> ({it.reason})</span> : null}
+      </li>
+    ));
+  return (
+    <dl className="bk-dl">
+      <dt>Workload</dt>
+      <dd>{workload}</dd>
+      <dt>Target</dt>
+      <dd>{target}</dd>
+      <dt>Status</dt>
+      <dd>
+        {runStatusLabel(run.status)}
+        {run.incremental ? ", incremental (only changes were copied)" : ""}
+      </dd>
+      {run.error ? (
+        <>
+          <dt>Error</dt>
+          <dd className="bk-error-text">{run.error}</dd>
+        </>
+      ) : null}
+      <dt>Uploaded</dt>
+      <dd>{run.transferred_bytes != null ? formatBytes(run.transferred_bytes) : "Nothing reported"}</dd>
+      <dt>Started</dt>
+      <dd>{formatWhen(run.started_at)}</dd>
+      <dt>Finished</dt>
+      <dd>{run.finished_at ? formatWhen(run.finished_at) : "Not finished"}</dd>
+      <dt>How it was copied</dt>
+      <dd>
+        {plan ? (
+          <>
+            {PLAN_METHODS[plan.method ?? ""] ?? plan.method ?? "Copied"}
+            {plan.consistency ? `, ${PLAN_CONSISTENCY[plan.consistency] ?? plan.consistency}` : ""}.
+            {plan.warning ? <div className="bk-hint">{plan.warning}</div> : null}
+          </>
+        ) : (
+          "Not recorded for this run."
+        )}
+      </dd>
+      {plan?.included?.length ? (
+        <>
+          <dt>Included</dt>
+          <dd>
+            <ul className="bk-plain">{items(plan.included)}</ul>
+          </dd>
+        </>
+      ) : null}
+      {plan?.skipped?.length ? (
+        <>
+          <dt>Skipped</dt>
+          <dd>
+            <ul className="bk-plain">{items(plan.skipped)}</ul>
+          </dd>
+        </>
+      ) : null}
+    </dl>
+  );
 }
 
 type Dialog =
@@ -445,7 +546,8 @@ type Dialog =
   | { kind: "history"; policy: BackupPolicy }
   | { kind: "artifact"; artifact: BackupArtifact }
   | { kind: "delete-policy"; policy: BackupPolicy }
-  | { kind: "workspace" };
+  | { kind: "workspace" }
+  | { kind: "run"; run: BackupRun };
 
 export function BackupsPage() {
   const session = useSession();
@@ -511,6 +613,9 @@ export function BackupsPage() {
   const [filePath, setFilePath] = useState("/etc/hostname");
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [restoreNodeId, setRestoreNodeId] = useState("");
+  const [artifactQuery, setArtifactQuery] = useState("");
+  // refreshKey reloads panels that fetch their own data after a change here.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Everything loads at once. Backups render as soon as the backup lists
   // arrive; workloads, nodes and workspace settings fill in when they do.
@@ -642,6 +747,10 @@ export function BackupsPage() {
     setError(null);
     try {
       await deleteBackupArtifact(art.id, true);
+      // Drop the row at once; the reload brings back the counts and runs.
+      setArtifacts((cur) => (cur ?? []).filter((a) => a.id !== art.id));
+      setDialog((cur) => (cur?.kind === "artifact" && cur.artifact.id === art.id ? null : cur));
+      setRefreshKey((k) => k + 1);
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not delete the backup");
@@ -662,6 +771,7 @@ export function BackupsPage() {
     setError(null);
     try {
       await deleteBackupTargetWithBackups(t.id);
+      setRefreshKey((k) => k + 1);
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not remove the target");
@@ -1117,8 +1227,13 @@ export function BackupsPage() {
     policyScope === "all"
       ? workloads.filter((w) => !policyExcludedIds.includes(w.id))
       : workloads.filter((w) => policyWorkloadIds.includes(w.id));
-  const recentRuns = (runs ?? []).slice(0, 12);
-  const recentArtifacts = artifacts ?? [];
+  const workloadNames = useMemo(() => new Map(workloads.map((w) => [w.id, w.name])), [workloads]);
+  const workloadName = useCallback((id: string) => workloadNames.get(id) ?? id, [workloadNames]);
+  const shownArtifacts = useMemo(() => {
+    const q = artifactQuery.trim().toLowerCase();
+    const all = artifacts ?? [];
+    return q ? all.filter((a) => workloadName(a.workload_id).toLowerCase().includes(q)) : all;
+  }, [artifacts, artifactQuery, workloadName]);
   const protectionSummary = useMemo(() => {
     const counts = { protected: 0, localPending: 0, queued: 0, uploading: 0, failed: 0, legacy: 0 };
     for (const art of artifacts ?? []) {
@@ -1143,7 +1258,7 @@ export function BackupsPage() {
   const hasR2Target = (targets ?? []).some((t) => t.kind === "r2");
 
   return (
-    <section className="page page-wide" aria-labelledby="backups-heading">
+    <section className="page page-wide bk" aria-labelledby="backups-heading">
       <PageHeader
         id="backups-heading"
         title="Backups"
@@ -1165,19 +1280,17 @@ export function BackupsPage() {
                 Add target
               </button>
               <button className="btn" type="button" onClick={() => setDialog({ kind: "adhoc" })}>
-                Ad-hoc backup
+                Back up one workload
               </button>
               <button className="btn" type="button" onClick={() => setDialog({ kind: "workspace" })}>
-                Workspace
+                Settings
               </button>
             </div>
           ) : null
         }
       />
 
-      {error ? (
-        <ErrorNotice error={error} />
-      ) : null}
+      {error ? <ErrorNotice error={error} /> : null}
 
       {loadState === "collecting" ? (
         <p className="banner" role="status">
@@ -1193,165 +1306,92 @@ export function BackupsPage() {
 
       {loadState === "ready" ? (
         <>
-          <div className="summary-grid" aria-label="Protection summary">
-            <article className="summary-card">
-              <span className="label">Remote protected</span>
-              <span className="value">{protectionSummary.protected}</span>
-              <span className="meta">Off-host objects verified</span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Local pending</span>
-              <span className="value">{protectionSummary.localPending}</span>
-              <span className="meta">Local complete, not yet remote</span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Queued</span>
-              <span className="value">{protectionSummary.queued}</span>
-              <span className="meta">Waiting for upload workers</span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Uploading</span>
-              <span className="value">{protectionSummary.uploading}</span>
-              <span className="meta">Includes remote verifying</span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Failed</span>
-              <span className="value">{protectionSummary.failed}</span>
-              <span className="meta">Remote or capture failure</span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Legacy</span>
-              <span className="value">{protectionSummary.legacy}</span>
-              <span className="meta">Historical tar or pack artifacts</span>
-            </article>
-          </div>
-          <div className="summary-grid" aria-label="Repository statistics">
-            <article className="summary-card">
-              <span className="label">Local repository</span>
-              <span className="value">{workspace?.repo_bytes != null ? formatBytes(workspace.repo_bytes) : "Unknown"}</span>
-              <span className="meta">
-                {workspace?.pending_uploads ? `${workspace.pending_uploads} queued upload${workspace.pending_uploads === 1 ? "" : "s"}` : "No pending uploads"}
+          <div className="bk-stats" aria-label="Backup summary">
+            <span className="bk-stat is-ok" title="Backups uploaded to the cloud and checked there">
+              Safe in the cloud <b>{protectionSummary.protected}</b>
+            </span>
+            <span className={"bk-stat" + (protectionSummary.uploading ? " is-active" : "")} title="Uploading or being checked in the cloud">
+              Uploading <b>{protectionSummary.uploading}</b>
+            </span>
+            <span className={"bk-stat" + (protectionSummary.queued ? " is-active" : "")} title="Waiting for a free upload slot">
+              Waiting to upload <b>{protectionSummary.queued}</b>
+            </span>
+            <span className={"bk-stat" + (protectionSummary.localPending ? " is-warn" : "")} title="Complete on this host, not in the cloud yet">
+              Only on this host <b>{protectionSummary.localPending}</b>
+            </span>
+            <span className={"bk-stat" + (protectionSummary.failed ? " is-danger" : "")} title="The backup or its upload failed">
+              Failed <b>{protectionSummary.failed}</b>
+            </span>
+            {protectionSummary.legacy ? (
+              <span className="bk-stat" title="Older tar or pack backups">
+                Old format <b>{protectionSummary.legacy}</b>
               </span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Logical protected data</span>
-              <span className="value">{workspace?.logical_bytes != null ? formatBytes(workspace.logical_bytes) : "Unknown"}</span>
-              <span className="meta">Sum of restore-point logical sizes</span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Physical stored data</span>
-              <span className="value">{physicalBytes ? formatBytes(physicalBytes) : "Unknown"}</span>
-              <span className="meta">{dedupeSaved > 0 ? `${formatBytes(dedupeSaved)} saved by dedupe` : "Dedupe savings unknown"}</span>
-            </article>
-            <article className="summary-card">
-              <span className="label">Pending upload data</span>
-              <span className="value">{workspace?.pending_bytes != null ? formatBytes(pendingBytes) : "Unknown"}</span>
-              <span className="meta">{workspace?.capture_active ? `${workspace.capture_active} capture${workspace.capture_active === 1 ? "" : "s"} active` : "No active captures"}</span>
-            </article>
+            ) : null}
+            <span className="bk-stat" title={dedupeSaved > 0 ? `${formatBytes(logicalBytes)} of data, ${formatBytes(dedupeSaved)} saved by skipping repeats` : "Space the backups use on this host"}>
+              Stored on this host <b>{physicalBytes ? formatBytes(physicalBytes) : "Unknown"}</b>
+            </span>
+            <span
+              className={"bk-stat" + (pendingBytes ? " is-active" : "")}
+              title={workspace?.capture_active ? `${workspace.capture_active} backup${workspace.capture_active === 1 ? "" : "s"} running` : "No backups running"}
+            >
+              Left to upload <b>{workspace?.pending_bytes != null ? formatBytes(pendingBytes) : "Unknown"}</b>
+            </span>
           </div>
+
+          <BackupSizes artifacts={artifacts ?? []} workloadName={workloadName} targets={targets ?? []} />
           <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
           <RecoveryWorkloads owner={isAdmin(roles)} />
-          <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
-          <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
-          <BackupStoragePanel mutate={mutate} targets={targets ?? []} />
-          <div className="card-grid">
-          <section className="section-block" aria-labelledby="backup-policies-heading">
-            <div className="page-header-row">
+
+          <section className="panel bk-panel" aria-labelledby="backup-policies-heading">
+            <div className="bk-head">
               <h2 id="backup-policies-heading">Policies</h2>
+              <span className="bk-hint">A policy backs up its workloads every night and keeps the copies its rules say.</span>
             </div>
-            <div className="card-grid">
-              {policies == null ? (
-                <article className="panel dashboard-card empty-card">
-                  <LoadingState label="Collecting" />
-                </article>
-              ) : policies.length === 0 ? (
-                <article className="panel dashboard-card empty-card">
-                  <p className="empty-title">No backup policies yet</p>
-                  <p className="muted">A policy is the thing you schedule and run. Select the workloads it protects. Full Machine / Full LXC is the default backup scope so restore can rebuild the complete recoverable guest.</p>
-                  {mutate ? (
-                    <div className="btn-row">
-                      <button className="btn btn-primary" type="button" onClick={() => openPolicyDialog()}>
-                        Create policy
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              ) : (
-                policies.map((p) => {
+            {policies == null ? (
+              <LoadingState label="Collecting" />
+            ) : policies.length === 0 ? (
+              <div className="bk-empty">
+                <p className="empty-title">No backup policies yet</p>
+                <p className="bk-hint">Create a policy to back up your workloads every night. Full Machine is the default and restores the whole workload.</p>
+              </div>
+            ) : (
+              <div className="bk-list">
+                {policies.map((p) => {
                   const latest = latestPolicyRun(runs ?? [], p.id);
                   const latestArt = latest ? latestArtifactByRun.get(latest.id) : undefined;
-                  const target = targetById.get(p.target_id);
                   return (
-                    <article className="panel dashboard-card" key={p.id}>
-                      <h3>{p.name}</h3>
-                      <dl className="card-meta">
-                        <div>
-                          <dt>Workloads</dt>
-                          <dd>{policyScopeLabel(p, workloads)}</dd>
+                    <div className="bk-item" key={p.id}>
+                      <div className="bk-item-main">
+                        <div className="bk-item-title">
+                          <h3>{p.name}</h3>
+                          <span className={"bk-pill " + (p.paused ? "is-warn" : "is-ok")}>{p.paused ? "Paused" : "Runs nightly"}</span>
+                          {latest ? <span className={"bk-pill " + runTone(latest.status)}>Last run: {runStatusLabel(latest.status)}</span> : null}
                         </div>
-                        <div>
-                          <dt>Backup scope</dt>
-                          <dd>{captureModeLabel(p.capture_mode)}</dd>
+                        <div className="bk-item-meta">
+                          <span>{policyScopeLabel(p, workloads)}</span>
+                          <span>{captureModeLabel(p.capture_mode)}</span>
+                          <span>To {targetById.get(p.target_id)?.name ?? p.target_id}</span>
+                          <span>Keeps {retentionLabel(p)}</span>
+                          <span title={formatWhen(p.last_run_at ?? latest?.started_at)}>Last run {formatRelative(p.last_run_at ?? latest?.started_at)}</span>
+                          {latestArt ? (
+                            <span>
+                              Latest: {protectionLabel(latestArt)}
+                              {latestArt.consistency ? ` · ${consistencyLabel(latestArt.consistency)}` : ""}
+                              {latestArt.logical_bytes != null ? ` · ${formatBytes(latestArt.logical_bytes)} read` : ""}
+                              {latestArt.physical_new_data != null ? ` · ${formatBytes(latestArt.physical_new_data)} new` : ""}
+                              {latestArt.capture_duration_ns ? ` · copied in ${formatDurationNS(latestArt.capture_duration_ns)}` : ""}
+                              {latestArt.upload_duration_ns ? `, uploaded in ${formatDurationNS(latestArt.upload_duration_ns)}` : ""}
+                            </span>
+                          ) : null}
                         </div>
-                        <div>
-                          <dt>Target</dt>
-                          <dd>{target?.name ?? p.target_id}</dd>
-                        </div>
-                        <div>
-                          <dt>Schedule</dt>
-                          <dd>{p.schedule === "nightly" ? "Nightly" : p.schedule}</dd>
-                        </div>
-                        <div>
-                          <dt>Retention</dt>
-                          <dd>{retentionLabel(p)}</dd>
-                        </div>
-                        <div>
-                          <dt>Latest</dt>
-                          <dd>{latest ? runStatusLabel(latest.status) : "No runs yet"}</dd>
-                        </div>
-                        <div>
-                          <dt>Protection</dt>
-                          <dd>{latestArt ? protectionLabel(latestArt) : "None"}</dd>
-                        </div>
-                        <div>
-                          <dt>Consistency</dt>
-                          <dd>{latestArt ? consistencyLabel(latestArt.consistency) : "None"}</dd>
-                        </div>
-                        <div>
-                          <dt>Capture duration</dt>
-                          <dd>{formatDurationNS(latestArt?.capture_duration_ns)}</dd>
-                        </div>
-                        <div>
-                          <dt>Upload duration</dt>
-                          <dd>{formatDurationNS(latestArt?.upload_duration_ns)}</dd>
-                        </div>
-                        <div>
-                          <dt>Logical changed</dt>
-                          <dd>{latestArt?.logical_bytes != null ? formatBytes(latestArt.logical_bytes) : "None"}</dd>
-                        </div>
-                        <div>
-                          <dt>Physical stored</dt>
-                          <dd>{latestArt?.physical_new_data != null ? formatBytes(latestArt.physical_new_data) : "None"}</dd>
-                        </div>
-                        <div>
-                          <dt>Last run</dt>
-                          <dd>{formatWhen(p.last_run_at ?? latest?.started_at)}</dd>
-                        </div>
-                      </dl>
-                      {p.scope === "all" ? (
-                        <p className="muted">
-                          All workloads covers every current and future eligible guest. Extra disks, iSCSI, and
-                          distributed volumes are skipped when the root disk can still be backed up. Directory
-                          system containers use Backup Engine V2. Full Machine is the default; Smart and Custom remain available.
-                        </p>
-                      ) : null}
+                      </div>
                       {mutate ? (
-                        <div className="btn-row">
+                        <div className="bk-actions">
                           <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void onRunPolicy(p)}>
                             Run now
                           </button>
                           <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onTogglePause(p)}>
-                            {p.paused ? "Resume schedule" : "Pause schedule"}
+                            {p.paused ? "Resume" : "Pause"}
                           </button>
                           <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "history", policy: p })}>
                             History
@@ -1359,276 +1399,236 @@ export function BackupsPage() {
                           <button className="btn btn-sm" type="button" onClick={() => openPolicyDialog(p)}>
                             Edit
                           </button>
-                          <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "delete-policy", policy: p })}>
+                          <button className="btn btn-sm btn-ghost btn-danger-text" type="button" onClick={() => setDialog({ kind: "delete-policy", policy: p })}>
                             Delete
                           </button>
                         </div>
-                      ) : (
-                        <p className="muted">Operator or admin role required to run or edit.</p>
-                      )}
-                    </article>
+                      ) : null}
+                    </div>
                   );
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
           </section>
 
-          <section className="section-block" aria-labelledby="backup-targets-heading">
-            <div className="page-header-row">
-              <h2 id="backup-targets-heading">Targets</h2>
-            </div>
-            <div className="card-grid">
-              {targets == null ? (
-                <article className="panel dashboard-card empty-card">
-                  <LoadingState label="Collecting" />
-                </article>
-              ) : targets.length === 0 ? (
-                <article className="panel dashboard-card empty-card">
-                  <p className="empty-title">No backup targets yet</p>
-                  <p className="muted">Destinations such as local, NFS, SMB, R2, S3, B2, or MinIO.</p>
-                  {mutate ? (
-                    <div className="btn-row">
-                      <button
-                        className="btn btn-primary"
-                        type="button"
-                        onClick={() => {
-                          resetTargetForm();
-                          setDialog({ kind: "target" });
-                        }}
-                      >
-                        Add target
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              ) : (
-                targets.map((t) => (
-                  <article className="panel dashboard-card" key={t.id}>
-                    <div className="page-header-row">
-                      <h3>{t.name}</h3>
-                      <div className="btn-row is-flush">
-                        <span className="kind-chip">{t.kind}</span>
-                        {mutate ? (
-                          <DeleteButton
-                            path={`/backups/targets/${t.id}`}
-                            name={t.name}
-                            noun="backup target"
-                            label="Remove"
-                            description={
-                              <p>
-                                No-dal stops using this target. Files already on it are not deleted. A target that a
-                                policy uses, or that still holds restorable backups, cannot be removed.
-                              </p>
-                            }
-                            onDeleted={() => reload()}
-                          />
-                        ) : null}
-                        {mutate ? (
-                          <button
-                            className="btn btn-sm btn-ghost btn-danger-text"
-                            type="button"
-                            disabled={busy}
-                            aria-label={`Remove ${t.name} with its backups`}
-                            onClick={() => void onRemoveTargetWithBackups(t)}
-                          >
-                            Remove with backups
+          <div className="bk-row">
+            <BackupStoragePanel
+              mutate={mutate}
+              targets={targets ?? []}
+              refreshKey={refreshKey}
+              targetStatus={(t) => targetStatusLabel(t.status)}
+              targetActions={
+                mutate
+                  ? (t) => (
+                      <>
+                        {isObjectKind(t.kind) ? (
+                          <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onTestTarget(t.id)}>
+                            Test connection
                           </button>
                         ) : null}
-                      </div>
-                    </div>
-                    <dl className="card-meta">
-                      <div>
-                        <dt>Status</dt>
-                        <dd>
-                          <span className="status-pill">{targetStatusLabel(t.status)}</span>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{isObjectKind(t.kind) ? "Bucket" : "Locator"}</dt>
-                        <dd>{isObjectKind(t.kind) ? t.bucket || t.locator : t.locator}</dd>
-                      </div>
-                      {t.username ? (
-                        <div>
-                          <dt>{isObjectKind(t.kind) ? "Access key id" : "Username"}</dt>
-                          <dd>{t.username}</dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                    {mutate && isObjectKind(t.kind) ? (
-                      <div className="btn-row">
+                        <DeleteButton
+                          path={`/backups/targets/${t.id}`}
+                          name={t.name}
+                          noun="backup target"
+                          label="Remove"
+                          description={
+                            <p>
+                              No-dal stops using this target. Files already on it are not deleted. A target that a policy
+                              uses, or that still holds restorable backups, cannot be removed.
+                            </p>
+                          }
+                          onDeleted={() => reload()}
+                        />
                         <button
-                          className="btn btn-sm"
+                          className="btn btn-sm btn-ghost btn-danger-text"
                           type="button"
                           disabled={busy}
-                          onClick={() => void onTestTarget(t.id)}
+                          aria-label={`Remove ${t.name} with its backups`}
+                          onClick={() => void onRemoveTargetWithBackups(t)}
                         >
-                          Test connection
+                          Remove with backups
                         </button>
-                      </div>
-                    ) : null}
-                  </article>
-                ))
+                      </>
+                    )
+                  : undefined
+              }
+            />
+
+            <section className="panel bk-panel" aria-labelledby="backup-runs-heading">
+              <div className="bk-head">
+                <h2 id="backup-runs-heading">Recent runs</h2>
+                {runs?.length ? <span className="bk-hint">{runs.length} runs, newest first</span> : null}
+              </div>
+              {runs == null ? (
+                <LoadingState label="Collecting" />
+              ) : runs.length === 0 ? (
+                <div className="bk-empty">
+                  <p className="empty-title">No backup runs yet</p>
+                  <p className="bk-hint">Press Run now on a policy and its runs show here.</p>
+                </div>
+              ) : (
+                <div className="bk-scroll" tabIndex={0} aria-label="Recent runs list">
+                  <table className="bk-table">
+                    <thead>
+                      <tr>
+                        <th>Workload</th>
+                        <th>Status</th>
+                        <th className="bk-num">Uploaded</th>
+                        <th>Started</th>
+                        <th className="bk-actions-col">
+                          <span className="sr-only">Details</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {runs.map((r) => (
+                        <tr key={r.id}>
+                          <td>{workloadName(r.workload_id)}</td>
+                          <td>
+                            <span className={"bk-pill " + runTone(r.status)} title={r.error || undefined}>
+                              {runStatusLabel(r.status)}
+                            </span>
+                            {r.incremental ? <span className="bk-hint"> incremental</span> : null}
+                          </td>
+                          <td className="bk-num">{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : ""}</td>
+                          <td title={formatWhen(r.started_at)}>{formatRelative(r.started_at)}</td>
+                          <td className="bk-actions-col">
+                            <button
+                              className="btn btn-sm btn-ghost"
+                              type="button"
+                              aria-label={`Details of ${workloadName(r.workload_id)} run ${formatWhen(r.started_at)}`}
+                              onClick={() => setDialog({ kind: "run", run: r })}
+                            >
+                              Details
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </div>
-          </section>
+            </section>
           </div>
 
-          <section className="section-block" aria-labelledby="backup-runs-heading">
-            <div className="page-header-row">
-              <h2 id="backup-runs-heading">Recent runs</h2>
+          <section className="panel bk-panel" aria-labelledby="backup-artifacts-heading">
+            <div className="bk-head">
+              <h2 id="backup-artifacts-heading">Restore points</h2>
+              <div className="bk-actions">
+                {(artifacts ?? []).length > 0 ? (
+                  <input
+                    className="field-input bk-search"
+                    type="search"
+                    placeholder="Filter by workload"
+                    aria-label="Filter restore points by workload"
+                    value={artifactQuery}
+                    onChange={(e) => setArtifactQuery(e.target.value)}
+                  />
+                ) : null}
+                {mutate ? (
+                  <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
+                    Export DR metadata
+                  </button>
+                ) : null}
+              </div>
             </div>
-            {runs == null || runs.length === 0 ? (
-              <div className="card-grid">
-                <article className="panel dashboard-card empty-card">
-                  {runs == null ? (
-                    <LoadingState label="Collecting" />
-                  ) : (
-                    <>
-                      <p className="empty-title">No backup runs yet</p>
-                      <p className="muted">Run now on a policy to see fleet-wide history here.</p>
-                    </>
-                  )}
-                </article>
+            {artifacts == null ? (
+              <LoadingState label="Collecting" />
+            ) : artifacts.length === 0 ? (
+              <div className="bk-empty">
+                <p className="empty-title">No backup artifacts yet</p>
+                <p className="bk-hint">Finished backups show here, ready to restore or check.</p>
               </div>
             ) : (
-              <div className="card-grid card-grid-table">
-                <article className="panel dashboard-card table-card">
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Workload</th>
-                          <th>Target</th>
-                          <th>Status</th>
-                          <th>Plan</th>
-                          <th>Error</th>
-                          <th>Transferred</th>
-                          <th>Incremental</th>
-                          <th>Started</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentRuns.map((r) => (
-                          <tr key={r.id}>
-                            <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
-                            <td>{targetById.get(r.target_id)?.name ?? r.target_id}</td>
-                            <td>{runStatusLabel(r.status)}</td>
-                            <td>{planLabel(r.plan)}</td>
-                            <td>{r.error || "None"}</td>
-                            <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
-                            <td>{r.incremental ? "Yes" : "No"}</td>
-                            <td>{formatWhen(r.started_at)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </article>
+              <div className="bk-scroll is-tall">
+                <table className="bk-table">
+                  <thead>
+                    <tr>
+                      <th>Workload</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th className="bk-num">Size</th>
+                      <th>Checked</th>
+                      <th>Created</th>
+                      <th className="bk-actions-col">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shownArtifacts.map((art) => (
+                      <tr key={art.id}>
+                        <td>{workloadName(art.workload_id)}</td>
+                        <td>{artifactBackupType(art)}</td>
+                        <td>
+                          <span className={"bk-pill " + protectionTone(art)} title={art.remote_error && art.remote_state !== "protected" ? art.remote_error : undefined}>
+                            {protectionLabel(art)}
+                          </span>
+                          {art.protected ? <span className="bk-pill">Kept</span> : null}
+                          {uploadProgress(art) ? <span className="bk-hint"> {uploadProgress(art)}</span> : null}
+                        </td>
+                        <td className="bk-num">{formatBytes(art.logical_bytes || art.size_bytes)}</td>
+                        <td>{verifyStatusLabel(art.verify_status)}</td>
+                        <td title={formatWhen(art.created_at)}>{formatRelative(art.created_at)}</td>
+                        <td className="bk-actions-col">
+                          {mutate ? (
+                            <div className="bk-actions">
+                              <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "artifact", artifact: art })}>
+                                Restore or verify
+                              </button>
+                              <button
+                                className="btn btn-sm"
+                                type="button"
+                                disabled={busy}
+                                aria-label={`${art.protected ? "Unprotect" : "Protect"} backup from ${formatWhen(art.created_at)}`}
+                                title={art.protected ? "Let retention delete this backup again" : "Keep this backup even when retention would delete it"}
+                                onClick={() => void onToggleProtect(art)}
+                              >
+                                {art.protected ? "Unprotect" : "Protect"}
+                              </button>
+                              <button
+                                className="btn btn-sm btn-ghost btn-danger-text"
+                                type="button"
+                                disabled={busy || art.protected}
+                                aria-label={`Delete backup from ${formatWhen(art.created_at)}`}
+                                title={art.protected ? "Unprotect it first" : undefined}
+                                onClick={() => void onDeleteArtifact(art)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                    {shownArtifacts.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="bk-hint">
+                          No restore points match.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
 
-          <section className="section-block" aria-labelledby="backup-artifacts-heading">
-            <div className="page-header-row">
-              <h2 id="backup-artifacts-heading">Artifacts</h2>
-              {mutate ? (
-                <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
-                  Export DR metadata
-                </button>
-              ) : null}
-            </div>
-            {artifacts == null || artifacts.length === 0 ? (
-              <div className="card-grid">
-                <article className="panel dashboard-card empty-card">
-                  {artifacts == null ? (
-                    <LoadingState label="Collecting" />
-                  ) : (
-                    <>
-                      <p className="empty-title">No backup artifacts yet</p>
-                      <p className="muted">Completed backups appear here for restore and verification.</p>
-                    </>
-                  )}
-                </article>
-              </div>
-            ) : (
-              <div className="card-grid card-grid-table">
-                <article className="panel dashboard-card table-card">
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Workload</th>
-                          <th>Backup type</th>
-                          <th>Protection</th>
-                          <th>Size</th>
-                          <th>Encrypted</th>
-                          <th>Verify</th>
-                          <th>Created</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {recentArtifacts.map((art) => (
-                          <tr key={art.id}>
-                            <td>{workloads.find((w) => w.id === art.workload_id)?.name ?? art.workload_id}</td>
-                            <td>{artifactBackupType(art)}</td>
-                            <td>
-                              <span className="status-pill">{protectionLabel(art)}</span>
-                              {art.protected ? <span className="status-pill">Kept by protection</span> : null}
-                              {uploadProgress(art) ? <span className="meta"> {uploadProgress(art)}</span> : null}
-                              {art.remote_error && art.remote_state !== "protected" ? (
-                                <span className="meta" title={art.remote_error}>
-                                  {" "}
-                                  {art.remote_error}
-                                </span>
-                              ) : null}
-                            </td>
-                            <td>{formatBytes(art.logical_bytes || art.size_bytes)}</td>
-                            <td>{art.encrypted ? "Client-side" : "No"}</td>
-                            <td>{verifyStatusLabel(art.verify_status)}</td>
-                            <td>{formatWhen(art.created_at)}</td>
-                            <td>
-                              {mutate ? (
-                                <div className="btn-row is-flush">
-                                  <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "artifact", artifact: art })}>
-                                    Restore or verify
-                                  </button>
-                                  <button
-                                    className="btn btn-sm"
-                                    type="button"
-                                    disabled={busy}
-                                    aria-label={`${art.protected ? "Unprotect" : "Protect"} backup from ${formatWhen(art.created_at)}`}
-                                    onClick={() => void onToggleProtect(art)}
-                                  >
-                                    {art.protected ? "Unprotect" : "Protect"}
-                                  </button>
-                                  {!art.protected ? (
-                                    <button
-                                      className="btn btn-sm btn-ghost btn-danger-text"
-                                      type="button"
-                                      disabled={busy}
-                                      aria-label={`Delete backup from ${formatWhen(art.created_at)}`}
-                                      onClick={() => void onDeleteArtifact(art)}
-                                    >
-                                      Delete
-                                    </button>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <span className="muted">None</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </article>
-              </div>
-            )}
-          </section>
+          <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
+          <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
         </>
       ) : null}
+
+      <ConfirmDialog
+        open={dialog?.kind === "run"}
+        title="Backup run details"
+        hideFooter
+        wide
+        onClose={() => setDialog(null)}
+        onConfirm={() => setDialog(null)}
+      >
+        {dialog?.kind === "run" ? <RunDetails run={dialog.run} workload={workloadName(dialog.run.workload_id)} target={targetById.get(dialog.run.target_id)?.name ?? dialog.run.target_id} /> : null}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={dialog?.kind === "target"}
@@ -2198,14 +2198,13 @@ export function BackupsPage() {
         onConfirm={() => setDialog(null)}
       >
         {dialog?.kind === "history" ? (
-          <div className="table-wrap">
-            <table>
+          <div className="bk-scroll is-tall">
+            <table className="bk-table">
               <thead>
                 <tr>
                   <th>Workload</th>
                   <th>Status</th>
-                  <th>Plan</th>
-                  <th>Transferred</th>
+                  <th>Uploaded</th>
                   <th>Started</th>
                   <th>Finished</th>
                   <th>Error</th>
@@ -2216,13 +2215,14 @@ export function BackupsPage() {
                   .filter((r) => r.policy_id === dialog.policy.id)
                   .map((r) => (
                     <tr key={r.id}>
-                      <td>{workloads.find((w) => w.id === r.workload_id)?.name ?? r.workload_id}</td>
+                      <td>{workloadName(r.workload_id)}</td>
                       <td>{runStatusLabel(r.status)}</td>
-                      <td>{planLabel(r.plan)}</td>
                       <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
                       <td>{formatWhen(r.started_at)}</td>
                       <td>{formatWhen(r.finished_at)}</td>
-                      <td>{r.error || "None"}</td>
+                      <td className="bk-clip" title={r.error || undefined}>
+                        {r.error}
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -2393,8 +2393,8 @@ export function BackupsPage() {
 
       <ConfirmDialog
         open={dialog?.kind === "workspace"}
-        title="Backup workspace"
-        confirmLabel="Save workspace"
+        title="Backup settings"
+        confirmLabel="Save settings"
         wide
         confirmDisabled={busy}
         onClose={() => setDialog(null)}

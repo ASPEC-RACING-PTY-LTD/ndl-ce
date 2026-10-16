@@ -4,6 +4,7 @@ import { App } from "./App";
 import "./styles.css";
 import "./content.css";
 import "./design.css";
+import "./backups.css";
 import { startThemeSync } from "./theme";
 import { installTableSorting } from "./ui/autoSort";
 
