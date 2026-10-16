@@ -133,17 +133,35 @@ func (s *Server) checkLocalBackupPath(ctx context.Context, clusterID, path, excl
 			return errConflict("the location overlaps backup target " + t.Name)
 		}
 	}
-	if allowRoot || s.Backup == nil {
+	if s.Backup == nil {
 		return nil
 	}
 	res, err := s.Backup.CopyBackup(ctx, qemu.BackupRootFS, "", path)
 	if err != nil {
 		return errUnprocessable("could not check which disk the location is on: " + err.Error())
 	}
-	if res.Size == 1 {
-		return errRootFilesystem
+	if res.Size != 1 {
+		return nil
 	}
-	return nil
+	// The root disk runs the operating system, PostgreSQL and NDL-CE; with
+	// another disk available it never holds backups, confirmed or not.
+	if other := separateBackupPool(pools); other != "" {
+		return errBadRequest("this location is on the host root disk; backups must go on storage pool " + other + " instead")
+	}
+	if allowRoot {
+		return nil
+	}
+	return errRootFilesystem
+}
+
+// separateBackupPool names a usable storage pool off the root disk, or "".
+func separateBackupPool(pools []appdb.StoragePool) string {
+	for _, p := range pools {
+		if l := backupLocationFor(p); l.Usable && !l.RootFilesystem {
+			return p.Name
+		}
+	}
+	return ""
 }
 
 func isUnderPath(p, dir string) bool {

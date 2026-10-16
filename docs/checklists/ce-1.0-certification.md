@@ -51,6 +51,16 @@ production, and never fills a filesystem. Workspace and host-reserve limits are
 exercised with small artificial settings, not by filling real storage. Cleanup
 removes only tracked disposable resources.
 
+The harness never runs on a production host. It stops before doing anything
+when `/etc/ndl/production` exists or when the host runs any workload whose name
+does not start with `cert-`. Run it on a dedicated lab host.
+
+Its scratch output (`CERT_OUT`, its `TMPDIR` and the throwaway MinIO) must not
+be on the root disk, which holds the OS, PostgreSQL and No-dal. Set `CERT_OUT`
+to a folder on another disk, for example
+`CERT_OUT=/storage/ndl-test/<run-id>`. On a single-disk lab machine only,
+`CERT_ALLOW_ROOT_DISK=1` allows the root disk.
+
 Management-plane restart (gate 19) is permitted because workloads are
 independent systemd units; the harness restarts `ndl-control`/`ndl-agent` and
 asserts the disposable workload's `MainPID` is unchanged. It never restarts a
@@ -105,7 +115,7 @@ export CERT_VM_IMAGE=/var/lib/ndl/images/debian-13-genericcloud-amd64.qcow2
 sudo -E packaging/cert/ce-1.0-certify.sh
 ```
 
-The report is written to `/var/lib/ndl/cert/<run-id>/report.md` with a per-gate
+The report is written to `$CERT_OUT/report.md` with a per-gate
 evidence directory. Re-run after resolving any `FAIL`. CE 1.0 is certified only
 when a run reports `PASS` for every required gate and exits `0`.
 

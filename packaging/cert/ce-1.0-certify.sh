@@ -109,6 +109,9 @@ if [ "${CERT_I_UNDERSTAND:-}" != "disposable-only" ]; then
   exit 3
 fi
 
+cert_refuse_production || exit 3
+cert_require_scratch_off_root || exit 3
+
 if [ "$CERT_RESUME_REBOOT" != 1 ]; then
   cert_init
   cert_install_cleanup_trap
@@ -365,7 +368,7 @@ cert_ensure_object_target() {
   local user pass
   user="cert$(printf '%s' "$CERT_RUN_ID" | tr -cd 'a-zA-Z0-9' | cut -c1-8)"
   pass="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
-  MINIO_ROOT_USER="$user" MINIO_ROOT_PASSWORD="$pass" "$bin" server --address 127.0.0.1:19000 "$datadir" >/tmp/cert-minio.log 2>&1 &
+  MINIO_ROOT_USER="$user" MINIO_ROOT_PASSWORD="$pass" "$bin" server --address 127.0.0.1:19000 "$datadir" >"${CERT_OUT}/minio.log" 2>&1 &
   echo $! > "${CERT_OUT}/minio.pid"
   local i=0
   while [ "$i" -lt 30 ]; do
@@ -941,7 +944,7 @@ gate21() {
       done)"
       if [ -n "$same" ]; then
         map_before="$(cert_preservation_digest || true)"
-        DEBIAN_FRONTEND=noninteractive dpkg -i $(cert_sibling_debs "$same") >/tmp/cert-reinstall.log 2>&1 || true
+        DEBIAN_FRONTEND=noninteractive dpkg -i $(cert_sibling_debs "$same") >"${CERT_OUT}/reinstall.log" 2>&1 || true
         systemctl start ndl-control ndl-agent >/dev/null 2>&1 || true
         after="$(dpkg-query -W -f='${Version}' nodal 2>/dev/null || true)"
         if control_healthy && [ "$(cert_upgrade_kind "$before" "$after")" = same ]; then
@@ -955,7 +958,7 @@ gate21() {
     return
   fi
   map_before="$(cert_preservation_digest || true)"
-  DEBIAN_FRONTEND=noninteractive dpkg -i $(cert_sibling_debs "$newer") >/tmp/cert-upgrade.log 2>&1 || true
+  DEBIAN_FRONTEND=noninteractive dpkg -i $(cert_sibling_debs "$newer") >"${CERT_OUT}/upgrade.log" 2>&1 || true
   systemctl start ndl-control ndl-agent >/dev/null 2>&1 || true
   after="$(dpkg-query -W -f='${Version}' nodal 2>/dev/null || true)"
   kind="$(cert_upgrade_kind "$before" "$after")"

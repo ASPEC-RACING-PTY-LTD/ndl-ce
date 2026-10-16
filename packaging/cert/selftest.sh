@@ -55,6 +55,18 @@ check "guard accepts restore-as-new leftover name" 0 "$?"
 ( track_resource workload "prod-thing" ) >/dev/null 2>&1
 check "track_resource refuses non-disposable" 3 "$?"
 
+# --- Production host and root disk -----------------------------------------
+marker="${CERT_OUT}/production"
+touch "$marker"
+( CERT_PRODUCTION_MARKER="$marker" CERT_CONTROL_SOCKET=/nonexistent cert_refuse_production ) >/dev/null 2>&1
+check "refuses a host marked production" 1 "$?"
+( CERT_PRODUCTION_MARKER="${CERT_OUT}/absent" CERT_CONTROL_SOCKET=/nonexistent cert_refuse_production ) >/dev/null 2>&1
+check "runs on an unmarked host without a control plane" 0 "$?"
+( CERT_OUT=/ cert_require_scratch_off_root ) >/dev/null 2>&1
+check "refuses scratch on the root disk" 1 "$?"
+( CERT_OUT=/ CERT_ALLOW_ROOT_DISK=1 cert_require_scratch_off_root ) >/dev/null 2>&1
+check "root disk scratch only with CERT_ALLOW_ROOT_DISK=1" 0 "$?"
+
 # --- Ledger -----------------------------------------------------------------
 : > "$CERT_RESULTS"
 gate_pass 01 "example pass" "evidence"

@@ -117,6 +117,13 @@ bounded worker pool fed from an on-disk job directory:
 
 - Persistent and restart-recoverable: pending jobs survive a process restart and
   resume automatically (a fresh queue picks up the persisted job files).
+- One queue and one job directory per target (`state/queue/<target>`). A job
+  is only ever uploaded, and its restore point only ever marked protected, by
+  the target it was queued for.
+- The agent remembers each target it uploads to (`state/targets`) so queues
+  resume after a restart. Every status call and capture from the control plane
+  lists the targets that still exist; the agent stops and forgets any other,
+  deleting its saved spec, pending jobs and uploaded-pack index.
 - Retries with exponential backoff and jitter; a job file is never lost on
   failure.
 - Backpressure through a bounded channel; no unbounded goroutines or memory.
@@ -348,9 +355,10 @@ change is landed, not in CI. The disposable engine lifecycle lives in
 ## Datastores, jobs and offsite copies
 
 Backup locations are chosen by storage pool (`GET /backups/locations`). A pool
-on its own disk is recommended; the host root disk, workload disk folders,
-No-dal state and folders overlapping another target are refused, and the root
-disk needs `allow_root_filesystem`. The local repository moves the same way
+on its own disk is recommended; workload disk folders, No-dal state and folders
+overlapping another target are refused. The host root disk is refused whenever
+another disk has a usable pool, even with `allow_root_filesystem`; only a
+single-disk host can confirm it with `allow_root_filesystem`. The local repository moves the same way
 (`POST /backups/workspace/relocate` with `pool_id`), only while it is empty.
 
 Maintenance runs daily and verification weekly from the nightly tick, whether

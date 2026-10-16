@@ -114,6 +114,9 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		req.Settings.CompressionLevel != 0 {
 		h.applySettings(req.Settings)
 	}
+	if req.SyncTargets {
+		h.forgetTargetsExcept(req.Targets)
+	}
 	var out Result
 	var err error
 	switch req.Action {

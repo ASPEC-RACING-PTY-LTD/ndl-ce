@@ -228,6 +228,7 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 		// to Git; Full keeps the working tree itself.
 		HoldUncommittedGit: settings.HoldUncommittedGit && bp.CaptureMode != appdb.BackupCaptureFull,
 	}
+	req.Targets, req.SyncTargets = s.v2TargetIDs(ctx, clusterID)
 	if opts, _ := s.Store.ListBackupWorkloadOptions(ctx, clusterID); opts[wl.ID].KeepImages {
 		req.KeepImages = true
 		if wl.Status == lxc.StatusRunning || wl.UnitActive {
@@ -409,11 +410,27 @@ func (s *Server) v2TargetSpec(ctx context.Context, tgt appdb.BackupTarget) backu
 	return spec
 }
 
+// v2TargetIDs lists the cluster's backup targets so the agent can forget any
+// other it still remembers. ok is false when the list cannot be read, so a
+// database error never makes the agent forget a live target.
+func (s *Server) v2TargetIDs(ctx context.Context, clusterID string) (ids []string, ok bool) {
+	targets, err := s.Store.ListBackupTargets(ctx, clusterID)
+	if err != nil {
+		return nil, false
+	}
+	ids = make([]string, 0, len(targets))
+	for _, t := range targets {
+		ids = append(ids, t.ID)
+	}
+	return ids, true
+}
+
 func (s *Server) v2Status(ctx context.Context, clusterID string, settings appdb.BackupWorkspaceSettings) (backuphost.Result, error) {
 	if s.Backup == nil {
 		return backuphost.Result{}, errUnavailable("backup agent is unavailable")
 	}
 	req := backuphost.Request{Action: backuphost.ActionStatus, Settings: hostSettings(settings)}
+	req.Targets, req.SyncTargets = s.v2TargetIDs(ctx, clusterID)
 	raw, _ := json.Marshal(req)
 	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2Status, "", string(raw))
 	if err != nil {

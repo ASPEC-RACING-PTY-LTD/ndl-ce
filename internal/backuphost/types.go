@@ -70,6 +70,10 @@ type Request struct {
 	Chown        bool                  `json:"chown,omitempty"`
 	Settings     Settings              `json:"settings,omitempty"`
 	Target       TargetSpec            `json:"target,omitempty"`
+	// SyncTargets says Targets lists every backup target the control plane
+	// still has; the host stops uploading to, and forgets, any other.
+	SyncTargets bool     `json:"sync_targets,omitempty"`
+	Targets     []string `json:"targets,omitempty"`
 	// DeferGC skips collection after an expire; the caller sends ActionGC.
 	DeferGC bool `json:"defer_gc,omitempty"`
 	// Reason labels an ActionGC run in reports.

@@ -133,7 +133,49 @@ func (q *UploadQueue) bandwidthLimit() int64 {
 	return q.limitBPS
 }
 
-func (q *UploadQueue) queueDir() string { return filepath.Join(q.repo.root, "state", "queue") }
+func (q *UploadQueue) legacyQueueDir() string { return filepath.Join(q.repo.root, "state", "queue") }
+
+// queueDir holds this target's jobs. Each target has its own directory, so a
+// job is only ever uploaded, and its restore point only ever marked protected,
+// by the target it was queued for.
+func (q *UploadQueue) queueDir() string {
+	if q.targetKey == "" {
+		return q.legacyQueueDir()
+	}
+	return filepath.Join(q.legacyQueueDir(), sanitize(q.targetKey))
+}
+
+// adoptLegacyJobs moves jobs queued before targets had their own directory
+// into this queue.
+func (q *UploadQueue) adoptLegacyJobs() {
+	if q.targetKey == "" {
+		return
+	}
+	entries, err := os.ReadDir(q.legacyQueueDir())
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || (filepath.Ext(e.Name()) != ".job" && filepath.Ext(e.Name()) != ".failed") {
+			continue
+		}
+		_ = os.Rename(filepath.Join(q.legacyQueueDir(), e.Name()), filepath.Join(q.queueDir(), e.Name()))
+	}
+}
+
+// Discard stops the queue and deletes its pending jobs and uploaded-pack
+// index, for a target that no longer exists.
+func (q *UploadQueue) Discard() {
+	if q == nil {
+		return
+	}
+	q.Stop()
+	if q.targetKey == "" {
+		return
+	}
+	_ = os.RemoveAll(q.queueDir())
+	q.repo.ClearUploaded(q.targetKey)
+}
 
 // Start launches the workers and the dispatcher and immediately picks up any
 // jobs already persisted on disk (restart recovery).
@@ -141,6 +183,7 @@ func (q *UploadQueue) Start(ctx context.Context) error {
 	if err := os.MkdirAll(q.queueDir(), 0o750); err != nil {
 		return err
 	}
+	q.adoptLegacyJobs()
 	q.retryFailed()
 	q.lastRearm = time.Now()
 	q.ctx, q.cancel = context.WithCancel(ctx)

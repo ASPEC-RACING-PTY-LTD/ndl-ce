@@ -36,10 +36,60 @@ NODALCTL="${NODALCTL:-nodalctl}"
 # explicitly off limits. The list is a case-insensitive substring denylist.
 CERT_PRODUCTION_DENY="${CERT_PRODUCTION_DENY:-skila}"
 
+# --- Production and root-disk guard ----------------------------------------
+#
+# Certification never runs on a production host. A host is production when
+# CERT_PRODUCTION_MARKER exists or when it runs any workload outside the
+# certification prefix. Scratch output (CERT_OUT, TMPDIR, the throwaway MinIO)
+# never goes on the root disk, which holds the OS, PostgreSQL and No-dal: point
+# CERT_OUT at another disk, or set CERT_ALLOW_ROOT_DISK=1 on a single-disk lab
+# machine.
+CERT_PRODUCTION_MARKER="${CERT_PRODUCTION_MARKER:-/etc/ndl/production}"
+CERT_CONTROL_SOCKET="${CERT_CONTROL_SOCKET:-/run/ndl/control.sock}"
+
+cert_refuse_production() {
+  if [ -e "$CERT_PRODUCTION_MARKER" ]; then
+    cert_log "FATAL: ${CERT_PRODUCTION_MARKER} marks this host as production; certification runs only on lab hosts"
+    return 1
+  fi
+  [ -S "$CERT_CONTROL_SOCKET" ] || return 0
+  local names n
+  if ! names="$(curl -fsS --unix-socket "$CERT_CONTROL_SOCKET" http://ndl/api/v1/workloads | jq -r '(.items // .)[]?.name')"; then
+    cert_log "FATAL: could not list workloads to confirm this is not a production host"
+    return 1
+  fi
+  while IFS= read -r n; do
+    [ -z "$n" ] && continue
+    case "$n" in
+      cert-*) ;;
+      *)
+        cert_log "FATAL: workload ${n} is not a certification resource; this host is in use, refusing to run"
+        return 1
+        ;;
+    esac
+  done <<< "$names"
+}
+
+# cert_on_root_disk PATH succeeds when PATH (or its nearest existing parent)
+# is on the same filesystem as /.
+cert_on_root_disk() {
+  local probe="$1"
+  while [ ! -e "$probe" ]; do probe="$(dirname "$probe")"; done
+  [ "$(stat -c %d "$probe")" = "$(stat -c %d /)" ]
+}
+
+cert_require_scratch_off_root() {
+  if cert_on_root_disk "$CERT_OUT" && [ "${CERT_ALLOW_ROOT_DISK:-}" != 1 ]; then
+    cert_log "FATAL: ${CERT_OUT} is on the root disk; set CERT_OUT to a folder on another disk (CERT_ALLOW_ROOT_DISK=1 only on a single-disk lab machine)"
+    return 1
+  fi
+}
+
 # --- Ledger ----------------------------------------------------------------
 
 cert_init() {
-  mkdir -p "$CERT_OUT" "$CERT_EVIDENCE"
+  mkdir -p "$CERT_OUT" "$CERT_EVIDENCE" "${CERT_OUT}/tmp"
+  export TMPDIR="${CERT_OUT}/tmp"
   : > "$CERT_RESULTS"
   cert_log "certification run ${CERT_RUN_ID}"
   cert_log "disposable prefix: ${CERT_PREFIX}"

@@ -105,8 +105,28 @@ func TestLocalBackupPathChecks(t *testing.T) {
 	if err := s.checkLocalBackupPath(ctx, cluster.ID, "/srv/backups", "", false); err == nil || !strings.Contains(err.Error(), "root disk") {
 		t.Fatalf("the root disk must need confirmation, got %v", err)
 	}
+	// With the ZFS pool on another disk, the root disk is refused even when
+	// confirmed.
+	if err := s.checkLocalBackupPath(ctx, cluster.ID, "/srv/backups", "", true); err == nil || !strings.Contains(err.Error(), "storage pool storage") {
+		t.Fatalf("the root disk must be refused while another disk exists, got %v", err)
+	}
+}
+
+func TestRootDiskBackupNeedsConfirmationOnlyWithoutAnotherDisk(t *testing.T) {
+	s, mem, _ := testServer(t)
+	ctx := context.Background()
+	cluster, _ := mem.GetCluster(ctx)
+	small := int64(280 << 30)
+	if err := mem.CreateStoragePool(ctx, appdb.StoragePool{ID: "pool-local", ClusterID: cluster.ID, Name: "local", BackendType: storage.BackendDirectory,
+		Status: storage.StatusWarning, RootPath: "/var/lib/ndl/storage/local", Warnings: []string{storage.WarnRootFilesystem}, UsableBytes: &small}); err != nil {
+		t.Fatal(err)
+	}
+	s.Backup = &rootFSBackup{}
+	if err := s.checkLocalBackupPath(ctx, cluster.ID, "/srv/backups", "", false); err == nil || !strings.Contains(err.Error(), "root disk") {
+		t.Fatalf("the root disk must need confirmation, got %v", err)
+	}
 	if err := s.checkLocalBackupPath(ctx, cluster.ID, "/srv/backups", "", true); err != nil {
-		t.Fatalf("confirmed root disk must be accepted: %v", err)
+		t.Fatalf("a confirmed root disk must be accepted on a single-disk host: %v", err)
 	}
 }
 

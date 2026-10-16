@@ -3,6 +3,7 @@ package backuphost
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +31,34 @@ func (h *Host) rememberTarget(spec TargetSpec) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(h.targetDir(), spec.ID+".json"), raw, 0o600)
+}
+
+// forgetTargetsExcept drops every remembered target not in keep: its upload
+// queue stops, and its saved spec, pending jobs and uploaded-pack index are
+// deleted. Without this a deleted target keeps receiving uploads after every
+// agent restart.
+func (h *Host) forgetTargetsExcept(keep []string) {
+	want := map[string]bool{}
+	for _, id := range keep {
+		want[id] = true
+	}
+	for _, spec := range h.rememberedTargets() {
+		if want[spec.ID] {
+			continue
+		}
+		id := firstNonEmpty(spec.ID, spec.Bucket, spec.Locator, spec.Kind, "default")
+		h.mu.Lock()
+		q := h.queues[id]
+		delete(h.queues, id)
+		h.mu.Unlock()
+		if q != nil {
+			q.Discard()
+		} else {
+			h.repo.ClearUploaded(targetKey(spec))
+		}
+		_ = os.Remove(filepath.Join(h.targetDir(), spec.ID+".json"))
+		log.Printf("backup: forgot target %s, which the control plane no longer has", id)
+	}
 }
 
 func (h *Host) resumeTargets(ctx context.Context) error {
