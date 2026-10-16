@@ -101,7 +101,7 @@ func (e *Engine) bootstrapGuest(ctx context.Context, id string, reconcileOnly bo
 			return err
 		}
 	} else {
-		_ = chownMappedGuest(rootfs, spec, "etc/profile.d/00-ndl-term.sh", "etc/ndl/inputrc")
+		_ = chownMappedGuest(rootfs, spec, "etc/profile.d/00-ndl-term.sh", "etc/ndl/inputrc", "etc/ndl/paste-history.bash")
 	}
 	return nil
 }
@@ -119,7 +119,7 @@ func (e *Engine) bootstrapAlpineGuest(ctx context.Context, id, rootfs string, sp
 			return err
 		}
 	} else {
-		_ = chownMappedGuest(rootfs, spec, "etc/profile.d/00-ndl-term.sh", "etc/ndl/inputrc")
+		_ = chownMappedGuest(rootfs, spec, "etc/profile.d/00-ndl-term.sh", "etc/ndl/inputrc", "etc/ndl/paste-history.bash")
 	}
 	return e.writeBaselineMarker(rootfs, spec, first)
 }

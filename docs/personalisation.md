@@ -45,3 +45,18 @@ on links; the page's own actions (for example Add hostname on Cloudflare);
 and Back, Forward, Reload, Search and Copy page link. The code editor and the
 VM console keep their own menus. Shift+F10 or the menu key opens it from the
 keyboard.
+
+## Shells in containers and on the node
+
+Login shells in system containers (and on the node, from the ndl-agent
+package) get two conveniences:
+
+- `clear` also removes the scrollback, whatever terminal type the SSH client
+  reports; `clear -x` keeps it. Ctrl+L does the same in Bash.
+- In Bash, pasting several lines keeps them as one history entry, so the up
+  arrow brings the whole block back and Enter runs it again. Typed commands are
+  unchanged. The hook (`/etc/ndl/paste-history.bash` in containers,
+  `/usr/share/ndl/profile/paste-history.bash` on the node) is loaded only by
+  Bash.
+
+Containers pick these up the next time they start.

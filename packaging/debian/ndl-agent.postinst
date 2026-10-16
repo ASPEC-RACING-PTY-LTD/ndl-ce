@@ -111,12 +111,13 @@ start_units() {
   fi
 }
 
-# Login shells on the node load ndl-clear.sh, so `clear` also erases the
-# scrollback in SSH clients whose TERM lacks E3. A file of the same name the
+# Login shells on the node load ndl-shell.sh: `clear` also erases the
+# scrollback in SSH clients whose TERM lacks E3, and a multi-line paste is
+# one history entry. A file of the same name the
 # administrator put there is left alone.
 link_shell_profile() {
-  src=/usr/share/ndl/profile/ndl-clear.sh
-  dst=/etc/profile.d/ndl-clear.sh
+  src=/usr/share/ndl/profile/ndl-shell.sh
+  dst=/etc/profile.d/ndl-shell.sh
   [ -r "$src" ] && [ -d /etc/profile.d ] || return 0
   if [ -e "$dst" ] && [ ! -L "$dst" ]; then
     return 0

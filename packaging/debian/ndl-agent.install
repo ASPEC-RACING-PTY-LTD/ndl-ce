@@ -16,4 +16,5 @@ lib/systemd/system/nodal-oci@.service
 etc/apparmor.d/local/usr.bin.qemu-system-x86_64
 usr/lib/modules-load.d/ndl-agent.conf
 usr/lib/sysctl.d/ndl-lxc-keys.conf
-usr/share/ndl/profile/ndl-clear.sh
+usr/share/ndl/profile/ndl-shell.sh
+usr/share/ndl/profile/paste-history.bash

@@ -227,6 +227,11 @@ fi
 if [ -n "${BASH_VERSION:-}" ]; then
   bind 'set enable-bracketed-paste on' 2>/dev/null || true
 fi
+# In Bash, a multi-line paste is kept in history as one entry (the file is
+# Bash-only, so plain sh never parses it).
+if [ -n "${BASH_VERSION:-}" ] && [ -r /etc/ndl/paste-history.bash ]; then
+  . /etc/ndl/paste-history.bash
+fi
 # clear also removes the scrollback, whatever TERM the terminal reports: some
 # SSH apps report a TERM without E3 (erase saved lines), so the screen cleared
 # but scrolling up showed it all. clear -x keeps the scrollback.
@@ -257,8 +262,54 @@ set enable-bracketed-paste on
 # Ctrl+L clears the scrollback too, like clear.
 "\C-l": clear-display
 `
-	return os.WriteFile(filepath.Join(rootfs, "etc", "ndl", "inputrc"), []byte(body), 0o644)
+	if err := os.WriteFile(filepath.Join(rootfs, "etc", "ndl", "inputrc"), []byte(body), 0o644); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(rootfs, "etc", "ndl", "paste-history.bash"), []byte(guestPasteHistory), 0o644)
 }
+
+// guestPasteHistory keeps a multi-line paste in Bash history as one entry, so
+// the up arrow brings the whole block back. The same script ships for the
+// node in packaging/share/ndl/profile/paste-history.bash.
+const guestPasteHistory = `# Installed by No-dal. Sourced by Bash only.
+# A multi-line paste is kept in history as one entry, so the up arrow brings
+# the whole block back instead of its lines one by one.
+if [ -n "${BASH_VERSION:-}" ] && [ -n "${PS1:-}" ] && [ -z "${__ndl_paste_hook:-}" ]; then
+  __ndl_paste_hook=1
+  shopt -s cmdhist lithist 2>/dev/null
+  __ndl_hist_last() {
+    local l
+    l=$(HISTTIMEFORMAT= history 1)
+    l=${l#"${l%%[![:space:]]*}"}
+    printf '%s' "${l%%[!0-9]*}"
+  }
+  __ndl_join_paste() {
+    local now count line joined="" re='^ *[0-9]+  (.*)$'
+    now=$(__ndl_hist_last)
+    # More than one entry since the last prompt means one input held several
+    # lines: a paste. (HISTCMD and fc lag behind after a paste, so the
+    # numbers come from the history listing itself.)
+    if [ -n "$now" ] && [ -n "${__ndl_hist_seen:-}" ]; then
+      count=$((now - __ndl_hist_seen))
+      if [ "$count" -gt 1 ] && [ "$count" -le 200 ]; then
+        while IFS= read -r line; do
+          if [[ $line =~ $re ]]; then
+            joined+=${joined:+$'\n'}${BASH_REMATCH[1]}
+          else
+            joined+=$'\n'${line#$'\t'}
+          fi
+        done < <(HISTTIMEFORMAT= history "$count")
+        if [ -n "$joined" ] && history -d "$((__ndl_hist_seen + 1))-$now" 2>/dev/null; then
+          history -s "$joined"
+          now=$(__ndl_hist_last)
+        fi
+      fi
+    fi
+    __ndl_hist_seen=$now
+  }
+  PROMPT_COMMAND="__ndl_join_paste${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+fi
+`
 
 func ensureGuestMotd(rootfs, hostname string) error {
 	hostname = strings.TrimSpace(hostname)
@@ -379,6 +430,7 @@ func guestBaselineChownRels() []string {
 		"etc/profile.d",
 		"etc/profile.d/00-ndl-term.sh",
 		"etc/ndl/inputrc",
+		"etc/ndl/paste-history.bash",
 		"etc/profile.d/00-ndl-details.sh",
 		"etc/systemd/system/systemd-networkd-wait-online.service",
 		"etc/systemd/system/systemd-homed.service",

@@ -20,8 +20,8 @@ esac
 # The shell profile link points into this package; remove it with it.
 case "$1" in
   remove|purge)
-    if [ -L /etc/profile.d/ndl-clear.sh ] && [ "$(readlink /etc/profile.d/ndl-clear.sh)" = /usr/share/ndl/profile/ndl-clear.sh ]; then
-      rm -f /etc/profile.d/ndl-clear.sh
+    if [ -L /etc/profile.d/ndl-shell.sh ] && [ "$(readlink /etc/profile.d/ndl-shell.sh)" = /usr/share/ndl/profile/ndl-shell.sh ]; then
+      rm -f /etc/profile.d/ndl-shell.sh
     fi
     ;;
 esac

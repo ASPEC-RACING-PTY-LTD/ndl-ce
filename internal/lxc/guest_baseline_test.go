@@ -2,6 +2,7 @@ package lxc
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -190,5 +191,33 @@ func TestRenderConfigTUNAndMknodOptional(t *testing.T) {
 	}
 	if !strings.Contains(got, "lxc.mount.entry = /dev/net/tun") {
 		t.Fatal(got)
+	}
+}
+
+func TestGuestShellFilesParseAndMatchTheNode(t *testing.T) {
+	root := t.TempDir()
+	if err := ensureGuestConsole(root); err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(root, "etc", "profile.d", "00-ndl-term.sh")
+	paste := filepath.Join(root, "etc", "ndl", "paste-history.bash")
+	// The profile is read by plain sh too, so it must stay POSIX; the paste
+	// hook is Bash-only and loaded only from Bash.
+	if sh, err := exec.LookPath("sh"); err == nil {
+		if out, err := exec.Command(sh, "-n", profile).CombinedOutput(); err != nil {
+			t.Fatalf("profile does not parse in sh: %v %s", err, out)
+		}
+	}
+	if bash, err := exec.LookPath("bash"); err == nil {
+		if out, err := exec.Command(bash, "-n", paste).CombinedOutput(); err != nil {
+			t.Fatalf("paste hook does not parse in bash: %v %s", err, out)
+		}
+	}
+	node, err := os.ReadFile(filepath.Join("..", "..", "packaging", "share", "ndl", "profile", "paste-history.bash"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(node) != guestPasteHistory {
+		t.Fatal("the container and node copies of paste-history.bash differ")
 	}
 }
