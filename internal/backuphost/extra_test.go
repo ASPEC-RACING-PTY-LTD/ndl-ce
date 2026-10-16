@@ -168,3 +168,18 @@ func TestWipeRemoteDeletesOnlyBackupObjectsAndKeepsLocal(t *testing.T) {
 		t.Fatalf("local copy must stay, local-only: %+v %v", ps, err)
 	}
 }
+
+func TestPinImageUsesTheMatchingDigest(t *testing.T) {
+	pin := pinImage("postgres:17", "sha256:img", []string{"mirror.example.com/postgres@sha256:aaa", "postgres@sha256:bbb"})
+	if pin.Digest != "postgres@sha256:bbb" || pin.Local {
+		t.Fatalf("%+v", pin)
+	}
+	pin = pinImage("ghcr.io/o/app:latest", "sha256:img", []string{"ghcr.io/o/app@sha256:ccc"})
+	if pin.Digest != "ghcr.io/o/app@sha256:ccc" {
+		t.Fatalf("%+v", pin)
+	}
+	pin = pinImage("myapp-web", "sha256:local", nil)
+	if !pin.Local || pin.Digest != "" || pin.ImageID != "sha256:local" {
+		t.Fatalf("a locally built image has no digest: %+v", pin)
+	}
+}

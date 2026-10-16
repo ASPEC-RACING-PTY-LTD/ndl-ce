@@ -400,14 +400,22 @@ func normalizeCapturePaths(source string, paths []string) []string {
 	return out
 }
 
+// captureSkip decides whether a path is captured. The most specific listed
+// path wins: an include inside an excluded tree (a Docker volume under
+// /var/lib/docker, a database inside an excluded Git working tree) is still
+// captured, and an exclude inside an included tree is skipped. On a tie the
+// exclude wins. An excluded directory is still walked when an include lies
+// below it (the directory entry is kept), but nothing else in it is captured.
 func captureSkip(abs, rel string, isDir bool, includes, excludes []string) (skip, skipDir bool) {
-	if pathListed(abs, rel, excludes) {
+	le := longestMatch(abs, rel, excludes)
+	li := longestMatch(abs, rel, includes)
+	if le >= 0 && le >= li {
+		if isDir && pathMayContain(abs, rel, includes) {
+			return false, false
+		}
 		return true, isDir
 	}
-	if len(includes) == 0 {
-		return false, false
-	}
-	if pathCovered(abs, rel, includes) {
+	if len(includes) == 0 || li >= 0 {
 		return false, false
 	}
 	if isDir && pathMayContain(abs, rel, includes) {
@@ -416,28 +424,19 @@ func captureSkip(abs, rel string, isDir bool, includes, excludes []string) (skip
 	return true, isDir
 }
 
-func pathListed(abs, rel string, list []string) bool {
+// longestMatch is the length of the longest listed path that is abs or one
+// of its parents, or -1.
+func longestMatch(abs, rel string, list []string) int {
+	best := -1
 	for _, p := range list {
-		if abs == p || rel == p || strings.HasPrefix(abs, p+string(os.PathSeparator)) {
-			return true
-		}
-		if rel != "." && strings.HasPrefix(rel, strings.TrimPrefix(p, "/")+string(os.PathSeparator)) {
-			return true
-		}
-	}
-	return false
-}
-
-func pathCovered(abs, rel string, includes []string) bool {
-	for _, p := range includes {
-		if abs == p || rel == p {
-			return true
-		}
-		if strings.HasPrefix(abs, p+string(os.PathSeparator)) {
-			return true
+		if abs == p || rel == p || strings.HasPrefix(abs, p+string(os.PathSeparator)) ||
+			rel != "." && strings.HasPrefix(rel, strings.TrimPrefix(p, "/")+string(os.PathSeparator)) {
+			if len(p) > best {
+				best = len(p)
+			}
 		}
 	}
-	return false
+	return best
 }
 
 func pathMayContain(abs, rel string, includes []string) bool {
@@ -492,4 +491,21 @@ func (r *Repository) writeState(s *PointState) error {
 		return err
 	}
 	return writeFileAtomic(filepath.Join(dir, s.BackupID+".state"), raw)
+}
+
+// Captured reports whether a capture of source with these includes and
+// excludes would keep the file at rel (walking its parents the same way).
+func Captured(source, rel string, includes, excludes []string) bool {
+	incl := normalizeCapturePaths(source, includes)
+	excl := normalizeCapturePaths(source, excludes)
+	parts := strings.Split(filepath.ToSlash(strings.TrimPrefix(rel, "/")), "/")
+	for i := 1; i <= len(parts); i++ {
+		r := filepath.Join(parts[:i]...)
+		isDir := i < len(parts)
+		skip, skipDir := captureSkip(filepath.Join(filepath.Clean(source), r), r, isDir, incl, excl)
+		if isDir && skip && skipDir || !isDir && skip {
+			return false
+		}
+	}
+	return true
 }

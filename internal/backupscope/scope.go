@@ -30,6 +30,7 @@ const (
 	KindOS           = "os"
 	KindUncertain    = "uncertain"
 	KindTechnical    = "technical"
+	KindMedia        = "media"
 )
 
 // Item is one discovered path category for preview and capture planning.
@@ -74,6 +75,8 @@ type Preview struct {
 	FullBytes      int64     `json:"full_bytes"`
 	Includes       []string  `json:"includes,omitempty"`
 	Excludes       []string  `json:"excludes,omitempty"`
+	// Repos records each Git working tree found (never its contents).
+	Repos []backup.GitRepo `json:"repos,omitempty"`
 }
 
 // DockerHint is a secret-free persistence hint from Docker inventory.
@@ -140,6 +143,10 @@ var reproduciblePrefixes = []struct {
 	{"var/lib/docker/overlay2", "repro:docker-overlay", KindReproducible, "Docker image layers"},
 	{"var/lib/docker/image", "repro:docker-image", KindReproducible, "Docker image metadata"},
 	{"var/lib/docker/buildkit", "repro:docker-buildkit", KindReproducible, "Docker build cache"},
+	{"var/lib/docker/containerd", "repro:docker-containerd", KindReproducible, "Docker image layers"},
+	{"var/lib/docker/containers", "repro:docker-containers", KindReproducible, "Docker container logs"},
+	{"var/lib/docker/tmp", "repro:docker-tmp", KindReproducible, "Docker temporary files"},
+	{"var/lib/containerd", "repro:containerd", KindReproducible, "Docker image layers"},
 	{"usr", "os:usr", KindOS, "Operating system"},
 	{"lib", "os:lib", KindOS, "Operating system"},
 	{"lib64", "os:lib64", KindOS, "Operating system"},
@@ -171,8 +178,9 @@ func Discover(opts Options) (Preview, error) {
 	var warnings []Warning
 	var full int64
 	gitRoots := map[string]string{}
+	gitKeep := map[string][]string{}
 	sqliteHits := map[string]int64{}
-
+	media := newMediaTally()
 	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			if d != nil && d.IsDir() {
@@ -191,6 +199,15 @@ func Discover(opts Options) (Preview, error) {
 			addPath(it, "/"+rel)
 			return filepath.SkipDir
 		}
+		// Rebuildable trees by name (caches, toolchains, package stores,
+		// game content) are left out wherever they are, and not walked.
+		if d.IsDir() && mode != ModeFull {
+			if id, label := reproducibleDir(rel); id != "" {
+				it := upsert(id+":"+rel, KindReproducible, label, false, true)
+				addPath(it, "/"+rel)
+				return filepath.SkipDir
+			}
+		}
 		info, err := d.Info()
 		if err != nil {
 			return nil
@@ -200,30 +217,45 @@ func Discover(opts Options) (Preview, error) {
 			size = info.Size()
 			full += size
 		}
-
 		if d.IsDir() && looksLikeGit(path) {
 			id := "git:" + rel
 			it := upsert(id, KindGit, "Git repository", false, true)
-			it.Reproducible = true
 			addPath(it, "/"+rel)
 			gitRoots[rel] = id
 			it.Warnings = appendUnique(it.Warnings, "Git repository may contain uncommitted work, ignored files, or local-only state.")
 			warnings = append(warnings, Warning{Level: "warning", Message: "Git repository may contain uncommitted work or local-only files.", ItemID: id, Path: "/" + rel})
+			return nil
 		}
-
+		// Inside a Git working tree only untracked configuration, databases
+		// and .env files are candidates; the rest comes back from the remote.
+		if repo := enclosingGit(rel, gitRoots); repo != "" {
+			if d.IsDir() && filepath.Base(rel) == ".git" {
+				return filepath.SkipDir
+			}
+			if info.Mode().IsRegular() {
+				if keepInRepo(rel, size) {
+					gitKeep[repo] = append(gitKeep[repo], rel)
+				} else if it := items[gitRoots[repo]]; it != nil {
+					it.Bytes += size
+				}
+			}
+			return nil
+		}
 		if info.Mode().IsRegular() && sqliteExt[strings.ToLower(filepath.Ext(rel))] && !underReproCache(rel) {
 			sqliteHits[rel] = size
 		}
-
-		if d.IsDir() && (filepath.Base(rel) == "node_modules" || filepath.Base(rel) == ".pnpm-store" || filepath.Base(rel) == "__pycache__") {
-			id := "repro:" + filepath.Base(rel) + ":" + rel
-			it := upsert(id, KindReproducible, filepath.Base(rel), false, true)
-			addPath(it, "/"+rel)
-			return nil
+		// The most specific of the persistent and reproducible prefixes
+		// wins, so /var/lib/docker/overlay2 and /var/lib/containerd are image
+		// layers, not "service state" under /var/lib.
+		persist := classifyPrefix(rel, persistentPrefixes)
+		repro := classifyPrefix(rel, reproduciblePrefixes)
+		if repro != nil && (persist == nil || len(repro.rel) > len(persist.rel)) {
+			persist = nil
 		}
-
-		if classified := classifyPrefix(rel, persistentPrefixes); classified != nil && !isTechnical(rel) {
+		if persist != nil && !isTechnical(rel) {
+			classified := persist
 			defaultOn := classified.kind != KindOS
+			owner := ""
 			if classified.id == "config:etc" && (strings.HasPrefix(rel, "etc/ssl") || strings.HasPrefix(rel, "etc/letsencrypt") || strings.HasPrefix(rel, "etc/systemd")) {
 				// more specific cert/systemd items own those trees
 			} else if classified.id == "app:var-lib" && moreSpecificPersistent(rel) {
@@ -238,27 +270,32 @@ func Discover(opts Options) (Preview, error) {
 					it := upsert(classified.id, classified.kind, classified.label, defaultOn, false)
 					addPath(it, "/"+classified.rel)
 					it.Bytes += size
+					owner = classified.id
 				}
 			} else {
 				it := upsert(classified.id, classified.kind, classified.label, defaultOn, false)
 				addPath(it, "/"+classified.rel)
 				it.Bytes += size
+				owner = classified.id
+			}
+			if info.Mode().IsRegular() && mode != ModeFull && owner != "" {
+				media.add(rel, size, owner)
 			}
 			return nil
 		}
-		if classified := classifyPrefix(rel, reproduciblePrefixes); classified != nil {
+		if classified := repro; classified != nil {
 			it := upsert(classified.id, classified.kind, classified.label, false, true)
 			addPath(it, "/"+classified.rel)
 			it.Bytes += size
-			if d.IsDir() && (classified.rel == rel || classified.rel == firstSeg(rel)) &&
-				(classified.id == "repro:docker-overlay" || classified.id == "os:usr" || classified.id == "repro:tmp" || classified.id == "repro:var-tmp") {
-				if d.IsDir() && rel == classified.rel {
-					return nil
-				}
+			if d.IsDir() && rel == classified.rel && mode != ModeFull && skipReproducibleWalk(classified.id) {
+				return filepath.SkipDir
 			}
 			return nil
 		}
 		if !d.IsDir() && size > 0 && !isTechnical(rel) {
+			if mode != ModeFull {
+				media.add(rel, size, "uncertain:"+filepath.Dir(rel))
+			}
 			it := upsert("uncertain:"+filepath.Dir(rel), KindUncertain, "Unclassified data", true, false)
 			addPath(it, "/"+filepath.ToSlash(filepath.Dir(rel)))
 			it.Bytes += size
@@ -272,21 +309,75 @@ func Discover(opts Options) (Preview, error) {
 	if walkErr != nil {
 		return Preview{}, walkErr
 	}
-
 	for rel, size := range sqliteHits {
 		id := "db:sqlite:" + rel
 		it := upsert(id, KindDatabase, "SQLite database", true, false)
 		addPath(it, "/"+rel)
 		it.Bytes += size
-		if gitID := enclosingGit(rel, gitRoots); gitID != "" {
-			msg := "SQLite database detected inside a Git working tree."
-			it.Warnings = appendUnique(it.Warnings, msg)
-			warnings = append(warnings, Warning{Level: "warning", Message: msg, ItemID: id, Path: "/" + rel})
-			if git := items[gitID]; git != nil {
-				git.Warnings = appendUnique(git.Warnings, "SQLite database detected inside excluded path.")
+	}
+	// Large video and audio is media that can be fetched again; a folder
+	// mostly made of it, or one big file, is left out.
+	mediaPaths := media.excluded()
+	for _, m := range mediaPaths {
+		it := upsert("media:"+m, KindMedia, "Media files", false, true)
+		addPath(it, "/"+m)
+		// Move the bytes from the items that counted them.
+		for owner, b := range media.ownedUnder(m) {
+			if o := items[owner]; o != nil {
+				o.Bytes -= b
+			}
+			it.Bytes += b
+		}
+	}
+	// Generic per-folder items inside a media folder would out-rank it;
+	// specific ones (databases, volumes) keep their place.
+	for id, it := range items {
+		if (it.Kind == KindApplication || it.Kind == KindUncertain) && len(it.Paths) > 0 && allUnder(it.Paths, mediaPaths) {
+			delete(items, id)
+		}
+	}
+	// Each Git tree is recorded (remote, branch, exact commit, whether it
+	// has uncommitted or unpushed work) and its untracked keep-files kept.
+	var repos []backup.GitRepo
+	for rel, id := range gitRoots {
+		repo, tracked := inspectGit(filepath.Join(root, rel), "/"+rel)
+		var kept []string
+		var keptBytes int64
+		for _, f := range gitKeep[rel] {
+			inner := strings.TrimPrefix(f, rel+"/")
+			if tracked[inner] {
+				if it := items[id]; it != nil {
+					if st, err := os.Lstat(filepath.Join(root, f)); err == nil {
+						it.Bytes += st.Size()
+					}
+				}
+				continue
+			}
+			kept = append(kept, "/"+f)
+			if st, err := os.Lstat(filepath.Join(root, f)); err == nil {
+				keptBytes += st.Size()
+			}
+		}
+		sort.Strings(kept)
+		repo.Kept = kept
+		repos = append(repos, repo)
+		if len(kept) > 0 {
+			it := upsert("git-keep:"+rel, KindConfig, "Untracked config, databases and .env in a Git repository", true, false)
+			it.Paths = kept
+			it.Bytes = keptBytes
+		}
+		if it := items[id]; it != nil {
+			if repo.Dirty {
+				msg := "Git repository has uncommitted changes."
+				it.Warnings = appendUnique(it.Warnings, msg)
+			}
+			if repo.Unpushed {
+				msg := "Git repository has commits that are on no remote."
+				it.Warnings = appendUnique(it.Warnings, msg)
 			}
 		}
 	}
+	sort.Slice(repos, func(i, j int) bool { return repos[i].Path < repos[j].Path })
 
 	if opts.Docker != nil {
 		for i, vol := range opts.Docker.NamedVolumes {
@@ -310,6 +401,13 @@ func Discover(opts Options) (Preview, error) {
 				continue
 			}
 			id := "docker:bind:" + bind
+			if bindHoldsGit(bind, gitRoots) {
+				// A bind of a whole working tree would undo the Git rule;
+				// the tree's keep-files are captured on their own.
+				it := upsert(id, KindDockerBind, "Docker bind mount (Git working tree)", false, true)
+				addPath(it, bind)
+				continue
+			}
 			it := upsert(id, KindDockerBind, "Docker bind mount", true, false)
 			addPath(it, bind)
 			it.Warnings = appendUnique(it.Warnings, "Docker bind mount contains persistent application data.")
@@ -336,7 +434,7 @@ func Discover(opts Options) (Preview, error) {
 
 	prev := Preview{
 		WorkloadID: opts.WorkloadID, WorkloadName: opts.Name, Mode: mode,
-		Items: list, Warnings: warnings, FullBytes: full,
+		Items: list, Warnings: warnings, FullBytes: full, Repos: repos,
 	}
 	applySelection(&prev, opts.Selection)
 	return prev, nil
@@ -428,6 +526,25 @@ func applySelection(prev *Preview, sel Selection) {
 	prev.ExcludedBytes = excluded
 }
 
+// allUnder reports whether every path is one of roots (relative, no
+// leading slash) or inside one.
+func allUnder(paths, roots []string) bool {
+	for _, p := range paths {
+		p = strings.TrimPrefix(p, "/")
+		in := false
+		for _, r := range roots {
+			if p == r || strings.HasPrefix(p, r+"/") {
+				in = true
+				break
+			}
+		}
+		if !in {
+			return false
+		}
+	}
+	return true
+}
+
 func isDatabaseKind(kind string) bool {
 	return kind == KindDatabase
 }
@@ -501,13 +618,15 @@ func looksLikeGit(dir string) bool {
 	return err == nil && (st.IsDir() || st.Mode().IsRegular())
 }
 
+// enclosingGit is the innermost Git working tree holding rel, or "".
 func enclosingGit(rel string, roots map[string]string) string {
-	for root, id := range roots {
-		if rel == root || strings.HasPrefix(rel, root+"/") {
-			return id
+	best := ""
+	for root := range roots {
+		if (rel == root || strings.HasPrefix(rel, root+"/")) && len(root) > len(best) {
+			best = root
 		}
 	}
-	return ""
+	return best
 }
 
 func firstSeg(rel string) string {

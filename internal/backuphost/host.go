@@ -214,6 +214,7 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 	excludes = append(excludes, defaultTechnicalExcludes(source)...)
 	bp.Includes = includes
 	bp.Excludes = excludes
+	bp.Repos = prev.Repos
 
 	unit := strings.TrimSpace(req.Unit)
 	pre := ctbackup.RunGuestHookDetailed(ctx, unit, source, ctbackup.GuestHookPre)

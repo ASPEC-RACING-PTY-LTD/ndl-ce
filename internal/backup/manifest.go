@@ -94,6 +94,44 @@ type Blueprint struct {
 	CaptureMode  string         `json:"capture_mode,omitempty"`
 	Includes     []string       `json:"includes,omitempty"`
 	Excludes     []string       `json:"excludes,omitempty"`
+	// Repos are the Git working trees Smart left out, recorded so a restore
+	// can clone each one back at the exact commit.
+	Repos []GitRepo `json:"repos,omitempty"`
+}
+
+// GitRepo records one Git working tree without its contents. Remote URLs
+// never carry credentials.
+type GitRepo struct {
+	Path    string      `json:"path"`
+	Remotes []GitRemote `json:"remotes,omitempty"`
+	Branch  string      `json:"branch,omitempty"`
+	Commit  string      `json:"commit,omitempty"`
+	// Dirty is set when tracked files were changed or new files were not
+	// yet committed; Changed lists their paths (never contents), capped.
+	Dirty   bool     `json:"dirty,omitempty"`
+	Changed []string `json:"changed,omitempty"`
+	// Unpushed is set when Commit is on no remote-tracking branch, so a
+	// fresh clone may not contain it.
+	Unpushed bool `json:"unpushed,omitempty"`
+	// Kept are untracked configuration, database and .env files inside the
+	// tree that Smart captured anyway.
+	Kept  []string `json:"kept,omitempty"`
+	Error string   `json:"error,omitempty"`
+}
+
+// GitRemote is one configured remote.
+type GitRemote struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// ImagePin is the exact image a container ran: its registry digest when it
+// has one, else the local image ID (built locally, rebuilt on restore).
+type ImagePin struct {
+	Ref     string `json:"ref"`
+	Digest  string `json:"digest,omitempty"`
+	ImageID string `json:"image_id,omitempty"`
+	Local   bool   `json:"local,omitempty"`
 }
 
 // Capture modes. Smart and Custom restrict the live tree; Full captures the
@@ -117,6 +155,11 @@ type DockerInfo struct {
 	ComposeFiles    []string `json:"compose_files,omitempty"`
 	Reconstructable bool     `json:"reconstructable,omitempty"`
 	Uncertainty     []string `json:"uncertainty,omitempty"`
+	// ImagePins pin every image by digest so a restore pulls exactly what
+	// ran, not whatever a tag points to later.
+	ImagePins []ImagePin `json:"image_pins,omitempty"`
+	// ComposeDirs are the Compose projects' working directories.
+	ComposeDirs []string `json:"compose_dirs,omitempty"`
 }
 
 // CaptureStats instruments a backup so its cost can be explained from real

@@ -45,9 +45,20 @@ func (h *Host) dockerInventory(ctx context.Context, workloadID, name string) (*b
 			}
 		}
 	}
+	digests, _ := eng.ImageDigests(ctx, workloadID)
+	seenPin := map[string]struct{}{}
 	for _, c := range inv.Containers {
 		if c.MachineID != workloadID {
 			continue
+		}
+		if c.WorkingDir != "" {
+			info.ComposeDirs = appendUnique(info.ComposeDirs, c.WorkingDir)
+		}
+		if c.Image != "" {
+			if _, ok := seenPin[c.Image+"|"+c.ImageID]; !ok {
+				seenPin[c.Image+"|"+c.ImageID] = struct{}{}
+				info.ImagePins = append(info.ImagePins, pinImage(c.Image, c.ImageID, digests[c.ImageID]))
+			}
 		}
 		if c.Image != "" {
 			if _, ok := seenImg[c.Image]; !ok {
@@ -110,6 +121,34 @@ func (h *Host) dockerInventory(ctx context.Context, workloadID, name string) (*b
 		info.Uncertainty = append(info.Uncertainty, "compose projects are inventoried; restore does not recreate the Docker engine")
 	}
 	return info, hint
+}
+
+// pinImage records the digest the container's image came from. The digest
+// whose repository matches the reference is preferred; an image with no
+// digest was built locally.
+func pinImage(ref, imageID string, repoDigests []string) backup.ImagePin {
+	pin := backup.ImagePin{Ref: ref, ImageID: imageID}
+	repo := ref
+	if i := strings.LastIndex(repo, "@"); i >= 0 {
+		repo = repo[:i]
+	}
+	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+		repo = repo[:i]
+	}
+	for _, d := range repoDigests {
+		name, _, _ := strings.Cut(d, "@")
+		if name == repo || strings.TrimPrefix(name, "docker.io/") == strings.TrimPrefix(repo, "docker.io/") ||
+			strings.TrimPrefix(name, "docker.io/library/") == repo {
+			pin.Digest = d
+			return pin
+		}
+	}
+	if len(repoDigests) > 0 {
+		pin.Digest = repoDigests[0]
+		return pin
+	}
+	pin.Local = true
+	return pin
 }
 
 func isLocalDockerImage(ref, imageID string) bool {

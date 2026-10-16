@@ -355,7 +355,11 @@ function kindGroupLabel(kind: string): string {
     case "git":
       return "Git repositories";
     case "reproducible":
-      return "Reproducible caches";
+      return "Rebuildable (images, caches, toolchains, game files)";
+    case "media":
+      return "Media files (video and audio)";
+    case "uncertain":
+      return "Unclassified data";
     case "logs":
       return "Logs";
     case "os":
@@ -377,6 +381,7 @@ function groupCategories(items: ScopeCategory[]): CategoryGroup[] {
     "certificate",
     "uncertain",
     "git",
+    "media",
     "reproducible",
     "logs",
     "os",

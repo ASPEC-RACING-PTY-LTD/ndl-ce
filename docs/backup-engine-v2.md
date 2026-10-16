@@ -265,10 +265,26 @@ whole-rootfs tar format.
   backups reuse content-addressed chunks.
 - `smart`: protect irreplaceable application and workload data
   (databases, Docker volumes and bind mounts, uploads, persistent state,
-  relevant configuration, Blueprint). Reproducible trees such as
-  `node_modules`, package caches, image layers, and ordinary logs are
-  normally excluded. Git working trees default to excluded and are warned
-  because they may contain uncommitted or local-only state. Uncertain
+  relevant configuration, Blueprint). Anything that can be fetched or
+  rebuilt again is left out:
+  - Docker images, containerd content, container layers and BuildKit state
+    (images are recorded by digest in the Blueprint instead);
+  - caches, build output and toolchains (`node_modules`, `.cache`,
+    `go/pkg/mod`, `.cargo/registry`, `.rustup`, `.nvm`, `.venv`,
+    editor servers, transcode folders);
+  - game install files (`steamapps`, `Content/Paks`, `Binaries/...`) while
+    saves and settings stay;
+  - media libraries: a folder of at least 50 MB that is 80% audio, video or
+    images, a subtree whose folders are all media-dominant, or a single
+    media file of 200 MB or more.
+  Git working trees are left to Git: the Blueprint records each repository's
+  remotes (credentials stripped), branch, exact commit, whether it is dirty
+  or has unpushed commits, and the changed paths. Only untracked or ignored
+  local files that cannot be re-cloned are kept: `.env*` files, databases
+  (with their `-wal`/`-shm`), keys and small config files outside build
+  folders. Their contents are never read. Git is run with system and user
+  config, hooks, fsmonitor and network protocols disabled. Docker bind
+  mounts that hold a repository follow the same rule. Uncertain
   classification is protected or flagged. Smart cannot rebuild a complete
   guest by itself.
 - `custom`: user include/exclude plus detected-category overrides.

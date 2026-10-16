@@ -49,3 +49,28 @@ func (e *Engine) PruneUnused(ctx context.Context, machineID string) (PruneResult
 	}
 	return out, nil
 }
+
+// ImageDigests maps each image ID on a machine to its registry digests
+// (repo@sha256:...). A locally built image has none.
+func (e *Engine) ImageDigests(ctx context.Context, machineID string) (map[string][]string, error) {
+	sock, err := e.SocketFor(ctx, machineID)
+	if err != nil {
+		return nil, err
+	}
+	cli, _ := e.client(sock).(*unixClient)
+	if cli == nil {
+		cli = sharedUnixClient(sock)
+	}
+	var images []struct {
+		ID          string   `json:"Id"`
+		RepoDigests []string `json:"RepoDigests"`
+	}
+	if err := cli.json(ctx, "GET", "/images/json", nil, &images); err != nil {
+		return nil, err
+	}
+	out := make(map[string][]string, len(images))
+	for _, im := range images {
+		out[im.ID] = im.RepoDigests
+	}
+	return out, nil
+}

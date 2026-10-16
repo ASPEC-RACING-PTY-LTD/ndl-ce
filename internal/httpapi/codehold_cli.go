@@ -100,8 +100,8 @@ func (s *Server) getCodeholdCLI(w http.ResponseWriter, r *http.Request) {
 	last := s.chCLIRun.snapshot()
 	s.chCLIMu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"settings":    s.codeholdCLIConfig(r.Context(), p.User.ClusterID),
-		"rollout":     last,
+		"settings": s.codeholdCLIConfig(r.Context(), p.User.ClusterID),
+		"rollout":  last,
 	})
 }
 
