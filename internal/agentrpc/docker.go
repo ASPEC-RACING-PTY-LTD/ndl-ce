@@ -105,6 +105,21 @@ func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*c
 			return connect.NewResponse(&agentv1.ExecuteResponse{Ok: false, Message: err.Error(), ResultJson: mustJSON(res)}), nil
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "proxy", ResultJson: mustJSON(res)}), nil
+	case "codehold":
+		var req docker.CodeholdRequest
+		if err := json.Unmarshal(m.GetSpecJson(), &req); err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("CodeHold request is invalid"))
+		}
+		if m.GetMachineId() != "" {
+			req.MachineID = m.GetMachineId()
+		}
+		cctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		res, err := h.docker().Codehold(cctx, req)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "codehold", ResultJson: mustJSON(res)}), nil
 	case "tunnel-restart", "tunnel-start":
 		if err := h.docker().TunnelUnitAction(ctx, m.GetMachineId(), spec.Unit, strings.TrimPrefix(action, "tunnel-")); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)

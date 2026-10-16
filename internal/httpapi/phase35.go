@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -74,6 +76,9 @@ func (s *Server) enableFeature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "feature.enable", "ok", mod.ID)
+	if mod.ID == features.IDCodehold {
+		s.chWake()
+	}
 	writeJSON(w, http.StatusOK, s.featureJSON(r, p.User.ClusterID, mod))
 }
 
@@ -90,6 +95,21 @@ func (s *Server) disableFeature(w http.ResponseWriter, r *http.Request) {
 	if mod.Core {
 		writeErr(w, http.StatusUnprocessableEntity, "core features stay installed with the nodal metapackage")
 		return
+	}
+	if mod.ID == features.IDCodehold {
+		// Runner containers need a decision first (POST /codehold/disable).
+		if pending := s.chRunnerContainers(r.Context(), p.User.ClusterID); len(pending) > 0 {
+			names := make([]string, 0, len(pending))
+			for _, rr := range pending {
+				names = append(names, rr.Name)
+			}
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": "choose what happens to the containers of these runners first: " + strings.Join(names, ", "),
+				"code":  "codehold_runners",
+			})
+			return
+		}
+		s.chStop()
 	}
 	row := s.featureRow(r, p.User.ClusterID, mod)
 	count := s.featureWorkloadCount(r, p.User.ClusterID, mod.ID)
@@ -280,4 +300,20 @@ func uiOnlyFeature(id string) bool {
 		return true
 	}
 	return false
+}
+
+// setFeatureEnabled switches a software-only feature without the package
+// steps of the enable and disable handlers.
+func (s *Server) setFeatureEnabled(ctx context.Context, clusterID, id string, on bool, reason string) error {
+	mod, ok := features.Lookup(id)
+	if !ok {
+		return errors.New("feature is unknown")
+	}
+	stored, _ := s.Store.GetFeature(ctx, clusterID, mod.ID)
+	row := appdb.Feature{ClusterID: clusterID, ID: mod.ID, PackageStatus: appdb.FeatureNotConfigured, RuntimeStatus: appdb.FeatureNotStarted}
+	if stored != nil {
+		row = *stored
+	}
+	row.Enabled, row.Reason, row.UpdatedAt = on, reason, s.now()
+	return s.Store.UpsertFeature(ctx, row)
 }

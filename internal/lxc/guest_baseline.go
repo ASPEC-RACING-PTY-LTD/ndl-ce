@@ -227,6 +227,15 @@ fi
 if [ -n "${BASH_VERSION:-}" ]; then
   bind 'set enable-bracketed-paste on' 2>/dev/null || true
 fi
+# clear also removes the scrollback, whatever TERM the terminal reports: some
+# SSH apps report a TERM without E3 (erase saved lines), so the screen cleared
+# but scrolling up showed it all. clear -x keeps the scrollback.
+clear() {
+  case "${1:-}" in
+    -x|-V|-T*) command clear "$@"; return ;;
+  esac
+  printf '\033[H\033[2J\033[3J'
+}
 `
 	if err := os.WriteFile(filepath.Join(dir, "00-ndl-term.sh"), []byte(term), 0o644); err != nil {
 		return err
@@ -245,6 +254,8 @@ func ensureGuestReadline(rootfs string) error {
 # Enables Bash bracketed paste so multiline pastes keep comments and quotes.
 $include /etc/inputrc
 set enable-bracketed-paste on
+# Ctrl+L clears the scrollback too, like clear.
+"\C-l": clear-display
 `
 	return os.WriteFile(filepath.Join(rootfs, "etc", "ndl", "inputrc"), []byte(body), 0o644)
 }

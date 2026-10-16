@@ -61,6 +61,7 @@ override_dh_auto_install:
 	install -m 0755 build/ndl-ct-prepare debian/tmp/usr/lib/ndl/ndl-ct-prepare
 	install -m 0755 build/ndl-lxc-nesting-apparmor debian/tmp/usr/lib/ndl/ndl-lxc-nesting-apparmor
 	install -m 0755 build/nodalctl debian/tmp/usr/bin/nodalctl
+	install -D -m 0644 $(MODROOT)/packaging/share/ndl/profile/ndl-clear.sh debian/tmp/usr/share/ndl/profile/ndl-clear.sh
 	test -f $(MODROOT)/ui/dist/index.html
 	test -d $(MODROOT)/ui/dist/assets
 	mkdir -p debian/tmp/usr/share/ndl/ui

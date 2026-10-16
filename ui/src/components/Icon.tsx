@@ -311,6 +311,8 @@ export function navIcon(label: string): IconName {
       return "node";
     case "Storage":
       return "storage";
+    case "CodeHold Runners":
+      return "activity";
     case "Network":
       return "network";
     case "Tasks":

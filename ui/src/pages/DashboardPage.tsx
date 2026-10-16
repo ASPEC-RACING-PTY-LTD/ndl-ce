@@ -25,6 +25,7 @@ import { eventHeadline, humanTaskMessage, taskIntentTitle } from "../humanize";
 import { metricLabel } from "../labels";
 import { SummaryCard } from "../ui/SummaryCard";
 import { FeatureCards } from "../components/FeatureCards";
+import { CodeholdPendingBanner } from "../components/CodeholdPendingBanner";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
 import { useQuery } from "../query";
@@ -98,6 +99,7 @@ export function DashboardPage() {
     <section className="page" aria-labelledby="dashboard-heading">
       <PageHeader id="dashboard-heading" title="Dashboard" kicker="Appliance health and capacity" />
       {error ? <ErrorState>{error}</ErrorState> : null}
+      <CodeholdPendingBanner />
       <div className="summary-grid">
         <SummaryCard
           label="Node"

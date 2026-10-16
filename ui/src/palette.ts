@@ -47,6 +47,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "oci", label: "OCI Containers", href: "/oci", keywords: ["compose", "multi-container", "oci", "containerd", "group", "stack"] },
   { id: "docker", label: "Docker", href: "/docker", keywords: ["docker", "compose", "container", "engine", "tunnel", "cloudflared"] },
   { id: "cloudflare", label: "Cloudflare", href: "/network/cloudflare", feature: "cloudflare", keywords: ["cloudflare", "tunnel", "dns", "hostname", "domain", "publish", "cloudflared"] },
+  { id: "codehold", label: "CodeHold Runners", href: "/codehold", feature: "codehold", keywords: ["codehold", "runner", "actions", "ci", "build"] },
   { id: "caddy", label: "Caddy", href: "/network/caddy", feature: "caddy", keywords: ["caddy", "reverse proxy", "proxy", "https", "site", "domain"] },
   { id: "nginx", label: "Nginx", href: "/network/nginx", feature: "nginx", keywords: ["nginx", "reverse proxy", "proxy", "server block", "site", "domain"] },
   { id: "uptime", label: "Uptime", href: "/docker/uptime", keywords: ["monitor", "url", "health", "recover", "restart", "status"] },

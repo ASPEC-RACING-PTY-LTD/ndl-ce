@@ -644,6 +644,22 @@ func (c Client) DockerProxy(ctx context.Context, req docker.ProxyRequest) (docke
 	return out, nil
 }
 
+// DockerCodehold runs a CodeHold runner action: find CodeHold on this node,
+// install the agent into a runner container, hand it a registration token
+// or report its state. Tokens travel only in this request.
+func (c Client) DockerCodehold(ctx context.Context, req docker.CodeholdRequest) (docker.CodeholdResult, error) {
+	raw, _ := json.Marshal(req)
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "codehold", MachineId: req.MachineID, SpecJson: raw}},
+	}))
+	if err != nil {
+		return docker.CodeholdResult{}, err
+	}
+	var out docker.CodeholdResult
+	_ = json.Unmarshal(res.Msg.GetResultJson(), &out)
+	return out, nil
+}
+
 // DockerExecRun runs one command in a container and returns its output.
 func (c Client) DockerExecRun(ctx context.Context, machineID, containerID string, argv []string, timeoutSec int) (docker.ExecResult, error) {
 	raw, _ := json.Marshal(map[string]any{"command": argv, "timeout": timeoutSec})

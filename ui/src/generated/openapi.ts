@@ -539,7 +539,7 @@ export interface RollingUpdatePreview {
 }
 
 export interface Feature {
-  id: "vm" | "ct" | "oci" | "docker" | "gameservers" | "gpu" | "k8s" | "distributed_storage" | "ai";
+  id: "vm" | "ct" | "oci" | "docker" | "gameservers" | "cloudflare" | "caddy" | "nginx" | "codehold" | "gpu" | "k8s" | "distributed_storage" | "ai";
   title: string;
   enabled: boolean;
   core: boolean;
@@ -3706,3 +3706,19 @@ export type UpsertProxySitePath = "/api/v1/proxies/{kind}/sites";
 export type DeleteProxySitePath = "/api/v1/proxies/{kind}/sites/delete";
 
 export type ProxyServicePath = "/api/v1/proxies/{kind}/service";
+
+export type GetCodeholdPath = "/api/v1/codehold";
+
+export type DetectCodeholdPath = "/api/v1/codehold/detect";
+
+export type ConnectCodeholdPath = "/api/v1/codehold/connect";
+
+export type DisconnectCodeholdPath = "/api/v1/codehold/disconnect";
+
+export type SaveCodeholdSettingsPath = "/api/v1/codehold/settings";
+
+export type RetryCodeholdRunnerPath = "/api/v1/codehold/runners/{id}/retry";
+
+export type DisableCodeholdPath = "/api/v1/codehold/disable";
+
+export type GetCodeholdPendingPath = "/api/v1/codehold/pending";

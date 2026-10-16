@@ -13,6 +13,7 @@ import { Segmented } from "../ui/Segmented";
 import { SelectionCard } from "../ui/SelectionCard";
 import { featureRuntimeLabel } from "../labels";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { CodeholdDisableDialog } from "../components/CodeholdDisableDialog";
 
 function capabilityHref(id: string): string | undefined {
   const cap = CAPABILITIES.find((item) => item.id === id);
@@ -47,10 +48,12 @@ export function FeaturesPage() {
     useNavDisclosure();
   const [list, setList] = useState<FeatureList | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [show, setShow] = useState<"all" | "on" | "off">("all");
+  const [codeholdOff, setCodeholdOff] = useState(false);
 
   const reload = useCallback(async () => {
     const next = await listFeatures();
@@ -86,6 +89,11 @@ export function FeaturesPage() {
   }
 
   async function onDisablePackage(item: Feature) {
+    if (item.id === "codehold") {
+      // Runner containers need a decision first; the dialog asks.
+      setCodeholdOff(true);
+      return;
+    }
     setBusy(item.id);
     setError(null);
     try {
@@ -134,12 +142,26 @@ export function FeaturesPage() {
 
   return (
     <section className="page page-wide features-page">
+      <CodeholdDisableDialog
+        open={codeholdOff}
+        onClose={() => setCodeholdOff(false)}
+        onDone={(msg) => {
+          setCodeholdOff(false);
+          setNotice(msg);
+          void reload();
+        }}
+      />
       <PageHeader
         id="features-heading"
         title="Add Features"
         kicker="Turn optional capabilities on or off. Turning one off never deletes workloads. Roles still decide who can change the system."
       />
       {error ? <ErrorNotice error={error} /> : null}
+      {notice ? (
+        <p className="banner banner-ok" role="status">
+          {notice}
+        </p>
+      ) : null}
 
       <article className="stack">
         <div className="section-head">

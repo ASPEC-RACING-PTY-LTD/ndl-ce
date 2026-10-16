@@ -57,6 +57,9 @@ type Memory struct {
 	uptimeMonitors     map[string]UptimeMonitor
 	uptimeEvents       []UptimeEvent
 	cfCreds            map[string]CloudflareCredential
+	chControllers      map[string]CodeholdController
+	chSecrets          map[string]string
+	chRunners          map[string]CodeholdRunner
 	cfTokens           map[string]string
 	cfRoutes           map[string]CloudflareRoute
 	cfPrefs            map[string]CloudflareWorkloadPref

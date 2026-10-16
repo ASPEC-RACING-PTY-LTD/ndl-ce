@@ -2906,6 +2906,109 @@ export async function proxyService(
   return readProxy(await request(`/proxies/${kind}/service`, json({ machine_id, action })));
 }
 
+// --- CodeHold runners ---
+
+export type CodeholdSettings = {
+  cpus: number;
+  memory_mb: number;
+  disk_gb: number;
+  pool_id?: string;
+  network_id?: string;
+  image_pin: string;
+  capacity_cpus?: number;
+  capacity_memory_mb?: number;
+  source: "local" | "url";
+  local_machine_id?: string;
+  local_container?: string;
+  download_url?: string;
+  checksum_required: boolean;
+  sha256?: string;
+};
+export type CodeholdInstance = {
+  machine_id: string;
+  machine_name: string;
+  container_id: string;
+  container_name: string;
+  image: string;
+  http_port?: number;
+  has_runner: boolean;
+  url?: string;
+};
+export type CodeholdRunner = {
+  id: string;
+  name: string;
+  desired: "running" | "stopped" | "removed" | string;
+  state: "provisioning" | "running" | "stopped" | "error" | "removed" | string;
+  error?: string;
+  busy: number;
+  limits: { concurrency?: number; cpus?: number; memory_mb?: number; isolation?: string; image?: string };
+  workload_id?: string;
+  workload_name?: string;
+  workload_ip?: string;
+  power?: string;
+  setting_up: boolean;
+  detached: boolean;
+  delete_after?: string;
+  updated_at: string;
+};
+export type CodeholdStatus = {
+  connected: boolean;
+  controller?: {
+    url: string;
+    runner_url: string;
+    controller_id: string;
+    name: string;
+    status: "connected" | "unreachable" | "rejected" | "disconnected" | string;
+    status_reason?: string;
+    syncing: boolean;
+    cloudflare_access: boolean;
+    last_sync_at?: string;
+    credential_expires_at?: string;
+  };
+  settings: CodeholdSettings;
+  runners: CodeholdRunner[];
+  capacity: { cpus: number; memory_mb: number };
+  instances: CodeholdInstance[] | null;
+};
+
+export async function getCodehold(): Promise<CodeholdStatus> {
+  return readJson(await request("/codehold"));
+}
+export async function detectCodehold(): Promise<{ instances: CodeholdInstance[] | null }> {
+  return readJson(await request("/codehold/detect", { method: "POST" }));
+}
+export async function connectCodehold(body: {
+  url: string;
+  runner_url?: string;
+  enrollment_token: string;
+  name?: string;
+  cf_client_id?: string;
+  cf_client_secret?: string;
+}): Promise<{ connected: boolean; name: string }> {
+  return readJson(await request("/codehold/connect", json(body)));
+}
+export async function disconnectCodehold(): Promise<void> {
+  await readJson(await request("/codehold/disconnect", { method: "POST" }));
+}
+export async function saveCodeholdSettings(body: CodeholdSettings): Promise<CodeholdSettings> {
+  return readJson(await request("/codehold/settings", { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function retryCodeholdRunner(id: string): Promise<void> {
+  await readJson(await request(`/codehold/runners/${encodeURIComponent(id)}/retry`, { method: "POST" }));
+}
+export async function disableCodehold(body: { decisions?: Record<string, "stop" | "delete">; force?: boolean }): Promise<{
+  disabled: boolean;
+  results?: { runner: string; action: string; ok: boolean; error?: string }[];
+}> {
+  return readJson(await request("/codehold/disable", json(body)));
+}
+export async function getCodeholdPending(): Promise<{ items: CodeholdRunner[] }> {
+  return readJson(await request("/codehold/pending"));
+}
+export async function actOnCodeholdPending(action: "keep" | "delete", ids?: string[]): Promise<{ done: number }> {
+  return readJson(await request("/codehold/pending", json({ action, ids })));
+}
+
 // --- Workload extensions ---
 
 export type WorkloadExtension = {

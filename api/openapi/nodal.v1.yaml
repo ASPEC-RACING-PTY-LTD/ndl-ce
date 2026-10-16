@@ -9618,6 +9618,168 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /codehold:
+    get:
+      operationId: getCodehold
+      summary: The CodeHold connection, runner settings, runners and their containers, and CodeHold instances found on this node. The credential is never returned.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold/detect:
+    post:
+      operationId: detectCodehold
+      summary: Look for CodeHold server containers on this node and in system containers.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold/connect:
+    post:
+      operationId: connectCodehold
+      summary: Enroll this node as a CodeHold host controller with a one-time enrollment token. The credential is sealed at rest.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold/disconnect:
+    post:
+      operationId: disconnectCodehold
+      summary: Forget the CodeHold connection. Refused while runners still have containers here.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold/settings:
+    put:
+      operationId: saveCodeholdSettings
+      summary: Runner container size, placement, capacity offered to CodeHold and where the runner program comes from.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold/runners/{id}/retry:
+    post:
+      operationId: retryCodeholdRunner
+      summary: Set up a runner whose setup failed again on the next sync.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold/disable:
+    post:
+      operationId: disableCodehold
+      summary: Turn CodeHold runners off after choosing per runner whether its container is stopped and kept or deleted; force stops all and deletes them after seven days.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /codehold/pending:
+    get:
+      operationId: getCodeholdPending
+      summary: Runner containers stopped by a forced turn-off and waiting to be deleted.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: actOnCodeholdPending
+      summary: Keep (cancel the deletion of) or delete now the containers of force-disabled runners.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 components:
   schemas:
     OpsJob:
@@ -10949,6 +11111,10 @@ components:
             - oci
             - docker
             - gameservers
+            - cloudflare
+            - caddy
+            - nginx
+            - codehold
             - gpu
             - k8s
             - distributed_storage

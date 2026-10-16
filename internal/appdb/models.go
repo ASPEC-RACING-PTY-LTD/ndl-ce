@@ -361,6 +361,15 @@ type Store interface {
 	ListWorkloadExtensions(ctx context.Context, clusterID, workloadID string) ([]WorkloadExtension, error)
 	PutWorkloadExtension(ctx context.Context, x WorkloadExtension) error
 
+	// CodeHold runners.
+	GetCodeholdController(ctx context.Context, clusterID string) (*CodeholdController, error)
+	PutCodeholdController(ctx context.Context, c CodeholdController) error
+	DeleteCodeholdController(ctx context.Context, clusterID string) error
+	PutCodeholdSecret(ctx context.Context, clusterID, name, sealed string) error
+	GetCodeholdSecret(ctx context.Context, clusterID, name string) (string, error)
+	ListCodeholdRunners(ctx context.Context, clusterID string) ([]CodeholdRunner, error)
+	PutCodeholdRunner(ctx context.Context, r CodeholdRunner) error
+	DeleteCodeholdRunner(ctx context.Context, clusterID, runnerID string) error
 	// Cloudflare. ListCloudflareCredentials with an empty clusterID lists every cluster's.
 	ListCloudflareCredentials(ctx context.Context, clusterID string) ([]CloudflareCredential, error)
 	GetCloudflareCredential(ctx context.Context, clusterID, id string) (*CloudflareCredential, error)

@@ -95,6 +95,15 @@ export const NAV_MODULES: NavModule[] = [
     simple: false,
     capability: "docker",
   },
+  {
+    id: "codehold",
+    href: "/codehold",
+    label: "CodeHold Runners",
+    group: "Compute",
+    match: (p) => p === "/codehold",
+    simple: false,
+    capability: "codehold",
+  },
   { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates", simple: false },
   { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries", simple: false },
   {
@@ -347,6 +356,15 @@ export const CAPABILITIES: Capability[] = [
     featureId: "nginx",
     href: "/network/nginx",
     modules: [],
+  },
+  {
+    id: "codehold",
+    title: "CodeHold runners",
+    summary:
+      "Host CodeHold Actions runners here. No-dal connects to CodeHold as a host controller and gives every runner its own system container (2 vCPU, 2 GB, 50 GB by default) with Docker inside. Turning it off asks what happens to those containers first.",
+    featureId: "codehold",
+    href: "/codehold",
+    modules: ["codehold"],
   },
   {
     id: "gpu",

@@ -38,6 +38,10 @@ type Engine struct {
 	// FetchKeyring and ProbeDial replace network access in tests.
 	FetchKeyring func(ctx context.Context) ([]byte, error)
 	ProbeDial    func(ctx context.Context, machineID, addr string) error
+	// ArchiveFile and Download replace reading the CodeHold runner binary
+	// from a container or over HTTPS (tests).
+	ArchiveFile func(ctx context.Context, socket, containerID, path string, limit int64) ([]byte, error)
+	Download    func(ctx context.Context, url string) ([]byte, error)
 
 	mu      sync.Mutex
 	updates map[string]updateNote

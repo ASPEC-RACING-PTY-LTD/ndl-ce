@@ -1,4 +1,4 @@
-import { getCfInventory, getDocker, getHostDisk, getProxies, listUptimeMonitors } from "../api/client";
+import { getCodehold, getCfInventory, getDocker, getHostDisk, getProxies, listUptimeMonitors } from "../api/client";
 import { listGameServers } from "../gameservers/api";
 import { useFeatureFlags } from "../nav/NavDisclosure";
 import { useQuery } from "../query";
@@ -30,6 +30,7 @@ export function FeatureCards() {
   const nginx = on("nginx", "network.read");
   const games = on("gameservers", "gameserver.read");
   const disk = hasGrant(user, "storage.read");
+  const runners = on("codehold", "compute.read");
 
   const dockerQ = useQuery(`dash-docker:${docker}`, docker ? () => getDocker() : nothing, 30000);
   const uptimeQ = useQuery(`dash-uptime:${docker}`, docker ? () => listUptimeMonitors() : nothing, 30000);
@@ -37,6 +38,7 @@ export function FeatureCards() {
   const caddyQ = useQuery(`dash-caddy:${caddy}`, caddy ? () => getProxies("caddy") : nothing, 60000);
   const nginxQ = useQuery(`dash-nginx:${nginx}`, nginx ? () => getProxies("nginx") : nothing, 60000);
   const gamesQ = useQuery(`dash-games:${games}`, games ? () => listGameServers() : nothing, 30000);
+  const chQ = useQuery(`dash-codehold:${runners}`, runners ? () => getCodehold() : nothing, 30000);
   const diskQ = useQuery(`dash-disk:${disk}`, disk ? () => getHostDisk() : nothing, 60000);
 
   const cards = [];
@@ -104,6 +106,24 @@ export function FeatureCards() {
         value={q.data ? (inst.length ? `${running}/${inst.length} running` : "Not installed") : "Collecting"}
         meta={q.data ? `${sites} site${sites === 1 ? "" : "s"}` : "Loading"}
         tone={q.data && running < inst.length ? "warn" : undefined}
+      />,
+    );
+  }
+  if (runners) {
+    const d = chQ.data;
+    const list = (d?.runners ?? []).filter((r) => !r.detached);
+    const ready = list.filter((r) => r.state === "running").length;
+    const busy = list.reduce((n, r) => n + (r.busy || 0), 0);
+    const bad = list.filter((r) => r.state === "error").length;
+    const conn = d?.controller?.status;
+    cards.push(
+      <Card
+        key="codehold"
+        label="CodeHold runners"
+        href="/codehold"
+        value={d ? (d.connected ? `${ready}/${list.length} ready` : "Not connected") : "Collecting"}
+        meta={d ? (conn && conn !== "connected" ? `CodeHold ${conn}` : bad ? `${bad} with errors` : `${busy} job${busy === 1 ? "" : "s"} running`) : "Loading"}
+        tone={d && ((conn && conn !== "connected") || bad) ? "warn" : undefined}
       />,
     );
   }

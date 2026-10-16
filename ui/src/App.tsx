@@ -52,6 +52,7 @@ import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
+import { CodeholdPage } from "./pages/CodeholdPage";
 import { DockerHubPage } from "./pages/DockerHubPage";
 import { WorkloadExtensionsPage } from "./pages/WorkloadExtensionsPage";
 import { StorageHubPage } from "./pages/StorageHubPage";
@@ -209,6 +210,9 @@ function matchPage(path: string) {
     // Cloudflare moved under Network; the old address still lands there.
     window.history.replaceState({}, "", "/network/cloudflare");
     return <NetworkHubPage tab="cloudflare" />;
+  }
+  if (path === "/codehold") {
+    return <CodeholdPage />;
   }
   if (path === "/oci") {
     return <OciPage />;

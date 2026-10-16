@@ -56,6 +56,10 @@ func TestGuestBaselineFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// clear also clears the scrollback, whatever TERM the SSH client reports.
+	if !strings.Contains(string(term), `printf '\033[H\033[2J\033[3J'`) {
+		t.Fatalf("clear must erase the scrollback:\n%s", term)
+	}
 	if !strings.Contains(string(term), "enable-bracketed-paste on") || strings.Contains(string(term), "enable-bracketed-paste off") {
 		t.Fatalf("guest bash must enable bracketed paste: %s", term)
 	}

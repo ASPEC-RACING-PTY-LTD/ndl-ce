@@ -17,6 +17,15 @@ case "$1" in
     ;;
 esac
 
+# The shell profile link points into this package; remove it with it.
+case "$1" in
+  remove|purge)
+    if [ -L /etc/profile.d/ndl-clear.sh ] && [ "$(readlink /etc/profile.d/ndl-clear.sh)" = /usr/share/ndl/profile/ndl-clear.sh ]; then
+      rm -f /etc/profile.d/ndl-clear.sh
+    fi
+    ;;
+esac
+
 #DEBHELPER#
 
 exit 0

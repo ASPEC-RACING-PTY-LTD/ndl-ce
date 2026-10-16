@@ -127,8 +127,15 @@ type Server struct {
 	CFKeyPath     string
 	CFPublicCheck func(ctx context.Context, url string) uptimeResult
 	// CFDocsURL overrides Cloudflare's documentation root (tests).
-	CFDocsURL      string
-	cf             cfState
+	CFDocsURL string
+	cf        cfState
+	ch        chState
+	// CHKeyPath overrides the key that seals the CodeHold credential, and
+	// CodeholdHTTP the client used to reach CodeHold (tests).
+	CHKeyPath      string
+	CodeholdHTTP   *http.Client
+	internalOnce   sync.Once
+	internalMux    http.Handler
 	proxies        proxyCache
 	extrasMu       sync.Mutex
 	extrasBusy     map[string]bool
@@ -448,6 +455,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/cloudflare/move/preview", s.previewCloudflareMove)
 	mux.HandleFunc("POST /api/v1/cloudflare/move", s.moveCloudflareRoutes)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/cloudflare", s.cloudflareForWorkload)
+	mux.HandleFunc("GET /api/v1/codehold", s.getCodehold)
+	mux.HandleFunc("POST /api/v1/codehold/detect", s.detectCodehold)
+	mux.HandleFunc("POST /api/v1/codehold/connect", s.connectCodehold)
+	mux.HandleFunc("POST /api/v1/codehold/disconnect", s.disconnectCodehold)
+	mux.HandleFunc("PUT /api/v1/codehold/settings", s.putCodeholdSettings)
+	mux.HandleFunc("POST /api/v1/codehold/runners/{id}/retry", s.retryCodeholdRunner)
+	mux.HandleFunc("POST /api/v1/codehold/disable", s.disableCodehold)
+	mux.HandleFunc("GET /api/v1/codehold/pending", s.getCodeholdPending)
+	mux.HandleFunc("POST /api/v1/codehold/pending", s.actOnCodeholdPending)
 	mux.HandleFunc("GET /api/v1/proxies/{kind}", s.getProxies)
 	mux.HandleFunc("POST /api/v1/proxies/{kind}/sites", s.upsertProxySite)
 	mux.HandleFunc("POST /api/v1/proxies/{kind}/sites/delete", s.deleteProxySite)
@@ -1044,6 +1060,11 @@ func (s *Server) require(w http.ResponseWriter, r *http.Request, perm string) (*
 }
 
 func (s *Server) principal(r *http.Request) (*principal, error) {
+	// In-process calls made by the CodeHold controller (codehold.go). The key
+	// is unexported, so no request from outside can carry it.
+	if p, ok := r.Context().Value(systemPrincipalKey{}).(*principal); ok && p != nil {
+		return p, nil
+	}
 	if p, ok, err := s.unixRootPrincipal(r); ok || err != nil {
 		return p, err
 	}
