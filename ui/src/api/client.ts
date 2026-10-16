@@ -3180,8 +3180,10 @@ export async function createR2Bucket(account_id: string, name: string, location:
 export async function deleteR2Bucket(account_id: string, name: string): Promise<void> {
   await readJson(await request("/cloudflare/r2/buckets/delete", json({ account_id, name })));
 }
-export async function attachTerminalSession(id: string): Promise<import("./phase6").IOSession> {
-  return readJson(await request(`/io/sessions/${encodeURIComponent(id)}/attach`, { method: "POST" }));
+/** attachTerminalSession reattaches to a running shell. With ifFree it fails
+ * (409) rather than take the shell from a window that is using it. */
+export async function attachTerminalSession(id: string, ifFree = false): Promise<import("./phase6").IOSession> {
+  return readJson(await request(`/io/sessions/${encodeURIComponent(id)}/attach${ifFree ? "?if_free=1" : ""}`, { method: "POST" }));
 }
 export async function endTerminalSession(id: string): Promise<void> {
   await request(`/io/sessions/${encodeURIComponent(id)}/end`, { method: "POST" });

@@ -21,7 +21,15 @@ var (
 	termReplayBytes     = 256 << 10
 	termAttachTicketTTL = time.Minute
 	termWriteWait       = 45 * time.Second
+	// termReadWait drops a socket that has not answered a ping (sent every
+	// termWSPingEvery) for this long, so a dead connection frees its shell
+	// for a reattach instead of holding it until a write fails.
+	termReadWait = 70 * time.Second
 )
+
+// termTakenOver is the close code a socket gets when another window took
+// its shell over; the page then stops reconnecting on its own.
+const termTakenOver = 4001
 
 type liveTerm struct {
 	id     string
@@ -92,6 +100,7 @@ func (lt *liveTerm) pump() {
 // attach makes ws the shell's socket, replaying recent output first.
 func (lt *liveTerm) attach(ws *websocket.Conn) bool {
 	if old := lt.cur.Load(); old != nil && old != ws {
+		_ = old.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(termTakenOver, "opened in another window"), time.Now().Add(time.Second))
 		_ = old.Close()
 	}
 	lt.mu.Lock()
@@ -104,6 +113,7 @@ func (lt *liveTerm) attach(ws *websocket.Conn) bool {
 		lt.timer = nil
 	}
 	if lt.ws != nil && lt.ws != ws {
+		_ = lt.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(termTakenOver, "opened in another window"), time.Now().Add(time.Second))
 		_ = lt.ws.Close()
 	}
 	lt.ws = ws
@@ -157,6 +167,11 @@ func (lt *liveTerm) end() {
 	}
 }
 
+// inUse reports whether a socket is attached now.
+func (lt *liveTerm) inUse() bool {
+	return lt.cur.Load() != nil
+}
+
 func (lt *liveTerm) setAttachTicket(hash string, now time.Time) {
 	lt.mu.Lock()
 	lt.attachHash, lt.attachExp = hash, now.Add(termAttachTicketTTL)
@@ -182,11 +197,15 @@ func serveLiveTerm(lt *liveTerm, ws *websocket.Conn) {
 		return
 	}
 	defer lt.detach(ws)
+	alive := func(string) error { return ws.SetReadDeadline(time.Now().Add(termReadWait)) }
+	_ = alive("")
+	ws.SetPongHandler(alive)
 	for {
 		_, data, err := ws.ReadMessage()
 		if err != nil {
 			return
 		}
+		_ = alive("")
 		if err := lt.conn.Send(data); err != nil {
 			return
 		}

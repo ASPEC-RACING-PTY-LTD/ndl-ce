@@ -28,7 +28,8 @@ const STORE_KEY = "ndl-term-workspace";
 // the shell: the server keeps it for 10 minutes, so the page keeps trying to
 // reattach for that long before giving up.
 export const TERM_RETRY_WINDOW_MS = 10 * 60 * 1000;
-const RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 10000];
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000];
+const TAKEN_ELSEWHERE = "This terminal is open in another window. Reconnect to use it here.";
 
 type Runtime = {
   term: Terminal;
@@ -47,6 +48,7 @@ type Runtime = {
   retryTimer: number;
   retryCount: number;
   retrySince: number;
+  openedAt: number;
 };
 
 type StoredWorkspace = {
@@ -252,7 +254,10 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
   }, []);
 
   const connect = useCallback(
-    (tab: TermTab, mode: "connecting" | "reconnecting", auto = false) => {
+    // how: "manual" may take the shell from another window; "resume" (a page
+    // load) and "retry" (after a drop) never do.
+    (tab: TermTab, mode: "connecting" | "reconnecting", how: "manual" | "resume" | "retry" = "manual") => {
+      const auto = how !== "manual";
       let rt = runtimes.get(tab.tabId);
       if (!rt) {
         const made = makeTerm();
@@ -271,6 +276,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           retryTimer: 0,
           retryCount: 0,
           retrySince: 0,
+          openedAt: 0,
         };
         runtimes.set(tab.tabId, rt);
         const created = rt;
@@ -340,6 +346,13 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           return;
         }
         const now = Date.now();
+        // Only a socket that stayed up a while counts as recovered, so one
+        // that the server closes at once still backs off.
+        if (owner.openedAt && now - owner.openedAt > 10000) {
+          owner.retryCount = 0;
+          owner.retrySince = 0;
+        }
+        owner.openedAt = 0;
         if (!owner.retrySince) {
           owner.retrySince = now;
         }
@@ -354,7 +367,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
         owner.retryTimer = window.setTimeout(() => {
           const latest = tabsRef.current.find((t) => t.tabId === tab.tabId);
           if (latest && runtimes.get(tab.tabId) === owner && !owner.closed) {
-            connectRef.current(latest, "reconnecting", true);
+            connectRef.current(latest, "reconnecting", "retry");
           }
         }, delay);
       };
@@ -367,9 +380,11 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           if (prior && auto) {
             // An automatic retry only ever resumes the same shell.
             try {
-              created = await attachTerminalSession(prior);
+              created = await attachTerminalSession(prior, true);
             } catch (err) {
-              if (err instanceof ApiError && (err.status === 410 || err.status === 404)) {
+              if (err instanceof ApiError && err.status === 409 && how === "resume") {
+                patch(tab.tabId, { state: "disconnected", error: TAKEN_ELSEWHERE });
+              } else if (err instanceof ApiError && (err.status === 410 || err.status === 404)) {
                 owner.ended = true;
                 patch(tab.tabId, { state: "closed", error: "The shell ended while the connection was down." });
               } else {
@@ -412,8 +427,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
             ws.send(encodeFrame(1, encoder.encode(data)));
           };
           ws.onopen = () => {
-            current.retryCount = 0;
-            current.retrySince = 0;
+            current.openedAt = Date.now();
             patch(tab.tabId, { state: "active", error: null });
             try {
               current.fit.fit();
@@ -429,8 +443,14 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
               }, delay);
             }
           };
-          ws.onclose = () => {
+          ws.onclose = (ev) => {
             if (current.closed || current.ws !== ws) {
+              return;
+            }
+            if (ev.code === 4001) {
+              // Another window took this shell; do not take it back.
+              window.clearTimeout(current.retryTimer);
+              patch(tab.tabId, { state: "disconnected", error: TAKEN_ELSEWHERE });
               return;
             }
             if (current.ended) {
@@ -488,7 +508,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
         if (rt && rt.retryTimer && tab.state === "reconnecting" && !rt.closed && !rt.ended) {
           window.clearTimeout(rt.retryTimer);
           rt.retryTimer = 0;
-          connectRef.current(tab, "reconnecting", true);
+          connectRef.current(tab, "reconnecting", "retry");
         }
       }
     }
@@ -730,7 +750,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     resumed.current = true;
     for (const tab of tabsRef.current) {
       if (tab.ioSessionId && tab.state === "disconnected" && !runtimes.has(tab.tabId)) {
-        connect(tab, "reconnecting");
+        connect(tab, "reconnecting", "resume");
       }
     }
   }, [hydrated, connect]);

@@ -373,6 +373,13 @@ func (s *Server) attachIOSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusGone, "the terminal session has ended")
 		return
 	}
+	// An automatic reattach (after a drop, or when another browser tab
+	// loads) must not take a shell that a window is using right now; only an
+	// explicit Reconnect does.
+	if r.URL.Query().Get("if_free") == "1" && live.inUse() {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "the terminal is open in another window", "code": "terminal_in_use"})
+		return
+	}
 	ticket, err := secutil.RandomHex(24)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

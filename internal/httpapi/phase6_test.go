@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -1005,5 +1006,78 @@ func TestWorkloadFilesFailsClosedForUnavailableVolume(t *testing.T) {
 	sessions, _ := mem.ListIOSessions(context.Background(), cluster.ID, admin.ID)
 	if len(sessions) != 0 {
 		t.Fatalf("GET must not list a terminal session whose jail GET /volumes would show unavailable: %+v", sessions)
+	}
+}
+
+func TestTerminalReattachDoesNotStealAndTellsTheOldWindow(t *testing.T) {
+	_, _, ts, admin, _, wlID := seedPhase6(t)
+	res := doCookie(t, ts, admin, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
+	var created map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	id, _ := created["id"].(string)
+	dial := func(ticket string) *websocket.Conn {
+		t.Helper()
+		header := http.Header{}
+		header.Set("Origin", ts.URL)
+		header.Set("Cookie", sessionCookie+"="+admin)
+		wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/v1/io/sessions/" + id + "/ws"
+		conn, _, err := (&websocket.Dialer{Subprotocols: []string{"ndl.ticket." + ticket}}).Dial(wsURL, header)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		return conn
+	}
+	first := dial(created["ticket"].(string))
+	defer first.Close()
+	closed := make(chan int, 1)
+	go func() {
+		for {
+			if _, _, err := first.ReadMessage(); err != nil {
+				var ce *websocket.CloseError
+				if errors.As(err, &ce) {
+					closed <- ce.Code
+				} else {
+					closed <- -1
+				}
+				return
+			}
+		}
+	}()
+	// Wait until the first socket is attached.
+	deadline := time.Now().Add(2 * time.Second)
+	for live := getLiveTerm(id); live == nil || !live.inUse(); live = getLiveTerm(id) {
+		if time.Now().After(deadline) {
+			t.Fatal("the first socket never attached")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// An automatic reattach must not take a shell that is in use.
+	res = doCookie(t, ts, admin, "POST", "/api/v1/io/sessions/"+id+"/attach?if_free=1", "")
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("if_free attach while in use: %d", res.StatusCode)
+	}
+	_ = res.Body.Close()
+	// An explicit one takes it, and the old window is told why.
+	res = doCookie(t, ts, admin, "POST", "/api/v1/io/sessions/"+id+"/attach", "")
+	var again map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&again); err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("attach %d %v", res.StatusCode, err)
+	}
+	_ = res.Body.Close()
+	second := dial(again["ticket"].(string))
+	defer second.Close()
+	select {
+	case code := <-closed:
+		if code != termTakenOver {
+			t.Fatalf("old window closed with %d, want %d", code, termTakenOver)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the old window was not closed")
+	}
+	if live := getLiveTerm(id); live != nil {
+		live.end()
 	}
 }

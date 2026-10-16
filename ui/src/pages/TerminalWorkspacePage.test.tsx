@@ -77,7 +77,7 @@ function installIO() {
     binaryType = "arraybuffer";
     onopen: (() => void) | null = null;
     onmessage: ((ev: MessageEvent) => void) | null = null;
-    onclose: (() => void) | null = null;
+    onclose: ((ev: { code: number }) => void) | null = null;
     onerror: (() => void) | null = null;
     constructor() {
       sockets.push(this);
@@ -87,9 +87,9 @@ function installIO() {
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
       sent.push({ tab: sockets.indexOf(this), type: bytes[0] ?? 0, text: new TextDecoder().decode(bytes.slice(5)) });
     }
-    close() {
+    close(code = 1006) {
       this.readyState = 3;
-      this.onclose?.();
+      this.onclose?.({ code });
     }
     pushCwd(path: string) {
       const payload = new TextEncoder().encode(path);
@@ -449,6 +449,21 @@ describe("Terminal workspace", () => {
     await waitFor(() => expect(attached).toEqual(["s1"]), { timeout: 3000 });
     await waitFor(() => expect(sockets.length).toBe(2));
     expect(created).toHaveLength(1);
+  });
+
+  it("stops reconnecting when another window takes the shell over", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitConnected();
+    reattachable = true;
+    sockets[0]?.close(4001);
+    expect(await screen.findByText(/open in another window/i)).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(attached).toEqual([]);
+    expect(sockets.length).toBe(1);
   });
 
   it("shows the shell ended when it is gone after a drop and reconnects with a new PTY", async () => {
