@@ -48,6 +48,8 @@ type Memory struct {
 	policyOffsite      map[string]BackupOffsite
 	backupWorkspace    map[string]BackupWorkspaceSettings
 	backupGitHolds     map[string]BackupGitHold
+	platformBackup     map[string]string
+	platformBackupKeys map[string]string
 	backupRepos        map[string]BackupRepository
 	backupPoints       map[string]BackupRestorePoint
 	backupUploadJobs   map[string][]BackupUploadJob

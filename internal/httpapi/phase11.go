@@ -979,6 +979,7 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 		// and run on the first tick after it.
 		return
 	}
+	go s.TickPlatformBackup(context.WithoutCancel(ctx))
 	policies, err := s.Store.ListBackupPolicies(ctx, cluster.ID)
 	if err != nil {
 		return

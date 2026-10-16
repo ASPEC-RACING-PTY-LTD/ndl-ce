@@ -225,6 +225,12 @@ type Store interface {
 
 	GetBackupWorkspaceSettings(ctx context.Context, clusterID string) (*BackupWorkspaceSettings, error)
 	UpsertBackupWorkspaceSettings(ctx context.Context, s BackupWorkspaceSettings) error
+	// Platform backup state (no secrets) and its snapshot keys (secret),
+	// each one JSON document per cluster; "" when unset.
+	GetPlatformBackupState(ctx context.Context, clusterID string) (string, error)
+	PutPlatformBackupState(ctx context.Context, clusterID, stateJSON string) error
+	GetPlatformBackupKeys(ctx context.Context, clusterID string) (string, error)
+	PutPlatformBackupKeys(ctx context.Context, clusterID, keysJSON string) error
 	// Workloads whose backup waits on uncommitted Git work.
 	UpsertBackupGitHold(ctx context.Context, h BackupGitHold) error
 	ListBackupGitHolds(ctx context.Context, clusterID string) ([]BackupGitHold, error)

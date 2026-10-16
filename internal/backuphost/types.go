@@ -29,6 +29,12 @@ const (
 	// ActionGitSave commits and pushes the uncommitted work of a workload's
 	// Git repositories from inside the guest, leaving secret-like files out.
 	ActionGitSave = "v2-git-save"
+	// ActionPlatformObject puts, gets, deletes or lists one object of the
+	// platform backup (under ndl-platform/ only).
+	ActionPlatformObject = "v2-platform-object"
+	// ActionRemoteCheck checks restore points exist (and, deep, decrypt)
+	// on a target.
+	ActionRemoteCheck = "v2-remote-check"
 
 	DefaultRoot                = "/var/lib/ndl/backup-repo"
 	DefaultMaxLocalBytes       = 50 << 30
@@ -72,6 +78,21 @@ type Request struct {
 	HoldUncommittedGit bool `json:"hold_uncommitted_git,omitempty"`
 	// Repos are the guest paths of the repositories ActionGitSave saves.
 	Repos []string `json:"repos,omitempty"`
+	// ObjectOp (put, get, delete, list) and ObjectKey for
+	// ActionPlatformObject; Path carries the body.
+	ObjectOp  string `json:"object_op,omitempty"`
+	ObjectKey string `json:"object_key,omitempty"`
+	// Checks are the restore points ActionRemoteCheck checks; Deep
+	// downloads and authenticates them and looks for Sample of their packs.
+	Checks []PointID `json:"checks,omitempty"`
+	Deep   bool      `json:"deep,omitempty"`
+	Sample int       `json:"sample,omitempty"`
+}
+
+// PointID names a restore point.
+type PointID struct {
+	Namespace string `json:"namespace"`
+	BackupID  string `json:"backup_id"`
 }
 
 // TargetSpec describes a destination. Secrets stay on this request only.
@@ -144,6 +165,10 @@ type Result struct {
 	GitHold []backup.GitRepo `json:"git_hold,omitempty"`
 	// GitSave reports ActionGitSave per repository.
 	GitSave []GitSaveResult `json:"git_save,omitempty"`
+	// NotFound is set by ActionPlatformObject get for a missing object.
+	NotFound     bool                 `json:"not_found,omitempty"`
+	Objects      []backup.ObjectInfo  `json:"objects,omitempty"`
+	RemoteChecks []backup.RemoteCheck `json:"remote_checks,omitempty"`
 }
 
 // GitSaveResult is the outcome of saving one repository.
@@ -212,7 +237,7 @@ type WorkspaceStatus struct {
 func IsAction(action string) bool {
 	switch action {
 	case ActionCapture, ActionRestore, ActionStatus, ActionPreview, ActionExpire, ActionWorkspace, ActionEnqueue,
-		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave:
+		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck:
 		return true
 	default:
 		return false

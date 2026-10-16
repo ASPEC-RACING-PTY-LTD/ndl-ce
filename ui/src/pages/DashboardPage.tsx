@@ -29,6 +29,7 @@ import { CodeholdPendingBanner } from "../components/CodeholdPendingBanner";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
 import { useQuery } from "../query";
+import { getPlatformBackup } from "../api/client";
 
 export function DashboardPage() {
   const session = useSession();
@@ -43,6 +44,9 @@ export function DashboardPage() {
   const networksQ = useQuery("networks", () => listNetworks(), 30000);
   const workloadsQ = useQuery("workloads", () => listWorkloads(), 10000);
   const healthQ = useQuery("health", () => getHealth(), 30000);
+  const recoveryQ = useQuery("platform-backup", () => getPlatformBackup().catch(() => null), 60000);
+  const recovery = recoveryQ.data?.health;
+  const recoveryProblem = recoveryQ.data?.snapshot?.error || recoveryQ.data?.envelope?.error;
   const events: EventItem[] = (eventsQ.data ?? []).slice(0, 6);
   const tasks: TaskItem[] = (tasksQ.data ?? []).slice(0, 6);
   const pools: StoragePool[] = poolsQ.data?.items ?? [];
@@ -145,6 +149,20 @@ export function DashboardPage() {
                 : "No pool yet"
           }
         />
+        {recoveryQ.data ? (
+          <SummaryCard
+            label="Disaster recovery"
+            value={recovery?.checked_at ? `${recovery.recoverable ?? 0} of ${recovery.total ?? 0} recoverable` : "Not checked"}
+            meta={
+              recoveryProblem
+                ? recoveryProblem
+                : recovery?.checked_at
+                  ? `${recovery.stale ?? 0} stale · ${recovery.missing ?? 0} missing`
+                  : "Checked after each platform backup"
+            }
+            tone={recoveryProblem ? "danger" : (recovery?.missing ?? 0) + (recovery?.stale ?? 0) > 0 ? "warn" : undefined}
+          />
+        ) : null}
         <SummaryCard
           label="Tasks"
           value={!tasksLoaded ? "Collecting" : `${tasks.filter((t) => t.state === "running").length} running`}

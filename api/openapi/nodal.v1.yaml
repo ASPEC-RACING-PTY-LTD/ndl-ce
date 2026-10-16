@@ -7012,6 +7012,89 @@ paths:
           description: Not held
         "422":
           description: Saving failed; see error and saved
+  /platform-backup:
+    get:
+      operationId: getPlatformBackup
+      summary: The NDL-CE platform backup (database, configuration, keys and restore-point index, encrypted and unlockable only with an Owner's password) and how many protected workloads are recoverable from offsite backups
+      responses:
+        "200":
+          description: Platform backup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformBackupStatus"
+        "401":
+          description: Unauthenticated
+    patch:
+      operationId: updatePlatformBackup
+      summary: Owner only. Turn the platform backup on or off, or choose its object storage target.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformBackupUpdate"
+      responses:
+        "200":
+          description: Platform backup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformBackupStatus"
+        "403":
+          description: Not an Owner
+  /platform-backup/run:
+    post:
+      operationId: runPlatformBackup
+      summary: Owner only. Back the platform up now; the snapshot is uploaded, read back and decrypted before it is published.
+      responses:
+        "200":
+          description: Platform backup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformBackupStatus"
+        "403":
+          description: Not an Owner
+        "422":
+          description: The backup failed
+  /platform-backup/verify:
+    post:
+      operationId: verifyPlatformBackup
+      summary: Check that every protected workload's newest offsite restore point is in its target; deep downloads and authenticates it and samples its packs.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformBackupVerify"
+      responses:
+        "200":
+          description: Platform backup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformBackupStatus"
+  /platform-backup/rotate:
+    post:
+      operationId: rotatePlatformBackupKey
+      summary: Owner only, with their password. Replace the platform backup key; other Owners can unlock again after their next sign-in. Copies of old envelopes or snapshots downloaded before stay readable with the passwords of that time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformBackupRotate"
+      responses:
+        "200":
+          description: Platform backup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformBackupStatus"
+        "401":
+          description: Wrong password
+        "422":
+          description: Rotated, but publishing or the first snapshot failed
   /backups/restore-points:
     get:
       operationId: listBackupRestorePoints
@@ -13953,6 +14036,158 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BackupArtifact"
+    PlatformBackupUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        target_id:
+          type: string
+    PlatformBackupVerify:
+      type: object
+      properties:
+        deep:
+          type: boolean
+    PlatformBackupRotate:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+    PlatformSnapshotRef:
+      type: object
+      properties:
+        key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        sha256:
+          type: string
+        size:
+          type: integer
+        key_id:
+          type: string
+        schema_level:
+          type: integer
+        workloads:
+          type: integer
+    PlatformWorkloadRecovery:
+      type: object
+      properties:
+        workload_id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          description: recoverable, stale or missing
+        backup_id:
+          type: string
+        target_id:
+          type: string
+        latest_at:
+          type: string
+          format: date-time
+        deep:
+          type: boolean
+        error:
+          type: string
+    PlatformRecoveryHealth:
+      type: object
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        deep_at:
+          type: string
+          format: date-time
+        total:
+          type: integer
+        recoverable:
+          type: integer
+        stale:
+          type: integer
+        missing:
+          type: integer
+        error:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformWorkloadRecovery"
+    PlatformEnvelopeState:
+      type: object
+      properties:
+        key:
+          type: string
+        key_id:
+          type: string
+        owners:
+          type: integer
+        published_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+        dirty:
+          type: boolean
+    PlatformSnapshotState:
+      type: object
+      properties:
+        last:
+          $ref: "#/components/schemas/PlatformSnapshotRef"
+        published:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformSnapshotRef"
+        last_attempt_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+    PlatformBackupTarget:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        bucket:
+          type: string
+    PlatformBackupStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        target_id:
+          type: string
+        target:
+          $ref: "#/components/schemas/PlatformBackupTarget"
+        owners_ready:
+          type: array
+          items:
+            type: string
+        owners_waiting:
+          type: array
+          items:
+            type: string
+        envelope:
+          $ref: "#/components/schemas/PlatformEnvelopeState"
+        snapshot:
+          $ref: "#/components/schemas/PlatformSnapshotState"
+        health:
+          $ref: "#/components/schemas/PlatformRecoveryHealth"
+        rotated_at:
+          type: string
+          format: date-time
+        schema_level:
+          type: integer
+        error:
+          type: string
     BackupGitHoldRepo:
       type: object
       properties:

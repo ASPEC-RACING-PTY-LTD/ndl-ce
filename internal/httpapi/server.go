@@ -121,6 +121,11 @@ type Server struct {
 	tunnels         tunnelCache
 	opsJobs         opsJobs
 	uptimeMu        sync.Mutex
+	// DSN is the control database, for the platform backup's pg_dump.
+	DSN string
+	// Platform overrides parts of the platform backup (tests).
+	Platform PlatformHooks
+	platform platformRuntime
 	// CFBaseURL and CFKeyPath override the Cloudflare API root and the token
 	// key file (tests). CFPublicCheck replaces public site checks in tests.
 	CFBaseURL     string
@@ -564,6 +569,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/backups/targets/{id}/usage", s.getBackupTargetUsage)
 	mux.HandleFunc("POST /api/v1/backups/targets/{id}/wipe", s.wipeBackupTarget)
 	mux.HandleFunc("GET /api/v1/backups/git-holds", s.listBackupGitHolds)
+	mux.HandleFunc("GET /api/v1/platform-backup", s.getPlatformBackup)
+	mux.HandleFunc("PATCH /api/v1/platform-backup", s.patchPlatformBackup)
+	mux.HandleFunc("POST /api/v1/platform-backup/run", s.runPlatformBackupAPI)
+	mux.HandleFunc("POST /api/v1/platform-backup/verify", s.verifyPlatformBackupAPI)
+	mux.HandleFunc("POST /api/v1/platform-backup/rotate", s.rotatePlatformKey)
 	mux.HandleFunc("POST /api/v1/backups/git-holds/{workload}", s.resolveBackupGitHold)
 	mux.HandleFunc("GET /api/v1/backups/locations", s.listBackupLocations)
 	mux.HandleFunc("POST /api/v1/backups/key/export", s.exportBackupKey)
@@ -861,6 +871,7 @@ func (s *Server) setupClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, cluster.ID, user.ID, "setup.claim", "ok", "")
+	s.platformOwnerSignedIn(cluster.ID, user, req.Password)
 	s.writeMe(w, r, user, 1)
 }
 
@@ -902,6 +913,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
+	// The password is right: keep this Owner able to unlock the platform
+	// backup with it.
+	s.platformOwnerSignedIn(cluster.ID, *user, req.Password)
 	method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "mfa state is unavailable")

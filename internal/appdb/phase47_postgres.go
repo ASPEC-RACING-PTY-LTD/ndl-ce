@@ -327,3 +327,34 @@ func (p *Postgres) DeleteBackupGitHold(ctx context.Context, clusterID, workloadI
 	_, err := p.DB.ExecContext(ctx, `DELETE FROM backup_git_holds WHERE cluster_id=$1 AND workload_id=$2`, clusterID, workloadID)
 	return err
 }
+
+func (p *Postgres) getDoc(ctx context.Context, query, clusterID string) (string, error) {
+	var out string
+	err := p.DB.QueryRowContext(ctx, query, clusterID).Scan(&out)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return out, err
+}
+
+func (p *Postgres) GetPlatformBackupState(ctx context.Context, clusterID string) (string, error) {
+	return p.getDoc(ctx, `SELECT state_json FROM platform_backup_state WHERE cluster_id=$1`, clusterID)
+}
+
+func (p *Postgres) PutPlatformBackupState(ctx context.Context, clusterID, stateJSON string) error {
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO platform_backup_state (cluster_id, state_json, updated_at) VALUES ($1,$2,now())
+ON CONFLICT (cluster_id) DO UPDATE SET state_json=EXCLUDED.state_json, updated_at=now()`, clusterID, stateJSON)
+	return err
+}
+
+func (p *Postgres) GetPlatformBackupKeys(ctx context.Context, clusterID string) (string, error) {
+	return p.getDoc(ctx, `SELECT keys_json FROM secrets.platform_backup_keys WHERE cluster_id=$1`, clusterID)
+}
+
+func (p *Postgres) PutPlatformBackupKeys(ctx context.Context, clusterID, keysJSON string) error {
+	_, err := p.DB.ExecContext(ctx, `
+INSERT INTO secrets.platform_backup_keys (cluster_id, keys_json, updated_at) VALUES ($1,$2,now())
+ON CONFLICT (cluster_id) DO UPDATE SET keys_json=EXCLUDED.keys_json, updated_at=now()`, clusterID, keysJSON)
+	return err
+}

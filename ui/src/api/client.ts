@@ -1816,6 +1816,28 @@ export async function getBackupTargetUsage(id: string): Promise<import("../gener
   return readJson(await request(`/backups/targets/${encodeURIComponent(id)}/usage`));
 }
 
+export async function getPlatformBackup(): Promise<import("../generated/openapi").PlatformBackupStatus> {
+  return readJson(await request("/platform-backup"));
+}
+
+export async function updatePlatformBackup(
+  body: import("../generated/openapi").PlatformBackupUpdate,
+): Promise<import("../generated/openapi").PlatformBackupStatus> {
+  return readJson(await request("/platform-backup", { method: "PATCH", body: JSON.stringify(body) }));
+}
+
+export async function runPlatformBackup(): Promise<import("../generated/openapi").PlatformBackupStatus> {
+  return readJson(await request("/platform-backup/run", { method: "POST" }));
+}
+
+export async function verifyPlatformBackup(deep: boolean): Promise<import("../generated/openapi").PlatformBackupStatus> {
+  return readJson(await request("/platform-backup/verify", { method: "POST", body: JSON.stringify({ deep }) }));
+}
+
+export async function rotatePlatformBackupKey(password: string): Promise<import("../generated/openapi").PlatformBackupStatus> {
+  return readJson(await request("/platform-backup/rotate", { method: "POST", body: JSON.stringify({ password }) }));
+}
+
 export async function listBackupGitHolds(): Promise<import("../generated/openapi").BackupGitHoldListResponse> {
   return readJson(await request("/backups/git-holds"));
 }

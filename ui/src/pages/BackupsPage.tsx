@@ -48,6 +48,7 @@ import { formatBytes, formatWhen, honestStatus } from "../format";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { BackupGitHolds } from "../components/BackupGitHolds";
+import { PlatformBackupPanel } from "../components/PlatformBackup";
 
 function canMutate(roles: string[] | undefined): boolean {
   return Boolean(roles?.includes("admin") || roles?.includes("operator"));
@@ -1241,6 +1242,7 @@ export function BackupsPage() {
             </article>
           </div>
           <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
+          <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
           <BackupStoragePanel mutate={mutate} targets={targets ?? []} />
           <div className="card-grid">
           <section className="section-block" aria-labelledby="backup-policies-heading">

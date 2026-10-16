@@ -816,3 +816,35 @@ func (m *Memory) DeleteBackupGitHold(_ context.Context, clusterID, workloadID st
 	delete(m.backupGitHolds, clusterID+"/"+workloadID)
 	return nil
 }
+
+func (m *Memory) GetPlatformBackupState(_ context.Context, clusterID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.platformBackup[clusterID], nil
+}
+
+func (m *Memory) PutPlatformBackupState(_ context.Context, clusterID, stateJSON string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.platformBackup == nil {
+		m.platformBackup = map[string]string{}
+	}
+	m.platformBackup[clusterID] = stateJSON
+	return nil
+}
+
+func (m *Memory) GetPlatformBackupKeys(_ context.Context, clusterID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.platformBackupKeys[clusterID], nil
+}
+
+func (m *Memory) PutPlatformBackupKeys(_ context.Context, clusterID, keysJSON string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.platformBackupKeys == nil {
+		m.platformBackupKeys = map[string]string{}
+	}
+	m.platformBackupKeys[clusterID] = keysJSON
+	return nil
+}

@@ -141,6 +141,10 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		out, err = h.enqueue(ctx, req)
 	case ActionGitSave:
 		out, err = h.gitSave(ctx, src, req)
+	case ActionPlatformObject:
+		out, err = h.platformObject(ctx, req)
+	case ActionRemoteCheck:
+		out, err = h.remoteCheck(ctx, req)
 	case ActionGC:
 		rep := h.runGC(ctx, firstNonEmpty(req.Reason, "requested"))
 		out, err = h.status(req)

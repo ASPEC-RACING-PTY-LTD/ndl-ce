@@ -1670,6 +1670,88 @@ export interface BackupArtifactListResponse {
   items: BackupArtifact[];
 }
 
+export interface PlatformBackupUpdate {
+  enabled?: boolean;
+  target_id?: string;
+}
+
+export interface PlatformBackupVerify {
+  deep?: boolean;
+}
+
+export interface PlatformBackupRotate {
+  password: string;
+}
+
+export interface PlatformSnapshotRef {
+  key?: string;
+  created_at?: string;
+  sha256?: string;
+  size?: number;
+  key_id?: string;
+  schema_level?: number;
+  workloads?: number;
+}
+
+export interface PlatformWorkloadRecovery {
+  workload_id?: string;
+  name?: string;
+  status?: string;
+  backup_id?: string;
+  target_id?: string;
+  latest_at?: string;
+  deep?: boolean;
+  error?: string;
+}
+
+export interface PlatformRecoveryHealth {
+  checked_at?: string;
+  deep_at?: string;
+  total?: number;
+  recoverable?: number;
+  stale?: number;
+  missing?: number;
+  error?: string;
+  items?: PlatformWorkloadRecovery[];
+}
+
+export interface PlatformEnvelopeState {
+  key?: string;
+  key_id?: string;
+  owners?: number;
+  published_at?: string;
+  error?: string;
+  dirty?: boolean;
+}
+
+export interface PlatformSnapshotState {
+  last?: PlatformSnapshotRef;
+  published?: PlatformSnapshotRef[];
+  last_attempt_at?: string;
+  error?: string;
+}
+
+export interface PlatformBackupTarget {
+  id?: string;
+  name?: string;
+  kind?: string;
+  bucket?: string;
+}
+
+export interface PlatformBackupStatus {
+  enabled?: boolean;
+  target_id?: string;
+  target?: PlatformBackupTarget;
+  owners_ready?: string[];
+  owners_waiting?: string[];
+  envelope?: PlatformEnvelopeState;
+  snapshot?: PlatformSnapshotState;
+  health?: PlatformRecoveryHealth;
+  rotated_at?: string;
+  schema_level?: number;
+  error?: string;
+}
+
 export interface BackupGitHoldRepo {
   path?: string;
   branch?: string;
@@ -3553,6 +3635,14 @@ export type WipeBackupTargetPath = "/api/v1/backups/targets/{id}/wipe";
 export type ListBackupGitHoldsPath = "/api/v1/backups/git-holds";
 
 export type ResolveBackupGitHoldPath = "/api/v1/backups/git-holds/{workload}";
+
+export type GetPlatformBackupPath = "/api/v1/platform-backup";
+
+export type RunPlatformBackupPath = "/api/v1/platform-backup/run";
+
+export type VerifyPlatformBackupPath = "/api/v1/platform-backup/verify";
+
+export type RotatePlatformBackupKeyPath = "/api/v1/platform-backup/rotate";
 
 export type ListBackupRestorePointsPath = "/api/v1/backups/restore-points";
 

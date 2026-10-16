@@ -172,6 +172,7 @@ func Run(cfg Config) error {
 		Hub:         hub,
 		UI:          ui,
 		SetupHash:   cfg.SetupHash,
+		DSN:         cfg.DSN,
 		TLSListen:   cfg.TLSListen,
 		HTTPListen:  cfg.HTTPListen,
 		CertDir:     ndltls.Dir{Root: cfg.CertDir},

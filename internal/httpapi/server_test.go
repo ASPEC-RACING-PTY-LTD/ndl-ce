@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/no-dal/ndl-ce/internal/platformbackup"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,10 @@ func testServer(t *testing.T) (*Server, *appdb.Memory, string) {
 		t.Fatal(err)
 	}
 	s := &Server{Store: mem, Lockout: auth.NewLockout(), SetupHash: secutil.HashSHA256(token), ClusterCA: cluster.CA{Dir: t.TempDir()}}
+	// Owner sign-ins wrap the platform backup key: cheaply and inline here.
+	// The bucket is in memory and nothing is backed up on a schedule.
+	bucket := platformbackup.NewMemoryStore()
+	s.Platform = PlatformHooks{KDF: &testPlatformKDF, Sync: true, NoTick: true, Store: func(appdb.BackupTarget) platformbackup.Store { return bucket }}
 	return s, mem, token
 }
 
@@ -534,3 +539,5 @@ func TestHealth(t *testing.T) {
 	}
 	_ = res.Body.Close()
 }
+
+var testPlatformKDF = platformbackup.KDF{Alg: "argon2id", Time: 1, MemoryKiB: 8 * 1024, Threads: 1}

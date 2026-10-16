@@ -338,6 +338,7 @@ func (s *Server) resetUserPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.RevokeUserSessions(r.Context(), u.ID)
+	s.platformOwnerSignedIn(p.User.ClusterID, *u, req.Password)
 	s.audit(r, p.User.ClusterID, p.User.ID, "user.password.reset", "ok", u.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
