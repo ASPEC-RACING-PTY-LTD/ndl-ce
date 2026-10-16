@@ -221,7 +221,17 @@ func (r *Repository) restoreEntry(ctx context.Context, dest string, e FileEntry,
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	target := filepath.Join(dest, filepath.FromSlash(e.Path))
+	// Paths resolve inside dest, which may already hold a base image.
+	target, err := inRoot(dest, e.Path, e.Type == EntryDir)
+	if err != nil {
+		return err
+	}
+	if e.Type != EntryDir {
+		// Never write through a link that is already there.
+		if fi, err := os.Lstat(target); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			_ = os.Remove(target)
+		}
+	}
 	switch e.Type {
 	case EntryDir:
 		if err := os.MkdirAll(target, os.FileMode(e.Mode).Perm()); err != nil {
@@ -237,7 +247,10 @@ func (r *Repository) restoreEntry(ctx context.Context, dest string, e FileEntry,
 			return err
 		}
 		if e.Hardlink != "" {
-			src := filepath.Join(dest, filepath.FromSlash(e.Hardlink))
+			src, err := inRoot(dest, e.Hardlink, false)
+			if err != nil {
+				return err
+			}
 			_ = os.Remove(target)
 			if err := os.Link(src, target); err != nil {
 				return err
