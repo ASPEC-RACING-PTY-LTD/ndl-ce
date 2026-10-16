@@ -61,6 +61,10 @@ export function useTablePrefs<T>(key: string, columns: TableColumn<T>[], default
     });
   }
 
+  function setSort(next: SortState) {
+    setSaved((cur) => ({ ...cur, sort: next }));
+  }
+
   function option(name: string, fallback: boolean): boolean {
     const v = saved.options?.[name];
     return v === undefined ? fallback : v;
@@ -96,7 +100,7 @@ export function useTablePrefs<T>(key: string, columns: TableColumn<T>[], default
       .map((x) => x.row);
   }
 
-  return { visible, isVisible, setVisible, sort, toggleSort, sortRows, option, setOption, reset, columns };
+  return { visible, isVisible, setVisible, sort, toggleSort, setSort, sortRows, option, setOption, reset, columns };
 }
 
 export type TablePrefs<T> = ReturnType<typeof useTablePrefs<T>>;

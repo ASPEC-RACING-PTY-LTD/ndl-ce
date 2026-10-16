@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   addCfCredential,
   cfConnectorAction,
@@ -174,64 +174,147 @@ type GroupProps = {
   onSelect: (t: CfTunnel, on: boolean) => void;
   onMenu: (e: ReactMouseEvent, t: CfTunnel) => void;
   itemsFor: (t: CfTunnel) => ContextItem[];
+  /** asBar draws the heading as a bar above cards instead of a table row. */
+  asBar?: boolean;
 };
 
 /** TunnelGroup is the heading row of one tunnel's hostnames. */
-const TunnelGroup = memo(function TunnelGroup({ t, count, shown, span, collapsed, selection, canManage, multiAccount, onCollapse, onSelect, onMenu, itemsFor }: GroupProps) {
+const TunnelGroup = memo(function TunnelGroup({ t, count, shown, span, collapsed, selection, canManage, multiAccount, onCollapse, onSelect, onMenu, itemsFor, asBar }: GroupProps) {
   const colos = [...new Set(t.connectors.flatMap((c) => (c.conns ?? []).map((x) => x.colo_name)))].join(", ");
   const versions = [...new Set(t.connectors.map((c) => c.version).filter(Boolean))].join(", ");
+  const check = canManage ? (
+    <input
+      type="checkbox"
+      aria-label={`Select every hostname on ${t.name}`}
+      disabled={count === 0}
+      checked={selection === "all"}
+      ref={(el) => {
+        if (el) {
+          el.indeterminate = selection === "some";
+        }
+      }}
+      onChange={(e) => onSelect(t, e.target.checked)}
+    />
+  ) : null;
+  const head = (
+    <div className="cf-group-head">
+      <button type="button" className="cf-group-toggle" aria-expanded={!collapsed} aria-label={`${collapsed ? "Show" : "Hide"} ${t.name} hostnames`} onClick={() => onCollapse(t.id)}>
+        <Icon name="chevron-down" size={14} className={collapsed ? "is-collapsed" : undefined} />
+      </button>
+      <strong className="cf-group-name">{t.name}</strong>
+      <StatusBadge status={tunnelTone(t.status)} label={t.status} />
+      <span className="meta">{shown === count ? `${count} hostname${count === 1 ? "" : "s"}` : `${shown} of ${count} hostnames`}</span>
+      {multiAccount ? <span className="tag-inline">{t.account_name}</span> : null}
+      {!t.remote_managed ? (
+        <span className="tag-inline" title="Routes are set in a config file on the connector">
+          config file
+        </span>
+      ) : null}
+      <span className="meta cf-group-conn">
+        {t.connectors.length
+          ? `${t.connectors.length} connector${t.connectors.length === 1 ? "" : "s"}${colos ? ` via ${colos}` : ""}${versions ? ` · ${versions}` : ""}`
+          : "No connector connected"}
+      </span>
+      {t.local.length ? (
+        <span className="cf-group-local">
+          {t.local.map((l) => (
+            <span key={l.machine_id + l.unit} className="tag-inline" title={l.unit}>
+              <span className={"dot " + (l.active ? "is-ok" : "is-bad")} aria-hidden="true" /> {l.machine_name}
+              {l.managed ? " · No-dal" : ""}
+            </span>
+          ))}
+        </span>
+      ) : null}
+      {t.error ? <span className="tunnel-reason">{t.error}</span> : null}
+      <span className="cf-group-actions">
+        <ActionMenu label={`${t.name} actions`} items={actionItems(itemsFor(t))} />
+      </span>
+    </div>
+  );
+  if (asBar) {
+    return (
+      <div className={"cf-bar" + (t.status !== "healthy" ? " is-issue" : "")} onContextMenu={(e) => onMenu(e, t)}>
+        <span className="cf-gutter">{check}</span>
+        {head}
+      </div>
+    );
+  }
   return (
     <tr className={"cf-group" + (t.status !== "healthy" ? " is-issue" : "")} onContextMenu={(e) => onMenu(e, t)}>
-      {canManage ? (
-        <td className="cell-check">
-          <input
-            type="checkbox"
-            aria-label={`Select every hostname on ${t.name}`}
-            disabled={count === 0}
-            checked={selection === "all"}
-            ref={(el) => {
-              if (el) {
-                el.indeterminate = selection === "some";
-              }
-            }}
-            onChange={(e) => onSelect(t, e.target.checked)}
-          />
-        </td>
-      ) : null}
-      <td colSpan={span}>
-        <div className="cf-group-head">
-          <button type="button" className="cf-group-toggle" aria-expanded={!collapsed} aria-label={`${collapsed ? "Show" : "Hide"} ${t.name} hostnames`} onClick={() => onCollapse(t.id)}>
-            <Icon name="chevron-down" size={14} className={collapsed ? "is-collapsed" : undefined} />
-          </button>
-          <strong className="cf-group-name">{t.name}</strong>
-          <StatusBadge status={tunnelTone(t.status)} label={t.status} />
-          <span className="meta">
-            {shown === count ? `${count} hostname${count === 1 ? "" : "s"}` : `${shown} of ${count} hostnames`}
-          </span>
-          {multiAccount ? <span className="tag-inline">{t.account_name}</span> : null}
-          {!t.remote_managed ? <span className="tag-inline" title="Routes are set in a config file on the connector">config file</span> : null}
-          <span className="meta cf-group-conn">
-            {t.connectors.length
-              ? `${t.connectors.length} connector${t.connectors.length === 1 ? "" : "s"}${colos ? ` via ${colos}` : ""}${versions ? ` · ${versions}` : ""}`
-              : "No connector connected"}
-          </span>
-          {t.local.length ? (
-            <span className="cf-group-local">
-              {t.local.map((l) => (
-                <span key={l.machine_id + l.unit} className="tag-inline" title={l.unit}>
-                  <span className={"dot " + (l.active ? "is-ok" : "is-bad")} aria-hidden="true" /> {l.machine_name}
-                  {l.managed ? " · No-dal" : ""}
-                </span>
-              ))}
-            </span>
-          ) : null}
-          {t.error ? <span className="tunnel-reason">{t.error}</span> : null}
-          <span className="cf-group-actions">
-            <ActionMenu label={`${t.name} actions`} items={actionItems(itemsFor(t))} />
-          </span>
-        </div>
-      </td>
+      {canManage ? <td className="cell-check">{check}</td> : null}
+      <td colSpan={span}>{head}</td>
     </tr>
+  );
+});
+
+/** RouteCard is one hostname as a card: field names down the left, values beside them. */
+const RouteCard = memo(function RouteCard({ r, cols, selected, canManage, onToggle, onMenu, itemsFor }: Omit<RowProps, "grouped">) {
+  const dns = dnsBadge(r);
+  const fields: { id: string; label: string; value: ReactNode; title?: string }[] = [];
+  for (const c of cols) {
+    switch (c) {
+      case "service":
+        fields.push({
+          id: c,
+          label: "Goes to",
+          value: (
+            <>
+              <code>{r.service}</code>
+              {r.ip_changed ? (
+                <span className="tag-inline" title={`The workload now has ${r.workload?.current_ip}`}>
+                  IP changed
+                </span>
+              ) : null}
+            </>
+          ),
+        });
+        break;
+      case "tunnel":
+        fields.push({ id: c, label: "Tunnel", value: <StatusBadge status={tunnelTone(r.tunnel_status)} label={r.tunnel_name} /> });
+        break;
+      case "account":
+        fields.push({ id: c, label: "Account", value: r.account_name });
+        break;
+      case "zone":
+        fields.push({ id: c, label: "Zone", value: r.zone_name ?? <span className="meta">-</span> });
+        break;
+      case "dns":
+        fields.push({ id: c, label: "DNS", value: <StatusBadge status={dns.status} label={dns.label} />, title: r.dns?.reason ?? dns.title });
+        break;
+      case "workload":
+        fields.push({ id: c, label: "Workload", value: r.workload ? <Link href={`/workloads/${r.workload.id}`}>{r.workload.name}</Link> : <span className="meta">-</span> });
+        break;
+      case "state":
+        fields.push({ id: c, label: "State", value: r.enabled ? "On" : "Off" });
+        break;
+    }
+  }
+  return (
+    <article className={"cf-card" + (r.enabled ? "" : " is-muted") + (selected ? " is-selected" : "")} aria-label={r.hostname} onContextMenu={(e) => onMenu(e, r)}>
+      <header className="cf-card-head">
+        {canManage ? (
+          <span className="cf-gutter">
+            <input type="checkbox" aria-label={`Select ${r.hostname}`} checked={selected} onChange={() => onToggle(r.key)} />
+          </span>
+        ) : null}
+        <a className="cf-card-title" href={`https://${r.hostname}${r.path ?? ""}`} target="_blank" rel="noopener noreferrer">
+          {r.hostname}
+          {r.path ? <span className="meta"> {r.path}</span> : null}
+        </a>
+        {!r.enabled ? <span className="tag-inline">off</span> : null}
+        <span className="cf-group-actions">
+          <ActionMenu label={`${r.hostname} actions`} items={actionItems(itemsFor(r))} />
+        </span>
+      </header>
+      <dl className="cf-card-fields">
+        {fields.map((f) => (
+          <div key={f.id} title={f.title}>
+            <dt>{f.label}</dt>
+            <dd>{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </article>
   );
 });
 
@@ -266,6 +349,8 @@ export function CloudflarePage() {
   const [permsOpen, setPermsOpen] = useState<Set<string>>(new Set());
   const table = useTablePrefs<CfRoute>("cf.hostnames", HOST_COLUMNS, { id: "hostname", dir: "asc" });
   const grouped = table.option("group", true);
+  // Cards put field names down the left and fit two or three hostnames across.
+  const asCards = table.option("cards", true);
 
   const loadCreds = useCallback(async () => {
     try {
@@ -538,6 +623,19 @@ export function CloudflarePage() {
       .sort((a, b) => a.t.name.localeCompare(b.t.name, undefined, { sensitivity: "base", numeric: true }));
   })();
 
+  const editorExtra = (
+    <>
+      <label className="check-row">
+        <input type="checkbox" checked={grouped} onChange={(e) => table.setOption("group", e.target.checked)} />
+        <span>Group by tunnel</span>
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={asCards} onChange={(e) => table.setOption("cards", e.target.checked)} />
+        <span>Show as cards</span>
+      </label>
+    </>
+  );
+
   const actionButtons = (
     <>
       {canManage && !noAccounts ? (
@@ -716,7 +814,102 @@ export function CloudflarePage() {
       </div>
       {job ? <JobLog job={job} onDone={() => void reload(true)} onClose={() => setJob(null)} /> : null}
 
-      {!noAccounts && view === "hostnames" ? (
+      {!noAccounts && view === "hostnames" && asCards && !(grouped ? groups.length === 0 : shownRoutes.length === 0) ? (
+        <div className="cf-cards" aria-label="Public hostnames">
+          <div className="cf-cards-bar">
+            <span className="cf-gutter">
+              {canManage ? (
+                <input
+                  type="checkbox"
+                  aria-label="Select all hostnames"
+                  checked={shownRoutes.length > 0 && shownRoutes.every((r) => selected.has(r.key))}
+                  onChange={(e) => setSelected(e.target.checked ? new Set(shownRoutes.map((r) => r.key)) : new Set())}
+                />
+              ) : null}
+            </span>
+            <label className="cf-sort">
+              <span className="meta">Sort by</span>
+              <select
+                className="field-input"
+                aria-label="Sort hostnames by"
+                value={table.sort?.id ?? ""}
+                onChange={(e) => table.setSort(e.target.value ? { id: e.target.value, dir: table.sort?.dir ?? "asc" } : null)}
+              >
+                <option value="">Default order</option>
+                {table.columns
+                  .filter((c) => c.sortValue && table.isVisible(c))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {table.sort ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-icon"
+                aria-label={table.sort.dir === "asc" ? "Sorted A to Z; sort Z to A" : "Sorted Z to A; sort A to Z"}
+                title={table.sort.dir === "asc" ? "A to Z" : "Z to A"}
+                onClick={() => table.setSort(table.sort ? { id: table.sort.id, dir: table.sort.dir === "asc" ? "desc" : "asc" } : null)}
+              >
+                <Icon name={table.sort.dir === "asc" ? "sort-up" : "sort-down"} size={14} />
+              </button>
+            ) : null}
+            <span className="theme-spacer" />
+            <span className="meta">
+              {shownRoutes.length} hostname{shownRoutes.length === 1 ? "" : "s"}
+            </span>
+            <ColumnEditor prefs={table as TablePrefs<CfRoute>} label="Edit hostname fields" extra={editorExtra} />
+          </div>
+          {grouped ? (
+            groups.map((g) => (
+              <section key={g.t.id} className="cf-card-group" aria-label={`Tunnel ${g.t.name}`}>
+                <TunnelGroup
+                  t={g.t}
+                  count={g.total}
+                  shown={g.list.length}
+                  span={span}
+                  collapsed={collapsed.has(g.t.id)}
+                  selection={g.selection}
+                  canManage={canManage}
+                  multiAccount={multiAccount}
+                  onCollapse={onCollapse}
+                  onSelect={onSelectTunnel}
+                  onMenu={onTunnelMenu}
+                  itemsFor={tunnelItems}
+                  asBar
+                />
+                {collapsed.has(g.t.id) ? null : g.list.length === 0 ? (
+                  <p className="meta cf-card-empty">
+                    No hostnames on this tunnel yet.
+                    {canManage && g.t.remote_managed ? (
+                      <>
+                        {" "}
+                        <button type="button" className="linkish" onClick={() => setRouteDialog({ route: null, tunnelId: g.t.id })}>
+                          Add one
+                        </button>
+                      </>
+                    ) : null}
+                  </p>
+                ) : (
+                  <div className="cf-card-grid">
+                    {g.list.map((r) => (
+                      <RouteCard key={r.key} r={r} cols={cols} selected={selected.has(r.key)} canManage={canManage} onToggle={toggle} onMenu={onRouteMenu} itemsFor={routeItems} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))
+          ) : (
+            <div className="cf-card-grid">
+              {shownRoutes.map((r) => (
+                <RouteCard key={r.key} r={r} cols={cols} selected={selected.has(r.key)} canManage={canManage} onToggle={toggle} onMenu={onRouteMenu} itemsFor={routeItems} />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : !noAccounts && view === "hostnames" ? (
         (grouped ? groups.length === 0 : shownRoutes.length === 0) ? (
           <EmptyState title="No hostnames">{q || account ? "Nothing matches the filter." : "Add a public hostname to route a domain to a service."}</EmptyState>
         ) : (
@@ -738,16 +931,7 @@ export function CloudflarePage() {
                     <SortHeader key={c.id} column={c} prefs={table} />
                   ))}
                   <th className="cell-actions">
-                    <ColumnEditor
-                      prefs={table as TablePrefs<CfRoute>}
-                      label="Edit hostname columns"
-                      extra={
-                        <label className="check-row">
-                          <input type="checkbox" checked={grouped} onChange={(e) => table.setOption("group", e.target.checked)} />
-                          <span>Group by tunnel</span>
-                        </label>
-                      }
-                    />
+                    <ColumnEditor prefs={table as TablePrefs<CfRoute>} label="Edit hostname columns" extra={editorExtra} />
                   </th>
                 </tr>
               </thead>

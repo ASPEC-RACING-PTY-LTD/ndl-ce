@@ -111,6 +111,20 @@ describe("Cloudflare page", () => {
     });
     window.history.replaceState({}, "", "/cloudflare");
     render(<App />);
+    // Cards are the default: field names down the left, one card per hostname.
+    const card = await screen.findByRole("article", { name: "shop.racing.example" });
+    expect(within(card).getByText("Goes to")).toBeVisible();
+    expect(within(card).getByText("DNS ok")).toBeVisible();
+    expect(screen.getByRole("region", { name: /tunnel racing-shared/i })).toContainElement(card);
+    // Sorting has its own control, as cards have no column headings.
+    fireEvent.change(screen.getByLabelText(/sort hostnames by/i), { target: { value: "hostname" } });
+    fireEvent.click(screen.getByRole("button", { name: /sorted a to z/i }));
+    expect(JSON.parse(localStorage.getItem("ndl-ui-prefs:user-1") ?? "{}")["table.cf.hostnames"].sort).toEqual({ id: "hostname", dir: "desc" });
+    fireEvent.click(screen.getByRole("button", { name: /sorted z to a/i }));
+    // Switch to the table for the rest.
+    fireEvent.click(screen.getByRole("button", { name: /edit hostname fields/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /show as cards/i }));
+    fireEvent.mouseDown(document.body);
     const table = await screen.findByRole("table", { name: /public hostnames/i });
     // Header, then each tunnel's heading row followed by its hostnames.
     expect(within(table).getAllByRole("row")).toHaveLength(5);

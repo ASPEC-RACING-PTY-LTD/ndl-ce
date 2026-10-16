@@ -1272,7 +1272,7 @@ tr.cf-group > td {
   border-top: 1px solid var(--line);
 }
 
-tr.cf-group.is-issue > td {
+tr.cf-group.is-issue > td:first-child {
   box-shadow: inset 2px 0 0 var(--warn);
 }
 
@@ -1319,7 +1319,9 @@ tr.cf-group.is-issue > td {
   margin-left: auto;
 }
 
-table.cf-grouped tr.cf-route-row > td:first-child {
+/* Indent the entry, never the checkbox, so every checkbox lines up. */
+table.cf-grouped tr.cf-route-row > td:not(.cell-check):first-child,
+table.cf-grouped tr.cf-route-row > td.cell-check + td {
   padding-left: 1.6rem;
 }
 
@@ -1449,4 +1451,147 @@ table.cf-grouped tr.cf-route-row > td:first-child {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+}
+
+/* Checkbox cells line up whatever the row holds. */
+th.cell-check,
+td.cell-check {
+  width: 2.25rem;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+/* Cards: field names down the left, two or three entries across. ------- */
+
+.cf-cards {
+  --cf-gutter: 2.25rem;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.cf-gutter {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--cf-gutter);
+}
+
+.cf-cards-bar,
+.cf-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem 0.45rem 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.cf-bar {
+  background: var(--bg-surface);
+}
+
+.cf-bar.is-issue {
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+
+.cf-bar .cf-group-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.cf-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cf-sort select {
+  width: auto;
+  min-width: 9rem;
+}
+
+.cf-card-group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cf-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 27rem), 1fr));
+  gap: var(--space-2);
+}
+
+.cf-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.6rem 0.6rem 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  min-width: 0;
+}
+
+.cf-card:hover {
+  border-color: color-mix(in oklch, var(--line) 50%, var(--fg-tertiary));
+}
+
+.cf-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cf-card.is-muted {
+  opacity: 0.65;
+}
+
+.cf-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.cf-card-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.cf-card-fields {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0 0 0 var(--cf-gutter);
+}
+
+.cf-card-fields > div {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.cf-card-fields dt {
+  color: var(--fg-tertiary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cf-card-fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cf-card-empty {
+  margin: 0 0 0 var(--cf-gutter);
 }
