@@ -74,14 +74,15 @@ export function FeatureCards() {
     const routes = inv?.routes ?? [];
     const healthy = tunnels.filter((t) => t.status === "healthy").length;
     const dns = routes.filter((r) => r.enabled && r.dns && r.dns.action !== "ok").length;
+    const dnsBlocked = (inv?.accounts ?? []).some((a) => a.dns_access === "denied" || a.dns_access === "partial");
     cards.push(
       <Card
         key="cloudflare"
         label="Cloudflare"
         href="/network/cloudflare"
         value={inv ? `${healthy}/${tunnels.length} tunnels healthy` : "Collecting"}
-        meta={inv ? `${routes.length} hostnames${dns ? ` · ${dns} DNS issues` : ""}` : "Loading"}
-        tone={inv && healthy < tunnels.length ? "warn" : dns ? "warn" : undefined}
+        meta={inv ? `${routes.length} hostnames${dnsBlocked ? " · DNS not readable" : dns ? ` · ${dns} DNS issues` : ""}` : "Loading"}
+        tone={inv && (healthy < tunnels.length || dns || dnsBlocked) ? "warn" : undefined}
       />,
     );
   }

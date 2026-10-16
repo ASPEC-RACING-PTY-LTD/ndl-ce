@@ -602,3 +602,67 @@ func TestCloudflareInventoryAnswersNotModified(t *testing.T) {
 		t.Fatalf("unchanged inventory must be 304, got %d", res.StatusCode)
 	}
 }
+
+func TestCloudflareDNSAccessIsTriedEveryRefreshAndReported(t *testing.T) {
+	e := newCFEnv(t)
+	var zones []string
+	for _, n := range []string{"a.example", "b.example", "c.example", "d.example", "e.example"} {
+		zones = append(zones, e.fake.AddZone(cfAcctA, n))
+	}
+	tA := e.fake.AddTunnel(cfAcctA, "shared", map[string]any{"hostname": "shop.a.example", "service": "http://10.0.0.2:80"})
+	e.fake.AddRecord(zones[0], "shop.a.example", "CNAME", tA.ID+".cfargotunnel.com", true)
+	// A tunnel-only token, like one made with Zero Trust permissions.
+	e.fake.Mu.Lock()
+	tok := e.fake.Tokens[cfTokA]
+	tok.Perms = []string{cftest.TunnelRead, cftest.TunnelWrite, cftest.ZoneRead, cftest.AccountList}
+	e.fake.Tokens[cfTokA] = tok
+	e.fake.Mu.Unlock()
+	if code, _, raw := e.call(e.admin, "POST", "/api/v1/cloudflare/credentials", `{"name":"racing","token":"`+cfTokA+`"}`); code != 201 {
+		t.Fatalf("add %d %s", code, raw)
+	}
+	dnsCalls := func() int {
+		e.fake.Mu.Lock()
+		defer e.fake.Mu.Unlock()
+		n := 0
+		for k, v := range e.fake.Calls {
+			if strings.HasPrefix(k, "GET /zones/") && strings.HasSuffix(k, "/dns_records") {
+				n += v
+			}
+		}
+		return n
+	}
+	before := dnsCalls()
+	inv := e.inventory()
+	a := inv.Accounts[0]
+	if a.DNSAccess != "denied" || !strings.Contains(a.DNSReason, "DNS Read") || a.DNSUnreadable != 5 {
+		t.Fatalf("denied DNS must be reported: %+v", a)
+	}
+	// A few zones are tried, not all of them.
+	if n := dnsCalls() - before; n == 0 || n > cfDNSProbes {
+		t.Fatalf("dns calls %d", n)
+	}
+	// The permission is added in Cloudflare; the next refresh uses it without
+	// checking the token again, and the token's card catches up.
+	e.fake.Mu.Lock()
+	tok.Perms = append(tok.Perms, cftest.DNSRead, cftest.DNSWrite)
+	e.fake.Tokens[cfTokA] = tok
+	e.fake.Mu.Unlock()
+	inv = e.inventory()
+	a = inv.Accounts[0]
+	if a.DNSAccess != "ok" || a.DNSUnreadable != 0 {
+		t.Fatalf("DNS should be read now: %+v", a)
+	}
+	var shop *cfRouteView
+	for i := range inv.Routes {
+		if inv.Routes[i].Hostname == "shop.a.example" {
+			shop = &inv.Routes[i]
+		}
+	}
+	if shop == nil || shop.DNS == nil || shop.DNS.Action != "ok" {
+		t.Fatalf("route DNS %+v", shop)
+	}
+	_, _, raw := e.call(e.admin, "GET", "/api/v1/cloudflare/credentials", "")
+	if !strings.Contains(raw, `"dns":true`) || !strings.Contains(raw, `"status":"active"`) {
+		t.Fatalf("credential scope not updated: %s", raw)
+	}
+}

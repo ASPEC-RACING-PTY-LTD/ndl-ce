@@ -40,9 +40,15 @@ built-in copy when the documentation cannot be reached. Write access cannot be
 tested without changing something, so it is confirmed the first time it is
 used.
 
-A token without DNS access (for example one with only Zero Trust or Tunnel
-permissions) can still add and edit hostnames: the route is saved, DNS is
-left alone, and the reply says which permission to add. Moving hostnames
+DNS is tried on every refresh, so a permission added to the token in
+Cloudflare is used straight away; the token's card catches up without
+checking it again. When Cloudflare refuses DNS for an account, the page says
+so first, above everything else: which account, what it means, and a button
+that opens the permissions to add. A few zones are tried before deciding, so
+a refused token is not asked once per zone. While DNS is refused, a token
+(for example one with only Zero Trust or Tunnel permissions) can still add
+and edit hostnames: the route is saved, DNS is left alone, and the reply says
+which permission to add. Moving hostnames
 between tunnels needs DNS access, since the CNAME must be repointed. Any number of tokens and accounts
 can be connected. When a token is added or rotated, No-dal verifies it and
 records which accounts, zones and permissions it reaches; nothing is saved if
@@ -144,8 +150,8 @@ summary names the failing layer.
 
 The inventory is cached for two minutes and refreshed in the background, so
 the page does not poll Cloudflare. A refresh reads each account's tunnels and
-zones, then every tunnel's routes and the DNS records of zones a token may
-read, eight at a time. Connectors come from the tunnel list itself. Each
+zones, then every tunnel's routes and every zone's DNS records, eight at a
+time. Connectors come from the tunnel list itself. Each
 token keeps one connection pool and a rate budget that allows short bursts
 and then stays well under Cloudflare's limit of 1,200 requests per five
 minutes, which is shared with the dashboard.

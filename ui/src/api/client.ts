@@ -2616,7 +2616,17 @@ export type CfCredential = {
   expires_at?: string;
 };
 export type CfZone = { id: string; name: string; status?: string; account?: { id: string; name: string } };
-export type CfAccount = { id: string; name: string; credentials: { id: string; name: string; status: string }[]; zones: CfZone[] | null; problems?: string[] };
+export type CfAccount = {
+  id: string;
+  name: string;
+  credentials: { id: string; name: string; status: string }[];
+  zones: CfZone[] | null;
+  problems?: string[];
+  /** Whether DNS could be read on the last refresh. */
+  dns_access?: "ok" | "partial" | "denied" | "none" | "unknown" | string;
+  dns_reason?: string;
+  dns_unreadable?: number;
+};
 export type CfConnector = { id: string; version: string; arch: string; run_at?: string; conns?: { colo_name: string; origin_ip: string }[] };
 export type CfLocalConnector = { machine_id: string; machine_name: string; unit: string; active: boolean; managed: boolean };
 export type CfTunnel = {

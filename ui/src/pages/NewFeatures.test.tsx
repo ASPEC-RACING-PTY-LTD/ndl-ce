@@ -189,7 +189,15 @@ describe("Cloudflare permissions", () => {
   it("lists what a tunnel-only token cannot do and how to add it", async () => {
     mockApi({
       ...base,
-      "/api/v1/cloudflare/inventory": { status: 200, body: inventory },
+      "/api/v1/cloudflare/inventory": {
+        status: 200,
+        body: {
+          ...inventory,
+          accounts: inventory.accounts.map((a) =>
+            a.id === A ? { ...a, dns_access: "denied", dns_reason: "Cloudflare refused to show DNS records in Racing. The saved token needs Zone: DNS Read." } : { ...a, dns_access: "ok" },
+          ),
+        },
+      },
       "/api/v1/cloudflare/machines": { status: 200, body: { items: [], supported: true } },
       "/api/v1/cloudflare/credentials": {
         status: 200,
@@ -236,8 +244,10 @@ describe("Cloudflare permissions", () => {
     });
     window.history.replaceState({}, "", "/network/cloudflare");
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /^accounts$/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /permissions \(some missing\)/i }));
+    // Refused DNS is said first, above everything else, with the way to fix it.
+    const warning = await screen.findByRole("alert");
+    expect(within(warning).getByText(/dns can't be read for racing/i)).toBeVisible();
+    fireEvent.click(within(warning).getByRole("button", { name: /show what to add/i }));
     const list = await screen.findByRole("list", { name: /what this token can do/i });
     const item = (t: RegExp) => within(list).getByText(t).closest("li")!;
     expect(within(item(/see tunnels/i)).getByText(/allowed/i)).toBeVisible();

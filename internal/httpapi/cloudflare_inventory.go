@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"sort"
@@ -31,6 +33,11 @@ type cfAccountView struct {
 	Credentials []cfCredRef `json:"credentials"`
 	Zones       []cf.Zone   `json:"zones"`
 	Problems    []string    `json:"problems,omitempty"`
+	// DNSAccess says whether DNS could be read on this refresh: ok, partial
+	// (some zones refused), denied (no zone could be read) or none (no zones).
+	DNSAccess     string `json:"dns_access"`
+	DNSReason     string `json:"dns_reason,omitempty"`
+	DNSUnreadable int    `json:"dns_unreadable,omitempty"`
 }
 
 type cfLocalConnector struct {
@@ -197,23 +204,12 @@ func (s *Server) cfBuild(ctx context.Context, clusterID string) *cfInventory {
 	// Each token's client paces its own calls, so this stays inside
 	// Cloudflare's rate limit.
 	var mu sync.Mutex
-	dnsAccounts := map[string]bool{}
-	for _, c := range creds {
-		if c.Status == cfStatusInvalid {
-			continue
-		}
-		for _, sc := range cfCredScopes(c) {
-			if sc.DNS {
-				dnsAccounts[sc.Account.ID] = true
-			}
-		}
-	}
 	var wg sync.WaitGroup
 	for _, id := range order {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
-			s.cfBuildAccount(bctx, clusterID, byAccount[id], inv, &mu, dnsAccounts[id])
+			s.cfBuildAccount(bctx, clusterID, byAccount[id], inv, &mu)
 		}(id)
 	}
 	wg.Wait()
@@ -239,9 +235,70 @@ func (s *Server) cfBuild(ctx context.Context, clusterID string) *cfInventory {
 // cfBuildParallel is how many tunnel or zone reads run at once per account.
 const cfBuildParallel = 8
 
+// cfDNSProbes is how many zones are tried before deciding the saved tokens
+// cannot read DNS in an account.
+const cfDNSProbes = 3
+
+// cfSyncDNSScope records what a refresh found about DNS access on the
+// account's token, so the Accounts view and permission guide stay current
+// without checking the token again. With several tokens for one account it
+// cannot tell which one answered, so nothing is changed.
+func (s *Server) cfSyncDNSScope(ctx context.Context, clusterID, accountID string, ok bool) {
+	creds, _ := s.Store.ListCloudflareCredentials(ctx, clusterID)
+	var match []appdb.CloudflareCredential
+	for _, c := range creds {
+		if c.Status == cfStatusInvalid {
+			continue
+		}
+		for _, sc := range cfCredScopes(c) {
+			if sc.Account.ID == accountID {
+				match = append(match, c)
+				break
+			}
+		}
+	}
+	if len(match) != 1 {
+		return
+	}
+	c := match[0]
+	scopes := cfCredScopes(c)
+	changed := false
+	var problems []string
+	for i := range scopes {
+		sc := &scopes[i]
+		if sc.Account.ID == accountID && sc.DNS != ok {
+			sc.DNS, changed = ok, true
+			kept := sc.Problems[:0]
+			for _, p := range sc.Problems {
+				if !strings.Contains(p, "DNS records") {
+					kept = append(kept, p)
+				}
+			}
+			sc.Problems = kept
+			if !ok {
+				sc.Problems = append(sc.Problems, "cannot read DNS records (needs DNS Read or Edit)")
+			}
+		}
+		for _, p := range sc.Problems {
+			problems = append(problems, sc.Account.Name+": "+p)
+		}
+	}
+	if !changed {
+		return
+	}
+	c.Scope, _ = json.Marshal(scopes)
+	if c.Status == cfStatusActive || c.Status == cfStatusLimited {
+		c.Status, c.StatusReason = cfStatusActive, ""
+		if len(problems) > 0 {
+			c.Status, c.StatusReason = cfStatusLimited, strings.Join(problems, "; ")
+		}
+	}
+	_ = s.Store.PutCloudflareCredential(context.WithoutCancel(ctx), c)
+}
+
 // cfBuildAccount reads one account's zones, tunnels, tunnel routes and
 // connectors and DNS records into inv. mu guards inv.
-func (s *Server) cfBuildAccount(ctx context.Context, clusterID string, a *cfAccountView, inv *cfInventory, mu *sync.Mutex, dnsOK bool) {
+func (s *Server) cfBuildAccount(ctx context.Context, clusterID string, a *cfAccountView, inv *cfInventory, mu *sync.Mutex) {
 	id := a.ID
 	var tunnels []cf.Tunnel
 	var terr error
@@ -312,30 +369,82 @@ func (s *Server) cfBuildAccount(ctx context.Context, clusterID string, a *cfAcco
 			}
 		}(tv)
 	}
-	// DNS is only read where a saved token may read it; asking with a token
-	// that cannot would fail once per zone and only slow the page down.
+	// DNS is tried on every refresh, so a permission added in Cloudflare is
+	// picked up without checking the token again. A few zones are tried one
+	// at a time first: when Cloudflare refuses them all, the token cannot
+	// read DNS, the rest are not asked, and the page says what to add.
 	var problems []string
-	if dnsOK {
-		for _, z := range a.Zones {
-			wg.Add(1)
-			go func(z cf.Zone) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				var recs []cf.DNSRecord
-				err := s.cfWith(ctx, clusterID, id, z.ID, func(c *cf.Client) error {
-					var err error
-					recs, err = c.DNSRecords(ctx, z.ID, "")
-					return err
-				})
-				mu.Lock()
-				defer mu.Unlock()
-				if err == nil {
-					inv.records[z.ID] = recs
-				} else if err != errCFNoCredential {
-					problems = append(problems, "DNS for "+z.Name+": "+err.Error())
-				}
-			}(z)
+	readZone := func(z cf.Zone) error {
+		var recs []cf.DNSRecord
+		err := s.cfWith(ctx, clusterID, id, "", func(c *cf.Client) error {
+			var err error
+			recs, err = c.DNSRecords(ctx, z.ID, "")
+			return err
+		})
+		mu.Lock()
+		defer mu.Unlock()
+		if err == nil {
+			inv.records[z.ID] = recs
+		}
+		return err
+	}
+	refused := func(err error) bool { return errors.Is(err, cf.ErrPermission) || errors.Is(err, errCFNoCredential) }
+	a.DNSAccess = "none"
+	if len(a.Zones) > 0 {
+		readable, denied := 0, 0
+		next := 0
+		for next < len(a.Zones) && next < cfDNSProbes && readable == 0 {
+			err := readZone(a.Zones[next])
+			switch {
+			case err == nil:
+				readable++
+			case refused(err):
+				denied++
+			default:
+				problems = append(problems, "DNS for "+a.Zones[next].Name+": "+err.Error())
+			}
+			next++
+		}
+		if readable > 0 {
+			var dmu sync.Mutex
+			for _, z := range a.Zones[next:] {
+				wg.Add(1)
+				go func(z cf.Zone) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					err := readZone(z)
+					dmu.Lock()
+					defer dmu.Unlock()
+					switch {
+					case err == nil:
+						readable++
+					case refused(err):
+						denied++
+					default:
+						problems = append(problems, "DNS for "+z.Name+": "+err.Error())
+					}
+				}(z)
+			}
+			wg.Wait()
+		} else if denied > 0 {
+			denied = len(a.Zones)
+		}
+		switch {
+		case readable == 0 && denied > 0:
+			a.DNSAccess = "denied"
+			a.DNSReason = "Cloudflare refused to show DNS records in " + a.Name + ". The saved token needs Zone: DNS Read to show DNS status, and Zone: DNS Edit to create and fix records."
+		case denied > 0:
+			a.DNSAccess = "partial"
+			a.DNSReason = fmt.Sprintf("Cloudflare refused DNS for %d of %d zones in %s. Include those zones in the token's DNS permission.", denied, len(a.Zones), a.Name)
+		case readable > 0:
+			a.DNSAccess = "ok"
+		default:
+			a.DNSAccess = "unknown"
+		}
+		a.DNSUnreadable = denied
+		if a.DNSAccess == "ok" || a.DNSAccess == "denied" {
+			s.cfSyncDNSScope(ctx, clusterID, id, a.DNSAccess == "ok")
 		}
 	}
 	wg.Wait()

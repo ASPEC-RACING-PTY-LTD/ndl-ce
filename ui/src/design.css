@@ -1419,3 +1419,12 @@ table.cf-grouped tr.cf-route-row > td:first-child {
   font-size: 0.78rem;
   white-space: pre-wrap;
 }
+
+.cf-dns-warning {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cf-dns-warning p {
+  margin: 0;
+}

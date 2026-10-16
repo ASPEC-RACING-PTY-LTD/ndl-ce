@@ -473,6 +473,15 @@ export function CloudflarePage() {
   }
 
   const noAccounts = accounts.length === 0;
+  // Accounts whose DNS Cloudflare refused on the last refresh; said first, with the fix.
+  const dnsBlocked = accounts.filter((a) => a.dns_access === "denied" || a.dns_access === "partial");
+
+  function showPermissionsFor(credIDs: string[]) {
+    setView("accounts");
+    setPermsOpen((cur) => new Set([...cur, ...credIDs]));
+    window.setTimeout(() => document.querySelector(".cf-perms-body")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+
   const pageItems: ContextItem[] = [];
   if (canManage && !noAccounts) {
     pageItems.push({ label: "Add hostname", onClick: () => setRouteDialog({ route: null }) }, { label: "New tunnel", onClick: () => setTunnelDialog(true) });
@@ -582,6 +591,26 @@ export function CloudflarePage() {
           {e}
         </p>
       ))}
+      {dnsBlocked.map((a) => (
+        <div key={a.id} className="banner banner-warn cf-dns-warning" role="alert">
+          <p>
+            <strong>{a.dns_access === "denied" ? `DNS can't be read for ${a.name}` : `Some DNS in ${a.name} can't be read`}</strong>
+          </p>
+          <p>{a.dns_reason}</p>
+          <p className="meta">
+            Until then hostnames keep working and can still be added or edited, but their DNS status shows as not readable and No-dal can't create or
+            fix their DNS records; add or point those in Cloudflare yourself. No-dal tries again on every refresh.
+          </p>
+          <div className="btn-row">
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => showPermissionsFor(a.credentials.map((c) => c.id))}>
+              Show what to add
+            </button>
+            <button type="button" className="btn btn-sm btn-secondary" disabled={busy !== null} onClick={() => void act("Checking DNS access", () => reload(true))}>
+              Try again
+            </button>
+          </div>
+        </div>
+      ))}
       {noAccounts && !fromCache ? (
         <EmptyState title="No Cloudflare account connected">
           Connect an account with a scoped API token. Give it Account: Cloudflare Tunnel Edit, Zone: DNS Edit and Zone: Zone Read for the
@@ -623,7 +652,7 @@ export function CloudflarePage() {
               </span>
               <span className="meta">
                 {counts.unreadable ? (
-                  <button type="button" className="linkish" onClick={() => setView("accounts")}>
+                  <button type="button" className="linkish" onClick={() => showPermissionsFor(dnsBlocked.flatMap((a) => a.credentials.map((c) => c.id)))}>
                     {counts.unreadable} not readable; see permissions
                   </button>
                 ) : fromCache ? (
