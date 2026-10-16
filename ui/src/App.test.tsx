@@ -206,8 +206,11 @@ describe("App", () => {
     expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^automation$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^ask$/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^admin$/i }));
+    // The account lives at the bottom of the sidebar, with the theme controls.
+    fireEvent.click(screen.getByRole("button", { name: /^admin menu$/i }));
     expect(screen.getByRole("menuitem", { name: /log out/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^dark mode$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^light mode$/i })).toBeVisible();
     expect(screen.queryByText(/ci works/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/12 running/i)).not.toBeInTheDocument();

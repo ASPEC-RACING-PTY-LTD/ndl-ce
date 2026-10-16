@@ -27,6 +27,8 @@ export type RouteDialogProps = {
   route?: CfRoute | null;
   /** Publishing a workload: its address and suggested origins. */
   workload?: { id: string; name: string; suggestions: { label: string; host: string; port?: number }[]; preferred?: { account_id: string; tunnel_id: string } };
+  /** Tunnel to add the hostname to, when adding from a tunnel's group. */
+  tunnelId?: string;
 };
 
 function dnsText(plan: CfDNSPlan | null): { status: string; text: string } | null {
@@ -44,12 +46,17 @@ function dnsText(plan: CfDNSPlan | null): { status: string; text: string } | nul
       return { status: "warning", text: plan.reason || "The hostname points at another tunnel." };
     case "conflict":
       return { status: "failed", text: plan.reason || "Another record uses this name." };
+    case "unavailable":
+      return {
+        status: "warning",
+        text: `The route can be saved, but DNS is left alone: ${plan.reason || "no saved token may read DNS here"}. See Accounts for the permissions to add.`,
+      };
   }
   return { status: "unknown", text: plan.reason || plan.action };
 }
 
 /** RouteDialog adds or edits a public hostname route, or publishes a workload. */
-export function RouteDialog({ open, onClose, onSaved, accounts, tunnels, route, workload }: RouteDialogProps) {
+export function RouteDialog({ open, onClose, onSaved, accounts, tunnels, route, workload, tunnelId }: RouteDialogProps) {
   const editable = tunnels.filter((t) => t.remote_managed);
   const [accountID, setAccountID] = useState("");
   const [tunnelID, setTunnelID] = useState("");
@@ -70,7 +77,8 @@ export function RouteDialog({ open, onClose, onSaved, accounts, tunnels, route, 
     if (!open) {
       return;
     }
-    const pref = workload?.preferred;
+    const fixed = tunnelId ? tunnels.find((t) => t.id === tunnelId) : undefined;
+    const pref = fixed ? { account_id: fixed.account_tag, tunnel_id: fixed.id } : workload?.preferred;
     const firstTunnel = editable.find((t) => (pref ? t.id === pref.tunnel_id : true)) ?? editable[0];
     setAccountID(route?.account_id ?? pref?.account_id ?? firstTunnel?.account_tag ?? accounts[0]?.id ?? "");
     setTunnelID(route?.tunnel_id ?? (pref?.tunnel_id || firstTunnel?.id) ?? "");

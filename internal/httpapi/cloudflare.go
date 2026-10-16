@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,56 @@ type cfState struct {
 	stale     map[string]bool
 	refreshMu sync.Mutex
 	sealer    *cf.Sealer
+	// clients keeps one API client per saved token, so its connections and
+	// rate pacing carry over between calls. Keyed by credential and sealed
+	// token, so a rotated token gets a new client.
+	clients map[string]*cf.Client
+	// guide is the permissions guide read from Cloudflare's documentation.
+	guideMu sync.Mutex
+	guide   *cf.Guide
+}
+
+// Cloudflare's documentation changes rarely; a failed read is retried sooner.
+const (
+	cfGuideTTL      = 12 * time.Hour
+	cfGuideRetryTTL = 10 * time.Minute
+)
+
+// cloudflarePermissionsGuide tells people which token permissions each
+// feature needs, using Cloudflare's current documentation for the names,
+// descriptions and token steps.
+func (s *Server) cloudflarePermissionsGuide(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.require(w, r, rbac.CloudflareRead); err != nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.cfGuide(r.Context(), r.URL.Query().Get("refresh") == "1"))
+}
+
+func (s *Server) cfGuide(ctx context.Context, refresh bool) cf.Guide {
+	s.cf.guideMu.Lock()
+	defer s.cf.guideMu.Unlock()
+	now := s.now()
+	if g := s.cf.guide; g != nil && !refresh {
+		ttl := cfGuideTTL
+		if g.Source != "cloudflare-docs" {
+			ttl = cfGuideRetryTTL
+		}
+		if now.Sub(g.FetchedAt) < ttl {
+			return *g
+		}
+	}
+	base := s.CFDocsURL
+	if base == "" {
+		base = cf.DocsBaseURL
+	}
+	g, err := cf.FetchGuide(ctx, nil, base)
+	if err != nil && s.cf.guide != nil && s.cf.guide.Source == "cloudflare-docs" {
+		// Keep the last good copy rather than falling back to the built-in one.
+		return *s.cf.guide
+	}
+	g.FetchedAt = now
+	s.cf.guide = &g
+	return g
 }
 
 // cfInventoryTTL is how long a fetched inventory is served before a refresh
@@ -77,16 +129,47 @@ func cfCredScopes(c appdb.CloudflareCredential) []cf.AccountScope {
 	return out
 }
 
+// cfForgetClient drops a removed token's cached client.
+func (s *Server) cfForgetClient(credID string) {
+	s.cf.mu.Lock()
+	defer s.cf.mu.Unlock()
+	for k := range s.cf.clients {
+		if strings.HasPrefix(k, credID+":") {
+			delete(s.cf.clients, k)
+		}
+	}
+}
+
 func (s *Server) cfClientFor(ctx context.Context, clusterID string, cred appdb.CloudflareCredential) (*cf.Client, error) {
 	sealed, err := s.Store.GetCloudflareToken(ctx, clusterID, cred.ID)
 	if err != nil {
 		return nil, err
 	}
+	sum := sha256.Sum256([]byte(sealed))
+	key := cred.ID + ":" + hex.EncodeToString(sum[:8])
+	s.cf.mu.Lock()
+	c := s.cf.clients[key]
+	s.cf.mu.Unlock()
+	if c != nil {
+		return c, nil
+	}
 	tok, err := s.cfSealer().Open(cred.ID, sealed)
 	if err != nil {
 		return nil, err
 	}
-	return s.cfNewClient(tok), nil
+	c = s.cfNewClient(tok)
+	s.cf.mu.Lock()
+	if s.cf.clients == nil {
+		s.cf.clients = map[string]*cf.Client{}
+	}
+	for k := range s.cf.clients {
+		if strings.HasPrefix(k, cred.ID+":") {
+			delete(s.cf.clients, k)
+		}
+	}
+	s.cf.clients[key] = c
+	s.cf.mu.Unlock()
+	return c, nil
 }
 
 // cfCandidates lists usable credentials that reach an account (and zone when
@@ -179,7 +262,9 @@ func cfHTTPStatus(err error) int {
 	case errors.Is(err, errCFNoCredential):
 		return http.StatusFailedDependency
 	case errors.Is(err, cf.ErrAuth), errors.Is(err, cf.ErrPermission):
-		return http.StatusForbidden
+		// The saved token was refused, not the signed-in user. 403 would
+		// read as a No-dal permission problem, so this is a failed dependency.
+		return http.StatusFailedDependency
 	case errors.Is(err, cf.ErrRateLimited):
 		return http.StatusTooManyRequests
 	case errors.Is(err, cf.ErrNotFound):
@@ -202,7 +287,7 @@ func cfCredentialJSON(c appdb.CloudflareCredential) map[string]any {
 	accounts := []map[string]any{}
 	for _, sc := range cfCredScopes(c) {
 		accounts = append(accounts, map[string]any{
-			"id": sc.Account.ID, "name": sc.Account.Name, "zones": len(sc.Zones), "tunnels": sc.Tunnels, "dns": sc.DNS, "problems": sc.Problems,
+			"id": sc.Account.ID, "name": sc.Account.Name, "zones": len(sc.Zones), "tunnels": sc.Tunnels, "dns": sc.DNS, "listed": sc.Listed, "problems": sc.Problems,
 		})
 	}
 	out := map[string]any{
@@ -459,6 +544,7 @@ func (s *Server) deleteCloudflareCredential(w http.ResponseWriter, r *http.Reque
 		writeErr(w, http.StatusNotFound, "credential not found")
 		return
 	}
+	s.cfForgetClient(cred.ID)
 	if err := s.Store.DeleteCloudflareCredential(r.Context(), p.User.ClusterID, cred.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

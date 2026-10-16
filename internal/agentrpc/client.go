@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 
@@ -622,6 +623,24 @@ func (c Client) DockerConnector(ctx context.Context, req docker.ConnectorRequest
 	}
 	var out docker.ConnectorResult
 	_ = json.Unmarshal(res.Msg.GetResultJson(), &out)
+	return out, nil
+}
+
+// DockerProxy scans or changes Caddy or Nginx on the host and in system
+// containers. A refused change returns the proxy's own message as the error.
+func (c Client) DockerProxy(ctx context.Context, req docker.ProxyRequest) (docker.ProxyResult, error) {
+	raw, _ := json.Marshal(req)
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "proxy", MachineId: req.MachineID, SpecJson: raw}},
+	}))
+	if err != nil {
+		return docker.ProxyResult{}, err
+	}
+	var out docker.ProxyResult
+	_ = json.Unmarshal(res.Msg.GetResultJson(), &out)
+	if !res.Msg.GetOk() {
+		return out, errors.New(res.Msg.GetMessage())
+	}
 	return out, nil
 }
 

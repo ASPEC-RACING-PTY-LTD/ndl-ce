@@ -15,7 +15,7 @@ import { MePage } from "./pages/MePage";
 import { NodePage } from "./pages/NodePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SetupPage } from "./pages/SetupPage";
-import { NetworkPage } from "./pages/NetworkPage";
+import { NetworkHubPage, type NetworkTab } from "./pages/NetworkHubPage";
 import { FilesPage } from "./pages/FilesPage";
 import { HostOperatePage } from "./pages/HostOperatePage";
 import { TerminalPage } from "./pages/TerminalPage";
@@ -53,7 +53,6 @@ import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
 import { DockerHubPage } from "./pages/DockerHubPage";
-import { CloudflarePage } from "./pages/CloudflarePage";
 import { WorkloadExtensionsPage } from "./pages/WorkloadExtensionsPage";
 import { StorageHubPage } from "./pages/StorageHubPage";
 import { GameServersHomePage } from "./pages/GameServersHomePage";
@@ -68,6 +67,8 @@ import { selectedTargetFromPath } from "./nav/match";
 import { isGameServersContext } from "./nav/gameServers";
 import { SessionProvider, useSession } from "./session";
 import { ErrorNotice } from "./components/ErrorNotice";
+import { GlobalContextMenu } from "./components/ContextMenu";
+import { bindPrefsUser, unbindPrefs } from "./prefs";
 
 function GateNotice({ children }: { children: string }) {
   return (
@@ -114,8 +115,8 @@ function matchPage(path: string) {
   if (path === "/storage" || path === "/storage/manage") {
     return <StorageHubPage tab={path === "/storage/manage" ? "manage" : "storage"} />;
   }
-  if (path === "/network") {
-    return <NetworkPage />;
+  if (path === "/network" || path === "/network/cloudflare" || path === "/network/caddy" || path === "/network/nginx") {
+    return <NetworkHubPage tab={(path.split("/")[2] as NetworkTab | undefined) ?? "network"} />;
   }
   if (path === "/workloads/new/system-container") {
     return <WorkloadCreatePage />;
@@ -205,7 +206,9 @@ function matchPage(path: string) {
     return <DockerHubPage tab="uptime" />;
   }
   if (path === "/cloudflare") {
-    return <CloudflarePage />;
+    // Cloudflare moved under Network; the old address still lands there.
+    window.history.replaceState({}, "", "/network/cloudflare");
+    return <NetworkHubPage tab="cloudflare" />;
   }
   if (path === "/oci") {
     return <OciPage />;
@@ -397,9 +400,31 @@ function AppRoutes() {
   );
 }
 
+/** PrefsBinder loads the signed-in user's saved interface preferences. */
+function PrefsBinder() {
+  const session = useSession();
+  const user = session.status === "ready" ? session.user : null;
+  const uid = user?.user_id ?? "";
+  useEffect(() => {
+    if (session.status !== "ready") {
+      return;
+    }
+    if (user) {
+      bindPrefsUser(user.user_id, user.ui_prefs);
+    } else {
+      unbindPrefs();
+    }
+    // Rebinding on every profile change would reset unsaved preferences.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.status, uid]);
+  return null;
+}
+
 export function App() {
   return (
     <SessionProvider>
+      <PrefsBinder />
+      <GlobalContextMenu />
       <AppRoutes />
     </SessionProvider>
   );

@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach } from "vitest";
+import { resetPrefsForTest } from "../prefs";
 import { resetQueryCache } from "../query";
 
 if (typeof globalThis.EventSource === "undefined") {
@@ -69,5 +70,14 @@ if (typeof HTMLDialogElement !== "undefined") {
 
 // Query results are cached per module; every test starts from an empty cache.
 
-beforeEach(() => resetQueryCache());
+// Preferences and page caches live in localStorage; tests start without them.
+beforeEach(() => {
+  resetQueryCache();
+  try {
+    globalThis.localStorage?.clear();
+  } catch {
+    // No storage.
+  }
+  resetPrefsForTest();
+});
 afterEach(() => resetQueryCache());

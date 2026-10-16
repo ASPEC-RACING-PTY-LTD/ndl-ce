@@ -92,6 +92,9 @@ func (s *Server) cfPlanMove(ctx context.Context, clusterID string, in cfMoveIn) 
 		} else if route.ZoneAccountID != "" && route.ZoneAccountID != dest.AccountTag {
 			pl.Blockers = append(pl.Blockers, fmt.Sprintf("%s is in the %s account; a tunnel in %s cannot serve it (Cloudflare error 1014)", route.ZoneName, inv.accountName(route.ZoneAccountID), dest.AccountName))
 		}
+		if route.ZoneID != "" && route.DNS == nil {
+			pl.Blockers = append(pl.Blockers, "no saved token may read DNS in "+route.ZoneName+", so its CNAME cannot be repointed; add Zone: DNS Edit to the token")
+		}
 		if route.DNS != nil && route.DNS.Action == cf.DNSConflict {
 			pl.Blockers = append(pl.Blockers, "DNS: "+route.DNS.Reason)
 		}
@@ -254,7 +257,7 @@ func (s *Server) cfMoveOne(ctx context.Context, clusterID, by string, j *opsJob,
 	// 2. Repoint DNS.
 	inv, _ := s.cfInventoryFor(ctx, clusterID, false)
 	z, plan, err := s.cfPlanHostname(ctx, clusterID, inv, route.Hostname, dest)
-	if err == nil && plan.Action == cf.DNSConflict {
+	if err == nil && (plan.Action == cf.DNSConflict || plan.Action == cf.DNSUnavailable) {
 		err = fmt.Errorf("%s", plan.Reason)
 	}
 	if err == nil {

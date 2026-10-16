@@ -10,7 +10,22 @@ import {
   visibleModules,
   type DisclosurePrefs,
 } from "./disclosure";
-import { loadDisclosurePrefs, saveDisclosurePrefs } from "./disclosurePrefs";
+import { DISCLOSURE_PREF, disclosureFromPref, saveDisclosurePrefs } from "./disclosurePrefs";
+import { usePref } from "../prefs";
+import { storageGet, storageSet } from "../storage";
+
+// The feature list is cached in this browser so the sidebar draws at once.
+const FEATURES_CACHE = "ndl-features-cache";
+
+function cachedFeatures(): Feature[] {
+  try {
+    const raw = storageGet(FEATURES_CACHE);
+    const parsed = raw ? (JSON.parse(raw) as Feature[]) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 import { CAPABILITIES, type NavTemplate } from "./modules";
 
 type NavDisclosureValue = {
@@ -30,11 +45,11 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const grants = session.status === "ready" ? session.user?.grants : undefined;
-  const [prefs, setPrefs] = useState<DisclosurePrefs>(() => loadDisclosurePrefs());
-  const [features, setFeatures] = useState<Feature[]>([]);
+  const [rawPrefs] = usePref<unknown>(DISCLOSURE_PREF, null);
+  const prefs = useMemo(() => disclosureFromPref(rawPrefs), [rawPrefs]);
+  const [features, setFeatures] = useState<Feature[]>(cachedFeatures);
 
   const persist = useCallback((next: DisclosurePrefs) => {
-    setPrefs(next);
     saveDisclosurePrefs(next);
   }, []);
 
@@ -42,8 +57,9 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
     try {
       const list = await listFeatures();
       setFeatures(list.items ?? []);
+      storageSet(FEATURES_CACHE, JSON.stringify(list.items ?? []));
     } catch {
-      setFeatures([]);
+      // Keep the cached list; a failed read does not turn features off.
     }
   }, []);
 
@@ -61,19 +77,17 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
 
   const setTemplate = useCallback(
     (template: NavTemplate) => {
-      setPrefs((cur) => {
-        let next = { ...cur, template };
-        if (template === "custom" && next.customVisible.length === 0) {
-          const snapshot = visibleModules({ ...cur, template: cur.template === "custom" ? "simple" : cur.template }, featureEnabled, roles, undefined, grants).map(
-            (mod) => mod.id,
-          );
-          next = seedCustom({ ...next, template: "custom" }, snapshot);
-        }
-        saveDisclosurePrefs(next);
-        return next;
-      });
+      const cur = prefs;
+      let next = { ...cur, template };
+      if (template === "custom" && next.customVisible.length === 0) {
+        const snapshot = visibleModules({ ...cur, template: cur.template === "custom" ? "simple" : cur.template }, featureEnabled, roles, undefined, grants).map(
+          (mod) => mod.id,
+        );
+        next = seedCustom({ ...next, template: "custom" }, snapshot);
+      }
+      saveDisclosurePrefs(next);
     },
-    [featureEnabled, grants, roles],
+    [featureEnabled, grants, prefs, roles],
   );
 
   const setUiEnabled = useCallback((id: string, on: boolean) => {
@@ -124,4 +138,17 @@ export function useVisibleNav(path: string) {
 
 export function capabilityIds(): string[] {
   return CAPABILITIES.map((item) => item.id);
+}
+
+/** useFeatureOn reports whether an optional feature is on; false outside the provider. */
+export function useFeatureOn(id: string): boolean {
+  const ctx = useContext(NavDisclosureContext);
+  return Boolean(ctx?.featureEnabled[id]);
+}
+
+const NO_FEATURES: Record<string, boolean> = {};
+
+/** useFeatureFlags lists which optional features are on; empty outside the provider. */
+export function useFeatureFlags(): Record<string, boolean> {
+  return useContext(NavDisclosureContext)?.featureEnabled ?? NO_FEATURES;
 }

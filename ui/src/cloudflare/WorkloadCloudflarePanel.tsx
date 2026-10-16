@@ -43,7 +43,7 @@ export function WorkloadCloudflarePanel({ workload }: { workload: { id: string; 
       <article className="panel" aria-label="Cloudflare">
         <h2>Cloudflare</h2>
         <p className="meta">
-          Not published. <Link href="/cloudflare">Connect a Cloudflare account</Link> to give this workload a public hostname.
+          Not published. <Link href="/network/cloudflare">Connect a Cloudflare account</Link> to give this workload a public hostname.
         </p>
       </article>
     );

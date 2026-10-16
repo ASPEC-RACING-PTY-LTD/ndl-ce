@@ -1,3 +1,4 @@
+import { registerTerminal } from "../components/ContextMenu";
 import { FitAddon } from "@xterm/addon-fit";
 import { PageHeader } from "../components/PageHeader";
 import { Terminal } from "@xterm/xterm";
@@ -41,6 +42,7 @@ export function ConsolePage() {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(wrap.current);
+    registerTerminal(term);
     fit.fit();
     let ws: WebSocket | null = null;
     let closed = false;

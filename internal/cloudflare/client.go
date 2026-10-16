@@ -64,16 +64,34 @@ type Client struct {
 	Token   string
 	BaseURL string
 	HTTP    *http.Client
-	// MinGap spaces requests made with this token; 0 uses DefaultMinGap.
+	// MinGap is the average spacing of requests made with this token once a
+	// burst is used up; 0 uses DefaultMinGap and a negative value turns
+	// pacing off.
 	MinGap time.Duration
+	// Burst is how many requests may go at once; 0 uses DefaultBurst.
+	Burst int
 
-	mu   sync.Mutex
-	next time.Time
+	mu     sync.Mutex
+	tokens float64
+	last   time.Time
 }
 
-// DefaultMinGap keeps one token well under Cloudflare's 1200 requests per
-// five minutes (four per second) even when several pages refresh at once.
-const DefaultMinGap = 300 * time.Millisecond
+// DefaultMinGap and DefaultBurst keep one token well under Cloudflare's 1200
+// requests per five minutes (four per second) while letting a page load make
+// its few dozen calls at once.
+const (
+	DefaultMinGap = 300 * time.Millisecond
+	DefaultBurst  = 60
+)
+
+// sharedHTTP keeps connections to the API open between calls, so each call
+// does not pay for a new TLS handshake.
+var sharedHTTP = func() *http.Client {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConnsPerHost = 32
+	t.IdleConnTimeout = 90 * time.Second
+	return &http.Client{Timeout: 30 * time.Second, Transport: t}
+}()
 
 type envelope struct {
 	Success  bool            `json:"success"`
@@ -107,10 +125,11 @@ func (c *Client) httpClient() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return sharedHTTP
 }
 
-// pace waits for this token's turn so bursts stay under the API limit.
+// pace waits for this token's turn. It is a token bucket: up to Burst calls
+// go at once, then one per MinGap.
 func (c *Client) pace(ctx context.Context) error {
 	gap := c.MinGap
 	if gap == 0 {
@@ -119,15 +138,28 @@ func (c *Client) pace(ctx context.Context) error {
 	if gap < 0 {
 		return nil
 	}
+	burst := float64(c.Burst)
+	if burst <= 0 {
+		burst = DefaultBurst
+	}
 	c.mu.Lock()
 	now := time.Now()
-	at := c.next
-	if at.Before(now) {
-		at = now
+	if c.last.IsZero() {
+		c.tokens = burst
+	} else {
+		c.tokens += float64(now.Sub(c.last)) / float64(gap)
+		if c.tokens > burst {
+			c.tokens = burst
+		}
 	}
-	c.next = at.Add(gap)
+	c.last = now
+	c.tokens--
+	var wait time.Duration
+	if c.tokens < 0 {
+		wait = time.Duration(-c.tokens * float64(gap))
+	}
 	c.mu.Unlock()
-	if wait := time.Until(at); wait > 0 {
+	if wait > 0 {
 		t := time.NewTimer(wait)
 		defer t.Stop()
 		select {

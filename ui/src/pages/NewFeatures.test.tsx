@@ -38,6 +38,7 @@ const base: Record<string, Route> = {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   window.history.replaceState({}, "", "/");
@@ -111,7 +112,17 @@ describe("Cloudflare page", () => {
     window.history.replaceState({}, "", "/cloudflare");
     render(<App />);
     const table = await screen.findByRole("table", { name: /public hostnames/i });
-    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    // Header, then each tunnel's heading row followed by its hostnames.
+    expect(within(table).getAllByRole("row")).toHaveLength(5);
+    expect(within(table).getByText("racing-shared").closest("tr")).toHaveClass("cf-group");
+    expect(within(table).getByText(/1 connector via syd01/i)).toBeVisible();
+    expect(within(table).getByText(/no connector connected/i)).toBeVisible();
+    // The old Tunnels view is gone; tunnels are the groups.
+    expect(screen.queryByRole("button", { name: /^tunnels$/i })).toBeNull();
+    // Collapsing a tunnel hides its hostnames.
+    fireEvent.click(within(table).getByRole("button", { name: /hide hosting-shared hostnames/i }));
+    expect(within(table).queryByText("app.hosting.example")).toBeNull();
+    fireEvent.click(within(table).getByRole("button", { name: /show hosting-shared hostnames/i }));
     const rowOf = (host: string) => within(table).getByText(host).closest("tr")!;
     expect(within(rowOf("app.hosting.example")).getByText("Hosting")).toBeVisible();
     expect(within(rowOf("shop.racing.example")).getByText("Racing")).toBeVisible();
@@ -122,6 +133,30 @@ describe("Cloudflare page", () => {
     fireEvent.change(screen.getByLabelText(/account filter/i), { target: { value: A } });
     expect(within(table).queryByText("app.hosting.example")).toBeNull();
     fireEvent.change(screen.getByLabelText(/account filter/i), { target: { value: "" } });
+
+    // Columns: hide Account with the pencil, and sort by hostname.
+    fireEvent.click(within(table).getByRole("button", { name: /edit hostname columns/i }));
+    fireEvent.click(within(table).getByRole("checkbox", { name: /^account$/i }));
+    expect(within(table).queryByRole("columnheader", { name: /^account/i })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("ndl-ui-prefs:user-1") ?? "{}")["table.cf.hostnames"].hidden).toContain("account");
+    fireEvent.click(within(table).getByRole("checkbox", { name: /^account$/i }));
+    fireEvent.click(within(table).getByRole("checkbox", { name: /group by tunnel/i }));
+    const flat = await screen.findByRole("table", { name: /public hostnames/i });
+    expect(within(flat).getAllByRole("row")).toHaveLength(3);
+    const sortBtn = within(flat).getByRole("button", { name: /^hostname/i });
+    fireEvent.click(sortBtn);
+    expect(within(flat).getAllByRole("row")[1]).toHaveTextContent("shop.racing.example");
+    expect(sortBtn.closest("th")).toHaveAttribute("aria-sort", "descending");
+    // The picker stays open until clicked outside.
+    fireEvent.click(within(flat).getByRole("checkbox", { name: /group by tunnel/i }));
+    fireEvent.mouseDown(document.body);
+
+    // Right-clicking the page offers the page's actions instead of the browser menu.
+    const bg = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
+    screen.getByRole("heading", { name: /^cloudflare$/i }).dispatchEvent(bg);
+    expect(bg.defaultPrevented).toBe(true);
+    expect(await screen.findByRole("menuitem", { name: /^new tunnel$/i })).toBeVisible();
+    fireEvent.keyDown(document, { key: "Escape" });
 
     fireEvent.contextMenu(within(table).getByText("shop.racing.example").closest("tr")!);
     fireEvent.click(await screen.findByRole("menuitem", { name: /^diagnose$/i }));
@@ -147,6 +182,73 @@ describe("Cloudflare page", () => {
     fireEvent.click(go);
     await waitFor(() => expect(deleted).toContain('"confirm":"shop.racing.example"'));
     expect(JSON.parse(deleted)).toMatchObject({ delete_dns: true, tunnel_id: T1 });
+  });
+});
+
+describe("Cloudflare permissions", () => {
+  it("lists what a tunnel-only token cannot do and how to add it", async () => {
+    mockApi({
+      ...base,
+      "/api/v1/cloudflare/inventory": { status: 200, body: inventory },
+      "/api/v1/cloudflare/machines": { status: 200, body: { items: [], supported: true } },
+      "/api/v1/cloudflare/credentials": {
+        status: 200,
+        body: {
+          items: [
+            {
+              id: "c1",
+              name: "ARPL",
+              account_owned: true,
+              account_hint: A,
+              token_last4: "e085",
+              status: "limited",
+              created_at: "2026-10-16T00:00:00Z",
+              accounts: [{ id: A, name: "Racing", zones: 45, tunnels: true, dns: false, listed: false, problems: ["cannot read DNS records (needs DNS Read or Edit)"] }],
+            },
+          ],
+        },
+      },
+      "/api/v1/cloudflare/permissions": {
+        status: 200,
+        body: {
+          source: "cloudflare-docs",
+          fetched_at: new Date().toISOString(),
+          docs_updated: "Oct 12, 2026",
+          docs_url: "https://developers.cloudflare.com/fundamentals/api/reference/permissions/",
+          create_url: "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/",
+          account_tokens_url: "https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/",
+          dashboard_url: "https://dash.cloudflare.com/profile/api-tokens",
+          steps: ["Select Create Token."],
+          permissions: [
+            { id: "tunnel_read", scope: "Account", group: "Cloudflare Tunnel", level: "Read", description: "Grants access to view Cloudflare Tunnels.", in_docs: true },
+            { id: "dns_read", scope: "Zone", group: "DNS", level: "Read", description: "Grants read access to DNS.", in_docs: true },
+            { id: "dns_edit", scope: "Zone", group: "DNS", level: "Edit", description: "Grants write access to DNS.", in_docs: true },
+            { id: "account_settings_read", scope: "Account", group: "Account Settings", level: "Read", description: "Account resources.", in_docs: true },
+          ],
+          use_cases: [
+            { id: "accounts", title: "Find your accounts", why: "", needs: ["account_settings_read"], resources: "All accounts", check: "accounts", user_tokens_only: true },
+            { id: "tunnels_read", title: "See tunnels and hostnames", why: "", needs: ["tunnel_read"], resources: "the account", check: "tunnels" },
+            { id: "dns_read", title: "Show DNS status", why: "", needs: ["dns_read"], resources: "All zones", check: "dns" },
+            { id: "dns_edit", title: "Create and fix DNS records", why: "", needs: ["dns_edit"], resources: "All zones" },
+          ],
+        },
+      },
+    });
+    window.history.replaceState({}, "", "/network/cloudflare");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^accounts$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /permissions \(some missing\)/i }));
+    const list = await screen.findByRole("list", { name: /what this token can do/i });
+    const item = (t: RegExp) => within(list).getByText(t).closest("li")!;
+    expect(within(item(/see tunnels/i)).getByText(/allowed/i)).toBeVisible();
+    expect(within(item(/show dns status/i)).getByText(/missing/i)).toBeVisible();
+    expect(within(item(/create and fix dns/i)).getByText(/missing/i)).toBeVisible();
+    // Account-owned tokens do not need Account Settings.
+    expect(within(item(/find your accounts/i)).getByText(/not needed/i)).toBeVisible();
+    const fix = screen.getByRole("table", { name: "" });
+    expect(within(fix).getByText("Grants write access to DNS.")).toBeVisible();
+    expect(screen.getByRole("link", { name: /api tokens in the cloudflare dashboard/i })).toHaveAttribute("href", `https://dash.cloudflare.com/${A}/api-tokens`);
+    expect(screen.getByText(/from cloudflare's documentation, updated oct 12, 2026/i)).toBeVisible();
   });
 });
 

@@ -2,11 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
@@ -190,63 +193,32 @@ func (s *Server) cfBuild(ctx context.Context, clusterID string) *cfInventory {
 			}
 		}
 	}
+	// Accounts, and the tunnels and zones inside each, are read in parallel.
+	// Each token's client paces its own calls, so this stays inside
+	// Cloudflare's rate limit.
+	var mu sync.Mutex
+	dnsAccounts := map[string]bool{}
+	for _, c := range creds {
+		if c.Status == cfStatusInvalid {
+			continue
+		}
+		for _, sc := range cfCredScopes(c) {
+			if sc.DNS {
+				dnsAccounts[sc.Account.ID] = true
+			}
+		}
+	}
+	var wg sync.WaitGroup
 	for _, id := range order {
-		a := byAccount[id]
-		if zones, err := s.cfZones(bctx, clusterID, id); err == nil {
-			a.Zones = zones
-		} else if err != errCFNoCredential {
-			a.Problems = append(a.Problems, "zones: "+err.Error())
-		}
-		var tunnels []cf.Tunnel
-		err := s.cfWith(bctx, clusterID, id, "", func(c *cf.Client) error {
-			var err error
-			tunnels, err = c.Tunnels(bctx, id)
-			return err
-		})
-		if err != nil {
-			a.Problems = append(a.Problems, "tunnels: "+err.Error())
-			inv.Errors = append(inv.Errors, a.Name+": "+err.Error())
-		}
-		for _, t := range tunnels {
-			if t.TunType != "" && t.TunType != "cfd_tunnel" {
-				continue
-			}
-			tv := &cfTunnelView{Tunnel: t, AccountName: a.Name, RemoteManaged: t.RemotelyManaged(), Connectors: []cf.Connector{}, Local: []cfLocalConnector{}}
-			_ = s.cfWith(bctx, clusterID, id, "", func(c *cf.Client) error {
-				conns, err := c.Connectors(bctx, id, t.ID)
-				if err == nil {
-					tv.Connectors, tv.connectorsRead = conns, true
-				}
-				return err
-			})
-			if tv.RemoteManaged {
-				err := s.cfWith(bctx, clusterID, id, "", func(c *cf.Client) error {
-					cfg, err := c.Config(bctx, id, t.ID)
-					if err == nil {
-						tv.config, tv.ConfigVersion = &cfg, cfg.Version
-					}
-					return err
-				})
-				if err != nil {
-					tv.Error = "routes could not be read: " + err.Error()
-				}
-			}
-			inv.Tunnels = append(inv.Tunnels, tv)
-		}
-		for _, z := range a.Zones {
-			zid := z.ID
-			err := s.cfWith(bctx, clusterID, id, zid, func(c *cf.Client) error {
-				recs, err := c.DNSRecords(bctx, zid, "")
-				if err == nil {
-					inv.records[zid] = recs
-				}
-				return err
-			})
-			if err != nil && err != errCFNoCredential {
-				a.Problems = append(a.Problems, "DNS for "+z.Name+": "+err.Error())
-			}
-		}
-		inv.Accounts = append(inv.Accounts, *a)
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			s.cfBuildAccount(bctx, clusterID, byAccount[id], inv, &mu, dnsAccounts[id])
+		}(id)
+	}
+	wg.Wait()
+	for _, id := range order {
+		inv.Accounts = append(inv.Accounts, *byAccount[id])
 	}
 	s.cfAttachLocal(bctx, clusterID, inv)
 	s.cfBuildRoutes(bctx, clusterID, inv)
@@ -262,6 +234,116 @@ func (s *Server) cfBuild(ctx context.Context, clusterID string) *cfInventory {
 	delete(s.cf.stale, clusterID)
 	s.cf.mu.Unlock()
 	return inv
+}
+
+// cfBuildParallel is how many tunnel or zone reads run at once per account.
+const cfBuildParallel = 8
+
+// cfBuildAccount reads one account's zones, tunnels, tunnel routes and
+// connectors and DNS records into inv. mu guards inv.
+func (s *Server) cfBuildAccount(ctx context.Context, clusterID string, a *cfAccountView, inv *cfInventory, mu *sync.Mutex, dnsOK bool) {
+	id := a.ID
+	var tunnels []cf.Tunnel
+	var terr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		terr = s.cfWith(ctx, clusterID, id, "", func(c *cf.Client) error {
+			var err error
+			tunnels, err = c.Tunnels(ctx, id)
+			return err
+		})
+	}()
+	if zones, err := s.cfZones(ctx, clusterID, id); err == nil {
+		a.Zones = zones
+	} else if err != errCFNoCredential {
+		a.Problems = append(a.Problems, "zones: "+err.Error())
+	}
+	wg.Wait()
+	if terr != nil {
+		a.Problems = append(a.Problems, "tunnels: "+terr.Error())
+		mu.Lock()
+		inv.Errors = append(inv.Errors, a.Name+": "+terr.Error())
+		mu.Unlock()
+	}
+	sem := make(chan struct{}, cfBuildParallel)
+	var views []*cfTunnelView
+	for _, t := range tunnels {
+		if t.TunType != "" && t.TunType != "cfd_tunnel" {
+			continue
+		}
+		tv := &cfTunnelView{Tunnel: t, AccountName: a.Name, RemoteManaged: t.RemotelyManaged(), Connectors: []cf.Connector{}, Local: []cfLocalConnector{}}
+		// The list already carries connections; read them separately only
+		// when it does not.
+		if conns, ok := t.ListedConnectors(); ok {
+			tv.Connectors, tv.connectorsRead = conns, true
+		}
+		tv.Connections = nil
+		views = append(views, tv)
+		if tv.connectorsRead && !tv.RemoteManaged {
+			continue
+		}
+		wg.Add(1)
+		go func(tv *cfTunnelView) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if !tv.connectorsRead {
+				_ = s.cfWith(ctx, clusterID, id, "", func(c *cf.Client) error {
+					conns, err := c.Connectors(ctx, id, tv.ID)
+					if err == nil {
+						tv.Connectors, tv.connectorsRead = conns, true
+					}
+					return err
+				})
+			}
+			if tv.RemoteManaged {
+				err := s.cfWith(ctx, clusterID, id, "", func(c *cf.Client) error {
+					cfg, err := c.Config(ctx, id, tv.ID)
+					if err == nil {
+						tv.config, tv.ConfigVersion = &cfg, cfg.Version
+					}
+					return err
+				})
+				if err != nil {
+					tv.Error = "routes could not be read: " + err.Error()
+				}
+			}
+		}(tv)
+	}
+	// DNS is only read where a saved token may read it; asking with a token
+	// that cannot would fail once per zone and only slow the page down.
+	var problems []string
+	if dnsOK {
+		for _, z := range a.Zones {
+			wg.Add(1)
+			go func(z cf.Zone) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				var recs []cf.DNSRecord
+				err := s.cfWith(ctx, clusterID, id, z.ID, func(c *cf.Client) error {
+					var err error
+					recs, err = c.DNSRecords(ctx, z.ID, "")
+					return err
+				})
+				mu.Lock()
+				defer mu.Unlock()
+				if err == nil {
+					inv.records[z.ID] = recs
+				} else if err != errCFNoCredential {
+					problems = append(problems, "DNS for "+z.Name+": "+err.Error())
+				}
+			}(z)
+		}
+	}
+	wg.Wait()
+	sort.Strings(problems)
+	a.Problems = append(a.Problems, problems...)
+	mu.Lock()
+	inv.Tunnels = append(inv.Tunnels, views...)
+	mu.Unlock()
 }
 
 func (s *Server) cfZones(ctx context.Context, clusterID, accountID string) ([]cf.Zone, error) {
@@ -454,5 +536,21 @@ func (s *Server) getCloudflareInventory(w http.ResponseWriter, r *http.Request) 
 	inv, refreshing := s.cfInventoryFor(r.Context(), p.User.ClusterID, r.URL.Query().Get("refresh") == "1")
 	out := *inv
 	out.Refreshing = refreshing
-	writeJSON(w, http.StatusOK, out)
+	body, err := json.Marshal(out)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// The page polls; an unchanged inventory is answered with 304 and no body.
+	sum := sha256.Sum256(body)
+	etag := `"` + hex.EncodeToString(sum[:12]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }

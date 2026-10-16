@@ -1,8 +1,23 @@
 # Cloudflare Tunnel Manager
 
-The Cloudflare page (Infrastructure, Cloudflare) manages tunnels, public
-hostnames and DNS for every connected Cloudflare account in one view. Every
-row shows the account that owns it. There are no per-account dashboards.
+The Cloudflare page (Network, then Cloudflare at the top) manages tunnels,
+public hostnames and DNS for every connected Cloudflare account in one view.
+Every row shows the account that owns it. There are no per-account
+dashboards.
+
+Cloudflare is an optional feature, off on a fresh install; turn it on in Add
+Features. Turning it off only hides the page and the workload panels. Saved
+tokens, tunnels, routes and running connectors are kept and keep working.
+
+## Hostnames
+
+Hostnames are grouped under their tunnel. A tunnel's heading row shows its
+status, connectors and where they run, and its menu (or a right-click) holds
+the tunnel actions: add a hostname to it, rename, deploy, restart or update a
+connector, move all its hostnames, and delete. Tunnels without hostnames are
+listed too. Columns sort when their heading is clicked; the pencil at the end
+of the heading row chooses the columns and whether to group by tunnel. These
+choices are saved to your profile.
 
 ## Connecting accounts
 
@@ -13,7 +28,22 @@ Use scoped API tokens. Global API keys are not accepted. Give a token:
 - Account: Account Settings Read, so its accounts are found
 
 Account-owned tokens (`cfat_...`) cannot list accounts or verify at the user
-endpoint, so enter the account ID with them. Any number of tokens and accounts
+endpoint, so enter the account ID with them.
+
+Each token card under Accounts has a Permissions dropdown. It lists what No-dal
+does with Cloudflare, whether the token allows it, and for anything missing
+the exact permission to add (type, permission, access and resources) with
+the steps to edit the token. The permission names, descriptions and token
+steps are read from Cloudflare's documentation (its Markdown copies of the API
+token permissions and Create API token pages), cached for twelve hours, with a
+built-in copy when the documentation cannot be reached. Write access cannot be
+tested without changing something, so it is confirmed the first time it is
+used.
+
+A token without DNS access (for example one with only Zero Trust or Tunnel
+permissions) can still add and edit hostnames: the route is saved, DNS is
+left alone, and the reply says which permission to add. Moving hostnames
+between tunnels needs DNS access, since the CNAME must be repointed. Any number of tokens and accounts
 can be connected. When a token is added or rotated, No-dal verifies it and
 records which accounts, zones and permissions it reaches; nothing is saved if
 verification fails. A rotation that would lose access to an account asks
@@ -110,13 +140,19 @@ DNS, the origin as reached from each connector on this node (a TCP connect
 only, and only to the route's own origin address), and the public URL. The
 summary names the failing layer.
 
-## Polling
+## Polling and speed
 
 The inventory is cached for two minutes and refreshed in the background, so
-the page does not poll Cloudflare. A refresh makes roughly two calls per
-tunnel plus one per account and zone. Each token is paced to stay well under
-Cloudflare's limit of 1,200 requests per five minutes, which is shared with
-the dashboard.
+the page does not poll Cloudflare. A refresh reads each account's tunnels and
+zones, then every tunnel's routes and the DNS records of zones a token may
+read, eight at a time. Connectors come from the tunnel list itself. Each
+token keeps one connection pool and a rate budget that allows short bursts
+and then stays well under Cloudflare's limit of 1,200 requests per five
+minutes, which is shared with the dashboard.
+
+The page shows the last inventory saved in the browser at once, then asks the
+server whether anything changed: an unchanged inventory is answered with 304
+and no body, and only rows whose data changed are redrawn.
 
 ## Limitations
 

@@ -3,9 +3,13 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-mode="dark"]) {
     color-scheme: light;
   }
+}
+
+:root[data-mode="light"] {
+  color-scheme: light;
 }
 
 input,

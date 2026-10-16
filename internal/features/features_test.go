@@ -25,8 +25,15 @@ func TestCatalogDefaultSmall(t *testing.T) {
 			t.Fatalf("%s must not start a runtime from Phase 35", m.ID)
 		}
 	}
-	if optional != 7 {
+	if optional != 10 {
 		t.Fatalf("optional=%d", optional)
+	}
+	// Cloudflare, Caddy and Nginx only change what the interface shows.
+	for _, id := range []string{IDCloudflare, IDCaddy, IDNginx} {
+		m, ok := Lookup(id)
+		if !ok || !m.SoftwareOnly || m.Package != "" || m.Core || m.StartsRuntime {
+			t.Fatalf("%s: %+v", id, m)
+		}
 	}
 	gs, ok := Lookup(IDGameServers)
 	if !ok || !gs.SoftwareOnly || gs.Package != "" || gs.StartsRuntime || gs.Core {

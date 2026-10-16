@@ -8943,6 +8943,681 @@ paths:
           description: Not found
         "409":
           description: Still in use; the error names what uses it
+  /cloudflare/credentials:
+    get:
+      operationId: listCloudflareCredentials
+      summary: Saved Cloudflare API tokens: name, last four characters, status and the accounts each reaches. Token values are never returned.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: createCloudflareCredential
+      summary: Verify and save a scoped Cloudflare API token. It is sealed at rest; nothing is saved if verification fails.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/credentials/{id}:
+    put:
+      operationId: updateCloudflareCredential
+      summary: Rename a saved token or replace its value; a replacement that loses access to an account needs allow_narrower.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    delete:
+      operationId: deleteCloudflareCredential
+      summary: Remove a saved token from No-dal. Nothing changes in Cloudflare.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/credentials/{id}/validate:
+    post:
+      operationId: validateCloudflareCredential
+      summary: Verify a saved token again and record the accounts, zones and permissions it reaches.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/inventory:
+    get:
+      operationId: getCloudflareInventory
+      summary: Tunnels, routes and tunnel DNS records from every connected account, cached. Supports If-None-Match and answers 304 when unchanged.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "304":
+          description: Unchanged since the ETag sent in If-None-Match
+  /cloudflare/machines:
+    get:
+      operationId: listCloudflareMachines
+      summary: Machines a cloudflared connector can be deployed on.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/permissions:
+    get:
+      operationId: getCloudflarePermissionsGuide
+      summary: Token permissions each feature needs and how to add them, read from Cloudflare's documentation with a built-in fallback.
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/tunnels:
+    post:
+      operationId: createCloudflareTunnel
+      summary: Create a remotely managed tunnel.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/tunnels/{id}:
+    patch:
+      operationId: renameCloudflareTunnel
+      summary: Rename a tunnel.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/tunnels/{id}/delete:
+    post:
+      operationId: deleteCloudflareTunnel
+      summary: Delete a tunnel; refused while it still has routes, DNS records or connected connectors.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/tunnels/{id}/connectors:
+    post:
+      operationId: cloudflareConnector
+      summary: Install, update, restart or remove a cloudflared connector on a machine.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/routes:
+    post:
+      operationId: upsertCloudflareRoute
+      summary: Add or change a public hostname route and, when allowed, its DNS record.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/routes/plan:
+    post:
+      operationId: planCloudflareRoute
+      summary: Preview what routing a hostname would do to DNS without changing anything.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/routes/enabled:
+    post:
+      operationId: setCloudflareRouteEnabled
+      summary: Switch a route off (No-dal keeps a copy) or back on.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/routes/delete:
+    post:
+      operationId: deleteCloudflareRoute
+      summary: Delete a route and optionally its DNS record.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/routes/sync-ip:
+    post:
+      operationId: syncCloudflareRouteIP
+      summary: Point a route at its workload's current address.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/routes/diagnose:
+    post:
+      operationId: diagnoseCloudflareRoute
+      summary: Check a route layer by layer: tunnel, DNS, origin and public URL.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/move/preview:
+    post:
+      operationId: previewCloudflareMove
+      summary: Preview moving routes to another tunnel.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /cloudflare/move:
+    post:
+      operationId: moveCloudflareRoutes
+      summary: Move routes to another tunnel as a background job, checking each before removing it from the source.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /workloads/{id}/cloudflare:
+    get:
+      operationId: getWorkloadCloudflare
+      summary: Public hostnames that reach a workload, with suggested origins.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /workloads/{id}/cloudflare/publish:
+    post:
+      operationId: publishWorkload
+      summary: Publish a workload through a Cloudflare tunnel.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /workloads/{id}/extensions:
+    get:
+      operationId: listWorkloadExtensions
+      summary: Optional software in a system container and its install state.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: changeWorkloadExtensions
+      summary: Install, update or reinstall extensions in the background.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /storage/scan/targets:
+    get:
+      operationId: listStorageScanTargets
+      summary: Places the storage manager can scan.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /storage/scan:
+    post:
+      operationId: startStorageScan
+      summary: Start a disk usage scan.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /storage/scan/{id}:
+    get:
+      operationId: getStorageScan
+      summary: A scan's progress and the largest items in a folder.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /storage/scan/{id}/cancel:
+    post:
+      operationId: cancelStorageScan
+      summary: Stop a running scan.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /storage/scan/{id}/delete:
+    post:
+      operationId: deleteStorageScanItems
+      summary: Delete chosen items from a finished scan; protected paths are refused.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /proxies/{kind}:
+    get:
+      operationId: getProxies
+      summary: Caddy or Nginx on the host and in system containers, with their sites. kind is caddy or nginx; the feature must be on.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /proxies/{kind}/sites:
+    post:
+      operationId: upsertProxySite
+      summary: Add or change a site No-dal manages. The proxy validates the change before it is loaded and it is put back on failure.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /proxies/{kind}/sites/delete:
+    post:
+      operationId: deleteProxySite
+      summary: Remove a site No-dal manages.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /proxies/{kind}/service:
+    post:
+      operationId: proxyService
+      summary: Reload, restart, start, stop, validate or install the proxy on a machine.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 components:
   schemas:
     OpsJob:
@@ -9228,6 +9903,10 @@ components:
           description: Workload ids in the user's custom order.
           items:
             type: string
+        ui_prefs:
+          type: object
+          description: Interface preferences by key (theme, sidebar order, table columns). Presentation only.
+          additionalProperties: true
     MePatchRequest:
       type: object
       additionalProperties: false
@@ -9251,6 +9930,10 @@ components:
           maxItems: 5000
           items:
             type: string
+        ui_prefs:
+          type: object
+          description: Interface preference keys to set; a null value removes a key. Other keys are kept.
+          additionalProperties: true
     MFAChallengeResponse:
       type: object
       additionalProperties: false

@@ -41,6 +41,9 @@ const (
 	DNSProxy    = "proxy"    // CNAME to this tunnel but not proxied; it will be proxied
 	DNSRetarget = "retarget" // CNAME to another tunnel; only changed when moving the route
 	DNSConflict = "conflict" // an unrelated record holds the name; never changed
+	// DNSUnavailable means no saved token may read DNS in the zone, so DNS
+	// is left alone and only the tunnel route is changed.
+	DNSUnavailable = "unavailable"
 )
 
 // DNSPlan says what routing hostname to a tunnel would do to DNS.

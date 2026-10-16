@@ -82,6 +82,9 @@ type Fake struct {
 	Records  map[string]*Record
 	// Calls counts requests by "METHOD path".
 	Calls map[string]int
+	// Refused lists "METHOD path" calls made with a token that cannot see
+	// the account or zone they name.
+	Refused []string
 	// FailNext makes the next n requests return this status.
 	FailNext   int
 	FailStatus int
@@ -235,6 +238,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, out, map[string]any{"page": 1, "count": len(out), "total_count": len(out)})
 	case len(parts) == 2 && parts[0] == "accounts":
 		if !tok.sees(parts[1]) {
+			f.Refused = append(f.Refused, r.Method+" "+r.URL.Path)
 			fail(w, 403, 9109, "Unauthorized to access requested resource")
 			return
 		}
@@ -266,6 +270,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 func (f *Fake) serveTunnels(w http.ResponseWriter, r *http.Request, tok Token, parts []string, need func(string) bool) {
 	acct := parts[1]
 	if !tok.sees(acct) {
+		f.Refused = append(f.Refused, r.Method+" "+r.URL.Path)
 		fail(w, 403, 9109, "Unauthorized to access requested resource")
 		return
 	}
@@ -378,6 +383,9 @@ func tunnelJSON(t *Tunnel) map[string]any {
 
 func (f *Fake) serveDNS(w http.ResponseWriter, r *http.Request, tok Token, parts []string, need func(string) bool) {
 	zone := f.Zones[parts[1]]
+	if zone != nil && !tok.sees(zone["account"]) {
+		f.Refused = append(f.Refused, r.Method+" "+r.URL.Path)
+	}
 	if zone == nil || !tok.sees(zone["account"]) {
 		fail(w, 403, 9109, "Unauthorized to access requested resource")
 		return

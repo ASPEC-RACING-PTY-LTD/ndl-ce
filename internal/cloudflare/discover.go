@@ -14,6 +14,9 @@ type AccountScope struct {
 	Tunnels bool `json:"tunnels"`
 	// DNS is true when the token can read DNS records in its zones.
 	DNS bool `json:"dns"`
+	// Listed is true when the token found the account itself (Account
+	// Settings Read) rather than from an entered account ID.
+	Listed bool `json:"listed"`
 	// Problems explains missing permissions in plain words.
 	Problems []string `json:"problems,omitempty"`
 }
@@ -41,6 +44,10 @@ func Discover(ctx context.Context, c *Client, accountHint string) (Scope, error)
 	if err != nil && !errors.Is(err, ErrPermission) {
 		return sc, err
 	}
+	listed := map[string]bool{}
+	for _, a := range accounts {
+		listed[a.ID] = true
+	}
 	if accountHint != "" {
 		found := false
 		for _, a := range accounts {
@@ -60,7 +67,7 @@ func Discover(ctx context.Context, c *Client, accountHint string) (Scope, error)
 		return sc, &APIError{Message: "the token cannot see any account; give it Account Settings Read, or enter the account ID", class: ErrPermission}
 	}
 	for _, a := range accounts {
-		as := AccountScope{Account: a}
+		as := AccountScope{Account: a, Listed: listed[a.ID]}
 		if _, terr := c.Tunnels(ctx, a.ID); terr == nil {
 			as.Tunnels = true
 		} else if errors.Is(terr, ErrRateLimited) {

@@ -1,3 +1,4 @@
+import { useFeatureOn } from "../nav/NavDisclosure";
 import { useEffect, useMemo, useState } from "react";
 import {
   changeWorkloadExtensions,
@@ -91,6 +92,7 @@ export function WorkloadCreatePage() {
   const [extWatch, setExtWatch] = useState(false);
   // Optional: publish through Cloudflare once the container has an address.
   const [publish, setPublish] = useState(false);
+  const cloudflareOn = useFeatureOn("cloudflare");
   const [cfInv, setCfInv] = useState<CfInventory | null>(null);
   const [cfTunnel, setCfTunnel] = useState("");
   const [cfHost, setCfHost] = useState("");
@@ -291,7 +293,7 @@ export function WorkloadCreatePage() {
       if (createdRow.setup_status === "installing") {
         setExtWatch(true);
       }
-      if (publish && cfHost.trim() && cfTunnel) {
+      if (cloudflareOn && publish && cfHost.trim() && cfTunnel) {
         void publishWhenReady(createdRow.id);
       }
     } catch (err) {
@@ -491,13 +493,15 @@ export function WorkloadCreatePage() {
                   )
                 ) : null}
                 <Checkbox id="ct-auto" label="Start automatically with the host" checked={autostart} onChange={(e) => setAutostart(e.target.checked)} />
-                <Checkbox
-                  id="ct-publish"
-                  label="Publish it through Cloudflare once it has an address (optional)"
-                  checked={publish}
-                  onChange={(e) => setPublish(e.target.checked)}
-                />
-                {publish ? (
+                {cloudflareOn ? (
+                  <Checkbox
+                    id="ct-publish"
+                    label="Publish it through Cloudflare once it has an address (optional)"
+                    checked={publish}
+                    onChange={(e) => setPublish(e.target.checked)}
+                  />
+                ) : null}
+                {cloudflareOn && publish ? (
                   cfInv && (cfInv.tunnels ?? []).some((t) => t.remote_managed) ? (
                     <div className="oci-grid">
                       <div className="field">

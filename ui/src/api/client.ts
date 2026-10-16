@@ -2600,7 +2600,7 @@ export async function importUptime(script: unknown, dryRun: boolean): Promise<Up
 
 // --- Cloudflare Tunnel Manager ---
 
-export type CfAccountScope = { id: string; name: string; zones: number; tunnels: boolean; dns: boolean; problems?: string[] };
+export type CfAccountScope = { id: string; name: string; zones: number; tunnels: boolean; dns: boolean; listed?: boolean; problems?: string[] };
 export type CfCredential = {
   id: string;
   name: string;
@@ -2641,7 +2641,7 @@ export type CfOriginOptions = {
   disable_chunked_encoding?: boolean;
   connect_timeout_seconds?: number;
 };
-export type CfDNSPlan = { action: "create" | "ok" | "proxy" | "retarget" | "conflict" | string; hostname: string; current_tunnel?: string; reason?: string };
+export type CfDNSPlan = { action: "create" | "ok" | "proxy" | "retarget" | "conflict" | "unavailable" | string; hostname: string; current_tunnel?: string; reason?: string };
 export type CfRoute = {
   key: string;
   hostname: string;
@@ -2722,6 +2722,46 @@ export async function deleteCfCredential(id: string): Promise<{ deleted: boolean
 export async function getCfInventory(refresh = false): Promise<CfInventory> {
   return readJson(await request(refresh ? "/cloudflare/inventory?refresh=1" : "/cloudflare/inventory"));
 }
+
+/**
+ * getCfInventoryIfChanged reads the inventory unless it still matches etag,
+ * in which case it returns null and the server sends no body.
+ */
+export async function getCfInventoryIfChanged(etag: string, refresh = false): Promise<{ inventory: CfInventory; etag: string } | null> {
+  const res = await request(refresh ? "/cloudflare/inventory?refresh=1" : "/cloudflare/inventory", etag ? { headers: { "If-None-Match": etag } } : {});
+  if (res.status === 304) {
+    return null;
+  }
+  const inventory = await readJson<CfInventory>(res);
+  return { inventory, etag: res.headers.get("ETag") ?? "" };
+}
+
+export type CfGuidePermission = { id: string; scope: string; group: string; level: string; description: string; in_docs: boolean };
+export type CfGuideUseCase = {
+  id: string;
+  title: string;
+  why: string;
+  needs: string[];
+  resources: string;
+  check?: "accounts" | "tunnels" | "zones" | "dns" | string;
+  user_tokens_only?: boolean;
+};
+export type CfGuide = {
+  source: "cloudflare-docs" | "built-in" | string;
+  fetched_at: string;
+  docs_updated?: string;
+  docs_url: string;
+  create_url: string;
+  account_tokens_url: string;
+  dashboard_url: string;
+  steps: string[];
+  permissions: CfGuidePermission[];
+  use_cases: CfGuideUseCase[];
+  error?: string;
+};
+export async function getCfPermissionsGuide(refresh = false): Promise<CfGuide> {
+  return readJson(await request(refresh ? "/cloudflare/permissions?refresh=1" : "/cloudflare/permissions"));
+}
 export async function listCfMachines(): Promise<{ items: CfMachine[]; supported: boolean }> {
   return readJson(await request("/cloudflare/machines"));
 }
@@ -2777,6 +2817,83 @@ export async function getWorkloadCloudflare(id: string): Promise<CfWorkloadInfo>
 }
 export async function publishWorkload(id: string, body: CfRouteIn): Promise<CfRouteResult> {
   return readJson(await request(`/workloads/${encodeURIComponent(id)}/cloudflare/publish`, json(body)));
+}
+
+// --- Reverse proxies (Caddy, Nginx) ---
+
+export type ProxyKind = "caddy" | "nginx";
+export type ProxySite = {
+  name?: string;
+  domains: string[];
+  upstream?: string;
+  redirect?: string;
+  tls?: "auto" | "internal" | "http" | "cert" | string;
+  cert_path?: string;
+  key_path?: string;
+  websocket?: boolean;
+  listen?: string[];
+  managed: boolean;
+  file?: string;
+  line?: number;
+  workload?: { id: string; name: string };
+};
+export type ProxyInstance = {
+  kind: ProxyKind;
+  machine_id: string;
+  machine_name: string;
+  binary: string;
+  version?: string;
+  service: string;
+  active: boolean;
+  state: string;
+  config_path: string;
+  managed_dir: string;
+  included: boolean;
+  sites: ProxySite[];
+  errors?: string[];
+  notes?: string[];
+  workload?: { id: string; name: string };
+};
+export type ProxyMachine = { id: string; name: string; installed: boolean; can_apt: boolean };
+export type ProxyResult = { message?: string; output?: string; site?: ProxySite };
+
+/** ProxyError carries the proxy's own validator output when a change is refused. */
+export class ProxyError extends ApiError {
+  readonly output: string;
+  constructor(status: number, message: string, output: string) {
+    super(status, message);
+    this.output = output;
+  }
+}
+
+async function readProxy<T>(res: Response): Promise<T> {
+  if (res.ok) {
+    return (await res.json()) as T;
+  }
+  let body: { error?: string; output?: string } = {};
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    // Not JSON.
+  }
+  throw new ProxyError(res.status, body.error || `Request failed (${res.status})`, body.output ?? "");
+}
+
+export async function getProxies(kind: ProxyKind, refresh = false): Promise<{ instances: ProxyInstance[]; machines: ProxyMachine[] }> {
+  return readJson(await request(`/proxies/${kind}${refresh ? "?refresh=1" : ""}`));
+}
+export async function upsertProxySite(kind: ProxyKind, body: { machine_id: string; previous?: string; site: Partial<ProxySite> }): Promise<ProxyResult> {
+  return readProxy(await request(`/proxies/${kind}/sites`, json(body)));
+}
+export async function deleteProxySite(kind: ProxyKind, machine_id: string, name: string): Promise<ProxyResult> {
+  return readProxy(await request(`/proxies/${kind}/sites/delete`, json({ machine_id, name })));
+}
+export async function proxyService(
+  kind: ProxyKind,
+  machine_id: string,
+  action: "reload" | "restart" | "start" | "stop" | "validate" | "install",
+): Promise<ProxyResult> {
+  return readProxy(await request(`/proxies/${kind}/service`, json({ machine_id, action })));
 }
 
 // --- Workload extensions ---

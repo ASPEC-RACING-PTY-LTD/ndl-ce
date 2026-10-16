@@ -123,10 +123,13 @@ type Server struct {
 	uptimeMu        sync.Mutex
 	// CFBaseURL and CFKeyPath override the Cloudflare API root and the token
 	// key file (tests). CFPublicCheck replaces public site checks in tests.
-	CFBaseURL      string
-	CFKeyPath      string
-	CFPublicCheck  func(ctx context.Context, url string) uptimeResult
+	CFBaseURL     string
+	CFKeyPath     string
+	CFPublicCheck func(ctx context.Context, url string) uptimeResult
+	// CFDocsURL overrides Cloudflare's documentation root (tests).
+	CFDocsURL      string
 	cf             cfState
+	proxies        proxyCache
 	extrasMu       sync.Mutex
 	extrasBusy     map[string]bool
 	applyPreparing atomic.Bool
@@ -431,6 +434,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/cloudflare/credentials/{id}", s.deleteCloudflareCredential)
 	mux.HandleFunc("GET /api/v1/cloudflare/inventory", s.getCloudflareInventory)
 	mux.HandleFunc("GET /api/v1/cloudflare/machines", s.listCloudflareMachines)
+	mux.HandleFunc("GET /api/v1/cloudflare/permissions", s.cloudflarePermissionsGuide)
 	mux.HandleFunc("POST /api/v1/cloudflare/tunnels", s.createCloudflareTunnel)
 	mux.HandleFunc("PATCH /api/v1/cloudflare/tunnels/{id}", s.renameCloudflareTunnel)
 	mux.HandleFunc("POST /api/v1/cloudflare/tunnels/{id}/delete", s.deleteCloudflareTunnel)
@@ -444,6 +448,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/cloudflare/move/preview", s.previewCloudflareMove)
 	mux.HandleFunc("POST /api/v1/cloudflare/move", s.moveCloudflareRoutes)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/cloudflare", s.cloudflareForWorkload)
+	mux.HandleFunc("GET /api/v1/proxies/{kind}", s.getProxies)
+	mux.HandleFunc("POST /api/v1/proxies/{kind}/sites", s.upsertProxySite)
+	mux.HandleFunc("POST /api/v1/proxies/{kind}/sites/delete", s.deleteProxySite)
+	mux.HandleFunc("POST /api/v1/proxies/{kind}/service", s.proxyService)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/cloudflare/publish", s.publishWorkload)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/extensions", s.changeWorkloadExtensions)
 	mux.HandleFunc("POST /api/v1/workloads/bulk-delete", s.bulkDeleteWorkloads)
@@ -1161,6 +1169,10 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	}
 	out["workload_sort"] = ""
 	out["workload_order"] = []string{}
+	out["ui_prefs"] = map[string]json.RawMessage{}
+	if prefs != nil && prefs.UI != nil {
+		out["ui_prefs"] = prefs.UI
+	}
 	if prefs != nil {
 		out["workload_sort"] = prefs.WorkloadSort
 		if prefs.WorkloadOrder != nil {

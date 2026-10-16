@@ -97,6 +97,7 @@ export interface MeResponse {
   expert_ack_at?: string;
   workload_sort?: string;
   workload_order?: string[];
+  ui_prefs?: Record<string, unknown>;
 }
 
 export interface MePatchRequest {
@@ -104,6 +105,7 @@ export interface MePatchRequest {
   expert_ack?: boolean;
   workload_sort?: "" | "name" | "custom";
   workload_order?: string[];
+  ui_prefs?: Record<string, unknown>;
 }
 
 export interface MFAChallengeResponse {
@@ -3644,3 +3646,63 @@ export type DeleteNetworkOverlayPath = "/api/v1/networks/overlays/{id}";
 export type DeleteNetworkPolicyPath = "/api/v1/networks/policies/{id}";
 
 export type DeleteWGPeerPath = "/api/v1/cluster/wg/peers/{id}";
+
+export type ListCloudflareCredentialsPath = "/api/v1/cloudflare/credentials";
+
+export type UpdateCloudflareCredentialPath = "/api/v1/cloudflare/credentials/{id}";
+
+export type ValidateCloudflareCredentialPath = "/api/v1/cloudflare/credentials/{id}/validate";
+
+export type GetCloudflareInventoryPath = "/api/v1/cloudflare/inventory";
+
+export type ListCloudflareMachinesPath = "/api/v1/cloudflare/machines";
+
+export type GetCloudflarePermissionsGuidePath = "/api/v1/cloudflare/permissions";
+
+export type CreateCloudflareTunnelPath = "/api/v1/cloudflare/tunnels";
+
+export type RenameCloudflareTunnelPath = "/api/v1/cloudflare/tunnels/{id}";
+
+export type DeleteCloudflareTunnelPath = "/api/v1/cloudflare/tunnels/{id}/delete";
+
+export type CloudflareConnectorPath = "/api/v1/cloudflare/tunnels/{id}/connectors";
+
+export type UpsertCloudflareRoutePath = "/api/v1/cloudflare/routes";
+
+export type PlanCloudflareRoutePath = "/api/v1/cloudflare/routes/plan";
+
+export type SetCloudflareRouteEnabledPath = "/api/v1/cloudflare/routes/enabled";
+
+export type DeleteCloudflareRoutePath = "/api/v1/cloudflare/routes/delete";
+
+export type SyncCloudflareRouteIPPath = "/api/v1/cloudflare/routes/sync-ip";
+
+export type DiagnoseCloudflareRoutePath = "/api/v1/cloudflare/routes/diagnose";
+
+export type PreviewCloudflareMovePath = "/api/v1/cloudflare/move/preview";
+
+export type MoveCloudflareRoutesPath = "/api/v1/cloudflare/move";
+
+export type GetWorkloadCloudflarePath = "/api/v1/workloads/{id}/cloudflare";
+
+export type PublishWorkloadPath = "/api/v1/workloads/{id}/cloudflare/publish";
+
+export type ListWorkloadExtensionsPath = "/api/v1/workloads/{id}/extensions";
+
+export type ListStorageScanTargetsPath = "/api/v1/storage/scan/targets";
+
+export type StartStorageScanPath = "/api/v1/storage/scan";
+
+export type GetStorageScanPath = "/api/v1/storage/scan/{id}";
+
+export type CancelStorageScanPath = "/api/v1/storage/scan/{id}/cancel";
+
+export type DeleteStorageScanItemsPath = "/api/v1/storage/scan/{id}/delete";
+
+export type GetProxiesPath = "/api/v1/proxies/{kind}";
+
+export type UpsertProxySitePath = "/api/v1/proxies/{kind}/sites";
+
+export type DeleteProxySitePath = "/api/v1/proxies/{kind}/sites/delete";
+
+export type ProxyServicePath = "/api/v1/proxies/{kind}/service";

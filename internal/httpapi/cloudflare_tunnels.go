@@ -340,6 +340,8 @@ func (s *Server) diagnoseCloudflareRoute(w http.ResponseWriter, r *http.Request)
 			checks = append(checks, cfCheck{"dns", "ok", in.Hostname + " is a proxied CNAME to this tunnel"})
 		case cf.DNSCreate:
 			checks = append(checks, cfCheck{"dns", "fail", "there is no DNS record for " + in.Hostname + "; edit the route with DNS on to create it"})
+		case cf.DNSUnavailable:
+			checks = append(checks, cfCheck{"dns", "skip", "not checked: " + plan.Reason})
 		default:
 			checks = append(checks, cfCheck{"dns", "fail", plan.Reason})
 		}

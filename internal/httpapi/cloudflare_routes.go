@@ -140,6 +140,12 @@ func (s *Server) cfPlanHostname(ctx context.Context, clusterID string, inv *cfIn
 		recs, err = c.DNSRecords(ctx, z.ID, hostname)
 		return err
 	})
+	if errors.Is(err, cf.ErrPermission) || errors.Is(err, errCFNoCredential) {
+		// The token can route the tunnel but not read DNS (for example a
+		// Zero Trust only token). That is not a reason to refuse the route.
+		return z, cf.DNSPlan{Action: cf.DNSUnavailable, Hostname: hostname,
+			Reason: "no saved token may read DNS in " + z.Name + "; add Zone: DNS Edit to the token so No-dal can create and check the CNAME, or manage DNS for " + hostname + " yourself"}, nil
+	}
 	if err != nil {
 		return z, cf.DNSPlan{}, err
 	}
@@ -249,7 +255,9 @@ func (s *Server) cfUpsertRoute(ctx context.Context, clusterID, by string, in cfR
 	res.DNSAction = "skipped"
 	if wantDNS {
 		res.DNSAction = plan.Action
-		if err := s.cfApplyDNS(ctx, clusterID, zone, plan, t); err != nil {
+		if plan.Action == cf.DNSUnavailable {
+			res.Warnings = append(res.Warnings, "DNS was not changed: "+plan.Reason+".")
+		} else if err := s.cfApplyDNS(ctx, clusterID, zone, plan, t); err != nil {
 			if !res.Replaced && in.Original == nil && undo != nil {
 				undo()
 				return res, fmt.Errorf("the DNS record could not be set, so the new route was removed again: %w", err)

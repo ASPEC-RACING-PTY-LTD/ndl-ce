@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   addCfCredential,
   cfConnectorAction,
@@ -7,7 +7,6 @@ import {
   deleteCfRoute,
   deleteCfTunnel,
   diagnoseCfRoute,
-  getCfInventory,
   listCfCredentials,
   listCfMachines,
   moveCfRoutes,
@@ -19,7 +18,6 @@ import {
   validateCfCredential,
   type CfCheck,
   type CfCredential,
-  type CfInventory,
   type CfMachine,
   type CfMovePlan,
   type CfRoute,
@@ -27,28 +25,34 @@ import {
   type CfTunnel,
   type OpsJob,
 } from "../api/client";
+import { useCfInventory } from "../cloudflare/inventory";
+import { CfPermissions } from "../cloudflare/PermissionsGuide";
 import { RouteDialog } from "../cloudflare/RouteDialog";
 import { ActionMenu } from "../components/ActionMenu";
-import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
+import { ContextMenu, useContextMenu, usePageContextItems, type ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { Icon } from "../components/Icon";
 import { JobLog } from "../components/JobLog";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatRelative, formatWhen } from "../format";
+import { usePref } from "../prefs";
 import { usePoll } from "../query";
 import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { Dialog } from "../ui/Dialog";
 import { Segmented } from "../ui/Segmented";
+import { ColumnEditor, SortHeader, useTablePrefs, type TableColumn, type TablePrefs } from "../ui/tablePrefs";
 
-type View = "hostnames" | "tunnels" | "dns" | "accounts";
+type View = "hostnames" | "dns" | "accounts";
 
 const ref = (r: CfRoute): CfRouteRef => ({ account_id: r.account_id, tunnel_id: r.tunnel_id, hostname: r.hostname, path: r.path });
 const errText = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
+const actionItems = (items: ContextItem[]) => items.filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled);
 
-function dnsBadge(r: CfRoute): { status: string; label: string } {
+function dnsBadge(r: CfRoute): { status: string; label: string; title?: string } {
   switch (r.dns?.action) {
     case "ok":
       return { status: "healthy", label: "DNS ok" };
@@ -61,12 +65,175 @@ function dnsBadge(r: CfRoute): { status: string; label: string } {
     case "conflict":
       return { status: "critical", label: "DNS conflict" };
   }
-  return { status: "unknown", label: r.zone_id ? "DNS unknown" : "No zone" };
+  if (r.zone_id) {
+    return { status: "unknown", label: "Not readable", title: "No saved token may read DNS in this zone. See Accounts > Permissions." };
+  }
+  return { status: "unknown", label: "No zone", title: "The domain is not in a zone a saved token can see." };
 }
 
 function tunnelTone(status: string): string {
   return status === "healthy" ? "healthy" : status === "degraded" ? "degraded" : status === "inactive" ? "unknown" : "critical";
 }
+
+const HOST_COLUMNS: TableColumn<CfRoute>[] = [
+  { id: "hostname", label: "Hostname", required: true, sortValue: (r) => r.hostname + (r.path ?? "") },
+  { id: "service", label: "Goes to", sortValue: (r) => r.service },
+  { id: "tunnel", label: "Tunnel", defaultHidden: true, sortValue: (r) => r.tunnel_name },
+  { id: "account", label: "Account", sortValue: (r) => r.account_name },
+  { id: "zone", label: "Zone", defaultHidden: true, sortValue: (r) => r.zone_name ?? "" },
+  { id: "dns", label: "DNS", sortValue: (r) => dnsBadge(r).label },
+  { id: "workload", label: "Workload", sortValue: (r) => r.workload?.name ?? "￿" },
+  { id: "state", label: "State", defaultHidden: true, sortValue: (r) => (r.enabled ? 0 : 1) },
+];
+
+type RowProps = {
+  r: CfRoute;
+  cols: string[];
+  selected: boolean;
+  canManage: boolean;
+  grouped: boolean;
+  onToggle: (key: string) => void;
+  onMenu: (e: ReactMouseEvent, r: CfRoute) => void;
+  itemsFor: (r: CfRoute) => ContextItem[];
+};
+
+/** RouteRow redraws only when its route, selection or columns change. */
+const RouteRow = memo(function RouteRow({ r, cols, selected, canManage, grouped, onToggle, onMenu, itemsFor }: RowProps) {
+  const dns = dnsBadge(r);
+  return (
+    <tr className={(r.enabled ? "" : "is-muted") + (grouped ? " cf-route-row" : "")} onContextMenu={(e) => onMenu(e, r)}>
+      {canManage ? (
+        <td className="cell-check">
+          <input type="checkbox" aria-label={`Select ${r.hostname}`} checked={selected} onChange={() => onToggle(r.key)} />
+        </td>
+      ) : null}
+      {cols.map((c) => {
+        switch (c) {
+          case "hostname":
+            return (
+              <td key={c}>
+                <a href={`https://${r.hostname}${r.path ?? ""}`} target="_blank" rel="noopener noreferrer">
+                  {r.hostname}
+                </a>
+                {r.path ? <span className="meta"> {r.path}</span> : null}
+                {!r.enabled ? <span className="tag-inline">off</span> : null}
+              </td>
+            );
+          case "service":
+            return (
+              <td key={c}>
+                <code>{r.service}</code>
+                {r.ip_changed ? (
+                  <span className="tag-inline" title={`The workload now has ${r.workload?.current_ip}`}>
+                    IP changed
+                  </span>
+                ) : null}
+              </td>
+            );
+          case "tunnel":
+            return (
+              <td key={c}>
+                <StatusBadge status={tunnelTone(r.tunnel_status)} label={r.tunnel_name} />
+                {!r.editable ? <span className="meta"> config file</span> : null}
+              </td>
+            );
+          case "account":
+            return <td key={c}>{r.account_name}</td>;
+          case "zone":
+            return <td key={c}>{r.zone_name ?? <span className="meta">-</span>}</td>;
+          case "dns":
+            return (
+              <td key={c} title={r.dns?.reason ?? dns.title}>
+                <StatusBadge status={dns.status} label={dns.label} />
+              </td>
+            );
+          case "workload":
+            return <td key={c}>{r.workload ? <Link href={`/workloads/${r.workload.id}`}>{r.workload.name}</Link> : <span className="meta">-</span>}</td>;
+          case "state":
+            return <td key={c}>{r.enabled ? "On" : "Off"}</td>;
+        }
+        return null;
+      })}
+      <td className="cell-actions">
+        <ActionMenu label={`${r.hostname} actions`} items={actionItems(itemsFor(r))} />
+      </td>
+    </tr>
+  );
+});
+
+type GroupProps = {
+  t: CfTunnel;
+  count: number;
+  shown: number;
+  span: number;
+  collapsed: boolean;
+  selection: "all" | "some" | "none";
+  canManage: boolean;
+  multiAccount: boolean;
+  onCollapse: (id: string) => void;
+  onSelect: (t: CfTunnel, on: boolean) => void;
+  onMenu: (e: ReactMouseEvent, t: CfTunnel) => void;
+  itemsFor: (t: CfTunnel) => ContextItem[];
+};
+
+/** TunnelGroup is the heading row of one tunnel's hostnames. */
+const TunnelGroup = memo(function TunnelGroup({ t, count, shown, span, collapsed, selection, canManage, multiAccount, onCollapse, onSelect, onMenu, itemsFor }: GroupProps) {
+  const colos = [...new Set(t.connectors.flatMap((c) => (c.conns ?? []).map((x) => x.colo_name)))].join(", ");
+  const versions = [...new Set(t.connectors.map((c) => c.version).filter(Boolean))].join(", ");
+  return (
+    <tr className={"cf-group" + (t.status !== "healthy" ? " is-issue" : "")} onContextMenu={(e) => onMenu(e, t)}>
+      {canManage ? (
+        <td className="cell-check">
+          <input
+            type="checkbox"
+            aria-label={`Select every hostname on ${t.name}`}
+            disabled={count === 0}
+            checked={selection === "all"}
+            ref={(el) => {
+              if (el) {
+                el.indeterminate = selection === "some";
+              }
+            }}
+            onChange={(e) => onSelect(t, e.target.checked)}
+          />
+        </td>
+      ) : null}
+      <td colSpan={span}>
+        <div className="cf-group-head">
+          <button type="button" className="cf-group-toggle" aria-expanded={!collapsed} aria-label={`${collapsed ? "Show" : "Hide"} ${t.name} hostnames`} onClick={() => onCollapse(t.id)}>
+            <Icon name="chevron-down" size={14} className={collapsed ? "is-collapsed" : undefined} />
+          </button>
+          <strong className="cf-group-name">{t.name}</strong>
+          <StatusBadge status={tunnelTone(t.status)} label={t.status} />
+          <span className="meta">
+            {shown === count ? `${count} hostname${count === 1 ? "" : "s"}` : `${shown} of ${count} hostnames`}
+          </span>
+          {multiAccount ? <span className="tag-inline">{t.account_name}</span> : null}
+          {!t.remote_managed ? <span className="tag-inline" title="Routes are set in a config file on the connector">config file</span> : null}
+          <span className="meta cf-group-conn">
+            {t.connectors.length
+              ? `${t.connectors.length} connector${t.connectors.length === 1 ? "" : "s"}${colos ? ` via ${colos}` : ""}${versions ? ` · ${versions}` : ""}`
+              : "No connector connected"}
+          </span>
+          {t.local.length ? (
+            <span className="cf-group-local">
+              {t.local.map((l) => (
+                <span key={l.machine_id + l.unit} className="tag-inline" title={l.unit}>
+                  <span className={"dot " + (l.active ? "is-ok" : "is-bad")} aria-hidden="true" /> {l.machine_name}
+                  {l.managed ? " · No-dal" : ""}
+                </span>
+              ))}
+            </span>
+          ) : null}
+          {t.error ? <span className="tunnel-reason">{t.error}</span> : null}
+          <span className="cf-group-actions">
+            <ActionMenu label={`${t.name} actions`} items={actionItems(itemsFor(t))} />
+          </span>
+        </div>
+      </td>
+    </tr>
+  );
+});
 
 /** CloudflarePage manages every connected Cloudflare account's tunnels, hostnames and DNS in one place. */
 export function CloudflarePage() {
@@ -75,8 +242,8 @@ export function CloudflarePage() {
   const canManage = hasGrant(user, "cloudflare.manage");
   const canCreds = hasGrant(user, "cloudflare.credentials");
   const ctx = useContextMenu();
-  const [view, setView] = useState<View>("hostnames");
-  const [inv, setInv] = useState<CfInventory | null>(null);
+  const [view, setView] = usePref<View>("cf.view", "hostnames");
+  const { inv, fromCache, error: loadError, reload: reloadInv } = useCfInventory();
   const [creds, setCreds] = useState<CfCredential[]>([]);
   const [machines, setMachines] = useState<CfMachine[]>([]);
   const [connectorsSupported, setConnectorsSupported] = useState(true);
@@ -86,7 +253,7 @@ export function CloudflarePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [routeDialog, setRouteDialog] = useState<{ route: CfRoute | null } | null>(null);
+  const [routeDialog, setRouteDialog] = useState<{ route: CfRoute | null; tunnelId?: string } | null>(null);
   const [diagnose, setDiagnose] = useState<{ route: CfRoute; checks?: CfCheck[]; summary?: string; error?: string } | null>(null);
   const [moving, setMoving] = useState<CfRoute[] | null>(null);
   const [deleting, setDeleting] = useState<CfRoute | null>(null);
@@ -95,30 +262,39 @@ export function CloudflarePage() {
   const [deploy, setDeploy] = useState<CfTunnel | null>(null);
   const [tunnelDelete, setTunnelDelete] = useState<CfTunnel | null>(null);
   const [job, setJob] = useState<OpsJob | null>(null);
+  const [collapsedList, setCollapsedList] = usePref<string[]>("cf.collapsed", []);
+  const [permsOpen, setPermsOpen] = useState<Set<string>>(new Set());
+  const table = useTablePrefs<CfRoute>("cf.hostnames", HOST_COLUMNS, { id: "hostname", dir: "asc" });
+  const grouped = table.option("group", true);
 
-  async function reload(refresh = false) {
+  const loadCreds = useCallback(async () => {
     try {
-      const [next, c] = await Promise.all([getCfInventory(refresh), listCfCredentials()]);
-      setInv(next);
+      const c = await listCfCredentials();
       setCreds(c.items ?? []);
-      setError(null);
-    } catch (err) {
-      setError(errText(err, "Cloudflare is unavailable"));
-      setInv((cur) => cur ?? { fetched_at: "", refreshing: false, accounts: [], tunnels: [], routes: [], dns: [], errors: [] });
+    } catch {
+      // The inventory reports the failure.
     }
-  }
+  }, []);
+
+  const reload = useCallback(
+    async (refresh = false) => {
+      await Promise.all([reloadInv(refresh), loadCreds()]);
+    },
+    [reloadInv, loadCreds],
+  );
 
   useEffect(() => {
-    void reload();
+    void loadCreds();
     void listCfMachines()
       .then((m) => {
         setMachines(m.items ?? []);
         setConnectorsSupported(m.supported);
       })
       .catch(() => undefined);
-  }, []);
-  // Cheap: the server answers from its cache and refreshes Cloudflare itself at most every two minutes.
-  usePoll(() => reload(false), 60000);
+  }, [loadCreds]);
+  // Cheap: unchanged inventories are answered with 304 and no body. While the
+  // server refreshes from Cloudflare in the background, look again sooner.
+  usePoll(() => reloadInv(false), inv?.refreshing ? 4000 : 30000);
 
   async function act(label: string, fn: () => Promise<unknown>, done?: string) {
     setBusy(label);
@@ -141,24 +317,38 @@ export function CloudflarePage() {
   const routes = useMemo(() => inv?.routes ?? [], [inv]);
   const q = query.trim().toLowerCase();
   const matches = (...fields: (string | undefined)[]) => !q || fields.some((f) => f?.toLowerCase().includes(q));
-  const shownRoutes = routes.filter(
-    (r) => (!account || r.account_id === account) && matches(r.hostname, r.path, r.service, r.tunnel_name, r.account_name, r.workload?.name),
+  const shownRoutes = useMemo(
+    () =>
+      table.sortRows(
+        routes.filter(
+          (r) =>
+            (!account || r.account_id === account) &&
+            (!q || [r.hostname, r.path, r.service, r.tunnel_name, r.account_name, r.workload?.name].some((f) => f?.toLowerCase().includes(q))),
+        ),
+      ),
+    // table.sortRows changes with the saved sort.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [routes, account, q, table.sort?.id, table.sort?.dir],
   );
-  const shownTunnels = tunnels.filter((t) => (!account || t.account_tag === account) && matches(t.name, t.account_name, t.id));
   const shownDNS = (inv?.dns ?? []).filter((d) => (!account || d.account_id === account) && matches(d.record.name, d.zone_name, d.tunnel_name));
   const counts = useMemo(() => {
     const healthy = tunnels.filter((t) => t.status === "healthy").length;
     const dnsIssues = routes.filter((r) => r.enabled && r.dns && r.dns.action !== "ok").length;
-    return { healthy, dnsIssues, disabled: routes.filter((r) => !r.enabled).length };
+    return { healthy, dnsIssues, disabled: routes.filter((r) => !r.enabled).length, unreadable: routes.filter((r) => r.zone_id && !r.dns).length };
   }, [tunnels, routes]);
 
-  function routeItems(r: CfRoute): ContextItem[] {
+  // Stable callbacks, so memoised rows only redraw when their data changes.
+  const latest = useRef({ canManage, routes, tunnels, machines });
+  latest.current = { canManage, routes, tunnels, machines };
+
+  const routeItems = useCallback((r: CfRoute): ContextItem[] => {
     const items: ContextItem[] = [];
-    if (canManage && r.editable) {
+    const manage = latest.current.canManage;
+    if (manage && r.editable) {
       items.push({ label: "Edit", onClick: () => setRouteDialog({ route: r }) });
     }
     items.push({ label: "Diagnose", onClick: () => void runDiagnose(r) });
-    if (canManage && r.editable) {
+    if (manage && r.editable) {
       items.push(
         {
           label: r.enabled ? "Switch off" : "Switch on",
@@ -179,11 +369,98 @@ export function CloudflarePage() {
       { label: "Open site", onClick: () => window.open(`https://${r.hostname}${r.path ?? ""}`, "_blank", "noopener") },
       { label: "Copy hostname", onClick: () => void navigator.clipboard?.writeText(r.hostname) },
     );
-    if (canManage) {
+    if (manage) {
       items.push("sep", { label: "Delete", danger: true, onClick: () => setDeleting(r) });
     }
     return items;
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const tunnelItems = useCallback((t: CfTunnel): ContextItem[] => {
+    const items: ContextItem[] = [];
+    if (latest.current.canManage) {
+      if (t.remote_managed) {
+        items.push({ label: "Add hostname here", onClick: () => setRouteDialog({ route: null, tunnelId: t.id }) });
+      }
+      const onTunnel = latest.current.routes.filter((r) => r.tunnel_id === t.id && r.enabled && r.editable);
+      if (onTunnel.length) {
+        items.push({ label: `Move all ${onTunnel.length} hostnames`, onClick: () => setMoving(onTunnel) });
+      }
+      items.push(
+        {
+          label: "Rename",
+          onClick: () => {
+            const name = window.prompt("New tunnel name", t.name)?.trim();
+            if (name && name !== t.name) {
+              void act("Renaming", () => renameCfTunnel(t.id, t.account_tag, name), `Renamed to ${name}.`);
+            }
+          },
+        },
+        { label: "Deploy a connector", onClick: () => setDeploy(t) },
+      );
+      for (const l of t.local) {
+        items.push({
+          label: `Restart connector on ${l.machine_name}`,
+          onClick: () => void act("Restarting connector", () => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "restart", unit: l.unit })),
+        });
+        items.push({
+          label: `Update cloudflared on ${l.machine_name}`,
+          onClick: () => void act("Updating cloudflared", () => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "update" }), "cloudflared updated."),
+        });
+        if (l.managed) {
+          items.push({
+            label: `Remove connector on ${l.machine_name}`,
+            danger: true,
+            onClick: () => {
+              if (window.confirm(`Stop and remove the connector for ${t.name} on ${l.machine_name}? Its hostnames go down unless another connector runs.`)) {
+                void act("Removing connector", () => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "remove", confirm: true }));
+              }
+            },
+          });
+        }
+      }
+    }
+    items.push("sep", { label: "Copy tunnel ID", onClick: () => void navigator.clipboard?.writeText(t.id) });
+    if (latest.current.canManage) {
+      items.push("sep", { label: "Delete tunnel", danger: true, onClick: () => setTunnelDelete(t) });
+    }
+    return items;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onRouteMenu = useCallback((e: ReactMouseEvent, r: CfRoute) => ctx.openAt(e, r.hostname, routeItems(r)), [ctx, routeItems]);
+  const onTunnelMenu = useCallback((e: ReactMouseEvent, t: CfTunnel) => ctx.openAt(e, t.name, tunnelItems(t)), [ctx, tunnelItems]);
+  const toggle = useCallback((key: string) => {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+  const collapsed = useMemo(() => new Set(collapsedList), [collapsedList]);
+  const onCollapse = useCallback(
+    (id: string) => setCollapsedList((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])),
+    [setCollapsedList],
+  );
+  const onSelectTunnel = useCallback((t: CfTunnel, on: boolean) => {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      for (const r of latest.current.routes) {
+        if (r.tunnel_id === t.id) {
+          if (on) {
+            next.add(r.key);
+          } else {
+            next.delete(r.key);
+          }
+        }
+      }
+      return next;
+    });
+  }, []);
 
   async function runDiagnose(r: CfRoute) {
     setDiagnose({ route: r });
@@ -195,17 +472,22 @@ export function CloudflarePage() {
     }
   }
 
-  function toggle(key: string) {
-    setSelected((cur) => {
-      const next = new Set(cur);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
+  const noAccounts = accounts.length === 0;
+  const pageItems: ContextItem[] = [];
+  if (canManage && !noAccounts) {
+    pageItems.push({ label: "Add hostname", onClick: () => setRouteDialog({ route: null }) }, { label: "New tunnel", onClick: () => setTunnelDialog(true) });
   }
+  if (canCreds) {
+    pageItems.push({ label: "Connect account", onClick: () => setTokenDialog({ cred: null }) });
+  }
+  pageItems.push(
+    { label: "Refresh from Cloudflare", disabled: busy !== null, onClick: () => void act("Refreshing", () => reload(true)) },
+    "sep",
+    { label: "Show hostnames", disabled: view === "hostnames", onClick: () => setView("hostnames") },
+    { label: "Show DNS", disabled: view === "dns", onClick: () => setView("dns") },
+    { label: "Show accounts", disabled: view === "accounts", onClick: () => setView("accounts") },
+  );
+  usePageContextItems("Cloudflare", pageItems);
 
   if (!inv) {
     return (
@@ -215,8 +497,57 @@ export function CloudflarePage() {
     );
   }
 
-  const noAccounts = accounts.length === 0;
   const selectedRoutes = shownRoutes.filter((r) => selected.has(r.key));
+  const cols = table.visible.map((c) => c.id);
+  const span = cols.length + 1;
+  const multiAccount = accounts.length > 1;
+
+  // Group hostnames under their tunnel. Tunnels without hostnames are listed
+  // too (they replace the old Tunnels view); a search hides them unless the
+  // tunnel's own name matches.
+  const groups = (() => {
+    if (!grouped) {
+      return [];
+    }
+    const byTunnel = new Map<string, CfRoute[]>();
+    for (const r of shownRoutes) {
+      const list = byTunnel.get(r.tunnel_id) ?? [];
+      list.push(r);
+      byTunnel.set(r.tunnel_id, list);
+    }
+    const totals = new Map<string, number>();
+    for (const r of routes) {
+      totals.set(r.tunnel_id, (totals.get(r.tunnel_id) ?? 0) + 1);
+    }
+    return tunnels
+      .filter((t) => (!account || t.account_tag === account) && (byTunnel.has(t.id) || (q ? matches(t.name, t.id) : true)))
+      .map((t) => {
+        const list = byTunnel.get(t.id) ?? (q && matches(t.name, t.id) ? routes.filter((r) => r.tunnel_id === t.id) : []);
+        const sel = list.filter((r) => selected.has(r.key)).length;
+        return { t, list, total: totals.get(t.id) ?? 0, selection: (sel === 0 ? "none" : sel === list.length ? "all" : "some") as "all" | "some" | "none" };
+      })
+      .sort((a, b) => a.t.name.localeCompare(b.t.name, undefined, { sensitivity: "base", numeric: true }));
+  })();
+
+  const actionButtons = (
+    <>
+      {canManage && !noAccounts ? (
+        <>
+          <button className="btn btn-sm btn-primary" type="button" onClick={() => setRouteDialog({ route: null })}>
+            Add hostname
+          </button>
+          <button className="btn btn-sm btn-secondary" type="button" onClick={() => setTunnelDialog(true)}>
+            New tunnel
+          </button>
+        </>
+      ) : null}
+      {canCreds ? (
+        <button className="btn btn-sm btn-secondary" type="button" onClick={() => setTokenDialog({ cred: null })}>
+          Connect account
+        </button>
+      ) : null}
+    </>
+  );
 
   return (
     <section className="page page-wide" aria-labelledby="cf-heading">
@@ -226,28 +557,13 @@ export function CloudflarePage() {
         kicker="Tunnels, public hostnames and DNS from every connected Cloudflare account. Each item shows the account that owns it; tokens stay on this server."
         actions={
           <div className="btn-row is-flush">
-            {canManage && !noAccounts ? (
-              <>
-                <button className="btn btn-primary" type="button" onClick={() => setRouteDialog({ route: null })}>
-                  Add hostname
-                </button>
-                <button className="btn btn-secondary" type="button" onClick={() => setTunnelDialog(true)}>
-                  New tunnel
-                </button>
-              </>
-            ) : null}
-            {canCreds ? (
-              <button className="btn btn-secondary" type="button" onClick={() => setTokenDialog({ cred: null })}>
-                Connect account
-              </button>
-            ) : null}
             <button className="btn btn-secondary" type="button" disabled={busy !== null} onClick={() => void act("Refreshing", () => reload(true))}>
-              Refresh
+              {busy === "Refreshing" ? "Refreshing" : "Refresh"}
             </button>
           </div>
         }
       />
-      {error ? <ErrorNotice error={error} /> : null}
+      {error || loadError ? <ErrorNotice error={(error || loadError) as string} /> : null}
       {notice ? (
         <p className="banner banner-ok" role="status">
           {notice}{" "}
@@ -256,7 +572,7 @@ export function CloudflarePage() {
           </button>
         </p>
       ) : null}
-      {busy ? (
+      {busy && busy !== "Refreshing" ? (
         <p className="banner" role="status">
           Working: {busy}
         </p>
@@ -266,7 +582,7 @@ export function CloudflarePage() {
           {e}
         </p>
       ))}
-      {noAccounts ? (
+      {noAccounts && !fromCache ? (
         <EmptyState title="No Cloudflare account connected">
           Connect an account with a scoped API token. Give it Account: Cloudflare Tunnel Edit, Zone: DNS Edit and Zone: Zone Read for the
           zones you publish, plus Account Settings Read so its accounts are found. Global API keys are not accepted.
@@ -279,7 +595,8 @@ export function CloudflarePage() {
             </>
           ) : null}
         </EmptyState>
-      ) : (
+      ) : null}
+      {!noAccounts ? (
         <>
           <div className="status-strip">
             <div className="status-tile">
@@ -302,268 +619,222 @@ export function CloudflarePage() {
             <div className="status-tile">
               <span className="label">DNS issues</span>
               <span className="value">
-                <StatusBadge status={counts.dnsIssues ? "critical" : "healthy"} /> {counts.dnsIssues}
+                <StatusBadge status={counts.dnsIssues ? "critical" : counts.unreadable ? "unknown" : "healthy"} /> {counts.dnsIssues}
               </span>
               <span className="meta">
-                {inv.refreshing ? "refreshing" : inv.fetched_at ? `checked ${formatRelative(inv.fetched_at)}` : ""}
+                {counts.unreadable ? (
+                  <button type="button" className="linkish" onClick={() => setView("accounts")}>
+                    {counts.unreadable} not readable; see permissions
+                  </button>
+                ) : fromCache ? (
+                  "showing saved copy"
+                ) : inv.refreshing ? (
+                  "refreshing"
+                ) : inv.fetched_at ? (
+                  `checked ${formatRelative(inv.fetched_at)}`
+                ) : (
+                  ""
+                )}
               </span>
             </div>
           </div>
-          <div className="toolbar">
-            <div className="toolbar-group">
-              <Segmented<View>
-                ariaLabel="Cloudflare view"
-                value={view}
-                onChange={setView}
-                options={[
-                  { id: "hostnames", label: "Hostnames" },
-                  { id: "tunnels", label: "Tunnels" },
-                  { id: "dns", label: "DNS" },
-                  { id: "accounts", label: "Accounts" },
-                ]}
-              />
+        </>
+      ) : null}
+      <div className="toolbar">
+        <div className="toolbar-group">
+          {!noAccounts ? (
+            <Segmented<View>
+              ariaLabel="Cloudflare view"
+              value={view}
+              onChange={setView}
+              options={[
+                { id: "hostnames", label: "Hostnames" },
+                { id: "dns", label: "DNS" },
+                { id: "accounts", label: "Accounts" },
+              ]}
+            />
+          ) : null}
+          {!noAccounts ? (
+            <>
               <label className="search-field">
                 <input className="field-input" type="search" value={query} placeholder="Search" aria-label="Search Cloudflare" onChange={(e) => setQuery(e.target.value)} />
               </label>
-              <select className="field-input" aria-label="Account filter" value={account} onChange={(e) => setAccount(e.target.value)}>
-                <option value="">All accounts</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {view === "hostnames" && canManage && selectedRoutes.length > 0 ? (
-              <div className="toolbar-group">
-                <span className="meta">{selectedRoutes.length} selected</span>
-                <button className="btn btn-sm btn-secondary" type="button" onClick={() => setMoving(selectedRoutes)}>
-                  Move to tunnel
-                </button>
-                <button className="btn btn-sm btn-ghost" type="button" onClick={() => setSelected(new Set())}>
-                  Clear
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {job ? <JobLog job={job} onDone={() => void reload(true)} onClose={() => setJob(null)} /> : null}
-
-          {view === "hostnames" ? (
-            shownRoutes.length === 0 ? (
-              <EmptyState title="No hostnames">{q || account ? "Nothing matches the filter." : "Add a public hostname to route a domain to a service."}</EmptyState>
-            ) : (
-              <div className="table-wrap">
-                <table aria-label="Public hostnames">
-                  <thead>
-                    <tr>
-                      {canManage ? (
-                        <th>
-                          <input
-                            type="checkbox"
-                            aria-label="Select all hostnames"
-                            checked={shownRoutes.length > 0 && shownRoutes.every((r) => selected.has(r.key))}
-                            onChange={(e) => setSelected(e.target.checked ? new Set(shownRoutes.map((r) => r.key)) : new Set())}
-                          />
-                        </th>
-                      ) : null}
-                      <th>Hostname</th>
-                      <th>Goes to</th>
-                      <th>Tunnel</th>
-                      <th>Account</th>
-                      <th>DNS</th>
-                      <th>Workload</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shownRoutes.map((r) => {
-                      const dns = dnsBadge(r);
-                      return (
-                        <tr
-                          key={r.key}
-                          className={r.enabled ? "" : "is-muted"}
-                          onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, r.hostname, routeItems(r))}
-                        >
-                          {canManage ? (
-                            <td>
-                              <input type="checkbox" aria-label={`Select ${r.hostname}`} checked={selected.has(r.key)} onChange={() => toggle(r.key)} />
-                            </td>
-                          ) : null}
-                          <td>
-                            <a href={`https://${r.hostname}${r.path ?? ""}`} target="_blank" rel="noopener noreferrer">
-                              {r.hostname}
-                            </a>
-                            {r.path ? <span className="meta"> {r.path}</span> : null}
-                            {!r.enabled ? <span className="tag-inline">off</span> : null}
-                          </td>
-                          <td>
-                            <code>{r.service}</code>
-                            {r.ip_changed ? (
-                              <span className="tag-inline" title={`The workload now has ${r.workload?.current_ip}`}>
-                                IP changed
-                              </span>
-                            ) : null}
-                          </td>
-                          <td>
-                            <StatusBadge status={tunnelTone(r.tunnel_status)} label={r.tunnel_name} />
-                            {!r.editable ? <span className="meta"> config file</span> : null}
-                          </td>
-                          <td>{r.account_name}</td>
-                          <td title={r.dns?.reason}>
-                            <StatusBadge status={dns.status} label={dns.label} />
-                          </td>
-                          <td>{r.workload ? <Link href={`/workloads/${r.workload.id}`}>{r.workload.name}</Link> : <span className="meta">-</span>}</td>
-                          <td>
-                            <ActionMenu
-                              label={`${r.hostname} actions`}
-                              items={routeItems(r).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
-          ) : null}
-
-          {view === "tunnels" ? (
-            <div className="docker-grid">
-              {shownTunnels.map((t) => (
-                <article key={t.id} className={"docker-card" + (t.status !== "healthy" ? " is-issue" : "")} aria-label={`Tunnel ${t.name}`}>
-                  <header className="docker-card-head">
-                    <strong className="docker-head-name">{t.name}</strong>
-                    <StatusBadge status={tunnelTone(t.status)} label={t.status} />
-                    {canManage ? (
-                      <ActionMenu
-                        label={`${t.name} actions`}
-                        items={[
-                          {
-                            label: "Rename",
-                            onClick: () => {
-                              const name = window.prompt("New tunnel name", t.name)?.trim();
-                              if (name && name !== t.name) {
-                                void act("Renaming", () => renameCfTunnel(t.id, t.account_tag, name), `Renamed to ${name}.`);
-                              }
-                            },
-                          },
-                          { label: "Deploy a connector", onClick: () => setDeploy(t) },
-                          { label: "Delete tunnel", danger: true, onClick: () => setTunnelDelete(t) },
-                        ]}
-                      />
-                    ) : null}
-                  </header>
-                  <p className="meta">
-                    {t.account_name} · {t.remote_managed ? "managed in Cloudflare" : "managed by a config file on its connector"} · {t.route_count} route(s)
-                  </p>
-                  {t.error ? <p className="tunnel-reason">{t.error}</p> : null}
-                  <p className="meta">
-                    {t.connectors.length
-                      ? `${t.connectors.length} connector(s) connected: ${t.connectors
-                          .map((c) => `${c.version} via ${(c.conns ?? []).map((x) => x.colo_name).join(", ") || "edge"}`)
-                          .join("; ")}`
-                      : "No connector is connected, so its hostnames are down."}
-                  </p>
-                  {t.local.length > 0 ? (
-                    <ul className="plain-list" aria-label={`${t.name} connectors on this node`}>
-                      {t.local.map((l) => (
-                        <li key={l.machine_id + l.unit}>
-                          <StatusBadge status={l.active ? "running" : "stopped"} label={l.machine_name} /> <code>{l.unit}</code>
-                          {l.managed ? <span className="tag-inline">No-dal</span> : null}
-                          {canManage ? (
-                            <>
-                              {" "}
-                              <button
-                                className="btn btn-sm btn-ghost"
-                                type="button"
-                                onClick={() =>
-                                  void act("Restarting connector", () =>
-                                    cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "restart", unit: l.unit }),
-                                  )
-                                }
-                              >
-                                Restart
-                              </button>
-                              <button
-                                className="btn btn-sm btn-ghost"
-                                type="button"
-                                onClick={() =>
-                                  void act("Updating cloudflared", () => cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "update" }), "cloudflared updated.")
-                                }
-                              >
-                                Update
-                              </button>
-                              {l.managed ? (
-                                <button
-                                  className="btn btn-sm btn-ghost btn-danger-text"
-                                  type="button"
-                                  onClick={() => {
-                                    if (window.confirm(`Stop and remove the connector for ${t.name} on ${l.machine_name}? Its hostnames go down unless another connector runs.`)) {
-                                      void act("Removing connector", () =>
-                                        cfConnectorAction(t.id, { account_id: t.account_tag, machine_id: l.machine_id, action: "remove", confirm: true }),
-                                      );
-                                    }
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="meta">No connector for this tunnel runs on this node.</p>
-                  )}
-                </article>
-              ))}
-            </div>
-          ) : null}
-
-          {view === "dns" ? (
-            <>
-              <p className="field-hint">
-                Records that send a hostname to a tunnel. A record with no route returns 404; one pointing at an unknown tunnel returns error 1016. Remove those
-                records in DNS once you no longer need them.
-              </p>
-              <div className="table-wrap">
-                <table aria-label="Tunnel DNS records">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Zone</th>
-                      <th>Account</th>
-                      <th>Tunnel</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shownDNS.map((d) => (
-                      <tr key={d.record.id}>
-                        <td>
-                          {d.record.name} {d.managed ? <span className="tag-inline">No-dal</span> : null}
-                          {!d.record.proxied ? <span className="tag-inline">not proxied</span> : null}
-                        </td>
-                        <td>{d.zone_name}</td>
-                        <td>{d.account_name}</td>
-                        <td>{d.tunnel_name || <code>{d.tunnel_id.slice(0, 8)}</code>}</td>
-                        <td>
-                          <StatusBadge
-                            status={d.status === "routed" ? "healthy" : d.status === "no-route" ? "warning" : "critical"}
-                            label={d.status === "routed" ? "Routed" : d.status === "no-route" ? "No route" : "Unknown tunnel"}
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {multiAccount ? (
+                <select className="field-input toolbar-select" aria-label="Account filter" value={account} onChange={(e) => setAccount(e.target.value)}>
+                  <option value="">All accounts</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
             </>
           ) : null}
+          {actionButtons}
+        </div>
+        {view === "hostnames" && canManage && selectedRoutes.length > 0 ? (
+          <div className="toolbar-group">
+            <span className="meta">{selectedRoutes.length} selected</span>
+            <button className="btn btn-sm btn-secondary" type="button" onClick={() => setMoving(selectedRoutes)}>
+              Move to tunnel
+            </button>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {job ? <JobLog job={job} onDone={() => void reload(true)} onClose={() => setJob(null)} /> : null}
+
+      {!noAccounts && view === "hostnames" ? (
+        (grouped ? groups.length === 0 : shownRoutes.length === 0) ? (
+          <EmptyState title="No hostnames">{q || account ? "Nothing matches the filter." : "Add a public hostname to route a domain to a service."}</EmptyState>
+        ) : (
+          <div className="table-wrap">
+            <table aria-label="Public hostnames" className={grouped ? "cf-grouped" : undefined}>
+              <thead>
+                <tr>
+                  {canManage ? (
+                    <th className="cell-check">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all hostnames"
+                        checked={shownRoutes.length > 0 && shownRoutes.every((r) => selected.has(r.key))}
+                        onChange={(e) => setSelected(e.target.checked ? new Set(shownRoutes.map((r) => r.key)) : new Set())}
+                      />
+                    </th>
+                  ) : null}
+                  {table.visible.map((c) => (
+                    <SortHeader key={c.id} column={c} prefs={table} />
+                  ))}
+                  <th className="cell-actions">
+                    <ColumnEditor
+                      prefs={table as TablePrefs<CfRoute>}
+                      label="Edit hostname columns"
+                      extra={
+                        <label className="check-row">
+                          <input type="checkbox" checked={grouped} onChange={(e) => table.setOption("group", e.target.checked)} />
+                          <span>Group by tunnel</span>
+                        </label>
+                      }
+                    />
+                  </th>
+                </tr>
+              </thead>
+              {grouped ? (
+                groups.map((g) => (
+                  <tbody key={g.t.id}>
+                    <TunnelGroup
+                      t={g.t}
+                      count={g.total}
+                      shown={g.list.length}
+                      span={span}
+                      collapsed={collapsed.has(g.t.id)}
+                      selection={g.selection}
+                      canManage={canManage}
+                      multiAccount={multiAccount}
+                      onCollapse={onCollapse}
+                      onSelect={onSelectTunnel}
+                      onMenu={onTunnelMenu}
+                      itemsFor={tunnelItems}
+                    />
+                    {collapsed.has(g.t.id)
+                      ? null
+                      : g.list.length === 0
+                        ? (
+                            <tr className="cf-route-row is-muted">
+                              <td colSpan={span + (canManage ? 1 : 0)}>
+                                <span className="meta">No hostnames on this tunnel yet.</span>
+                                {canManage && g.t.remote_managed ? (
+                                  <>
+                                    {" "}
+                                    <button type="button" className="linkish" onClick={() => setRouteDialog({ route: null, tunnelId: g.t.id })}>
+                                      Add one
+                                    </button>
+                                  </>
+                                ) : null}
+                              </td>
+                            </tr>
+                          )
+                        : g.list.map((r) => (
+                            <RouteRow
+                              key={r.key}
+                              r={r}
+                              cols={cols}
+                              selected={selected.has(r.key)}
+                              canManage={canManage}
+                              grouped
+                              onToggle={toggle}
+                              onMenu={onRouteMenu}
+                              itemsFor={routeItems}
+                            />
+                          ))}
+                  </tbody>
+                ))
+              ) : (
+                <tbody>
+                  {shownRoutes.map((r) => (
+                    <RouteRow
+                      key={r.key}
+                      r={r}
+                      cols={cols}
+                      selected={selected.has(r.key)}
+                      canManage={canManage}
+                      grouped={false}
+                      onToggle={toggle}
+                      onMenu={onRouteMenu}
+                      itemsFor={routeItems}
+                    />
+                  ))}
+                </tbody>
+              )}
+            </table>
+          </div>
+        )
+      ) : null}
+
+      {!noAccounts && view === "dns" ? (
+        <>
+          <p className="field-hint">
+            Records that send a hostname to a tunnel. A record with no route returns 404; one pointing at an unknown tunnel returns error 1016. Remove those
+            records in DNS once you no longer need them.
+            {counts.unreadable ? " Zones the saved tokens cannot read are not listed; see Accounts > Permissions." : ""}
+          </p>
+          <div className="table-wrap">
+            <table aria-label="Tunnel DNS records">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Zone</th>
+                  {multiAccount ? <th>Account</th> : null}
+                  <th>Tunnel</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shownDNS.map((d) => (
+                  <tr key={d.record.id}>
+                    <td>
+                      {d.record.name} {d.managed ? <span className="tag-inline">No-dal</span> : null}
+                      {!d.record.proxied ? <span className="tag-inline">not proxied</span> : null}
+                    </td>
+                    <td>{d.zone_name}</td>
+                    {multiAccount ? <td>{d.account_name}</td> : null}
+                    <td>{d.tunnel_name || <code>{d.tunnel_id.slice(0, 8)}</code>}</td>
+                    <td>
+                      <StatusBadge
+                        status={d.status === "routed" ? "healthy" : d.status === "no-route" ? "warning" : "critical"}
+                        label={d.status === "routed" ? "Routed" : d.status === "no-route" ? "No route" : "Unknown tunnel"}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
-      )}
+      ) : null}
 
       {view === "accounts" || noAccounts ? (
         <div className="docker-grid">
@@ -603,9 +874,30 @@ export function CloudflarePage() {
                 {c.accounts.map((a) => (
                   <li key={a.id}>
                     <strong>{a.name}</strong>: {a.zones} zone(s), tunnels {a.tunnels ? "yes" : "no"}, DNS {a.dns ? "yes" : "no"}
+                    {(a.problems ?? []).map((p) => (
+                      <div key={p} className="tunnel-reason">
+                        {p}
+                      </div>
+                    ))}
                   </li>
                 ))}
               </ul>
+              <CfPermissions
+                cred={c}
+                open={permsOpen.has(c.id)}
+                onToggle={() =>
+                  setPermsOpen((cur) => {
+                    const next = new Set(cur);
+                    if (next.has(c.id)) {
+                      next.delete(c.id);
+                    } else {
+                      next.add(c.id);
+                    }
+                    return next;
+                  })
+                }
+                onCheckAgain={canManage ? () => void act("Checking token", () => validateCfCredential(c.id), `${c.name} checked again.`) : undefined}
+              />
             </article>
           ))}
         </div>
@@ -614,6 +906,7 @@ export function CloudflarePage() {
       <RouteDialog
         open={routeDialog != null}
         route={routeDialog?.route ?? null}
+        tunnelId={routeDialog?.tunnelId}
         accounts={accounts}
         tunnels={tunnels}
         onClose={() => setRouteDialog(null)}
@@ -638,8 +931,8 @@ export function CloudflarePage() {
         onClose={() => setTunnelDialog(false)}
         onCreated={(name) => {
           setTunnelDialog(false);
-          setNotice(`Tunnel ${name} created. Deploy a connector for it, then add hostnames.`);
-          setView("tunnels");
+          setNotice(`Tunnel ${name} created. Deploy a connector for it from its row, then add hostnames.`);
+          setView("hostnames");
           void reload(true);
         }}
       />

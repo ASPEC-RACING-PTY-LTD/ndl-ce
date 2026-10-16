@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -160,7 +161,7 @@ func TestCloudflareCredentialsAreSealedAndNeverReturned(t *testing.T) {
 		}
 	}
 	// A bad token is not saved.
-	if code, _, raw := e.call(e.admin, "POST", "/api/v1/cloudflare/credentials", `{"name":"bad","token":"nope"}`); code != 403 || !strings.Contains(raw, "not saved") {
+	if code, _, raw := e.call(e.admin, "POST", "/api/v1/cloudflare/credentials", `{"name":"bad","token":"nope"}`); code != 424 || !strings.Contains(raw, "not saved") {
 		t.Fatalf("invalid token: %d %s", code, raw)
 	}
 	if n := len(creds); n != 2 {
@@ -248,10 +249,8 @@ func TestCloudflareUnifiedInventoryKeepsAccountsApart(t *testing.T) {
 	// Each account was only ever called with its own token.
 	e.fake.Mu.Lock()
 	defer e.fake.Mu.Unlock()
-	for k := range e.fake.Calls {
-		if strings.Contains(k, cfAcctB) && strings.Contains(k, "403") {
-			t.Fatalf("cross-account call %s", k)
-		}
+	if len(e.fake.Refused) > 0 {
+		t.Fatalf("cross-account calls %v", e.fake.Refused)
 	}
 }
 
@@ -305,11 +304,28 @@ func TestCloudflareRouteCreateChecksDNSAndRollsBack(t *testing.T) {
 	tok.Perms = []string{cftest.TunnelRead, cftest.TunnelWrite, cftest.ZoneRead, cftest.DNSRead, cftest.AccountList}
 	e.fake.Tokens[cfTokA] = tok
 	e.fake.Mu.Unlock()
-	if code, _, raw = route("new.racing.example", ""); code != 403 || !strings.Contains(raw, "removed again") {
+	if code, _, raw = route("new.racing.example", ""); code != 424 || !strings.Contains(raw, "removed again") {
 		t.Fatalf("dns failure %d %s", code, raw)
 	}
 	if len(e.fake.Ingress(tA.ID)) != before {
 		t.Fatal("the route must be rolled back when DNS fails")
+	}
+	// A token that cannot read DNS (tunnel permissions only) still edits
+	// routes; DNS is left alone and the reply says why.
+	e.fake.Mu.Lock()
+	tok = e.fake.Tokens[cfTokA]
+	tok.Perms = []string{cftest.TunnelRead, cftest.TunnelWrite, cftest.ZoneRead, cftest.AccountList}
+	e.fake.Tokens[cfTokA] = tok
+	e.fake.Mu.Unlock()
+	if code, _, raw := e.call(e.admin, "POST", "/api/v1/cloudflare/routes/plan", `{"account_id":"`+cfAcctA+`","tunnel_id":"`+tA.ID+`","hostname":"tunnel-only.racing.example"}`); code != 200 || !strings.Contains(raw, `"unavailable"`) {
+		t.Fatalf("plan without DNS read %d %s", code, raw)
+	}
+	code, out, raw = route("tunnel-only.racing.example", "")
+	if code != 200 || out["dns_action"] != "unavailable" || !strings.Contains(raw, "DNS was not changed") {
+		t.Fatalf("route without DNS read %d %s", code, raw)
+	}
+	if len(e.fake.RecordsNamed("tunnel-only.racing.example")) != 0 {
+		t.Fatal("DNS must not be touched without DNS permission")
 	}
 	// Unsafe origins are refused.
 	code, _, _ = e.call(e.admin, "POST", "/api/v1/cloudflare/routes", `{"account_id":"`+cfAcctA+`","tunnel_id":"`+tA.ID+`","hostname":"meta.racing.example","protocol":"http","host":"169.254.169.254","port":80}`)
@@ -546,5 +562,43 @@ func TestCloudflarePermissionsAndRateLimits(t *testing.T) {
 	code, _, raw := e.call(e.admin, "PATCH", "/api/v1/cloudflare/tunnels/"+tA.ID, `{"account_id":"`+cfAcctA+`","name":"renamed"}`)
 	if code != 429 || !strings.Contains(raw, "retry in 42s") {
 		t.Fatalf("rate limits must surface: %d %s", code, raw)
+	}
+}
+
+func TestCloudflarePermissionsGuideFallsBackAndCaches(t *testing.T) {
+	e := newCFEnv(t)
+	hits := 0
+	docs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer docs.Close()
+	e.s.CFDocsURL = docs.URL
+	viewer := loginRole(t, e.ts, e.mem, "guideviewer", rbac.Viewer)
+	code, out, raw := e.call(viewer, "GET", "/api/v1/cloudflare/permissions", "")
+	if code != 200 || out["source"] != "built-in" || !strings.Contains(raw, "dns_edit") {
+		t.Fatalf("guide %d %s", code, raw)
+	}
+	before := hits
+	if code, _, _ := e.call(viewer, "GET", "/api/v1/cloudflare/permissions", ""); code != 200 || hits != before {
+		t.Fatalf("a failed read must be cached for a while: %d hits", hits-before)
+	}
+}
+
+func TestCloudflareInventoryAnswersNotModified(t *testing.T) {
+	e := newCFEnv(t)
+	e.fake.AddZone(cfAcctA, "racing.example")
+	e.fake.AddTunnel(cfAcctA, "shared", map[string]any{"hostname": "shop.racing.example", "service": "http://10.0.0.2:80"})
+	e.addCredentials()
+	res := authedJSON(t, e.ts, "GET", "/api/v1/cloudflare/inventory", e.admin, "", nil)
+	_ = res.Body.Close()
+	etag := res.Header.Get("ETag")
+	if res.StatusCode != 200 || etag == "" {
+		t.Fatalf("first read %d %q", res.StatusCode, etag)
+	}
+	res = authedJSON(t, e.ts, "GET", "/api/v1/cloudflare/inventory", e.admin, "", map[string]string{"If-None-Match": etag})
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusNotModified {
+		t.Fatalf("unchanged inventory must be 304, got %d", res.StatusCode)
 	}
 }

@@ -1,3 +1,4 @@
+import { useFeatureOn } from "../nav/NavDisclosure";
 import { useEffect, useState } from "react";
 import {
   listNetworks,
@@ -80,6 +81,7 @@ function MetricArea({
 
 export function WorkloadDetailPage() {
   const session = useSession();
+  const cloudflareOn = useFeatureOn("cloudflare");
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
   const path = usePath();
@@ -637,7 +639,7 @@ export function WorkloadDetailPage() {
               )}
             </article>
           ) : null}
-          {item.kind === "system-container" || item.kind === "oci" ? <WorkloadCloudflarePanel workload={{ id: item.id, name: item.name }} /> : null}
+          {cloudflareOn && (item.kind === "system-container" || item.kind === "oci") ? <WorkloadCloudflarePanel workload={{ id: item.id, name: item.name }} /> : null}
         </>
       ) : null}
 

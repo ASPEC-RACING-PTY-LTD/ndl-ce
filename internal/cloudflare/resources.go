@@ -50,6 +50,45 @@ type Tunnel struct {
 	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
 	ConnsActiveAt   *time.Time `json:"conns_active_at,omitempty"`
 	ConnsInactiveAt *time.Time `json:"conns_inactive_at,omitempty"`
+	// Connections is the edge connections the tunnel list reports, which
+	// saves a call per tunnel. Not every response includes them.
+	Connections []ListedConnection `json:"connections,omitempty"`
+}
+
+// ListedConnection is one edge connection in the tunnel list.
+type ListedConnection struct {
+	ClientID      string     `json:"client_id"`
+	ClientVersion string     `json:"client_version"`
+	ColoName      string     `json:"colo_name"`
+	OriginIP      string     `json:"origin_ip"`
+	OpenedAt      *time.Time `json:"opened_at,omitempty"`
+	Pending       bool       `json:"is_pending_reconnect"`
+}
+
+// ListedConnectors groups the list's connections by connector. ok is false
+// when the list had none and the tunnel reports being connected, so the
+// connections must be read separately.
+func (t Tunnel) ListedConnectors() (out []Connector, ok bool) {
+	byID := map[string]int{}
+	for _, lc := range t.Connections {
+		if lc.Pending {
+			continue
+		}
+		i, seen := byID[lc.ClientID]
+		if !seen {
+			i = len(out)
+			byID[lc.ClientID] = i
+			out = append(out, Connector{ID: lc.ClientID, Version: lc.ClientVersion})
+		}
+		out[i].Connections = append(out[i].Connections, EdgeConnection{ColoName: lc.ColoName, OriginIP: lc.OriginIP, OpenedAt: lc.OpenedAt})
+	}
+	if len(out) == 0 && (t.Status == "healthy" || t.Status == "degraded") {
+		return nil, false
+	}
+	if out == nil {
+		out = []Connector{}
+	}
+	return out, true
 }
 
 // RemotelyManaged reports whether the tunnel's routes live in Cloudflare

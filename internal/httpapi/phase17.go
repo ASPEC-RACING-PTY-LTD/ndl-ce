@@ -1,8 +1,13 @@
 package httpapi
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +25,8 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
 		ExpertAck     bool      `json:"expert_ack"`
 		WorkloadSort  *string   `json:"workload_sort"`
 		WorkloadOrder *[]string `json:"workload_order"`
+		// UIPrefs sets interface preference keys; a null value removes one.
+		UIPrefs map[string]json.RawMessage `json:"ui_prefs"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
@@ -29,6 +36,31 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if req.UIPrefs != nil {
+		var cur map[string]json.RawMessage
+		if pref != nil {
+			cur = pref.UI
+		}
+		set, remove, err := cleanUIPrefs(cur, req.UIPrefs)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := s.Store.MergeUserUIPrefs(r.Context(), p.User.ID, p.User.ClusterID, set, remove); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		// Interface preferences change often and grant nothing, so they are
+		// not audited and need no other field.
+		if req.UXLevel == "" && !req.ExpertAck && req.WorkloadSort == nil && req.WorkloadOrder == nil {
+			s.writeMe(w, r, p.User, p.AAL)
+			return
+		}
+		if pref, err = s.Store.GetUserPrefs(r.Context(), p.User.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	if pref == nil {
 		pref = &appdb.UserPrefs{UserID: p.User.ID, ClusterID: p.User.ClusterID, UXLevel: appdb.UXGuided}
@@ -114,4 +146,55 @@ func prefsJSON(p *appdb.UserPrefs) (level string, ack bool, ackAt string) {
 		ackAt = p.ExpertAckAt.UTC().Format(time.RFC3339)
 	}
 	return level, ack, ackAt
+}
+
+// Limits for saved interface preferences.
+const (
+	maxUIPrefKeys   = 200
+	maxUIPrefValue  = 16 << 10
+	maxUIPrefsTotal = 256 << 10
+)
+
+var uiPrefKeyRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_.:-]{0,63}$`)
+
+// cleanUIPrefs checks a preferences patch against the saved keys. It returns
+// the keys to set and the keys to remove.
+func cleanUIPrefs(cur, patch map[string]json.RawMessage) (map[string]json.RawMessage, []string, error) {
+	set := map[string]json.RawMessage{}
+	var remove []string
+	sizes := map[string]int{}
+	for k, v := range cur {
+		sizes[k] = len(k) + len(v)
+	}
+	for k, v := range patch {
+		if !uiPrefKeyRe.MatchString(k) {
+			return nil, nil, fmt.Errorf("ui_prefs key %q is invalid", k)
+		}
+		trimmed := bytes.TrimSpace(v)
+		if len(trimmed) == 0 || string(trimmed) == "null" {
+			remove = append(remove, k)
+			delete(sizes, k)
+			continue
+		}
+		if len(trimmed) > maxUIPrefValue {
+			return nil, nil, fmt.Errorf("ui_prefs %s is too large", k)
+		}
+		if !json.Valid(trimmed) {
+			return nil, nil, fmt.Errorf("ui_prefs %s is not valid JSON", k)
+		}
+		set[k] = append(json.RawMessage(nil), trimmed...)
+		sizes[k] = len(k) + len(trimmed)
+	}
+	total := 0
+	for _, n := range sizes {
+		total += n
+	}
+	if len(sizes) > maxUIPrefKeys {
+		return nil, nil, errors.New("too many ui_prefs keys")
+	}
+	if total > maxUIPrefsTotal {
+		return nil, nil, errors.New("ui_prefs are too large")
+	}
+	sort.Strings(remove)
+	return set, remove, nil
 }

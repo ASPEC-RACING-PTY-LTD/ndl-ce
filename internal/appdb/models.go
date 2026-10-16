@@ -306,6 +306,9 @@ type Store interface {
 
 	GetUserPrefs(ctx context.Context, userID string) (*UserPrefs, error)
 	UpsertUserPrefs(ctx context.Context, p UserPrefs) error
+	// MergeUserUIPrefs sets and removes interface preference keys without
+	// touching the others, creating the row when missing.
+	MergeUserUIPrefs(ctx context.Context, userID, clusterID string, set map[string]json.RawMessage, remove []string) error
 
 	DeleteVolume(ctx context.Context, clusterID, volumeID string) error
 	// DeleteConfig removes one configuration record (see ConfigKind).
