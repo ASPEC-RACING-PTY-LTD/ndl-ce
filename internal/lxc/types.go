@@ -21,8 +21,12 @@ const (
 	ApplyUnsupported = "unsupported"
 	ActionApplySpec  = "apply-spec"
 	ActionGuestSetup = "guest-setup"
-	ActionMountsGet  = "mounts-get"
-	ActionMountsSet  = "mounts-set"
+	// Extension status, update and reinstall act on extras already chosen.
+	ActionGuestExtrasStatus    = "guest-extras-status"
+	ActionGuestExtrasUpdate    = "guest-extras-update"
+	ActionGuestExtrasReinstall = "guest-extras-reinstall"
+	ActionMountsGet            = "mounts-get"
+	ActionMountsSet            = "mounts-set"
 )
 
 const (
@@ -123,6 +127,16 @@ type Applied struct {
 
 // Result is returned by create, clone, and lifecycle.
 // SetupWarning is a failed optional guest extra after the workload exists.
+// ExtraStatus is one optional extra as found inside the guest.
+type ExtraStatus struct {
+	ID        string `json:"id"`
+	Installed bool   `json:"installed"`
+	Version   string `json:"version,omitempty"`
+	Package   string `json:"package,omitempty"`
+	// Detail notes a problem with an installed extra, such as a stopped engine.
+	Detail string `json:"detail,omitempty"`
+}
+
 type SetupWarning struct {
 	Extra   string `json:"extra"`
 	Message string `json:"message"`
@@ -137,6 +151,8 @@ type Result struct {
 	ImageSHA256   string         `json:"image_sha256,omitempty"`
 	Status        string         `json:"status"`
 	SetupWarnings []SetupWarning `json:"setup_warnings,omitempty"`
+	// Extras is what is installed in the guest, after an extras action.
+	Extras []ExtraStatus `json:"extras,omitempty"`
 	// Mounts and RestartRequired answer the mount actions.
 	Mounts          []Mount `json:"mounts,omitempty"`
 	RestartRequired bool    `json:"restart_required,omitempty"`

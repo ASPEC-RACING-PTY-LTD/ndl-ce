@@ -344,8 +344,19 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	s.finishOp(r.Context(), op, "succeeded", mustCreateMsg(ids), 100)
 	s.audit(r, p.User.ClusterID, p.User.ID, "workload.create", "ok", row.ID)
 	s.emitEvent(r.Context(), p.User.ClusterID, node.ID, "workload.created", map[string]string{"workload_id": row.ID, "kind": row.Kind})
-	warnings := s.applyWorkloadExtras(r.Context(), p.User.ClusterID, node.ID, row, req.Extras, req.DesiredPower)
-	writeJSON(w, http.StatusCreated, s.workloadJSONWithSetup(r.Context(), row, warnings))
+	out := s.workloadJSON(r.Context(), row)
+	if row.NodeID == "" {
+		row.NodeID = node.ID
+	}
+	if op, err := s.startExtensionsJob(p.User.ClusterID, row, req.Extras, extensionInstall); err != nil {
+		out["setup_status"] = "warnings"
+		out["setup_warnings"] = []lxc.SetupWarning{{Extra: "setup", Message: err.Error()}}
+	} else if op != nil {
+		// Extras install in the background; GET .../extensions reports progress.
+		out["setup_status"] = "installing"
+		out["setup_operation_id"] = op.ID
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 func (s *Server) planCreateIDs(ctx context.Context, clusterID, nodeID, key, volumeID string) createIDs {
@@ -828,14 +839,15 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 	if req.Autostart != nil {
 		next.Autostart = *req.Autostart
 	}
-	diskGrow := false
+	diskGrow, diskShrink := false, false
 	if req.DiskBytes > 0 && row.Kind == lxc.KindSystemContainer {
 		if disks, derr := s.Store.ListWorkloadDisks(r.Context(), p.User.ClusterID, row.ID); derr == nil && len(disks) > 0 {
 			if vol, verr := s.Store.GetVolume(r.Context(), p.User.ClusterID, disks[0].VolumeID); verr == nil && vol != nil {
 				diskGrow = req.DiskBytes > vol.SizeBytes
+				diskShrink = req.DiskBytes < vol.SizeBytes
 			}
 		}
-		if err := s.growCTDisk(r.Context(), p.User.ClusterID, *row, req.DiskBytes, req.ExpandFilesystem); err != nil {
+		if err := s.resizeCTDisk(r.Context(), p.User.ClusterID, *row, req.DiskBytes, req.ExpandFilesystem); err != nil {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
@@ -863,7 +875,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 				nextSpec.IP = prevSpec.IP
 			}
 		}
-		classes := lxc.ClassifyEdit(prevSpec, nextSpec, diskGrow, false)
+		classes := lxc.ClassifyEdit(prevSpec, nextSpec, diskGrow, diskShrink)
 		if running && lxc.RequiresStop(classes) {
 			writeErr(w, http.StatusConflict, "this spec change requires the container to be stopped")
 			return
@@ -1568,7 +1580,10 @@ func (s *Server) destroyOwnedVolume(ctx context.Context, clusterID string, vol *
 	_ = s.Store.DeleteVolume(ctx, clusterID, vol.ID)
 }
 
-func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Workload, size int64, expandFS *bool) error {
+// resizeCTDisk grows or shrinks a container root. ZFS shrinks live; a
+// directory root shrinks only while stopped; LVM shrink is refused. Every
+// backend refuses a shrink that would leave too little headroom for the data.
+func (s *Server) resizeCTDisk(ctx context.Context, clusterID string, row appdb.Workload, size int64, expandFS *bool) error {
 	if size < lxc.MinRootSize {
 		return errBadRequest("disk size must be at least 1 GB")
 	}
@@ -1580,18 +1595,28 @@ func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Wor
 	if err != nil || vol == nil {
 		return errConflict("container root volume is unavailable")
 	}
-	if size < vol.SizeBytes {
-		return errBadRequest("shrinking a container disk is not supported")
-	}
-	if size == vol.SizeBytes {
-		return nil
-	}
-	running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
 	pool, err := s.Store.GetStoragePool(ctx, clusterID, vol.PoolID)
 	if err != nil || pool == nil {
 		return errConflict("storage pool is not found")
 	}
-	if err := storage.AdmitPhysicalFree(pool.UsableBytes); err != nil {
+	// An unchanged ZFS size still reapplies quota and refquota, so saving
+	// heals datasets whose quota was left at the create size.
+	if size == vol.SizeBytes && pool.BackendType != storage.BackendZFS {
+		return nil
+	}
+	shrink := size < vol.SizeBytes
+	running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
+	if shrink {
+		switch pool.BackendType {
+		case storage.BackendZFS:
+		case storage.BackendDirectory:
+			if running {
+				return errConflict("stop the container to shrink its disk; directory-backed disks cannot shrink while running")
+			}
+		default:
+			return errUnprocessable("shrinking a disk on this storage backend is not supported")
+		}
+	} else if err := storage.AdmitPhysicalFree(pool.UsableBytes); err != nil {
 		return errConflict("storage pool does not have enough physical free space to grow the disk")
 	}
 	switch pool.BackendType {
@@ -1616,7 +1641,7 @@ func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Wor
 			return err
 		}
 		if res.Status == storage.StatusFailed || res.Status == storage.StatusUnavailable {
-			return errUnprocessable(firstNonEmpty(res.Reason, "zfs disk grow failed"))
+			return errUnprocessable(firstNonEmpty(res.Reason, "zfs disk resize failed"))
 		}
 	case storage.BackendLVM:
 		res, err := s.lvm().LVMPool(ctx, storage.LVMOp{
@@ -1627,10 +1652,10 @@ func (s *Server) growCTDisk(ctx context.Context, clusterID string, row appdb.Wor
 			return err
 		}
 		if res.Status == storage.StatusFailed || res.Status == storage.StatusUnavailable {
-			return errUnprocessable(firstNonEmpty(res.Reason, "lvm disk grow failed"))
+			return errUnprocessable(firstNonEmpty(res.Reason, "lvm disk resize failed"))
 		}
 	default:
-		return errUnprocessable("growing this storage backend is not supported")
+		return errUnprocessable("resizing a disk on this storage backend is not supported")
 	}
 	return s.Store.UpdateVolumeSize(ctx, clusterID, vol.ID, size)
 }

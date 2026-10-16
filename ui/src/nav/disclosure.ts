@@ -173,3 +173,44 @@ export function moveCustom(prefs: DisclosurePrefs, id: string, delta: number): D
   order[idx] = swap;
   return { ...prefs, customOrder: order };
 }
+
+/** NavOrder is the user's order of sidebar entries, by group label. */
+export type NavOrder = Record<string, string[]>;
+
+export const NAV_ORDER_KEY = "nav.order";
+
+/** applyNavOrder sorts each group's entries in the user's saved order; entries not in it keep their place after the ordered ones. */
+export function applyNavOrder<T extends { label: string; items: NavModule[] }>(groups: T[], order: NavOrder | null | undefined): T[] {
+  if (!order) {
+    return groups;
+  }
+  return groups.map((g) => {
+    const saved = order[g.label];
+    if (!Array.isArray(saved) || saved.length === 0) {
+      return g;
+    }
+    const rank = new Map(saved.map((id, i) => [id, i]));
+    const items = g.items
+      .map((item, i) => ({ item, i }))
+      .sort((a, b) => (rank.get(a.item.id) ?? saved.length + a.i) - (rank.get(b.item.id) ?? saved.length + b.i))
+      .map((x) => x.item);
+    return { ...g, items };
+  });
+}
+
+/** moveNavItem moves id before (or after) target within a group's current order. */
+export function moveNavItem(order: NavOrder, group: string, current: string[], id: string, target: string, after: boolean): NavOrder {
+  if (id === target) {
+    return order;
+  }
+  const list = current.filter((x) => x !== id);
+  let at = list.indexOf(target);
+  if (at < 0) {
+    return order;
+  }
+  if (after) {
+    at++;
+  }
+  list.splice(at, 0, id);
+  return { ...order, [group]: list };
+}

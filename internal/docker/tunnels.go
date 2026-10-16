@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -60,20 +61,25 @@ type TunnelLink struct {
 
 // Tunnel is one cloudflared service on a machine.
 type Tunnel struct {
-	MachineID     string        `json:"machine_id"`
-	MachineName   string        `json:"machine_name"`
-	Unit          string        `json:"unit"`
-	Active        bool          `json:"active"`
-	State         string        `json:"state"`
-	SubState      string        `json:"sub_state,omitempty"`
-	RemoteManaged bool          `json:"remote_managed"`
-	ConfigPath    string        `json:"config_path,omitempty"`
-	Ingress       []IngressRule `json:"ingress,omitempty"`
-	Errors        []TunnelError `json:"errors,omitempty"`
-	ErrorCount    int           `json:"error_count"`
-	Links         []TunnelLink  `json:"links,omitempty"`
-	Health        string        `json:"health"`
-	Reason        string        `json:"reason,omitempty"`
+	MachineID     string `json:"machine_id"`
+	MachineName   string `json:"machine_name"`
+	Unit          string `json:"unit"`
+	Active        bool   `json:"active"`
+	State         string `json:"state"`
+	SubState      string `json:"sub_state,omitempty"`
+	RemoteManaged bool   `json:"remote_managed"`
+	ConfigPath    string `json:"config_path,omitempty"`
+	IngressSource string `json:"ingress_source,omitempty"`
+	// TunnelID is the Cloudflare tunnel this connector runs, from its log.
+	TunnelID string `json:"tunnel_id,omitempty"`
+	// Managed is true for connectors No-dal deployed.
+	Managed    bool          `json:"managed,omitempty"`
+	Ingress    []IngressRule `json:"ingress,omitempty"`
+	Errors     []TunnelError `json:"errors,omitempty"`
+	ErrorCount int           `json:"error_count"`
+	Links      []TunnelLink  `json:"links,omitempty"`
+	Health     string        `json:"health"`
+	Reason     string        `json:"reason,omitempty"`
 }
 
 var (
@@ -151,6 +157,10 @@ func (e *Engine) machineTunnels(ctx context.Context, m MachineHint) []Tunnel {
 		t := Tunnel{MachineID: m.ID, MachineName: firstNonEmptyStr(m.Name, m.ID), Unit: f[0], State: f[2], SubState: f[3]}
 		t.Active = f[2] == "active"
 		e.fillTunnelConfig(ctx, &t)
+		t.Managed = ManagedConnectorUnit(t.Unit)
+		if raw, err := e.machineRun(ctx, m.ID, binJournalctl, "-u", t.Unit, "--no-pager", "-o", "cat", "-g", "tunnelID=", "-n", "1", "-r"); err == nil {
+			t.TunnelID = ParseTunnelID(string(raw))
+		}
 		if jr, err := e.machineRun(ctx, m.ID, binJournalctl, "-u", t.Unit, "--since", "-"+strconv.Itoa(int(TunnelWindow.Minutes()))+"min", "--no-pager", "-o", "short-iso", "-n", "500"); err == nil {
 			t.Errors = ParseTunnelErrors(string(jr))
 			for _, te := range t.Errors {
@@ -176,23 +186,71 @@ func (e *Engine) fillTunnelConfig(ctx context.Context, t *Tunnel) {
 			t.RemoteManaged = true
 		}
 	}
-	root := e.machineRoot(ctx, t.MachineID)
-	if root == "" {
-		return
-	}
-	candidates := []string{"/etc/cloudflared/config.yml", "/etc/cloudflared/config.yaml", "/root/.cloudflared/config.yml", "/root/.cloudflared/config.yaml", "/usr/local/etc/cloudflared/config.yml"}
-	if cfg != "" && strings.HasPrefix(cfg, "/") && !strings.Contains(cfg, "..") {
-		candidates = append([]string{cfg}, candidates...)
-	}
-	for _, p := range candidates {
-		raw, err := os.ReadFile(filepath.Join(root, p))
-		if err != nil {
-			continue
+	if root := e.machineRoot(ctx, t.MachineID); root != "" {
+		candidates := []string{"/etc/cloudflared/config.yml", "/etc/cloudflared/config.yaml", "/root/.cloudflared/config.yml", "/root/.cloudflared/config.yaml", "/usr/local/etc/cloudflared/config.yml"}
+		if cfg != "" && strings.HasPrefix(cfg, "/") && !strings.Contains(cfg, "..") {
+			candidates = append([]string{cfg}, candidates...)
 		}
-		t.ConfigPath = p
-		t.Ingress = ParseIngress(raw)
-		return
+		for _, p := range candidates {
+			raw, err := os.ReadFile(filepath.Join(root, p))
+			if err != nil {
+				continue
+			}
+			t.ConfigPath = p
+			t.Ingress = ParseIngress(raw)
+			return
+		}
 	}
+	// A dashboard-managed tunnel logs the routes Cloudflare pushed to it.
+	if raw, err := e.machineRun(ctx, t.MachineID, binJournalctl, "-u", t.Unit, "--no-pager", "-o", "cat", "-g", remoteConfigMarker, "-n", "1", "-r"); err == nil {
+		if rules := ParseRemoteIngress(string(raw)); len(rules) > 0 {
+			t.Ingress = rules
+			t.IngressSource = IngressSourceRemote
+		}
+	}
+}
+
+var tunnelIDRe = regexp.MustCompile(`tunnelID=([0-9a-fA-F-]{36})`)
+
+// ParseTunnelID reads the tunnel ID cloudflared logs when it starts.
+func ParseTunnelID(log string) string {
+	if m := tunnelIDRe.FindStringSubmatch(log); m != nil {
+		return strings.ToLower(m[1])
+	}
+	return ""
+}
+
+const (
+	remoteConfigMarker = "Updated to new configuration"
+	// IngressSourceRemote marks ingress read from the routes Cloudflare pushed.
+	IngressSourceRemote = "cloudflare"
+)
+
+var remoteConfigRe = regexp.MustCompile(`config="((?:[^"\\]|\\.)*)"`)
+
+// ParseRemoteIngress reads the ingress rules from cloudflared's
+// "Updated to new configuration" log line. Only hostname, path and service
+// are kept; origin request settings are dropped.
+func ParseRemoteIngress(line string) []IngressRule {
+	m := remoteConfigRe.FindStringSubmatch(line)
+	if m == nil {
+		return nil
+	}
+	raw, err := strconv.Unquote(`"` + m[1] + `"`)
+	if err != nil {
+		return nil
+	}
+	var doc struct {
+		Ingress []IngressRule `json:"ingress"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil
+	}
+	out := make([]IngressRule, 0, len(doc.Ingress))
+	for _, r := range doc.Ingress {
+		out = append(out, IngressRule{Hostname: r.Hostname, Path: r.Path, Service: r.Service})
+	}
+	return out
 }
 
 // ParseIngress reads the ingress rules from a cloudflared config file.

@@ -145,3 +145,50 @@ func TestRecoveryOrderRestartsDependenciesFirst(t *testing.T) {
 		t.Fatalf("a dependency cycle must still restart both once: %+v", loop)
 	}
 }
+
+const remoteConfigLine = `2026-10-12T16:30:38Z INF Updated to new configuration config="{\"ingress\":[{\"hostname\":\"shop.example.com\",\"originRequest\":{\"httpHostHeader\":\"internal.example\"},\"service\":\"http://localhost:8080\"},{\"hostname\":\"ssh.example.com\",\"service\":\"ssh://localhost:22\"},{\"service\":\"http_status:404\"}],\"warp-routing\":{\"enabled\":false}}" version=7`
+
+func TestParseRemoteIngressKeepsRoutesOnly(t *testing.T) {
+	got := ParseRemoteIngress(remoteConfigLine)
+	if len(got) != 3 || got[0].Hostname != "shop.example.com" || got[0].Service != "http://localhost:8080" || got[2].Service != "http_status:404" {
+		t.Fatalf("ingress %+v", got)
+	}
+	if ParseRemoteIngress("INF Starting tunnel") != nil || ParseRemoteIngress(`config="{not json" version=1`) != nil {
+		t.Fatal("lines without a valid config must yield nothing")
+	}
+}
+
+func TestDashboardTunnelIngressComesFromItsLog(t *testing.T) {
+	e := &Engine{
+		LXCInfo: func(context.Context, string) (int, string, error) { return 0, "", nil },
+		GuestRun: func(_ context.Context, _ string, argv ...string) ([]byte, error) {
+			name, args := argv[0], argv[1:]
+			joined := strings.Join(args, " ")
+			switch {
+			case strings.Contains(joined, "list-units"):
+				return []byte("cloudflared.service loaded active running cloudflared\n"), nil
+			case strings.Contains(joined, "ExecStart"):
+				return []byte("argv[]=/usr/bin/cloudflared tunnel run --token eySECRET"), nil
+			case name == binJournalctl && strings.Contains(joined, remoteConfigMarker):
+				return []byte(remoteConfigLine + "\n"), nil
+			}
+			return nil, nil
+		},
+	}
+	tunnels := e.machineTunnels(context.Background(), MachineHint{ID: "ct-1", Name: "apps"})
+	if len(tunnels) != 1 {
+		t.Fatalf("tunnels %+v", tunnels)
+	}
+	tun := tunnels[0]
+	if tun.IngressSource != IngressSourceRemote || len(tun.Ingress) != 3 {
+		t.Fatalf("dashboard tunnel ingress %+v", tun)
+	}
+	inv := Inventory{
+		Machines:   []Machine{{ID: "ct-1", Name: "apps"}},
+		Containers: []Container{{MachineID: "ct-1", Name: "shop-web-1", State: "running", Ports: []Port{{PublicPort: 8080}}}},
+	}
+	linked := LinkTunnels(tunnels, inv)
+	if len(linked[0].Links) != 1 || linked[0].Links[0].Name != "shop-web-1" || linked[0].Links[0].Hostnames[0] != "shop.example.com" {
+		t.Fatalf("links %+v", linked[0].Links)
+	}
+}

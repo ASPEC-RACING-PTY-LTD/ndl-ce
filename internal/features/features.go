@@ -12,6 +12,9 @@ const (
 	IDAI           = "ai"
 	IDDocker       = "docker"
 	IDGameServers  = "gameservers"
+	IDCloudflare   = "cloudflare"
+	IDCaddy        = "caddy"
+	IDNginx        = "nginx"
 	EnableK8s      = "enable-k8s"
 	DisableConfirm = "disable-feature"
 	// TinyK8sMemoryBytes is the RAM floor for Kubernetes without confirm.
@@ -24,8 +27,11 @@ const (
 	OCIReason                  = "OCI extras are optional. Enabling the module installs containerd via nodal-feature-oci."
 	DockerReason               = "Docker Management is optional. Enabling it discovers Docker engines on this node and in system containers. It does not install Docker Engine."
 	GameServersReason          = "Game Servers is optional. Enabling it does not start servers or delete existing ones when later disabled."
+	CloudflareReason           = "Cloudflare is optional. Turning it off only hides it; tokens, tunnels, routes and connectors are kept and keep running."
+	CaddyReason                = "Caddy is optional. Turning it on finds Caddy on this node and in system containers. Turning it off only hides it; Caddy and its sites are not changed."
+	NginxReason                = "Nginx is optional. Turning it on finds Nginx on this node and in system containers. Turning it off only hides it; Nginx and its sites are not changed."
 	CoreInstalledReason        = "Installed with the nodal metapackage."
-	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, AI, Docker Management, and Game Servers stay opt-in."
+	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, AI, Docker Management, Game Servers, Cloudflare, Caddy and Nginx stay opt-in."
 )
 
 // Module is one Settings Features row.
@@ -48,6 +54,9 @@ func Catalog() []Module {
 		{ID: IDOCI, Title: "OCI Containers", Package: "nodal-feature-oci", DefaultReason: OCIReason},
 		{ID: IDDocker, Title: "Docker Management", Package: "nodal-feature-docker", DefaultReason: DockerReason},
 		{ID: IDGameServers, Title: "Game Servers", SoftwareOnly: true, DefaultReason: GameServersReason},
+		{ID: IDCloudflare, Title: "Cloudflare", SoftwareOnly: true, DefaultReason: CloudflareReason},
+		{ID: IDCaddy, Title: "Caddy", SoftwareOnly: true, DefaultReason: CaddyReason},
+		{ID: IDNginx, Title: "Nginx", SoftwareOnly: true, DefaultReason: NginxReason},
 		{ID: IDGPU, Title: "GPU Services", Package: "nodal-feature-gpu", DefaultReason: GPUOptionalReason},
 		{ID: IDK8s, Title: "Kubernetes", Package: "nodal-feature-k8s", RequiresK8sAck: true, DefaultReason: K8sNotStartedReason},
 		{ID: IDDistStorage, Title: "Distributed Storage", Package: "nodal-feature-distributed-storage", DefaultReason: DistStorageReason},

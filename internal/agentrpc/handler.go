@@ -267,6 +267,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execGameServer(ctx, req.Msg.GetGameServer())
 	case req.Msg.GetHostDisk() != nil:
 		return h.execHostDisk(ctx, req.Msg.GetHostDisk())
+	case req.Msg.GetStorageScan() != nil:
+		return h.execStorageScan(ctx, req.Msg.GetStorageScan())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

@@ -199,6 +199,63 @@ describe("Uptime page", () => {
   });
 });
 
+describe("Uptime on the Docker page", () => {
+  it("lives under Docker, and Scan Docker adds every new tunnel site with its container", async () => {
+    let imported = "";
+    mockApi({
+      ...baseRoutes,
+      "GET /api/v1/uptime/monitors": { status: 200, body: { items: monitors } },
+      "/api/v1/docker": { status: 200, body: dockerInv },
+      "GET /api/v1/docker/tunnels": {
+        status: 200,
+        body: {
+          supported: true,
+          items: [
+            {
+              machine_id: "ct-1",
+              machine_name: "apps",
+              ingress: [
+                { hostname: "shop.example.com", service: "http://localhost:3000" },
+                { hostname: "api.example.com", service: "http://localhost:3000" },
+                { hostname: "ssh.example.com", service: "ssh://localhost:22" },
+              ],
+              links: [{ origin: "http://localhost:3000", name: "shop-web-1" }],
+            },
+          ],
+        },
+      },
+      "POST /api/v1/uptime/import": (init) => {
+        imported = String(init?.body ?? "");
+        return { status: 200, body: { valid: true, dry_run: false, results: [{ name: "api.example.com", change: "create" }] } };
+      },
+    });
+    window.history.replaceState({}, "", "/uptime");
+    render(<App />);
+    await screen.findAllByRole("article", { name: /^monitor /i });
+    expect(window.location.pathname).toBe("/docker/uptime");
+    const sections = screen.getByRole("navigation", { name: /docker sections/i });
+    expect(within(sections).getByRole("button", { name: /^uptime$/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("link", { name: /^uptime$/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^scan docker$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /scan docker for sites/i });
+    expect(await within(dialog).findByText(/already watched by shop/i)).toBeVisible();
+    expect(within(dialog).queryByText(/ssh\.example\.com/i)).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^add 1 monitor$/i }));
+    await waitFor(() => expect(imported).toBeTruthy());
+    expect(JSON.parse(imported)).toMatchObject({
+      dry_run: false,
+      script: {
+        monitors: [{ name: "api.example.com", target: "https://api.example.com", containers: [{ machine: "apps", name: "shop-web-1" }] }],
+      },
+    });
+    expect(await within(dialog).findByText(/^saved\.$/i)).toBeVisible();
+
+    fireEvent.click(within(sections).getByRole("button", { name: /^docker$/i }));
+    expect(window.location.pathname).toBe("/docker");
+  });
+});
+
 describe("Automation page", () => {
   it("creates an Uptime recovery policy", async () => {
     let created = "";

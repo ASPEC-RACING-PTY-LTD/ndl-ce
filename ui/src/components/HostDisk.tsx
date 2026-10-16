@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { navigate } from "../router";
 import {
   cleanupHostDisk,
   getHostDisk,
@@ -110,12 +111,9 @@ function FilesystemRow({ fs }: { fs: HostDiskFilesystem }) {
 /** HostDiskPanel shows disk protection and the safe ways to free space. */
 export function HostDiskPanel({ mutate }: { mutate: boolean }) {
   const [status, setStatus] = useState<HostDiskStatus | null>(null);
-  const [usage, setUsage] = useState<HostDiskUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [measuring, setMeasuring] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [cleaning, setCleaning] = useState<HostDiskCategory | null>(null);
   const [releasing, setReleasing] = useState(false);
 
   useEffect(() => {
@@ -135,36 +133,6 @@ export function HostDiskPanel({ mutate }: { mutate: boolean }) {
       cancelled = true;
     };
   }, []);
-
-  function measure() {
-    setMeasuring(true);
-    setError(null);
-    getHostDiskUsage()
-      .then((res) => {
-        setUsage(res.usage ?? null);
-        setStatus(res.status);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : "Could not measure disk usage"))
-      .finally(() => setMeasuring(false));
-  }
-
-  function onClean() {
-    const cat = cleaning;
-    setCleaning(null);
-    if (!cat) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    cleanupHostDisk(cat.id as HostDiskCleanupRequest["category"])
-      .then((res) => {
-        setStatus(res.status);
-        setNotice(`${cat.label}: freed ${formatBytes(res.clean?.removed_bytes ?? 0)}.`);
-        measure();
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : "Cleanup failed"))
-      .finally(() => setBusy(false));
-  }
 
   function onRelease() {
     setReleasing(false);
@@ -214,6 +182,78 @@ export function HostDiskPanel({ mutate }: { mutate: boolean }) {
         </p>
       ) : null}
 
+      <div className="btn-row is-flush">
+        <button className="btn" type="button" onClick={() => navigate("/storage/manage")}>
+          Find what is using space
+        </button>
+      </div>
+
+      <ConfirmDialog
+        open={releasing}
+        title="Release emergency reserve"
+        confirmLabel="Release"
+        onConfirm={onRelease}
+        onClose={() => setReleasing(false)}
+      >
+        <p>
+          Delete the reserve file to free {formatBytes(status?.reserve_bytes ?? 0)} now? It holds no data. It is
+          recreated after six hours once the disk is healthy.
+        </p>
+      </ConfirmDialog>
+    </article>
+  );
+}
+
+/** HostDiskCleanups measures No-dal's own folders and offers the safe clean-ups. */
+export function HostDiskCleanups({ mutate }: { mutate: boolean }) {
+  const [usage, setUsage] = useState<HostDiskUsage | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [measuring, setMeasuring] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [cleaning, setCleaning] = useState<HostDiskCategory | null>(null);
+  const [, setStatus] = useState<HostDiskStatus | null>(null);
+
+  function measure() {
+    setMeasuring(true);
+    setError(null);
+    getHostDiskUsage()
+      .then((res) => {
+        setUsage(res.usage ?? null);
+        setStatus(res.status);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not measure disk usage"))
+      .finally(() => setMeasuring(false));
+  }
+
+  function onClean() {
+    const cat = cleaning;
+    setCleaning(null);
+    if (!cat) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    cleanupHostDisk(cat.id as HostDiskCleanupRequest["category"])
+      .then((res) => {
+        setStatus(res.status);
+        setNotice(`${cat.label}: freed ${formatBytes(res.clean?.removed_bytes ?? 0)}.`);
+        measure();
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Cleanup failed"))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <article className="panel" aria-labelledby="host-cleanups-heading">
+      <h2 id="host-cleanups-heading">Quick clean-ups</h2>
+      <p className="field-hint">No-dal's own folders on the root disk, and the leftovers it can remove safely.</p>
+      {error ? <ErrorNotice error={error} /> : null}
+      {notice ? (
+        <p className="banner banner-ok" role="status">
+          {notice}
+        </p>
+      ) : null}
       <div className="btn-row is-flush">
         <button className="btn" type="button" disabled={measuring} onClick={measure}>
           {measuring ? "Measuring" : usage ? "Measure again" : "What is using space"}
@@ -294,18 +334,6 @@ export function HostDiskPanel({ mutate }: { mutate: boolean }) {
       >
         <p>
           {cleaning?.label}: {cleaning?.cleanup} Pools, workload disks, backups and game data are never touched.
-        </p>
-      </ConfirmDialog>
-      <ConfirmDialog
-        open={releasing}
-        title="Release emergency reserve"
-        confirmLabel="Release"
-        onConfirm={onRelease}
-        onClose={() => setReleasing(false)}
-      >
-        <p>
-          Delete the reserve file to free {formatBytes(status?.reserve_bytes ?? 0)} now? It holds no data. It is
-          recreated after six hours once the disk is healthy.
         </p>
       </ConfirmDialog>
     </article>

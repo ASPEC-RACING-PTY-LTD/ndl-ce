@@ -45,7 +45,16 @@ export type IconName =
   | "mark-info"
   | "mark-neutral"
   | "diagnostics"
-  | "game";
+  | "game"
+  | "sun"
+  | "moon"
+  | "monitor"
+  | "palette"
+  | "columns"
+  | "cloud"
+  | "globe"
+  | "logout"
+  | "check";
 
 const PATHS: Record<IconName, ReactNode> = {
   shield: <path d="M8 1.8 13 3.6v4c0 3.2-2.1 5.6-5 6.6-2.9-1-5-3.4-5-6.6v-4L8 1.8zM5.8 8l1.6 1.6 2.9-3" />,
@@ -72,6 +81,37 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   sort: <path d="M5.5 6 8 3.5 10.5 6M5.5 10 8 12.5 10.5 10" />,
+  sun: (
+    <>
+      <circle cx="8" cy="8" r="2.8" />
+      <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+    </>
+  ),
+  moon: <path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" />,
+  monitor: (
+    <>
+      <rect x="1.8" y="2.6" width="12.4" height="8.4" rx="1.2" />
+      <path d="M5.8 13.6h4.4M8 11v2.6" />
+    </>
+  ),
+  palette: (
+    <>
+      <path d="M8 1.8a6.2 6.2 0 1 0 0 12.4c.9 0 1.3-.6 1.1-1.3-.3-.9.3-1.7 1.2-1.7h1.4a2.5 2.5 0 0 0 2.5-2.5A6.4 6.4 0 0 0 8 1.8z" />
+      <circle cx="4.9" cy="7.4" r=".8" fill="currentColor" stroke="none" />
+      <circle cx="7" cy="4.6" r=".8" fill="currentColor" stroke="none" />
+      <circle cx="10.3" cy="5.2" r=".8" fill="currentColor" stroke="none" />
+    </>
+  ),
+  columns: <path d="M2.2 3h11.6v10H2.2zM6.1 3v10M9.9 3v10" />,
+  cloud: <path d="M4.6 12.6h7a2.9 2.9 0 0 0 .4-5.8 4 4 0 0 0-7.7.9 2.5 2.5 0 0 0 .3 4.9z" />,
+  globe: (
+    <>
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.5 3.9 2.5 6.2S9.7 12.4 8 14.2C6.3 12.4 5.5 10.3 5.5 8S6.3 3.6 8 1.8z" />
+    </>
+  ),
+  logout: <path d="M6.2 2.5H3.4v11h2.8M10.2 5l3 3-3 3M13.2 8H6" />,
+  check: <path d="m3.2 8.4 3 3 6.6-6.8" />,
   "sort-up": <path d="M5 9.5 8 6.5 11 9.5" />,
   "sort-down": <path d="M5 6.5 8 9.5 11 6.5" />,
   transfer: <path d="M2.8 5.2h9.4L9.6 2.6M13.2 10.8H3.8l2.6 2.6" />,

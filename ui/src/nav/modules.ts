@@ -95,7 +95,6 @@ export const NAV_MODULES: NavModule[] = [
     simple: false,
     capability: "docker",
   },
-  { id: "uptime", href: "/uptime", label: "Uptime", group: "Compute", match: (p) => p === "/uptime", simple: true },
   { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates", simple: false },
   { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries", simple: false },
   {
@@ -119,7 +118,8 @@ export const NAV_MODULES: NavModule[] = [
     href: "/network",
     label: "Network",
     group: "Infrastructure",
-    match: (p) => p === "/network" || p.startsWith("/network/"),
+    // Cloudflare, Caddy and Nginx live under Network.
+    match: (p) => p === "/network" || p.startsWith("/network/") || p === "/cloudflare",
     simple: true,
   },
   {
@@ -322,6 +322,31 @@ export const CAPABILITIES: Capability[] = [
     featureId: "gameservers",
     href: "/game-servers",
     modules: ["game-servers"],
+  },
+  {
+    id: "cloudflare",
+    title: "Cloudflare",
+    summary:
+      "Tunnels, public hostnames and DNS from your Cloudflare accounts, under Network. Turning it off only hides it; tokens, tunnels and connectors keep running.",
+    featureId: "cloudflare",
+    href: "/network/cloudflare",
+    modules: [],
+  },
+  {
+    id: "caddy",
+    title: "Caddy",
+    summary: "Find Caddy on this node and in system containers, see its sites and add reverse proxy sites, under Network. Turning it off only hides it.",
+    featureId: "caddy",
+    href: "/network/caddy",
+    modules: [],
+  },
+  {
+    id: "nginx",
+    title: "Nginx",
+    summary: "Find Nginx on this node and in system containers, see its sites and add reverse proxy sites, under Network. Turning it off only hides it.",
+    featureId: "nginx",
+    href: "/network/nginx",
+    modules: [],
   },
   {
     id: "gpu",

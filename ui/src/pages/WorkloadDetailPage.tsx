@@ -1,3 +1,4 @@
+import { useFeatureOn } from "../nav/NavDisclosure";
 import { useEffect, useState } from "react";
 import {
   listNetworks,
@@ -38,6 +39,7 @@ import { Link } from "../components/Link";
 import { MetricChart, lastPoint } from "../components/MetricChart";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import { WorkloadCloudflarePanel } from "../cloudflare/WorkloadCloudflarePanel";
 import { formatBytes, honestStatus } from "../format";
 import { isOperationsLeaf } from "../nav/workloadNav";
 import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
@@ -79,6 +81,7 @@ function MetricArea({
 
 export function WorkloadDetailPage() {
   const session = useSession();
+  const cloudflareOn = useFeatureOn("cloudflare");
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
   const path = usePath();
@@ -267,6 +270,16 @@ export function WorkloadDetailPage() {
     try {
       const diskGrowing =
         item?.kind === "system-container" && parseMemoryGB(diskGB, 8) > parseMemoryGB(origDiskGB, 8);
+      const diskShrinking =
+        item?.kind === "system-container" && parseMemoryGB(diskGB, 8) < parseMemoryGB(origDiskGB, 8);
+      if (
+        diskShrinking &&
+        !window.confirm(
+          `Shrink the disk from ${origDiskGB} GB to ${diskGB} GB? It is refused if the data would not fit with headroom. Directory disks need the container stopped.`,
+        )
+      ) {
+        return;
+      }
       const origNet = item?.nics?.[0]?.network_id || "";
       const moving = item?.kind === "system-container" && networkID !== "" && networkID !== origNet;
       const wasRunning = running;
@@ -291,7 +304,7 @@ export function WorkloadDetailPage() {
       });
       const apply = (updated as Workload & { apply?: { field: string; apply: string; reason: string }[] }).apply;
       setApplyNote(Array.isArray(apply) ? apply : []);
-      if (diskGrowing) {
+      if (diskGrowing || diskShrinking) {
         setOrigDiskGB(diskGB);
       }
       if (moving && wasRunning) {
@@ -326,14 +339,19 @@ export function WorkloadDetailPage() {
   const diskGrowing = parseMemoryGB(diskGB, 8) > parseMemoryGB(origDiskGB, 8);
   const diagnosticsLink =
     item.kind === "system-container" ? (
-      <Link
-        className="btn btn-sm btn-ghost btn-icon"
-        href={`/workloads/${item.id}/diagnostics`}
-        aria-label="Diagnostics"
-        title="Diagnostics"
-      >
-        <Icon name="diagnostics" size={14} />
-      </Link>
+      <>
+        <Link className="btn btn-sm btn-ghost" href={`/workloads/${item.id}/extensions`}>
+          Extensions
+        </Link>
+        <Link
+          className="btn btn-sm btn-ghost btn-icon"
+          href={`/workloads/${item.id}/diagnostics`}
+          aria-label="Diagnostics"
+          title="Diagnostics"
+        >
+          <Icon name="diagnostics" size={14} />
+        </Link>
+      </>
     ) : null;
 
   return (
@@ -621,6 +639,7 @@ export function WorkloadDetailPage() {
               )}
             </article>
           ) : null}
+          {cloudflareOn && (item.kind === "system-container" || item.kind === "oci") ? <WorkloadCloudflarePanel workload={{ id: item.id, name: item.name }} /> : null}
         </>
       ) : null}
 
@@ -828,8 +847,8 @@ export function WorkloadDetailPage() {
         <p className="page-kicker">
           {item.kind === "system-container"
             ? running
-              ? "CPU, memory, and directory disk growth apply live. Hostname and IP wait for the next restart. MAC requires a stopped container. Save does not restart unless you opt in."
-              : "Changes are written now and load on the next start. Growing a directory root is allowed while stopped. Shrinking is not supported."
+              ? "CPU, memory, and disk growth apply live. ZFS disks can also shrink live; directory disks need the container stopped to shrink. Hostname and IP wait for the next restart. MAC requires a stopped container. Save does not restart unless you opt in."
+              : "Changes are written now and load on the next start. The disk can grow or shrink while stopped."
             : running
               ? "VM CPU, memory, and most spec fields become Pending Restart. Save does not restart unless you opt in."
               : "Changes are recorded for the next start."}
@@ -855,7 +874,7 @@ export function WorkloadDetailPage() {
               min={1}
               value={diskGB}
               onChange={(e) => setDiskGB(e.target.value)}
-              hint="Growing only. Directory roots can grow while running. Shrinking is not supported."
+              hint="Shrinking keeps the data plus 10% (at least 1 GB) of headroom. Directory disks shrink only while stopped; LVM disks cannot shrink."
             />
             {diskGrowing ? (
               <label className="field-check">

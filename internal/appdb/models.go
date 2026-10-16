@@ -306,6 +306,9 @@ type Store interface {
 
 	GetUserPrefs(ctx context.Context, userID string) (*UserPrefs, error)
 	UpsertUserPrefs(ctx context.Context, p UserPrefs) error
+	// MergeUserUIPrefs sets and removes interface preference keys without
+	// touching the others, creating the row when missing.
+	MergeUserUIPrefs(ctx context.Context, userID, clusterID string, set map[string]json.RawMessage, remove []string) error
 
 	DeleteVolume(ctx context.Context, clusterID, volumeID string) error
 	// DeleteConfig removes one configuration record (see ConfigKind).
@@ -354,6 +357,25 @@ type Store interface {
 	PutUptimeMonitor(ctx context.Context, u UptimeMonitor) error
 	DeleteUptimeMonitor(ctx context.Context, clusterID, id string) error
 	AddUptimeEvent(ctx context.Context, e UptimeEvent) error
+
+	ListWorkloadExtensions(ctx context.Context, clusterID, workloadID string) ([]WorkloadExtension, error)
+	PutWorkloadExtension(ctx context.Context, x WorkloadExtension) error
+
+	// Cloudflare. ListCloudflareCredentials with an empty clusterID lists every cluster's.
+	ListCloudflareCredentials(ctx context.Context, clusterID string) ([]CloudflareCredential, error)
+	GetCloudflareCredential(ctx context.Context, clusterID, id string) (*CloudflareCredential, error)
+	PutCloudflareCredential(ctx context.Context, c CloudflareCredential) error
+	DeleteCloudflareCredential(ctx context.Context, clusterID, id string) error
+	PutCloudflareToken(ctx context.Context, clusterID, credentialID, sealed string) error
+	GetCloudflareToken(ctx context.Context, clusterID, credentialID string) (string, error)
+	ListCloudflareRoutes(ctx context.Context, clusterID string) ([]CloudflareRoute, error)
+	PutCloudflareRoute(ctx context.Context, r CloudflareRoute) error
+	DeleteCloudflareRoute(ctx context.Context, clusterID, id string) error
+	GetCloudflareWorkloadPref(ctx context.Context, clusterID, workloadID string) (*CloudflareWorkloadPref, error)
+	PutCloudflareWorkloadPref(ctx context.Context, p CloudflareWorkloadPref) error
+	ListCloudflareConnectors(ctx context.Context, clusterID string) ([]CloudflareConnector, error)
+	PutCloudflareConnector(ctx context.Context, c CloudflareConnector) error
+	DeleteCloudflareConnector(ctx context.Context, clusterID, id string) error
 	ListUptimeEvents(ctx context.Context, monitorID string, limit int) ([]UptimeEvent, error)
 
 	CreateWGPeer(ctx context.Context, p WGPeer) error

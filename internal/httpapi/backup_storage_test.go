@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,8 +53,11 @@ func TestRetainBackupIDsUsesRotationNotConsecutiveDays(t *testing.T) {
 }
 
 // expireBackup records expire requests and fails them while failing is set.
+// expireBackup records expire and GC calls. Deletes start maintenance in the
+// background (reclaimLater), so calls can overlap and are guarded by mu.
 type expireBackup struct {
 	fakeBackup
+	mu       sync.Mutex
 	failing  bool
 	expires  []backuphost.Request
 	gcCalls  int
@@ -66,20 +70,54 @@ func (e *expireBackup) CopyBackup(ctx context.Context, action, src, dest string)
 	case qemu.BackupV2Expire:
 		var req backuphost.Request
 		_ = json.Unmarshal([]byte(dest), &req)
+		e.mu.Lock()
 		e.expires = append(e.expires, req)
-		if e.failing {
+		failing := e.failing
+		e.mu.Unlock()
+		if failing {
 			return storage.CopyResult{}, errors.New("agent unreachable")
 		}
 		return storage.CopyResult{Format: backup.Format, Extra: "{}"}, nil
 	case qemu.BackupV2GC:
+		e.mu.Lock()
 		e.gcCalls++
+		e.mu.Unlock()
 		extra, _ := json.Marshal(backuphost.Result{GC: &backuphost.GCReport{Reason: "test", Local: backup.GCStats{BytesFreed: 1 << 30}}})
 		return storage.CopyResult{Format: backup.Format, Extra: string(extra)}, nil
 	case qemu.BackupV2Status, qemu.BackupV2Workspace:
-		extra, _ := json.Marshal(backuphost.Result{Points: e.points})
+		e.mu.Lock()
+		points := e.points
+		e.mu.Unlock()
+		extra, _ := json.Marshal(backuphost.Result{Points: points})
 		return storage.CopyResult{Format: backup.Format, Extra: string(extra)}, nil
 	}
 	return e.fakeBackup.CopyBackup(ctx, action, src, dest)
+}
+
+// expired returns a copy of the expire requests seen so far.
+func (e *expireBackup) expired() []backuphost.Request {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]backuphost.Request(nil), e.expires...)
+}
+
+func (e *expireBackup) gcCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.gcCalls
+}
+
+// reset sets whether expires fail and forgets earlier requests.
+func (e *expireBackup) reset(failing bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.failing, e.expires = failing, nil
+}
+
+func (e *expireBackup) setPoints(p []backuphost.PointView) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.points = p
 }
 
 func seedV2Artifacts(t *testing.T, mem *appdb.Memory, clusterID, workloadID, targetID string, times []time.Time) []string {
@@ -139,8 +177,7 @@ func TestPruneKeepsArtifactRowsWhenExpireFails(t *testing.T) {
 		t.Fatalf("each failed removal must be recorded, got %d", failed)
 	}
 
-	fake.failing = false
-	fake.expires = nil
+	fake.reset(false)
 	res = s.pruneBackupArtifacts(ctx, cluster.ID, wl, targetID, pol)
 	if res.Expired != 2 || res.V2 != 2 {
 		t.Fatalf("retry result %+v", res)
@@ -149,7 +186,7 @@ func TestPruneKeepsArtifactRowsWhenExpireFails(t *testing.T) {
 	if len(arts) != 1 || !arts[0].CreatedAt.Equal(base) {
 		t.Fatalf("only the newest artifact may remain: %+v", arts)
 	}
-	for _, req := range fake.expires {
+	for _, req := range fake.expired() {
 		if !req.DeferGC || req.Target.ID != targetID || req.Target.Bucket != "ndl-ce" {
 			t.Fatalf("expire must name the target so the remote copy is removed, and defer GC: %+v", req)
 		}
@@ -161,8 +198,8 @@ func TestBackupMaintenanceRecordsOutcome(t *testing.T) {
 	fake := &expireBackup{}
 	s.Backup = fake
 	rep, err := s.runBackupMaintenance(context.Background(), "test")
-	if err != nil || rep == nil || fake.gcCalls != 1 {
-		t.Fatalf("maintenance %+v %v calls=%d", rep, err, fake.gcCalls)
+	if err != nil || rep == nil || fake.gcCount() != 1 {
+		t.Fatalf("maintenance %+v %v calls=%d", rep, err, fake.gcCount())
 	}
 	evs := s.recentStorageEvents()
 	if len(evs) == 0 || !evs[0].OK || !strings.Contains(evs[0].Message, "1.0 GiB") {
@@ -351,8 +388,8 @@ func TestDeleteBackupsOfDeletedWorkloadsAndTestTargets(t *testing.T) {
 	if a, _ := mem.GetBackupArtifact(ctx, cluster.ID, gone.ID); a != nil {
 		t.Fatal("the deleted workload's backup must be gone")
 	}
-	if len(fake.expires) != 1 || fake.expires[0].BackupID != gone.BackupID {
-		t.Fatalf("its data must be expired in the repository: %+v", fake.expires)
+	if exp := fake.expired(); len(exp) != 1 || exp[0].BackupID != gone.BackupID {
+		t.Fatalf("its data must be expired in the repository: %+v", exp)
 	}
 
 	// A test target goes in one step with its backups.

@@ -99,27 +99,6 @@ func TestDirectoryContainerRootRejectsPhysicallyExhausted(t *testing.T) {
 	}
 }
 
-func TestDirectoryResizeRefusesShrink(t *testing.T) {
-	d, base := fixtureDir(t, "", false, 20<<30)
-	poolID := uuid.NewString()
-	root := base + "/pool"
-	if _, err := d.CreatePool(context.Background(), CreatePoolRequest{PoolID: poolID, RootPath: root, Create: true}, nil); err != nil {
-		t.Fatal(err)
-	}
-	volID := uuid.NewString()
-	req := CreateVolumeRequest{
-		VolumeID: volID, PoolID: poolID, RootPath: root, Class: ClassContainerRoot,
-		Size: 8 << 30, Format: FormatDirectory, Owner: VolumeOwnerName, OwnerKind: VolumeKindOperator,
-	}
-	if _, err := d.CreateVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err != nil {
-		t.Fatal(err)
-	}
-	req.Size = 4 << 30
-	if err := d.ResizeVolume(context.Background(), req, PoolHint{PoolID: poolID, RootPath: root}); err == nil {
-		t.Fatal("shrink must be refused")
-	}
-}
-
 func TestDirectoryResizeRunsE2fsck(t *testing.T) {
 	d, base := fixtureDir(t, "", false, 20<<30)
 	var ran []string

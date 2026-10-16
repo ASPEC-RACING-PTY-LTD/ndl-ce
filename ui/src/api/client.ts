@@ -2597,3 +2597,392 @@ export type UptimeImportResult = {
 export async function importUptime(script: unknown, dryRun: boolean): Promise<UptimeImportResult> {
   return (await sendScript("/uptime/import", script, dryRun)) as UptimeImportResult;
 }
+
+// --- Cloudflare Tunnel Manager ---
+
+export type CfAccountScope = { id: string; name: string; zones: number; tunnels: boolean; dns: boolean; listed?: boolean; problems?: string[] };
+export type CfCredential = {
+  id: string;
+  name: string;
+  account_hint?: string;
+  account_owned: boolean;
+  token_last4: string;
+  status: "active" | "limited" | "invalid" | "error" | string;
+  status_reason?: string;
+  accounts: CfAccountScope[];
+  created_by?: string;
+  created_at: string;
+  last_verified_at?: string;
+  expires_at?: string;
+};
+export type CfZone = { id: string; name: string; status?: string; account?: { id: string; name: string } };
+export type CfAccount = {
+  id: string;
+  name: string;
+  credentials: { id: string; name: string; status: string }[];
+  zones: CfZone[] | null;
+  problems?: string[];
+  /** Whether DNS could be read on the last refresh. */
+  dns_access?: "ok" | "partial" | "denied" | "none" | "unknown" | string;
+  dns_reason?: string;
+  dns_unreadable?: number;
+};
+export type CfConnector = { id: string; version: string; arch: string; run_at?: string; conns?: { colo_name: string; origin_ip: string }[] };
+export type CfLocalConnector = { machine_id: string; machine_name: string; unit: string; active: boolean; managed: boolean };
+export type CfTunnel = {
+  id: string;
+  name: string;
+  account_tag: string;
+  account_name: string;
+  status: string;
+  config_src: string;
+  remote_managed: boolean;
+  created_at?: string;
+  connectors: CfConnector[];
+  route_count: number;
+  local: CfLocalConnector[];
+  error?: string;
+};
+export type CfOriginOptions = {
+  no_tls_verify?: boolean;
+  origin_server_name?: string;
+  http_host_header?: string;
+  http2_origin?: boolean;
+  disable_chunked_encoding?: boolean;
+  connect_timeout_seconds?: number;
+};
+export type CfDNSPlan = { action: "create" | "ok" | "proxy" | "retarget" | "conflict" | "unavailable" | string; hostname: string; current_tunnel?: string; reason?: string };
+export type CfRoute = {
+  key: string;
+  hostname: string;
+  path?: string;
+  service: string;
+  origin?: { protocol: string; host: string; port: number };
+  options: CfOriginOptions;
+  enabled: boolean;
+  editable: boolean;
+  account_id: string;
+  account_name: string;
+  tunnel_id: string;
+  tunnel_name: string;
+  tunnel_status: string;
+  zone_id?: string;
+  zone_name?: string;
+  dns?: CfDNSPlan;
+  workload?: { id: string; name: string; current_ip?: string; linked: boolean };
+  ip_changed?: boolean;
+};
+export type CfDNSEntry = {
+  zone_id: string;
+  zone_name: string;
+  account_id: string;
+  account_name: string;
+  record: { id: string; name: string; type: string; content: string; proxied: boolean; comment?: string };
+  tunnel_id: string;
+  tunnel_name?: string;
+  status: "routed" | "no-route" | "unknown-tunnel" | string;
+  managed: boolean;
+};
+export type CfInventory = {
+  fetched_at: string;
+  refreshing: boolean;
+  accounts: CfAccount[] | null;
+  tunnels: CfTunnel[] | null;
+  routes: CfRoute[] | null;
+  dns: CfDNSEntry[] | null;
+  errors: string[] | null;
+};
+export type CfRouteRef = { account_id: string; tunnel_id: string; hostname: string; path?: string };
+export type CfRouteIn = CfRouteRef & {
+  protocol?: string;
+  host?: string;
+  port?: number;
+  status_code?: number;
+  options?: CfOriginOptions;
+  dns?: boolean;
+  replace_dns?: boolean;
+  workload_id?: string;
+  original?: CfRouteRef;
+};
+export type CfRouteResult = { key: string; hostname: string; service: string; dns_action: string; replaced: boolean; warnings?: string[] };
+export type CfCheck = { area: "tunnel" | "dns" | "origin" | "public" | string; status: "ok" | "warn" | "fail" | "skip" | string; detail: string };
+export type CfMovePlan = { route: CfRoute; ok: boolean; blockers: string[]; warnings: string[] };
+export type CfMachine = { id: string; name: string; kind: string };
+
+const json = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
+
+export async function listCfCredentials(): Promise<{ items: CfCredential[] }> {
+  return readJson(await request("/cloudflare/credentials"));
+}
+export async function addCfCredential(body: { name: string; token: string; account_id?: string }): Promise<CfCredential> {
+  return readJson(await request("/cloudflare/credentials", json(body)));
+}
+export async function updateCfCredential(
+  id: string,
+  body: { name?: string; token?: string; account_id?: string; allow_narrower?: boolean },
+): Promise<CfCredential> {
+  return readJson(await request(`/cloudflare/credentials/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function validateCfCredential(id: string): Promise<CfCredential> {
+  return readJson(await request(`/cloudflare/credentials/${encodeURIComponent(id)}/validate`, { method: "POST" }));
+}
+export async function deleteCfCredential(id: string): Promise<{ deleted: boolean; note: string }> {
+  return readJson(await request(`/cloudflare/credentials/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+export async function getCfInventory(refresh = false): Promise<CfInventory> {
+  return readJson(await request(refresh ? "/cloudflare/inventory?refresh=1" : "/cloudflare/inventory"));
+}
+
+/**
+ * getCfInventoryIfChanged reads the inventory unless it still matches etag,
+ * in which case it returns null and the server sends no body.
+ */
+export async function getCfInventoryIfChanged(etag: string, refresh = false): Promise<{ inventory: CfInventory; etag: string } | null> {
+  const res = await request(refresh ? "/cloudflare/inventory?refresh=1" : "/cloudflare/inventory", etag ? { headers: { "If-None-Match": etag } } : {});
+  if (res.status === 304) {
+    return null;
+  }
+  const inventory = await readJson<CfInventory>(res);
+  return { inventory, etag: res.headers.get("ETag") ?? "" };
+}
+
+export type CfGuidePermission = { id: string; scope: string; group: string; level: string; description: string; in_docs: boolean };
+export type CfGuideUseCase = {
+  id: string;
+  title: string;
+  why: string;
+  needs: string[];
+  resources: string;
+  check?: "accounts" | "tunnels" | "zones" | "dns" | string;
+  user_tokens_only?: boolean;
+};
+export type CfGuide = {
+  source: "cloudflare-docs" | "built-in" | string;
+  fetched_at: string;
+  docs_updated?: string;
+  docs_url: string;
+  create_url: string;
+  account_tokens_url: string;
+  dashboard_url: string;
+  steps: string[];
+  permissions: CfGuidePermission[];
+  use_cases: CfGuideUseCase[];
+  error?: string;
+};
+export async function getCfPermissionsGuide(refresh = false): Promise<CfGuide> {
+  return readJson(await request(refresh ? "/cloudflare/permissions?refresh=1" : "/cloudflare/permissions"));
+}
+export async function listCfMachines(): Promise<{ items: CfMachine[]; supported: boolean }> {
+  return readJson(await request("/cloudflare/machines"));
+}
+export async function createCfTunnel(account_id: string, name: string): Promise<{ id: string; name: string }> {
+  return readJson(await request("/cloudflare/tunnels", json({ account_id, name })));
+}
+export async function renameCfTunnel(id: string, account_id: string, name: string): Promise<void> {
+  await readJson(await request(`/cloudflare/tunnels/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ account_id, name }) }));
+}
+export async function deleteCfTunnel(id: string, account_id: string, confirm: string): Promise<void> {
+  await readJson(await request(`/cloudflare/tunnels/${encodeURIComponent(id)}/delete`, json({ account_id, confirm })));
+}
+export async function cfConnectorAction(
+  tunnelId: string,
+  body: { account_id: string; machine_id: string; action: "install" | "update" | "restart" | "remove"; unit?: string; confirm?: boolean },
+): Promise<{ unit?: string; version?: string; message?: string }> {
+  return readJson(await request(`/cloudflare/tunnels/${encodeURIComponent(tunnelId)}/connectors`, json(body)));
+}
+export async function upsertCfRoute(body: CfRouteIn): Promise<CfRouteResult> {
+  return readJson(await request("/cloudflare/routes", json(body)));
+}
+export async function planCfRoute(body: CfRouteRef): Promise<{ zone: CfZone; plan: CfDNSPlan; remote_managed: boolean }> {
+  return readJson(await request("/cloudflare/routes/plan", json(body)));
+}
+export async function setCfRouteEnabled(ref: CfRouteRef, enabled: boolean): Promise<void> {
+  await readJson(await request("/cloudflare/routes/enabled", json({ ...ref, enabled })));
+}
+export async function deleteCfRoute(ref: CfRouteRef, deleteDNS: boolean, confirm: string): Promise<{ note: string }> {
+  return readJson(await request("/cloudflare/routes/delete", json({ ...ref, delete_dns: deleteDNS, confirm })));
+}
+export async function syncCfRouteIP(ref: CfRouteRef): Promise<CfRouteResult> {
+  return readJson(await request("/cloudflare/routes/sync-ip", json(ref)));
+}
+export async function diagnoseCfRoute(ref: CfRouteRef): Promise<{ checks: CfCheck[]; summary: string }> {
+  return readJson(await request("/cloudflare/routes/diagnose", json(ref)));
+}
+export async function previewCfMove(routes: CfRouteRef[], dest_account_id: string, dest_tunnel_id: string): Promise<{ destination: { id: string; name: string }; items: CfMovePlan[] }> {
+  return readJson(await request("/cloudflare/move/preview", json({ routes, dest_account_id, dest_tunnel_id })));
+}
+export async function moveCfRoutes(routes: CfRouteRef[], dest_account_id: string, dest_tunnel_id: string): Promise<OpsJob> {
+  return readJson(await request("/cloudflare/move", json({ routes, dest_account_id, dest_tunnel_id, confirm: true })));
+}
+export type CfWorkloadInfo = {
+  routes: CfRoute[];
+  suggestions: { label: string; host: string; port?: number }[];
+  connected: boolean;
+  refreshing: boolean;
+  preferred?: { account_id: string; tunnel_id: string };
+  current_ip?: string;
+};
+export async function getWorkloadCloudflare(id: string): Promise<CfWorkloadInfo> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/cloudflare`));
+}
+export async function publishWorkload(id: string, body: CfRouteIn): Promise<CfRouteResult> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/cloudflare/publish`, json(body)));
+}
+
+// --- Reverse proxies (Caddy, Nginx) ---
+
+export type ProxyKind = "caddy" | "nginx";
+export type ProxySite = {
+  name?: string;
+  domains: string[];
+  upstream?: string;
+  redirect?: string;
+  tls?: "auto" | "internal" | "http" | "cert" | string;
+  cert_path?: string;
+  key_path?: string;
+  websocket?: boolean;
+  listen?: string[];
+  managed: boolean;
+  file?: string;
+  line?: number;
+  workload?: { id: string; name: string };
+};
+export type ProxyInstance = {
+  kind: ProxyKind;
+  machine_id: string;
+  machine_name: string;
+  binary: string;
+  version?: string;
+  service: string;
+  active: boolean;
+  state: string;
+  config_path: string;
+  managed_dir: string;
+  included: boolean;
+  sites: ProxySite[];
+  errors?: string[];
+  notes?: string[];
+  workload?: { id: string; name: string };
+};
+export type ProxyMachine = { id: string; name: string; installed: boolean; can_apt: boolean };
+export type ProxyResult = { message?: string; output?: string; site?: ProxySite };
+
+/** ProxyError carries the proxy's own validator output when a change is refused. */
+export class ProxyError extends ApiError {
+  readonly output: string;
+  constructor(status: number, message: string, output: string) {
+    super(status, message);
+    this.output = output;
+  }
+}
+
+async function readProxy<T>(res: Response): Promise<T> {
+  if (res.ok) {
+    return (await res.json()) as T;
+  }
+  let body: { error?: string; output?: string } = {};
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    // Not JSON.
+  }
+  throw new ProxyError(res.status, body.error || `Request failed (${res.status})`, body.output ?? "");
+}
+
+export async function getProxies(kind: ProxyKind, refresh = false): Promise<{ instances: ProxyInstance[]; machines: ProxyMachine[] }> {
+  return readJson(await request(`/proxies/${kind}${refresh ? "?refresh=1" : ""}`));
+}
+export async function upsertProxySite(kind: ProxyKind, body: { machine_id: string; previous?: string; site: Partial<ProxySite> }): Promise<ProxyResult> {
+  return readProxy(await request(`/proxies/${kind}/sites`, json(body)));
+}
+export async function deleteProxySite(kind: ProxyKind, machine_id: string, name: string): Promise<ProxyResult> {
+  return readProxy(await request(`/proxies/${kind}/sites/delete`, json({ machine_id, name })));
+}
+export async function proxyService(
+  kind: ProxyKind,
+  machine_id: string,
+  action: "reload" | "restart" | "start" | "stop" | "validate" | "install",
+): Promise<ProxyResult> {
+  return readProxy(await request(`/proxies/${kind}/service`, json({ machine_id, action })));
+}
+
+// --- Workload extensions ---
+
+export type WorkloadExtension = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  requires?: string[] | null;
+  available: boolean;
+  unavailable_reason?: string;
+  state: "installed" | "installing" | "failed" | "missing" | string;
+  requested: boolean;
+  version?: string;
+  package?: string;
+  detail?: string;
+  message?: string;
+  updated_at?: string;
+};
+export async function listWorkloadExtensions(id: string, refresh = false): Promise<{ items: WorkloadExtension[]; busy: boolean; note?: string; image_pin?: string }> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/extensions${refresh ? "?refresh=1" : ""}`));
+}
+export async function changeWorkloadExtensions(
+  id: string,
+  body: { action: "install" | "update" | "reinstall"; extras?: string[]; all?: boolean },
+): Promise<{ started: boolean; extras: string[]; operation_id?: string }> {
+  return readJson(await request(`/workloads/${encodeURIComponent(id)}/extensions`, json(body)));
+}
+
+// --- Storage manager ---
+
+export type ScanTarget = { label: string; path: string; kind: "host" | "pool" | string; pool_id?: string; total_bytes?: number; used_bytes?: number };
+export type ScanStatus = {
+  id: string;
+  root: string;
+  one_filesystem: boolean;
+  state: "running" | "done" | "failed" | "cancelled" | string;
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+  entries: number;
+  bytes: number;
+  current?: string;
+  fs_total: number;
+  fs_free: number;
+};
+export type ScanInsight = { purpose: string; importance: "low" | "review" | "important" | "critical" | string; confidence: "known" | "likely" | "unknown" | string; advice?: string; protected?: boolean };
+export type ScanItem = {
+  name: string;
+  path: string;
+  dir: boolean;
+  symlink?: boolean;
+  size: number;
+  apparent: number;
+  files: number;
+  dirs: number;
+  mtime: number;
+  mount?: boolean;
+  error?: string;
+  has_children?: boolean;
+  other?: { count: number; size: number };
+  insight: ScanInsight;
+};
+export async function listScanTargets(): Promise<{ items: ScanTarget[]; can_delete: boolean }> {
+  return readJson(await request("/storage/scan/targets"));
+}
+export async function startStorageScan(path: string, oneFilesystem = true): Promise<ScanStatus> {
+  return readJson(await request("/storage/scan", json({ path, one_filesystem: oneFilesystem })));
+}
+export async function getStorageScan(id: string, path = ""): Promise<{ scan: ScanStatus; path: string; node?: ScanItem; items?: ScanItem[] }> {
+  return readJson(await request(`/storage/scan/${encodeURIComponent(id)}?path=${encodeURIComponent(path)}`));
+}
+export async function cancelStorageScan(id: string): Promise<ScanStatus> {
+  return readJson(await request(`/storage/scan/${encodeURIComponent(id)}/cancel`, { method: "POST" }));
+}
+export async function deleteScannedItems(
+  id: string,
+  items: string[],
+): Promise<{ results: { path: string; deleted: boolean; freed: number; error?: string }[]; deleted: number; freed_bytes: number }> {
+  return readJson(await request(`/storage/scan/${encodeURIComponent(id)}/delete`, json({ items, confirm: `delete ${items.length}` })));
+}

@@ -202,7 +202,7 @@ func TestOffsiteRetentionRemovesOnlyRemoteCopies(t *testing.T) {
 		t.Fatalf("local retention keeps all three: %+v", res)
 	}
 	remoteOnly := 0
-	for _, req := range fake.expires {
+	for _, req := range fake.expired() {
 		if !req.RemoteOnly {
 			t.Fatalf("offsite retention must never delete local copies: %+v", req)
 		}
@@ -252,7 +252,7 @@ func TestWipeTargetNeedsNameAndResetsRecords(t *testing.T) {
 	_ = mem.CreateBackupRun(ctx, appdb.BackupRun{ID: runID, ClusterID: cluster.ID, TargetID: targetID, WorkloadID: wl, Status: appdb.BackupSucceeded, StartedAt: now})
 	_ = mem.CreateBackupArtifact(ctx, appdb.BackupArtifact{ID: uuid.NewString(), ClusterID: cluster.ID, RunID: runID, WorkloadID: wl, Format: "qcow2", ObjectKey: "backups/rsdw/x", Locator: "s3://ndl-ce/backups/rsdw/x", CreatedAt: now})
 	fake := &wipeBackup{}
-	fake.points = []backuphost.PointView{{BackupID: local.BackupID, Namespace: "ns"}}
+	fake.setPoints([]backuphost.PointView{{BackupID: local.BackupID, Namespace: "ns"}})
 	s.Backup = fake
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()

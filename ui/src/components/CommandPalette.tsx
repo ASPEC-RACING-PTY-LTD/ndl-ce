@@ -17,7 +17,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { prefs, featureEnabled } = useNavDisclosure();
   const actions = useMemo(() => {
     const visibleIds = new Set(visibleModules(prefs, featureEnabled, roles, undefined, grants).map((item) => item.id));
-    return visiblePaletteActions(roles).filter((action) => paletteMatchesVisible(action, visibleIds));
+    return visiblePaletteActions(roles).filter(
+      (action) => paletteMatchesVisible(action, visibleIds) && (!action.feature || featureEnabled[action.feature]),
+    );
   }, [featureEnabled, grants, prefs, roles]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);

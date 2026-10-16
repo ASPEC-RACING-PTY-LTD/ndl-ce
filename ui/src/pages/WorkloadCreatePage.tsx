@@ -1,11 +1,17 @@
+import { useFeatureOn } from "../nav/NavDisclosure";
 import { useEffect, useMemo, useState } from "react";
 import {
+  changeWorkloadExtensions,
   createWorkload,
+  getCfInventory,
+  getWorkloadCloudflare,
   listNetworks,
   listPools,
+  listWorkloadExtensions,
   listWorkloadExtras,
   listWorkloads,
-  setupWorkloadExtras,
+  publishWorkload,
+  type CfInventory,
   type WorkloadExtra,
 } from "../api/client";
 import type { Network } from "../api/phase4";
@@ -81,6 +87,110 @@ export function WorkloadCreatePage() {
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<Workload | null>(null);
   const [progress, setProgress] = useState<{ id: string; label: string; state: "done" | "active" | "todo" }[]>([]);
+  // Extras install in the background after create; their state is polled.
+  const [extState, setExtState] = useState<Record<string, { state: string; message?: string }>>({});
+  const [extWatch, setExtWatch] = useState(false);
+  // Optional: publish through Cloudflare once the container has an address.
+  const [publish, setPublish] = useState(false);
+  const cloudflareOn = useFeatureOn("cloudflare");
+  const [cfInv, setCfInv] = useState<CfInventory | null>(null);
+  const [cfTunnel, setCfTunnel] = useState("");
+  const [cfHost, setCfHost] = useState("");
+  const [cfProto, setCfProto] = useState("http");
+  const [cfPort, setCfPort] = useState("80");
+  const [publishState, setPublishState] = useState<{ state: "todo" | "active" | "done" | "failed"; message?: string } | null>(null);
+
+  useEffect(() => {
+    if (!extWatch || !created?.id) {
+      return;
+    }
+    let stop = false;
+    const tick = async () => {
+      try {
+        const res = await listWorkloadExtensions(created.id);
+        const next: Record<string, { state: string; message?: string }> = {};
+        for (const x of res.items) {
+          next[x.id] = { state: x.state, message: x.message };
+        }
+        if (!stop) {
+          setExtState(next);
+          if (!res.busy && !res.items.some((x) => x.state === "installing")) {
+            setExtWatch(false);
+          }
+        }
+      } catch {
+        /* keep polling */
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), 3000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [extWatch, created?.id]);
+
+  useEffect(() => {
+    setProgress((cur) =>
+      cur.map((row) => {
+        const x = extState[row.id];
+        if (!x) {
+          return row;
+        }
+        const label = catalog.find((c) => c.id === row.id)?.name || row.id;
+        if (x.state === "installed") {
+          return { ...row, state: "done", label: `${label} installed` };
+        }
+        if (x.state === "failed") {
+          return { ...row, state: "todo", label: `${label} failed${x.message ? `: ${x.message}` : ""}` };
+        }
+        return { ...row, state: "active", label: `Installing ${label}` };
+      }),
+    );
+  }, [extState, catalog]);
+
+  useEffect(() => {
+    if (!publish || cfInv) {
+      return;
+    }
+    void getCfInventory()
+      .then((inv) => {
+        setCfInv(inv);
+        setCfTunnel((inv.tunnels ?? []).find((t) => t.remote_managed)?.id ?? "");
+      })
+      .catch(() => setCfInv({ fetched_at: "", refreshing: false, accounts: [], tunnels: [], routes: [], dns: [], errors: [] }));
+  }, [publish, cfInv]);
+
+  async function publishWhenReady(id: string) {
+    const tunnel = (cfInv?.tunnels ?? []).find((t) => t.id === cfTunnel);
+    if (!tunnel) {
+      return;
+    }
+    setPublishState({ state: "active", message: "Waiting for the container's address" });
+    for (let i = 0; i < 30; i++) {
+      try {
+        const info = await getWorkloadCloudflare(id);
+        if (info.current_ip) {
+          const res = await publishWorkload(id, {
+            account_id: tunnel.account_tag,
+            tunnel_id: tunnel.id,
+            hostname: cfHost.trim(),
+            protocol: cfProto,
+            host: info.current_ip,
+            port: Number(cfPort) || 0,
+            dns: true,
+          });
+          setPublishState({ state: "done", message: `${res.hostname} goes to ${res.service}` });
+          return;
+        }
+      } catch (err) {
+        setPublishState({ state: "failed", message: err instanceof Error ? err.message : "Publishing failed" });
+        return;
+      }
+      await new Promise((r) => window.setTimeout(r, 3000));
+    }
+    setPublishState({ state: "failed", message: "The container did not get an address in time; publish it from the workload page" });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -177,15 +287,15 @@ export function WorkloadCreatePage() {
         `ui-create-${name}`,
       );
       setCreated(createdRow);
-      const failed = new Set((createdRow.setup_warnings ?? []).map((w) => w.extra));
-      setProgress((cur) =>
-        cur.map((stepRow) => {
-          if (failed.has(stepRow.id)) {
-            return { ...stepRow, state: "todo", label: `${stepRow.label} failed` };
-          }
-          return { ...stepRow, state: "done" };
-        }),
-      );
+      // The container is up; extras keep installing in the background and are
+      // marked done or failed as the server reports them.
+      setProgress((cur) => cur.map((stepRow) => (extras.includes(stepRow.id) ? { ...stepRow, state: "active" } : { ...stepRow, state: "done" })));
+      if (createdRow.setup_status === "installing") {
+        setExtWatch(true);
+      }
+      if (cloudflareOn && publish && cfHost.trim() && cfTunnel) {
+        void publishWhenReady(createdRow.id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
       setStep("review");
@@ -194,15 +304,19 @@ export function WorkloadCreatePage() {
     }
   }
 
+  const failedExtras = Object.entries(extState)
+    .filter(([id, x]) => x.state === "failed" && extras.includes(id))
+    .map(([id, x]) => ({ extra: id, message: x.message ?? "failed" }));
+
   async function retryFailed() {
     if (!created?.id) {
       return;
     }
-    const failed = (created.setup_warnings ?? []).map((w) => w.extra).filter((id) => id && id !== "setup");
+    const ids = failedExtras.map((w) => w.extra);
     setBusy(true);
     try {
-      const next = await setupWorkloadExtras(created.id, failed);
-      setCreated(next);
+      await changeWorkloadExtensions(created.id, { action: "install", extras: ids.length ? ids : extras });
+      setExtWatch(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Retry failed");
     } finally {
@@ -210,7 +324,7 @@ export function WorkloadCreatePage() {
     }
   }
 
-  const warnings = created?.setup_warnings ?? [];
+  const warnings = [...(created?.setup_warnings ?? []), ...(extWatch ? [] : failedExtras)];
 
   return (
     <section className="page page-wide" aria-labelledby="create-ct-heading">
@@ -379,6 +493,49 @@ export function WorkloadCreatePage() {
                   )
                 ) : null}
                 <Checkbox id="ct-auto" label="Start automatically with the host" checked={autostart} onChange={(e) => setAutostart(e.target.checked)} />
+                {cloudflareOn ? (
+                  <Checkbox
+                    id="ct-publish"
+                    label="Publish it through Cloudflare once it has an address (optional)"
+                    checked={publish}
+                    onChange={(e) => setPublish(e.target.checked)}
+                  />
+                ) : null}
+                {cloudflareOn && publish ? (
+                  cfInv && (cfInv.tunnels ?? []).some((t) => t.remote_managed) ? (
+                    <div className="oci-grid">
+                      <div className="field">
+                        <label className="field-label" htmlFor="ct-cf-tunnel">
+                          Tunnel
+                        </label>
+                        <select id="ct-cf-tunnel" className="field-input" value={cfTunnel} onChange={(e) => setCfTunnel(e.target.value)}>
+                          {(cfInv.tunnels ?? [])
+                            .filter((t) => t.remote_managed)
+                            .map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name} · {t.account_name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <Field id="ct-cf-host" label="Public hostname" value={cfHost} placeholder="app.example.com" onChange={(e) => setCfHost(e.target.value)} />
+                      <div className="field">
+                        <label className="field-label" htmlFor="ct-cf-proto">
+                          Protocol
+                        </label>
+                        <select id="ct-cf-proto" className="field-input" value={cfProto} onChange={(e) => setCfProto(e.target.value)}>
+                          <option value="http">HTTP</option>
+                          <option value="https">HTTPS</option>
+                          <option value="tcp">TCP</option>
+                          <option value="ssh">SSH</option>
+                        </select>
+                      </div>
+                      <Field id="ct-cf-port" label="App port" inputMode="numeric" value={cfPort} onChange={(e) => setCfPort(e.target.value.replace(/[^0-9]/g, ""))} />
+                    </div>
+                  ) : (
+                    <p className="field-hint">{cfInv ? "No dashboard-managed tunnel is available; connect Cloudflare first." : "Reading Cloudflare"}</p>
+                  )
+                ) : null}
                 {isExpert(mode) ? (
                   <pre className="code-block">
                     {JSON.stringify(
@@ -432,7 +589,7 @@ export function WorkloadCreatePage() {
         </div>
       ) : (
         <article className="stack">
-          <h2>{warnings.length ? "Workload created with setup warnings" : "Creating"}</h2>
+          <h2>{warnings.length ? "Workload created with setup warnings" : extWatch ? "Created; installing extensions" : created ? "Created" : "Creating"}</h2>
           <ol className="progress-steps">
             {progress.map((item) => (
               <li key={item.id} className={"progress-step is-" + item.state}>
@@ -441,6 +598,16 @@ export function WorkloadCreatePage() {
               </li>
             ))}
           </ol>
+          {extWatch ? (
+            <p className="banner" role="status">
+              Extensions install in the background and keep going if you leave this page. Their progress is also on the workload's Extensions page.
+            </p>
+          ) : null}
+          {publishState ? (
+            <p className={"banner " + (publishState.state === "failed" ? "banner-warn" : publishState.state === "done" ? "banner-ok" : "")} role="status">
+              Cloudflare: {publishState.message}
+            </p>
+          ) : null}
           {warnings.length ? (
             <div className="banner banner-warn" role="status">
               <p>The container exists. Optional extras failed:</p>
@@ -461,6 +628,11 @@ export function WorkloadCreatePage() {
               <button className="btn btn-primary" type="button" onClick={() => navigate(`/workloads/${created.id}`)}>
                 Open workload
               </button>
+              {extras.length ? (
+                <button className="btn btn-secondary" type="button" onClick={() => navigate(`/workloads/${created.id}/extensions`)}>
+                  Extensions
+                </button>
+              ) : null}
             </div>
           ) : null}
         </article>

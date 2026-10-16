@@ -26,6 +26,9 @@ import (
 )
 
 type fakeBackup struct {
+	// mu guards copies and converts: policy runs back up several workloads
+	// in parallel goroutines that share this fake.
+	mu       sync.Mutex
 	copies   [][3]string
 	converts [][2]string
 	res      storage.CopyResult
@@ -33,7 +36,9 @@ type fakeBackup struct {
 }
 
 func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (storage.CopyResult, error) {
+	f.mu.Lock()
 	f.copies = append(f.copies, [3]string{action, src, dest})
+	f.mu.Unlock()
 	if f.err != nil {
 		return storage.CopyResult{}, f.err
 	}
@@ -190,7 +195,9 @@ func (f *fakeBackup) CopyBackup(_ context.Context, action, src, dest string) (st
 }
 
 func (f *fakeBackup) ConvertImport(_ context.Context, req qemu.ConvertRequest) error {
+	f.mu.Lock()
 	f.converts = append(f.converts, [2]string{req.SourcePath, req.DestPath})
+	f.mu.Unlock()
 	if f.err != nil {
 		return f.err
 	}

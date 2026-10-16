@@ -24,6 +24,7 @@ import { formatBytes, formatPercent, formatWhen } from "../format";
 import { eventHeadline, humanTaskMessage, taskIntentTitle } from "../humanize";
 import { metricLabel } from "../labels";
 import { SummaryCard } from "../ui/SummaryCard";
+import { FeatureCards } from "../components/FeatureCards";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
 import { useQuery } from "../query";
@@ -166,6 +167,7 @@ export function DashboardPage() {
           <Meter series={memSeries} overall={metrics?.status} />
         </div>
       </div>
+      <FeatureCards />
       <section className="section">
         <div className="section-head">
           <h2>Attention</h2>

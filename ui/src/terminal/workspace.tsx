@@ -1,3 +1,4 @@
+import { registerTerminal } from "../components/ContextMenu";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import {
@@ -113,6 +114,7 @@ function makeTerm(): { term: Terminal; fit: FitAddon; holder: HTMLDivElement } {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(holder);
+  registerTerminal(term);
   return { term, fit, holder };
 }
 

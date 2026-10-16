@@ -95,8 +95,9 @@ func TestZFSVolumeArgv(t *testing.T) {
 	if err != nil || !strings.Contains(joinedGrow, "refquota=17179869184") {
 		t.Fatalf("grow %v %v", grow, err)
 	}
-	if strings.Contains(joinedGrow, " quota=") {
-		t.Fatalf("set should use refquota only: %v", grow)
+	// create sets quota too; leaving it behind capped grown disks at the create size.
+	if !strings.Contains(joinedGrow, " quota=17179869184") {
+		t.Fatalf("resize must move quota with refquota: %v", grow)
 	}
 	snap, err := ZFSSnapshotArgv(ds, "s1")
 	if err != nil {

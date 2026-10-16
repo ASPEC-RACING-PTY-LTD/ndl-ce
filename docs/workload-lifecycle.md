@@ -30,7 +30,9 @@ become Pending Restart.
 | Hostname / name | Pending restart (`lxc.uts.name` and `/etc/hostname`) | Written for next start |
 | IP / DNS | Pending restart | Written for next start |
 | MAC | Requires stop | Applied |
-| Disk shrink | Unsupported | Unsupported |
+| Disk shrink (ZFS) | Live (`refquota` lowered after a usage check) | Same |
+| Disk shrink (directory) | Requires stop | Offline `e2fsck` + `resize2fs`, then truncate |
+| Disk shrink (LVM-thin) | Unsupported | Unsupported |
 | Autostart | Live systemd enable/disable | Same |
 
 GPU, nesting, and TUN last-applied flags are preserved across spec
@@ -79,14 +81,62 @@ OCI lifecycle. Clone and migrate stay on Operations.
 Directory container roots can grow while running. The image is
 extended and `resize2fs` can run on the mounted filesystem. The guest
 is not unmounted. ZFS and LVM-thin grow go through their pool APIs.
-Shrink is refused.
 
-Multi-disk VM growth is not a live CT cgroup path. Stopped shrink is
-only allowed when a later path can prove it is safe; it is not
-implemented here.
+## Extensions
+
+Optional extras chosen at create time (Docker, Compose, git and others)
+install in a background job after the container starts. The job does not
+depend on the browser request, so a proxy timeout (Cloudflare drops requests
+after 100 seconds) cannot cancel it half way. Each extension's state, version
+and last error are stored, and the workload's Extensions page installs,
+updates (`apt-get install --only-upgrade`) or reinstalls one, a selection, or
+all installed extensions. A held apt lock is waited out. Check what's
+installed asks the container directly.
+
+## Disk shrink
+
+A shrink is refused unless the new size holds the data in use plus
+headroom: 10% of the used bytes or 1 GiB, whichever is larger
+(`storage.ShrinkFloor`).
+
+- **ZFS** container roots shrink live. The agent reads `refquota` and
+  `referenced`, checks the floor, then lowers `refquota`. ZFS itself
+  also refuses a limit below current usage.
+- **Directory** container roots shrink only while the container is
+  stopped, because ext4 cannot shrink while mounted. The agent measures
+  usage, unmounts (a busy mount is refused), runs `e2fsck -f`, runs
+  `resize2fs` to the new size, and reads the ext4 superblock to prove
+  the filesystem fits. Only then is the image truncated, checked again,
+  and remounted. Any failure before the truncate remounts the disk at
+  its old size with nothing changed.
+- **LVM-thin** shrink is refused.
+
+Multi-disk VM disk shrink is not implemented.
 
 ## Management updates
 
 Package updates restart the management plane only. Guests keep running.
 The Updates page reports management as temporarily unavailable during an
 apply. It does not say the infrastructure is restarting.
+
+## Storage manager
+
+Storage, Manage measures what uses space under the host root or a storage
+pool, in the agent and in the background. Sizes are space allocated on disk
+(sparse disk images show their apparent size too), hard links count once,
+and by default the scan stays on one filesystem. Each folder keeps its 200
+largest entries; the rest are summed.
+
+Every item is explained by its path: items No-dal tracks (each workload's
+disk, by workload name) are known; well-known locations and file types are
+likely; anything else is unknown and marked "Review first". Importance is
+one of Usually safe, Review first, Important or Keep, with advice on the right
+way to free that space.
+
+Deleting needs `storage.files.delete` (admins by default) and typing the
+number of items. The agent refuses system folders, PostgreSQL, No-dal's
+control, keys and secrets, every workload disk, pool roots, backup folders,
+anything with a filesystem mounted inside it, and paths reached through a
+symlinked folder. The contents of key and credential folders are never
+listed. Quick clean-ups (staging and other disposable No-dal files) are on
+the same page.

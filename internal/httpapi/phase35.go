@@ -100,6 +100,9 @@ func (s *Server) disableFeature(w http.ResponseWriter, r *http.Request) {
 	row.Enabled = false
 	row.RuntimeStatus = appdb.FeatureNotStarted
 	row.Reason = "disabled; workloads were not deleted"
+	if uiOnlyFeature(mod.ID) {
+		row.Reason = "hidden; nothing was changed or removed"
+	}
 	if mod.Package != "" {
 		res, uerr := s.updater().HostUpdate(r.Context(), hostos.UpdateRequest{
 			Action: hostos.UpdateFeatureRemove, PackageName: mod.Package, Channel: hostos.ChannelStable,
@@ -266,4 +269,15 @@ func featureDisableRequiresConfirm(mod features.Module, enabled bool, workloadCo
 	default:
 		return false
 	}
+}
+
+// uiOnlyFeature reports whether switching a feature off only hides its pages.
+// Cloudflare tokens, tunnels and connectors and Caddy or Nginx sites are
+// never changed by the switch.
+func uiOnlyFeature(id string) bool {
+	switch id {
+	case features.IDCloudflare, features.IDCaddy, features.IDNginx:
+		return true
+	}
+	return false
 }
