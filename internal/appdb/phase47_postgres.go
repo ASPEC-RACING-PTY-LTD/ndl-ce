@@ -39,10 +39,10 @@ WHERE cluster_id=$1 AND id=$2`,
 
 func (p *Postgres) GetBackupWorkspaceSettings(ctx context.Context, clusterID string) (*BackupWorkspaceSettings, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT cluster_id::text, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, COALESCE(cache_retention_hours, 0), updated_at
+SELECT cluster_id::text, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, COALESCE(cache_retention_hours, 0), COALESCE(compression_level, 0), updated_at
 FROM backup_workspace_settings WHERE cluster_id=$1`, clusterID)
 	var s BackupWorkspaceSettings
-	err := row.Scan(&s.ClusterID, &s.MaxLocalBytes, &s.MinHostFreeBytes, &s.CaptureConcurrency, &s.UploadWorkers, &s.BandwidthLimitBPS, &s.CacheRetentionHours, &s.UpdatedAt)
+	err := row.Scan(&s.ClusterID, &s.MaxLocalBytes, &s.MinHostFreeBytes, &s.CaptureConcurrency, &s.UploadWorkers, &s.BandwidthLimitBPS, &s.CacheRetentionHours, &s.CompressionLevel, &s.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultBackupWorkspaceSettings(clusterID), nil
 	}
@@ -57,8 +57,8 @@ func (p *Postgres) UpsertBackupWorkspaceSettings(ctx context.Context, s BackupWo
 		s.UpdatedAt = time.Now().UTC()
 	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO backup_workspace_settings (cluster_id, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, cache_retention_hours, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+INSERT INTO backup_workspace_settings (cluster_id, max_local_bytes, min_host_free_bytes, capture_concurrency, upload_workers, bandwidth_limit_bps, cache_retention_hours, compression_level, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$9,$8)
 ON CONFLICT (cluster_id) DO UPDATE SET
   max_local_bytes=EXCLUDED.max_local_bytes,
   min_host_free_bytes=EXCLUDED.min_host_free_bytes,
@@ -66,8 +66,9 @@ ON CONFLICT (cluster_id) DO UPDATE SET
   upload_workers=EXCLUDED.upload_workers,
   bandwidth_limit_bps=EXCLUDED.bandwidth_limit_bps,
   cache_retention_hours=EXCLUDED.cache_retention_hours,
+  compression_level=EXCLUDED.compression_level,
   updated_at=EXCLUDED.updated_at`,
-		s.ClusterID, s.MaxLocalBytes, s.MinHostFreeBytes, s.CaptureConcurrency, s.UploadWorkers, s.BandwidthLimitBPS, s.CacheRetentionHours, s.UpdatedAt)
+		s.ClusterID, s.MaxLocalBytes, s.MinHostFreeBytes, s.CaptureConcurrency, s.UploadWorkers, s.BandwidthLimitBPS, s.CacheRetentionHours, s.UpdatedAt, s.CompressionLevel)
 	return err
 }
 

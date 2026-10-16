@@ -50,12 +50,8 @@ func (s *Server) executeVMBackupV2(ctx context.Context, clusterID string, wl app
 	req := backuphost.Request{
 		Action: backuphost.ActionCapture, WorkloadID: wl.ID, WorkloadName: wl.Name,
 		CaptureMode: backuphost.CaptureModeDisk, DiskPath: frozen, Blueprint: s.v2Blueprint(ctx, clusterID, wl, vol),
-		Settings: backuphost.Settings{
-			MaxLocalBytes: settings.MaxLocalBytes, MinHostFreeBytes: settings.MinHostFreeBytes,
-			CaptureConcurrency: settings.CaptureConcurrency, UploadWorkers: settings.UploadWorkers,
-			BandwidthLimitBPS: settings.BandwidthLimitBPS,
-		},
-		Target: s.v2TargetSpec(ctx, tgt),
+		Settings: hostSettings(*settings),
+		Target:   s.v2TargetSpec(ctx, tgt),
 	}
 	raw, _ := json.Marshal(req)
 	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2Capture, frozen, string(raw))
@@ -149,7 +145,8 @@ func (s *Server) materializeV2Disk(ctx context.Context, clusterID string, art ap
 	}
 	st, _ := s.v2Status(ctx, clusterID, *settings)
 	root := firstNonEmpty(st.Workspace.Root, backuphost.DefaultRoot)
-	dest := filepath.Join(filepath.Dir(root), "backup-restore-staging", art.ID)
+	// Inside the repository, so staging lives on the backup disk.
+	dest := filepath.Join(root, "restore-staging", art.ID)
 	var tgt *appdb.BackupTarget
 	if run, _ := s.Store.GetBackupRun(ctx, clusterID, art.RunID); run != nil && run.TargetID != "" {
 		tgt, _ = s.Store.GetBackupTarget(ctx, clusterID, run.TargetID)

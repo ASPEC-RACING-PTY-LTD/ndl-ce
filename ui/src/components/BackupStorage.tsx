@@ -176,7 +176,6 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
   const [relocate, setRelocate] = useState<LocationChoice>({ poolId: "", path: "", allowRoot: false });
   const [keySaved, setKeySaved] = useState(false);
   const [wiping, setWiping] = useState<BackupTarget | null>(null);
-  const [wipeName, setWipeName] = useState("");
 
   function load() {
     getBackupStorage()
@@ -267,7 +266,7 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
     }
     setBusy(true);
     setNotice(null);
-    wipeBackupTarget(tgt.id, wipeName)
+    wipeBackupTarget(tgt.id, tgt.name)
       .then(() => {
         setNotice(
           `Wiping ${tgt.name} in the background. Backups still on this host are kept and upload fresh with the next runs. The result shows under recent activity.`,
@@ -278,7 +277,6 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
       .catch((err) => setError(errorText(err, "Could not wipe the target")))
       .finally(() => {
         setBusy(false);
-        setWipeName("");
       });
   }
 
@@ -484,7 +482,6 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
                             disabled={busy}
                             aria-label={`Wipe ${t.name}`}
                             onClick={() => {
-                              setWipeName("");
                               setWiping(t);
                             }}
                           >
@@ -579,7 +576,6 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
         title="Wipe backup target"
         confirmLabel="Wipe"
         danger
-        confirmDisabled={!wiping || wipeName.trim() !== wiping.name}
         onConfirm={onWipe}
         onClose={() => setWiping(null)}
       >
@@ -588,13 +584,6 @@ export function BackupStoragePanel({ mutate, targets }: { mutate: boolean; targe
           Other files in the bucket are not touched. Backups still on this host are kept and upload again with the next
           runs; backups that exist only in {wiping?.name} are gone for good.
         </p>
-        <Field
-          id="backup-wipe-confirm"
-          label={`Type ${wiping?.name ?? "the target name"} to confirm`}
-          value={wipeName}
-          onChange={(e) => setWipeName(e.target.value)}
-          autoComplete="off"
-        />
       </ConfirmDialog>
       <ConfirmDialog
         open={relocating}

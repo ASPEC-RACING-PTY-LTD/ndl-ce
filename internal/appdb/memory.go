@@ -59,6 +59,7 @@ type Memory struct {
 	cfCreds            map[string]CloudflareCredential
 	chControllers      map[string]CodeholdController
 	chCLI              map[string]CodeholdCLISettings
+	dockerPrune        map[string]DockerPruneSettings
 	chSecrets          map[string]string
 	chRunners          map[string]CodeholdRunner
 	cfTokens           map[string]string

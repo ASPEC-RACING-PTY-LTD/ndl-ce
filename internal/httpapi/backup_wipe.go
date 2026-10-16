@@ -31,12 +31,13 @@ func (s *Server) wipeBackupTarget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "wiping a target requires X-Nodal-Confirm: "+wipeTargetConfirm)
 		return
 	}
+	// The confirm header is the confirmation; confirm_name is optional and
+	// only checked when a client sends it.
 	var req struct {
 		ConfirmName string `json:"confirm_name"`
 	}
-	if err := readJSON(r, &req); err != nil {
-		writeErr(w, http.StatusBadRequest, "confirm_name is required")
-		return
+	if r.ContentLength != 0 {
+		_ = readJSON(r, &req)
 	}
 	ctx := r.Context()
 	clusterID := p.User.ClusterID
@@ -49,7 +50,7 @@ func (s *Server) wipeBackupTarget(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "only cloud object storage targets can be wiped here")
 		return
 	}
-	if strings.TrimSpace(req.ConfirmName) != tgt.Name {
+	if req.ConfirmName != "" && strings.TrimSpace(req.ConfirmName) != tgt.Name {
 		writeErr(w, http.StatusConflict, "type the target name exactly to confirm")
 		return
 	}
@@ -69,7 +70,7 @@ func (s *Server) wipeBackupTarget(w http.ResponseWriter, r *http.Request) {
 			defer cancel()
 			out, err := s.wipeRemote(bg, clusterID, target, spec)
 			if err != nil {
-				s.recordStorageEvent("wipe", false, "", target.Name+": "+err.Error())
+				s.recordStorageEvent("wipe", false, "", target.Name+": "+remoteErrText(err))
 				return
 			}
 			s.recordStorageEvent("wipe", true, "", wipeMessage(target.Name, out))
@@ -79,8 +80,8 @@ func (s *Server) wipeBackupTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.wipeRemote(context.WithoutCancel(ctx), clusterID, *tgt, spec)
 	if err != nil {
-		s.recordStorageEvent("wipe", false, "", tgt.Name+": "+err.Error())
-		writeErr(w, http.StatusBadGateway, err.Error())
+		s.recordStorageEvent("wipe", false, "", tgt.Name+": "+remoteErrText(err))
+		writeErr(w, remoteErrStatus(err), remoteErrText(err))
 		return
 	}
 	s.recordStorageEvent("wipe", true, "", wipeMessage(tgt.Name, out))
@@ -149,4 +150,36 @@ func (s *Server) wipeRemote(ctx context.Context, clusterID string, tgt appdb.Bac
 	}
 	_ = s.Store.UpdateBackupTargetStatus(ctx, clusterID, tgt.ID, appdb.BackupUntested)
 	return wipeOutcome{objects: wipe.ObjectsDeleted, bytes: wipe.BytesDeleted, removed: removed, localOnly: localOnly}, nil
+}
+
+// remoteErrDenied reports an object store refusing the target's access key.
+func remoteErrDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := err.Error()
+	for _, k := range []string{"401", "403", "Unauthorized", "AccessDenied", "Forbidden"} {
+		if strings.Contains(m, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// remoteErrStatus maps an object store failure to a status: a refused key is
+// a configuration problem the user fixes (422), anything else a 502.
+func remoteErrStatus(err error) int {
+	if remoteErrDenied(err) {
+		return http.StatusUnprocessableEntity
+	}
+	return http.StatusBadGateway
+}
+
+// remoteErrText explains a refused key; listing and deleting need the key to
+// have Object Read & Write, while uploads only need write.
+func remoteErrText(err error) string {
+	if remoteErrDenied(err) && !strings.Contains(err.Error(), "Object Read & Write") {
+		return err.Error() + " (the access key is not allowed to list or delete objects in this bucket; give it Object Read & Write)"
+	}
+	return err.Error()
 }

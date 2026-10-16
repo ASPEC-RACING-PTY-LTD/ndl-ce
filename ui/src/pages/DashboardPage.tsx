@@ -94,6 +94,9 @@ export function DashboardPage() {
   ].filter((item): item is { href: string; text: string } => Boolean(item));
   const failedTasks = tasks.filter((t) => t.state === "failed");
   const poolWarn = pools.find((p) => p.status === "warning" || (p.warning_text?.length ?? 0) > 0);
+  const poolWarnText = poolWarn?.warning_text?.[0] ?? "";
+  const [warnHidden, setWarnHidden] = useState(() => warningHidden(poolWarnText));
+  const showPoolWarn = poolWarnText !== "" && !warnHidden && !warningHidden(poolWarnText);
 
   return (
     <section className="page" aria-labelledby="dashboard-heading">
@@ -181,9 +184,19 @@ export function DashboardPage() {
                 {item.text} <Link href={item.href}>Open</Link>
               </p>
             ))}
-            {poolWarn?.warning_text?.[0] ? (
+            {showPoolWarn ? (
               <p className="banner banner-warn" role="status">
-                {poolWarn.warning_text[0]} <Link href="/storage">Storage</Link>
+                {poolWarnText} <Link href="/storage">Storage</Link>{" "}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  onClick={() => {
+                    dismissWarning(poolWarnText);
+                    setWarnHidden(true);
+                  }}
+                >
+                  Dismiss
+                </button>
               </p>
             ) : null}
             {failedTasks.map((task) => (
@@ -371,4 +384,37 @@ function Meter({
     );
   }
   return <MetricChart series={series} />;
+}
+
+// Dashboard storage warnings show for a day after they first appear, and
+// Dismiss hides them for good. Both are remembered per browser.
+const warnSeenKey = "ndl.dashboard.warning-seen:";
+const warnDismissedKey = "ndl.dashboard.warning-dismissed:";
+const warnShowFor = 24 * 60 * 60 * 1000;
+
+function warningHidden(text: string): boolean {
+  if (!text) {
+    return true;
+  }
+  try {
+    if (localStorage.getItem(warnDismissedKey + text)) {
+      return true;
+    }
+    const seen = Number(localStorage.getItem(warnSeenKey + text));
+    if (!seen) {
+      localStorage.setItem(warnSeenKey + text, String(Date.now()));
+      return false;
+    }
+    return Date.now() - seen > warnShowFor;
+  } catch {
+    return false;
+  }
+}
+
+function dismissWarning(text: string) {
+  try {
+    localStorage.setItem(warnDismissedKey + text, "1");
+  } catch {
+    // Storage is unavailable; the warning stays hidden until reload.
+  }
 }

@@ -3,7 +3,9 @@ import {
   cancelStorageScan,
   deleteScannedItems,
   getStorageScan,
+  listNodes,
   listScanTargets,
+  listWorkloads,
   startStorageScan,
   type ScanItem,
   type ScanStatus,
@@ -14,9 +16,11 @@ import { ContextMenu, useContextMenu, type ContextItem } from "../components/Con
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { HostDiskCleanups } from "../components/HostDisk";
+import { DockerPrunePanel } from "../components/DockerPrune";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes } from "../format";
+import { navigate } from "../router";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
 import { Dialog } from "../ui/Dialog";
@@ -46,6 +50,7 @@ export function StorageManagePage() {
   const ctx = useContextMenu();
   const [targets, setTargets] = useState<ScanTarget[] | null>(null);
   const [canDelete, setCanDelete] = useState(false);
+  const [canOverride, setCanOverride] = useState(false);
   const [target, setTarget] = useState("/");
   const [sub, setSub] = useState("");
   const [oneFS, setOneFS] = useState(true);
@@ -57,7 +62,6 @@ export function StorageManagePage() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Map<string, ScanItem>>(new Map());
   const [confirm, setConfirm] = useState(false);
-  const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ deleted: number; freed: number; refused: { path: string; error?: string }[] } | null>(null);
@@ -67,6 +71,7 @@ export function StorageManagePage() {
       .then((res) => {
         setTargets(res.items);
         setCanDelete(res.can_delete);
+        setCanOverride(Boolean(res.can_override));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Storage scanning is unavailable"));
   }, []);
@@ -116,7 +121,8 @@ export function StorageManagePage() {
     }
   }
 
-  const deletable = (x: ScanItem) => canDelete && !x.insight.protected && !x.mount;
+  // An Owner may delete what No-dal protects; mounted filesystems never.
+  const deletable = (x: ScanItem) => canDelete && !x.mount && (!x.insight.protected || canOverride);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((x) => (filter === "all" || x.insight.importance === filter) && (!q || x.name.toLowerCase().includes(q) || x.insight.purpose.toLowerCase().includes(q)));
@@ -144,6 +150,7 @@ export function StorageManagePage() {
     if (deletable(x)) {
       out.push({ label: selected.has(x.path) ? "Unselect" : "Select", onClick: () => toggle(x) });
     }
+    out.push({ label: "Open in SM", onClick: () => void openInFiles(`${scan?.root.replace(/\/$/, "")}/${x.path}`, x.dir) });
     out.push({ label: "Copy path", onClick: () => void navigator.clipboard?.writeText(`${scan?.root.replace(/\/$/, "")}/${x.path}`) });
     if (deletable(x)) {
       out.push("sep", {
@@ -151,7 +158,6 @@ export function StorageManagePage() {
         danger: true,
         onClick: () => {
           setSelected(new Map([[x.path, x]]));
-          setTyped("");
           setConfirm(true);
         },
       });
@@ -167,7 +173,8 @@ export function StorageManagePage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await deleteScannedItems(scan.id, list);
+      const override = [...selected.values()].some((x) => x.insight.protected);
+      const res = await deleteScannedItems(scan.id, list, override);
       setResult({ deleted: res.deleted, freed: res.freed_bytes, refused: res.results.filter((r) => !r.deleted) });
       setConfirm(false);
       setSelected(new Map());
@@ -192,6 +199,7 @@ export function StorageManagePage() {
       />
       {error ? <ErrorNotice error={error} /> : null}
       <HostDiskCleanups mutate={mutate} />
+      <DockerPrunePanel mutate={mutate} />
       <article className="panel" aria-labelledby="scan-heading">
         <h2 id="scan-heading">Find what is using space</h2>
         {!targets ? (
@@ -294,7 +302,6 @@ export function StorageManagePage() {
                   className="btn btn-sm btn-danger"
                   type="button"
                   onClick={() => {
-                    setTyped("");
                     setConfirm(true);
                   }}
                 >
@@ -399,13 +406,19 @@ export function StorageManagePage() {
             <button className="btn btn-ghost" type="button" onClick={() => setConfirm(false)}>
               Cancel
             </button>
-            <button className="btn btn-danger" type="button" disabled={busy || typed.trim().toLowerCase() !== `delete ${chosen.length}`} onClick={() => void doDelete()}>
+            <button className="btn btn-danger" type="button" disabled={busy} onClick={() => void doDelete()}>
               {busy ? "Deleting" : `Delete ${formatBytes(chosenBytes)}`}
             </button>
           </div>
         }
       >
         <p>These are deleted permanently from {scan?.root}. There is no undo.</p>
+        {chosen.some((x) => x.insight.protected) ? (
+          <p className="banner banner-warn">
+            You are overriding No-dal's protection for: {chosen.filter((x) => x.insight.protected).map((x) => x.name).join(", ")}. No-dal or the
+            host may depend on them.
+          </p>
+        ) : null}
         {risky.length ? (
           <p className="banner banner-warn">
             {risky.length} item(s) are not marked usually safe. Check what they are first: {risky.map((x) => x.name).join(", ")}.
@@ -418,16 +431,35 @@ export function StorageManagePage() {
             </li>
           ))}
         </ul>
-        <div className="field">
-          <label className="field-label" htmlFor="scan-del-confirm">
-            Type delete {chosen.length} to confirm
-          </label>
-          <input id="scan-del-confirm" className="field-input" value={typed} onChange={(e) => setTyped(e.target.value)} />
-        </div>
       </Dialog>
       <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
+}
+
+const containerRootRe = /\/volumes\/container-root\/([0-9a-f-]{36})(\/.*)?$/;
+
+// openInFiles opens a scanned path in the Files page. Inside a system
+// container's root disk it opens that container's files at the same place;
+// anywhere else it opens the host's files. Files open at their folder.
+async function openInFiles(abs: string, dir: boolean) {
+  const target = dir ? abs : abs.replace(/\/[^/]*$/, "") || "/";
+  const m = containerRootRe.exec(target);
+  if (m) {
+    try {
+      const { items } = await listWorkloads();
+      const wl = items.find((w) => (w.disks ?? []).some((d) => d.volume_id === m[1]));
+      if (wl) {
+        navigate(`/workloads/${wl.id}/files?path=${encodeURIComponent(m[2] || "/")}`);
+        return;
+      }
+    } catch {
+      // Fall back to the host view below.
+    }
+  }
+  const nodes = await listNodes().catch(() => []);
+  const node = nodes[0]?.id ?? "local";
+  navigate(`/nodes/${node}/files?path=${encodeURIComponent(target)}`);
 }
 
 export type StorageTab = "storage" | "manage";

@@ -122,19 +122,22 @@ type DockerInfo struct {
 // CaptureStats instruments a backup so its cost can be explained from real
 // numbers rather than guesses.
 type CaptureStats struct {
-	FilesScanned    int      `json:"files_scanned"`
-	FilesUnchanged  int      `json:"files_unchanged"`
-	FilesChanged    int      `json:"files_changed"`
-	LogicalBytes    int64    `json:"logical_bytes"`
-	BytesRead       int64    `json:"bytes_read"`
-	ChunksTotal     int      `json:"chunks_total"`
-	ChunksNew       int      `json:"chunks_new"`
-	ChunksReused    int      `json:"chunks_reused"`
-	StoredBytes     int64    `json:"stored_bytes"`
-	DurationNanos   int64    `json:"duration_ns"`
-	PacksCommitted  int      `json:"packs_committed"`
-	PhysicalNewData int64    `json:"physical_new_data"`
-	Degraded        []string `json:"degraded,omitempty"`
+	FilesScanned    int   `json:"files_scanned"`
+	FilesUnchanged  int   `json:"files_unchanged"`
+	FilesChanged    int   `json:"files_changed"`
+	LogicalBytes    int64 `json:"logical_bytes"`
+	BytesRead       int64 `json:"bytes_read"`
+	ChunksTotal     int   `json:"chunks_total"`
+	ChunksNew       int   `json:"chunks_new"`
+	ChunksReused    int   `json:"chunks_reused"`
+	StoredBytes     int64 `json:"stored_bytes"`
+	DurationNanos   int64 `json:"duration_ns"`
+	PacksCommitted  int   `json:"packs_committed"`
+	PhysicalNewData int64 `json:"physical_new_data"`
+	// NewRawBytes is the uncompressed size of the new chunks; with
+	// PhysicalNewData it gives the compression saving.
+	NewRawBytes int64    `json:"new_raw_bytes,omitempty"`
+	Degraded    []string `json:"degraded,omitempty"`
 }
 
 // Consistency levels. The engine never freezes a guest, so the default is
@@ -201,6 +204,12 @@ type PointState struct {
 	Packs           []string    `json:"packs"`
 	UploadStartedNS int64       `json:"upload_started_ns,omitempty"`
 	UploadEndedNS   int64       `json:"upload_ended_ns,omitempty"`
+	// UploadedBytes and UploadTotalBytes track the upload of this point's
+	// own new packs. RemoteError is the last upload failure, cleared on
+	// success; it never contains credentials.
+	UploadedBytes    int64  `json:"uploaded_bytes,omitempty"`
+	UploadTotalBytes int64  `json:"upload_total_bytes,omitempty"`
+	RemoteError      string `json:"remote_error,omitempty"`
 	// Recovered marks a restore point whose sidecar was rebuilt after a
 	// crash; control may not know about it.
 	Recovered bool `json:"recovered,omitempty"`

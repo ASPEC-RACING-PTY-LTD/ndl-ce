@@ -90,6 +90,10 @@ export function FilesBrowser({
     ? roles?.includes("admin")
     : Boolean(roles?.includes("admin") || roles?.includes("operator") || roles?.includes("viewer"));
   const [path, setPath] = useState(initialPath || "/");
+  const [pathInput, setPathInput] = useState(displayPath(initialPath || "/"));
+  useEffect(() => {
+    setPathInput(displayPath(path));
+  }, [path]);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [listing, setListing] = useState(true);
   const [selected, setSelected] = useState<string[]>([]);
@@ -411,6 +415,28 @@ export function FilesBrowser({
           </Link>
         </nav>
       ) : null}
+      <form
+        className="files-path-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const next = pathInput.trim().replace(/\/+$/, "") || "/";
+          setError(null);
+          void reload(next).catch((err) => setError(err instanceof Error ? err.message : "Could not open that path"));
+        }}
+      >
+        <input
+          className="field-input files-path-input"
+          aria-label="Go to path"
+          value={pathInput}
+          onChange={(e) => setPathInput(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <button className="btn btn-sm btn-secondary" type="submit">
+          Go
+        </button>
+      </form>
       <nav className="files-crumbs" aria-label="Path">
         {crumbs.map((c) => (
           <button key={c.path} className="btn btn-ghost btn-sm" type="button" onClick={() => void reload(c.path)}>

@@ -20,6 +20,8 @@ type StorageScanSpec struct {
 	Items   []string `json:"items,omitempty"`
 	Protect []string `json:"protect,omitempty"`
 	Keep    []string `json:"keep,omitempty"`
+	// Override skips No-dal's protection (an Owner's explicit choice).
+	Override bool `json:"override,omitempty"`
 }
 
 // StorageScanResult answers a storage scan action.
@@ -78,7 +80,11 @@ func (h *Handler) execStorageScan(_ context.Context, m *agentv1.StorageScan) (*c
 			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("delete works on a finished scan"))
 		}
 		out.Scan = st
-		out.Deleted = storscan.Delete(st.Root, spec.Items, spec.Protect, spec.Keep, nil)
+		if spec.Override {
+			out.Deleted = storscan.DeleteOverride(st.Root, spec.Items, nil)
+		} else {
+			out.Deleted = storscan.Delete(st.Root, spec.Items, spec.Protect, spec.Keep, nil)
+		}
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown storage scan action %q", m.GetAction()))
 	}

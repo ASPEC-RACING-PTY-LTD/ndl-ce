@@ -42,6 +42,7 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 		UploadWorkers       *int   `json:"upload_workers"`
 		BandwidthLimitBPS   *int64 `json:"bandwidth_limit_bps"`
 		CacheRetentionHours *int   `json:"cache_retention_hours"`
+		CompressionLevel    *int   `json:"compression_level"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid workspace settings")
@@ -68,6 +69,13 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CacheRetentionHours != nil {
 		cur.CacheRetentionHours = *req.CacheRetentionHours
+	}
+	if req.CompressionLevel != nil {
+		if *req.CompressionLevel < backup.CompressionOff || *req.CompressionLevel > backup.MaxCompressionLevel {
+			writeErr(w, http.StatusBadRequest, "compression level must be between 1 and 22, 0 for the default or -1 for off")
+			return
+		}
+		cur.CompressionLevel = *req.CompressionLevel
 	}
 	if cur.MaxLocalBytes < 0 || cur.MinHostFreeBytes < 0 || cur.CaptureConcurrency < 0 || cur.UploadWorkers < 0 || cur.BandwidthLimitBPS < 0 || cur.CacheRetentionHours < 0 {
 		writeErr(w, http.StatusBadRequest, "workspace limits cannot be negative")
@@ -194,12 +202,8 @@ func (s *Server) executeDirectoryCTBackupV2(ctx context.Context, clusterID strin
 	req := backuphost.Request{
 		Action: backuphost.ActionCapture, WorkloadID: wl.ID, WorkloadName: wl.Name,
 		Unit: unit, CaptureMode: bp.CaptureMode, Blueprint: bp, Selection: sel,
-		Settings: backuphost.Settings{
-			MaxLocalBytes: settings.MaxLocalBytes, MinHostFreeBytes: settings.MinHostFreeBytes,
-			CaptureConcurrency: settings.CaptureConcurrency, UploadWorkers: settings.UploadWorkers,
-			BandwidthLimitBPS: settings.BandwidthLimitBPS,
-		},
-		Target: s.v2TargetSpec(ctx, tgt),
+		Settings: hostSettings(*settings),
+		Target:   s.v2TargetSpec(ctx, tgt),
 	}
 	source, release := s.zfsCaptureSource(ctx, clusterID, wl, vol, rootfs, run.ID)
 	defer release()
@@ -368,10 +372,7 @@ func (s *Server) v2Status(ctx context.Context, clusterID string, settings appdb.
 	if s.Backup == nil {
 		return backuphost.Result{}, errUnavailable("backup agent is unavailable")
 	}
-	req := backuphost.Request{Action: backuphost.ActionStatus, Settings: backuphost.Settings{
-		MaxLocalBytes: settings.MaxLocalBytes, MinHostFreeBytes: settings.MinHostFreeBytes,
-		CaptureConcurrency: settings.CaptureConcurrency, UploadWorkers: settings.UploadWorkers,
-	}}
+	req := backuphost.Request{Action: backuphost.ActionStatus, Settings: hostSettings(settings)}
 	raw, _ := json.Marshal(req)
 	res, err := s.Backup.CopyBackup(ctx, qemu.BackupV2Status, "", string(raw))
 	if err != nil {
@@ -424,8 +425,9 @@ func (s *Server) syncV2State(ctx context.Context, clusterID string) {
 			if pt.Consistency != "" {
 				b.Consistency = pt.Consistency
 			}
+			b.StatsJSON = withUploadStats(a.StatsJSON, pt)
 			if b.RemoteState != a.RemoteState || b.LocalComplete != a.LocalComplete ||
-				b.UploadDurationNS != a.UploadDurationNS || b.Consistency != a.Consistency {
+				b.UploadDurationNS != a.UploadDurationNS || b.Consistency != a.Consistency || b.StatsJSON != a.StatsJSON {
 				_ = s.Store.UpdateBackupArtifact(ctx, b)
 			}
 		}
@@ -478,9 +480,21 @@ func selectionFor(raw string, workloadID string) backupscope.Selection {
 	return decodePolicySelections(raw)[workloadID]
 }
 
+// hostSettings is every workspace setting the agent applies. A request must
+// carry all of them: the agent replaces its settings as a whole.
+func hostSettings(s appdb.BackupWorkspaceSettings) backuphost.Settings {
+	return backuphost.Settings{
+		MaxLocalBytes: s.MaxLocalBytes, MinHostFreeBytes: s.MinHostFreeBytes,
+		CaptureConcurrency: s.CaptureConcurrency, UploadWorkers: s.UploadWorkers,
+		BandwidthLimitBPS: s.BandwidthLimitBPS, CacheRetentionHours: s.CacheRetentionHours,
+		CompressionLevel: s.CompressionLevel,
+	}
+}
+
 func workspaceJSON(s appdb.BackupWorkspaceSettings, st backuphost.Result) map[string]any {
 	return map[string]any{
-		"max_local_bytes": s.MaxLocalBytes, "min_host_free_bytes": s.MinHostFreeBytes,
+		"compression_level": backup.NormalizeCompressionLevel(s.CompressionLevel),
+		"max_local_bytes":   s.MaxLocalBytes, "min_host_free_bytes": s.MinHostFreeBytes,
 		"capture_concurrency": s.CaptureConcurrency, "upload_workers": s.UploadWorkers,
 		"bandwidth_limit_bps": s.BandwidthLimitBPS,
 		"repo_bytes":          st.RepoBytes, "pending_uploads": st.PendingUploads,
@@ -607,4 +621,45 @@ func protectionLabel(remote string, local bool, format, objectKey, locator strin
 	default:
 		return "Legacy"
 	}
+}
+
+// withUploadStats folds a restore point's upload progress and last upload
+// error into its stored statistics, so the Backups page can show them
+// without a schema change. It returns stats unchanged when nothing moved.
+func withUploadStats(stats string, pt backuphost.PointView) string {
+	m := map[string]any{}
+	if strings.TrimSpace(stats) != "" && json.Unmarshal([]byte(stats), &m) != nil {
+		return stats
+	}
+	want := map[string]any{}
+	if pt.UploadTotalBytes > 0 {
+		want["upload_total_bytes"] = float64(pt.UploadTotalBytes)
+		want["uploaded_bytes"] = float64(pt.UploadedBytes)
+	}
+	if pt.RemoteError != "" {
+		want["remote_error"] = pt.RemoteError
+	}
+	changed := false
+	for _, k := range []string{"upload_total_bytes", "uploaded_bytes", "remote_error"} {
+		v, ok := want[k]
+		if !ok {
+			if _, had := m[k]; had {
+				delete(m, k)
+				changed = true
+			}
+			continue
+		}
+		if m[k] != v {
+			m[k] = v
+			changed = true
+		}
+	}
+	if !changed {
+		return stats
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return stats
+	}
+	return string(raw)
 }

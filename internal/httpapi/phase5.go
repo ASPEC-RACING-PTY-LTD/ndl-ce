@@ -851,7 +851,7 @@ func (s *Server) patchWorkload(w http.ResponseWriter, r *http.Request) {
 				diskShrink = req.DiskBytes < vol.SizeBytes
 			}
 		}
-		if err := s.resizeCTDisk(r.Context(), p.User.ClusterID, *row, req.DiskBytes, req.ExpandFilesystem); err != nil {
+		if err := s.resizeCTDisk(context.WithoutCancel(r.Context()), p.User.ClusterID, *row, req.DiskBytes, req.ExpandFilesystem); err != nil {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}

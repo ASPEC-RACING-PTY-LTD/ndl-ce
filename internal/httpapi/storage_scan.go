@@ -104,7 +104,7 @@ func (s *Server) listScanTargets(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": s.scanTargets(r.Context(), p.User.ClusterID), "can_delete": rbac.Authorize(p.Grants, storageFilesDelete)})
+	writeJSON(w, http.StatusOK, map[string]any{"items": s.scanTargets(r.Context(), p.User.ClusterID), "can_delete": rbac.Authorize(p.Grants, storageFilesDelete), "can_override": hasRole(p, rbac.Admin)})
 }
 
 func (s *Server) startStorageScan(w http.ResponseWriter, r *http.Request) {
@@ -232,6 +232,8 @@ func (s *Server) deleteScannedItems(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Items   []string `json:"items"`
 		Confirm string   `json:"confirm"`
+		// Override lets an Owner delete items No-dal protects.
+		Override bool `json:"override"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
@@ -242,7 +244,11 @@ func (s *Server) deleteScannedItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if want := fmt.Sprintf("delete %d", len(in.Items)); strings.TrimSpace(strings.ToLower(in.Confirm)) != want {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf("type %q to confirm", want))
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("confirm must be %q", want))
+		return
+	}
+	if in.Override && !hasRole(p, rbac.Admin) {
+		writeErr(w, http.StatusForbidden, "only an Owner can delete protected items")
 		return
 	}
 	ctx, clusterID := r.Context(), p.User.ClusterID
@@ -259,7 +265,7 @@ func (s *Server) deleteScannedItems(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	protect = append(protect, "/var/lib/ndl/backup-repo", "/storage/backups")
-	res, err := rpc.StorageScan(ctx, "delete", agentrpc.StorageScanSpec{ID: r.PathValue("id"), Items: in.Items, Protect: protect, Keep: keep})
+	res, err := rpc.StorageScan(ctx, "delete", agentrpc.StorageScanSpec{ID: r.PathValue("id"), Items: in.Items, Protect: protect, Keep: keep, Override: in.Override})
 	if err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
@@ -274,7 +280,11 @@ func (s *Server) deleteScannedItems(w http.ResponseWriter, r *http.Request) {
 			done++
 			freed += d.Freed
 		}
-		s.audit(r, clusterID, p.User.ID, "storage.files.delete", result, filepath.Join(res.Scan.Root, d.Path)+" "+d.Error)
+		action := "storage.files.delete"
+		if in.Override {
+			action = "storage.files.delete.override"
+		}
+		s.audit(r, clusterID, p.User.ID, action, result, filepath.Join(res.Scan.Root, d.Path)+" "+d.Error)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": res.Deleted, "deleted": done, "freed_bytes": freed})
 }

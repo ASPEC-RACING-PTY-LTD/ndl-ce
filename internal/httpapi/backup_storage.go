@@ -561,7 +561,7 @@ func (s *Server) getBackupTargetUsage(w http.ResponseWriter, r *http.Request) {
 	raw, _ := json.Marshal(backuphost.Request{Action: backuphost.ActionRemoteUsage, Target: s.v2TargetSpec(r.Context(), *tgt)})
 	res, err := s.Backup.CopyBackup(r.Context(), qemu.BackupV2RemoteUsage, "", string(raw))
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeErr(w, remoteErrStatus(err), remoteErrText(err))
 		return
 	}
 	var out backuphost.Result

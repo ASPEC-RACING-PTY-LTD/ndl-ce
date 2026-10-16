@@ -3077,7 +3077,7 @@ export type ScanItem = {
   other?: { count: number; size: number };
   insight: ScanInsight;
 };
-export async function listScanTargets(): Promise<{ items: ScanTarget[]; can_delete: boolean }> {
+export async function listScanTargets(): Promise<{ items: ScanTarget[]; can_delete: boolean; can_override?: boolean }> {
   return readJson(await request("/storage/scan/targets"));
 }
 export async function startStorageScan(path: string, oneFilesystem = true): Promise<ScanStatus> {
@@ -3092,8 +3092,9 @@ export async function cancelStorageScan(id: string): Promise<ScanStatus> {
 export async function deleteScannedItems(
   id: string,
   items: string[],
+  override = false,
 ): Promise<{ results: { path: string; deleted: boolean; freed: number; error?: string }[]; deleted: number; freed_bytes: number }> {
-  return readJson(await request(`/storage/scan/${encodeURIComponent(id)}/delete`, json({ items, confirm: `delete ${items.length}` })));
+  return readJson(await request(`/storage/scan/${encodeURIComponent(id)}/delete`, json({ items, confirm: `delete ${items.length}`, ...(override ? { override: true } : {}) })));
 }
 
 // --- CodeHold CLI ("ch") in system containers ---
@@ -3147,4 +3148,51 @@ export async function startCodeholdCLIRollout(body: {
 }
 export async function getCodeholdCLIRollout(): Promise<{ rollout: CodeholdCLIRollout | null }> {
   return readJson(await request("/codehold-cli/rollout"));
+}
+
+export type R2Bucket = { name: string; creation_date?: string; location?: string; storage_class?: string };
+export type R2Account = { account_id: string; account_name: string; buckets: R2Bucket[]; error?: string };
+export async function listR2Buckets(): Promise<{ accounts: R2Account[] }> {
+  return readJson(await request("/cloudflare/r2/buckets"));
+}
+export async function createR2Bucket(account_id: string, name: string, location: string): Promise<R2Bucket> {
+  return readJson(await request("/cloudflare/r2/buckets", json({ account_id, name, location })));
+}
+export async function deleteR2Bucket(account_id: string, name: string): Promise<void> {
+  await readJson(await request("/cloudflare/r2/buckets/delete", json({ account_id, name })));
+}
+export async function attachTerminalSession(id: string): Promise<import("./phase6").IOSession> {
+  return readJson(await request(`/io/sessions/${encodeURIComponent(id)}/attach`, { method: "POST" }));
+}
+export async function endTerminalSession(id: string): Promise<void> {
+  await request(`/io/sessions/${encodeURIComponent(id)}/end`, { method: "POST" });
+}
+
+export type DockerPruneMachine = { id: string; name: string; images_deleted: number; bytes_freed: number; error?: string };
+export type DockerPruneRun = {
+  started_at: string;
+  finished_at: string;
+  trigger: string;
+  machines: DockerPruneMachine[];
+  images_deleted: number;
+  bytes_freed: number;
+  failed: number;
+};
+export type DockerPruneStatus = {
+  enabled: boolean;
+  run_at: string;
+  timezone: string;
+  next_run_at?: string;
+  last_run_at?: string;
+  last_result?: DockerPruneRun;
+  running?: boolean;
+};
+export async function getDockerPrune(): Promise<DockerPruneStatus> {
+  return readJson(await request("/docker/prune"));
+}
+export async function putDockerPruneSettings(body: { enabled?: boolean; run_at?: string; timezone?: string }): Promise<DockerPruneStatus> {
+  return readJson(await request("/docker/prune/settings", { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function runDockerPrune(): Promise<{ started: boolean }> {
+  return readJson(await request("/docker/prune", { method: "POST" }));
 }

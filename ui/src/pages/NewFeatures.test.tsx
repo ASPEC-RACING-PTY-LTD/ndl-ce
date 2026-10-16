@@ -190,10 +190,7 @@ describe("Cloudflare page", () => {
     fireEvent.contextMenu(within(table).getByText("shop.racing.example").closest("tr")!);
     fireEvent.click(await screen.findByRole("menuitem", { name: /^delete$/i }));
     const del = await screen.findByRole("dialog", { name: /delete shop.racing.example/i });
-    const go = within(del).getByRole("button", { name: /^delete$/i });
-    expect(go).toBeDisabled();
-    fireEvent.change(within(del).getByLabelText(/type shop.racing.example/i), { target: { value: "shop.racing.example" } });
-    fireEvent.click(go);
+    fireEvent.click(within(del).getByRole("button", { name: /^delete$/i }));
     await waitFor(() => expect(deleted).toContain('"confirm":"shop.racing.example"'));
     expect(JSON.parse(deleted)).toMatchObject({ delete_dns: true, tunnel_id: T1 });
   });
@@ -362,10 +359,7 @@ describe("Storage manager", () => {
     fireEvent.click(screen.getByRole("button", { name: /delete selected/i }));
     const dialog = await screen.findByRole("dialog", { name: /delete 2 item/i });
     expect(within(dialog).getByText(/not marked usually safe/i)).toBeVisible();
-    const go = within(dialog).getByRole("button", { name: /^delete /i });
-    expect(go).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText(/type delete 2/i), { target: { value: "delete 2" } });
-    fireEvent.click(go);
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete /i }));
     await waitFor(() => expect(deleted).toBeTruthy());
     expect(JSON.parse(deleted)).toEqual({ items: ["old.tar.gz", "cache"], confirm: "delete 2" });
     expect(await screen.findByText(/deleted 2 item/i)).toBeVisible();

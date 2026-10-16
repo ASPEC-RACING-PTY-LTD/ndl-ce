@@ -125,17 +125,12 @@ describe("BackupStoragePanel", () => {
     expect(await screen.findByText(/verified 7 restore point/i)).toBeVisible();
   });
 
-  it("wipes a cloud target only after its name is typed", async () => {
+  it("wipes a cloud target after a simple confirmation", async () => {
     api.getBackupStorage.mockResolvedValue(report);
     api.wipeBackupTarget.mockResolvedValue({ target_id: "r2", started: true });
     render(<BackupStoragePanel mutate targets={[r2]} />);
     fireEvent.click(await screen.findByRole("button", { name: /wipe r2/i }));
-    const confirm = screen.getByRole("button", { name: /^wipe$/i });
-    expect(confirm).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/type r2 to confirm/i), { target: { value: "r2" } });
-    expect(confirm).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/type r2 to confirm/i), { target: { value: "R2" } });
-    fireEvent.click(confirm);
+    fireEvent.click(screen.getByRole("button", { name: /^wipe$/i }));
     expect(await screen.findByText(/wiping R2 in the background/i)).toBeVisible();
     expect(api.wipeBackupTarget).toHaveBeenCalledWith("r2", "R2");
   });

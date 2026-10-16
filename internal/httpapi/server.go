@@ -359,6 +359,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/docker/tunnels/action", s.dockerTunnelAction)
 	mux.HandleFunc("POST /api/v1/docker/bulk", s.dockerBulk)
 	mux.HandleFunc("POST /api/v1/docker/script", s.runDockerScript)
+	mux.HandleFunc("GET /api/v1/docker/prune", s.getDockerPrune)
+	mux.HandleFunc("PUT /api/v1/docker/prune/settings", s.putDockerPruneSettings)
+	mux.HandleFunc("POST /api/v1/docker/prune", s.postDockerPrune)
 	mux.HandleFunc("GET /api/v1/ops/jobs", s.listOpsJobs)
 	mux.HandleFunc("GET /api/v1/ops/jobs/{id}", s.getOpsJob)
 	mux.HandleFunc("GET /api/v1/scripts", s.listSavedScripts)
@@ -444,6 +447,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/cloudflare/credentials/{id}", s.deleteCloudflareCredential)
 	mux.HandleFunc("GET /api/v1/cloudflare/inventory", s.getCloudflareInventory)
 	mux.HandleFunc("GET /api/v1/cloudflare/machines", s.listCloudflareMachines)
+	mux.HandleFunc("GET /api/v1/cloudflare/r2/buckets", s.listR2Buckets)
+	mux.HandleFunc("POST /api/v1/cloudflare/r2/buckets", s.createR2Bucket)
+	mux.HandleFunc("POST /api/v1/cloudflare/r2/buckets/delete", s.deleteR2Bucket)
 	mux.HandleFunc("GET /api/v1/cloudflare/permissions", s.cloudflarePermissionsGuide)
 	mux.HandleFunc("POST /api/v1/cloudflare/tunnels", s.createCloudflareTunnel)
 	mux.HandleFunc("PATCH /api/v1/cloudflare/tunnels/{id}", s.renameCloudflareTunnel)
@@ -504,6 +510,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/io/sessions", s.listIOSessions)
 	mux.HandleFunc("GET /api/v1/io/sessions/{id}", s.getIOSession)
 	mux.HandleFunc("GET /api/v1/io/sessions/{id}/ws", s.ioSessionWS)
+	mux.HandleFunc("POST /api/v1/io/sessions/{id}/attach", s.attachIOSession)
+	mux.HandleFunc("POST /api/v1/io/sessions/{id}/end", s.endIOSession)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/files", s.nodeFilesList)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/files/stat", s.nodeFilesStat)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/files/download", s.nodeFilesDownload)
@@ -693,7 +701,9 @@ func (s *Server) spa() http.Handler {
 }
 
 func (s *Server) writeUIIndex(w http.ResponseWriter) {
-	w.Header().Set("Cache-Control", "no-cache")
+	// no-transform keeps Cloudflare from injecting its Web Analytics beacon,
+	// which the page's content security policy and ad blockers reject.
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	index, err := fs.ReadFile(s.UI, "index.html")
 	if err != nil {

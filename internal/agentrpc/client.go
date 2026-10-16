@@ -660,6 +660,19 @@ func (c Client) DockerCodehold(ctx context.Context, req docker.CodeholdRequest) 
 	return out, nil
 }
 
+// DockerPrune removes one machine's unused Docker images and build cache.
+func (c Client) DockerPrune(ctx context.Context, machineID string) (docker.PruneResult, error) {
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: "prune", MachineId: machineID}},
+	}))
+	if err != nil {
+		return docker.PruneResult{}, err
+	}
+	var out docker.PruneResult
+	_ = json.Unmarshal(res.Msg.GetResultJson(), &out)
+	return out, nil
+}
+
 // DockerExecRun runs one command in a container and returns its output.
 func (c Client) DockerExecRun(ctx context.Context, machineID, containerID string, argv []string, timeoutSec int) (docker.ExecResult, error) {
 	raw, _ := json.Marshal(map[string]any{"command": argv, "timeout": timeoutSec})

@@ -120,6 +120,14 @@ func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*c
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		}
 		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "codehold", ResultJson: mustJSON(res)}), nil
+	case "prune":
+		pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
+		res, err := h.docker().PruneUnused(pctx, m.GetMachineId())
+		if err != nil {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return connect.NewResponse(&agentv1.ExecuteResponse{Ok: true, Message: "prune", ResultJson: mustJSON(res)}), nil
 	case "tunnel-restart", "tunnel-start":
 		if err := h.docker().TunnelUnitAction(ctx, m.GetMachineId(), spec.Unit, strings.TrimPrefix(action, "tunnel-")); err != nil {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)

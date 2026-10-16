@@ -164,6 +164,7 @@ func (h *Host) engineConfig(s Settings) backup.Config {
 	return backup.Config{
 		MaxLocalBytes:    s.MaxLocalBytes,
 		MinHostFreeBytes: h.effectiveReserve(s.MinHostFreeBytes),
+		CompressionLevel: s.CompressionLevel,
 	}
 }
 

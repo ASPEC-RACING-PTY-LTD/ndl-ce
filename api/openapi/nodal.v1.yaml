@@ -13574,6 +13574,9 @@ components:
             - custom
             - full
           description: Smart Application Data is the default. Full Machine is opt-in.
+        paused:
+          type: boolean
+          description: The nightly schedule is paused; manual runs still work.
         scope_json:
           type: object
           additionalProperties: true
@@ -13621,6 +13624,9 @@ components:
             - custom
             - full
           description: Defaults to smart. Full Machine is never implied.
+        paused:
+          type: boolean
+          description: Pause the nightly schedule. Omitted keeps the current value.
         scope_json:
           type: object
           additionalProperties: true
@@ -13858,6 +13864,16 @@ components:
           type: integer
         physical_new_data:
           type: integer
+        new_raw_bytes:
+          type: integer
+          description: Uncompressed size of the data this backup added.
+        uploaded_bytes:
+          type: integer
+        upload_total_bytes:
+          type: integer
+        remote_error:
+          type: string
+          description: Last upload failure, while the backup is not protected.
         chunks_new:
           type: integer
         chunks_reused:
@@ -13920,6 +13936,9 @@ components:
           type: integer
         logical_bytes:
           type: integer
+        compression_level:
+          type: integer
+          description: zstd level 1-22; 0 uses the default (19), -1 stores chunks uncompressed.
         physical_bytes:
           type: integer
         pending_bytes:

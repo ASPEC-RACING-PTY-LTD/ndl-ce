@@ -16,7 +16,7 @@ func TestRepositoryDedupAndIndexRebuild(t *testing.T) {
 	}
 	plain := randBytes(51, 40<<10)
 	id := keys.ID(plain)
-	frame, err := compressChunk(plain)
+	frame, err := compressChunk(plain, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}

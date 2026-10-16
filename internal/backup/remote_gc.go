@@ -188,6 +188,7 @@ func (r *Repository) SweepRemote(ctx context.Context, t Target, targetKey string
 			remaining[id] = struct{}{}
 			continue
 		}
+		_ = r.ForgetUploaded(targetKey, id)
 		res.PacksDeleted++
 		res.BytesFreed += size
 	}

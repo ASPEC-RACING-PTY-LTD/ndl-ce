@@ -1595,3 +1595,48 @@ td.cell-check {
 .cf-card-empty {
   margin: 0 0 0 var(--cf-gutter);
 }
+
+/* Press feedback for every button ----------------------------------------- */
+
+button,
+.btn,
+[role="button"],
+[role="tab"],
+[role="menuitem"] {
+  transition:
+    background var(--ease, 120ms ease),
+    color var(--ease, 120ms ease),
+    border-color var(--ease, 120ms ease),
+    box-shadow 160ms ease,
+    transform 90ms ease,
+    filter 90ms ease;
+}
+
+button:not(:disabled):hover,
+.btn:not(:disabled):hover {
+  filter: brightness(1.06);
+}
+
+button:not(:disabled):active,
+.btn:not(:disabled):active,
+[role="button"]:active,
+[role="tab"]:active,
+[role="menuitem"]:active {
+  transform: scale(0.95);
+  filter: brightness(0.9);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #3b82f6) 30%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  .btn,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"] {
+    transition: none;
+  }
+  button:not(:disabled):active,
+  .btn:not(:disabled):active {
+    transform: none;
+  }
+}

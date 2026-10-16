@@ -199,6 +199,21 @@ func (d Directory) ResizeVolume(ctx context.Context, req CreateVolumeRequest, hi
 	if err != nil {
 		return fmt.Errorf("container root image is missing")
 	}
+	if req.Size == st.Size() {
+		// A same-size resize finishes an interrupted grow; when the
+		// filesystem already fills the image there is nothing to do.
+		if n, err := ext4Bytes(img); err == nil && n == req.Size {
+			return nil
+		}
+	}
+	// The storage observer remounts unmounted container roots every few
+	// seconds; the lock keeps it (and container start) off the image while
+	// it is unmounted for fsck, resize2fs and truncate.
+	unlock, err := lockImage(img)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if req.Size < st.Size() {
 		if req.Live {
 			return fmt.Errorf("a directory-backed disk can only shrink while the container is stopped")
@@ -274,7 +289,7 @@ func (d Directory) shrinkVolume(ctx context.Context, abs, img string, size int64
 		return fmt.Errorf("directory filesystem limit runner is unavailable")
 	}
 	if !d.containerRootMounted(abs) {
-		if err := d.EnsureDirectoryRootMounted(ctx, abs); err != nil {
+		if err := d.mountRoot(ctx, abs, img); err != nil {
 			return err
 		}
 	}
@@ -478,6 +493,13 @@ func (d Directory) EnsureDirectoryRootMounted(ctx context.Context, abs string) e
 	if d.containerRootMounted(abs) {
 		return nil
 	}
+	if imageLocked(img) {
+		return ErrDiskResizing
+	}
+	return d.mountRoot(ctx, abs, img)
+}
+
+func (d Directory) mountRoot(ctx context.Context, abs, img string) error {
 	if d.Run == nil {
 		return fmt.Errorf("container root image is present but not mounted")
 	}

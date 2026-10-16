@@ -97,6 +97,7 @@ func backupPolicyJSON(p appdb.BackupPolicy) map[string]any {
 		"scope": p.Scope, "workload_ids": ids,
 		"schedule": p.Schedule, "keep_daily": p.KeepDaily, "keep_weekly": p.KeepWeekly, "keep_monthly": p.KeepMonthly,
 		"capture_mode":        firstNonEmpty(p.CaptureMode, appdb.BackupCaptureFull),
+		"paused":              p.Paused,
 		"offsite_keep_daily":  p.Offsite.KeepDaily,
 		"offsite_keep_weekly": p.Offsite.KeepWeekly, "offsite_keep_monthly": p.Offsite.KeepMonthly,
 	}
@@ -213,6 +214,24 @@ func backupArtifactJSON(a appdb.BackupArtifact) map[string]any {
 	}
 	if a.StatsJSON != "" {
 		out["stats"] = json.RawMessage(a.StatsJSON)
+		var st struct {
+			NewRawBytes      int64  `json:"new_raw_bytes"`
+			UploadedBytes    int64  `json:"uploaded_bytes"`
+			UploadTotalBytes int64  `json:"upload_total_bytes"`
+			RemoteError      string `json:"remote_error"`
+		}
+		if json.Unmarshal([]byte(a.StatsJSON), &st) == nil {
+			if st.NewRawBytes > 0 {
+				out["new_raw_bytes"] = st.NewRawBytes
+			}
+			if st.UploadTotalBytes > 0 {
+				out["upload_total_bytes"] = st.UploadTotalBytes
+				out["uploaded_bytes"] = st.UploadedBytes
+			}
+			if st.RemoteError != "" {
+				out["remote_error"] = st.RemoteError
+			}
+		}
 	}
 	if a.BlueprintJSON != "" {
 		out["blueprint"] = json.RawMessage(a.BlueprintJSON)
@@ -463,7 +482,7 @@ func (s *Server) createBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, "")
+	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, "", false)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -490,7 +509,7 @@ func (s *Server) updateBackupPolicy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "backup policy not found")
 		return
 	}
-	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, existing.ID)
+	row, err := s.parseBackupPolicyBody(r, p.User.ClusterID, existing.ID, existing.Paused)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -545,9 +564,11 @@ type backupPolicyBody struct {
 	OffsiteKeepDaily   int `json:"offsite_keep_daily"`
 	OffsiteKeepWeekly  int `json:"offsite_keep_weekly"`
 	OffsiteKeepMonthly int `json:"offsite_keep_monthly"`
+	// Paused stops the nightly schedule. Omitted keeps the current value.
+	Paused *bool `json:"paused"`
 }
 
-func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID string) (appdb.BackupPolicy, error) {
+func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID string, paused bool) (appdb.BackupPolicy, error) {
 	var req backupPolicyBody
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" || req.TargetID == "" {
 		return appdb.BackupPolicy{}, errBadRequest("name and target_id are required")
@@ -600,6 +621,10 @@ func (s *Server) parseBackupPolicyBody(r *http.Request, clusterID, existingID st
 		Offsite: appdb.BackupOffsite{
 			KeepDaily: req.OffsiteKeepDaily, KeepWeekly: req.OffsiteKeepWeekly, KeepMonthly: req.OffsiteKeepMonthly,
 		},
+	}
+	row.Paused = paused
+	if req.Paused != nil {
+		row.Paused = *req.Paused
 	}
 	if existingID == "" {
 		row.ID = uuid.NewString()
@@ -962,7 +987,7 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 	s.ResumeSuspendedBackups(ctx, cluster.ID)
 	now := s.now()
 	for _, pol := range policies {
-		if pol.Schedule != appdb.BackupNightly {
+		if pol.Schedule != appdb.BackupNightly || pol.Paused {
 			continue
 		}
 		if pol.LastRunAt == nil {

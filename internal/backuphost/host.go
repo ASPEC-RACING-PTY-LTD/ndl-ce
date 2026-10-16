@@ -110,7 +110,8 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		req.Action = action
 	}
 	if req.Settings.MaxLocalBytes > 0 || req.Settings.MinHostFreeBytes > 0 || req.Settings.UploadWorkers > 0 ||
-		req.Settings.CaptureConcurrency > 0 || req.Settings.BandwidthLimitBPS > 0 || req.Settings.CacheRetentionHours > 0 {
+		req.Settings.CaptureConcurrency > 0 || req.Settings.BandwidthLimitBPS > 0 || req.Settings.CacheRetentionHours > 0 ||
+		req.Settings.CompressionLevel != 0 {
 		h.applySettings(req.Settings)
 	}
 	var out Result
@@ -391,6 +392,7 @@ func (h *Host) status(_ Request) (Result, error) {
 			LocalComplete: s.LocalComplete, Remote: s.Remote, CaptureMode: mode,
 			Consistency: consistency, LogicalBytes: logical, PhysicalNewData: physical,
 			UploadStartedNS: s.UploadStartedNS, UploadEndedNS: s.UploadEndedNS,
+			UploadedBytes: s.UploadedBytes, UploadTotalBytes: s.UploadTotalBytes, RemoteError: s.RemoteError,
 			Recovered: s.Recovered,
 		})
 		if s.Remote == backup.RemoteProtected {
@@ -422,7 +424,8 @@ func (h *Host) status(_ Request) (Result, error) {
 		CaptureBusy: active > 0, CaptureActive: active,
 		CaptureConcurrency: settings.CaptureConcurrency, UploadWorkers: settings.UploadWorkers,
 		BandwidthLimitBPS: settings.BandwidthLimitBPS, CacheRetentionHours: settings.CacheRetentionHours,
-		Usage: &usage, Recovery: h.repo.Recovery(), LastGC: lastGC, GCPending: gcPending,
+		CompressionLevel: backup.NormalizeCompressionLevel(settings.CompressionLevel),
+		Usage:            &usage, Recovery: h.repo.Recovery(), LastGC: lastGC, GCPending: gcPending,
 		StaleRestoreDirsRemoved: h.staleDirs, StaleRestoreBytesRemoved: h.staleBytes,
 		KeyNote: h.keyNote, KeyExported: h.keyExported(),
 	}
@@ -512,7 +515,7 @@ func resultFrom(man *backup.Manifest, state *backup.PointState) Result {
 		WorkloadName: man.WorkloadName, LocalComplete: true, Remote: remote,
 		CaptureMode: man.Blueprint.CaptureMode, Consistency: man.Consistency,
 		LogicalBytes: man.Stats.LogicalBytes, BytesRead: man.Stats.BytesRead,
-		PhysicalNewData: man.Stats.PhysicalNewData, ChunksTotal: man.Stats.ChunksTotal,
+		PhysicalNewData: man.Stats.PhysicalNewData, NewRawBytes: man.Stats.NewRawBytes, ChunksTotal: man.Stats.ChunksTotal,
 		ChunksNew: man.Stats.ChunksNew, ChunksReused: man.Stats.ChunksReused,
 		FilesScanned: man.Stats.FilesScanned, FilesUnchanged: man.Stats.FilesUnchanged,
 		FilesChanged: man.Stats.FilesChanged, PacksCommitted: man.Stats.PacksCommitted,

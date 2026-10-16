@@ -1539,12 +1539,10 @@ function MoveDialog({ routes, tunnels, onClose, onStarted }: { routes: CfRoute[]
 }
 
 function DeleteRouteDialog({ route, onClose, onDone }: { route: CfRoute | null; onClose: () => void; onDone: (msg: string) => void }) {
-  const [typed, setTyped] = useState("");
   const [dns, setDNS] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setTyped("");
     setDNS(true);
     setError(null);
   }, [route]);
@@ -1561,13 +1559,13 @@ function DeleteRouteDialog({ route, onClose, onDone }: { route: CfRoute | null; 
           <button
             className="btn btn-danger"
             type="button"
-            disabled={busy || !route || typed.trim().toLowerCase() !== route.hostname}
+            disabled={busy || !route}
             onClick={() => {
               if (!route) {
                 return;
               }
               setBusy(true);
-              deleteCfRoute(ref(route), dns, typed.trim())
+              deleteCfRoute(ref(route), dns, route.hostname)
                 .then((res) => onDone(`${route.hostname} deleted; ${res.note}.`))
                 .catch((err) => setError(errText(err, "Delete failed")))
                 .finally(() => setBusy(false));
@@ -1584,22 +1582,14 @@ function DeleteRouteDialog({ route, onClose, onDone }: { route: CfRoute | null; 
         <input type="checkbox" checked={dns} onChange={(e) => setDNS(e.target.checked)} />
         <span>Also remove its DNS record (only if it points at this tunnel)</span>
       </label>
-      <div className="field">
-        <label className="field-label" htmlFor="cf-del-confirm">
-          Type {route?.hostname} to confirm
-        </label>
-        <input id="cf-del-confirm" className="field-input" value={typed} onChange={(e) => setTyped(e.target.value)} />
-      </div>
     </Dialog>
   );
 }
 
 function DeleteTunnelDialog({ tunnel, onClose, onDone }: { tunnel: CfTunnel | null; onClose: () => void; onDone: (msg: string) => void }) {
-  const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    setTyped("");
     setError(null);
   }, [tunnel]);
   return (
@@ -1615,13 +1605,13 @@ function DeleteTunnelDialog({ tunnel, onClose, onDone }: { tunnel: CfTunnel | nu
           <button
             className="btn btn-danger"
             type="button"
-            disabled={busy || !tunnel || typed.trim() !== tunnel.name}
+            disabled={busy || !tunnel}
             onClick={() => {
               if (!tunnel) {
                 return;
               }
               setBusy(true);
-              deleteCfTunnel(tunnel.id, tunnel.account_tag, typed.trim())
+              deleteCfTunnel(tunnel.id, tunnel.account_tag, tunnel.name)
                 .then(() => onDone(`Tunnel ${tunnel.name} deleted.`))
                 .catch((err) => setError(errText(err, "Delete failed")))
                 .finally(() => setBusy(false));
@@ -1637,12 +1627,6 @@ function DeleteTunnelDialog({ tunnel, onClose, onDone }: { tunnel: CfTunnel | nu
         The tunnel is deleted in Cloudflare. It is refused while it still has routes, DNS records pointing at it, or connected connectors, so nothing
         live is cut off.
       </p>
-      <div className="field">
-        <label className="field-label" htmlFor="cf-tdel-confirm">
-          Type {tunnel?.name} to confirm
-        </label>
-        <input id="cf-tdel-confirm" className="field-input" value={typed} onChange={(e) => setTyped(e.target.value)} />
-      </div>
     </Dialog>
   );
 }

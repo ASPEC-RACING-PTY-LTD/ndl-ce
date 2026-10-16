@@ -115,9 +115,9 @@ func (p *Postgres) CreateBackupPolicy(ctx context.Context, pol BackupPolicy) err
 		workloadID = pol.WorkloadID
 	}
 	_, err = tx.ExecContext(ctx, `
-INSERT INTO backup_policies (id, cluster_id, name, workload_id, target_id, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, scope, capture_mode, scope_json)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		pol.ID, pol.ClusterID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureFull), pol.ScopeJSON)
+INSERT INTO backup_policies (id, cluster_id, name, workload_id, target_id, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, scope, capture_mode, scope_json, paused)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		pol.ID, pol.ClusterID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.LastRunAt, pol.CreatedAt, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureFull), pol.ScopeJSON, pol.Paused)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 
 func (p *Postgres) ListBackupPolicies(ctx context.Context, clusterID string) ([]BackupPolicy, error) {
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, '')
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, ''), COALESCE(paused, false)
 FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -159,7 +159,7 @@ FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 
 func (p *Postgres) GetBackupPolicy(ctx context.Context, clusterID, id string) (*BackupPolicy, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, '')
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, ''), COALESCE(paused, false)
 FROM backup_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	pol, err := scanBackupPolicy(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -189,9 +189,9 @@ func (p *Postgres) UpdateBackupPolicy(ctx context.Context, pol BackupPolicy) err
 		workloadID = pol.WorkloadID
 	}
 	res, err := tx.ExecContext(ctx, `
-UPDATE backup_policies SET name=$3, workload_id=$4, target_id=$5, schedule=$6, keep_daily=$7, keep_weekly=$8, keep_monthly=$9, scope=$10, capture_mode=$11, scope_json=$12
+UPDATE backup_policies SET name=$3, workload_id=$4, target_id=$5, schedule=$6, keep_daily=$7, keep_weekly=$8, keep_monthly=$9, scope=$10, capture_mode=$11, scope_json=$12, paused=$13
 WHERE cluster_id=$1 AND id=$2`,
-		pol.ClusterID, pol.ID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureFull), pol.ScopeJSON)
+		pol.ClusterID, pol.ID, pol.Name, workloadID, pol.TargetID, pol.Schedule, pol.KeepDaily, pol.KeepWeekly, pol.KeepMonthly, pol.Scope, firstNonEmpty(pol.CaptureMode, BackupCaptureFull), pol.ScopeJSON, pol.Paused)
 	if err != nil {
 		return err
 	}
@@ -451,7 +451,7 @@ func scanBackupTarget(row rowScanner) (BackupTarget, error) {
 func scanBackupPolicy(row rowScanner) (BackupPolicy, error) {
 	var pol BackupPolicy
 	var last sql.NullTime
-	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt, &pol.Scope, &pol.CaptureMode, &pol.ScopeJSON)
+	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt, &pol.Scope, &pol.CaptureMode, &pol.ScopeJSON, &pol.Paused)
 	if last.Valid {
 		t := last.Time
 		pol.LastRunAt = &t

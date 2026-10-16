@@ -43,8 +43,10 @@ type Repository struct {
 	root string
 	keys *Keys
 
-	mu    sync.RWMutex
-	index map[KeyID]location
+	mu sync.RWMutex
+	// stateMu serialises read-modify-write of restore point state files.
+	stateMu sync.Mutex
+	index   map[KeyID]location
 
 	manifestMu    sync.Mutex
 	manifestCache map[string]manifestSummaryCacheEntry

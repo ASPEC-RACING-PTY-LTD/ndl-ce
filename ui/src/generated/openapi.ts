@@ -1550,6 +1550,7 @@ export interface BackupPolicy {
   keep_monthly: number;
   last_run_at?: string;
   capture_mode?: "smart" | "custom" | "full";
+  paused?: boolean;
   scope_json?: Record<string, unknown>;
   offsite_keep_daily?: number;
   offsite_keep_weekly?: number;
@@ -1564,6 +1565,7 @@ export interface CreateBackupPolicyRequest {
   name: string;
   scope?: "all" | "selected";
   capture_mode?: "smart" | "custom" | "full";
+  paused?: boolean;
   scope_json?: Record<string, unknown>;
   offsite_keep_daily?: number;
   offsite_keep_weekly?: number;
@@ -1648,6 +1650,10 @@ export interface BackupArtifact {
   remote_state?: "local-only" | "queued" | "uploading" | "verifying" | "protected" | "failed";
   logical_bytes?: number;
   physical_new_data?: number;
+  new_raw_bytes?: number;
+  uploaded_bytes?: number;
+  upload_total_bytes?: number;
+  remote_error?: string;
   chunks_new?: number;
   chunks_reused?: number;
   capture_duration_ns?: number;
@@ -1678,6 +1684,7 @@ export interface BackupWorkspace {
   capture_active?: number;
   cache_retention_hours?: number;
   logical_bytes?: number;
+  compression_level?: number;
   physical_bytes?: number;
   pending_bytes?: number;
   root?: string;

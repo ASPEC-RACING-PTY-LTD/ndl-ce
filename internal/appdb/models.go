@@ -55,6 +55,7 @@ type Store interface {
 	RevokeNode(ctx context.Context, clusterID, id string, at time.Time) error
 	DeleteNode(ctx context.Context, clusterID, id string) error
 	ClearAuditEvents(ctx context.Context, clusterID string, before time.Time) (int, error)
+	OldestAuditEvent(ctx context.Context, clusterID string) (time.Time, error)
 	ClearOperations(ctx context.Context, clusterID string, before time.Time) (int, error)
 
 	GetProvisionedService(ctx context.Context, clusterID, externalID string) (*ProvisionedService, error)
@@ -362,6 +363,8 @@ type Store interface {
 	PutWorkloadExtension(ctx context.Context, x WorkloadExtension) error
 
 	// CodeHold runners.
+	GetDockerPruneSettings(ctx context.Context, clusterID string) (*DockerPruneSettings, error)
+	PutDockerPruneSettings(ctx context.Context, st DockerPruneSettings) error
 	GetCodeholdCLISettings(ctx context.Context, clusterID string) (*CodeholdCLISettings, error)
 	PutCodeholdCLISettings(ctx context.Context, st CodeholdCLISettings) error
 	GetCodeholdController(ctx context.Context, clusterID string) (*CodeholdController, error)

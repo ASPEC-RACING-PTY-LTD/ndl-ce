@@ -240,6 +240,7 @@ func (h *Host) wipeRemote(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 	h.repo.ClearSweep(targetKey(req.Target))
+	h.repo.ClearUploaded(targetKey(req.Target))
 	out, err := h.status(req)
 	out.Wipe = &res
 	if res.Failed > 0 {

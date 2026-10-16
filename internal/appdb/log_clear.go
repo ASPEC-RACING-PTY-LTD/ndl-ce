@@ -77,3 +77,25 @@ func (p *Postgres) ClearOperations(ctx context.Context, clusterID string, before
 	n, _ := res.RowsAffected()
 	return int(n), nil
 }
+
+// OldestAuditEvent returns when the oldest audit event of a cluster was
+// recorded, or the zero time when there are none.
+func (m *Memory) OldestAuditEvent(_ context.Context, clusterID string) (time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var oldest time.Time
+	for _, e := range m.audit {
+		if e.ClusterID == clusterID && (oldest.IsZero() || e.CreatedAt.Before(oldest)) {
+			oldest = e.CreatedAt
+		}
+	}
+	return oldest, nil
+}
+
+func (p *Postgres) OldestAuditEvent(ctx context.Context, clusterID string) (time.Time, error) {
+	var t *time.Time
+	if err := p.DB.QueryRowContext(ctx, `SELECT min(created_at) FROM audit_events WHERE cluster_id=$1`, clusterID).Scan(&t); err != nil || t == nil {
+		return time.Time{}, err
+	}
+	return *t, nil
+}

@@ -32,6 +32,7 @@ import { filesWorkspaceHref } from "../files/workspace";
 import { formatBytes, formatWhen } from "../format";
 import { navigate } from "../router";
 import { canMutate, isAdmin } from "../rbac";
+import { DockerPrunePanel } from "../components/DockerPrune";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
 import { usePoll } from "../query";
@@ -662,6 +663,7 @@ export function DockerPage() {
         }
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
+      <DockerPrunePanel mutate={mutate} />
       {notice ? (
         <p className="banner banner-ok" role="status">
           {notice}{" "}

@@ -27,6 +27,9 @@ type Config struct {
 	// MinHostFreeBytes is the host free-space floor the repository must never
 	// cross. Zero means no explicit reserve.
 	MinHostFreeBytes int64
+	// CompressionLevel is the zstd level (1-22) for new chunks; 0 means
+	// DefaultCompressionLevel and CompressionOff stores chunks raw.
+	CompressionLevel int
 }
 
 func (c Config) withDefaults() Config {
@@ -290,6 +293,7 @@ func (e *Engine) captureFile(ctx context.Context, relPath, absPath string, meta 
 	}
 	defer f.Close()
 	var chunks []KeyID
+	skipCompress := isPrecompressed(relPath)
 	err = cdc.New(e.cfg.ChunkConfig).Split(f, func(chunk []byte) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -302,7 +306,7 @@ func (e *Engine) captureFile(ctx context.Context, relPath, absPath string, meta 
 			stats.ChunksReused++
 			return nil
 		}
-		frame, err := compressChunk(chunk)
+		frame, err := compressChunk(chunk, e.cfg.CompressionLevel, skipCompress)
 		if err != nil {
 			return err
 		}
@@ -317,6 +321,7 @@ func (e *Engine) captureFile(ctx context.Context, relPath, absPath string, meta 
 		if isNew {
 			stats.ChunksNew++
 			stats.PhysicalNewData += int64(len(sealed))
+			stats.NewRawBytes += int64(len(chunk))
 		} else {
 			stats.ChunksReused++
 		}

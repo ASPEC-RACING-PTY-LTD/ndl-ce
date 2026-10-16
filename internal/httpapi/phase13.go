@@ -211,7 +211,7 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := 200
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
-		limit = min(v, 2000)
+		limit = min(v, 20000)
 	}
 	items, err := s.Store.ListAuditEvents(r.Context(), p.User.ClusterID, limit)
 	if err != nil {

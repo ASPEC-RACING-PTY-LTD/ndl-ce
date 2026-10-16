@@ -1,4 +1,5 @@
 import { HostDiskPanel } from "../components/HostDisk";
+import { R2BucketsPanel } from "../components/R2Buckets";
 import { StatusBadge } from "../components/StatusBadge";
 import { DeleteButton } from "../components/DeleteButton";
 import { useEffect, useState } from "react";
@@ -363,6 +364,7 @@ export function StoragePage() {
         <ErrorNotice error={error} />
       ) : null}
       {!firstRun ? <HostDiskPanel mutate={mutate} /> : null}
+      {!firstRun ? <R2BucketsPanel mutate={mutate} /> : null}
       {firstRun || addKind ? (
       <Dialog
         open={firstRun || Boolean(addKind)}

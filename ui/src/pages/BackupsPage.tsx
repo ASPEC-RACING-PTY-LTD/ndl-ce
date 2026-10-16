@@ -186,6 +186,27 @@ function artifactBackupType(art: BackupArtifact): string {
   return "Legacy";
 }
 
+// uploadProgress describes an upload still in flight, e.g. "42% uploaded".
+function uploadProgress(art: BackupArtifact): string {
+  const total = art.upload_total_bytes ?? 0;
+  if (!total || art.remote_state === "protected" || art.remote_state === "failed") {
+    return "";
+  }
+  const pct = Math.min(100, Math.floor(((art.uploaded_bytes ?? 0) / total) * 100));
+  return `${pct}% of ${formatBytes(total)} uploaded`;
+}
+
+// compressionSaving compares the new data a backup added with what it stored.
+function compressionSaving(art: BackupArtifact): string {
+  const raw = art.new_raw_bytes ?? 0;
+  const stored = art.physical_new_data ?? 0;
+  if (!raw || !stored) {
+    return "";
+  }
+  const saved = Math.max(0, Math.round((1 - stored / raw) * 100));
+  return `${formatBytes(raw)} → ${formatBytes(stored)} (${saved}% saved)`;
+}
+
 function protectionLabel(art: BackupArtifact): string {
   if (art.protection) {
     return art.protection;
@@ -468,6 +489,7 @@ export function BackupsPage() {
   const [captureConcurrency, setCaptureConcurrency] = useState("1");
   const [bandwidthMBps, setBandwidthMBps] = useState("0");
   const [cacheRetentionHours, setCacheRetentionHours] = useState("0");
+  const [compressionLevel, setCompressionLevel] = useState("19");
 
   const [runWorkloadId, setRunWorkloadId] = useState("");
   const [runTargetId, setRunTargetId] = useState("");
@@ -498,6 +520,9 @@ export function BackupsPage() {
       }
       if (ws.cache_retention_hours != null) {
         setCacheRetentionHours(String(ws.cache_retention_hours));
+      }
+      if (ws.compression_level != null) {
+        setCompressionLevel(String(ws.compression_level || 19));
       }
     }
 
@@ -878,6 +903,7 @@ export function BackupsPage() {
         capture_concurrency: Math.max(1, Math.round(slots)),
         bandwidth_limit_bps: Math.round(bandwidth * 1024 * 1024),
         cache_retention_hours: Math.max(0, Math.round(cacheHours)),
+        compression_level: Number(compressionLevel),
       });
       setWorkspace(ws);
       setDialog(null);
@@ -896,6 +922,34 @@ export function BackupsPage() {
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Backup run failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onTogglePause(policy: BackupPolicy) {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateBackupPolicy(policy.id, {
+        name: policy.name,
+        scope: policy.scope,
+        workload_ids: policy.workload_ids,
+        target_id: policy.target_id,
+        schedule: policy.schedule,
+        keep_daily: policy.keep_daily,
+        keep_weekly: policy.keep_weekly,
+        keep_monthly: policy.keep_monthly,
+        capture_mode: policy.capture_mode,
+        scope_json: policy.scope_json,
+        offsite_keep_daily: policy.offsite_keep_daily,
+        offsite_keep_weekly: policy.offsite_keep_weekly,
+        offsite_keep_monthly: policy.offsite_keep_monthly,
+        paused: !policy.paused,
+      } as Parameters<typeof updateBackupPolicy>[1]);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not change the schedule");
     } finally {
       setBusy(false);
     }
@@ -1267,6 +1321,9 @@ export function BackupsPage() {
                           <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void onRunPolicy(p)}>
                             Run now
                           </button>
+                          <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onTogglePause(p)}>
+                            {p.paused ? "Resume schedule" : "Pause schedule"}
+                          </button>
                           <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "history", policy: p })}>
                             History
                           </button>
@@ -1489,6 +1546,13 @@ export function BackupsPage() {
                             <td>
                               <span className="status-pill">{protectionLabel(art)}</span>
                               {art.protected ? <span className="status-pill">Kept by protection</span> : null}
+                              {uploadProgress(art) ? <span className="meta"> {uploadProgress(art)}</span> : null}
+                              {art.remote_error && art.remote_state !== "protected" ? (
+                                <span className="meta" title={art.remote_error}>
+                                  {" "}
+                                  {art.remote_error}
+                                </span>
+                              ) : null}
                             </td>
                             <td>{formatBytes(art.logical_bytes || art.size_bytes)}</td>
                             <td>{art.encrypted ? "Client-side" : "No"}</td>
@@ -2137,6 +2201,26 @@ export function BackupsPage() {
                 <dt>Physical / stored size</dt>
                 <dd>{dialog.artifact.physical_new_data != null ? formatBytes(dialog.artifact.physical_new_data) : "Unknown"}</dd>
               </div>
+              {compressionSaving(dialog.artifact) ? (
+                <div>
+                  <dt>New data / compressed</dt>
+                  <dd>{compressionSaving(dialog.artifact)}</dd>
+                </div>
+              ) : null}
+              {dialog.artifact.upload_total_bytes ? (
+                <div>
+                  <dt>Uploaded</dt>
+                  <dd>
+                    {formatBytes(dialog.artifact.uploaded_bytes ?? 0)} of {formatBytes(dialog.artifact.upload_total_bytes)}
+                  </dd>
+                </div>
+              ) : null}
+              {dialog.artifact.remote_error && dialog.artifact.remote_state !== "protected" ? (
+                <div>
+                  <dt>Upload error</dt>
+                  <dd>{dialog.artifact.remote_error}</dd>
+                </div>
+              ) : null}
               <div>
                 <dt>Created</dt>
                 <dd>{formatWhen(dialog.artifact.created_at)}</dd>
@@ -2316,6 +2400,20 @@ export function BackupsPage() {
           onChange={(e) => setCacheRetentionHours(e.target.value)}
           hint="0 keeps metadata caches until the next successful prune. Loss of cache only slows the next capture."
         />
+        <label className="field">
+          <span className="field-label">Compression</span>
+          <select className="field-input" value={compressionLevel} onChange={(e) => setCompressionLevel(e.target.value)}>
+            <option value="3">zstd 3 (fastest)</option>
+            <option value="9">zstd 9</option>
+            <option value="19">zstd 19 (default, small)</option>
+            <option value="22">zstd 22 (smallest, slowest)</option>
+            <option value="-1">Off</option>
+          </select>
+          <span className="field-hint">
+            Applies to new data. Already-compressed files (images, video, archives) are stored as they are. Existing
+            backups keep their compression.
+          </span>
+        </label>
       </ConfirmDialog>
     </section>
   );

@@ -11,7 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createTerminalSession } from "../api/client";
+import { attachTerminalSession, createTerminalSession, endTerminalSession } from "../api/client";
 import { canMutate, isAdmin } from "../rbac";
 import { storageGet, storageSet } from "../storage";
 import { useSession } from "../session";
@@ -39,7 +39,7 @@ type Runtime = {
 
 type StoredWorkspace = {
   userId?: string;
-  tabs?: Array<Pick<TermTab, "tabId" | "title" | "customTitle" | "target" | "startCwd">>;
+  tabs?: Array<Pick<TermTab, "tabId" | "title" | "customTitle" | "target" | "startCwd" | "ioSessionId">>;
   activeId?: string | null;
   recents?: TermTarget[];
 };
@@ -191,7 +191,6 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           cwd: t.startCwd || "/",
           jailRoot: "",
           error: null,
-          ioSessionId: undefined,
         }));
       setTabs(restored);
       setActiveId(stored.activeId && restored.some((t) => t.tabId === stored.activeId) ? stored.activeId : restored[0]?.tabId ?? null);
@@ -215,6 +214,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
           customTitle: t.customTitle,
           target: t.target,
           startCwd: t.startCwd,
+          ioSessionId: t.ioSessionId,
         })),
       }),
     );
@@ -307,7 +307,20 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       patch(tab.tabId, { state: mode, error: null });
       void (async () => {
         try {
-          const created = await createTerminalSession(tab.target.kind, tab.target.id, tab.cwd || tab.startCwd || "/");
+          // A shell outlives its socket for a while on the server, so a
+          // refresh or reconnect resumes it instead of starting a new one.
+          const prior = tabsRef.current.find((t) => t.tabId === tab.tabId)?.ioSessionId ?? tab.ioSessionId;
+          let created = prior ? await attachTerminalSession(prior).catch(() => null) : null;
+          if (created && created.ticket && created.id === prior) {
+            // The server replays recent output; clear what is on screen first.
+            try {
+              runtimes.get(tab.tabId)?.term.reset();
+            } catch {
+              // jsdom has no canvas
+            }
+          } else {
+            created = await createTerminalSession(tab.target.kind, tab.target.id, tab.cwd || tab.startCwd || "/");
+          }
           if (!created.ticket || !created.id) {
             throw new Error("session ticket was not returned");
           }
@@ -504,8 +517,18 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     patch(tabId, { title: next, customTitle: true });
   }, [patch]);
 
+  // endShell ends a tab's shell on the server when the user closes the tab;
+  // leaving the page only detaches it, so a refresh can resume it.
+  const endShell = useCallback((tabId: string) => {
+    const id = tabsRef.current.find((t) => t.tabId === tabId)?.ioSessionId;
+    if (id) {
+      void endTerminalSession(id).catch(() => undefined);
+    }
+  }, []);
+
   const closeTab = useCallback(
     (tabId: string) => {
+      endShell(tabId);
       disposeRuntime(tabId);
       setTabs((cur) => {
         const next = cur.filter((t) => t.tabId !== tabId);
@@ -519,28 +542,30 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
         return next;
       });
     },
-    [disposeRuntime],
+    [disposeRuntime, endShell],
   );
 
   const closeAll = useCallback(() => {
     for (const tab of tabsRef.current) {
+      endShell(tab.tabId);
       disposeRuntime(tab.tabId);
     }
     setTabs([]);
     setActiveId(null);
-  }, [disposeRuntime]);
+  }, [disposeRuntime, endShell]);
 
   const closeOthers = useCallback(
     (tabId: string) => {
       for (const tab of tabsRef.current) {
         if (tab.tabId !== tabId) {
+          endShell(tab.tabId);
           disposeRuntime(tab.tabId);
         }
       }
       setTabs((cur) => cur.filter((t) => t.tabId === tabId));
       setActiveId(tabId);
     },
-    [disposeRuntime],
+    [disposeRuntime, endShell],
   );
 
   const closeToSide = useCallback(
@@ -555,17 +580,19 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
         return;
       }
       for (const id of gone) {
+        endShell(id);
         disposeRuntime(id);
       }
       setTabs((tabs) => tabs.filter((t) => !gone.has(t.tabId)));
       setActiveId((id) => (id && gone.has(id) ? tabId : id));
     },
-    [disposeRuntime],
+    [disposeRuntime, endShell],
   );
 
   const closeDisconnected = useCallback(() => {
     const gone = tabsRef.current.filter((t) => t.state === "disconnected" || t.state === "closed");
     for (const tab of gone) {
+      endShell(tab.tabId);
       disposeRuntime(tab.tabId);
     }
     setTabs((cur) => {
@@ -573,7 +600,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       setActiveId((id) => (next.some((t) => t.tabId === id) ? id : next[0]?.tabId ?? null));
       return next;
     });
-  }, [disposeRuntime]);
+  }, [disposeRuntime, endShell]);
 
   const reconnect = useCallback(
     (tabId: string) => {
@@ -587,6 +614,20 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     },
     [connect],
   );
+
+  // After a refresh, resume the shells that are still running on the server.
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (!hydrated || resumed.current) {
+      return;
+    }
+    resumed.current = true;
+    for (const tab of tabsRef.current) {
+      if (tab.ioSessionId && tab.state === "disconnected" && !runtimes.has(tab.tabId)) {
+        connect(tab, "reconnecting");
+      }
+    }
+  }, [hydrated, connect]);
 
   const replaceCurrent = useCallback(
     (target: TermTarget) => {

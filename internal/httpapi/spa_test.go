@@ -48,7 +48,7 @@ func TestSPAReadsIndexFromDiskAfterReplace(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
-	if got := res.Header.Get("Cache-Control"); got != "no-cache" {
+	if got := res.Header.Get("Cache-Control"); got != "no-cache, no-transform" {
 		t.Fatalf("index Cache-Control=%q", got)
 	}
 	if !strings.Contains(string(body), "v1") {
@@ -157,7 +157,7 @@ func TestSPAClientRouteServesFreshIndex(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
-	if res.Header.Get("Cache-Control") != "no-cache" {
+	if res.Header.Get("Cache-Control") != "no-cache, no-transform" {
 		t.Fatalf("route Cache-Control=%q", res.Header.Get("Cache-Control"))
 	}
 	if !strings.Contains(res.Header.Get("Content-Type"), "text/html") {

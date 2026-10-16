@@ -1840,6 +1840,19 @@ body.is-term-resizing {
   -webkit-user-select: none;
 }
 
+.files-path-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.files-path-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
 .files-crumbs {
   display: flex;
   flex-wrap: wrap;
@@ -4309,4 +4322,20 @@ tr.is-muted td {
   align-items: center;
   gap: 0.15rem;
   font-weight: 600;
+}
+
+/* Header-click sorting for plain tables (ui/autoSort.ts). */
+table:not([data-nosort]) thead th:not([aria-sort]):not(:empty) {
+  cursor: pointer;
+  user-select: none;
+}
+thead th[data-autosort="asc"]::after {
+  content: " \25B2";
+  font-size: 0.7em;
+  opacity: 0.7;
+}
+thead th[data-autosort="desc"]::after {
+  content: " \25BC";
+  font-size: 0.7em;
+  opacity: 0.7;
 }

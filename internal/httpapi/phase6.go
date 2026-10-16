@@ -212,6 +212,11 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row, err := s.Store.GetIOSessionByTicketHash(r.Context(), secutil.HashSHA256(ticket))
+	live := getLiveTerm(r.PathValue("id"))
+	if (err != nil || row == nil || row.ID != r.PathValue("id")) && live != nil && live.takeAttachTicket(secutil.HashSHA256(ticket), s.now()) {
+		// A reattach to a shell that survived its last socket.
+		row, err = s.Store.GetIOSession(r.Context(), p.User.ClusterID, live.id)
+	}
 	if err != nil || row == nil || row.ID != r.PathValue("id") || row.ClusterID != p.User.ClusterID {
 		writeErr(w, http.StatusUnauthorized, "invalid ticket")
 		return
@@ -251,6 +256,10 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 	cwd := row.CWD
 	if row.Kind == appdb.IOKindConsole && row.TargetKind != appdb.IOTargetVM {
 		cwd = "console"
+	}
+	if row.Kind == appdb.IOKindTerminal {
+		s.serveTerminalSession(w, r, *row, jail, cwd, live)
+		return
 	}
 	conn, err := s.IO.OpenTerminal(r.Context(), agentrpc.TermOpen{
 		TargetKind: row.TargetKind, TargetID: row.TargetID, JailRoot: jail, CWD: cwd,
@@ -309,6 +318,90 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 	row.EndedAt = &ended
 	row.Reason = "session ended"
 	_ = s.Store.UpdateIOSession(context.Background(), *row)
+}
+
+// serveTerminalSession connects a socket to a shell that survives the socket
+// (see term_live.go), starting the shell on first connect.
+func (s *Server) serveTerminalSession(w http.ResponseWriter, r *http.Request, row appdb.IOSession, jail, cwd string, live *liveTerm) {
+	if live == nil {
+		conn, err := s.IO.OpenTerminal(context.WithoutCancel(r.Context()), agentrpc.TermOpen{
+			TargetKind: row.TargetKind, TargetID: row.TargetID, JailRoot: jail, CWD: cwd,
+		})
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		ended := row
+		live = startLiveTerm(row.ID, conn, func() {
+			t := s.now()
+			ended.State = appdb.IOStateEnded
+			ended.EndedAt = &t
+			ended.Reason = "session ended"
+			_ = s.Store.UpdateIOSession(context.Background(), ended)
+		})
+		now := s.now()
+		row.State = appdb.IOStateConnected
+		row.ConnectedAt = &now
+		ended = row
+		_ = s.Store.UpdateIOSession(r.Context(), row)
+	}
+	upgrader := websocket.Upgrader{
+		CheckOrigin:  func(req *http.Request) bool { return originOK(req) },
+		Subprotocols: wsTicketProtocols(r),
+	}
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer ws.Close()
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go pingTerminalSocket(ws, pingDone)
+	serveLiveTerm(live, ws)
+}
+
+// attachIOSession issues a one-time ticket to reattach to a shell still
+// running after its socket closed (for example after a page refresh).
+func (s *Server) attachIOSession(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.TerminalOpen)
+	if err != nil {
+		return
+	}
+	row, err := s.Store.GetIOSession(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	live := getLiveTerm(r.PathValue("id"))
+	if err != nil || row == nil || live == nil || row.Kind != appdb.IOKindTerminal || row.UserID != p.User.ID {
+		writeErr(w, http.StatusGone, "the terminal session has ended")
+		return
+	}
+	ticket, err := secutil.RandomHex(24)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	live.setAttachTicket(secutil.HashSHA256(ticket), s.now())
+	jail, _ := s.sessionJail(r.Context(), p.User.ClusterID, *row)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": row.ID, "target_kind": row.TargetKind, "target_id": row.TargetID,
+		"kind": row.Kind, "cwd": row.CWD, "state": row.State, "ticket": ticket, "jail_root": jail,
+		"ws_path": "/api/v1/io/sessions/" + row.ID + "/ws", "reattached": true,
+	})
+}
+
+// endIOSession ends a shell now, when its tab is closed.
+func (s *Server) endIOSession(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.TerminalOpen)
+	if err != nil {
+		return
+	}
+	row, err := s.Store.GetIOSession(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	if err != nil || row == nil || (row.UserID != p.User.ID && !hasRole(p, rbac.Admin)) {
+		writeErr(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if live := getLiveTerm(row.ID); live != nil {
+		live.end()
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) nodeFilesList(w http.ResponseWriter, r *http.Request) {

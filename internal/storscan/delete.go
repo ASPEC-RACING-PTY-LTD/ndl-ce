@@ -79,6 +79,14 @@ func protectedBy(abs string, protect []string) string {
 // keep names folders that must stay (with their parents) though their
 // contents may go, such as a storage pool's root.
 func Resolve(root, rel string, protect, mounts []string, keep ...string) (string, error) {
+	return resolve(root, rel, SystemProtected, protect, mounts, keep)
+}
+
+// OverrideProtected is all an Owner override still refuses: the root and
+// the kernel's virtual filesystems.
+var OverrideProtected = []string{"/", "/proc", "/sys", "/dev"}
+
+func resolve(root, rel string, system, protect, mounts, keep []string) (string, error) {
 	root = filepath.Clean(root)
 	if !filepath.IsAbs(root) {
 		return "", fmt.Errorf("scan root is invalid")
@@ -107,7 +115,7 @@ func Resolve(root, rel string, protect, mounts []string, keep ...string) (string
 	if _, err := os.Lstat(abs); err != nil {
 		return "", fmt.Errorf("no longer exists")
 	}
-	if p := protectedBy(abs, append(append([]string{}, SystemProtected...), protect...)); p != "" {
+	if p := protectedBy(abs, append(append([]string{}, system...), protect...)); p != "" {
 		return "", fmt.Errorf("protected: %s holds system or No-dal data", p)
 	}
 	for _, k := range keep {
@@ -135,6 +143,17 @@ func freeBytes(path string) int64 {
 // Delete removes the items after checking each one. Symlinks are removed
 // themselves, never followed. One refused item does not stop the others.
 func Delete(root string, rels, protect, keep []string, mounts func() ([]string, error)) []DeleteResult {
+	return deleteItems(root, rels, SystemProtected, protect, keep, mounts)
+}
+
+// DeleteOverride deletes as an Owner who has chosen to override No-dal's
+// protection: only the root, the kernel's virtual filesystems, links on the
+// way and mounted filesystems are still refused.
+func DeleteOverride(root string, rels []string, mounts func() ([]string, error)) []DeleteResult {
+	return deleteItems(root, rels, OverrideProtected, nil, nil, mounts)
+}
+
+func deleteItems(root string, rels, system, protect, keep []string, mounts func() ([]string, error)) []DeleteResult {
 	if mounts == nil {
 		mounts = MountPoints
 	}
@@ -147,7 +166,7 @@ func Delete(root string, rels, protect, keep []string, mounts func() ([]string, 
 			out = append(out, r)
 			continue
 		}
-		abs, rerr := Resolve(root, rel, protect, mps, keep...)
+		abs, rerr := resolve(root, rel, system, protect, mps, keep)
 		if rerr != nil {
 			r.Error = rerr.Error()
 			out = append(out, r)

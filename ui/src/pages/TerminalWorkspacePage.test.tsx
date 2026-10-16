@@ -56,6 +56,8 @@ const sockets: FakeWS[] = [];
 const created: { path: string; body: string }[] = [];
 const uploads: { path: string }[] = [];
 let sessionN = 0;
+const attached: string[] = [];
+let reattachable = false;
 let xhrMode: "ok" | "fail" | "hang" = "ok";
 let me: MeResponse = admin;
 let started: string[] = [];
@@ -67,6 +69,8 @@ function installIO() {
   uploads.length = 0;
   started = [];
   sessionN = 0;
+  attached.length = 0;
+  reattachable = false;
   class FakeSocket {
     static OPEN = 1;
     readyState = 1;
@@ -130,6 +134,12 @@ function installIO() {
     if (path === "/api/v1/workloads/wl-stop/start" && method === "POST") {
       started.push("wl-stop");
       return jsonResponse(200, { id: "wl-stop", name: "Test VM", kind: "vm", status: "running" });
+    }
+    if (path.endsWith("/attach") && method === "POST") {
+      const id = path.split("/").slice(-2)[0];
+      attached.push(id);
+      if (!reattachable) return jsonResponse(410, { error: "the terminal session has ended" });
+      return jsonResponse(200, { id, ticket: `r-${id}`, cwd: "/", jail_root: "/var/lib/ndl/ct" });
     }
     if (path.endsWith("/terminal/sessions") && method === "POST") {
       sessionN += 1;
@@ -408,6 +418,24 @@ describe("Terminal workspace", () => {
     expect(await screen.findByRole("tab", { name: /alpine/i })).toBeVisible();
     expect(created).toHaveLength(1);
     expect(document.querySelector(".term-conn.is-active")).toHaveTextContent(/connected/i);
+  });
+
+  it("resumes the same shell when it is still running on the server", async () => {
+    installIO();
+    await openWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
+    expect(await screen.findByRole("dialog", { name: /new terminal/i })).toBeVisible();
+    await clickTarget("workload", "wl-a");
+    await waitConnected();
+    reattachable = true;
+    sockets[0]?.close();
+    await waitFor(() => {
+      expect(document.querySelector(".term-conn.is-disconnected")).toHaveTextContent(/disconnected/i);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^reconnect$/i }));
+    await waitFor(() => expect(attached).toEqual(["s1"]));
+    await waitFor(() => expect(sockets.length).toBe(2));
+    expect(created).toHaveLength(1);
   });
 
   it("shows disconnected honestly after a socket close and reconnects with a new PTY", async () => {

@@ -447,6 +447,7 @@ export function AuditPage({ initialSource = "all" }: { initialSource?: SourceFil
                   <option value={200}>Newest 200</option>
                   <option value={500}>Newest 500</option>
                   <option value={2000}>Newest 2000</option>
+                  <option value={20000}>Newest 20000 (a month or more)</option>
                 </select>
               </label>
               {filtering ? (

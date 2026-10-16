@@ -94,8 +94,10 @@ type BackupPolicy struct {
 	Offsite     BackupOffsite
 	CaptureMode string
 	ScopeJSON   string
-	LastRunAt   *time.Time
-	CreatedAt   time.Time
+	// Paused stops the schedule; manual runs still work.
+	Paused    bool
+	LastRunAt *time.Time
+	CreatedAt time.Time
 }
 
 // NormalizeBackupPolicy fills scope from legacy single-workload rows.
@@ -209,7 +211,10 @@ type BackupWorkspaceSettings struct {
 	UploadWorkers       int
 	BandwidthLimitBPS   int64
 	CacheRetentionHours int
-	UpdatedAt           time.Time
+	// CompressionLevel is the zstd level for new chunks: 0 default (19),
+	// 1-22, or -1 off.
+	CompressionLevel int
+	UpdatedAt        time.Time
 }
 
 // BackupRepository is the catalogued local V2 store.

@@ -87,6 +87,9 @@ type Settings struct {
 	UploadWorkers       int   `json:"upload_workers,omitempty"`
 	BandwidthLimitBPS   int64 `json:"bandwidth_limit_bps,omitempty"`
 	CacheRetentionHours int   `json:"cache_retention_hours,omitempty"`
+	// CompressionLevel is the zstd level for new chunks (1-22, 0 default,
+	// -1 off).
+	CompressionLevel int `json:"compression_level,omitempty"`
 }
 
 // Result is returned in CopyResult.Extra.
@@ -103,6 +106,7 @@ type Result struct {
 	LogicalBytes    int64                      `json:"logical_bytes,omitempty"`
 	BytesRead       int64                      `json:"bytes_read,omitempty"`
 	PhysicalNewData int64                      `json:"physical_new_data,omitempty"`
+	NewRawBytes     int64                      `json:"new_raw_bytes,omitempty"`
 	ChunksTotal     int                        `json:"chunks_total,omitempty"`
 	ChunksNew       int                        `json:"chunks_new,omitempty"`
 	ChunksReused    int                        `json:"chunks_reused,omitempty"`
@@ -131,20 +135,23 @@ type Result struct {
 
 // PointView is a secret-free restore-point summary.
 type PointView struct {
-	BackupID        string             `json:"backup_id"`
-	Namespace       string             `json:"namespace"`
-	WorkloadID      string             `json:"workload_id"`
-	WorkloadName    string             `json:"workload_name"`
-	CreatedAtNS     int64              `json:"created_at_ns"`
-	LocalComplete   bool               `json:"local_complete"`
-	Remote          backup.RemoteState `json:"remote"`
-	CaptureMode     string             `json:"capture_mode,omitempty"`
-	Consistency     string             `json:"consistency,omitempty"`
-	LogicalBytes    int64              `json:"logical_bytes,omitempty"`
-	PhysicalNewData int64              `json:"physical_new_data,omitempty"`
-	UploadStartedNS int64              `json:"upload_started_ns,omitempty"`
-	UploadEndedNS   int64              `json:"upload_ended_ns,omitempty"`
-	Recovered       bool               `json:"recovered,omitempty"`
+	BackupID         string             `json:"backup_id"`
+	Namespace        string             `json:"namespace"`
+	WorkloadID       string             `json:"workload_id"`
+	WorkloadName     string             `json:"workload_name"`
+	CreatedAtNS      int64              `json:"created_at_ns"`
+	LocalComplete    bool               `json:"local_complete"`
+	Remote           backup.RemoteState `json:"remote"`
+	CaptureMode      string             `json:"capture_mode,omitempty"`
+	Consistency      string             `json:"consistency,omitempty"`
+	LogicalBytes     int64              `json:"logical_bytes,omitempty"`
+	PhysicalNewData  int64              `json:"physical_new_data,omitempty"`
+	UploadStartedNS  int64              `json:"upload_started_ns,omitempty"`
+	UploadEndedNS    int64              `json:"upload_ended_ns,omitempty"`
+	UploadedBytes    int64              `json:"uploaded_bytes,omitempty"`
+	UploadTotalBytes int64              `json:"upload_total_bytes,omitempty"`
+	RemoteError      string             `json:"remote_error,omitempty"`
+	Recovered        bool               `json:"recovered,omitempty"`
 }
 
 // WorkspaceStatus is the local repository footprint.
@@ -161,6 +168,7 @@ type WorkspaceStatus struct {
 	UploadWorkers       int    `json:"upload_workers"`
 	BandwidthLimitBPS   int64  `json:"bandwidth_limit_bps,omitempty"`
 	CacheRetentionHours int    `json:"cache_retention_hours,omitempty"`
+	CompressionLevel    int    `json:"compression_level"`
 
 	HostTotalBytes int64 `json:"host_total_bytes,omitempty"`
 	// EffectiveReserveBytes is the free space captures actually leave: the

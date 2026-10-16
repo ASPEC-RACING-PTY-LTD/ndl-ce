@@ -77,6 +77,7 @@ func (h *Host) queueFor(spec TargetSpec) (*backup.UploadQueue, error) {
 	limit := h.settings.BandwidthLimitBPS
 	h.mu.Unlock()
 	q := backup.NewUploadQueueLimited(h.repo, tgt, workers, limit)
+	q.SetTargetKey(targetKey(spec))
 	if err := q.Start(context.Background()); err != nil {
 		return nil, err
 	}
