@@ -73,3 +73,24 @@ func TestLiveUpdateUploadVerifiesAndQueues(t *testing.T) {
 		t.Fatalf("rollback request %d %v", code, err)
 	}
 }
+
+// An idle, freshly enabled host has nothing queued, busy or in history; the
+// status must still give lists, or the Updates page cannot render it.
+func TestLiveUpdateStatusIdleGivesEmptyLists(t *testing.T) {
+	s, _, token := testServer(t)
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "inbox"), 0o770)
+	s.LiveUpdates = LiveUpdatePaths{Root: root, KeysDir: t.TempDir(), Enabled: filepath.Join(t.TempDir(), "enabled")}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	code, st := jsonCall(t, ts, cookie, "GET", "/api/v1/live-updates", "")
+	if code != http.StatusOK {
+		t.Fatalf("status %d %v", code, st)
+	}
+	for _, k := range []string{"queued", "history", "trusted_keys", "busy", "applied_migrations"} {
+		if _, ok := st[k].([]any); !ok {
+			t.Errorf("%s = %#v, want a list", k, st[k])
+		}
+	}
+}

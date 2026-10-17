@@ -118,6 +118,14 @@ func (s *Server) appliedMigrations(ctx context.Context) []string {
 	return out
 }
 
+// orEmpty keeps a list a JSON array, never null.
+func orEmpty(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
+}
+
 func packageVersion() string {
 	out, err := exec.Command("dpkg-query", "-W", "-f=${Version}", "ndl-control").Output()
 	if err != nil {
@@ -139,7 +147,7 @@ func (s *Server) getLiveUpdates(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "live update state is unreadable: "+err.Error())
 		return
 	}
-	var queued []string
+	queued := []string{}
 	if entries, err := os.ReadDir(filepath.Join(paths.root(), "inbox")); err == nil {
 		for _, e := range entries {
 			if filepath.Ext(e.Name()) == liveupdate.BundleExt {
@@ -165,8 +173,8 @@ func (s *Server) getLiveUpdates(w http.ResponseWriter, r *http.Request) {
 		"queued":             queued,
 		"history":            history,
 		"trusted_keys":       keyIDs,
-		"busy":               s.liveBusy(r.Context(), p.User.ClusterID),
-		"applied_migrations": s.appliedMigrations(r.Context()),
+		"busy":               orEmpty(s.liveBusy(r.Context(), p.User.ClusterID)),
+		"applied_migrations": orEmpty(s.appliedMigrations(r.Context())),
 		"package_version":    packageVersion(),
 		"version":            buildinfo.Version,
 		"build":              buildinfo.ID(),

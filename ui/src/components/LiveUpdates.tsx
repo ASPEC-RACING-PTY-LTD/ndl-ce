@@ -86,6 +86,7 @@ export function LiveUpdatesPanel({ owner }: { owner: boolean }) {
   }
 
   const history = [...(st?.history ?? [])].reverse();
+  const busyNow = st?.busy ?? [];
   const canRollBack = (st?.history ?? []).some((e) => e.action === "apply" && e.result === "applied" && !e.rolled_back);
   return (
     <section className="panel bk-panel" aria-labelledby="live-updates-heading">
@@ -143,8 +144,8 @@ export function LiveUpdatesPanel({ owner }: { owner: boolean }) {
                 Queued <b>{(st.queued ?? []).length}</b>
               </span>
             ) : null}
-            <span className={"bk-stat" + (st.busy.length ? " is-warn" : "")} title={st.busy.join("; ") || undefined}>
-              {st.busy.length ? "Would wait for" : "Nothing running"} {st.busy.length ? <b>{st.busy.join(", ")}</b> : null}
+            <span className={"bk-stat" + (busyNow.length ? " is-warn" : "")} title={busyNow.join("; ") || undefined}>
+              {busyNow.length ? "Would wait for" : "Nothing running"} {busyNow.length ? <b>{busyNow.join(", ")}</b> : null}
             </span>
             <span className="bk-stat" title={(st.trusted_keys ?? []).join(", ") || undefined}>
               Trusted signing keys <b>{(st.trusted_keys ?? []).length}</b>
