@@ -1603,13 +1603,19 @@ func (s *Server) resizeCTDisk(ctx context.Context, clusterID string, row appdb.W
 	if err != nil || pool == nil {
 		return errConflict("storage pool is not found")
 	}
+	running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
+	return s.resizePoolVolume(ctx, clusterID, *vol, *pool, size, running, expandFS)
+}
+
+// resizePoolVolume grows or shrinks one volume on its pool. running says
+// whether the container using it is up, which limits directory shrinks.
+func (s *Server) resizePoolVolume(ctx context.Context, clusterID string, vol appdb.Volume, pool appdb.StoragePool, size int64, running bool, expandFS *bool) error {
 	// An unchanged ZFS size still reapplies quota and refquota, so saving
 	// heals datasets whose quota was left at the create size.
 	if size == vol.SizeBytes && pool.BackendType != storage.BackendZFS {
 		return nil
 	}
 	shrink := size < vol.SizeBytes
-	running := row.UnitActive || strings.EqualFold(row.Status, lxc.StatusRunning)
 	if shrink {
 		switch pool.BackendType {
 		case storage.BackendZFS:
@@ -1633,12 +1639,12 @@ func (s *Server) resizeCTDisk(ctx context.Context, clusterID string, row appdb.W
 			Size: size, Format: vol.Format, BackendRef: vol.BackendRef,
 			Owner: storage.VolumeOwnerName, OwnerKind: storage.VolumeKindOperator,
 			Live: running, ExpandFS: expandFS,
-		}, appdb.PoolHints([]appdb.StoragePool{*pool})[0]); err != nil {
+		}, appdb.PoolHints([]appdb.StoragePool{pool})[0]); err != nil {
 			return err
 		}
 	case storage.BackendZFS:
 		res, err := s.zfs().ZFSPool(ctx, storage.ZFSOp{
-			Action: "resize-volume", PoolID: pool.ID, Name: s.zfsPoolName(ctx, *pool),
+			Action: "resize-volume", PoolID: pool.ID, Name: s.zfsPoolName(ctx, pool),
 			VolumeID: vol.ID, Class: vol.Class, SizeBytes: size,
 		})
 		if err != nil {
@@ -1649,7 +1655,7 @@ func (s *Server) resizeCTDisk(ctx context.Context, clusterID string, row appdb.W
 		}
 	case storage.BackendLVM:
 		res, err := s.lvm().LVMPool(ctx, storage.LVMOp{
-			Action: "resize-volume", PoolID: pool.ID, Name: s.lvmVGName(ctx, *pool),
+			Action: "resize-volume", PoolID: pool.ID, Name: s.lvmVGName(ctx, pool),
 			VolumeID: vol.ID, Class: vol.Class, SizeBytes: size,
 		})
 		if err != nil {

@@ -58,13 +58,41 @@ func (s *Server) loadSystemContainer(w http.ResponseWriter, r *http.Request, p *
 	return wl, true
 }
 
-func mountJSON(m lxc.Mount, pools map[string]appdb.StoragePool) map[string]any {
+func mountJSON(m lxc.Mount, pools map[string]appdb.StoragePool, vol *appdb.Volume) map[string]any {
 	out := map[string]any{
 		"source": m.Source, "target": m.Target, "read_only": m.ReadOnly,
 		"label": m.Label, "pool_id": m.PoolID,
 	}
 	if pool, ok := pools[m.PoolID]; ok {
 		out["pool_name"] = pool.Name
+	}
+	if vol != nil {
+		out["volume_id"] = vol.ID
+		out["size_bytes"] = vol.SizeBytes
+	}
+	return out
+}
+
+// mountVolumes maps each pool mount's host folder to the volume behind it.
+// Mounts on a plain host folder have no volume.
+func (s *Server) mountVolumes(ctx context.Context, clusterID string, mounts []lxc.Mount, pools map[string]appdb.StoragePool) map[string]*appdb.Volume {
+	out := map[string]*appdb.Volume{}
+	seen := map[string]bool{}
+	for _, m := range mounts {
+		pool, ok := pools[m.PoolID]
+		if m.PoolID == "" || !ok || seen[m.PoolID] {
+			continue
+		}
+		seen[m.PoolID] = true
+		vols, err := s.Store.ListVolumes(ctx, clusterID, m.PoolID)
+		if err != nil {
+			continue
+		}
+		for i := range vols {
+			if host := volumeHostFolder(vols[i], pool); host != "" {
+				out[host] = &vols[i]
+			}
+		}
 	}
 	return out
 }
@@ -83,9 +111,10 @@ func (s *Server) workloadStorageBody(ctx context.Context, clusterID string, res 
 		}
 		eligible = append(eligible, poolJSON(pool))
 	}
+	vols := s.mountVolumes(ctx, clusterID, res.Mounts, byID)
 	mounts := make([]map[string]any, 0, len(res.Mounts))
 	for _, m := range res.Mounts {
-		mounts = append(mounts, mountJSON(m, byID))
+		mounts = append(mounts, mountJSON(m, byID, vols[m.Source]))
 	}
 	return map[string]any{
 		"mounts":           mounts,
@@ -163,13 +192,13 @@ func (s *Server) putWorkloadMounts(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(m.Source) != "" {
 			continue
 		}
-		vol, err := s.createMountVolume(r.Context(), p.User.ClusterID, m)
+		vol, host, err := s.createMountVolume(r.Context(), p.User.ClusterID, m)
 		if err != nil {
 			writeErr(w, statusFor(err), err.Error())
 			return
 		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.create", "ok", vol.ID)
-		mounts[i].Source = vol.BackendRef
+		mounts[i].Source = host
 		mounts[i].Create = true
 	}
 	res, err := s.Workloads.LifecycleCT(r.Context(), lxc.LifecycleRequest{
@@ -188,30 +217,30 @@ func (s *Server) putWorkloadMounts(w http.ResponseWriter, r *http.Request) {
 
 // createMountVolume makes a new filesystem volume on a pool for a mount.
 // It is owned by the operator so orphan cleanup never removes it.
-func (s *Server) createMountVolume(ctx context.Context, clusterID string, m workloadMountRequest) (appdb.Volume, error) {
+func (s *Server) createMountVolume(ctx context.Context, clusterID string, m workloadMountRequest) (appdb.Volume, string, error) {
 	pool, err := s.Store.GetStoragePool(ctx, clusterID, m.PoolID)
 	if err != nil || pool == nil {
-		return appdb.Volume{}, errNotFound("storage pool not found")
+		return appdb.Volume{}, "", errNotFound("storage pool not found")
 	}
 	if !mountPoolBackends[pool.BackendType] {
-		return appdb.Volume{}, errUnprocessable("this pool provides block storage; pick a directory, ZFS, NFS or SMB pool")
+		return appdb.Volume{}, "", errUnprocessable("this pool provides block storage; pick a directory, ZFS, NFS or SMB pool")
 	}
 	if pool.Status != storage.StatusAvailable && pool.Status != storage.StatusWarning {
-		return appdb.Volume{}, errConflict("storage pool is unavailable")
+		return appdb.Volume{}, "", errConflict("storage pool is unavailable")
 	}
 	class := storage.ClassContainerRoot
 	if invalidVolumeSize(pool.BackendType, class, m.SizeBytes) {
-		return appdb.Volume{}, errUnprocessable("size is required and must fit the pool")
+		return appdb.Volume{}, "", errUnprocessable("size is required and must fit the pool")
 	}
 	var row appdb.Volume
 	if pool.BackendType == storage.BackendZFS {
 		row, err = s.createZFSVolume(ctx, clusterID, *pool, class, m.SizeBytes)
 		if err != nil {
-			return appdb.Volume{}, err
+			return appdb.Volume{}, "", err
 		}
 	} else {
 		if s.Storage == nil {
-			return appdb.Volume{}, fmt.Errorf("storage agent is unavailable")
+			return appdb.Volume{}, "", fmt.Errorf("storage agent is unavailable")
 		}
 		volID := uuid.NewString()
 		hint := appdb.PoolHints([]appdb.StoragePool{*pool})[0]
@@ -220,7 +249,7 @@ func (s *Server) createMountVolume(ctx context.Context, clusterID string, m work
 			Owner: storage.VolumeOwnerName, OwnerKind: storage.VolumeKindOperator,
 		}, hint)
 		if err != nil {
-			return appdb.Volume{}, errUnprocessable(err.Error())
+			return appdb.Volume{}, "", errUnprocessable(err.Error())
 		}
 		row = appdb.Volume{
 			ID: volID, ClusterID: clusterID, NodeID: pool.NodeID, PoolID: pool.ID,
@@ -232,17 +261,96 @@ func (s *Server) createMountVolume(ctx context.Context, clusterID string, m work
 			row.BackendType = pool.BackendType
 		}
 		if err := s.Store.CreateVolume(ctx, row); err != nil {
-			return appdb.Volume{}, fmt.Errorf("could not record volume")
+			return appdb.Volume{}, "", fmt.Errorf("could not record volume")
 		}
 	}
 	row.Owner = storage.VolumeOwnerName
 	row.OwnerKind = storage.VolumeKindOperator
 	if err := s.Store.UpdateVolumeOwner(ctx, row); err != nil {
-		return appdb.Volume{}, fmt.Errorf("could not record volume owner")
+		return appdb.Volume{}, "", fmt.Errorf("could not record volume owner")
 	}
-	if !strings.HasPrefix(row.BackendRef, "/") {
-		return appdb.Volume{}, errUnprocessable("the pool did not return a folder for this volume")
+	// Directory, NFS and SMB pools return a path relative to the pool root.
+	host := volumeHostFolder(row, *pool)
+	if host == "" {
+		return appdb.Volume{}, "", errUnprocessable("the pool did not return a folder for this volume")
 	}
 	s.emitEvent(ctx, clusterID, pool.NodeID, "storage.volume.created", map[string]string{"volume_id": row.ID})
-	return row, nil
+	return row, host, nil
+}
+
+// volumeHostFolder is the absolute host folder of a filesystem volume, or
+// "" when it has none. ZFS returns its mountpoint; directory, NFS and SMB
+// pools return a path relative to the pool root.
+func volumeHostFolder(vol appdb.Volume, pool appdb.StoragePool) string {
+	if strings.HasPrefix(vol.BackendRef, "/") {
+		return vol.BackendRef
+	}
+	host, err := storage.HostVolumePath(vol.BackendType, pool.RootPath, vol.BackendRef)
+	if err != nil || !strings.HasPrefix(host, "/") {
+		return ""
+	}
+	return host
+}
+
+// resizeWorkloadMount grows or shrinks the pool volume behind one mount.
+// The mount list itself is unchanged, so nothing needs a restart.
+func (s *Server) resizeWorkloadMount(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.ComputeModify)
+	if err != nil {
+		return
+	}
+	wl, ok := s.loadSystemContainer(w, r, p)
+	if !ok {
+		return
+	}
+	var req struct {
+		Target    string `json:"target"`
+		SizeBytes int64  `json:"size_bytes"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if req.SizeBytes < lxc.MinRootSize {
+		writeErr(w, http.StatusBadRequest, "size must be at least 1 GB")
+		return
+	}
+	ctx := r.Context()
+	res, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: wl.ID, Action: lxc.ActionMountsGet})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	var mount *lxc.Mount
+	for i := range res.Mounts {
+		if res.Mounts[i].Target == strings.TrimSpace(req.Target) {
+			mount = &res.Mounts[i]
+		}
+	}
+	if mount == nil {
+		writeErr(w, http.StatusNotFound, "mount not found")
+		return
+	}
+	if mount.PoolID == "" {
+		writeErr(w, http.StatusUnprocessableEntity, "this mount is a host folder; only folders made on a storage pool can be resized")
+		return
+	}
+	pool, err := s.Store.GetStoragePool(ctx, p.User.ClusterID, mount.PoolID)
+	if err != nil || pool == nil {
+		writeErr(w, http.StatusNotFound, "storage pool not found")
+		return
+	}
+	vol := s.mountVolumes(ctx, p.User.ClusterID, []lxc.Mount{*mount}, map[string]appdb.StoragePool{pool.ID: *pool})[mount.Source]
+	if vol == nil {
+		writeErr(w, http.StatusNotFound, "the storage volume behind this mount was not found")
+		return
+	}
+	running := wl.UnitActive || strings.EqualFold(wl.Status, lxc.StatusRunning)
+	if err := s.resizePoolVolume(context.WithoutCancel(ctx), p.User.ClusterID, *vol, *pool, req.SizeBytes, running, nil); err != nil {
+		s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.resize", "failed", vol.ID)
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "storage.volume.resize", "ok", vol.ID)
+	writeJSON(w, http.StatusOK, s.workloadStorageBody(ctx, p.User.ClusterID, res))
 }

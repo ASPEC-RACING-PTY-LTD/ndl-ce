@@ -9412,6 +9412,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /workloads/{id}/storage/mounts/size:
+    put:
+      operationId: resizeWorkloadMount
+      summary: Grow or shrink the pool volume behind one of a system container's mounts. Only mounts made on a storage pool can be resized; files are never deleted, and a shrink that would not fit the data is refused. Requires compute.modify.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkloadMountResizeRequest"
+      responses:
+        "200":
+          description: Resized; current mounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkloadStorage"
+        "400":
+          description: Invalid size
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Mount or its volume not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Resize refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Resize not supported for this mount
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /workloads/{id}/diagnostics/gpu:
     get:
       operationId: workloadGpuDiagnostics
@@ -17840,6 +17887,25 @@ components:
           type: string
         pool_name:
           type: string
+        volume_id:
+          type: string
+          description: Pool volume behind the mount, when it was made on a pool.
+        size_bytes:
+          type: integer
+          format: int64
+          description: Size of the pool volume; present with volume_id.
+    WorkloadMountResizeRequest:
+      type: object
+      required:
+        - target
+        - size_bytes
+      properties:
+        target:
+          type: string
+          description: Container path of the mount to resize.
+        size_bytes:
+          type: integer
+          format: int64
     WorkloadMountInput:
       type: object
       required:

@@ -1018,6 +1018,19 @@ export async function setWorkloadMounts(
   );
 }
 
+export async function resizeWorkloadMount(
+  id: string,
+  target: string,
+  sizeBytes: number,
+): Promise<import("../generated/openapi").WorkloadStorage> {
+  return readJson(
+    await request(`/workloads/${id}/storage/mounts/size`, {
+      method: "PUT",
+      body: JSON.stringify({ target, size_bytes: sizeBytes }),
+    }),
+  );
+}
+
 export async function getWorkloadGPUDiagnostics(
   id: string,
 ): Promise<import("../generated/openapi").WorkloadGPUDiagnostics> {

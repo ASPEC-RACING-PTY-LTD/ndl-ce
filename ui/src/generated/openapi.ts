@@ -2941,6 +2941,13 @@ export interface WorkloadMount {
   label?: string;
   pool_id?: string;
   pool_name?: string;
+  volume_id?: string;
+  size_bytes?: number;
+}
+
+export interface WorkloadMountResizeRequest {
+  target: string;
+  size_bytes: number;
 }
 
 export interface WorkloadMountInput {
@@ -4321,6 +4328,8 @@ export type ReleaseHostDiskReservePath = "/api/v1/host/disk/reserve/release";
 export type GetWorkloadStoragePath = "/api/v1/workloads/{id}/storage";
 
 export type SetWorkloadMountsPath = "/api/v1/workloads/{id}/storage/mounts";
+
+export type ResizeWorkloadMountPath = "/api/v1/workloads/{id}/storage/mounts/size";
 
 export type WorkloadGpuDiagnosticsPath = "/api/v1/workloads/{id}/diagnostics/gpu";
 

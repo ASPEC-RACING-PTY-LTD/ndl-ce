@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { getWorkload, getWorkloadStorage, setWorkloadMounts, workloadAction } from "../api/client";
+import {
+  getWorkload,
+  getWorkloadStorage,
+  resizeWorkloadMount,
+  setWorkloadMounts,
+  workloadAction,
+} from "../api/client";
 import type { Workload } from "../api/phase5";
-import type { StoragePool, WorkloadMount, WorkloadMountInput, WorkloadStorage } from "../generated/openapi";
+import type {
+  StoragePool,
+  WorkloadMount,
+  WorkloadMountInput,
+  WorkloadStorage,
+} from "../generated/openapi";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
@@ -27,7 +38,13 @@ function slug(text: string): string {
 
 // keepMount sends an existing mount back unchanged.
 function keepMount(m: WorkloadMount): WorkloadMountInput {
-  return { source: m.source, target: m.target, read_only: m.read_only, pool_id: m.pool_id, label: m.label };
+  return {
+    source: m.source,
+    target: m.target,
+    read_only: m.read_only,
+    pool_id: m.pool_id,
+    label: m.label,
+  };
 }
 
 // defaultSizeGiB is the pool's free space in whole GiB.
@@ -39,7 +56,10 @@ function defaultSizeGiB(p: StoragePool | undefined): string {
 }
 
 function poolLabel(p: StoragePool): string {
-  const free = p.usable_bytes != null ? `${formatBytes(p.usable_bytes)} free` : "free space not reported";
+  const free =
+    p.usable_bytes != null
+      ? `${formatBytes(p.usable_bytes)} free`
+      : "free space not reported";
   return `${p.name} (${p.backend_type}, ${free})`;
 }
 
@@ -58,6 +78,11 @@ export function WorkloadStoragePage() {
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [removing, setRemoving] = useState<WorkloadMount | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState<WorkloadMount | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editTarget, setEditTarget] = useState("");
+  const [editReadOnly, setEditReadOnly] = useState(false);
+  const [editSize, setEditSize] = useState("");
 
   const [sourceKind, setSourceKind] = useState<"pool" | "host">("pool");
   const [poolID, setPoolID] = useState("");
@@ -74,7 +99,10 @@ export function WorkloadStoragePage() {
     let cancelled = false;
     void (async () => {
       try {
-        const [w, s] = await Promise.all([getWorkload(id), getWorkloadStorage(id)]);
+        const [w, s] = await Promise.all([
+          getWorkload(id),
+          getWorkloadStorage(id),
+        ]);
         if (cancelled) {
           return;
         }
@@ -108,7 +136,9 @@ export function WorkloadStoragePage() {
       }
       return true;
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Saving storage failed");
+      setFormError(
+        err instanceof Error ? err.message : "Saving storage failed",
+      );
       return false;
     } finally {
       setBusy(false);
@@ -122,7 +152,11 @@ export function WorkloadStoragePage() {
     }
     const name = label.trim();
     const mountAt = target.trim() || `/mnt/${slug(name) || "data"}`;
-    const input: WorkloadMountInput = { target: mountAt, read_only: readOnly, label: name };
+    const input: WorkloadMountInput = {
+      target: mountAt,
+      read_only: readOnly,
+      label: name,
+    };
     if (sourceKind === "pool") {
       const gib = Number(sizeGiB);
       if (!poolID) {
@@ -137,12 +171,17 @@ export function WorkloadStoragePage() {
       input.size_bytes = Math.floor(gib) * GIB;
     } else {
       if (!hostPath.trim().startsWith("/")) {
-        setFormError("Enter the absolute host folder, for example /mnt/hdd1/media.");
+        setFormError(
+          "Enter the absolute host folder, for example /mnt/hdd1/media.",
+        );
         return;
       }
       input.source = hostPath.trim();
     }
-    const ok = await save([...data.mounts.map(keepMount), input], `Added ${mountAt}.`);
+    const ok = await save(
+      [...data.mounts.map(keepMount), input],
+      `Added ${mountAt}.`,
+    );
     if (ok) {
       setLabel("");
       setTarget("");
@@ -163,6 +202,76 @@ export function WorkloadStoragePage() {
     );
   }
 
+  function openEdit(m: WorkloadMount) {
+    setEditing(m);
+    setEditLabel(m.label ?? "");
+    setEditTarget(m.target);
+    setEditReadOnly(m.read_only);
+    setEditSize(
+      m.size_bytes != null ? String(Math.round(m.size_bytes / GIB)) : "",
+    );
+  }
+
+  async function onEdit() {
+    const m = editing;
+    if (!m || !data) {
+      return;
+    }
+    const mountAt = editTarget.trim();
+    if (!mountAt.startsWith("/")) {
+      setFormError(
+        "Enter the absolute path inside the container, for example /mnt/data.",
+      );
+      return;
+    }
+    let sizeBytes: number | null = null;
+    if (m.volume_id && m.size_bytes != null) {
+      const gib = Number(editSize);
+      if (!Number.isFinite(gib) || gib < 1) {
+        setFormError("Enter a size of at least 1 GiB.");
+        return;
+      }
+      const next = Math.floor(gib) * GIB;
+      if (next !== Math.round(m.size_bytes / GIB) * GIB) {
+        sizeBytes = next;
+      }
+    }
+    const listChanged =
+      mountAt !== m.target ||
+      editReadOnly !== m.read_only ||
+      editLabel.trim() !== (m.label ?? "");
+    setEditing(null);
+    if (sizeBytes != null) {
+      setBusy(true);
+      setFormError(null);
+      setNotice(null);
+      try {
+        setData(await resizeWorkloadMount(id, m.target, sizeBytes));
+        setNotice(`Resized ${m.target} to ${formatBytes(sizeBytes)}.`);
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : "Resizing failed");
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+    }
+    if (listChanged) {
+      await save(
+        data.mounts.map((x) =>
+          x.target === m.target
+            ? {
+                ...keepMount(x),
+                target: mountAt,
+                read_only: editReadOnly,
+                label: editLabel.trim(),
+              }
+            : keepMount(x),
+        ),
+        `Saved ${mountAt}.`,
+      );
+    }
+  }
+
   function onRestart() {
     setConfirmRestart(false);
     setBusy(true);
@@ -172,7 +281,9 @@ export function WorkloadStoragePage() {
         setNotice("Restarted. The container now has its storage mounts.");
         setItem(await getWorkload(id));
       })
-      .catch((err) => setFormError(err instanceof Error ? err.message : "Restart failed"))
+      .catch((err) =>
+        setFormError(err instanceof Error ? err.message : "Restart failed"),
+      )
       .finally(() => setBusy(false));
   }
 
@@ -206,15 +317,21 @@ export function WorkloadStoragePage() {
           {notice}
         </p>
       ) : null}
-      {formError ? (
-        <ErrorNotice error={formError} />
-      ) : null}
+      {formError ? <ErrorNotice error={formError} /> : null}
       {restartNeeded && running ? (
         <div className="banner banner-warn" role="status">
-          <p>The change loads the next time {item.name} restarts. It keeps running until then.</p>
+          <p>
+            The change loads the next time {item.name} restarts. It keeps
+            running until then.
+          </p>
           {mutate ? (
             <div className="btn-row is-flush">
-              <button className="btn" type="button" disabled={busy} onClick={() => setConfirmRestart(true)}>
+              <button
+                className="btn"
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmRestart(true)}
+              >
                 Restart {item.name}
               </button>
             </div>
@@ -225,7 +342,9 @@ export function WorkloadStoragePage() {
       <article className="panel">
         <h2>Mounted storage</h2>
         {data.mounts.length === 0 ? (
-          <p>No extra storage is mounted. The container only has its root disk.</p>
+          <p>
+            No extra storage is mounted. The container only has its root disk.
+          </p>
         ) : (
           <div className="table-wrap">
             <table>
@@ -235,6 +354,7 @@ export function WorkloadStoragePage() {
                   <th>Container path</th>
                   <th>Host folder</th>
                   <th>Pool</th>
+                  <th>Size</th>
                   <th>Access</th>
                   {mutate ? <th aria-label="Actions" /> : null}
                 </tr>
@@ -249,10 +369,24 @@ export function WorkloadStoragePage() {
                     <td>
                       <code>{m.source}</code>
                     </td>
-                    <td>{m.pool_name || (m.pool_id ? "Pool" : "Host folder")}</td>
+                    <td>
+                      {m.pool_name || (m.pool_id ? "Pool" : "Host folder")}
+                    </td>
+                    <td>
+                      {m.size_bytes != null ? formatBytes(m.size_bytes) : "—"}
+                    </td>
                     <td>{m.read_only ? "Read-only" : "Read and write"}</td>
                     {mutate ? (
-                      <td>
+                      <td className="btn-row is-flush">
+                        <button
+                          className="btn"
+                          type="button"
+                          disabled={busy}
+                          aria-label={`Edit ${m.target}`}
+                          onClick={() => openEdit(m)}
+                        >
+                          Edit
+                        </button>
                         <button
                           className="btn"
                           type="button"
@@ -301,7 +435,8 @@ export function WorkloadStoragePage() {
             {sourceKind === "pool" ? (
               pools.length === 0 ? (
                 <p className="banner banner-warn" role="status">
-                  No directory, ZFS, NFS or SMB pool is available. Add a pool for the disk under Storage, then come back.
+                  No directory, ZFS, NFS or SMB pool is available. Add a pool
+                  for the disk under Storage, then come back.
                 </p>
               ) : (
                 <>
@@ -311,7 +446,11 @@ export function WorkloadStoragePage() {
                     value={poolID}
                     onChange={(e) => {
                       setPoolID(e.target.value);
-                      setSizeGiB(defaultSizeGiB(pools.find((p) => p.id === e.target.value)));
+                      setSizeGiB(
+                        defaultSizeGiB(
+                          pools.find((p) => p.id === e.target.value),
+                        ),
+                      );
                     }}
                   >
                     {pools.map((p) => (
@@ -331,8 +470,11 @@ export function WorkloadStoragePage() {
                     onChange={(e) => setSizeGiB(e.target.value)}
                   />
                   <p className="field-hint">
-                    A new, empty folder is created on the pool and given to the container's root user.
-                    {pool?.backend_type === "zfs" ? " On ZFS it is its own dataset and the size is its quota." : ""}
+                    A new, empty folder is created on the pool and given to the
+                    container's root user.
+                    {pool?.backend_type === "zfs"
+                      ? " On ZFS it is its own dataset and the size is its quota."
+                      : ""}
                   </p>
                 </>
               )
@@ -346,15 +488,21 @@ export function WorkloadStoragePage() {
                   onChange={(e) => setHostPath(e.target.value)}
                 />
                 <p className="field-hint">
-                  The folder must already exist. Its files and ownership are left exactly as they are. For the
-                  container to write to it, files need to be owned by host UID {data.mapped_root_uid}, which is root
-                  inside the container.
+                  The folder must already exist. Its files and ownership are
+                  left exactly as they are. For the container to write to it,
+                  files need to be owned by host UID {data.mapped_root_uid},
+                  which is root inside the container.
                 </p>
               </>
             )}
 
             <label htmlFor="storage-label">Name</label>
-            <input id="storage-label" placeholder="Media" value={label} onChange={(e) => setLabel(e.target.value)} />
+            <input
+              id="storage-label"
+              placeholder="Media"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+            />
             <label htmlFor="storage-target">Path inside the container</label>
             <input
               id="storage-target"
@@ -363,7 +511,12 @@ export function WorkloadStoragePage() {
               onChange={(e) => setTarget(e.target.value)}
             />
             <label>
-              <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> Read-only
+              <input
+                type="checkbox"
+                checked={readOnly}
+                onChange={(e) => setReadOnly(e.target.checked)}
+              />{" "}
+              Read-only
             </label>
             <div className="btn-row is-flush">
               <button
@@ -379,6 +532,62 @@ export function WorkloadStoragePage() {
       ) : null}
 
       <ConfirmDialog
+        open={editing != null}
+        title="Edit storage"
+        confirmLabel="Save"
+        confirmDisabled={busy}
+        onConfirm={() => void onEdit()}
+        onClose={() => setEditing(null)}
+      >
+        <div className="form">
+          <label htmlFor="edit-storage-label">Name</label>
+          <input
+            id="edit-storage-label"
+            value={editLabel}
+            onChange={(e) => setEditLabel(e.target.value)}
+          />
+          <label htmlFor="edit-storage-target">Path inside the container</label>
+          <input
+            id="edit-storage-target"
+            value={editTarget}
+            onChange={(e) => setEditTarget(e.target.value)}
+          />
+          <label>
+            <input
+              type="checkbox"
+              checked={editReadOnly}
+              onChange={(e) => setEditReadOnly(e.target.checked)}
+            />{" "}
+            Read-only
+          </label>
+          {editing?.volume_id ? (
+            <>
+              <label htmlFor="edit-storage-size">Size (GiB)</label>
+              <input
+                id="edit-storage-size"
+                inputMode="numeric"
+                value={editSize}
+                onChange={(e) => setEditSize(e.target.value)}
+              />
+              <p className="field-hint">
+                Growing takes effect straight away. Shrinking is refused if the
+                files would not fit; on a directory pool the container must be
+                stopped to shrink.
+              </p>
+            </>
+          ) : (
+            <p className="field-hint">
+              This is a host folder, so its size is whatever the host disk has.
+            </p>
+          )}
+          <p className="field-hint">
+            Changing the path or access loads on the next restart. Files are
+            never moved or deleted.
+          </p>
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
         open={removing != null}
         title="Unmount storage"
         confirmLabel="Unmount"
@@ -386,8 +595,9 @@ export function WorkloadStoragePage() {
         onClose={() => setRemoving(null)}
       >
         <p>
-          Unmount <code>{removing?.target}</code> from {item.name}? The host folder <code>{removing?.source}</code> and
-          every file in it stay on the host. Nothing is deleted.
+          Unmount <code>{removing?.target}</code> from {item.name}? The host
+          folder <code>{removing?.source}</code> and every file in it stay on
+          the host. Nothing is deleted.
         </p>
       </ConfirmDialog>
 
@@ -399,8 +609,8 @@ export function WorkloadStoragePage() {
         onClose={() => setConfirmRestart(false)}
       >
         <p>
-          Restart {item.name} now to load its storage mounts? Services inside it stop briefly while it restarts. Its
-          data is not affected.
+          Restart {item.name} now to load its storage mounts? Services inside it
+          stop briefly while it restarts. Its data is not affected.
         </p>
       </ConfirmDialog>
     </section>
