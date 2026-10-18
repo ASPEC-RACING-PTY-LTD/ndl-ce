@@ -4386,3 +4386,55 @@ thead th[data-autosort="desc"]::after {
   height: 100%;
   padding: 4px;
 }
+
+/* Docker overview: one-line summary, fixed-size collapsed cards. */
+.docker-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.docker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.docker-chip.is-bad {
+  border-color: var(--danger);
+}
+
+.docker-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+}
+
+.docker-card.is-collapsed {
+  height: 5.6rem;
+  overflow: hidden;
+}
+
+.docker-card-issue {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.docker-card .docker-rows {
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.docker-hl {
+  background: var(--warn-bg, rgba(255, 200, 0, 0.25));
+  color: inherit;
+  border-radius: 2px;
+}

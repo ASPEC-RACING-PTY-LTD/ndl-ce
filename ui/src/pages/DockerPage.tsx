@@ -1,7 +1,6 @@
 import { confirmAction } from "../confirm";
 import { HOST_TUNNEL_LEFT_ALONE, useHostTunnelApproval } from "../components/HostTunnelApproval";
 import { useEffect, useMemo, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   ApiError,
   dockerBulk,
@@ -19,13 +18,12 @@ import {
   type DockerPref,
 } from "../api/client";
 import { ActionMenu } from "../components/ActionMenu";
-import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
+import type { ContextItem } from "../components/ContextMenu";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { ResourceTable } from "../components/ResourceTable";
 import { StatusBadge } from "../components/StatusBadge";
-import { ErrorNotice } from "../components/ErrorNotice";
 import { Dialog } from "../ui/Dialog";
 import { JobLog } from "../components/JobLog";
 import { JsonScriptModal } from "../components/JsonScriptModal";
@@ -44,7 +42,9 @@ import type { TermTarget } from "../terminal/types";
 type ViewMode = "groups" | "table";
 type Act = "start" | "stop" | "restart" | "pull" | "recreate" | "remove";
 
-const COLLAPSE_KEY = "ndl-docker-collapsed";
+// Cards start collapsed. Expand all / Collapse all is remembered per browser;
+// single-card toggles are not.
+const EXPAND_KEY = "ndl-docker-expand-pref";
 
 const SCRIPT_TEMPLATE = `{
   "name": "Restart shop in order and check it",
@@ -117,6 +117,44 @@ function matchesQuery(c: DockerContainer, q: string): boolean {
   return hay.includes(q);
 }
 
+/** Hl marks the first match of q in text. */
+function Hl({ text, q }: { text: string; q: string }) {
+  const i = q ? text.toLowerCase().indexOf(q) : -1;
+  if (i < 0) {
+    return <>{text}</>;
+  }
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="docker-hl">{text.slice(i, i + q.length)}</mark>
+      {text.slice(i + q.length)}
+    </>
+  );
+}
+
+function nameRank(names: string[], q: string): number {
+  let best = 3;
+  for (const raw of names) {
+    const n = (raw || "").toLowerCase();
+    if (!n) {
+      continue;
+    }
+    if (n === q) {
+      return 0;
+    }
+    if (n.startsWith(q)) {
+      best = Math.min(best, 1);
+    } else if (n.includes(q)) {
+      best = Math.min(best, 2);
+    }
+  }
+  return best;
+}
+
+function groupRank(g: { project: DockerProject; machine: DockerMachine; containers: DockerContainer[] }, q: string): number {
+  return nameRank([g.project.name, g.machine.name, ...g.containers.flatMap((c) => [c.name, c.service ?? ""])], q);
+}
+
 function dockerTarget(c: DockerContainer): TermTarget {
   return {
     kind: "docker",
@@ -171,7 +209,6 @@ export function DockerPage() {
   const mutate = canMutate(roles);
   const admin = isAdmin(roles);
   const { openOrFocus } = useTerminalWorkspace();
-  const ctx = useContextMenu();
   const [inv, setInv] = useState<DockerInventory | null>(null);
   const [prefs, setPrefs] = useState<Map<string, DockerPref>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -181,13 +218,13 @@ export function DockerPage() {
   const [query, setQuery] = useState("");
   const [machineFilter, setMachineFilter] = useState("all");
   const [view, setView] = useState<ViewMode>("groups");
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(storageGet(COLLAPSE_KEY) || "{}") as Record<string, boolean>;
-    } catch {
-      return {};
-    }
+  const [expandPref, setExpandPref] = useState<"expanded" | "collapsed" | null>(() => {
+    const v = storageGet(EXPAND_KEY);
+    return v === "expanded" || v === "collapsed" ? v : null;
   });
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  // Healthy groups need no watching: the section always starts closed.
+  const [healthyOpen, setHealthyOpen] = useState(false);
   const [showAll, setShowAll] = useState<Record<string, boolean>>({});
   const [ignoredOpen, setIgnoredOpen] = useState(false);
   const [idleOpen, setIdleOpen] = useState(false);
@@ -280,12 +317,19 @@ export function DockerPage() {
   const flat = (inv?.containers ?? []).filter((c) => (machineFilter === "all" || c.machine_id === machineFilter) && matchesQuery(c, q));
   const selectedRow = (inv?.containers ?? []).find((c) => c.id === selected) ?? null;
 
-  function toggleCollapsed(key: string, fallback: boolean) {
-    setCollapsed((cur) => {
-      const next = { ...cur, [key]: !(cur[key] ?? fallback) };
-      storageSet(COLLAPSE_KEY, JSON.stringify(next));
-      return next;
-    });
+  function isOpen(key: string): boolean {
+    return opened[key] ?? expandPref === "expanded";
+  }
+
+  function toggleCollapsed(key: string) {
+    setOpened((cur) => ({ ...cur, [key]: !(cur[key] ?? expandPref === "expanded") }));
+  }
+
+  function setAllOpen(open: boolean) {
+    const v = open ? "expanded" : "collapsed";
+    setExpandPref(v);
+    storageSet(EXPAND_KEY, v);
+    setOpened({});
   }
 
   async function runAction(c: DockerContainer, action: Act) {
@@ -511,7 +555,7 @@ export function DockerPage() {
     const dir = g.project.working_dir;
     const termOK = mutate && (g.machine.kind !== "host" || admin);
     const items: ContextItem[] = [
-      { label: isCollapsed ? "Expand" : "Collapse", onClick: () => toggleCollapsed(g.key, isCollapsed) },
+      { label: isCollapsed ? "Expand" : "Collapse", onClick: () => toggleCollapsed(g.key) },
       { label: dir ? "Open terminal in compose folder" : "Open terminal on machine", onClick: () => void openTerminalAt(g.machine, dir), disabled: !termOK },
       { label: dir ? "Open compose folder in Files" : "Open machine files", onClick: () => void openFilesAt(g.machine, dir), disabled: g.machine.kind === "host" && !admin },
     ];
@@ -574,10 +618,55 @@ export function DockerPage() {
   const badTunnels = shownTunnels.filter((t) => t.health === "critical" || t.health === "degraded");
   const issueCount = attention.reduce((n, g) => n + g.issues.length, 0) + badTunnels.length;
 
+  const allBadTunnels = tunnels.filter((t) => t.health === "critical" || t.health === "degraded");
+  // Search results: best name matches first (exact, prefix, substring), then
+  // matches in other fields such as image, IP or folder.
+  const results = q ? [...groups].sort((a, b) => groupRank(a, q) - groupRank(b, q) || a.project.name.localeCompare(b.project.name)) : [];
+  const resultEngines = q ? machines.filter((m) => (m.container_count ?? 0) === 0 || !m.daemon_ok).filter(machineShown) : [];
+
+  function engineCard(m: DockerMachine) {
+    if (!m.daemon_ok) {
+      return (
+        <article key={`down-${m.id}`} className="docker-card is-issue">
+          <header className="docker-card-head">
+            <strong className="docker-head-name">
+              <Hl text={m.name} q={q} />
+            </strong>
+            <StatusBadge status="critical" label="Engine unreachable" />
+          </header>
+          <p className="docker-card-issue" title={m.daemon_error || ""}>
+            {m.daemon_error || "The Docker daemon did not answer."}
+          </p>
+        </article>
+      );
+    }
+    return (
+      <article key={m.id} className="docker-card is-healthy is-collapsed">
+        <header className="docker-card-head">
+          <strong className="docker-head-name">
+            <Hl text={m.name} q={q} />
+          </strong>
+          <StatusBadge status={healthTone(m.health)} label={m.health_reason || honestCap(m.health) || "Reachable"} />
+        </header>
+        <p className="meta docker-card-meta">
+          {m.kind === "host" ? "Host" : "System container"}
+          {m.ipv4 ? ` · ${m.ipv4}` : ""}
+          {m.docker_version ? ` · Docker ${m.docker_version}` : ""} · no containers
+        </p>
+      </article>
+    );
+  }
+
+  function tunnelCard(t: DockerTunnel) {
+    const key = `tunnel:${t.machine_id}/${t.unit}`;
+    return (
+      <TunnelCard key={key} tunnel={t} q={q} items={tunnelItems(t)} open={Boolean(q) || isOpen(key)} onToggle={() => toggleCollapsed(key)} />
+    );
+  }
+
   function renderCard(g: Group, tone: "issue" | "healthy" | "ignored") {
-    const fallback = tone !== "issue" && g.containers.length > ROWS_SHOWN;
     // While searching, matches are always shown, whatever was collapsed.
-    const isCollapsed = q ? false : (collapsed[g.key] ?? fallback);
+    const isCollapsed = q ? false : !isOpen(g.key);
     const ordered = [...g.containers].sort((a, b) => {
       const ai = isIssue(a.health) && !containerIgnored(a) ? 0 : 1;
       const bi = isIssue(b.health) && !containerIgnored(b) ? 0 : 1;
@@ -590,9 +679,8 @@ export function DockerPage() {
     return (
       <article
         key={g.key}
-        className={`docker-card is-${tone}`}
+        className={`docker-card is-${tone}` + (isCollapsed ? " is-collapsed" : "")}
         data-group={g.project.name}
-        onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, g.project.name, groupItems(g, isCollapsed))}
       >
         <header className="docker-card-head">
           <button
@@ -601,18 +689,28 @@ export function DockerPage() {
             aria-expanded={!isCollapsed}
             aria-label={`Group ${g.project.name}`}
             title={g.project.name}
-            onClick={() => toggleCollapsed(g.key, fallback)}
+            onClick={() => toggleCollapsed(g.key)}
           >
-            {isCollapsed ? "▸" : "▾"} {g.project.standalone ? "Standalone containers" : g.project.name}
+            {isCollapsed ? "▸" : "▾"} <Hl text={g.project.standalone ? "Standalone containers" : g.project.name} q={q} />
           </button>
           <StatusBadge status={tone === "ignored" ? "unknown" : g.issues.length ? healthTone(g.issues[0].health) : "healthy"} label={groupStatus} />
           <ActionMenu label={`${g.project.name} group actions`} items={groupItems(g, isCollapsed).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
         </header>
         <p className="meta docker-card-meta" title={g.project.working_dir || ""}>
-          {g.machine.name} · {running}/{total} running
+          <Hl text={g.machine.name} q={q} /> · {running}/{total} running
           {g.project.working_dir ? ` · ${g.project.working_dir}` : ""}
         </p>
-        {isCollapsed ? null : (
+        {isCollapsed ? (
+          g.issues.length && tone !== "ignored" ? (
+            <p className="docker-card-issue" title={g.issues.map((c) => `${c.service || c.name}: ${c.health_reason || c.status_label}`).join("\n")}>
+              {g.issues
+                .slice(0, 2)
+                .map((c) => `${c.service || c.name}: ${c.health_reason || c.status_label}`)
+                .join(" · ")}
+              {g.issues.length > 2 ? ` · +${g.issues.length - 2} more` : ""}
+            </p>
+          ) : null
+        ) : (
           <ul className="docker-rows">
             {rows.map((c) => {
               const ign = containerIgnored(c);
@@ -620,11 +718,17 @@ export function DockerPage() {
                 <li
                   key={c.id}
                   className={"docker-row" + (isIssue(c.health) && !ign ? " is-issue" : "") + (ign ? " is-ignored" : "")}
-                  onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, c.name, containerItems(c))}
                 >
                   <button className="linkish docker-row-name" type="button" title={c.name} onClick={() => setSelected(c.id)}>
-                    <strong>{c.service || c.name}</strong>
-                    {c.service && c.name !== c.service ? <span className="meta"> {c.name}</span> : null}
+                    <strong>
+                      <Hl text={c.service || c.name} q={q} />
+                    </strong>
+                    {c.service && c.name !== c.service ? (
+                      <span className="meta">
+                        {" "}
+                        <Hl text={c.name} q={q} />
+                      </span>
+                    ) : null}
                   </button>
                   <span className="docker-row-status">
                     <StatusBadge status={ign ? "unknown" : healthTone(c.health)} label={ign ? `Ignored · ${c.status_label}` : c.status_label} />
@@ -655,7 +759,7 @@ export function DockerPage() {
       <PageHeader
         id="docker-heading"
         title="Docker"
-        kicker="Compose projects across the host and system containers. Right-click a group or container for its tools."
+        kicker="Compose projects across the host and system containers. Use a card's … menu for its tools."
         actions={
           <div className="btn-row is-flush">
             {mutate ? (
@@ -677,7 +781,6 @@ export function DockerPage() {
         }
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
-      <DockerPrunePanel mutate={mutate} />
       {notice ? (
         <p className="banner banner-ok" role="status">
           {notice}{" "}
@@ -691,34 +794,22 @@ export function DockerPage() {
           Working: {busy}
         </p>
       ) : null}
-      <div className="status-strip">
-        <div className="status-tile">
-          <span className="label">Need attention</span>
-          <span className="value">
-            <StatusBadge status={issueCount ? "critical" : "healthy"} /> {issueCount}
-          </span>
-          <span className="meta">
-            {attention.length} group(s){downEngines.length ? ` · ${downEngines.length} engine(s) down` : ""}
-            {badTunnels.length ? ` · ${badTunnels.length} tunnel(s)` : ""}
-          </span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Healthy groups</span>
-          <span className="value">{healthy.length}</span>
-          <span className="meta">
-            {inv?.summary?.running ?? 0} running, {inv?.summary?.stopped ?? 0} stopped
-          </span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Ignored</span>
-          <span className="value">{ignoredCount}</span>
-          <span className="meta">{ignoredGroups.length} group(s) ignored</span>
-        </div>
-        <div className="status-tile">
-          <span className="label">Engines</span>
-          <span className="value">{inv?.summary?.machines ?? 0}</span>
-          <span className="meta">{inv?.summary?.daemons_down ? `${inv.summary.daemons_down} down` : "All reachable"}</span>
-        </div>
+      <div className="docker-summary" aria-label="Docker status">
+        <span className={"docker-chip" + (issueCount ? " is-bad" : " is-ok")}>
+          <StatusBadge status={issueCount ? "critical" : "healthy"} label={issueCount ? `${issueCount} need attention` : "Nothing needs attention"} />
+        </span>
+        <span className="docker-chip">
+          {inv?.summary?.machines ?? 0} engines{inv?.summary?.daemons_down ? `, ${inv.summary.daemons_down} down` : ""}
+        </span>
+        <span className="docker-chip">
+          {healthy.length} healthy · {attention.length} with issues · {ignoredGroups.length} ignored groups
+        </span>
+        <span className="docker-chip">
+          {inv?.summary?.running ?? 0} running · {inv?.summary?.stopped ?? 0} stopped · {ignoredCount} ignored containers
+        </span>
+        <span className={"docker-chip" + (allBadTunnels.length ? " is-bad" : "")}>
+          {tunnels.length} tunnels{allBadTunnels.length ? `, ${allBadTunnels.length} with errors now` : ""}
+        </span>
       </div>
 
       <div className="docker-toolbar">
@@ -751,6 +842,16 @@ export function DockerPage() {
             </button>
             <button className="btn btn-sm btn-ghost btn-danger-text" type="button" onClick={() => void bulk("stop-all", scopeNow())}>
               Stop all
+            </button>
+          </div>
+        ) : null}
+        {view === "groups" ? (
+          <div className="btn-row is-flush" role="group" aria-label="Cards">
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setAllOpen(true)}>
+              Expand all
+            </button>
+            <button className="btn btn-sm btn-ghost" type="button" onClick={() => setAllOpen(false)}>
+              Collapse all
             </button>
           </div>
         ) : null}
@@ -792,7 +893,6 @@ export function DockerPage() {
                 type="button"
                 title={c.name}
                 onClick={() => setSelected(c.id)}
-                onContextMenu={(e) => ctx.openAt(e, c.name, containerItems(c))}
               >
                 {c.name}
               </button>,
@@ -821,93 +921,95 @@ export function DockerPage() {
         </article>
       ) : (
         <>
-          <section className="docker-section" aria-labelledby="docker-attention">
-            <h2 id="docker-attention" className="docker-section-title">
-              Needs attention <span className="meta">{attention.length + downEngines.length}</span>
-            </h2>
-            {attention.length === 0 && downEngines.length === 0 ? (
-              <p className="muted">Nothing needs attention.</p>
-            ) : (
-              <div className="docker-grid">
-                {downEngines.map((m) => (
-                  <article key={`down-${m.id}`} className="docker-card is-issue">
-                    <header className="docker-card-head">
-                      <strong className="docker-head-name">{m.name}</strong>
-                      <StatusBadge status="critical" label="Engine unreachable" />
-                    </header>
-                    <ErrorNotice error={m.daemon_error || "The Docker daemon did not answer."} />
-                  </article>
-                ))}
-                {attention.map((g) => renderCard(g, "issue"))}
-              </div>
-            )}
-          </section>
-          {shownTunnels.length > 0 ? (
-            <section className="docker-section" aria-labelledby="docker-tunnels">
-              <h2 id="docker-tunnels" className="docker-section-title">
-                <button className="linkish" type="button" aria-expanded={tunnelsOpen} onClick={() => setTunnelsOpen((v) => !v)}>
-                  {tunnelsOpen ? "▾" : "▸"} Cloudflare tunnels
-                </button>{" "}
-                <span className="meta">
-                  {shownTunnels.length}
-                  {badTunnels.length ? `, ${badTunnels.length} with problems` : ""}
-                </span>
+          {q ? (
+            <section className="docker-section" aria-labelledby="docker-results">
+              <h2 id="docker-results" className="docker-section-title">
+                Results <span className="meta">{results.length + resultEngines.length + shownTunnels.length}</span>
               </h2>
-              {tunnelsOpen ? (
+              {results.length + resultEngines.length + shownTunnels.length === 0 ? (
+                <p className="muted">Nothing matches “{query.trim()}”.</p>
+              ) : (
                 <div className="docker-grid">
-                  {[...badTunnels, ...shownTunnels.filter((t) => !badTunnels.includes(t))].map((t) => (
-                    <TunnelCard key={`${t.machine_id}/${t.unit}`} tunnel={t} items={tunnelItems(t)} onContext={(e) => ctx.openAt(e, t.unit, tunnelItems(t))} />
-                  ))}
+                  {results.map((g) => renderCard(g, g.ignored ? "ignored" : g.issues.length ? "issue" : "healthy"))}
+                  {resultEngines.map((m) => engineCard(m))}
+                  {shownTunnels.map((t) => tunnelCard(t))}
                 </div>
+              )}
+            </section>
+          ) : (
+            <>
+              <section className="docker-section" aria-labelledby="docker-attention">
+                <h2 id="docker-attention" className="docker-section-title">
+                  Needs attention <span className="meta">{attention.length + downEngines.length}</span>
+                </h2>
+                {attention.length === 0 && downEngines.length === 0 ? (
+                  <p className="muted">Nothing needs attention.</p>
+                ) : (
+                  <div className="docker-grid">
+                    {downEngines.map((m) => engineCard(m))}
+                    {attention.map((g) => renderCard(g, "issue"))}
+                  </div>
+                )}
+              </section>
+              {shownTunnels.length > 0 ? (
+                <section className="docker-section" aria-labelledby="docker-tunnels">
+                  <h2 id="docker-tunnels" className="docker-section-title">
+                    <button className="linkish" type="button" aria-expanded={tunnelsOpen} onClick={() => setTunnelsOpen((v) => !v)}>
+                      {tunnelsOpen ? "▾" : "▸"} Cloudflare tunnels
+                    </button>{" "}
+                    <span className="meta">
+                      {shownTunnels.length}
+                      {badTunnels.length ? `, ${badTunnels.length} with errors now` : ""}
+                    </span>
+                  </h2>
+                  {tunnelsOpen ? (
+                    <div className="docker-grid">{[...badTunnels, ...shownTunnels.filter((t) => !badTunnels.includes(t))].map((t) => tunnelCard(t))}</div>
+                  ) : null}
+                </section>
               ) : null}
-            </section>
-          ) : null}
-          <section className="docker-section" aria-labelledby="docker-healthy">
-            <h2 id="docker-healthy" className="docker-section-title">
-              Healthy <span className="meta">{healthy.length}</span>
-            </h2>
-            {healthy.length === 0 ? <p className="muted">No healthy groups match.</p> : <div className="docker-grid">{healthy.map((g) => renderCard(g, "healthy"))}</div>}
-          </section>
-          {ignoredGroups.length > 0 ? (
-            <section className="docker-section" aria-labelledby="docker-ignored">
-              <h2 id="docker-ignored" className="docker-section-title">
-                <button className="linkish" type="button" aria-expanded={ignoredOpen} onClick={() => setIgnoredOpen((v) => !v)}>
-                  {ignoredOpen ? "▾" : "▸"} Ignored groups
-                </button>{" "}
-                <span className="meta">{ignoredGroups.length}</span>
-              </h2>
-              {ignoredOpen ? <div className="docker-grid">{ignoredGroups.map((g) => renderCard(g, "ignored"))}</div> : null}
-            </section>
-          ) : null}
-          {idleMachines.length > 0 ? (
-            <section className="docker-section docker-idle" aria-labelledby="docker-idle">
-              <h2 id="docker-idle" className="docker-section-title">
-                <button className="linkish" type="button" aria-expanded={idleOpen} onClick={() => setIdleOpen((v) => !v)}>
-                  {idleOpen ? "▾" : "▸"} Engines with no containers
-                </button>{" "}
-                <span className="meta">{idleMachines.length}</span>
-              </h2>
-              {idleOpen ? (
-                <div className="docker-grid">
-                  {idleMachines.map((m) => (
-                    <article key={m.id} className="docker-card is-healthy">
-                      <header className="docker-card-head">
-                        <strong className="docker-head-name">{m.name}</strong>
-                        <StatusBadge status={healthTone(m.health)} label={m.health_reason || honestCap(m.health) || "Reachable"} />
-                      </header>
-                      <p className="meta docker-card-meta">
-                        {m.kind === "host" ? "Host" : "System container"}
-                        {m.ipv4 ? ` · ${m.ipv4}` : ""}
-                        {m.docker_version ? ` · Docker ${m.docker_version}` : ""}
-                      </p>
-                    </article>
-                  ))}
-                </div>
+              {ignoredGroups.length > 0 ? (
+                <section className="docker-section" aria-labelledby="docker-ignored">
+                  <h2 id="docker-ignored" className="docker-section-title">
+                    <button className="linkish" type="button" aria-expanded={ignoredOpen} onClick={() => setIgnoredOpen((v) => !v)}>
+                      {ignoredOpen ? "▾" : "▸"} Ignored groups
+                    </button>{" "}
+                    <span className="meta">{ignoredGroups.length}</span>
+                  </h2>
+                  {ignoredOpen ? <div className="docker-grid">{ignoredGroups.map((g) => renderCard(g, "ignored"))}</div> : null}
+                </section>
               ) : null}
-            </section>
-          ) : null}
+              {idleMachines.length > 0 ? (
+                <section className="docker-section docker-idle" aria-labelledby="docker-idle">
+                  <h2 id="docker-idle" className="docker-section-title">
+                    <button className="linkish" type="button" aria-expanded={idleOpen} onClick={() => setIdleOpen((v) => !v)}>
+                      {idleOpen ? "▾" : "▸"} Engines with no containers
+                    </button>{" "}
+                    <span className="meta">{idleMachines.length}</span>
+                  </h2>
+                  {idleOpen ? <div className="docker-grid">{idleMachines.map((m) => engineCard(m))}</div> : null}
+                </section>
+              ) : null}
+              <section className="docker-section" aria-labelledby="docker-healthy">
+                <h2 id="docker-healthy" className="docker-section-title">
+                  <button className="linkish" type="button" aria-expanded={healthyOpen} onClick={() => setHealthyOpen((v) => !v)}>
+                    {healthyOpen ? "▾" : "▸"} Healthy
+                  </button>{" "}
+                  <span className="meta">{healthy.length}</span>
+                </h2>
+                {healthyOpen ? (
+                  healthy.length === 0 ? (
+                    <p className="muted">No healthy groups match.</p>
+                  ) : (
+                    <div className="docker-grid">{healthy.map((g) => renderCard(g, "healthy"))}</div>
+                  )
+                ) : null}
+              </section>
+            </>
+          )}
         </>
       )}
+
+      <DockerPrunePanel mutate={mutate} />
 
       <Dialog open={selectedRow != null} title={selectedRow?.name ?? "Container"} wide onClose={() => setSelected(null)}>
         {selectedRow ? (
@@ -947,7 +1049,6 @@ export function DockerPage() {
           setJsonOpen(false);
         }}
       />
-      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
 }
@@ -969,27 +1070,47 @@ function PlanView({ job }: { job: OpsJob }) {
   );
 }
 
-function TunnelCard({ tunnel: t, items, onContext }: { tunnel: DockerTunnel; items: ContextItem[]; onContext: (e: ReactMouseEvent) => void }) {
+function TunnelCard({
+  tunnel: t,
+  items,
+  open,
+  q,
+  onToggle,
+}: {
+  tunnel: DockerTunnel;
+  items: ContextItem[];
+  open: boolean;
+  q: string;
+  onToggle: () => void;
+}) {
   const bad = t.health === "critical" || t.health === "degraded";
+  const routes = (t.links ?? []).length || (t.ingress ?? []).length;
   return (
-    <article className={"docker-card" + (bad ? " is-issue" : "")} aria-label={`Tunnel ${t.unit} on ${t.machine_name}`} onContextMenu={onContext}>
+    <article className={"docker-card" + (bad ? " is-issue" : "") + (open ? "" : " is-collapsed")} aria-label={`Tunnel ${t.unit} on ${t.machine_name}`}>
       <header className="docker-card-head">
-        <strong className="docker-head-name" title={t.unit}>
-          {t.unit}
-        </strong>
+        <button className="linkish docker-head-name" type="button" aria-expanded={open} title={t.unit} onClick={onToggle}>
+          {open ? "▾" : "▸"} <Hl text={t.machine_name} q={q} /> <span className="meta">{t.unit}</span>
+        </button>
         <StatusBadge status={t.health} label={t.active ? (bad ? "Errors" : "Running") : t.sub_state || t.state} />
         <ActionMenu label={`${t.unit} actions`} items={items.filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
       </header>
       <p className="meta docker-card-meta">
-        {t.machine_name} · {t.remote_managed ? "routes set in the Cloudflare dashboard" : t.config_path || "no local config"}
+        {routes ? `${routes} route(s) · ` : ""}
+        {t.remote_managed ? "routes set in the Cloudflare dashboard" : t.config_path || "no local config"}
       </p>
-      {t.reason ? <p className="tunnel-reason">{t.reason}</p> : null}
-      {(t.links ?? []).length ? (
+      {t.reason ? (
+        <p className={bad ? "docker-card-issue" : "meta docker-card-meta"} title={t.reason}>
+          {t.reason}
+        </p>
+      ) : null}
+      {open && (t.links ?? []).length ? (
         <ul className="docker-rows">
           {(t.links ?? []).map((l) => (
             <li key={l.origin + l.id} className={"docker-row" + (l.state !== "running" || l.health === "critical" || l.health === "degraded" ? " is-issue" : "")}>
               <span className="docker-row-name" title={l.origin}>
-                <strong>{(l.hostnames ?? []).join(", ") || l.origin}</strong>
+                <strong>
+                  <Hl text={(l.hostnames ?? []).join(", ") || l.origin} q={q} />
+                </strong>
               </span>
               <span className="docker-row-status">
                 <StatusBadge status={l.state !== "running" ? "critical" : l.health || "unknown"} label={`${l.name} · ${l.state}`} />
@@ -1002,7 +1123,7 @@ function TunnelCard({ tunnel: t, items, onContext }: { tunnel: DockerTunnel; ite
           ))}
         </ul>
       ) : null}
-      {(t.errors ?? []).length ? (
+      {open && (t.errors ?? []).length ? (
         <details className="tunnel-errors">
           <summary>
             {t.current_errors ? `${t.current_errors} origin error(s) in the last minute · ` : "None in the last minute · "}

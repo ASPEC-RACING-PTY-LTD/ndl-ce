@@ -190,6 +190,7 @@ describe("Docker bulk tools", () => {
         };
       },
     });
+    localStorage.setItem("ndl-docker-expand-pref", "expanded");
     window.history.replaceState({}, "", "/docker");
     render(<App />);
     const tunnels = await screen.findByRole("region", { name: /cloudflare tunnels/i });

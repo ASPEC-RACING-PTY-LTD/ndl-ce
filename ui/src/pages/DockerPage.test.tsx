@@ -89,6 +89,7 @@ const baseRoutes = {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.unstubAllGlobals();
   window.history.replaceState({}, "", "/");
 });
@@ -237,11 +238,13 @@ describe("Docker page", () => {
       },
     });
     vi.spyOn(window, "prompt").mockReturnValue("noisy healthcheck");
+    localStorage.setItem("ndl-docker-expand-pref", "expanded");
     window.history.replaceState({}, "", "/docker");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^docker$/i })).toBeVisible();
     const attention = await screen.findByRole("region", { name: /needs attention/i });
-    const healthy = screen.getByRole("region", { name: /^healthy/i });
+    fireEvent.click(screen.getByRole("button", { name: /healthy/i, expanded: false }));
+    const healthy = screen.getByRole("region", { name: /healthy/i });
     expect(await within(attention).findByText(/shop-web-1/i)).toBeVisible();
     expect(within(attention).getByRole("button", { name: /group shop/i })).toBeVisible();
     expect(within(healthy).getByText(/aspecracing-admin-1/i)).toBeVisible();
@@ -255,7 +258,7 @@ describe("Docker page", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /^restart$/i }));
     await waitFor(() => expect(posted.some((b) => b.includes("restart"))).toBe(true));
 
-    fireEvent.contextMenu(within(attention).getByText(/shop-web-1/i));
+    fireEvent.click(screen.getByRole("button", { name: /shop-web-1 actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /^ignore container$/i }));
     await waitFor(() => expect(prefs.length).toBe(1));
     const saved = JSON.parse(prefs[0]);
@@ -315,6 +318,7 @@ describe("Docker page", () => {
     });
     window.history.replaceState({}, "", "/docker");
     render(<App />);
+    localStorage.setItem("ndl-docker-expand-pref", "expanded");
     const attention = await screen.findByRole("region", { name: /needs attention/i });
     expect(await within(attention).findByText(/nothing needs attention/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /ignored groups/i }));
