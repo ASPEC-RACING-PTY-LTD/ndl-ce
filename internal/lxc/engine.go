@@ -25,6 +25,7 @@ type Engine struct {
 	HTTP         HTTPDoer
 	Run          Runner
 	RunStdin     StdinRunner
+	Stream       StreamRunner
 	Now          func() time.Time
 	SkipHostCmds bool
 	FakeUnpack   bool

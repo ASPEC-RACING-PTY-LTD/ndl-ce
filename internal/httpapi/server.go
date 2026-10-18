@@ -92,7 +92,9 @@ type Server struct {
 	Migrate      migrate.Runtime
 	UI           fs.FS
 	// LiveUpdates locates live update state, inbox and trusted keys.
-	LiveUpdates     LiveUpdatePaths
+	LiveUpdates LiveUpdatePaths
+	// Deployer runs project deployments; nil uses the local agent.
+	Deployer        DeployRPC
 	Now             func() time.Time
 	SetupHash       string
 	AllowedUID      uint32
@@ -157,6 +159,8 @@ type Server struct {
 	updateStage    updateStage
 	updateStatus   updateStatusCache
 	docker         *dockerCache
+	dockerOnce     sync.Once
+	deployState    deployRuntime
 	destOverride   *destAgentOverride
 	Game           *gameserver.Runtime
 	// GameHost runs game server containers and owns their folders. In
@@ -369,6 +373,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/diagnostics", s.gameServerDiagnostics)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/tuning", s.gameServerTuning)
 	mux.HandleFunc("GET /api/v1/docker", s.getDocker)
+	mux.HandleFunc("GET /api/v1/docker/deploy/settings", s.getDeploySettings)
+	mux.HandleFunc("PUT /api/v1/docker/deploy/settings", s.putDeploySettings)
+	mux.HandleFunc("GET /api/v1/docker/deploy/projects", s.listDeployProjects)
+	mux.HandleFunc("POST /api/v1/docker/deploy/projects", s.createDeployProject)
+	mux.HandleFunc("GET /api/v1/docker/deploy/projects/{id}", s.getDeployProject)
+	mux.HandleFunc("PUT /api/v1/docker/deploy/projects/{id}", s.putDeployProject)
+	mux.HandleFunc("DELETE /api/v1/docker/deploy/projects/{id}", s.deleteDeployProject)
+	mux.HandleFunc("POST /api/v1/docker/deploy/projects/{id}/deploy", s.deployProjectNow)
+	mux.HandleFunc("GET /api/v1/docker/deploy/projects/{id}/deployments", s.listDeployments)
+	mux.HandleFunc("POST /api/v1/docker/deploy/projects/{id}/check", s.checkDeployProject)
+	mux.HandleFunc("POST /api/v1/docker/deploy/check", s.checkAllDeployProjects)
+	mux.HandleFunc("POST /api/v1/docker/deploy/bulk", s.bulkDeploy)
+	mux.HandleFunc("POST /api/v1/docker/deploy/projects/{id}/webhook", s.rotateDeployWebhook)
+	mux.HandleFunc("POST /api/v1/hooks/deploy/{id}", s.deployWebhook)
+	mux.HandleFunc("GET /api/v1/docker/deployments", s.listDeployments)
+	mux.HandleFunc("GET /api/v1/docker/deployments/{id}", s.getDeployment)
+	mux.HandleFunc("GET /api/v1/docker/deployments/{id}/log", s.getDeploymentLog)
+	mux.HandleFunc("GET /api/v1/docker/deployments/{id}/log/download", s.downloadDeploymentLog)
+	mux.HandleFunc("POST /api/v1/docker/deployments/{id}/cancel", s.cancelDeployment)
+	mux.HandleFunc("POST /api/v1/docker/deployments/{id}/force", s.forceDeployment)
 	mux.HandleFunc("GET /api/v1/docker/prefs", s.listDockerPrefs)
 	mux.HandleFunc("GET /api/v1/docker/tunnels", s.getDockerTunnels)
 	mux.HandleFunc("POST /api/v1/docker/tunnels/action", s.dockerTunnelAction)

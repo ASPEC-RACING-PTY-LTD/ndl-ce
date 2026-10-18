@@ -16,6 +16,8 @@ export function DockerPrunePanel({ mutate }: { mutate: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  // The saved schedule shows as a sentence; Edit opens the form.
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (st) {
@@ -32,6 +34,7 @@ export function DockerPrunePanel({ mutate }: { mutate: boolean }) {
     try {
       await putDockerPruneSettings({ enabled, run_at: runAt, timezone: tz });
       setNotice("Schedule saved.");
+      setEditing(false);
       await q.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the schedule");
@@ -62,9 +65,16 @@ export function DockerPrunePanel({ mutate }: { mutate: boolean }) {
       <div className="panel-header">
         <h2 id="docker-prune-heading">Docker cleanup</h2>
         {mutate ? (
-          <button className="btn btn-secondary btn-sm" type="button" disabled={busy || st?.running} onClick={() => setConfirm(true)}>
-            {st?.running ? "Pruning…" : "Prune now"}
-          </button>
+          <div className="btn-row is-flush">
+            {!editing ? (
+              <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => setEditing(true)}>
+                Edit schedule
+              </button>
+            ) : null}
+            <button className="btn btn-secondary btn-sm" type="button" disabled={busy || st?.running} onClick={() => setConfirm(true)}>
+              {st?.running ? "Pruning…" : "Prune now"}
+            </button>
+          </div>
         ) : null}
       </div>
       <p className="muted">
@@ -91,7 +101,7 @@ export function DockerPrunePanel({ mutate }: { mutate: boolean }) {
           {last.failed ? `, ${last.failed} failed: ${last.machines.filter((m) => m.error).map((m) => `${m.name}: ${m.error}`).join("; ")}` : ""}.
         </p>
       ) : null}
-      {mutate ? (
+      {mutate && editing ? (
         <div className="btn-row">
           <label className="check-row">
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
@@ -101,6 +111,21 @@ export function DockerPrunePanel({ mutate }: { mutate: boolean }) {
           <input className="field-input" aria-label="Time zone" value={tz} onChange={(e) => setTz(e.target.value)} />
           <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void save()}>
             Save schedule
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (st) {
+                setEnabled(st.enabled);
+                setRunAt(st.run_at);
+                setTz(st.timezone);
+              }
+              setEditing(false);
+            }}
+          >
+            Cancel
           </button>
         </div>
       ) : null}

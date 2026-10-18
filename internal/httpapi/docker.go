@@ -59,6 +59,17 @@ type dockerCache struct {
 	err      error
 }
 
+// dockerCacheRef returns the Docker snapshot cache, creating it once.
+// Requests and background work reach it concurrently.
+func (s *Server) dockerCacheRef() *dockerCache {
+	s.dockerOnce.Do(func() {
+		if s.docker == nil {
+			s.docker = &dockerCache{}
+		}
+	})
+	return s.docker
+}
+
 func (s *Server) dockerEnabled(ctx context.Context, clusterID string) bool {
 	mod, ok := features.Lookup(features.IDDocker)
 	if !ok {
@@ -99,10 +110,7 @@ func (s *Server) dockerHints(ctx context.Context, clusterID string) []docker.Mac
 }
 
 func (s *Server) dockerInventory(ctx context.Context, clusterID string, refresh bool) (docker.Inventory, error) {
-	if s.docker == nil {
-		s.docker = &dockerCache{}
-	}
-	c := s.docker
+	c := s.dockerCacheRef()
 	c.mu.Lock()
 	if !refresh && c.enabled && !c.at.IsZero() && time.Since(c.at) < 3*time.Second {
 		inv := c.inv
@@ -147,13 +155,12 @@ func (s *Server) dockerInventory(ctx context.Context, clusterID string, refresh 
 }
 
 func (s *Server) dockerIdle(ctx context.Context) {
-	if s.docker != nil {
-		s.docker.mu.Lock()
-		s.docker.inv = docker.Inventory{}
-		s.docker.at = time.Time{}
-		s.docker.enabled = false
-		s.docker.mu.Unlock()
-	}
+	c := s.dockerCacheRef()
+	c.mu.Lock()
+	c.inv = docker.Inventory{}
+	c.at = time.Time{}
+	c.enabled = false
+	c.mu.Unlock()
 	_ = s.dockerRPC().DockerIdle(ctx)
 }
 

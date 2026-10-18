@@ -3,6 +3,7 @@ package lxc
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -58,4 +59,26 @@ func (e *Engine) runStdin(ctx context.Context, stdin *os.File, name string, args
 		return out, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return out, nil
+}
+
+// StreamRunner runs a validated argv with stdin and copies its output to
+// out as it arrives. Tests replace it.
+type StreamRunner func(ctx context.Context, name string, stdin io.Reader, out io.Writer, args ...string) error
+
+// GuestStream runs cmd in a running system container, feeding it stdin and
+// copying its output to out as it comes. Deployments use it so their output
+// is seen live and secrets travel on stdin, never on a command line.
+func (e *Engine) GuestStream(ctx context.Context, id string, stdin io.Reader, out io.Writer, cmd ...string) error {
+	args := e.attachArgs(id, cmd...)
+	if e.Stream != nil {
+		return e.Stream(ctx, BinLXCAttach, stdin, out, args...)
+	}
+	if e.SkipHostCmds {
+		return fmt.Errorf("host commands are disabled")
+	}
+	c := exec.CommandContext(ctx, BinLXCAttach, args...)
+	c.Stdin, c.Stdout, c.Stderr = stdin, out, out
+	// See runStdin: a process left in the guest can hold the pipe open.
+	c.WaitDelay = 5 * time.Second
+	return c.Run()
 }

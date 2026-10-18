@@ -223,6 +223,9 @@ function matchPage(path: string) {
     window.history.replaceState({}, "", "/oci");
     return <OciPage />;
   }
+  if (path === "/docker/deploy") {
+    return <DockerHubPage tab="deploy" />;
+  }
   if (path === "/docker" || path.startsWith("/docker/")) {
     return <DockerHubPage tab="docker" />;
   }

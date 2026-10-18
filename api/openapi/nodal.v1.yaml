@@ -4142,6 +4142,390 @@ paths:
       responses:
         "200":
           description: Deleted
+  /docker/deploy/settings:
+    get:
+      operationId: getDeploySettings
+      summary: Deployment limits, log folder and retention, default commands and update check interval.
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploySettings"
+    put:
+      operationId: putDeploySettings
+      summary: Owner only. Change deployment limits, log folder, retention and defaults.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeploySettings"
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploySettings"
+        "403":
+          description: Not an Owner
+  /docker/deploy/projects:
+    get:
+      operationId: listDeployProjects
+      summary: Docker Compose projects with update commands, plus Compose projects in system containers that have none yet.
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployProjectList"
+    post:
+      operationId: createDeployProject
+      summary: Owner only. Give a Compose project's folder in a system container update commands.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeployProjectInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployProject"
+        "403":
+          description: Not an Owner
+        "409":
+          description: That folder in that container is already a project
+  /docker/deploy/projects/{id}:
+    get:
+      operationId: getDeployProject
+      summary: One project with its update state and running deployment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployProject"
+    put:
+      operationId: updateDeployProject
+      summary: Owner only. Change a project's commands, Git settings, automation, notifications or environment.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeployProjectInput"
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployProject"
+        "403":
+          description: Not an Owner
+    delete:
+      operationId: deleteDeployProject
+      summary: Owner only. Forget a project and its deployment history and logs. The folder is not touched.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "409":
+          description: The project is deploying
+  /docker/deploy/projects/{id}/deploy:
+    post:
+      operationId: deployProject
+      summary: Operators and Owners. Queue a run of the project's update commands. force starts it even while a backup of its container runs.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force:
+                  type: boolean
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "409":
+          description: The project is already deploying
+  /docker/deploy/projects/{id}/deployments:
+    get:
+      operationId: listProjectDeployments
+      summary: A project's deployment history, newest first.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deployments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentList"
+  /docker/deploy/projects/{id}/check:
+    post:
+      operationId: checkDeployProject
+      summary: Operators and Owners. Ask the project's Git remote for new commits now (CodeHold ch, then GitHub gh, then Git).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project with its update state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployProject"
+  /docker/deploy/check:
+    post:
+      operationId: checkAllDeployProjects
+      summary: Operators and Owners. Check every project for new commits in the background.
+      responses:
+        "202":
+          description: Started, or already running
+  /docker/deploy/bulk:
+    post:
+      operationId: bulkDeploy
+      summary: Operators and Owners. Queue the chosen projects, or every project with an update (due). Each runs on its own within the limits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project_ids:
+                  type: array
+                  items:
+                    type: string
+                due:
+                  type: boolean
+                force:
+                  type: boolean
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployBulkResult"
+  /docker/deploy/projects/{id}/webhook:
+    post:
+      operationId: setDeployWebhook
+      summary: Owner only. Turn a project's push webhook on with a new secret (shown once), or off.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Webhook state; secret is only set when it was just created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployWebhook"
+        "403":
+          description: Not an Owner
+  /docker/deployments:
+    get:
+      operationId: listDeployments
+      summary: Recent deployments of every project; active=1 lists only queued and running ones.
+      parameters:
+        - name: active
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deployments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentList"
+  /docker/deployments/{id}:
+    get:
+      operationId: getDeployment
+      summary: One deployment with its steps.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deployment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+  /docker/deployments/{id}/log:
+    get:
+      operationId: getDeploymentLog
+      summary: The deployment's output from offset. Read again from next until done.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: max
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Log slice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentLog"
+  /docker/deployments/{id}/log/download:
+    get:
+      operationId: downloadDeploymentLog
+      summary: The whole log as a text file.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Log file
+          content:
+            text/plain:
+              schema:
+                type: string
+  /docker/deployments/{id}/cancel:
+    post:
+      operationId: cancelDeployment
+      summary: Operators and Owners. Cancel a queued deployment, or stop a running one and every process it started.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Cancelling
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "409":
+          description: Already finished
+  /docker/deployments/{id}/force:
+    post:
+      operationId: forceDeployment
+      summary: Operators and Owners. Deploy anyway; start a deployment that waits for a backup of its container.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Will start
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "409":
+          description: Not waiting
+  /hooks/deploy/{id}:
+    post:
+      operationId: deployWebhook
+      summary: Push webhook (no session). Signed with X-Hub-Signature-256 or X-Gitea-Signature, or the secret as a bearer token. Checks the project for new commits; deploys only when the project deploys automatically.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ping answered
+        "202":
+          description: Checking, or ignored for another branch
+        "401":
+          description: Bad or missing signature
+        "404":
+          description: No such project, or its webhook is off
   /uptime/monitors:
     get:
       operationId: listUptimeMonitors
@@ -10462,6 +10846,414 @@ paths:
                 additionalProperties: true
 components:
   schemas:
+    DeployCommand:
+      type: object
+      required:
+        - run
+      properties:
+        run:
+          type: string
+        continue_on_error:
+          type: boolean
+    DeployProjectConfig:
+      type: object
+      required:
+        - commands
+      properties:
+        commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployCommand"
+        run_as:
+          type: string
+        timeout_sec:
+          type: integer
+        provider:
+          type: string
+          enum:
+            - auto
+            - codehold
+            - github
+            - git
+        remote:
+          type: string
+        branch:
+          type: string
+        fallback_remote:
+          type: string
+        detect:
+          type: boolean
+        detect_interval_sec:
+          type: integer
+        auto_deploy:
+          type: boolean
+        auto_window:
+          type: string
+        deploy_during_backup:
+          type: boolean
+        webhook:
+          type: boolean
+        notify_events:
+          type: array
+          items:
+            type: string
+        notify_channels:
+          type: array
+          items:
+            type: string
+        env_keys:
+          type: array
+          items:
+            type: string
+    DeployProjectState:
+      type: object
+      properties:
+        checked_at:
+          type: string
+        check_error:
+          type: string
+        check_note:
+          type: string
+        provider:
+          type: string
+        remote:
+          type: string
+        remote_url:
+          type: string
+        repo:
+          type: string
+        branch:
+          type: string
+        local_commit:
+          type: string
+        remote_commit:
+          type: string
+        behind:
+          type: integer
+        ahead:
+          type: integer
+        dirty:
+          type: boolean
+        due:
+          type: boolean
+        due_since:
+          type: string
+        remote_subject:
+          type: string
+        remote_author:
+          type: string
+        next_check_at:
+          type: string
+        last_deploy_id:
+          type: string
+        last_deploy_status:
+          type: string
+        last_deploy_at:
+          type: string
+        last_success_at:
+          type: string
+    DeployStep:
+      type: object
+      required:
+        - command
+      properties:
+        command:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        exit_code:
+          type: integer
+        continue_on_error:
+          type: boolean
+    Deployment:
+      type: object
+      required:
+        - id
+        - project_id
+        - status
+        - trigger
+        - steps
+        - step_count
+        - current_step
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        project_name:
+          type: string
+        workload_id:
+          type: string
+        workload_name:
+          type: string
+        batch_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - waiting
+            - starting
+            - running
+            - succeeded
+            - failed
+            - cancelled
+            - timed-out
+            - interrupted
+        trigger:
+          type: string
+        actor:
+          type: string
+        queued_at:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        duration_sec:
+          type: integer
+        working_dir:
+          type: string
+        run_as:
+          type: string
+        commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployCommand"
+        commit_before:
+          type: string
+        commit_after:
+          type: string
+        exit_code:
+          type: integer
+        failed_step:
+          type: integer
+        error:
+          type: string
+        waiting_for:
+          type: string
+        force:
+          type: boolean
+        log_bytes:
+          type: integer
+        log_gone:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployStep"
+        step_count:
+          type: integer
+        current_step:
+          type: integer
+        health:
+          type: array
+          items:
+            type: string
+        cancel_requested:
+          type: boolean
+    DeployProject:
+      type: object
+      required:
+        - id
+        - workload_id
+        - name
+        - working_dir
+        - config
+        - state
+      properties:
+        id:
+          type: string
+        workload_id:
+          type: string
+        workload_name:
+          type: string
+        workload_status:
+          type: string
+        workload_missing:
+          type: boolean
+        name:
+          type: string
+        working_dir:
+          type: string
+        config:
+          $ref: "#/components/schemas/DeployProjectConfig"
+        state:
+          $ref: "#/components/schemas/DeployProjectState"
+        active_deployment:
+          $ref: "#/components/schemas/Deployment"
+        estimate_sec:
+          type: integer
+        webhook_path:
+          type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    DeployDiscovered:
+      type: object
+      required:
+        - workload_id
+        - working_dir
+        - name
+      properties:
+        workload_id:
+          type: string
+        workload_name:
+          type: string
+        name:
+          type: string
+        working_dir:
+          type: string
+        services:
+          type: integer
+        running:
+          type: integer
+    DeploySettings:
+      type: object
+      properties:
+        max_concurrent:
+          type: integer
+        per_container:
+          type: integer
+        log_dir:
+          type: string
+        retention_days:
+          type: integer
+        keep_per_project:
+          type: integer
+        max_log_gb:
+          type: number
+        default_commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployCommand"
+        detect_interval_sec:
+          type: integer
+        default_timeout_sec:
+          type: integer
+        notify_events:
+          type: array
+          items:
+            type: string
+        updated_at:
+          type: string
+    DeployProjectList:
+      type: object
+      required:
+        - projects
+        - discovered
+        - settings
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployProject"
+        discovered:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployDiscovered"
+        settings:
+          $ref: "#/components/schemas/DeploySettings"
+        running:
+          type: integer
+        queued:
+          type: integer
+        can_configure:
+          type: boolean
+        can_deploy:
+          type: boolean
+    DeployProjectInput:
+      type: object
+      properties:
+        workload_id:
+          type: string
+        working_dir:
+          type: string
+        name:
+          type: string
+        config:
+          $ref: "#/components/schemas/DeployProjectConfig"
+        env:
+          type: object
+        env_remove:
+          type: array
+          items:
+            type: string
+    DeployBulkSkip:
+      type: object
+      required:
+        - id
+        - reason
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        reason:
+          type: string
+    DeployBulkResult:
+      type: object
+      required:
+        - queued
+        - skipped
+      properties:
+        batch_id:
+          type: string
+        queued:
+          type: array
+          items:
+            $ref: "#/components/schemas/Deployment"
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeployBulkSkip"
+    DeployWebhook:
+      type: object
+      required:
+        - enabled
+        - path
+      properties:
+        enabled:
+          type: boolean
+        secret:
+          type: string
+        path:
+          type: string
+    DeploymentList:
+      type: object
+      required:
+        - deployments
+      properties:
+        deployments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Deployment"
+    DeploymentLog:
+      type: object
+      required:
+        - data
+        - offset
+        - next
+        - size
+        - done
+      properties:
+        data:
+          type: string
+        offset:
+          type: integer
+        next:
+          type: integer
+        size:
+          type: integer
+        done:
+          type: boolean
+        gone:
+          type: boolean
+        error:
+          type: string
     OpsJob:
       type: object
       properties:

@@ -53,6 +53,9 @@ func startDockerExec(ctx context.Context, h *Handler, req termRequest) (termSess
 
 func (h *Handler) execDockerMgmt(ctx context.Context, m *agentv1.DockerMgmt) (*connect.Response[agentv1.ExecuteResponse], error) {
 	action := strings.TrimSpace(m.GetAction())
+	if isDeployAction(action) {
+		return h.execDeploy(ctx, action, m.GetSpecJson())
+	}
 	var spec struct {
 		Hints        []docker.MachineHint `json:"hints"`
 		Tail         int                  `json:"tail"`

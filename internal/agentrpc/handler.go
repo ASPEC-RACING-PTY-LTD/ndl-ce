@@ -15,6 +15,7 @@ import (
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
 	"github.com/no-dal/ndl-ce/internal/backuphost"
+	"github.com/no-dal/ndl-ce/internal/deploy"
 	"github.com/no-dal/ndl-ce/internal/diskguard"
 	"github.com/no-dal/ndl-ce/internal/docker"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
@@ -53,6 +54,8 @@ type Handler struct {
 	// Disk protects the host filesystems; nil disables the guard.
 	Disk       *diskguard.Guard
 	BackupHost *backuphost.Host
+	// Deploy runs Docker Compose project deployments in system containers.
+	Deploy *deploy.Manager
 	// backupMoving is set while the repository is being copied elsewhere.
 	backupMoving  bool
 	ZFS           *storage.ZFSEngine
@@ -69,6 +72,7 @@ type Handler struct {
 	last       inventory.Inventory
 	uploadOnce sync.Once
 	dockerOnce sync.Once
+	deployOnce sync.Once
 }
 
 var _ agentv1connect.AgentServiceHandler = (*Handler)(nil)

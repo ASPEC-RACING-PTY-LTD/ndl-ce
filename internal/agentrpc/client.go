@@ -800,3 +800,21 @@ func (c Client) OpenSession(ctx context.Context, nodeID, clusterID, listenAddr, 
 	}
 	return res.Msg, nil
 }
+
+// Deploy runs a deployment action on the agent and decodes its result.
+func (c Client) Deploy(ctx context.Context, action string, req DeployRequest, out any) error {
+	if !isDeployAction(action) {
+		return errors.New("unknown deployment action " + action)
+	}
+	raw, _ := json.Marshal(req)
+	res, err := c.rpc().Execute(ctx, connect.NewRequest(&agentv1.ExecuteRequest{
+		Method: &agentv1.ExecuteRequest_DockerMgmt{DockerMgmt: &agentv1.DockerMgmt{Action: action, SpecJson: raw}},
+	}))
+	if err != nil {
+		return err
+	}
+	if out != nil {
+		return json.Unmarshal(res.Msg.GetResultJson(), out)
+	}
+	return nil
+}

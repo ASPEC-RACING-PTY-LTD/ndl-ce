@@ -100,7 +100,29 @@ export function DashboardPage() {
   const poolWarn = pools.find((p) => p.status === "warning" || (p.warning_text?.length ?? 0) > 0);
   const poolWarnText = poolWarn?.warning_text?.[0] ?? "";
   const [warnHidden, setWarnHidden] = useState(() => warningHidden(poolWarnText));
-  const showPoolWarn = poolWarnText !== "" && !warnHidden && !warningHidden(poolWarnText);
+  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+  const attentionKey = (item: { href: string; text: string }) => `setup:${item.text}`;
+  const taskKey = (task: TaskItem) => `task:${task.id}`;
+  const poolKey = `pool:${poolWarnText}`;
+  const visibleAttention = attention.filter((item) => !dismissed.has(attentionKey(item)));
+  const visibleFailed = failedTasks.filter((task) => !dismissed.has(taskKey(task)));
+  const showPoolWarn = poolWarnText !== "" && !warnHidden && !warningHidden(poolWarnText) && !dismissed.has(poolKey);
+  const attentionCount = visibleAttention.length + visibleFailed.length + (showPoolWarn ? 1 : 0);
+  function dismiss(keys: string[]) {
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      keys.forEach((k) => next.add(k));
+      saveDismissed(next);
+      return next;
+    });
+  }
+  function dismissAll() {
+    if (showPoolWarn) {
+      dismissWarning(poolWarnText);
+      setWarnHidden(true);
+    }
+    dismiss([...visibleAttention.map(attentionKey), ...visibleFailed.map(taskKey)]);
+  }
 
   return (
     <section className="page" aria-labelledby="dashboard-heading">
@@ -194,12 +216,20 @@ export function DashboardPage() {
       <section className="section">
         <div className="section-head">
           <h2>Attention</h2>
+          {attentionCount > 0 ? (
+            <button className="btn btn-ghost btn-sm" type="button" onClick={dismissAll}>
+              Dismiss all
+            </button>
+          ) : null}
         </div>
-        {attention.length > 0 || failedTasks.length > 0 || poolWarn ? (
+        {attentionCount > 0 ? (
           <div className="stack">
-            {attention.map((item) => (
+            {visibleAttention.map((item) => (
               <p key={item.href} className="banner banner-warn" role="status">
-                {item.text} <Link href={item.href}>Open</Link>
+                {item.text} <Link href={item.href}>Open</Link>{" "}
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => dismiss([attentionKey(item)])}>
+                  Dismiss
+                </button>
               </p>
             ))}
             {showPoolWarn ? (
@@ -217,15 +247,20 @@ export function DashboardPage() {
                 </button>
               </p>
             ) : null}
-            {failedTasks.map((task) => (
+            {visibleFailed.map((task) => (
               <ErrorNotice
                 key={task.id}
                 title={`${taskIntentTitle(task)} failed`}
                 error={humanTaskMessage(task.message) || "No reason was reported."}
                 action={
-                  <button type="button" className="linkish" onClick={() => setOpenTask(task.id)}>
-                    View task
-                  </button>
+                  <>
+                    <button type="button" className="linkish" onClick={() => setOpenTask(task.id)}>
+                      View task
+                    </button>{" "}
+                    <button className="btn btn-ghost btn-sm" type="button" onClick={() => dismiss([taskKey(task)])}>
+                      Dismiss
+                    </button>
+                  </>
                 }
               />
             ))}
@@ -434,5 +469,27 @@ function dismissWarning(text: string) {
     localStorage.setItem(warnDismissedKey + text, "1");
   } catch {
     // Storage is unavailable; the warning stays hidden until reload.
+  }
+}
+
+// Dismissed Attention items (setup hints, failed tasks) are remembered per
+// browser. Only the newest entries are kept so the list stays small.
+const attentionDismissedKey = "ndl.dashboard.attention-dismissed";
+const attentionDismissedMax = 200;
+
+function loadDismissed(): Set<string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(attentionDismissedKey) || "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDismissed(keys: Set<string>) {
+  try {
+    localStorage.setItem(attentionDismissedKey, JSON.stringify([...keys].slice(-attentionDismissedMax)));
+  } catch {
+    // Storage is unavailable; dismissals last until reload.
   }
 }

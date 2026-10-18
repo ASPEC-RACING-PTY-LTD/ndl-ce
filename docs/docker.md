@@ -191,5 +191,9 @@ nodalctl docker logs host CONTAINER
 nodalctl docker restart MACHINE CONTAINER
 ```
 
+To update Compose projects in system containers from their Git repositories
+(detect new commits, deploy one or many, live logs, webhooks), see
+[Project deployments](deployments.md).
+
 Disable with `nodalctl feature disable docker --confirm disable-feature`.
 Existing containers keep running. Discovery stops.

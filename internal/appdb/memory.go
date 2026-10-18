@@ -58,6 +58,7 @@ type Memory struct {
 	provisioned        map[string]ProvisionedService
 	dockerPrefs        map[string]DockerPref
 	savedScripts       map[string]SavedScript
+	deploy             *deployMem
 	uptimeMonitors     map[string]UptimeMonitor
 	uptimeEvents       []UptimeEvent
 	cfCreds            map[string]CloudflareCredential

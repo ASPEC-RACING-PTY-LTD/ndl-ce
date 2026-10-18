@@ -1,5 +1,186 @@
 /* Generated from api/openapi/nodal.v1.yaml. Do not edit by hand. */
 
+export interface DeployCommand {
+  run: string;
+  continue_on_error?: boolean;
+}
+
+export interface DeployProjectConfig {
+  commands: DeployCommand[];
+  run_as?: string;
+  timeout_sec?: number;
+  provider?: "auto" | "codehold" | "github" | "git";
+  remote?: string;
+  branch?: string;
+  fallback_remote?: string;
+  detect?: boolean;
+  detect_interval_sec?: number;
+  auto_deploy?: boolean;
+  auto_window?: string;
+  deploy_during_backup?: boolean;
+  webhook?: boolean;
+  notify_events?: string[];
+  notify_channels?: string[];
+  env_keys?: string[];
+}
+
+export interface DeployProjectState {
+  checked_at?: string;
+  check_error?: string;
+  check_note?: string;
+  provider?: string;
+  remote?: string;
+  remote_url?: string;
+  repo?: string;
+  branch?: string;
+  local_commit?: string;
+  remote_commit?: string;
+  behind?: number;
+  ahead?: number;
+  dirty?: boolean;
+  due?: boolean;
+  due_since?: string;
+  remote_subject?: string;
+  remote_author?: string;
+  next_check_at?: string;
+  last_deploy_id?: string;
+  last_deploy_status?: string;
+  last_deploy_at?: string;
+  last_success_at?: string;
+}
+
+export interface DeployStep {
+  command: string;
+  started_at?: string;
+  finished_at?: string;
+  exit_code?: number;
+  continue_on_error?: boolean;
+}
+
+export interface Deployment {
+  id: string;
+  project_id: string;
+  project_name?: string;
+  workload_id?: string;
+  workload_name?: string;
+  batch_id?: string;
+  status: "queued" | "waiting" | "starting" | "running" | "succeeded" | "failed" | "cancelled" | "timed-out" | "interrupted";
+  trigger: string;
+  actor?: string;
+  queued_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  duration_sec?: number;
+  working_dir?: string;
+  run_as?: string;
+  commands?: DeployCommand[];
+  commit_before?: string;
+  commit_after?: string;
+  exit_code?: number;
+  failed_step?: number;
+  error?: string;
+  waiting_for?: string;
+  force?: boolean;
+  log_bytes?: number;
+  log_gone?: boolean;
+  steps: DeployStep[];
+  step_count: number;
+  current_step: number;
+  health?: string[];
+  cancel_requested?: boolean;
+}
+
+export interface DeployProject {
+  id: string;
+  workload_id: string;
+  workload_name?: string;
+  workload_status?: string;
+  workload_missing?: boolean;
+  name: string;
+  working_dir: string;
+  config: DeployProjectConfig;
+  state: DeployProjectState;
+  active_deployment?: Deployment;
+  estimate_sec?: number;
+  webhook_path?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface DeployDiscovered {
+  workload_id: string;
+  workload_name?: string;
+  name: string;
+  working_dir: string;
+  services?: number;
+  running?: number;
+}
+
+export interface DeploySettings {
+  max_concurrent?: number;
+  per_container?: number;
+  log_dir?: string;
+  retention_days?: number;
+  keep_per_project?: number;
+  max_log_gb?: number;
+  default_commands?: DeployCommand[];
+  detect_interval_sec?: number;
+  default_timeout_sec?: number;
+  notify_events?: string[];
+  updated_at?: string;
+}
+
+export interface DeployProjectList {
+  projects: DeployProject[];
+  discovered: DeployDiscovered[];
+  settings: DeploySettings;
+  running?: number;
+  queued?: number;
+  can_configure?: boolean;
+  can_deploy?: boolean;
+}
+
+export interface DeployProjectInput {
+  workload_id?: string;
+  working_dir?: string;
+  name?: string;
+  config?: DeployProjectConfig;
+  env?: Record<string, unknown>;
+  env_remove?: string[];
+}
+
+export interface DeployBulkSkip {
+  id: string;
+  name?: string;
+  reason: string;
+}
+
+export interface DeployBulkResult {
+  batch_id?: string;
+  queued: Deployment[];
+  skipped: DeployBulkSkip[];
+}
+
+export interface DeployWebhook {
+  enabled: boolean;
+  secret?: string;
+  path: string;
+}
+
+export interface DeploymentList {
+  deployments: Deployment[];
+}
+
+export interface DeploymentLog {
+  data: string;
+  offset: number;
+  next: number;
+  size: number;
+  done: boolean;
+  gone?: boolean;
+  error?: string;
+}
+
 export interface OpsJob {
   id?: string;
   kind?: string;
@@ -3664,6 +3845,38 @@ export type GetOpsJobPath = "/api/v1/ops/jobs/{id}";
 export type ListSavedScriptsPath = "/api/v1/scripts";
 
 export type UpdateSavedScriptPath = "/api/v1/scripts/{id}";
+
+export type GetDeploySettingsPath = "/api/v1/docker/deploy/settings";
+
+export type ListDeployProjectsPath = "/api/v1/docker/deploy/projects";
+
+export type GetDeployProjectPath = "/api/v1/docker/deploy/projects/{id}";
+
+export type DeployProjectPath = "/api/v1/docker/deploy/projects/{id}/deploy";
+
+export type ListProjectDeploymentsPath = "/api/v1/docker/deploy/projects/{id}/deployments";
+
+export type CheckDeployProjectPath = "/api/v1/docker/deploy/projects/{id}/check";
+
+export type CheckAllDeployProjectsPath = "/api/v1/docker/deploy/check";
+
+export type BulkDeployPath = "/api/v1/docker/deploy/bulk";
+
+export type SetDeployWebhookPath = "/api/v1/docker/deploy/projects/{id}/webhook";
+
+export type ListDeploymentsPath = "/api/v1/docker/deployments";
+
+export type GetDeploymentPath = "/api/v1/docker/deployments/{id}";
+
+export type GetDeploymentLogPath = "/api/v1/docker/deployments/{id}/log";
+
+export type DownloadDeploymentLogPath = "/api/v1/docker/deployments/{id}/log/download";
+
+export type CancelDeploymentPath = "/api/v1/docker/deployments/{id}/cancel";
+
+export type ForceDeploymentPath = "/api/v1/docker/deployments/{id}/force";
+
+export type DeployWebhookPath = "/api/v1/hooks/deploy/{id}";
 
 export type ListUptimeMonitorsPath = "/api/v1/uptime/monitors";
 

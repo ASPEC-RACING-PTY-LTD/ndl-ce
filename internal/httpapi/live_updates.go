@@ -95,6 +95,9 @@ func (s *Server) liveBusy(ctx context.Context, clusterID string) []string {
 			busy = append(busy, "a backup is copying data")
 		}
 	}
+	if n := s.deploymentsBusy(ctx, clusterID); n > 0 {
+		busy = append(busy, fmt.Sprintf("%d project deployment(s)", n))
+	}
 	if mv := s.repoMove.status(s.now()); mv != nil && mv["running"] == true {
 		busy = append(busy, "the backup repository is moving")
 	}

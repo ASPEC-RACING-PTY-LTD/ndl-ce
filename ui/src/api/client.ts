@@ -3346,3 +3346,94 @@ export async function putDockerPruneSettings(body: { enabled?: boolean; run_at?:
 export async function runDockerPrune(): Promise<{ started: boolean }> {
   return readJson(await request("/docker/prune", { method: "POST" }));
 }
+
+// --- Docker Compose project deployments ---
+
+export type DeployProject = import("../generated/openapi").DeployProject;
+export type DeployProjectList = import("../generated/openapi").DeployProjectList;
+export type DeployProjectInput = import("../generated/openapi").DeployProjectInput;
+export type DeployProjectConfig = import("../generated/openapi").DeployProjectConfig;
+export type DeploySettings = import("../generated/openapi").DeploySettings;
+export type Deployment = import("../generated/openapi").Deployment;
+export type DeploymentLog = import("../generated/openapi").DeploymentLog;
+export type DeployDiscovered = import("../generated/openapi").DeployDiscovered;
+
+const deployPath = (id: string) => `/docker/deploy/projects/${encodeURIComponent(id)}`;
+const deploymentPath = (id: string) => `/docker/deployments/${encodeURIComponent(id)}`;
+
+export async function listDeployProjects(): Promise<DeployProjectList> {
+  return readJson(await request("/docker/deploy/projects"));
+}
+
+export async function createDeployProject(body: DeployProjectInput): Promise<DeployProject> {
+  return readJson(await request("/docker/deploy/projects", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function updateDeployProject(id: string, body: DeployProjectInput): Promise<DeployProject> {
+  return readJson(await request(deployPath(id), { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function deleteDeployProject(id: string): Promise<void> {
+  const res = await request(deployPath(id), { method: "DELETE" });
+  if (!res.ok) {
+    await readJson(res);
+  }
+}
+
+export async function deployProject(id: string, force = false): Promise<Deployment> {
+  return readJson(await request(`${deployPath(id)}/deploy`, { method: "POST", body: JSON.stringify({ force }) }));
+}
+
+export async function listProjectDeployments(id: string, limit = 50): Promise<{ deployments: Deployment[] }> {
+  return readJson(await request(`${deployPath(id)}/deployments?limit=${limit}`));
+}
+
+export async function listDeployments(active = false, limit = 50): Promise<{ deployments: Deployment[] }> {
+  return readJson(await request(`/docker/deployments?limit=${limit}${active ? "&active=1" : ""}`));
+}
+
+export async function getDeployment(id: string): Promise<Deployment> {
+  return readJson(await request(deploymentPath(id)));
+}
+
+export async function getDeploymentLog(id: string, offset: number): Promise<DeploymentLog> {
+  return readJson(await request(`${deploymentPath(id)}/log?offset=${offset}`));
+}
+
+export function deploymentLogDownloadURL(id: string): string {
+  return `${API_PREFIX}${deploymentPath(id)}/log/download`;
+}
+
+export async function cancelDeployment(id: string): Promise<Deployment> {
+  return readJson(await request(`${deploymentPath(id)}/cancel`, { method: "POST" }));
+}
+
+export async function forceDeployment(id: string): Promise<Deployment> {
+  return readJson(await request(`${deploymentPath(id)}/force`, { method: "POST" }));
+}
+
+export async function getDeploySettings(): Promise<DeploySettings> {
+  return readJson(await request("/docker/deploy/settings"));
+}
+
+export async function putDeploySettings(body: DeploySettings): Promise<DeploySettings> {
+  return readJson(await request("/docker/deploy/settings", { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export type DeployBulkResult = import("../generated/openapi").DeployBulkResult;
+
+export async function checkDeployProject(id: string): Promise<DeployProject> {
+  return readJson(await request(`${deployPath(id)}/check`, { method: "POST" }));
+}
+
+export async function checkAllDeployProjects(): Promise<{ started: boolean; message?: string }> {
+  return readJson(await request("/docker/deploy/check", { method: "POST" }));
+}
+
+export async function bulkDeploy(body: { project_ids?: string[]; due?: boolean; force?: boolean }): Promise<DeployBulkResult> {
+  return readJson(await request("/docker/deploy/bulk", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function setDeployWebhook(id: string, enabled: boolean): Promise<import("../generated/openapi").DeployWebhook> {
+  return readJson(await request(`${deployPath(id)}/webhook`, { method: "POST", body: JSON.stringify({ enabled }) }));
+}

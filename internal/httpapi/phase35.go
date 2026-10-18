@@ -240,12 +240,10 @@ func (s *Server) featureWorkloadCount(r *http.Request, clusterID, id string) int
 		as, _ := s.Store.ListGPUAssignments(r.Context(), clusterID)
 		return len(as)
 	case features.IDDocker:
-		if s.docker == nil {
-			return 0
-		}
-		s.docker.mu.Lock()
-		n := len(s.docker.inv.Containers)
-		s.docker.mu.Unlock()
+		c := s.dockerCacheRef()
+		c.mu.Lock()
+		n := len(c.inv.Containers)
+		c.mu.Unlock()
 		return n
 	case features.IDGameServers:
 		if s.Store == nil {

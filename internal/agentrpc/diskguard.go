@@ -100,6 +100,13 @@ func diskGateFor(m *agentv1.ExecuteRequest, gameRoot string) (string, string, bo
 			return "Installing packages", "", true
 		}
 		return "", "", false
+	case m.GetDockerMgmt() != nil:
+		if m.GetDockerMgmt().GetAction() == "deploy-start" {
+			var req DeployRequest
+			_ = json.Unmarshal(m.GetDockerMgmt().GetSpecJson(), &req)
+			return "Starting a deployment", req.Spec.LogDir, true
+		}
+		return "", "", false
 	case m.GetGameServer() != nil:
 		switch strings.TrimSpace(m.GetGameServer().GetAction()) {
 		case gsInstall, gsWriteFile, gsExtract, gsBackup, gsRestoreBackup:

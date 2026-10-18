@@ -21,6 +21,8 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { JobLog } from "../components/JobLog";
 import { JsonScriptModal } from "../components/JsonScriptModal";
 import { PageHeader } from "../components/PageHeader";
+import { ResourceTable } from "../components/ResourceTable";
+import { ResultsToolbar, useResultsView } from "../components/ResultsToolbar";
 import { StatusBadge } from "../components/StatusBadge";
 import type { DockerContainer, DockerMachine } from "../generated/openapi";
 import { discoverMonitors, type UptimeCandidate } from "../uptime/discover";
@@ -75,6 +77,50 @@ function stateLabel(m: UptimeMonitor): string {
   }
   return "Waiting for first check";
 }
+
+const STATE_FILTERS = [
+  { value: "all", label: "All monitors" },
+  { value: "down", label: "Down" },
+  { value: "up", label: "Up" },
+  { value: "pending", label: "Waiting" },
+  { value: "paused", label: "Paused" },
+];
+
+const SORTS = [
+  { value: "status", label: "Status" },
+  { value: "name", label: "Name" },
+  { value: "latency", label: "Response time" },
+  { value: "uptime", label: "Uptime" },
+  { value: "checked", label: "Last checked" },
+];
+
+function stateKey(m: UptimeMonitor): string {
+  if (!m.enabled) {
+    return "paused";
+  }
+  return m.state === "up" || m.state === "down" ? m.state : "pending";
+}
+
+function compareMonitors(sort: string) {
+  const rank = (m: UptimeMonitor) => (!m.enabled ? 3 : m.state === "down" ? 0 : m.state === "up" ? 2 : 1);
+  return (a: UptimeMonitor, b: UptimeMonitor) => {
+    const byName = a.name.localeCompare(b.name);
+    switch (sort) {
+      case "name":
+        return byName;
+      case "latency":
+        return (a.last_latency_ms || Infinity) - (b.last_latency_ms || Infinity) || byName;
+      case "uptime":
+        return (a.uptime_percent ?? 101) - (b.uptime_percent ?? 101) || byName;
+      case "checked":
+        return Date.parse(b.last_check_at ?? "") - Date.parse(a.last_check_at ?? "") || byName;
+      default:
+        return rank(a) - rank(b) || byName;
+    }
+  };
+}
+
+type MonitorGroup = { key: string; label: string; meta: string; monitors: UptimeMonitor[]; down: number };
 
 function targetHref(target: string): string | null {
   if (/^https?:\/\//.test(target)) {
@@ -443,6 +489,10 @@ export function UptimePage() {
   const [jsonOpen, setJsonOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [job, setJob] = useState<OpsJob | null>(null);
+  const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState("all");
+  const [sort, setSort] = useState("status");
+  const [view, setView] = useResultsView("ndl-uptime-view");
 
   async function reload() {
     try {
@@ -574,11 +624,90 @@ export function UptimePage() {
     );
   }
 
-  const sorted = [...items].sort((a, b) => {
-    const rank = (m: UptimeMonitor) => (!m.enabled ? 3 : m.state === "down" ? 0 : m.state === "up" ? 2 : 1);
-    return rank(a) - rank(b) || a.name.localeCompare(b.name);
-  });
   const machineName = (id: string) => machines.find((x) => x.id === id)?.name ?? id;
+  // A monitor belongs to the Compose project (or standalone container) of
+  // the first container it restarts.
+  function groupOf(m: UptimeMonitor): { key: string; label: string; meta: string } {
+    const first = m.containers[0];
+    if (!first) {
+      return { key: "", label: "Not linked to a container", meta: "Reports only" };
+    }
+    const c = containers.find((x) => x.machine_id === first.machine_id && x.name === first.name);
+    const project = c?.project;
+    return project
+      ? { key: `${first.machine_id}/p/${project}`, label: project, meta: `Compose on ${machineName(first.machine_id)}` }
+      : { key: `${first.machine_id}/c/${first.name}`, label: first.name, meta: `Container on ${machineName(first.machine_id)}` };
+  }
+  const q = query.trim().toLowerCase();
+  const matching = items.filter((m) => {
+    if (stateFilter !== "all" && stateKey(m) !== stateFilter) {
+      return false;
+    }
+    if (!q) {
+      return true;
+    }
+    const g = groupOf(m);
+    const hay = [m.name, m.target, g.label, g.meta, ...m.containers.map((c) => `${machineName(c.machine_id)}/${c.name}`)].join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+  const groups: MonitorGroup[] = [];
+  for (const m of [...matching].sort(compareMonitors(sort))) {
+    const g = groupOf(m);
+    let entry = groups.find((x) => x.key === g.key);
+    if (!entry) {
+      entry = { ...g, monitors: [], down: 0 };
+      groups.push(entry);
+    }
+    entry.monitors.push(m);
+    if (m.enabled && m.state === "down") {
+      entry.down += 1;
+    }
+  }
+  // Groups with a site down come first, then by name; "not linked" goes last.
+  groups.sort((a, b) => Number(b.down > 0) - Number(a.down > 0) || Number(a.key === "") - Number(b.key === "") || a.label.localeCompare(b.label));
+
+  function monitorCard(m: UptimeMonitor) {
+    const href = targetHref(m.target);
+    return (
+      <article
+        key={m.id}
+        className={"docker-card" + (m.enabled && m.state === "down" ? " is-issue" : "") + (!m.enabled ? " is-ignored" : "")}
+        aria-label={`Monitor ${m.name}`}
+        onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, m.name, monitorItems(m))}
+      >
+        <header className="docker-card-head">
+          <strong className="docker-head-name" title={m.name}>
+            {m.name}
+          </strong>
+          <StatusBadge status={stateTone(m.state, m.enabled)} label={stateLabel(m)} />
+          <ActionMenu label={`${m.name} actions`} items={monitorItems(m).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
+        </header>
+        <p className="meta docker-card-meta" title={m.target}>
+          {href ? (
+            <a href={href} target="_blank" rel="noopener noreferrer">
+              {m.target}
+            </a>
+          ) : (
+            m.target
+          )}
+        </p>
+        <p className="uptime-stats">
+          {m.uptime_percent != null ? <span>{m.uptime_percent}% of recent checks</span> : null}
+          {m.last_check_at ? <span>Checked {formatWhen(m.last_check_at)}</span> : <span>Not checked yet</span>}
+          {m.state === "up" && m.last_latency_ms ? <span>{m.last_latency_ms} ms</span> : null}
+          {m.last_status ? <span>HTTP {m.last_status}</span> : null}
+        </p>
+        {m.state === "down" && m.last_error ? <p className="tunnel-reason">{m.last_error}</p> : null}
+        <History events={m.events} />
+        <p className="meta">
+          {m.containers.length
+            ? `${m.auto_restart ? "Restarts" : "Linked to"} ${m.containers.map((c) => `${machineName(c.machine_id)}/${c.name}`).join(", ")}`
+            : "Reports only, no containers linked"}
+          {m.last_restart_at ? ` · last restart ${formatWhen(m.last_restart_at)}` : ""}
+        </p>
+      </article>
+    );
+  }
 
   return (
     <section className="page page-wide" aria-labelledby="uptime-heading">
@@ -659,50 +788,61 @@ export function UptimePage() {
           its containers are restarted automatically.
         </EmptyState>
       ) : (
-        <div className="docker-grid">
-          {sorted.map((m) => {
-            const href = targetHref(m.target);
-            return (
-              <article
-                key={m.id}
-                className={"docker-card" + (m.enabled && m.state === "down" ? " is-issue" : "") + (!m.enabled ? " is-ignored" : "")}
-                aria-label={`Monitor ${m.name}`}
-                onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, m.name, monitorItems(m))}
-              >
-                <header className="docker-card-head">
-                  <strong className="docker-head-name" title={m.name}>
-                    {m.name}
-                  </strong>
-                  <StatusBadge status={stateTone(m.state, m.enabled)} label={stateLabel(m)} />
-                  <ActionMenu label={`${m.name} actions`} items={monitorItems(m).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />
-                </header>
-                <p className="meta docker-card-meta" title={m.target}>
-                  {href ? (
-                    <a href={href} target="_blank" rel="noopener noreferrer">
+        <>
+          <ResultsToolbar
+            label="Monitors"
+            query={query}
+            onQuery={setQuery}
+            placeholder="Search name, site, container, project"
+            filter={stateFilter}
+            filters={STATE_FILTERS}
+            onFilter={setStateFilter}
+            filterLabel="Status"
+            sort={sort}
+            sorts={SORTS}
+            onSort={setSort}
+            view={view}
+            onView={setView}
+          />
+          {groups.length === 0 ? (
+            <p className="muted">No monitors match the current filters.</p>
+          ) : view === "table" ? (
+            <article className="panel">
+              <ResourceTable
+                className="docker-table-flat"
+                headers={["Monitor", "Group", "Status", "Target", "Response", "Uptime", "Checked", ""]}
+                numeric={[4, 5]}
+                rows={groups.flatMap((g) =>
+                  g.monitors.map((m) => [
+                    <span key="n" className="docker-clip" title={m.name} onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, m.name, monitorItems(m))}>
+                      {m.name}
+                    </span>,
+                    <span key="g" className="docker-clip" title={`${g.label} · ${g.meta}`}>
+                      {g.label}
+                    </span>,
+                    <StatusBadge key="s" status={stateTone(m.state, m.enabled)} label={stateLabel(m)} />,
+                    <span key="t" className="docker-clip" title={m.target}>
                       {m.target}
-                    </a>
-                  ) : (
-                    m.target
-                  )}
-                </p>
-                <p className="uptime-stats">
-                  {m.uptime_percent != null ? <span>{m.uptime_percent}% of recent checks</span> : null}
-                  {m.last_check_at ? <span>Checked {formatWhen(m.last_check_at)}</span> : <span>Not checked yet</span>}
-                  {m.state === "up" && m.last_latency_ms ? <span>{m.last_latency_ms} ms</span> : null}
-                  {m.last_status ? <span>HTTP {m.last_status}</span> : null}
-                </p>
-                {m.state === "down" && m.last_error ? <p className="tunnel-reason">{m.last_error}</p> : null}
-                <History events={m.events} />
-                <p className="meta">
-                  {m.containers.length
-                    ? `${m.auto_restart ? "Restarts" : "Linked to"} ${m.containers.map((c) => `${machineName(c.machine_id)}/${c.name}`).join(", ")}`
-                    : "Reports only, no containers linked"}
-                  {m.last_restart_at ? ` · last restart ${formatWhen(m.last_restart_at)}` : ""}
-                </p>
-              </article>
-            );
-          })}
-        </div>
+                    </span>,
+                    m.state === "up" && m.last_latency_ms ? `${m.last_latency_ms} ms` : "n/a",
+                    m.uptime_percent != null ? `${m.uptime_percent}%` : "n/a",
+                    m.last_check_at ? formatWhen(m.last_check_at) : "Not yet",
+                    <ActionMenu key="a" label={`${m.name} actions`} items={monitorItems(m).filter((i): i is Exclude<ContextItem, "sep"> => i !== "sep" && !i.disabled)} />,
+                  ]),
+                )}
+              />
+            </article>
+          ) : (
+            groups.map((g) => (
+              <section key={g.key || "none"} className="docker-section" aria-label={`Group ${g.label}`}>
+                <h2 className="docker-section-title">
+                  {g.label} <span className="meta">{g.meta} · {g.monitors.length}{g.down ? `, ${g.down} down` : ""}</span>
+                </h2>
+                <div className="docker-grid">{g.monitors.map(monitorCard)}</div>
+              </section>
+            ))
+          )}
+        </>
       )}
 
       <Dialog

@@ -39,6 +39,7 @@ export function QuickSwitch({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [catalog, setCatalog] = useState<TermTarget[]>([]);
+  const [localNodeId, setLocalNodeId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [startTarget, setStartTarget] = useState<TermTarget | null>(null);
   const [replaceTarget, setReplaceTarget] = useState<TermTarget | null>(null);
@@ -62,6 +63,7 @@ export function QuickSwitch({
         if (cancelled) {
           return;
         }
+        setLocalNodeId((nodes.find((n) => n.local) ?? (nodes.length === 1 ? nodes[0] : undefined))?.id ?? null);
         setCatalog(
           buildTermCatalog({
             roles,
@@ -89,9 +91,16 @@ export function QuickSwitch({
       return filtered.map((target) => ({ key: `${target.kind}:${target.id}`, target }));
     }
     const out: Row[] = [];
+    // The local host always sits at the top, then recents, then everything else.
+    const isLocal = (t: TermTarget) => t.kind === "node" && t.id === localNodeId;
+    const local = catalog.find(isLocal);
+    if (local) {
+      out.push({ key: "h-local", heading: "This host" });
+      out.push({ key: `local:${local.kind}:${local.id}`, target: local });
+    }
     const recentHits = recents
       .map((r) => catalog.find((t) => t.kind === r.kind && t.id === r.id) ?? r)
-      .filter((t) => filterTermTargets([t], "").length >= 0);
+      .filter((t) => !isLocal(t));
     if (recentHits.length) {
       out.push({ key: "h-recent", heading: "Recent" });
       for (const target of recentHits) {
@@ -99,7 +108,7 @@ export function QuickSwitch({
       }
     }
     for (const group of GROUP_ORDER) {
-      const items = catalog.filter((t) => t.group === group);
+      const items = catalog.filter((t) => t.group === group && !isLocal(t));
       if (items.length === 0) {
         continue;
       }
@@ -109,7 +118,7 @@ export function QuickSwitch({
       }
     }
     return out;
-  }, [catalog, filtered, recents, searching]);
+  }, [catalog, filtered, recents, searching, localNodeId]);
 
   const targetRows = rows.map((r, i) => ({ row: r, index: i })).filter((x) => x.row.target);
   const activeTarget = rows[active]?.target;

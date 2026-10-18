@@ -364,6 +364,21 @@ type Store interface {
 	PutDockerPref(ctx context.Context, p DockerPref) error
 	DeleteDockerPref(ctx context.Context, clusterID, machineID, scope, name string) error
 
+	// ListDeployProjects with an empty clusterID lists every cluster's projects (for the worker).
+	ListDeployProjects(ctx context.Context, clusterID string) ([]DeployProject, error)
+	GetDeployProject(ctx context.Context, clusterID, id string) (*DeployProject, error)
+	PutDeployProject(ctx context.Context, p DeployProject) error
+	UpdateDeployProjectState(ctx context.Context, clusterID, id string, st DeployProjectState) error
+	DeleteDeployProject(ctx context.Context, clusterID, id string) error
+	DeployProjectSecrets(ctx context.Context, clusterID, id string) (env map[string]string, webhookSecret string, err error)
+	PutDeployProjectSecrets(ctx context.Context, clusterID, id string, env map[string]string, webhookSecret string) error
+	ListDeployments(ctx context.Context, clusterID string, f DeploymentFilter) ([]Deployment, error)
+	GetDeployment(ctx context.Context, clusterID, id string) (*Deployment, error)
+	PutDeployment(ctx context.Context, d Deployment) error
+	DeleteDeployments(ctx context.Context, clusterID string, ids []string) error
+	GetDeploySettings(ctx context.Context, clusterID string) (*DeploySettings, error)
+	PutDeploySettings(ctx context.Context, s DeploySettings) error
+
 	ListSavedScripts(ctx context.Context, clusterID, kind string) ([]SavedScript, error)
 	GetSavedScript(ctx context.Context, clusterID, id string) (*SavedScript, error)
 	PutSavedScript(ctx context.Context, s SavedScript) error

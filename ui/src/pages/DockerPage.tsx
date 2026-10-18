@@ -272,10 +272,10 @@ export function DockerPage() {
   const attention = groups.filter((g) => !g.ignored && g.issues.length > 0);
   const healthy = groups.filter((g) => !g.ignored && g.issues.length === 0);
   const ignoredGroups = groups.filter((g) => g.ignored);
-  const downEngines = machines.filter((m) => !m.daemon_ok && (machineFilter === "all" || m.id === machineFilter));
-  const idleMachines = machines.filter(
-    (m) => m.daemon_ok && (m.container_count ?? 0) === 0 && (machineFilter === "all" || m.id === machineFilter),
-  );
+  const machineShown = (m: DockerMachine) =>
+    (machineFilter === "all" || m.id === machineFilter) && (!q || `${m.name} ${m.ipv4 ?? ""}`.toLowerCase().includes(q));
+  const downEngines = machines.filter((m) => !m.daemon_ok && machineShown(m));
+  const idleMachines = machines.filter((m) => m.daemon_ok && (m.container_count ?? 0) === 0 && machineShown(m));
   const ignoredCount = (inv?.containers ?? []).filter((c) => containerIgnored(c)).length;
   const flat = (inv?.containers ?? []).filter((c) => (machineFilter === "all" || c.machine_id === machineFilter) && matchesQuery(c, q));
   const selectedRow = (inv?.containers ?? []).find((c) => c.id === selected) ?? null;
@@ -566,18 +566,24 @@ export function DockerPage() {
     );
   }
 
-  const badTunnels = tunnels.filter((t) => t.health === "critical" || t.health === "degraded");
+  const shownTunnels = tunnels.filter(
+    (t) =>
+      (machineFilter === "all" || t.machine_id === machineFilter) &&
+      (!q || `${t.unit} ${t.machine_name} ${(t.ingress ?? []).map((i) => i.hostname ?? "").join(" ")}`.toLowerCase().includes(q)),
+  );
+  const badTunnels = shownTunnels.filter((t) => t.health === "critical" || t.health === "degraded");
   const issueCount = attention.reduce((n, g) => n + g.issues.length, 0) + badTunnels.length;
 
   function renderCard(g: Group, tone: "issue" | "healthy" | "ignored") {
     const fallback = tone !== "issue" && g.containers.length > ROWS_SHOWN;
-    const isCollapsed = collapsed[g.key] ?? fallback;
+    // While searching, matches are always shown, whatever was collapsed.
+    const isCollapsed = q ? false : (collapsed[g.key] ?? fallback);
     const ordered = [...g.containers].sort((a, b) => {
       const ai = isIssue(a.health) && !containerIgnored(a) ? 0 : 1;
       const bi = isIssue(b.health) && !containerIgnored(b) ? 0 : 1;
       return ai - bi || (a.service || a.name).localeCompare(b.service || b.name);
     });
-    const rows = showAll[g.key] ? ordered : ordered.slice(0, ROWS_SHOWN);
+    const rows = showAll[g.key] || q ? ordered : ordered.slice(0, ROWS_SHOWN);
     const running = (g.project.containers ?? []).filter((c) => c.state === "running").length;
     const total = (g.project.containers ?? []).length;
     const groupStatus = tone === "ignored" ? "Ignored" : g.issues.length ? `${g.issues.length} need attention` : g.project.status_label || "Healthy";
@@ -836,20 +842,20 @@ export function DockerPage() {
               </div>
             )}
           </section>
-          {tunnels.length > 0 ? (
+          {shownTunnels.length > 0 ? (
             <section className="docker-section" aria-labelledby="docker-tunnels">
               <h2 id="docker-tunnels" className="docker-section-title">
                 <button className="linkish" type="button" aria-expanded={tunnelsOpen} onClick={() => setTunnelsOpen((v) => !v)}>
                   {tunnelsOpen ? "▾" : "▸"} Cloudflare tunnels
                 </button>{" "}
                 <span className="meta">
-                  {tunnels.length}
+                  {shownTunnels.length}
                   {badTunnels.length ? `, ${badTunnels.length} with problems` : ""}
                 </span>
               </h2>
               {tunnelsOpen ? (
                 <div className="docker-grid">
-                  {[...badTunnels, ...tunnels.filter((t) => !badTunnels.includes(t))].map((t) => (
+                  {[...badTunnels, ...shownTunnels.filter((t) => !badTunnels.includes(t))].map((t) => (
                     <TunnelCard key={`${t.machine_id}/${t.unit}`} tunnel={t} items={tunnelItems(t)} onContext={(e) => ctx.openAt(e, t.unit, tunnelItems(t))} />
                   ))}
                 </div>

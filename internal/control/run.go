@@ -215,6 +215,7 @@ func Run(cfg Config) error {
 	go srv.RunCodehold(runCtx)
 	go srv.RunAuditRetention(runCtx)
 	go srv.RunDockerPrune(runCtx)
+	go srv.RunDeployments(runCtx)
 	go observer{
 		Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups,
 		Alerts: srv.TickAlerts, UpdateCheck: srv.TickUpdateCheck,
