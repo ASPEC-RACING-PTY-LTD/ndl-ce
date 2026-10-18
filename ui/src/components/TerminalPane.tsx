@@ -118,6 +118,7 @@ export function TerminalPane({
     attach,
     detach,
     reconnect,
+    reopen,
     closeTab,
     send,
     fit,
@@ -400,6 +401,15 @@ export function TerminalPane({
           <Link className="btn btn-ghost btn-sm" href={backHref}>
             {host ? "Host" : "Workload"}
           </Link>
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            disabled={tab.state !== "active"}
+            title="Runs clear in this terminal"
+            onClick={() => send(tab.tabId, "clear\r")}
+          >
+            Clear
+          </button>
           {tab.state === "disconnected" || tab.state === "closed" ? (
             <button className="btn btn-ghost btn-sm" type="button" onClick={() => reconnect(tab.tabId)}>
               Reconnect
@@ -421,9 +431,16 @@ export function TerminalPane({
         <ErrorNotice
           error={tab.error}
           action={
-            <button className="btn btn-ghost btn-sm" type="button" onClick={() => closeTab(tab.tabId)}>
-              Close
-            </button>
+            <>
+              {tab.state === "closed" ? (
+                <button className="btn btn-secondary btn-sm" type="button" onClick={() => reopen(tab.tabId)}>
+                  Reopen
+                </button>
+              ) : null}{" "}
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => closeTab(tab.tabId)}>
+                Close
+              </button>
+            </>
           }
         />
       ) : null}

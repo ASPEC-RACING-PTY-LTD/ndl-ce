@@ -10,6 +10,9 @@ type DragState = {
 };
 
 const THRESHOLD = 5;
+// A tab must pass a neighbour's middle by this much before they swap, so a
+// pointer resting on a boundary cannot flip the order back and forth.
+const HYSTERESIS = 8;
 
 function tabEls(list: HTMLElement | null): HTMLElement[] {
   if (!list) {
@@ -59,7 +62,6 @@ export function useTabDrag(ids: string[], move: (id: string, toIndex: number) =>
       if (!s) {
         return;
       }
-      s.lastX = event.clientX;
       if (!s.active) {
         if (Math.abs(event.clientX - s.startX) < THRESHOLD) {
           return;
@@ -75,17 +77,27 @@ export function useTabDrag(ids: string[], move: (id: string, toIndex: number) =>
         return;
       }
       const width = el.getBoundingClientRect().width;
-      const center = event.clientX - s.grab + width / 2;
+      // Keep the dragged tab inside the tab row; past either end it stays
+      // pinned there instead of pushing the row around.
+      const bounds = listRef.current?.getBoundingClientRect();
+      let x = event.clientX;
+      if (bounds && bounds.width > 0) {
+        x = Math.min(Math.max(x, bounds.left + s.grab), bounds.right - (width - s.grab));
+      }
+      s.lastX = x;
+      const center = x - s.grab + width / 2;
+      const self = els.indexOf(el);
       let index = 0;
-      for (const other of els) {
+      els.forEach((other, i) => {
         if (other === el) {
-          continue;
+          return;
         }
         const r = other.getBoundingClientRect();
-        if (r.left + r.width / 2 < center) {
+        const mid = r.left + r.width / 2 + (i < self ? -HYSTERESIS : HYSTERESIS);
+        if (mid < center) {
           index += 1;
         }
-      }
+      });
       if (index !== idsRef.current.indexOf(s.id)) {
         moveRef.current(s.id, index);
       }

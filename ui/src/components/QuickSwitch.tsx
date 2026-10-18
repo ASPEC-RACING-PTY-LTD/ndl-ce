@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listNodes, listStacks, listWorkloads, workloadAction } from "../api/client";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
@@ -13,8 +13,49 @@ import type { TermTarget } from "../terminal/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { StatusBadge } from "./StatusBadge";
 import { ErrorNotice } from "./ErrorNotice";
+import { storageGet, storageSet } from "../storage";
+
+const LAYOUT_KEY = "ndl-qs-layout";
+
+/** statusDot maps a target status to the grid's coloured dot. */
+function statusDot(status: string): "ok" | "busy" | "off" | "bad" {
+  const s = (status || "").toLowerCase();
+  if (/(running|active|online|ready|healthy|available|up)/.test(s)) {
+    return "ok";
+  }
+  if (/(restart|start|creat|pending|degraded|crash|migrat|provision)/.test(s)) {
+    return "busy";
+  }
+  if (/(error|fail|critical|dead)/.test(s)) {
+    return "bad";
+  }
+  return "off";
+}
 
 type Row = { key: string; heading?: string; target?: TermTarget };
+
+/** gridSections splits the flat row list at its headings for the grid layout. */
+function gridSections(rows: Row[]): { key: string; heading?: string; first: boolean; items: { row: Row; index: number }[] }[] {
+  const out: { key: string; heading?: string; first: boolean; items: { row: Row; index: number }[] }[] = [];
+  rows.forEach((row, index) => {
+    if (row.heading) {
+      out.push({ key: row.key, heading: row.heading, first: false, items: [] });
+      return;
+    }
+    if (!row.target) {
+      return;
+    }
+    if (out.length === 0) {
+      out.push({ key: "results", first: false, items: [] });
+    }
+    out[out.length - 1].items.push({ row, index });
+  });
+  const firstFull = out.find((s) => s.items.length > 1) ?? out[0];
+  if (firstFull) {
+    firstFull.first = true;
+  }
+  return out.filter((s) => s.items.length > 0);
+}
 
 export function QuickSwitch({
   open,
@@ -44,6 +85,11 @@ export function QuickSwitch({
   const [startTarget, setStartTarget] = useState<TermTarget | null>(null);
   const [replaceTarget, setReplaceTarget] = useState<TermTarget | null>(null);
   const [busy, setBusy] = useState(false);
+  const [layout, setLayoutState] = useState<"grid" | "table">(() => (storageGet(LAYOUT_KEY) === "table" ? "table" : "grid"));
+  function setLayout(next: "grid" | "table") {
+    setLayoutState(next);
+    storageSet(LAYOUT_KEY, next);
+  }
 
   useEffect(() => {
     if (!open) {
@@ -121,6 +167,14 @@ export function QuickSwitch({
   }, [catalog, filtered, recents, searching, localNodeId]);
 
   const targetRows = rows.map((r, i) => ({ row: r, index: i })).filter((x) => x.row.target);
+  const gridRef = useRef<HTMLDivElement>(null);
+  function gridColumns(): number {
+    const el = gridRef.current;
+    if (!el) {
+      return 1;
+    }
+    return Math.max(1, getComputedStyle(el).gridTemplateColumns.split(" ").filter(Boolean).length);
+  }
   const activeTarget = rows[active]?.target;
 
   useEffect(() => {
@@ -168,19 +222,28 @@ export function QuickSwitch({
             event.preventDefault();
             onClose();
           }
+          const step = (dir: 1 | -1, count: number) =>
+            setActive((n) => {
+              const at = targetRows.findIndex((x) => x.index === n);
+              const to = targetRows[Math.max(0, Math.min(targetRows.length - 1, at + dir * count))];
+              return to?.index ?? n;
+            });
+          const cols = layout === "grid" ? gridColumns() : 1;
           if (event.key === "ArrowDown") {
             event.preventDefault();
-            setActive((n) => {
-              const next = targetRows.find((x) => x.index > n);
-              return next?.index ?? n;
-            });
+            step(1, cols);
           }
           if (event.key === "ArrowUp") {
             event.preventDefault();
-            setActive((n) => {
-              const prev = [...targetRows].reverse().find((x) => x.index < n);
-              return prev?.index ?? n;
-            });
+            step(-1, cols);
+          }
+          if (layout === "grid" && event.key === "ArrowRight" && (event.target as HTMLElement).id !== "qs-search") {
+            event.preventDefault();
+            step(1, 1);
+          }
+          if (layout === "grid" && event.key === "ArrowLeft" && (event.target as HTMLElement).id !== "qs-search") {
+            event.preventDefault();
+            step(-1, 1);
           }
           if (event.key === "Enter" && activeTarget) {
             event.preventDefault();
@@ -188,9 +251,19 @@ export function QuickSwitch({
           }
         }}
       >
-        <h2 id="qs-heading" className="palette-heading">
-          New terminal
-        </h2>
+        <div className="qs-head">
+          <h2 id="qs-heading" className="palette-heading">
+            New terminal
+          </h2>
+          <div className="segmented" role="group" aria-label="Layout">
+            <button type="button" aria-pressed={layout === "grid"} onClick={() => setLayout("grid")}>
+              Grid
+            </button>
+            <button type="button" aria-pressed={layout === "table"} onClick={() => setLayout("table")}>
+              Table
+            </button>
+          </div>
+        </div>
         <p className="field-hint">
           Enter opens a new terminal session. Existing tabs stay attached. Replace the current session only with the
           explicit action.
@@ -209,6 +282,45 @@ export function QuickSwitch({
         {loadError ? (
           <ErrorNotice error={loadError} />
         ) : null}
+        {layout === "grid" ? (
+          <div className="qs-grid-wrap">
+            {rows.length === 0 ? <p className="muted">No matching targets.</p> : null}
+            {gridSections(rows).map((sec) => (
+              <section key={sec.key} className="qs-grid-section">
+                {sec.heading ? <h3 className="qs-heading">{sec.heading}</h3> : null}
+                <div className="qs-grid" ref={sec.first ? gridRef : undefined}>
+                  {sec.items.map(({ row, index }) => {
+                    const t = row.target!;
+                    const openable = canOpenTermTarget(t, roles);
+                    const startable = !t.terminalReady && t.kind === "workload" && mutate;
+                    return (
+                      <div key={row.key} className={"qs-tile" + (index === active ? " is-active" : "")}>
+                        <button
+                          type="button"
+                          className="qs-tile-main"
+                          data-target={`${t.kind}:${t.id}`}
+                          title={`${t.name} · ${t.typeLabel} · ${t.status}`}
+                          aria-label={`${t.name}, ${t.status}`}
+                          onMouseEnter={() => setActive(index)}
+                          onClick={() => choose(t)}
+                          disabled={!openable && !startable}
+                        >
+                          <span className={"qs-dot is-" + statusDot(t.status)} aria-hidden="true" />
+                          <span className="qs-tile-name">{t.name}</span>
+                        </button>
+                        {openable && hasCurrent ? (
+                          <button type="button" className="qs-tile-alt" title="Replace current session" aria-label={`Replace current session with ${t.name}`} onClick={() => confirmReplace(t)}>
+                            ⇄
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
         <ul className="palette-list qs-list">
           {rows.length === 0 ? (
             <li className="muted">No matching targets.</li>
@@ -260,6 +372,7 @@ export function QuickSwitch({
             )
           )}
         </ul>
+        )}
         <p className="field-hint">Only authorized, terminal-capable targets can be opened. Stopped workloads are listed but not connected.</p>
       </div>
       <div onClick={(event) => event.stopPropagation()}>

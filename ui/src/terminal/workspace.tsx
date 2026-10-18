@@ -82,6 +82,8 @@ type WorkspaceValue = {
   closeToSide: (tabId: string, side: "left" | "right") => void;
   closeDisconnected: () => void;
   reconnect: (tabId: string) => void;
+  /** reopen starts a new shell on the same target in the same tab. */
+  reopen: (tabId: string) => void;
   replaceCurrent: (target: TermTarget) => string;
   setActive: (tabId: string) => void;
   nextTab: () => void;
@@ -742,6 +744,26 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     [connect],
   );
 
+  const reopen = useCallback(
+    (tabId: string) => {
+      const tab = tabsRef.current.find((t) => t.tabId === tabId);
+      if (!tab) {
+        return;
+      }
+      const rt = runtimes.get(tabId);
+      rt?.ws?.close();
+      if (rt) {
+        rt.ended = false;
+        rt.closed = false;
+      }
+      // Forget the ended shell so connect starts a new one in this tab.
+      tabsRef.current = tabsRef.current.map((t) => (t.tabId === tabId ? { ...t, ioSessionId: undefined } : t));
+      patch(tabId, { ioSessionId: undefined, error: null, state: "connecting" });
+      connect({ ...tab, ioSessionId: undefined, startCwd: tab.cwd || tab.startCwd }, "connecting");
+    },
+    [connect, patch],
+  );
+
   // After a refresh, resume the shells that are still running on the server.
   const resumed = useRef(false);
   useEffect(() => {
@@ -890,6 +912,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       closeToSide,
       closeDisconnected,
       reconnect,
+      reopen,
       replaceCurrent,
       setActive: setActiveId,
       nextTab,
@@ -917,6 +940,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       closeToSide,
       closeDisconnected,
       reconnect,
+      reopen,
       replaceCurrent,
       nextTab,
       prevTab,

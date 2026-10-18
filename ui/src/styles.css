@@ -4778,3 +4778,122 @@ thead th[data-autosort="desc"]::after {
 .iam-order-item.is-dragging {
   opacity: 0.5;
 }
+
+/* New terminal picker: grid of name + status dot, larger on wide screens. */
+.qs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.qs-grid-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: min(60vh, 40rem);
+  overflow: auto;
+}
+
+.qs-grid-section .qs-heading {
+  margin: 0 0 0.3rem;
+}
+
+.qs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.35rem;
+}
+
+.qs-tile {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.qs-tile.is-active {
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+}
+
+.qs-tile-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 2.4rem;
+  padding: 0 0.6rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.qs-tile-main:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.qs-tile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qs-tile-alt {
+  flex: none;
+  width: 2rem;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.qs-tile:hover .qs-tile-alt,
+.qs-tile.is-active .qs-tile-alt,
+.qs-tile-alt:focus-visible {
+  opacity: 1;
+}
+
+.qs-dot {
+  flex: none;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--fg-tertiary);
+}
+
+.qs-dot.is-ok {
+  background: var(--ok);
+}
+
+.qs-dot.is-busy {
+  background: var(--warn);
+}
+
+.qs-dot.is-bad {
+  background: var(--danger);
+}
+
+@media (min-width: 1921px) {
+  .palette.qs-palette {
+    width: min(94vw, 120rem);
+    max-height: 90vh;
+  }
+
+  .qs-grid {
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  }
+
+  .qs-grid-wrap {
+    max-height: min(72vh, 64rem);
+  }
+}
