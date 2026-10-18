@@ -1971,6 +1971,21 @@ body.is-term-resizing {
   touch-action: pan-x;
 }
 
+.term-tabs {
+  position: relative;
+}
+
+/* Dragged tabs follow the pointer exactly: no press scale or transition. */
+.term-tab.is-dragging,
+.term-tab.is-dragging:active {
+  transition: none !important;
+  will-change: transform;
+}
+
+.term-tab:active {
+  transform: none;
+}
+
 .term-tab.is-dragging {
   position: relative;
   z-index: 2;

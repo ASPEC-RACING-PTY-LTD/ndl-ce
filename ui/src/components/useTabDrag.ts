@@ -46,7 +46,9 @@ export function useTabDrag(ids: string[], move: (id: string, toIndex: number) =>
     if (!el) {
       return;
     }
-    const natural = el.getBoundingClientRect().left - s.tx;
+    // Layout position, unaffected by transforms or transitions on the tab.
+    const list = listRef.current;
+    const natural = list ? list.getBoundingClientRect().left + el.offsetLeft - list.scrollLeft : el.getBoundingClientRect().left - s.tx;
     s.tx = s.lastX - s.grab - natural;
     el.style.transform = `translateX(${s.tx}px)`;
   }, []);

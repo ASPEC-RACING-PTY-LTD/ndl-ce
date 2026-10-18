@@ -282,9 +282,10 @@ describe("Terminal workspace", () => {
       fireEvent.keyDown(document, { key: "Escape" });
     }
 
-    // Right-clicking a tab no longer opens a menu; the actions live in Session actions.
+    // Right-clicking a tab opens its own menu.
     fireEvent.contextMenu(screen.getByRole("tab", { name: /^alpine(?! \()/i }));
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: /close sessions to the right/i })).toBeEnabled();
+    fireEvent.mouseDown(document.body);
 
     let menu = await openMenu(/^alpine(?! \()/i);
     expect(within(menu).queryByRole("menuitem", { name: /close to the left/i })).toBeNull();
