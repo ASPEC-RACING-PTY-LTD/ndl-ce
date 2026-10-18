@@ -285,29 +285,19 @@
 }
 
 /*
- * A scroller fills its box: it takes the height its neighbours give the
- * row (contain: size keeps its own rows from stretching the page) and the
- * corner handle resizes it.
+ * Tables grow with their rows and only scroll once they reach the bottom of
+ * the window, so nothing is cut off inside a small fixed box.
  */
 .bk-scroll {
-  flex: 1 1 0;
-  min-height: 16rem;
   overflow: auto;
-  contain: size;
-  resize: vertical;
+  max-height: calc(100dvh - 10rem);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
 }
 
-.bk-scroll.is-tall {
-  flex: none;
-  height: 26rem;
-}
-
+.bk-scroll.is-tall,
 .bk-scroll.is-short {
-  flex: none;
-  height: 12rem;
-  min-height: 6rem;
+  max-height: calc(100dvh - 10rem);
 }
 
 .bk-scroll .bk-table th:first-child,

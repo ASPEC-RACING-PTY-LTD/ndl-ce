@@ -1381,7 +1381,7 @@ body:has(#root .shell) {
 }
 
 .table-card .table-wrap {
-  max-height: 18rem;
+  max-height: calc(100dvh - 10rem);
   overflow: auto;
 }
 
@@ -4437,4 +4437,15 @@ thead th[data-autosort="desc"]::after {
   background: var(--warn-bg, rgba(255, 200, 0, 0.25));
   color: inherit;
   border-radius: 2px;
+}
+
+/* Floating "…" menus live on document.body, above any table or card. */
+.menu-panel.is-floating {
+  position: fixed;
+  right: auto;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
 }
