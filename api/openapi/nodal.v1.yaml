@@ -11352,6 +11352,12 @@ components:
           description: Set to cloudflare when ingress was read from the routes the Cloudflare dashboard pushed to the tunnel.
         error_count:
           type: integer
+          description: Origin errors in the last 15 minutes. History once current_errors is zero.
+        current_errors:
+          type: integer
+          description: Origin errors inside the one-minute status scope. Only these set the tunnel's health.
+        last_error_at:
+          type: string
         health:
           type: string
         reason:

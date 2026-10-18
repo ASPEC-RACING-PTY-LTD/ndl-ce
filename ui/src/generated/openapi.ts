@@ -221,6 +221,8 @@ export interface DockerTunnel {
   config_path?: string;
   ingress_source?: string;
   error_count?: number;
+  current_errors?: number;
+  last_error_at?: string;
   health?: string;
   reason?: string;
   ingress?: Record<string, unknown>[];

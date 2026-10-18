@@ -2596,10 +2596,13 @@ export type DockerTunnel = {
   remote_managed: boolean;
   config_path?: string;
   error_count: number;
+  /** Errors inside the one-minute status scope; only these are current. */
+  current_errors?: number;
+  last_error_at?: string;
   health: string;
   reason?: string;
   ingress?: { hostname?: string; path?: string; service: string }[];
-  errors?: { origin?: string; hostname?: string; message: string; count: number; last?: string }[];
+  errors?: { origin?: string; hostname?: string; message: string; count: number; last?: string; recent?: number }[];
   links?: {
     origin: string;
     hostnames?: string[];
@@ -2610,6 +2613,7 @@ export type DockerTunnel = {
     state: string;
     health: string;
     errors: number;
+    recent_errors?: number;
   }[];
 };
 

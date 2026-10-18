@@ -27,7 +27,8 @@ import (
 const (
 	binSystemctl  = "/usr/bin/systemctl"
 	binJournalctl = "/usr/bin/journalctl"
-	// TunnelWindow is how far back tunnel errors are read.
+	// TunnelWindow is how far back tunnel errors are read. Errors older than
+	// StatusScope are history only and never set a tunnel's health.
 	TunnelWindow = 15 * time.Minute
 )
 
@@ -45,6 +46,8 @@ type TunnelError struct {
 	Message  string `json:"message"`
 	Count    int    `json:"count"`
 	Last     string `json:"last,omitempty"`
+	// Recent counts the errors inside StatusScope; only these are current.
+	Recent int `json:"recent"`
 }
 
 // TunnelLink ties a tunnel origin to the container serving it.
@@ -58,6 +61,7 @@ type TunnelLink struct {
 	State       string   `json:"state"`
 	Health      string   `json:"health"`
 	Errors      int      `json:"errors"`
+	Recent      int      `json:"recent_errors"`
 }
 
 // Tunnel is one cloudflared service on a machine.
@@ -78,6 +82,10 @@ type Tunnel struct {
 	Ingress    []IngressRule `json:"ingress,omitempty"`
 	Errors     []TunnelError `json:"errors,omitempty"`
 	ErrorCount int           `json:"error_count"`
+	// CurrentErrors counts errors inside StatusScope; ErrorCount is the
+	// whole TunnelWindow and is history once CurrentErrors is zero.
+	CurrentErrors int    `json:"current_errors"`
+	LastErrorAt   string `json:"last_error_at,omitempty"`
 	Links      []TunnelLink  `json:"links,omitempty"`
 	Health     string        `json:"health"`
 	Reason     string        `json:"reason,omitempty"`
@@ -163,9 +171,13 @@ func (e *Engine) machineTunnels(ctx context.Context, m MachineHint) []Tunnel {
 			t.TunnelID = ParseTunnelID(string(raw))
 		}
 		if jr, err := e.machineRun(ctx, m.ID, binJournalctl, "-u", t.Unit, "--since", "-"+strconv.Itoa(int(TunnelWindow.Minutes()))+"min", "--no-pager", "-o", "short-iso", "-n", "500"); err == nil {
-			t.Errors = ParseTunnelErrors(string(jr))
+			t.Errors = ParseTunnelErrorsAt(string(jr), time.Now())
 			for _, te := range t.Errors {
 				t.ErrorCount += te.Count
+				t.CurrentErrors += te.Recent
+				if te.Last > t.LastErrorAt {
+					t.LastErrorAt = te.Last
+				}
 			}
 		}
 		out = append(out, t)
@@ -267,6 +279,22 @@ func ParseIngress(raw []byte) []IngressRule {
 
 // ParseTunnelErrors groups cloudflared error lines by origin and hostname.
 func ParseTunnelErrors(journal string) []TunnelError {
+	return ParseTunnelErrorsAt(journal, time.Now())
+}
+
+// journalTime parses a short-iso journal timestamp.
+func journalTime(v string) (time.Time, bool) {
+	for _, layout := range []string{"2006-01-02T15:04:05-0700", "2006-01-02T15:04:05Z07:00", "2006-01-02T15:04:05.000000-0700"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// ParseTunnelErrorsAt groups origin errors and counts, per group, the ones
+// inside StatusScope of now.
+func ParseTunnelErrorsAt(journal string, now time.Time) []TunnelError {
 	byKey := map[string]*TunnelError{}
 	var order []string
 	for _, line := range strings.Split(journal, "\n") {
@@ -310,6 +338,9 @@ func ParseTunnelErrors(journal string) []TunnelError {
 		te.Message = msg
 		if f := strings.Fields(line); len(f) > 0 {
 			te.Last = f[0]
+			if at, ok := journalTime(f[0]); ok && now.Sub(at) <= StatusScope {
+				te.Recent++
+			}
 		}
 	}
 	out := make([]TunnelError, 0, len(order))
@@ -422,6 +453,7 @@ func LinkTunnels(tunnels []Tunnel, inv Inventory) []Tunnel {
 	for i, t := range tunnels {
 		hostsFor := map[string][]string{}
 		errorsFor := map[string]int{}
+		recentFor := map[string]int{}
 		var origins []string
 		add := func(o string) {
 			if _, ok := hostsFor[o]; !ok {
@@ -444,6 +476,7 @@ func LinkTunnels(tunnels []Tunnel, inv Inventory) []Tunnel {
 			}
 			add(te.Origin)
 			errorsFor[te.Origin] += te.Count
+			recentFor[te.Origin] += te.Recent
 			if te.Hostname != "" {
 				hostsFor[te.Origin] = appendUnique(hostsFor[te.Origin], te.Hostname)
 			}
@@ -457,7 +490,7 @@ func LinkTunnels(tunnels []Tunnel, inv Inventory) []Tunnel {
 			}
 			t.Links = append(t.Links, TunnelLink{
 				Origin: o, Hostnames: hostsFor[o], ContainerID: c.EngineID, Ref: c.Ref, Name: c.Name,
-				Project: c.Project, State: c.State, Health: c.Health, Errors: errorsFor[o],
+				Project: c.Project, State: c.State, Health: c.Health, Errors: errorsFor[o], Recent: recentFor[o],
 			})
 			if c.State != "running" || c.Health == HealthCritical || c.Health == HealthDegraded {
 				broken = append(broken, c.Name)
@@ -469,9 +502,13 @@ func LinkTunnels(tunnels []Tunnel, inv Inventory) []Tunnel {
 		case len(broken) > 0:
 			t.Health = HealthDegraded
 			t.Reason = "routes to containers that are down or unhealthy: " + strings.Join(broken, ", ")
-		case t.ErrorCount > 0:
+		case t.CurrentErrors > 0:
 			t.Health = HealthDegraded
-			t.Reason = strconv.Itoa(t.ErrorCount) + " origin errors in the last 15 minutes"
+			t.Reason = strconv.Itoa(t.CurrentErrors) + " origin errors in the last minute"
+		case t.ErrorCount > 0:
+			// Older errors are history: the tunnel has recovered.
+			t.Health = HealthHealthy
+			t.Reason = "Recovered: " + strconv.Itoa(t.ErrorCount) + " errors in the last 15 minutes, none in the last minute"
 		default:
 			t.Health, t.Reason = HealthHealthy, ""
 		}

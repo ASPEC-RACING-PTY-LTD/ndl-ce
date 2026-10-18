@@ -23,3 +23,6 @@ packaging/e2e/gocache/
 # Local task list
 /Tasks.md
 /out/live/
+
+# Local implementation plan (not tracked)
+/UI-OVERHAUL-PLAN.md

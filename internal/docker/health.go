@@ -8,12 +8,18 @@ import (
 
 const restartLoopWindow = 10 * time.Minute
 
+// StatusScope is how old a reported problem (a Docker event, a tunnel
+// error) may be and still decide current health. Older ones are history:
+// they stay visible but never make something degraded or critical. The
+// polling intervals are separate and unchanged.
+const StatusScope = time.Minute
+
 func classifyContainer(c *Container, now time.Time) {
 	if c == nil {
 		return
 	}
 	c.RestartLoop = restartLoop(c, now)
-	c.Problems = problemsFor(c)
+	c.Problems = problemsFor(c, now)
 	c.Health, c.HealthReason = containerHealth(*c)
 	c.StatusLabel = statusLabel(*c)
 }
@@ -38,7 +44,7 @@ func restartLoop(c *Container, now time.Time) bool {
 	return deaths >= 3
 }
 
-func problemsFor(c *Container) []Problem {
+func problemsFor(c *Container, now time.Time) []Problem {
 	var out []Problem
 	add := func(kind, level, msg string) {
 		if strings.TrimSpace(msg) == "" {
@@ -75,7 +81,7 @@ func problemsFor(c *Container) []Problem {
 		add("update", HealthDegraded, msg)
 	}
 	for _, ev := range c.RecentEvents {
-		if !ev.Severe {
+		if !ev.Severe || now.Sub(ev.Time) > StatusScope {
 			continue
 		}
 		kind := eventKind(ev)

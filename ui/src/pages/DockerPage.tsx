@@ -996,7 +996,7 @@ function TunnelCard({ tunnel: t, items, onContext }: { tunnel: DockerTunnel; ite
               </span>
               <span className="meta docker-row-meta">
                 {l.origin}
-                {l.errors ? ` · ${l.errors} error(s)` : ""}
+                {l.recent_errors ? ` · ${l.recent_errors} error(s) in the last minute` : l.errors ? ` · ${l.errors} earlier error(s)` : ""}
               </span>
             </li>
           ))}
@@ -1005,7 +1005,8 @@ function TunnelCard({ tunnel: t, items, onContext }: { tunnel: DockerTunnel; ite
       {(t.errors ?? []).length ? (
         <details className="tunnel-errors">
           <summary>
-            {t.error_count} origin error(s) in the last 15 minutes
+            {t.current_errors ? `${t.current_errors} origin error(s) in the last minute · ` : "None in the last minute · "}
+            {t.error_count} in the last 15 minutes
           </summary>
           <ul className="plain-list">
             {(t.errors ?? []).slice(0, 6).map((e, i) => (
