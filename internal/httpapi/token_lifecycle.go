@@ -223,10 +223,34 @@ func (s *Server) deleteTokenByID(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.auditTokenEnd(r.Context(), r, p.User.ClusterID, p.User.ID, "token.delete", *tok, "deleted")
-	if err := s.Store.RevokeClusterToken(r.Context(), p.User.ClusterID, tok.ID); err != nil {
-		writeErr(w, http.StatusNotFound, "token not found")
+	if !s.hardDeleteToken(w, r, p, *tok) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// hardDeleteToken audits a token's life, deletes it, and checks it is gone:
+// a store that reports success without deleting fails closed.
+func (s *Server) hardDeleteToken(w http.ResponseWriter, r *http.Request, p *principal, tok appdb.APIToken) bool {
+	usage, _ := s.Store.ListTokenUsage(r.Context(), tok.ID)
+	var err error
+	if tok.UserID == p.User.ID {
+		err = s.Store.RevokeToken(r.Context(), tok.ID, p.User.ID)
+	} else {
+		err = s.Store.RevokeClusterToken(r.Context(), p.User.ClusterID, tok.ID)
+	}
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "token not found")
+		return false
+	}
+	if still, gerr := s.Store.GetToken(r.Context(), tok.ID); gerr != nil || still != nil {
+		writeErr(w, http.StatusInternalServerError, "could not revoke token")
+		return false
+	}
+	body, _ := json.Marshal(tokenSummary(tok, usage, "deleted", s.now()))
+	_ = s.Store.InsertAudit(r.Context(), appdb.AuditEvent{
+		ID: uuid.NewString(), ClusterID: p.User.ClusterID, ActorUserID: p.User.ID, Action: "token.delete",
+		Result: "ok", RemoteAddr: r.RemoteAddr, Detail: body, CreatedAt: s.now(),
+	})
+	return true
 }

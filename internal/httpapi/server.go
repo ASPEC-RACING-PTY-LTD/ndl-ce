@@ -1135,9 +1135,7 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "that token belongs to someone above you in the role hierarchy")
 		return
 	}
-	s.auditTokenEnd(r.Context(), r, p.User.ClusterID, p.User.ID, "token.delete", *existing, "deleted")
-	if err := s.Store.RevokeClusterToken(r.Context(), p.User.ClusterID, req.ID); err != nil {
-		writeErr(w, http.StatusNotFound, "token not found")
+	if !s.hardDeleteToken(w, r, p, *existing) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
