@@ -1,5 +1,5 @@
 import { confirmAction } from "../confirm";
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   checkAllUptime,
   checkUptimeMonitor,
@@ -15,7 +15,7 @@ import {
   type UptimeMonitorIn,
 } from "../api/client";
 import { ActionMenu } from "../components/ActionMenu";
-import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
+import type { ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { JobLog } from "../components/JobLog";
@@ -478,7 +478,6 @@ export function UptimePage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
-  const ctx = useContextMenu();
   const [items, setItems] = useState<UptimeMonitor[] | null>(null);
   const [containers, setContainers] = useState<DockerContainer[]>([]);
   const [machines, setMachines] = useState<DockerMachine[]>([]);
@@ -673,7 +672,6 @@ export function UptimePage() {
         key={m.id}
         className={"docker-card" + (m.enabled && m.state === "down" ? " is-issue" : "") + (!m.enabled ? " is-ignored" : "")}
         aria-label={`Monitor ${m.name}`}
-        onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, m.name, monitorItems(m))}
       >
         <header className="docker-card-head">
           <strong className="docker-head-name" title={m.name}>
@@ -814,7 +812,7 @@ export function UptimePage() {
                 numeric={[4, 5]}
                 rows={groups.flatMap((g) =>
                   g.monitors.map((m) => [
-                    <span key="n" className="docker-clip" title={m.name} onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, m.name, monitorItems(m))}>
+                    <span key="n" className="docker-clip" title={m.name}>
                       {m.name}
                     </span>,
                     <span key="g" className="docker-clip" title={`${g.label} · ${g.meta}`}>
@@ -892,7 +890,6 @@ export function UptimePage() {
         }}
       />
       <ScanDialog open={scanOpen} existing={items} canSave={mutate} onClose={() => setScanOpen(false)} onSaved={() => void reload()} />
-      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
 }

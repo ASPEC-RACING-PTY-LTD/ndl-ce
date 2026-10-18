@@ -162,7 +162,7 @@ describe("OCI Containers page", () => {
     window.history.replaceState({}, "", "/oci");
     render(<App />);
     const loose = await screen.findByRole("article", { name: /ungrouped containers/i });
-    fireEvent.contextMenu(within(loose).getByText("db"));
+    fireEvent.click(within(loose).getByRole("button", { name: /^db actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /move to group/i }));
     fireEvent.change(await screen.findByLabelText(/^group$/i), { target: { value: "g1" } });
     fireEvent.click(screen.getByRole("button", { name: /^move$/i }));

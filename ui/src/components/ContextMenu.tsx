@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 export type ContextItem =
   | { label: string; onClick: () => void; danger?: boolean; disabled?: boolean }
@@ -96,32 +96,9 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState; onClose
 
 // --- Site-wide right-click menu --------------------------------------------
 //
-// Every right-click on the site opens one of No-dal's menus, never the
-// browser's. Rows, cards and tabs open their own menus (they call
-// preventDefault); anywhere else this menu opens with what fits the spot:
-// clipboard actions in text fields and terminals, link actions on links, the
-// page's own actions (see usePageContextItems) and navigation.
-
-type PageEntry = { title: string; items: ContextItem[] };
-const pageEntries = new Map<string, PageEntry>();
-
-/** usePageContextItems adds page actions (such as "Add hostname") to right-clicks on the page. */
-export function usePageContextItems(title: string, items: ContextItem[]): void {
-  const id = useId();
-  useEffect(() => {
-    pageEntries.delete(id);
-    pageEntries.set(id, { title, items });
-  });
-  useEffect(() => () => void pageEntries.delete(id), [id]);
-}
-
-function currentPageEntry(): PageEntry | null {
-  let last: PageEntry | null = null;
-  for (const e of pageEntries.values()) {
-    last = e;
-  }
-  return last;
-}
+// No-dal adds its own right-click menu only where it saves real work: in
+// terminals (copy, paste, clear) and on rows that open their own menus (file
+// managers, the sidebar). Everywhere else the browser's menu shows.
 
 type XtermLike = {
   element?: HTMLElement;
@@ -144,61 +121,8 @@ export function registerTerminal(term: XtermLike): void {
 /** OPEN_PALETTE asks the shell to open the command palette. */
 export const OPEN_PALETTE = "ndl:open-palette";
 
-function textField(el: Element | null): HTMLInputElement | HTMLTextAreaElement | HTMLElement | null {
-  const f = el?.closest("input, textarea, [contenteditable=''], [contenteditable='true']") as HTMLElement | null;
-  if (!f) {
-    return null;
-  }
-  if (f instanceof HTMLInputElement && !["text", "search", "url", "email", "password", "number", "tel", ""].includes(f.type)) {
-    return null;
-  }
-  return f;
-}
-
 function copyText(text: string): void {
   void navigator.clipboard?.writeText(text).catch(() => document.execCommand("copy"));
-}
-
-function fieldItems(f: HTMLElement): ContextItem[] {
-  const input = f instanceof HTMLInputElement || f instanceof HTMLTextAreaElement ? f : null;
-  const secret = input instanceof HTMLInputElement && input.type === "password";
-  const readOnly = Boolean(input?.readOnly || input?.disabled);
-  const selected = input ? input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0) : window.getSelection()?.toString() ?? "";
-  return [
-    {
-      label: "Cut",
-      disabled: secret || readOnly || !selected,
-      onClick: () => {
-        copyText(selected);
-        f.focus();
-        document.execCommand("insertText", false, "");
-      },
-    },
-    { label: "Copy", disabled: secret || !selected, onClick: () => copyText(selected) },
-    {
-      label: "Paste",
-      disabled: readOnly || !navigator.clipboard?.readText,
-      onClick: () => {
-        void navigator.clipboard.readText().then((text) => {
-          f.focus();
-          // insertText keeps React-controlled inputs and the undo history in step.
-          document.execCommand("insertText", false, text);
-        });
-      },
-    },
-    "sep",
-    {
-      label: "Select all",
-      onClick: () => {
-        f.focus();
-        if (input) {
-          input.select();
-        } else {
-          document.execCommand("selectAll");
-        }
-      },
-    },
-  ];
 }
 
 function terminalItems(t: XtermLike): ContextItem[] {
@@ -215,50 +139,14 @@ function terminalItems(t: XtermLike): ContextItem[] {
   ];
 }
 
-function linkItems(a: HTMLAnchorElement): ContextItem[] {
-  const href = a.href;
-  const internal = a.origin === window.location.origin && a.target !== "_blank";
-  return [
-    { label: "Open", onClick: () => (internal ? a.click() : window.open(href, a.target || "_self", "noopener")) },
-    { label: "Open in new tab", onClick: () => window.open(href, "_blank", "noopener") },
-    { label: "Copy link address", onClick: () => copyText(href) },
-  ];
-}
-
-function navItems(): ContextItem[] {
-  return [
-    { label: "Back", disabled: window.history.length <= 1, onClick: () => window.history.back() },
-    { label: "Forward", onClick: () => window.history.forward() },
-    { label: "Reload", onClick: () => window.location.reload() },
-    "sep",
-    { label: "Search No-dal…", onClick: () => window.dispatchEvent(new Event(OPEN_PALETTE)) },
-    { label: "Copy page link", onClick: () => copyText(window.location.href) },
-  ];
-}
-
-/** siteMenuFor builds the site menu for a right-click target. Exported for tests. */
-export function siteMenuFor(target: Element | null): { title: string; items: ContextItem[] } {
-  const join = (...groups: ContextItem[][]) => groups.filter((g) => g.length).flatMap((g, i) => (i ? (["sep", ...g] as ContextItem[]) : g));
+/** siteMenuFor builds the site menu for a right-click target, or null to leave the browser's. Exported for tests. */
+export function siteMenuFor(target: Element | null): { title: string; items: ContextItem[] } | null {
   const term = target?.closest(".xterm");
   const t = term ? terminals.get(term) : undefined;
-  if (t) {
-    return { title: "Terminal", items: terminalItems(t) };
-  }
-  const field = textField(target);
-  if (field) {
-    return { title: "Text", items: fieldItems(field) };
-  }
-  const selection = window.getSelection()?.toString() ?? "";
-  const copy: ContextItem[] = selection.trim() ? [{ label: "Copy", onClick: () => copyText(selection) }] : [];
-  const link = target?.closest("a[href]") as HTMLAnchorElement | null;
-  const page = currentPageEntry();
-  if (link) {
-    return { title: link.textContent?.trim().slice(0, 60) || "Link", items: join(copy, linkItems(link), page?.items ?? []) };
-  }
-  return { title: page?.title ?? document.title.replace(/ ?[-|·].*$/, "") ?? "No-dal", items: join(copy, page?.items ?? [], navItems()) };
+  return t ? { title: "Terminal", items: terminalItems(t) } : null;
 }
 
-/** GlobalContextMenu replaces the browser's right-click menu everywhere on the site. */
+/** GlobalContextMenu adds the terminal menu; other spots keep the browser's menu. */
 export function GlobalContextMenu() {
   const [menu, setMenu] = useState<ContextMenuState>(null);
   useEffect(() => {
@@ -272,8 +160,11 @@ export function GlobalContextMenu() {
       if (target?.closest("[data-native-contextmenu]")) {
         return;
       }
-      event.preventDefault();
       const built = siteMenuFor(target);
+      if (!built) {
+        return;
+      }
+      event.preventDefault();
       let { clientX: x, clientY: y } = event;
       if (x === 0 && y === 0 && target) {
         // Opened from the keyboard (Shift+F10 or the menu key).

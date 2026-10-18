@@ -1,6 +1,6 @@
 import { confirmAction } from "../confirm";
 import { useHostTunnelApproval } from "../components/HostTunnelApproval";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   addCfCredential,
   cfConnectorAction,
@@ -31,7 +31,7 @@ import { useCfInventory } from "../cloudflare/inventory";
 import { CfPermissions } from "../cloudflare/PermissionsGuide";
 import { RouteDialog } from "../cloudflare/RouteDialog";
 import { ActionMenu } from "../components/ActionMenu";
-import { ContextMenu, useContextMenu, usePageContextItems, type ContextItem } from "../components/ContextMenu";
+import type { ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
@@ -95,15 +95,15 @@ type RowProps = {
   canManage: boolean;
   grouped: boolean;
   onToggle: (key: string) => void;
-  onMenu: (e: ReactMouseEvent, r: CfRoute) => void;
+ 
   itemsFor: (r: CfRoute) => ContextItem[];
 };
 
 /** RouteRow redraws only when its route, selection or columns change. */
-const RouteRow = memo(function RouteRow({ r, cols, selected, canManage, grouped, onToggle, onMenu, itemsFor }: RowProps) {
+const RouteRow = memo(function RouteRow({ r, cols, selected, canManage, grouped, onToggle, itemsFor }: RowProps) {
   const dns = dnsBadge(r);
   return (
-    <tr className={(r.enabled ? "" : "is-muted") + (grouped ? " cf-route-row" : "")} onContextMenu={(e) => onMenu(e, r)}>
+    <tr className={(r.enabled ? "" : "is-muted") + (grouped ? " cf-route-row" : "")}>
       {canManage ? (
         <td className="cell-check">
           <input type="checkbox" aria-label={`Select ${r.hostname}`} checked={selected} onChange={() => onToggle(r.key)} />
@@ -174,14 +174,14 @@ type GroupProps = {
   multiAccount: boolean;
   onCollapse: (id: string) => void;
   onSelect: (t: CfTunnel, on: boolean) => void;
-  onMenu: (e: ReactMouseEvent, t: CfTunnel) => void;
+ 
   itemsFor: (t: CfTunnel) => ContextItem[];
   /** asBar draws the heading as a bar above cards instead of a table row. */
   asBar?: boolean;
 };
 
 /** TunnelGroup is the heading row of one tunnel's hostnames. */
-const TunnelGroup = memo(function TunnelGroup({ t, count, shown, span, collapsed, selection, canManage, multiAccount, onCollapse, onSelect, onMenu, itemsFor, asBar }: GroupProps) {
+const TunnelGroup = memo(function TunnelGroup({ t, count, shown, span, collapsed, selection, canManage, multiAccount, onCollapse, onSelect, itemsFor, asBar }: GroupProps) {
   const colos = [...new Set(t.connectors.flatMap((c) => (c.conns ?? []).map((x) => x.colo_name)))].join(", ");
   const versions = [...new Set(t.connectors.map((c) => c.version).filter(Boolean))].join(", ");
   const check = canManage ? (
@@ -235,14 +235,14 @@ const TunnelGroup = memo(function TunnelGroup({ t, count, shown, span, collapsed
   );
   if (asBar) {
     return (
-      <div className={"cf-bar" + (t.status !== "healthy" ? " is-issue" : "")} onContextMenu={(e) => onMenu(e, t)}>
+      <div className={"cf-bar" + (t.status !== "healthy" ? " is-issue" : "")}>
         <span className="cf-gutter">{check}</span>
         {head}
       </div>
     );
   }
   return (
-    <tr className={"cf-group" + (t.status !== "healthy" ? " is-issue" : "")} onContextMenu={(e) => onMenu(e, t)}>
+    <tr className={"cf-group" + (t.status !== "healthy" ? " is-issue" : "")}>
       {canManage ? <td className="cell-check">{check}</td> : null}
       <td colSpan={span}>{head}</td>
     </tr>
@@ -250,7 +250,7 @@ const TunnelGroup = memo(function TunnelGroup({ t, count, shown, span, collapsed
 });
 
 /** RouteCard is one hostname as a card: field names down the left, values beside them. */
-const RouteCard = memo(function RouteCard({ r, cols, selected, canManage, onToggle, onMenu, itemsFor }: Omit<RowProps, "grouped">) {
+const RouteCard = memo(function RouteCard({ r, cols, selected, canManage, onToggle, itemsFor }: Omit<RowProps, "grouped">) {
   const dns = dnsBadge(r);
   const fields: { id: string; label: string; value: ReactNode; title?: string }[] = [];
   for (const c of cols) {
@@ -292,7 +292,7 @@ const RouteCard = memo(function RouteCard({ r, cols, selected, canManage, onTogg
     }
   }
   return (
-    <article className={"cf-card" + (r.enabled ? "" : " is-muted") + (selected ? " is-selected" : "")} aria-label={r.hostname} onContextMenu={(e) => onMenu(e, r)}>
+    <article className={"cf-card" + (r.enabled ? "" : " is-muted") + (selected ? " is-selected" : "")} aria-label={r.hostname}>
       <header className="cf-card-head">
         {canManage ? (
           <span className="cf-gutter">
@@ -327,7 +327,6 @@ export function CloudflarePage() {
   const user = session.status === "ready" ? session.user : null;
   const canManage = hasGrant(user, "cloudflare.manage");
   const canCreds = hasGrant(user, "cloudflare.credentials");
-  const ctx = useContextMenu();
   const [view, setView] = usePref<View>("cf.view", "hostnames");
   const { inv, fromCache, error: loadError, reload: reloadInv } = useCfInventory();
   const [creds, setCreds] = useState<CfCredential[]>([]);
@@ -529,9 +528,6 @@ export function CloudflarePage() {
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const onRouteMenu = useCallback((e: ReactMouseEvent, r: CfRoute) => ctx.openAt(e, r.hostname, routeItems(r)), [ctx, routeItems]);
-  const onTunnelMenu = useCallback((e: ReactMouseEvent, t: CfTunnel) => ctx.openAt(e, t.name, tunnelItems(t)), [ctx, tunnelItems]);
   const toggle = useCallback((key: string) => {
     setSelected((cur) => {
       const next = new Set(cur);
@@ -598,7 +594,6 @@ export function CloudflarePage() {
     { label: "Show DNS", disabled: view === "dns", onClick: () => setView("dns") },
     { label: "Show accounts", disabled: view === "accounts", onClick: () => setView("accounts") },
   );
-  usePageContextItems("Cloudflare", pageItems);
 
   if (!inv) {
     return (
@@ -893,7 +888,7 @@ export function CloudflarePage() {
                   multiAccount={multiAccount}
                   onCollapse={onCollapse}
                   onSelect={onSelectTunnel}
-                  onMenu={onTunnelMenu}
+                 
                   itemsFor={tunnelItems}
                   asBar
                 />
@@ -912,7 +907,7 @@ export function CloudflarePage() {
                 ) : (
                   <div className="cf-card-grid">
                     {g.list.map((r) => (
-                      <RouteCard key={r.key} r={r} cols={cols} selected={selected.has(r.key)} canManage={canManage} onToggle={toggle} onMenu={onRouteMenu} itemsFor={routeItems} />
+                      <RouteCard key={r.key} r={r} cols={cols} selected={selected.has(r.key)} canManage={canManage} onToggle={toggle} itemsFor={routeItems} />
                     ))}
                   </div>
                 )}
@@ -921,7 +916,7 @@ export function CloudflarePage() {
           ) : (
             <div className="cf-card-grid">
               {shownRoutes.map((r) => (
-                <RouteCard key={r.key} r={r} cols={cols} selected={selected.has(r.key)} canManage={canManage} onToggle={toggle} onMenu={onRouteMenu} itemsFor={routeItems} />
+                <RouteCard key={r.key} r={r} cols={cols} selected={selected.has(r.key)} canManage={canManage} onToggle={toggle} itemsFor={routeItems} />
               ))}
             </div>
           )}
@@ -966,7 +961,7 @@ export function CloudflarePage() {
                       multiAccount={multiAccount}
                       onCollapse={onCollapse}
                       onSelect={onSelectTunnel}
-                      onMenu={onTunnelMenu}
+                     
                       itemsFor={tunnelItems}
                     />
                     {collapsed.has(g.t.id)
@@ -996,7 +991,7 @@ export function CloudflarePage() {
                               canManage={canManage}
                               grouped
                               onToggle={toggle}
-                              onMenu={onRouteMenu}
+                             
                               itemsFor={routeItems}
                             />
                           ))}
@@ -1013,7 +1008,7 @@ export function CloudflarePage() {
                       canManage={canManage}
                       grouped={false}
                       onToggle={toggle}
-                      onMenu={onRouteMenu}
+                     
                       itemsFor={routeItems}
                     />
                   ))}
@@ -1226,7 +1221,6 @@ export function CloudflarePage() {
           void reload(true);
         }}
       />
-      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
 }

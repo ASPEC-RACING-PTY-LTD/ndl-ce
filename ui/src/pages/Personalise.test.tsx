@@ -136,29 +136,18 @@ describe("Caddy page", () => {
 });
 
 describe("Right-click menus", () => {
-  it("offer clipboard actions in text fields and never the browser's menu", () => {
+  it("leave text fields and empty page space to the browser's menu", async () => {
     const input = document.createElement("input");
-    input.value = "hello";
     document.body.appendChild(input);
-    const menu = siteMenuFor(input);
-    const labels = menu.items.filter((i) => i !== "sep").map((i) => (i as { label: string }).label);
-    expect(labels).toEqual(["Cut", "Copy", "Paste", "Select all"]);
-    const pw = document.createElement("input");
-    pw.type = "password";
-    const pwMenu = siteMenuFor(pw);
-    expect(pwMenu.items.find((i) => i !== "sep" && (i as { label: string }).label === "Copy")).toMatchObject({ disabled: true });
+    expect(siteMenuFor(input)).toBeNull();
     input.remove();
-  });
-
-  it("open on empty parts of a page with navigation", async () => {
     mockApi(base({}));
     render(<App />);
     await screen.findByRole("heading", { name: /dashboard/i });
     const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 });
     document.querySelector("main")!.dispatchEvent(ev);
-    expect(ev.defaultPrevented).toBe(true);
-    expect(await screen.findByRole("menuitem", { name: /^reload$/i })).toBeVisible();
-    expect(screen.getByRole("menuitem", { name: /search no-dal/i })).toBeVisible();
+    expect(ev.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("menuitem", { name: /^reload$/i })).toBeNull();
   });
 });
 

@@ -1,5 +1,5 @@
 import { confirmAction } from "../confirm";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   connectCodehold,
   detectCodehold,
@@ -16,7 +16,7 @@ import {
   type CodeholdStatus,
 } from "../api/client";
 import { ActionMenu } from "../components/ActionMenu";
-import { ContextMenu, useContextMenu, usePageContextItems, type ContextItem } from "../components/ContextMenu";
+import type { ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Link } from "../components/Link";
@@ -70,10 +70,10 @@ const COLUMNS: TableColumn<CodeholdRunner>[] = [
   { id: "address", label: "Address", defaultHidden: true, sortValue: (r) => r.workload_ip ?? "" },
 ];
 
-const RunnerRow = memo(function RunnerRow({ r, cols, onMenu, itemsFor }: { r: CodeholdRunner; cols: string[]; onMenu: (e: ReactMouseEvent, r: CodeholdRunner) => void; itemsFor: (r: CodeholdRunner) => ContextItem[] }) {
+const RunnerRow = memo(function RunnerRow({ r, cols, itemsFor }: { r: CodeholdRunner; cols: string[]; itemsFor: (r: CodeholdRunner) => ContextItem[] }) {
   const st = stateBadge(r);
   return (
-    <tr onContextMenu={(e) => onMenu(e, r)} className={r.detached ? "is-muted" : undefined}>
+    <tr className={r.detached ? "is-muted" : undefined}>
       {cols.map((c) => {
         switch (c) {
           case "name":
@@ -129,7 +129,6 @@ export function CodeholdPage() {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const canManage = hasGrant(user, "feature.manage");
-  const ctx = useContextMenu();
   const [data, setData] = useState<CodeholdStatus | null>(() => {
     try {
       const raw = storageGet(CACHE);
@@ -184,7 +183,6 @@ export function CodeholdPage() {
     },
     [],
   );
-  const onMenu = useCallback((e: ReactMouseEvent, r: CodeholdRunner) => ctx.openAt(e, r.name, runnerItems(r)), [ctx, runnerItems]);
 
   const pageItems: ContextItem[] = [];
   if (canManage) {
@@ -194,7 +192,6 @@ export function CodeholdPage() {
     );
   }
   pageItems.push({ label: "Refresh", onClick: () => void reload() });
-  usePageContextItems("CodeHold Runners", pageItems);
 
   const rows = useMemo(() => table.sortRows(data?.runners ?? []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -344,7 +341,7 @@ export function CodeholdPage() {
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <RunnerRow key={r.id} r={r} cols={cols} onMenu={onMenu} itemsFor={runnerItems} />
+                    <RunnerRow key={r.id} r={r} cols={cols} itemsFor={runnerItems} />
                   ))}
                 </tbody>
               </table>
@@ -375,7 +372,6 @@ export function CodeholdPage() {
           void reload();
         }}
       />
-      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
 }

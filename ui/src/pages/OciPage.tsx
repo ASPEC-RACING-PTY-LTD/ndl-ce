@@ -1,5 +1,5 @@
 import { confirmAction } from "../confirm";
-import { useEffect, useMemo, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import {
   addToOCIGroup,
   applyStack,
@@ -23,7 +23,7 @@ import type { StoragePool } from "../api/phase3";
 import type { Workload } from "../api/phase5";
 import { ActionMenu } from "../components/ActionMenu";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
+import type { ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Link } from "../components/Link";
@@ -92,7 +92,6 @@ export function OciPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
-  const ctx = useContextMenu();
   const [workloads, setWorkloads] = useState<Workload[] | null>(null);
   const [groups, setGroups] = useState<Stack[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -323,7 +322,6 @@ export function OciPage() {
           e.dataTransfer.setData("application/x-ndl-oci", w.id);
           e.dataTransfer.effectAllowed = "move";
         }}
-        onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, w.name, containerItems(w))}
       >
         <Link className="docker-row-name" href={`/workloads/${encodeURIComponent(w.id)}`}>
           <strong>{w.name}</strong>
@@ -440,7 +438,6 @@ export function OciPage() {
                 className={"docker-card" + (bad ? " is-issue" : "") + (dropTarget === g.id ? " is-drop" : "")}
                 data-group={g.name}
                 aria-label={`Group ${g.name}`}
-                onContextMenu={(e: ReactMouseEvent) => ctx.openAt(e, g.name, groupItems(g))}
                 {...dropProps(g.id)}
               >
                 <header className="docker-card-head">
@@ -637,8 +634,6 @@ export function OciPage() {
           </select>
         </div>
       </ConfirmDialog>
-
-      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
 }

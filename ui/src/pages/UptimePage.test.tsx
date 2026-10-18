@@ -171,7 +171,7 @@ describe("Uptime page", () => {
     expect(within(cards[0]).getByText(/tunnel or proxy could not reach/i)).toBeVisible();
     expect(within(cards[0]).getByText(/restarts apps\/shop-web-1/i)).toBeVisible();
 
-    fireEvent.contextMenu(cards[0]);
+    fireEvent.click(within(cards[0]).getByRole("button", { name: /actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /^check now$/i }));
     await waitFor(() => expect(sent.check).toBe("yes"));
 

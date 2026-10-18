@@ -94,7 +94,7 @@ describe("CodeHold runners", () => {
     expect(within(table).getByRole("link", { name: "codehold-build-1-abc123" })).toHaveAttribute("href", "/workloads/w1");
     expect(within(table).getByText(/installing docker in the container failed/i)).toBeVisible();
     expect(screen.getByText("2 vCPU · 2 GB")).toBeVisible();
-    fireEvent.contextMenu(within(table).getByText("build-2").closest("tr")!);
+    fireEvent.click(within(within(table).getByText("build-2").closest("tr")!).getByRole("button", { name: /actions/i }));
     expect(await screen.findByRole("menuitem", { name: /retry setup now/i })).toBeVisible();
   });
 

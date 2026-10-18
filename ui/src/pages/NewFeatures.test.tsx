@@ -165,14 +165,12 @@ describe("Cloudflare page", () => {
     fireEvent.click(within(flat).getByRole("checkbox", { name: /group by tunnel/i }));
     fireEvent.mouseDown(document.body);
 
-    // Right-clicking the page offers the page's actions instead of the browser menu.
+    // Right-clicking the page leaves the browser's menu alone.
     const bg = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
     screen.getByRole("heading", { name: /^cloudflare$/i }).dispatchEvent(bg);
-    expect(bg.defaultPrevented).toBe(true);
-    expect(await screen.findByRole("menuitem", { name: /^new tunnel$/i })).toBeVisible();
-    fireEvent.keyDown(document, { key: "Escape" });
+    expect(bg.defaultPrevented).toBe(false);
 
-    fireEvent.contextMenu(within(table).getByText("shop.racing.example").closest("tr")!);
+    fireEvent.click(within(within(table).getByText("shop.racing.example").closest("tr")!).getByRole("button", { name: /actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /^diagnose$/i }));
     const diag = await screen.findByRole("dialog", { name: /diagnose shop.racing.example/i });
     expect(await within(diag).findByText(/internal service/i)).toBeVisible();
@@ -187,7 +185,7 @@ describe("Cloudflare page", () => {
     expect(within(add).getByRole("button", { name: /^add hostname$/i })).toBeDisabled();
     fireEvent.click(within(add).getByRole("button", { name: /cancel/i }));
 
-    fireEvent.contextMenu(within(table).getByText("shop.racing.example").closest("tr")!);
+    fireEvent.click(within(within(table).getByText("shop.racing.example").closest("tr")!).getByRole("button", { name: /actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /^delete$/i }));
     const del = await screen.findByRole("dialog", { name: /delete shop.racing.example/i });
     fireEvent.click(within(del).getByRole("button", { name: /^delete$/i }));

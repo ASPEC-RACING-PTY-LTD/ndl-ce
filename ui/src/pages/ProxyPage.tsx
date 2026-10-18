@@ -1,5 +1,5 @@
 import { confirmAction } from "../confirm";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ProxyError,
   deleteProxySite,
@@ -12,7 +12,7 @@ import {
   type ProxySite,
 } from "../api/client";
 import { ActionMenu } from "../components/ActionMenu";
-import { ContextMenu, useContextMenu, usePageContextItems, type ContextItem } from "../components/ContextMenu";
+import type { ContextItem } from "../components/ContextMenu";
 import { EmptyState, LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
@@ -66,10 +66,10 @@ function siteURL(r: ProxySite): string | null {
   return (r.tls === "http" ? "http://" : "https://") + d;
 }
 
-const SiteRow = memo(function SiteRow({ r, cols, onMenu, itemsFor }: { r: Row; cols: string[]; onMenu: (e: ReactMouseEvent, r: Row) => void; itemsFor: (r: Row) => ContextItem[] }) {
+const SiteRow = memo(function SiteRow({ r, cols, itemsFor }: { r: Row; cols: string[]; itemsFor: (r: Row) => ContextItem[] }) {
   const url = siteURL(r);
   return (
-    <tr className="cf-route-row" onContextMenu={(e) => onMenu(e, r)}>
+    <tr className="cf-route-row">
       {cols.map((c) => {
         switch (c) {
           case "domains":
@@ -122,7 +122,6 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const canManage = hasGrant(user, "network.apply");
-  const ctx = useContextMenu();
   const cacheKey = `ndl-proxy-${kind}`;
   const [data, setData] = useState<{ instances: ProxyInstance[]; machines: ProxyMachine[] } | null>(() => {
     try {
@@ -263,8 +262,6 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [kind, title],
   );
-
-  const onSiteMenu = useCallback((e: ReactMouseEvent, r: Row) => ctx.openAt(e, r.domains[0], siteItems(r)), [ctx, siteItems]);
   const collapsed = new Set(collapsedList);
 
   const installable = machines.filter((m) => !m.installed && m.can_apt);
@@ -274,7 +271,6 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
     pageItems.push({ label: `Install ${title}`, disabled: installable.length === 0, onClick: () => setInstalling(true) });
   }
   pageItems.push({ label: "Refresh", onClick: () => void reload(true) });
-  usePageContextItems(title, pageItems);
 
   if (!data) {
     return (
@@ -393,7 +389,7 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
                 const isCollapsed = collapsed.has(in_.machine_id);
                 return (
                   <tbody key={in_.machine_id}>
-                    <tr className={"cf-group" + (!in_.active ? " is-issue" : "")} onContextMenu={(e) => ctx.openAt(e, `${title} on ${in_.machine_name}`, instanceItems(in_))}>
+                    <tr className={"cf-group" + (!in_.active ? " is-issue" : "")}>
                       <td colSpan={span}>
                         <div className="cf-group-head">
                           <button
@@ -438,14 +434,14 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
                               </td>
                             </tr>
                           )
-                        : list.map((r) => <SiteRow key={r.key} r={r} cols={cols} onMenu={onSiteMenu} itemsFor={siteItems} />)}
+                        : list.map((r) => <SiteRow key={r.key} r={r} cols={cols} itemsFor={siteItems} />)}
                   </tbody>
                 );
               })
             ) : (
               <tbody>
                 {shown.map((r) => (
-                  <SiteRow key={r.key} r={r} cols={cols} onMenu={onSiteMenu} itemsFor={siteItems} />
+                  <SiteRow key={r.key} r={r} cols={cols} itemsFor={siteItems} />
                 ))}
               </tbody>
             )}
@@ -477,7 +473,6 @@ export function ProxyPage({ kind }: { kind: ProxyKind }) {
       <Dialog open={output != null} title={output?.title ?? ""} wide onClose={() => setOutput(null)}>
         <pre className="job-log-pre">{output?.text}</pre>
       </Dialog>
-      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
 }

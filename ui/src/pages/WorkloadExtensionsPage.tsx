@@ -1,8 +1,8 @@
 import { confirmAction } from "../confirm";
-import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useState } from "react";
 import { changeWorkloadExtensions, getWorkload, listWorkloadExtensions, type WorkloadExtension } from "../api/client";
 import { ActionMenu } from "../components/ActionMenu";
-import { ContextMenu, useContextMenu, type ContextItem } from "../components/ContextMenu";
+import type { ContextItem } from "../components/ContextMenu";
 import { LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Link } from "../components/Link";
@@ -29,7 +29,6 @@ export function WorkloadExtensionsPage() {
   const id = decodeURIComponent(path.split("/")[2] ?? "");
   const session = useSession();
   const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
-  const ctx = useContextMenu();
   const [name, setName] = useState("");
   const [items, setItems] = useState<WorkloadExtension[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -185,7 +184,7 @@ export function WorkloadExtensionsPage() {
               const st = STATE[x.state] ?? { status: "unknown", label: x.state };
               const menu = rowItems(x);
               return (
-                <tr key={x.id} onContextMenu={menu.length ? (e: ReactMouseEvent) => ctx.openAt(e, x.name, menu) : undefined}>
+                <tr key={x.id}>
                   {mutate ? (
                     <td>
                       <input
@@ -242,7 +241,6 @@ export function WorkloadExtensionsPage() {
           </tbody>
         </table>
       </div>
-      <ContextMenu menu={ctx.menu} onClose={ctx.close} />
     </section>
   );
 }
