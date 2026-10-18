@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -108,11 +109,35 @@ func (s *ptySession) CWD() (string, bool) {
 	if s.cmd == nil || s.cmd.Process == nil {
 		return "", false
 	}
-	target, err := os.Readlink("/proc/" + strconv.Itoa(s.cmd.Process.Pid) + "/cwd")
+	// The started process is often a wrapper (lxc-attach for a system
+	// container) whose own folder never changes; the shell the user types
+	// into is its newest descendant, so follow the children down to it.
+	pid := shellPID(s.cmd.Process.Pid)
+	target, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/cwd")
 	if err != nil {
 		return "", false
 	}
 	return target, true
+}
+
+// shellPID walks from pid to its newest descendant (up to 8 levels).
+func shellPID(pid int) int {
+	for i := 0; i < 8; i++ {
+		raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/task/" + strconv.Itoa(pid) + "/children")
+		if err != nil {
+			return pid
+		}
+		kids := strings.Fields(string(raw))
+		if len(kids) == 0 {
+			return pid
+		}
+		next, err := strconv.Atoi(kids[len(kids)-1])
+		if err != nil {
+			return pid
+		}
+		pid = next
+	}
+	return pid
 }
 
 func (s *ptySession) Pong() error {
