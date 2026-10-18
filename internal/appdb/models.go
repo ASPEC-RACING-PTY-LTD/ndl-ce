@@ -47,6 +47,13 @@ type Store interface {
 	ListTokens(ctx context.Context, clusterID string) ([]APIToken, error)
 	RevokeToken(ctx context.Context, id, userID string) error
 	RevokeClusterToken(ctx context.Context, clusterID, id string) error
+	// ListExpiredTokens lists tokens past their expiry, for the sweeper to
+	// audit and then delete.
+	ListExpiredTokens(ctx context.Context, now time.Time) ([]APIToken, error)
+	TouchTokenUsage(ctx context.Context, tokenID, ip string, at time.Time) error
+	ListTokenUsage(ctx context.Context, tokenID string) ([]TokenUsage, error)
+	RollToken(ctx context.Context, clusterID, id, hash, prefix string) error
+	UpdateToken(ctx context.Context, clusterID, id, name string, expires *time.Time) error
 
 	UpsertNode(ctx context.Context, n Node) error
 	GetNode(ctx context.Context, clusterID string) (*Node, error)
@@ -264,6 +271,14 @@ type Store interface {
 	ListGroupMembers(ctx context.Context, clusterID, groupID string) ([]string, error)
 	ListGroupRoles(ctx context.Context, clusterID, groupID string) ([]string, error)
 	BindGroupRole(ctx context.Context, clusterID, groupID, roleName string) error
+	// SetGroup renames a group and, when members or roles is non-nil,
+	// replaces that list.
+	SetGroup(ctx context.Context, clusterID, groupID, name, description string, members, roles []string) error
+
+	ListRoleDefs(ctx context.Context, clusterID string) ([]RoleDef, error)
+	SaveRoleDef(ctx context.Context, d RoleDef) error
+	DeleteRoleDef(ctx context.Context, clusterID, name string) error
+	SetRoleOrder(ctx context.Context, clusterID string, names []string) error
 
 	UpsertMFAMethod(ctx context.Context, m MFAMethod, totpSecret string, recoveryHashes []string) error
 	GetMFAMethod(ctx context.Context, userID string) (*MFAMethod, string, []string, error)

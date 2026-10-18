@@ -15,9 +15,11 @@ type Memory struct {
 	setup              *SetupToken
 	users              map[string]User
 	roles              map[string][]string
+	roleMeta           map[string]RoleDef
 	binds              map[string][]string
 	sess               map[string]Session
 	tokens             map[string]APIToken
+	tokenUsage         map[string]map[string]*TokenUsage
 	nodes              map[string]Node
 	audit              []AuditEvent
 	inventory          map[string]HardwareInventory
@@ -450,11 +452,9 @@ func (m *Memory) ListTokens(_ context.Context, clusterID string) ([]APIToken, er
 func (m *Memory) RevokeToken(_ context.Context, id, userID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := time.Now().UTC()
 	for k, t := range m.tokens {
 		if t.ID == id && t.UserID == userID {
-			t.RevokedAt = &now
-			m.tokens[k] = t
+			delete(m.tokens, k)
 			return nil
 		}
 	}
@@ -464,11 +464,10 @@ func (m *Memory) RevokeToken(_ context.Context, id, userID string) error {
 func (m *Memory) RevokeClusterToken(_ context.Context, clusterID, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := time.Now().UTC()
 	for k, t := range m.tokens {
 		if t.ID == id && t.ClusterID == clusterID {
-			t.RevokedAt = &now
-			m.tokens[k] = t
+			delete(m.tokens, k)
+			delete(m.tokenUsage, id)
 			return nil
 		}
 	}

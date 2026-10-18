@@ -214,6 +214,7 @@ func Run(cfg Config) error {
 	go srv.RunUptime(runCtx)
 	go srv.RunCodehold(runCtx)
 	go srv.RunAuditRetention(runCtx)
+	go srv.RunTokenSweeper(runCtx)
 	go srv.RunDockerPrune(runCtx)
 	go srv.RunDeployments(runCtx)
 	go observer{

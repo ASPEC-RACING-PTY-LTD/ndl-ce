@@ -61,6 +61,8 @@ type LogsRPC interface {
 
 // Server is the northbound HTTP API plus static UI.
 type Server struct {
+	// tokenUseSeen throttles API token usage writes (token|ip -> last write).
+	tokenUseSeen sync.Map
 	Store        appdb.Store
 	Lockout      *auth.Lockout
 	Agent        Agent
@@ -222,6 +224,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/tokens", s.listTokens)
 	mux.HandleFunc("POST /api/v1/tokens", s.createToken)
 	mux.HandleFunc("POST /api/v1/tokens/revoke", s.revokeToken)
+	mux.HandleFunc("PATCH /api/v1/tokens/{id}", s.updateToken)
+	mux.HandleFunc("DELETE /api/v1/tokens/{id}", s.deleteTokenByID)
+	mux.HandleFunc("POST /api/v1/tokens/{id}/roll", s.rollToken)
+	mux.HandleFunc("GET /api/v1/tokens/{id}/usage", s.tokenUsage)
+	mux.HandleFunc("GET /api/v1/iam/access", s.iamAccess)
+	mux.HandleFunc("PUT /api/v1/iam/roles/order", s.iamRoleOrder)
+	mux.HandleFunc("PUT /api/v1/iam/roles/{name}", s.iamSaveRole)
+	mux.HandleFunc("DELETE /api/v1/iam/roles/{name}", s.iamDeleteRole)
+	mux.HandleFunc("PUT /api/v1/iam/groups/{id}", s.iamSaveGroup)
 	mux.HandleFunc("GET /api/v1/nodes", s.listNodes)
 	mux.HandleFunc("POST /api/v1/placement/preview", s.previewPlacement)
 	mux.HandleFunc("GET /api/v1/node-groups", s.listNodeGroups)
@@ -1097,6 +1108,8 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, out)
 }
 
+// revokeToken is the older body-based delete; tokens are hard-deleted and
+// their history goes to the audit log.
 func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 	p, err := s.require(w, r, rbac.IdentityTokenRevoke)
 	if err != nil {
@@ -1114,31 +1127,19 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "token not found")
 		return
 	}
-	clusterWide := rbac.Authorize(p.Grants, rbac.APIAccessManage)
-	if existing.UserID == p.User.ID {
-		if err := s.Store.RevokeToken(r.Context(), req.ID, p.User.ID); err != nil {
-			writeErr(w, http.StatusNotFound, "token not found")
-			return
-		}
-	} else if clusterWide {
-		if err := s.Store.RevokeClusterToken(r.Context(), p.User.ClusterID, req.ID); err != nil {
-			writeErr(w, http.StatusNotFound, "token not found")
-			return
-		}
-	} else {
+	if existing.UserID != p.User.ID && !rbac.Authorize(p.Grants, rbac.APIAccessManage) {
 		writeErr(w, http.StatusNotFound, "token not found")
 		return
 	}
-	tok, err := s.Store.GetToken(r.Context(), req.ID)
-	if err != nil || tok == nil || tok.RevokedAt == nil {
-		writeErr(w, http.StatusInternalServerError, "could not revoke token")
+	if !s.mayActOnUser(r.Context(), p, existing.UserID) {
+		writeErr(w, http.StatusForbidden, "that token belongs to someone above you in the role hierarchy")
 		return
 	}
-	if existing.UserID == p.User.ID && tok.UserID != p.User.ID {
-		writeErr(w, http.StatusInternalServerError, "could not revoke token")
+	s.auditTokenEnd(r.Context(), r, p.User.ClusterID, p.User.ID, "token.delete", *existing, "deleted")
+	if err := s.Store.RevokeClusterToken(r.Context(), p.User.ClusterID, req.ID); err != nil {
+		writeErr(w, http.StatusNotFound, "token not found")
 		return
 	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "token.revoke", "ok", req.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1180,6 +1181,7 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 			return nil, errors.New("invalid token")
 		}
 		_ = s.Store.TouchTokenLastUsed(r.Context(), row.ID, s.now())
+		s.noteTokenUse(r, row.ID)
 		return s.asPrincipal(r.Context(), *u, "", 1, row.ID, row.Permissions)
 	}
 	c, err := r.Cookie(sessionCookie)
@@ -1202,7 +1204,7 @@ func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string, a
 	if err != nil {
 		return nil, err
 	}
-	grants := rbac.GrantsForRoles(roles)
+	grants := s.grantsForRoles(ctx, u.ClusterID, roles)
 	if len(tokenPerms) > 0 {
 		filtered := make([]string, 0, len(tokenPerms))
 		for _, perm := range tokenPerms {

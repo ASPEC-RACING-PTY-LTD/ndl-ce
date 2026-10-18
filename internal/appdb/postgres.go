@@ -315,7 +315,7 @@ func (p *Postgres) ListTokens(ctx context.Context, clusterID string) ([]APIToken
 }
 
 func (p *Postgres) RevokeToken(ctx context.Context, id, userID string) error {
-	res, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, id, userID)
+	res, err := p.DB.ExecContext(ctx, `DELETE FROM api_tokens WHERE id=$1 AND user_id=$2`, id, userID)
 	if err != nil {
 		return err
 	}
@@ -327,7 +327,7 @@ func (p *Postgres) RevokeToken(ctx context.Context, id, userID string) error {
 }
 
 func (p *Postgres) RevokeClusterToken(ctx context.Context, clusterID, id string) error {
-	res, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE id=$1 AND cluster_id=$2 AND revoked_at IS NULL`, id, clusterID)
+	res, err := p.DB.ExecContext(ctx, `DELETE FROM api_tokens WHERE id=$1 AND cluster_id=$2`, id, clusterID)
 	if err != nil {
 		return err
 	}

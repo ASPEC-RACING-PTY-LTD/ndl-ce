@@ -158,8 +158,12 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "username must be 1-64 letters, digits, dot, underscore, or hyphen")
 		return
 	}
-	if !rbac.IsLoginRole(req.Role) {
-		writeErr(w, http.StatusBadRequest, "role must be viewer, operator, or admin")
+	if !containsString(s.loginRoleNames(r.Context(), p.User.ClusterID), req.Role) {
+		writeErr(w, http.StatusBadRequest, "unknown sign-in role "+req.Role)
+		return
+	}
+	if !s.mayActOnRole(r.Context(), p, req.Role) {
+		writeErr(w, http.StatusForbidden, "you cannot assign a role at or above yours")
 		return
 	}
 	if req.Role == rbac.Admin && !rbac.Authorize(p.Grants, rbac.UsersRolesManage) {
@@ -206,6 +210,9 @@ func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) {
 	u, err := s.Store.GetUser(r.Context(), r.PathValue("id"))
 	if err != nil || u == nil || u.ClusterID != p.User.ClusterID {
 		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if !s.guardUserHierarchy(w, r, p, u.ID) {
 		return
 	}
 	var req struct {
@@ -291,6 +298,9 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "user not found")
 		return
 	}
+	if !s.guardUserHierarchy(w, r, p, u.ID) {
+		return
+	}
 	if u.ID == p.User.ID {
 		writeErr(w, http.StatusConflict, "cannot delete the current account")
 		return
@@ -319,6 +329,9 @@ func (s *Server) resetUserPassword(w http.ResponseWriter, r *http.Request) {
 	u, err := s.Store.GetUser(r.Context(), r.PathValue("id"))
 	if err != nil || u == nil || u.ClusterID != p.User.ClusterID {
 		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if !s.guardUserHierarchy(w, r, p, u.ID) {
 		return
 	}
 	var req struct {
@@ -353,6 +366,9 @@ func (s *Server) revokeUserSessions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "user not found")
 		return
 	}
+	if !s.guardUserHierarchy(w, r, p, u.ID) {
+		return
+	}
 	if err := s.Store.RevokeUserSessions(r.Context(), u.ID); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -373,6 +389,9 @@ func (s *Server) revokeUserTokens(w http.ResponseWriter, r *http.Request) {
 	u, err := s.Store.GetUser(r.Context(), r.PathValue("id"))
 	if err != nil || u == nil || u.ClusterID != p.User.ClusterID {
 		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if !s.guardUserHierarchy(w, r, p, u.ID) {
 		return
 	}
 	if err := s.Store.RevokeUserTokens(r.Context(), u.ID); err != nil {
@@ -474,9 +493,14 @@ func (s *Server) replaceLoginRole(w http.ResponseWriter, r *http.Request, p *pri
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return errForbidden("forbidden")
 	}
-	if !rbac.IsLoginRole(role) {
-		writeErr(w, http.StatusBadRequest, "role must be viewer, operator, or admin")
+	loginRoles := s.loginRoleNames(r.Context(), p.User.ClusterID)
+	if !containsString(loginRoles, role) {
+		writeErr(w, http.StatusBadRequest, "unknown sign-in role "+role)
 		return errBadRequest("invalid role")
+	}
+	if !s.mayActOnRole(r.Context(), p, role) {
+		writeErr(w, http.StatusForbidden, "you cannot assign a role at or above yours")
+		return errForbidden("forbidden")
 	}
 	cur, err := s.Store.UserRoles(r.Context(), u.ID)
 	if err != nil {
@@ -493,7 +517,7 @@ func (s *Server) replaceLoginRole(w http.ResponseWriter, r *http.Request, p *pri
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return err
 	}
-	for _, existing := range rbac.LoginRoles() {
+	for _, existing := range loginRoles {
 		if existing == role {
 			continue
 		}
@@ -621,4 +645,16 @@ func lastLoginUnix(u appdb.User) int64 {
 
 func userDisabled(u appdb.User) bool {
 	return u.DisabledAt != nil
+}
+
+// loginRoleNames lists the roles a person can sign in with: the built-in
+// sign-in roles plus stored roles marked as sign-in roles.
+func (s *Server) loginRoleNames(ctx context.Context, clusterID string) []string {
+	out := append([]string{}, rbac.LoginRoles()...)
+	for _, d := range s.roleDefs(ctx, clusterID) {
+		if d.Login && d.Name != rbac.Automation && !containsString(out, d.Name) {
+			out = append(out, d.Name)
+		}
+	}
+	return out
 }

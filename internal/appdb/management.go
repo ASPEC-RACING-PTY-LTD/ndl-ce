@@ -62,7 +62,7 @@ func (p *Postgres) TouchLastLogin(ctx context.Context, userID string, at time.Ti
 }
 
 func (p *Postgres) RevokeUserTokens(ctx context.Context, userID string) error {
-	_, err := p.DB.ExecContext(ctx, `UPDATE api_tokens SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, userID)
+	_, err := p.DB.ExecContext(ctx, `DELETE FROM api_tokens WHERE user_id=$1`, userID)
 	return err
 }
 
@@ -179,11 +179,9 @@ func (m *Memory) CountEnabledAdmins(_ context.Context, clusterID string) (int, e
 func (m *Memory) RevokeUserTokens(_ context.Context, userID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := time.Now().UTC()
 	for k, t := range m.tokens {
-		if t.UserID == userID && t.RevokedAt == nil {
-			t.RevokedAt = &now
-			m.tokens[k] = t
+		if t.UserID == userID {
+			delete(m.tokens, k)
 		}
 	}
 	return nil
