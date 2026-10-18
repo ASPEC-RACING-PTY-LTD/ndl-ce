@@ -61,7 +61,7 @@ export function DockerPrunePanel({ mutate }: { mutate: boolean }) {
 
   const last = st?.last_result;
   return (
-    <section className="panel" aria-labelledby="docker-prune-heading">
+    <section className="panel docker-prune" aria-labelledby="docker-prune-heading">
       <div className="panel-header">
         <h2 id="docker-prune-heading">Docker cleanup</h2>
         {mutate ? (
@@ -77,9 +77,9 @@ export function DockerPrunePanel({ mutate }: { mutate: boolean }) {
           </div>
         ) : null}
       </div>
-      <p className="muted">
-        Removes Docker images that no container uses, and the build cache, on the host and every system container.
-        Images used by any container (running or stopped), containers and volumes are kept.
+      <p className="field-hint">
+        Removes unused images and the build cache on the host and every system container. Images any container uses, containers and volumes
+        are kept.
       </p>
       {q.error ? <ErrorNotice error={q.error} /> : null}
       {error ? <ErrorNotice error={error} /> : null}
