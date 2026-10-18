@@ -128,8 +128,9 @@ export function queryGames(items: CatalogueItem[], opts: GameQuery): GameEntry[]
       }
       return g.matched.some((item) => categoryOf(item) === category);
     });
-  if (category === CATEGORY_RECENT && opts.sort !== "az") {
-    out = [...out].sort((a, b) => recentRank(a, recents) - recentRank(b, recents));
+  if ((category === CATEGORY_RECENT && opts.sort !== "az") || opts.sort === "recent") {
+    // Stable: games never picked keep their popular order after the recent ones.
+    out = [...out].sort((a, b) => Math.min(recentRank(a, recents), 1e9) - Math.min(recentRank(b, recents), 1e9));
   } else if (opts.sort === "az" && !opts.q?.trim()) {
     out = [...out].sort((a, b) => a.title.localeCompare(b.title));
   }

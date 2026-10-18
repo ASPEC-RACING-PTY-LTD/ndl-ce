@@ -24,6 +24,9 @@ import {
   type GameEntry,
 } from "./games";
 import type { CatalogueItem } from "./types";
+import { storageGet, storageSet } from "../storage";
+
+const SIDE_KEY = "ndl-gs-browser-side";
 
 /** Game tiles rendered per page before "Show more". */
 export const CATALOGUE_PAGE_SIZE = 200;
@@ -47,6 +50,12 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
   const [noCredentials, setNoCredentials] = useState(false);
   const [sort, setSort] = useState<CatalogueSort>("popular");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // The category sidebar is open unless this browser closed it.
+  const [sideOpen, setSideOpenState] = useState(() => storageGet(SIDE_KEY) !== "closed");
+  const setSideOpen = (open: boolean) => {
+    setSideOpenState(open);
+    storageSet(SIDE_KEY, open ? "open" : "closed");
+  };
   const deferredQ = useDeferredValue(q);
 
   const methods = useMemo(() => catalogueInstallMethods(items), [items]);
@@ -58,7 +67,7 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
   const games = useMemo(() => queryGames(items, { ...facetQuery, category }), [items, facetQuery, category]);
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
   const templateCount = useMemo(() => games.reduce((n, g) => n + g.matched.length, 0), [games]);
-  const activeFilters = (method ? 1 : 0) + (arch ? 1 : 0) + (noCredentials ? 1 : 0) + (sort !== "popular" ? 1 : 0);
+  const activeFilters = (method ? 1 : 0) + (arch ? 1 : 0) + (noCredentials ? 1 : 0);
 
   const filterKey = `${deferredQ}\u0000${category}\u0000${method}\u0000${arch}\u0000${noCredentials}\u0000${sort}`;
   const [paging, setPaging] = useState({ key: filterKey, limit: CATALOGUE_PAGE_SIZE });
@@ -115,20 +124,15 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
         : "No games match that search.";
 
   return (
-    <div className="gs-browser">
+    <div className={"gs-browser" + (sideOpen ? "" : " is-side-closed")}>
+      {sideOpen ? (
       <aside className="gs-browser-side" aria-label="Browse the catalogue">
-        <label className="gs-browser-search">
-          <span className="visually-hidden">Search games</span>
-          <input
-            className="field-input"
-            type="search"
-            value={q}
-            placeholder="Search games or engines"
-            title="Try mc, rust, cs2, paper, gslt"
-            aria-label="Search available game templates"
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </label>
+        <div className="gs-browser-side-head">
+          <span className="gs-browser-side-title">Categories</span>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" aria-label="Hide categories" title="Hide categories" onClick={() => setSideOpen(false)}>
+            «
+          </button>
+        </div>
         <div className="gs-browser-cats" role="tablist" aria-orientation="vertical" aria-label="Catalogue categories">
           {chips
             .filter((chip) => chip.count > 0 || chip.id === category || chip.id === CATEGORY_ALL)
@@ -176,13 +180,6 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
                 <option value="arm64">arm64</option>
               </select>
             </label>
-            <label>
-              <span>Sort</span>
-              <select className="field-input" value={sort} onChange={(e) => setSort(e.target.value as CatalogueSort)}>
-                <option value="popular">Popular</option>
-                <option value="az">A-Z</option>
-              </select>
-            </label>
             <label className="gs-browser-check">
               <input type="checkbox" checked={noCredentials} onChange={(e) => setNoCredentials(e.target.checked)} />
               <span>No credentials needed</span>
@@ -190,10 +187,32 @@ export function CatalogueBrowser({ items, favorites, recents, game, onGameChange
           </div>
         ) : null}
       </aside>
+      ) : null}
       <div className="gs-browser-main">
-        <p className="gs-catalogue-count" aria-live="polite">
-          {games.length} {games.length === 1 ? "game" : "games"}, {templateCount} server {templateCount === 1 ? "type" : "types"}
-        </p>
+        <div className="gs-browser-top">
+          {!sideOpen ? (
+            <button type="button" className="btn btn-secondary btn-sm" aria-label="Show categories" title="Show categories" onClick={() => setSideOpen(true)}>
+              » Categories
+            </button>
+          ) : null}
+          <input
+            className="field-input gs-browser-q"
+            type="search"
+            value={q}
+            placeholder="Search games or engines"
+            title="Try mc, rust, cs2, paper, gslt"
+            aria-label="Search available game templates"
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <p className="gs-catalogue-count" aria-live="polite">
+            {games.length} {games.length === 1 ? "game" : "games"}, {templateCount} server {templateCount === 1 ? "type" : "types"}
+          </p>
+          <select className="field-input gs-browser-sort" aria-label="Sort games" value={sort} onChange={(e) => setSort(e.target.value as CatalogueSort)}>
+            <option value="popular">Most popular</option>
+            <option value="recent">Recently picked</option>
+            <option value="az">A–Z</option>
+          </select>
+        </div>
         <div className="gs-game-grid">
           {visible.map((entry) => (
             <GameTile

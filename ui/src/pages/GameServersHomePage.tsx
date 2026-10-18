@@ -21,7 +21,8 @@ import type { GameServer, GameView } from "../gameservers/types";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
 import { useNavDisclosure } from "../nav/NavDisclosure";
-import { gameServerHref, gameServersHomeFilter, gameServersHomeHref, GS_ROOT } from "../nav/gameServers";
+import { gameServerHref, gameServersHomeFilter, gameServersHomeHref } from "../nav/gameServers";
+import { QuickCreateDialog } from "../gameservers/QuickCreateDialog";
 import { navigate, usePath } from "../router";
 
 function portText(server: GameServer): string {
@@ -43,6 +44,7 @@ export function GameServersHomePage() {
   const [items, setItems] = useState<GameServer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [quickOpen, setQuickOpen] = useState(false);
   const [view, setView] = useState<GameView>("grid");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
@@ -199,18 +201,39 @@ export function GameServersHomePage() {
 
   return (
     <section className="page gs-page" aria-labelledby="gs-home-title">
-      <PageHeader
-        id="gs-home-title"
-        title="Game Servers"
-        kicker="Create and operate dedicated servers without touching Linux by hand."
-        actions={
-          mutate ? (
-            <Link className="btn btn-primary" href={`${GS_ROOT}/create`}>
+      <nav className="gs-bar" aria-label="Game Servers">
+        <h1 id="gs-home-title" className="gs-bar-title">
+          Game Servers
+        </h1>
+        {(
+          [
+            ["all", "Servers"],
+            ["favorites", "Favourites"],
+            ["recent", "Recent"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className="gs-bar-link"
+            aria-current={filter === id ? "page" : undefined}
+            onClick={() => {
+              setStatusFilter("all");
+              navigate(gameServersHomeHref(id));
+            }}
+          >
+            {label}
+          </button>
+        ))}
+        {mutate ? (
+          <div className="btn-row is-flush gs-bar-actions">
+            <button className="btn btn-primary btn-sm" type="button" onClick={() => setQuickOpen(true)}>
               Create server
-            </Link>
-          ) : null
-        }
-      />
+            </button>
+          </div>
+        ) : null}
+      </nav>
+      <QuickCreateDialog open={quickOpen} onClose={() => setQuickOpen(false)} />
 
       <div className="gs-toolbar">
         <label className="search-field gs-search">
@@ -225,29 +248,18 @@ export function GameServersHomePage() {
         </label>
         <div className="gs-filters" role="tablist" aria-label="Filter servers">
           {[
-            ["all", "All"],
-            ["favorites", "Favourites"],
-            ["recent", "Recent"],
+            ["all", "Any status"],
             ["running", "Running"],
             ["failed", "Failed"],
           ].map(([id, label]) => {
-            const on =
-              id === "running" || id === "failed" ? statusFilter === id && filter === "all" : filter === id || (id === "all" && filter === "fleet");
+            const on = id === "all" ? statusFilter === "all" : statusFilter === id;
             return (
               <button
                 key={id}
                 type="button"
                 className={"gs-chip" + (on ? " is-on" : "")}
                 onClick={() => {
-                  if (id === "running" || id === "failed") {
-                    setStatusFilter((cur) => (cur === id ? "all" : id));
-                    if (filter !== "all" && filter !== "fleet") {
-                      navigate(GS_ROOT);
-                    }
-                    return;
-                  }
-                  setStatusFilter("all");
-                  navigate(gameServersHomeHref(id));
+                  setStatusFilter(id === "all" ? "all" : (cur) => (cur === id ? "all" : id));
                 }}
               >
                 {label}
@@ -278,9 +290,9 @@ export function GameServersHomePage() {
           title="No game servers yet"
           action={
             mutate ? (
-              <Link className="btn btn-primary" href={`${GS_ROOT}/create`}>
+              <button className="btn btn-primary" type="button" onClick={() => setQuickOpen(true)}>
                 Create your first server
-              </Link>
+              </button>
             ) : null
           }
         >
@@ -311,10 +323,6 @@ export function GameServersHomePage() {
                 ))}
               </div>
             </section>
-          ) : null}
-
-          {filter === "fleet" ? (
-            <p className="lede">Select servers, then start, stop, restart, or backup them together.</p>
           ) : null}
 
           {mutate && selected.length > 0 ? (

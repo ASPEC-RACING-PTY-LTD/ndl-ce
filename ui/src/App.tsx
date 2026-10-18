@@ -61,6 +61,7 @@ import { GameServerDetailPage } from "./pages/GameServerDetailPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { navigate, usePath } from "./router";
 import { isGameServersCreatePath, isGameServersHomePath, legacyGameServersRedirect } from "./nav/gameServers";
+import { GameServerFrame } from "./nav/GameServerFrame";
 import { NavDisclosureProvider } from "./nav/NavDisclosure";
 import { WorkloadFrame } from "./nav/WorkloadFrame";
 import { selectedTargetFromPath } from "./nav/match";
@@ -134,6 +135,13 @@ function matchPage(path: string) {
   if (legacyGame) {
     return <Redirect to={legacyGame} />;
   }
+  if (path === "/game-servers/fleet") {
+    // Fleet was a copy of the server list; bulk actions live there now.
+    return <Redirect to="/game-servers" />;
+  }
+  if (path === "/game-servers/catalogue") {
+    return <Redirect to="/game-servers/create" />;
+  }
   if (isGameServersHomePath(path)) {
     return <GameServersHomePage />;
   }
@@ -141,7 +149,11 @@ function matchPage(path: string) {
     return <GameServerCreatePage />;
   }
   if (path.startsWith("/game-servers/")) {
-    return <GameServerDetailPage />;
+    return (
+      <GameServerFrame>
+        <GameServerDetailPage />
+      </GameServerFrame>
+    );
   }
   if (path === "/import-export") {
     return <ImportExportPage />;

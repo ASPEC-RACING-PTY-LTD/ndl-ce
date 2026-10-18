@@ -100,12 +100,13 @@ describe("Game Servers home", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^game servers$/i })).toBeVisible();
     expect(await screen.findByText(/no game servers yet/i)).toBeVisible();
-    expect(screen.getByRole("link", { name: /create your first server/i })).toBeVisible();
-    const nav = screen.getByRole("navigation", { name: /^game servers$/i });
-    expect(within(nav).getByRole("button", { name: /back to main menu/i })).toBeVisible();
-    expect(within(nav).getByRole("link", { name: /all servers/i })).toBeVisible();
-    expect(within(nav).queryByRole("link", { name: /^manage$/i })).toBeNull();
-    expect(within(nav).queryByText(/system containers/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /create your first server/i })).toBeVisible();
+    // The page header bar holds the sections; the main sidebar stays in place.
+    const bar = screen.getByRole("navigation", { name: /^game servers$/i });
+    expect(within(bar).getByRole("button", { name: /^servers$/i })).toHaveAttribute("aria-current", "page");
+    expect(within(bar).queryByRole("button", { name: /fleet/i })).toBeNull();
+    expect(screen.getByRole("navigation", { name: /^appliance$/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /back to main menu/i })).toBeNull();
   });
 
   it("keeps the main sidebar on Workloads and Game Servers out of the workload list", async () => {
@@ -132,8 +133,9 @@ describe("Game Servers home", () => {
       "/api/v1/game-servers/gs-mc/console/history": { status: 200, body: { items: [] } },
     });
     render(<App />);
-    const nav = await screen.findByRole("navigation", { name: /^game servers$/i });
-    expect(within(nav).getByRole("button", { name: /back to game servers/i })).toBeVisible();
+    // Each server has a section bar above its pages; the main sidebar stays.
+    const nav = await screen.findByRole("navigation", { name: /^game server$/i });
+    expect(screen.getByRole("link", { name: /back to game servers/i })).toBeVisible();
     expect(await within(nav).findByRole("link", { name: /^console$/i })).toHaveAttribute("aria-current", "page");
     expect(within(nav).getByRole("link", { name: /^plugins$/i })).toBeVisible();
     expect(within(nav).getByRole("link", { name: /^players$/i })).toBeVisible();

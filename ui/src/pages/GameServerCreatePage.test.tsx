@@ -210,7 +210,6 @@ describe("Create Game Server catalogue", () => {
 
     expect(await screen.findByRole("heading", { name: /create game server/i })).toBeVisible();
     const templateSearch = screen.getByRole("searchbox", { name: /search available game templates/i });
-    const serverSearch = within(screen.getByRole("navigation", { name: /^game servers$/i })).getByRole("searchbox", { name: /search game servers/i });
     expect(screen.getByRole("button", { name: /^project zomboid/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^minecraft paper/i })).toBeVisible();
     fireEvent.click(screen.getByText(/import a pelican or pterodactyl egg/i));
@@ -220,11 +219,6 @@ describe("Create Game Server catalogue", () => {
     fireEvent.change(templateSearch, { target: { value: "pz" } });
     expect(screen.getByRole("button", { name: /^project zomboid/i })).toBeVisible();
     expect(screen.queryByRole("button", { name: /^minecraft paper/i })).toBeNull();
-    expect(within(screen.getByRole("navigation", { name: /^game servers$/i })).getByRole("treeitem", { name: /my minecraft server/i })).toBeVisible();
-
-    fireEvent.change(serverSearch, { target: { value: "valheim" } });
-    expect(screen.getByRole("button", { name: /^project zomboid/i })).toBeVisible();
-    expect(within(screen.getByRole("navigation", { name: /^game servers$/i })).queryByRole("treeitem", { name: /my minecraft server/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: /^all\b/i }));
     fireEvent.change(templateSearch, { target: { value: "" } });

@@ -9,11 +9,10 @@ const IAM_CRUMBS: Record<string, string> = {
   "/iam/access": "Access control",
   "/api-access": "API Access",
 };
-import { GameServersNavigator } from "../nav/GameServersNavigator";
 import { gameServerCrumbs, isGameServersContext } from "../nav/gameServers";
 import { selectedTargetFromPath, viewFromPath } from "../nav/match";
-import { isMainNavPreferred, saveLastView } from "../nav/prefs";
-import { navigate, useHistoryState, usePath } from "../router";
+import { saveLastView } from "../nav/prefs";
+import { navigate, usePath } from "../router";
 import { useSession } from "../session";
 import { hasGrant } from "../rbac";
 import { HostDiskBanner } from "./HostDisk";
@@ -128,9 +127,7 @@ function crumbs(path: string): { href: string; label: string }[] {
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePath();
-  const historyState = useHistoryState();
   const session = useSession();
-  const gameServersCtx = isGameServersContext(path) && !isMainNavPreferred(historyState);
   const user = session.status === "ready" ? session.user : null;
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -243,10 +240,8 @@ export function Shell({ children }: { children: ReactNode }) {
           </Link>
           <span className="edition-badge">CE</span>
         </div>
-        <nav className="sidebar-nav" aria-label={gameServersCtx ? "Game Servers" : "Appliance"}>
-          {gameServersCtx ? (
-            <GameServersNavigator />
-          ) : (
+        <nav className="sidebar-nav" aria-label="Appliance">
+          {(
             groups.map((group) => {
               const ids = group.items.map((item) => item.id);
               return (

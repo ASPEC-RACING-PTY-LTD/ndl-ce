@@ -18,7 +18,7 @@ import {
 } from "../gameservers/api";
 import type { CatalogueItem, GameCreateBody, GameTemplate, PreflightResult } from "../gameservers/types";
 import { GS_ROOT, gameServerHref } from "../nav/gameServers";
-import { navigate, usePath } from "../router";
+import { navigate } from "../router";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 const STEPS = ["Game", "Options", "Placement", "Review"];
@@ -32,8 +32,6 @@ type PreflightState =
   | { key: string; status: "error"; message: string };
 
 export function GameServerCreatePage() {
-  const path = usePath();
-  const catalogueOnly = path === `${GS_ROOT}/catalogue`;
   const [step, setStep] = useState(0);
   const [items, setItems] = useState<CatalogueItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +58,11 @@ export function GameServerCreatePage() {
       try {
         const [cat, nodeList] = await Promise.all([listGameCatalogue(), listNodes().catch(() => [])]);
         setItems(cat.items ?? []);
+        // Create server's quick picker sends the chosen game along.
+        const wanted = new URLSearchParams(window.location.search).get("game");
+        if (wanted) {
+          setGame(wanted);
+        }
         const list = nodeList ?? [];
         setNodes(list);
         if (list[0]?.id) {
@@ -251,16 +254,17 @@ export function GameServerCreatePage() {
     <section className="page gs-page" aria-labelledby="gs-create-title">
       <PageHeader
         id="gs-create-title"
-        title={catalogueOnly ? "Catalogue" : "Create game server"}
-        kicker={
-          catalogueOnly
-            ? "Browse built-in games and imported eggs, then install one."
-            : "Answer a few questions. No-DAL picks the image, installer, and ports."
-        }
+        title="Create game server"
+        kicker="Answer a few questions. No-DAL picks the image, installer, and ports."
         actions={
-          <Link className="btn btn-ghost" href={GS_ROOT}>
-            Cancel
-          </Link>
+          <div className="btn-row is-flush">
+            <Link className="btn btn-ghost" href={GS_ROOT}>
+              ← Back to Game Servers
+            </Link>
+            <Link className="btn btn-tinted" href={GS_ROOT}>
+              Cancel
+            </Link>
+          </div>
         }
       />
       <ol className="gs-steps">

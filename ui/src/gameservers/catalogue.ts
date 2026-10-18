@@ -261,7 +261,8 @@ export function filterCatalogue(items: CatalogueItem[], query: string, group: Ca
   return query.trim() ? rankByScore(inGroup, query) : inGroup;
 }
 
-export type CatalogueSort = "popular" | "az";
+/** popular: catalogue order; recent: games picked lately first; az: by name. */
+export type CatalogueSort = "popular" | "recent" | "az";
 
 export type CatalogueQuery = {
   q?: string;

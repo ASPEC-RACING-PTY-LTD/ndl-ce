@@ -45,13 +45,12 @@ export function isGameServersHomePath(path: string): boolean {
     path === GS_ROOT ||
     path === `${GS_ROOT}/favourites` ||
     path === `${GS_ROOT}/favorites` ||
-    path === `${GS_ROOT}/recent` ||
-    path === `${GS_ROOT}/fleet`
+    path === `${GS_ROOT}/recent`
   );
 }
 
 export function isGameServersCreatePath(path: string): boolean {
-  return path === `${GS_ROOT}/create` || path === `${GS_ROOT}/catalogue`;
+  return path === `${GS_ROOT}/create`;
 }
 
 export function gameServerIdFromPath(path: string): string | null {
@@ -92,22 +91,17 @@ export function gameServersHomeHref(filter?: string): string {
       return `${GS_ROOT}/favourites`;
     case "recent":
       return `${GS_ROOT}/recent`;
-    case "fleet":
-      return `${GS_ROOT}/fleet`;
     default:
       return GS_ROOT;
   }
 }
 
-export function gameServersHomeFilter(path: string): "all" | "favorites" | "recent" | "fleet" {
+export function gameServersHomeFilter(path: string): "all" | "favorites" | "recent" {
   if (path === `${GS_ROOT}/favourites` || path === `${GS_ROOT}/favorites`) {
     return "favorites";
   }
   if (path === `${GS_ROOT}/recent`) {
     return "recent";
-  }
-  if (path === `${GS_ROOT}/fleet`) {
-    return "fleet";
   }
   return "all";
 }
@@ -140,20 +134,12 @@ export function gameServerCrumbs(path: string): { href: string; label: string }[
     trail.push({ href: path, label: "Create" });
     return trail;
   }
-  if (path === `${GS_ROOT}/catalogue`) {
-    trail.push({ href: path, label: "Catalogue" });
-    return trail;
-  }
   if (path === `${GS_ROOT}/favourites` || path === `${GS_ROOT}/favorites`) {
     trail.push({ href: path, label: "Favourites" });
     return trail;
   }
   if (path === `${GS_ROOT}/recent`) {
     trail.push({ href: path, label: "Recent" });
-    return trail;
-  }
-  if (path === `${GS_ROOT}/fleet`) {
-    trail.push({ href: path, label: "Fleet" });
     return trail;
   }
   const id = gameServerIdFromPath(path);

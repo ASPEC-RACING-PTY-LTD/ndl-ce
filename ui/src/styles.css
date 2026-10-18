@@ -4897,3 +4897,161 @@ thead th[data-autosort="desc"]::after {
     max-height: min(72vh, 64rem);
   }
 }
+
+/* Game catalogue: search and sort above the results, sidebar can be hidden. */
+.gs-browser.is-side-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.gs-browser-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gs-browser-side-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-tertiary);
+}
+
+.gs-browser-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.gs-browser-q {
+  flex: 1 1 18rem;
+  min-width: 0;
+  min-height: 2.4rem;
+}
+
+.gs-browser-top .gs-catalogue-count {
+  margin: 0;
+}
+
+.gs-browser-sort {
+  flex: 0 0 auto;
+  width: auto;
+  margin-left: auto;
+}
+
+/* Game names always sit on the cover, on a tinted strip behind the text only. */
+.gs-game-label {
+  inset: auto 0 0 0;
+  padding: 0.35rem 0.55rem 0.4rem;
+  background: oklch(0.12 0.01 250 / 0.72);
+  opacity: 1;
+  transform: none;
+}
+
+.gs-game-label .gs-game-title {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+
+.gs-quick-q {
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+
+.gs-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .gs-quick-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.gs-quick-tile {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+
+.gs-quick-tile:hover,
+.gs-quick-tile:focus-visible {
+  border-color: var(--accent);
+}
+
+.gs-quick-tile .gs-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gs-quick-tile .gs-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gs-quick-title {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 0.3rem 0.45rem;
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+  background: oklch(0.12 0.01 250 / 0.72);
+}
+
+.btn.btn-tinted {
+  background: color-mix(in oklch, var(--danger) 14%, var(--bg-surface));
+  border-color: color-mix(in oklch, var(--danger) 35%, var(--line));
+}
+
+/* Game Servers header bar: sections left, actions right (no collapsing). */
+.gs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.gs-bar-title {
+  margin: 0 var(--space-2) 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.gs-bar-link {
+  padding: 0.35rem 0.7rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--fg-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.gs-bar-link[aria-current="page"] {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.gs-bar-actions {
+  margin-left: auto;
+}
