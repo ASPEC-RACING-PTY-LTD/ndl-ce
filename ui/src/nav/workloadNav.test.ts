@@ -23,6 +23,8 @@ describe("buildWorkloadNav", () => {
       "GPUs",
       "Storage",
       "Storage",
+      "Software",
+      "Extensions",
       "Protection",
       "Snapshots",
       "Operations",

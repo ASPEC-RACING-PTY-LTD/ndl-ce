@@ -128,6 +128,17 @@ export function buildWorkloadNav(opts: {
         },
       ],
     });
+    groups.push({
+      label: "Software",
+      items: [
+        {
+          href: `/workloads/${id}/extensions`,
+          label: "Extensions",
+          icon: "settings",
+          current: leaf === "extensions",
+        },
+      ],
+    });
   }
 
   if (kind === "system-container" || kind === "vm") {

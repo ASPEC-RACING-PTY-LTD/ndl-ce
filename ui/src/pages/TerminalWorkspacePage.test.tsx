@@ -273,32 +273,38 @@ describe("Terminal workspace", () => {
     const titles = () => screen.getAllByRole("tab").map((t) => t.querySelector(".term-tab-title")?.textContent);
     expect(titles()).toEqual(["Alpine", "Alpine (2)", "Alpine (3)", "Alpine (4)", "Alpine (5)"]);
 
-    function openMenu(name: RegExp) {
-      fireEvent.contextMenu(screen.getByRole("tab", { name }));
-      return screen.getByRole("menu");
+    async function openMenu(name: RegExp) {
+      fireEvent.click(screen.getByRole("tab", { name }));
+      fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
+      return screen.findByRole("menu");
+    }
+    function closeMenu() {
+      fireEvent.keyDown(document, { key: "Escape" });
     }
 
-    let menu = openMenu(/^alpine(?! \()/i);
-    expect(within(menu).getByRole("menuitem", { name: /close sessions to the left/i })).toBeDisabled();
-    expect(within(menu).getByRole("menuitem", { name: /close sessions to the right/i })).toBeEnabled();
-    fireEvent.mouseDown(document.body);
+    // Right-clicking a tab no longer opens a menu; the actions live in Session actions.
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /^alpine(?! \()/i }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
-    menu = openMenu(/alpine \(5\)/i);
-    expect(within(menu).getByRole("menuitem", { name: /close sessions to the right/i })).toBeDisabled();
-    expect(within(menu).getByRole("menuitem", { name: /close sessions to the left/i })).toBeEnabled();
-    fireEvent.mouseDown(document.body);
+    let menu = await openMenu(/^alpine(?! \()/i);
+    expect(within(menu).queryByRole("menuitem", { name: /close to the left/i })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: /close to the right/i })).toBeVisible();
+    closeMenu();
 
-    fireEvent.click(screen.getByRole("tab", { name: /alpine \(5\)/i }));
-    menu = openMenu(/alpine \(4\)/i);
-    fireEvent.click(within(menu).getByRole("menuitem", { name: /close sessions to the right/i }));
+    menu = await openMenu(/alpine \(5\)/i);
+    expect(within(menu).queryByRole("menuitem", { name: /close to the right/i })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: /close to the left/i })).toBeVisible();
+    closeMenu();
+
+    menu = await openMenu(/alpine \(4\)/i);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /close to the right/i }));
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(titles()).toEqual(["Alpine", "Alpine (2)", "Alpine (3)", "Alpine (4)"]);
     expect(screen.getByRole("tab", { name: /alpine \(4\)/i })).toHaveAttribute("aria-selected", "true");
 
-    menu = openMenu(/alpine \(3\)/i);
-    fireEvent.click(within(menu).getByRole("menuitem", { name: /close sessions to the left/i }));
+    menu = await openMenu(/alpine \(3\)/i);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /close to the left/i }));
     expect(titles()).toEqual(["Alpine (3)", "Alpine (4)"]);
-    expect(screen.getByRole("tab", { name: /alpine \(4\)/i })).toHaveAttribute("aria-selected", "true");
 
     fireEvent(
       screen.getByRole("tab", { name: /alpine \(4\)/i }),
@@ -309,11 +315,9 @@ describe("Terminal workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /new terminal here/i }));
     await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
-    menu = openMenu(/alpine \(3\)/i);
-    fireEvent.click(within(menu).getByRole("menuitem", { name: /close other sessions/i }));
+    menu = await openMenu(/alpine \(3\)/i);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /close others/i }));
     expect(titles()).toEqual(["Alpine (3)"]);
-    menu = openMenu(/alpine \(3\)/i);
-    expect(within(menu).getByRole("menuitem", { name: /close other sessions/i })).toBeDisabled();
   });
 
   it("does not reconnect same-target sessions when switching tabs", async () => {
@@ -526,8 +530,9 @@ describe("Terminal workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /new terminal here/i }));
     await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
-    fireEvent.contextMenu(screen.getByRole("tab", { name: /^alpine connected/i }));
-    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^duplicate$/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^alpine connected/i }));
+    fireEvent.click(screen.getByRole("button", { name: /session actions/i }));
+    fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: /^duplicate$/i }));
     await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
     await waitFor(() => expect(created.length).toBe(3));
     expect(created[2].body).toContain("/srv/app");

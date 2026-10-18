@@ -267,8 +267,12 @@ export function GlobalContextMenu() {
       if (event.defaultPrevented) {
         return;
       }
-      event.preventDefault();
       const target = event.target instanceof Element ? event.target : null;
+      // Pages that opt out (the Terminal workspace) keep the browser's own menu.
+      if (target?.closest("[data-native-contextmenu]")) {
+        return;
+      }
+      event.preventDefault();
       const built = siteMenuFor(target);
       let { clientX: x, clientY: y } = event;
       if (x === 0 && y === 0 && target) {

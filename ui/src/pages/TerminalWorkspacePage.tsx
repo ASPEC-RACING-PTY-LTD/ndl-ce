@@ -1,5 +1,5 @@
 import { confirmAction } from "../confirm";
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ActionMenu } from "../components/ActionMenu";
 import { Icon } from "../components/Icon";
 import { QuickSwitch } from "../components/QuickSwitch";
@@ -51,34 +51,10 @@ export function TerminalWorkspacePage() {
       // The layout is a convenience; it resets when storage is unavailable.
     }
   }
-  const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const drag = useTabDrag(
     tabs.map((t) => t.tabId),
     moveTab,
   );
-
-  useEffect(() => {
-    if (!menu) {
-      return;
-    }
-    function onDoc() {
-      setMenu(null);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [menu]);
-
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!menu || !el) {
-      return;
-    }
-    const margin = 8;
-    const rect = el.getBoundingClientRect();
-    el.style.left = `${Math.max(margin, Math.min(menu.x, window.innerWidth - rect.width - margin))}px`;
-    el.style.top = `${Math.max(margin, Math.min(menu.y, window.innerHeight - rect.height - margin))}px`;
-  }, [menu]);
 
   function renameTab(tabId: string, current: string) {
     const next = window.prompt("Session name", current);
@@ -98,16 +74,10 @@ export function TerminalWorkspacePage() {
     );
   }
 
-  const menuTab = menu ? tabs.find((t) => t.tabId === menu.tabId) : null;
-  const menuIndex = menuTab ? tabs.indexOf(menuTab) : -1;
-
-  function menuAction(action: () => void) {
-    action();
-    setMenu(null);
-  }
+  const activeIndex = active ? tabs.indexOf(active) : -1;
 
   return (
-    <section className="page page-wide page-term" aria-labelledby="term-heading">
+    <section className="page page-wide page-term" aria-labelledby="term-heading" data-native-contextmenu>
       <div className="term-toolbar">
         <h1 id="term-heading" className="term-page-title">
           Terminal
@@ -146,10 +116,6 @@ export function TerminalWorkspacePage() {
                   event.preventDefault();
                   closeTab(tab.tabId);
                 }
-              }}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setMenu({ tabId: tab.tabId, x: event.clientX, y: event.clientY });
               }}
               onDoubleClick={() => renameTab(tab.tabId, tab.title)}
             >
@@ -207,6 +173,10 @@ export function TerminalWorkspacePage() {
                 ? [{ label: "Reconnect", onClick: () => reconnect(active.tabId) }]
                 : []),
               { label: "Close others", onClick: () => closeOthers(active.tabId) },
+              ...(activeIndex > 0 ? [{ label: "Close to the left", onClick: () => closeToSide(active.tabId, "left") }] : []),
+              ...(activeIndex >= 0 && activeIndex < tabs.length - 1
+                ? [{ label: "Close to the right", onClick: () => closeToSide(active.tabId, "right") }]
+                : []),
               { label: "Close disconnected", onClick: () => closeDisconnected() },
               { label: "Close Session", onClick: () => closeTab(active.tabId), danger: true },
               {
@@ -225,84 +195,6 @@ export function TerminalWorkspacePage() {
         ) : null}
       </div>
       {grid === "1" ? <TerminalPane /> : <TerminalGrid grid={grid} />}
-      {menu && menuTab ? (
-        <div
-          ref={menuRef}
-          className="menu-panel term-ctx"
-          role="menu"
-          aria-label={`${menuTab.title} actions`}
-          style={{ left: menu.x, top: menu.y }}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <button type="button" role="menuitem" onClick={() => menuAction(() => renameTab(menuTab.tabId, menuTab.title))}>
-            Rename
-          </button>
-          <button type="button" role="menuitem" onClick={() => menuAction(() => duplicate(menuTab.tabId))}>
-            Duplicate
-          </button>
-          <button type="button" role="menuitem" onClick={() => menuAction(() => newHere(menuTab.tabId))}>
-            New Terminal Here
-          </button>
-          {menuTab.state === "disconnected" || menuTab.state === "closed" ? (
-            <button type="button" role="menuitem" onClick={() => menuAction(() => reconnect(menuTab.tabId))}>
-              Reconnect
-            </button>
-          ) : null}
-          <hr />
-          <button
-            type="button"
-            role="menuitem"
-            disabled={menuIndex <= 0}
-            onClick={() => menuAction(() => moveTab(menuTab.tabId, menuIndex - 1))}
-          >
-            Move Left
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={menuIndex < 0 || menuIndex >= tabs.length - 1}
-            onClick={() => menuAction(() => moveTab(menuTab.tabId, menuIndex + 1))}
-          >
-            Move Right
-          </button>
-          <hr />
-          <button
-            type="button"
-            role="menuitem"
-            className="is-danger"
-            onClick={() => menuAction(() => closeTab(menuTab.tabId))}
-          >
-            Close Session
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="is-danger"
-            disabled={tabs.length < 2}
-            onClick={() => menuAction(() => closeOthers(menuTab.tabId))}
-          >
-            Close Other Sessions
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="is-danger"
-            disabled={menuIndex <= 0}
-            onClick={() => menuAction(() => closeToSide(menuTab.tabId, "left"))}
-          >
-            Close Sessions to the Left
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="is-danger"
-            disabled={menuIndex < 0 || menuIndex >= tabs.length - 1}
-            onClick={() => menuAction(() => closeToSide(menuTab.tabId, "right"))}
-          >
-            Close Sessions to the Right
-          </button>
-        </div>
-      ) : null}
       <QuickSwitch
         open={qs}
         recents={recents}

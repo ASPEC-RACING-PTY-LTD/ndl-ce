@@ -340,19 +340,14 @@ export function WorkloadDetailPage() {
   const diskGrowing = parseMemoryGB(diskGB, 8) > parseMemoryGB(origDiskGB, 8);
   const diagnosticsLink =
     item.kind === "system-container" ? (
-      <>
-        <Link className="btn btn-sm btn-ghost" href={`/workloads/${item.id}/extensions`}>
-          Extensions
-        </Link>
-        <Link
-          className="btn btn-sm btn-ghost btn-icon"
-          href={`/workloads/${item.id}/diagnostics`}
-          aria-label="Diagnostics"
-          title="Diagnostics"
-        >
-          <Icon name="diagnostics" size={14} />
-        </Link>
-      </>
+      <Link
+        className="btn btn-sm btn-ghost btn-icon"
+        href={`/workloads/${item.id}/diagnostics`}
+        aria-label="Diagnostics"
+        title="Diagnostics"
+      >
+        <Icon name="diagnostics" size={14} />
+      </Link>
     ) : null;
 
   return (
