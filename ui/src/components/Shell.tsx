@@ -6,12 +6,8 @@ import { isIAMPath, moduleForPath } from "../nav/modules";
 
 const IAM_CRUMBS: Record<string, string> = {
   "/users": "Users",
-  "/groups": "Groups",
-  "/roles": "Roles",
-  "/roles/permissions": "Permissions",
-  "/roles/assignments": "Assignments",
+  "/iam/access": "Access control",
   "/api-access": "API Access",
-  "/settings/security": "Security",
 };
 import { GameServersNavigator } from "../nav/GameServersNavigator";
 import { gameServerCrumbs, isGameServersContext } from "../nav/gameServers";

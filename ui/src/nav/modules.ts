@@ -28,6 +28,7 @@ export const IAM_PERMISSIONS = [
 export function isIAMPath(p: string): boolean {
   return (
     p === "/iam" ||
+    p.startsWith("/iam/") ||
     p === "/users" ||
     p.startsWith("/users/") ||
     p === "/roles" ||

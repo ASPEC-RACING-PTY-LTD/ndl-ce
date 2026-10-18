@@ -79,7 +79,7 @@ describe("APIAccessPage", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /api access/i })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /api usage/i }));
-    expect(await screen.findByText(/not MCP/i)).toBeVisible();
+    expect(await screen.findByText(/removed completely/i)).toBeVisible();
     expect(screen.getByText(/Authorization: Bearer/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /create token/i }));
     fireEvent.change(await screen.findByLabelText(/token name/i), { target: { value: "agent" } });

@@ -2179,6 +2179,27 @@ export async function revokeAPIToken(id: string): Promise<void> {
   }
 }
 
+export async function deleteAPIToken(id: string): Promise<void> {
+  const res = await request(`/tokens/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+}
+
+export async function rollAPIToken(id: string): Promise<{ id: string; token: string; prefix: string }> {
+  return readJson(await request(`/tokens/${encodeURIComponent(id)}/roll`, { method: "POST" }));
+}
+
+export async function updateAPIToken(id: string, body: { name?: string; ttl_hours?: number }): Promise<APITokenItem> {
+  return readJson(await request(`/tokens/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }));
+}
+
+export type TokenUsageItem = { ip: string; first_at: string; last_at: string; count: number };
+
+export async function getAPITokenUsage(id: string): Promise<{ items: TokenUsageItem[] }> {
+  return readJson(await request(`/tokens/${encodeURIComponent(id)}/usage`));
+}
+
 export type ServicePrincipalItem = {
   id: string;
   name: string;
@@ -3440,4 +3461,61 @@ export async function bulkDeploy(body: { project_ids?: string[]; due?: boolean; 
 
 export async function setDeployWebhook(id: string, enabled: boolean): Promise<import("../generated/openapi").DeployWebhook> {
   return readJson(await request(`${deployPath(id)}/webhook`, { method: "POST", body: JSON.stringify({ enabled }) }));
+}
+
+// --- Access control (roles, groups, permissions) ----------------------------
+
+export type IAMRole = {
+  name: string;
+  title: string;
+  summary: string;
+  permissions: string[];
+  rank: number;
+  builtin: boolean;
+  login: boolean;
+  user_count: number;
+  owner: boolean;
+  editable: boolean;
+};
+
+export type IAMGroup = { id: string; name: string; member_ids: string[]; roles: string[]; editable: boolean };
+
+export type IAMAccess = {
+  roles: IAMRole[];
+  groups: IAMGroup[];
+  users: { id: string; username: string; display_name?: string }[];
+  permissions: string[];
+  can_order: boolean;
+  can_manage_roles: boolean;
+};
+
+async function noContent(res: Response): Promise<void> {
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+}
+
+export async function getIAMAccess(): Promise<IAMAccess> {
+  return readJson(await request("/iam/access"));
+}
+
+export async function saveIAMRole(name: string, body: { title: string; summary: string; permissions: string[]; login?: boolean }): Promise<void> {
+  return noContent(await request(`/iam/roles/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function deleteIAMRole(name: string, reassign?: string): Promise<void> {
+  const qs = reassign ? `?reassign=${encodeURIComponent(reassign)}` : "";
+  return noContent(await request(`/iam/roles/${encodeURIComponent(name)}${qs}`, { method: "DELETE" }));
+}
+
+export async function setIAMRoleOrder(names: string[]): Promise<void> {
+  return noContent(await request("/iam/roles/order", { method: "PUT", body: JSON.stringify({ names }) }));
+}
+
+export async function saveIAMGroup(id: string, body: { name?: string; member_ids?: string[]; roles?: string[] }): Promise<void> {
+  return noContent(await request(`/iam/groups/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function deleteIAMGroup(id: string): Promise<void> {
+  return noContent(await request(`/groups/${encodeURIComponent(id)}`, { method: "DELETE" }));
 }

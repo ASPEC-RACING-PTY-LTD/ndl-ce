@@ -3,8 +3,7 @@ import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
 import { RequireGrant } from "./components/RequireGrant";
 import { APIAccessPage } from "./pages/APIAccessPage";
-import { RolesPage } from "./pages/RolesPage";
-import { SecurityPage } from "./pages/SecurityPage";
+import { AccessControlPage } from "./pages/AccessControlPage";
 import { UsersPage } from "./pages/UsersPage";
 import { IAMLayout, iamSections } from "./iam/IAMLayout";
 import { ForbiddenPage } from "./pages/ForbiddenPage";
@@ -48,7 +47,6 @@ import { SnapshotsPage } from "./pages/SnapshotsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
 import { MFAPage } from "./pages/MFAPage";
-import { GroupsPage } from "./pages/GroupsPage";
 import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
@@ -285,23 +283,21 @@ function matchPage(path: string) {
       </RequireGrant>
     );
   }
-  if (path === "/settings/security") {
-    return (
-      <IAMLayout>
-        <RequireGrant permission="settings.security.manage">
-          <SecurityPage />
-        </RequireGrant>
-      </IAMLayout>
-    );
+  if (path === "/settings/security" || path === "/roles/assignments") {
+    // Security moved to the Users page (MFA policy); Assignments live on Users.
+    return <Redirect to="/users" />;
   }
   if (path === "/settings/mfa") {
     return <MFAPage />;
   }
-  if (path === "/groups") {
+  if (path === "/groups" || path === "/roles" || path === "/roles/permissions") {
+    return <Redirect to="/iam/access" />;
+  }
+  if (path === "/iam/access") {
     return (
       <IAMLayout>
-        <RequireGrant permission="identity.group.manage">
-          <GroupsPage />
+        <RequireGrant permission="identity.read">
+          <AccessControlPage />
         </RequireGrant>
       </IAMLayout>
     );
@@ -318,15 +314,6 @@ function matchPage(path: string) {
       <IAMLayout>
         <RequireGrant permission="users.read">
           <UsersPage />
-        </RequireGrant>
-      </IAMLayout>
-    );
-  }
-  if (path === "/roles" || path === "/roles/permissions" || path === "/roles/assignments") {
-    return (
-      <IAMLayout>
-        <RequireGrant permission="roles.manage">
-          <RolesPage />
         </RequireGrant>
       </IAMLayout>
     );

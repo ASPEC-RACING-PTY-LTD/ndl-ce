@@ -15,6 +15,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
+import { MfaPolicyButton } from "../components/MfaPolicyButton";
 import { ResourceTable } from "../components/ResourceTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatWhen } from "../format";
@@ -31,6 +32,7 @@ export function UsersPage() {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const canCreate = hasGrant(user, "users.create");
+  const canSecurity = hasGrant(user, "settings.security.manage");
   const canUpdate = hasGrant(user, "users.update");
   const canDelete = hasGrant(user, "users.delete");
   const canRoles = hasGrant(user, "users.roles.manage");
@@ -179,19 +181,22 @@ export function UsersPage() {
         title="Users"
         kicker="People and service identities on this appliance. The last Owner cannot be removed, disabled, or demoted."
         actions={
-          canCreate ? (
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={() => {
-                setEditing(null);
-                setDisplayName("");
-                setCreating(true);
-              }}
-            >
-              Create user
-            </button>
-          ) : null
+          <div className="btn-row is-flush">
+            {canSecurity ? <MfaPolicyButton /> : null}
+            {canCreate ? (
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => {
+                  setEditing(null);
+                  setDisplayName("");
+                  setCreating(true);
+                }}
+              >
+                Create user
+              </button>
+            ) : null}
+          </div>
         }
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
