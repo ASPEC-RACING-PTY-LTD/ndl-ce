@@ -1593,20 +1593,33 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^enroll totp$/i })).toBeVisible();
   });
 
-  it("renders groups with honest empty state", async () => {
+  it("sends /groups to Access control and shows an honest empty group list", async () => {
     window.history.replaceState({}, "", "/groups");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
-      "/api/v1/groups": { status: 200, body: { items: [] } },
+      "/api/v1/iam/access": {
+        status: 200,
+        body: {
+          roles: [
+            { name: "admin", title: "Owner", summary: "", permissions: [], rank: 0, builtin: true, login: true, user_count: 1, owner: true, editable: false },
+            { name: "viewer", title: "User", summary: "", permissions: ["events.read"], rank: 3, builtin: true, login: true, user_count: 0, owner: false, editable: true },
+          ],
+          groups: [],
+          users: [],
+          permissions: ["events.read"],
+          can_order: true,
+          can_manage_roles: true,
+        },
+      },
     });
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /^groups$/i })).toBeVisible();
-    expect(screen.getByText(/admin cannot be granted through a group/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^access control$/i })).toBeVisible();
     expect(await screen.findByText(/no groups yet/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /^add group$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^new group$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^role hierarchy$/i })).toBeVisible();
   });
 
   it("renders audit events and keeps license activation off this page", async () => {
