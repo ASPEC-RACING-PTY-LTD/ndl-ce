@@ -33,7 +33,7 @@ describe("BackupGitHolds", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("lists the unsaved work and lets an Owner have it committed and pushed", async () => {
+  it("lists the unsaved work and lets a SuperAdmin have it committed and pushed", async () => {
     api.listBackupGitHolds.mockResolvedValueOnce({ items: [hold] }).mockResolvedValue({ items: [] });
     api.resolveBackupGitHold.mockResolvedValue({ workload_id: "w1", held: false });
     const changed = vi.fn();
@@ -48,10 +48,10 @@ describe("BackupGitHolds", () => {
     expect(changed).toHaveBeenCalled();
   });
 
-  it("does not offer the Owner actions to others", async () => {
+  it("does not offer the SuperAdmin actions to others", async () => {
     api.listBackupGitHolds.mockResolvedValue({ items: [hold] });
     render(<BackupGitHolds owner={false} onChanged={() => {}} />);
-    expect(await screen.findByText("An Owner can release this backup.")).toBeTruthy();
+    expect(await screen.findByText("A SuperAdmin can release this backup.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Commit and push for me" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Ignore uncommitted Git" })).toBeNull();
   });

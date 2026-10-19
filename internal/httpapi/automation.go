@@ -81,14 +81,19 @@ func (s *Server) automation() *automationState {
 				cli.Timeout = timeout
 				return cli
 			},
-			CheckURL: checkWebhookDestination,
+			CheckURL:  checkWebhookDestination,
+			CheckSelf: s.selfTargetAtRun,
 		})
 		s.registerAutomationNodes(st.reg)
 		st.eng = &engine.Engine{
 			Store: s.Store, Registry: st.reg, Now: s.now, Owner: "control-" + uuid.NewString()[:8],
 			Connection: s.openAutomationConnection,
 			StepContext: func(ctx context.Context, run appdb.AutomationRun) context.Context {
-				return context.WithValue(ctx, automationRunKey{}, run.ID)
+				ctx = context.WithValue(ctx, automationRunKey{}, run.ID)
+				if f, _ := s.Store.GetAutomationFlow(ctx, run.ClusterID, run.FlowID); f != nil {
+					ctx = context.WithValue(ctx, automationFlowLabelKey{}, automationFlowLabel(*f))
+				}
+				return ctx
 			},
 		}
 		st.svc = &engine.Service{
@@ -98,6 +103,9 @@ func (s *Server) automation() *automationState {
 			},
 			Notify: func(ctx context.Context, clusterID, kind string, payload map[string]string) {
 				s.emitEvent(ctx, clusterID, "", kind, payload)
+				if kind == "automation.flow_disabled" {
+					s.notifyFlowDisabled(ctx, clusterID, payload)
+				}
 			},
 			Wake: s.wakeAutomations,
 		}
@@ -153,8 +161,10 @@ func (s *Server) automationGate(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// automationPrincipal is the automation service identity with the grants
-// its role has now (the role is editable, so this is read every time).
+// automationPrincipal is the system identity flows run as. It has every
+// permission: a flow does exactly what it was built to do. What keeps that
+// safe is the guard at publish time (protected steps wait for approval,
+// calls to this instance's own API are refused) and the run-time checks.
 func (s *Server) automationPrincipal(ctx context.Context, clusterID string) (*principal, error) {
 	actorID, err := s.ensureAutomationActor(ctx, clusterID)
 	if err != nil {
@@ -164,7 +174,25 @@ func (s *Server) automationPrincipal(ctx context.Context, clusterID string) (*pr
 	if err != nil || u == nil {
 		return nil, fmt.Errorf("the automation identity is missing")
 	}
-	return s.asPrincipal(ctx, *u, "automation", 1, "", nil)
+	p, err := s.asPrincipal(ctx, *u, "automation", 1, "", nil)
+	if err != nil {
+		return nil, err
+	}
+	p.Grants = []string{rbac.All}
+	return p, nil
+}
+
+type automationFlowLabelKey struct{}
+
+// automationFlowLabel names a flow and who created it, for audit entries
+// made by its steps: "Automation: nightly restart (created by alex)".
+func automationFlowLabel(f appdb.AutomationFlow) string {
+	return fmt.Sprintf("Automation: %s (created by %s)", f.Name, firstNonEmpty(f.CreatedBy, "unknown"))
+}
+
+func automationFlowLabelFrom(ctx context.Context) string {
+	v, _ := ctx.Value(automationFlowLabelKey{}).(string)
+	return v
 }
 
 // automationCall runs one API request in-process as the automation
@@ -197,21 +225,6 @@ func (s *Server) automationCall(ctx context.Context, clusterID, method, path str
 		rec.status = http.StatusOK
 	}
 	return rec.status, rec.body, nil
-}
-
-// automationHasGrant checks the automation identity's current grants, for
-// test runs.
-func (s *Server) automationHasGrant(ctx context.Context, clusterID string, perms ...string) error {
-	p, err := s.automationPrincipal(ctx, clusterID)
-	if err != nil {
-		return err
-	}
-	for _, perm := range perms {
-		if rbac.Authorize(p.Grants, perm) {
-			return nil
-		}
-	}
-	return fmt.Errorf("the Automation role does not have %s; grant it in Access control to let flows do this", strings.Join(perms, " or "))
 }
 
 // --- events ---

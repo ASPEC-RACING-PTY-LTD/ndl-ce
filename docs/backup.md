@@ -121,5 +121,5 @@ links, so a container cannot use it to reach the host.
   unless `include_protected=true` is given.
 - Space is reclaimed in the background by the next cleanup.
 
-Owners are not asked to confirm plain "are you sure" prompts; prompts that
+SuperAdmins are not asked to confirm plain "are you sure" prompts; prompts that
 collect something, such as a password, still open.

@@ -104,7 +104,7 @@ func (s *Server) listScanTargets(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": s.scanTargets(r.Context(), p.User.ClusterID), "can_delete": rbac.Authorize(p.Grants, storageFilesDelete), "can_override": hasRole(p, rbac.Admin)})
+	writeJSON(w, http.StatusOK, map[string]any{"items": s.scanTargets(r.Context(), p.User.ClusterID), "can_delete": rbac.Authorize(p.Grants, storageFilesDelete), "can_override": hasRole(p, rbac.SuperAdmin)})
 }
 
 func (s *Server) startStorageScan(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +232,7 @@ func (s *Server) deleteScannedItems(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Items   []string `json:"items"`
 		Confirm string   `json:"confirm"`
-		// Override lets an Owner delete items No-dal protects.
+		// Override lets a SuperAdmin delete items No-dal protects.
 		Override bool `json:"override"`
 	}
 	if err := readJSON(r, &in); err != nil {
@@ -247,8 +247,8 @@ func (s *Server) deleteScannedItems(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("confirm must be %q", want))
 		return
 	}
-	if in.Override && !hasRole(p, rbac.Admin) {
-		writeErr(w, http.StatusForbidden, "only an Owner can delete protected items")
+	if in.Override && !hasRole(p, rbac.SuperAdmin) {
+		writeErr(w, http.StatusForbidden, "only a SuperAdmin can delete protected items")
 		return
 	}
 	ctx, clusterID := r.Context(), p.User.ClusterID

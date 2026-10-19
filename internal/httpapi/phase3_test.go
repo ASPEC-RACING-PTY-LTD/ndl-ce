@@ -338,7 +338,7 @@ func TestStorageViewerCannotMutate(t *testing.T) {
 	_ = res.Body.Close()
 	viewer := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view"}
 	_ = mem.CreateUser(context.Background(), viewer)
-	_ = mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.User)
 	plain := "ndl_viewer_token"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: viewer.ID, Name: "v",

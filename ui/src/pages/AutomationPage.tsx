@@ -41,7 +41,7 @@ function describe(item: AutomationPolicy): string {
 }
 
 function canApply(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 export function AutomationPage() {

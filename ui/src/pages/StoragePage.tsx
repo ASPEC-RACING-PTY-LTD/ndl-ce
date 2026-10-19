@@ -37,7 +37,7 @@ import { SelectionCard } from "../ui/SelectionCard";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 function capacityLabel(value: number | null | undefined, status: string): string {

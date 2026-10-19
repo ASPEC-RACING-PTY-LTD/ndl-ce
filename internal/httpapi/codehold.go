@@ -256,8 +256,8 @@ func (s *Server) systemCall(ctx context.Context, clusterID, method, path string,
 	}
 	p := &principal{
 		User:   appdb.User{ID: LocalRootUserID, ClusterID: clusterID, Username: "codehold-controller", Kind: appdb.UserKindPerson},
-		Roles:  []string{rbac.Admin},
-		Grants: rbac.New().PermissionsForRole(rbac.Admin),
+		Roles:  []string{rbac.SuperAdmin},
+		Grants: rbac.New().PermissionsForRole(rbac.SuperAdmin),
 		SessID: "codehold-controller",
 		AAL:    2,
 	}

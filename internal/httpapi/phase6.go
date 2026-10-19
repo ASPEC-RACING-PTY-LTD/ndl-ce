@@ -67,7 +67,7 @@ func (s *Server) createNodeTerminal(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if !hasRole(p, rbac.Admin) {
+	if !hasRole(p, rbac.SuperAdmin) {
 		s.audit(r, p.User.ClusterID, p.User.ID, "terminal.open", "denied", "host terminal is admin-only")
 		writeErr(w, http.StatusForbidden, "host terminal requires admin")
 		return
@@ -182,7 +182,7 @@ func (s *Server) getIOSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if row.UserID != p.User.ID && !hasRole(p, rbac.Admin) {
+	if row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -229,7 +229,7 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if row.UserID != p.User.ID && !hasRole(p, rbac.Admin) {
+	if row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -401,7 +401,7 @@ func (s *Server) endIOSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row, err := s.Store.GetIOSession(r.Context(), p.User.ClusterID, r.PathValue("id"))
-	if err != nil || row == nil || (row.UserID != p.User.ID && !hasRole(p, rbac.Admin)) {
+	if err != nil || row == nil || (row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin)) {
 		writeErr(w, http.StatusNotFound, "session not found")
 		return
 	}
@@ -484,7 +484,7 @@ func (s *Server) nodeFiles(w http.ResponseWriter, r *http.Request, perm, action 
 	if err != nil {
 		return
 	}
-	if !hasRole(p, rbac.Admin) {
+	if !hasRole(p, rbac.SuperAdmin) {
 		s.audit(r, p.User.ClusterID, p.User.ID, "files."+action, "denied", "host files are admin-only")
 		writeErr(w, http.StatusForbidden, "host files require admin")
 		return

@@ -234,7 +234,7 @@ func TestViewerCannotCreateToken(t *testing.T) {
 	if err := mem.CreateUser(context.Background(), u); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Viewer); err != nil {
+	if err := mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.User); err != nil {
 		t.Fatal(err)
 	}
 	ts := httptest.NewServer(s.Handler())

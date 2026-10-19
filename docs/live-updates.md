@@ -83,14 +83,14 @@ It builds what you name, stamps the build ID into it, signs the bundle into
 `out/live/` and then:
 
 - on the host itself, as root, queues it with `ndl-live install`;
-- elsewhere, with `NDL_LIVE_URL` and an Owner API token in
+- elsewhere, with `NDL_LIVE_URL` and a SuperAdmin API token in
   `NDL_LIVE_TOKEN`, uploads it to `POST /api/v1/live-updates/bundles`;
 - otherwise leaves the file for you to upload under **Updates → Live
   updates → Upload update**.
 
 ## Status, history and rollback
 
-**Updates → Live updates** (Owners) shows whether automatic updates are on,
+**Updates → Live updates** (SuperAdmins) shows whether automatic updates are on,
 what is running, anything queued or waiting and what it waits for, trusted
 keys, and the history with results and errors. **Roll back last update**
 undoes the newest applied update. On the host, `ndl-live status` prints the

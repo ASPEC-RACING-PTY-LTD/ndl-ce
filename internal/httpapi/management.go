@@ -33,7 +33,7 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	roleFilter := strings.TrimSpace(r.URL.Query().Get("role"))
+	roleFilter := canonicalRole(r, r.URL.Query().Get("role"))
 	statusFilter := strings.TrimSpace(r.URL.Query().Get("status"))
 	kindFilter := strings.TrimSpace(r.URL.Query().Get("kind"))
 	sortKey := strings.TrimSpace(r.URL.Query().Get("sort"))
@@ -151,9 +151,9 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Username = strings.TrimSpace(req.Username)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
-	req.Role = strings.TrimSpace(req.Role)
+	req.Role = canonicalRole(r, req.Role)
 	if req.Role == "" {
-		req.Role = rbac.Viewer
+		req.Role = rbac.User
 	}
 	if !validUsername(req.Username) {
 		writeErr(w, http.StatusBadRequest, "username must be 1-64 letters, digits, dot, underscore, or hyphen")
@@ -167,7 +167,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "you cannot assign a role at or above yours")
 		return
 	}
-	if req.Role == rbac.Admin && !rbac.Authorize(p.Grants, rbac.UsersRolesManage) {
+	if req.Role == rbac.SuperAdmin && !rbac.Authorize(p.Grants, rbac.UsersRolesManage) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -314,7 +314,7 @@ func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Role != nil {
-		if err := s.replaceLoginRole(w, r, p, *u, strings.TrimSpace(*req.Role)); err != nil {
+		if err := s.replaceLoginRole(w, r, p, *u, canonicalRole(r, *req.Role)); err != nil {
 			return
 		}
 	}
@@ -555,7 +555,7 @@ func (s *Server) replaceLoginRole(w http.ResponseWriter, r *http.Request, p *pri
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return err
 	}
-	if containsString(cur, rbac.Admin) && role != rbac.Admin {
+	if containsString(cur, rbac.SuperAdmin) && role != rbac.SuperAdmin {
 		if err := s.guardLastAdmin(r.Context(), p.User.ClusterID, u.ID, "demote"); err != nil {
 			writeErr(w, http.StatusConflict, err.Error())
 			return err
@@ -575,6 +575,10 @@ func (s *Server) replaceLoginRole(w http.ResponseWriter, r *http.Request, p *pri
 		}
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "user.role.change", "ok", u.ID)
+	if u.ID != p.User.ID {
+		s.notifyUser(r.Context(), p.User.ClusterID, u.ID, noteRolesChanged, "Your role changed",
+			p.User.Username+" changed your role to "+s.roleTitle(r.Context(), p.User.ClusterID, role)+".", "/me")
+	}
 	return nil
 }
 
@@ -583,7 +587,7 @@ func (s *Server) guardLastAdmin(ctx context.Context, clusterID, userID, action s
 	if err != nil {
 		return err
 	}
-	if !containsString(roles, rbac.Admin) {
+	if !containsString(roles, rbac.SuperAdmin) {
 		return nil
 	}
 	n, err := s.Store.CountEnabledAdmins(ctx, clusterID)
@@ -591,7 +595,7 @@ func (s *Server) guardLastAdmin(ctx context.Context, clusterID, userID, action s
 		return err
 	}
 	if n <= 1 {
-		return errConflict("cannot " + action + " the last owner")
+		return errConflict("cannot " + action + " the last SuperAdmin")
 	}
 	return nil
 }
@@ -655,7 +659,7 @@ func (s *Server) userPublicJSON(ctx context.Context, u appdb.User) (map[string]a
 	if u.DisabledAt != nil {
 		item["disabled_at"] = u.DisabledAt.UTC().Format(time.RFC3339)
 	}
-	if containsString(roles, rbac.Admin) {
+	if containsString(roles, rbac.SuperAdmin) {
 		n, err := s.Store.CountEnabledAdmins(ctx, u.ClusterID)
 		if err != nil {
 			return nil, err

@@ -94,10 +94,10 @@ func TestTokenListPresetTTLAndExpiry(t *testing.T) {
 }
 
 func TestFullAuditPresetRequiresAuditGrant(t *testing.T) {
-	if !rbac.Authorize(rbac.New().PermissionsForRole(rbac.Admin), rbac.AuditRead) {
+	if !rbac.Authorize(rbac.New().PermissionsForRole(rbac.SuperAdmin), rbac.AuditRead) {
 		t.Fatal("admin audit")
 	}
-	op := rbac.New().PermissionsForRole(rbac.Operator)
+	op := rbac.New().PermissionsForRole(rbac.Admin)
 	if rbac.Authorize(op, rbac.AuditRead) {
 		t.Fatal("operator must not grant full-audit")
 	}

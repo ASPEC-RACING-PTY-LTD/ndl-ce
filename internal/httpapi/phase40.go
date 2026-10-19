@@ -262,7 +262,7 @@ func (s *Server) ensureAutomationActor(ctx context.Context, clusterID string) (s
 			})
 		}
 	}
-	if err := s.Store.UnbindRole(ctx, clusterID, u.ID, rbac.Operator); err != nil {
+	if err := s.Store.UnbindRole(ctx, clusterID, u.ID, rbac.Admin); err != nil {
 		return "", err
 	}
 	if err := s.Store.BindRole(ctx, clusterID, u.ID, rbac.Automation); err != nil {

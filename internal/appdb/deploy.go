@@ -40,7 +40,7 @@ type DeployCommand struct {
 	ContinueOnError bool   `json:"continue_on_error,omitempty"`
 }
 
-// DeployProjectConfig is what an Owner sets for a project.
+// DeployProjectConfig is what a SuperAdmin sets for a project.
 type DeployProjectConfig struct {
 	Commands   []DeployCommand `json:"commands"`
 	RunAs      string          `json:"run_as,omitempty"`
@@ -180,10 +180,10 @@ type DeploySettings struct {
 	UpdatedAt         time.Time       `json:"updated_at"`
 }
 
-// DefaultDeployCommand is what a new project runs until an Owner changes it.
+// DefaultDeployCommand is what a new project runs until a SuperAdmin changes it.
 const DefaultDeployCommand = "git pull origin main && docker compose up -d --build --force-recreate"
 
-// DefaultDeploySettings are used until an Owner saves settings.
+// DefaultDeploySettings are used until a SuperAdmin saves settings.
 func DefaultDeploySettings(clusterID string) *DeploySettings {
 	return &DeploySettings{
 		ClusterID: clusterID, MaxConcurrent: 3, PerContainer: 1,

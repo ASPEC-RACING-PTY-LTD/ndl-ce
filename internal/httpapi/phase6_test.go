@@ -291,8 +291,8 @@ func doCookie(t *testing.T, ts *httptest.Server, cookie, method, path, body stri
 
 func TestHostTerminalAdminOnly(t *testing.T) {
 	_, mem, ts, admin, nodeID, _ := seedPhase6(t)
-	op := loginRole(t, ts, mem, "oper", rbac.Operator)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	op := loginRole(t, ts, mem, "oper", rbac.Admin)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 	res := doCookie(t, ts, admin, "POST", "/api/v1/nodes/"+nodeID+"/terminal/sessions", `{"cwd":"/"}`)
 	if res.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(res.Body)
@@ -313,7 +313,7 @@ func TestHostTerminalAdminOnly(t *testing.T) {
 
 func TestTerminalCreateFailsClosedForJailEscapeCWD(t *testing.T) {
 	_, mem, ts, admin, nodeID, wlID := seedPhase6(t)
-	op := loginRole(t, ts, mem, "oper", rbac.Operator)
+	op := loginRole(t, ts, mem, "oper", rbac.Admin)
 
 	host := doCookie(t, ts, admin, "POST", "/api/v1/nodes/"+nodeID+"/terminal/sessions", `{"cwd":".."}`)
 	hostRaw, _ := io.ReadAll(host.Body)
@@ -339,8 +339,8 @@ func TestTerminalCreateFailsClosedForJailEscapeCWD(t *testing.T) {
 
 func TestCTTerminalOperatorAndViewer(t *testing.T) {
 	_, mem, ts, admin, _, wlID := seedPhase6(t)
-	op := loginRole(t, ts, mem, "oper", rbac.Operator)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	op := loginRole(t, ts, mem, "oper", rbac.Admin)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 	res := doCookie(t, ts, op, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
 	if res.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(res.Body)
@@ -366,7 +366,7 @@ func TestCTTerminalOperatorAndViewer(t *testing.T) {
 
 func TestMultipleCTTerminalSessionsAreIndependent(t *testing.T) {
 	_, mem, ts, _, _, wlID := seedPhase6(t)
-	op := loginRole(t, ts, mem, "oper", rbac.Operator)
+	op := loginRole(t, ts, mem, "oper", rbac.Admin)
 	res := doCookie(t, ts, op, "POST", "/api/v1/workloads/"+wlID+"/terminal/sessions", `{}`)
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("first %d", res.StatusCode)
@@ -432,7 +432,7 @@ func TestMultipleCTTerminalSessionsAreIndependent(t *testing.T) {
 
 func TestViewerCannotListIOSessions(t *testing.T) {
 	_, mem, ts, _, _, _ := seedPhase6(t)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 	res := doCookie(t, ts, view, "GET", "/api/v1/io/sessions", "")
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer list %d", res.StatusCode)
@@ -469,7 +469,7 @@ func TestHostAndWorkloadTerminalSessionsTogether(t *testing.T) {
 
 func TestViewerFilesReadNoDownload(t *testing.T) {
 	s, mem, ts, admin, _, wlID := seedPhase6(t)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 	_ = os.WriteFile(filepath.Join(s.IO.(*fakeIO).root, "hello.txt"), []byte("hi"), 0o644)
 	res := doCookie(t, ts, view, "GET", "/api/v1/workloads/"+wlID+"/files?path=.", "")
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusBadGateway {
@@ -496,7 +496,7 @@ func TestViewerFilesReadNoDownload(t *testing.T) {
 
 func TestOperatorHostFilesDenied(t *testing.T) {
 	_, mem, ts, _, nodeID, _ := seedPhase6(t)
-	op := loginRole(t, ts, mem, "oper", rbac.Operator)
+	op := loginRole(t, ts, mem, "oper", rbac.Admin)
 	res := doCookie(t, ts, op, "GET", "/api/v1/nodes/"+nodeID+"/files?path=.", "")
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("operator host files %d", res.StatusCode)
@@ -605,7 +605,7 @@ func TestQuietTerminalWebSocketIsPinged(t *testing.T) {
 
 func TestWorkloadFilesCRUDCopyContentAndConflict(t *testing.T) {
 	s, mem, ts, admin, _, wlID := seedPhase6(t)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 	root := s.IO.(*fakeIO).root
 	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
@@ -745,7 +745,7 @@ func postMultipart(t *testing.T, ts *httptest.Server, cookie, urlPath, rel, name
 
 func TestWorkloadFilesUploadLargeTraversalAndChmod(t *testing.T) {
 	s, mem, ts, admin, _, wlID := seedPhase6(t)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 	root := s.IO.(*fakeIO).root
 
 	res := postMultipart(t, ts, admin, "/api/v1/workloads/"+wlID+"/files/upload", "created.txt", "created.txt", "hello-upload")

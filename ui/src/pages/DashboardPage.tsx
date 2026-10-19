@@ -29,11 +29,15 @@ import { CodeholdPendingBanner } from "../components/CodeholdPendingBanner";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
 import { useQuery } from "../query";
-import { getPlatformBackup } from "../api/client";
+import { getPlatformBackup, listApprovals } from "../api/client";
+import { hasGrant } from "../rbac";
 
 export function DashboardPage() {
   const session = useSession();
   const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const seesApprovals = hasGrant(session.status === "ready" ? session.user : null, "approvals.view");
+  const approvalsQ = useQuery("approvals-pending", () => (seesApprovals ? listApprovals("pending") : Promise.resolve(null)), 60000);
+  const pendingApprovals = approvalsQ.data?.pending ?? 0;
   const nodesQ = useQuery("nodes", () => listNodes(), 15000);
   const node: NodeSummary | null = nodesQ.data?.[0] ?? null;
   const metricsQ = useQuery(`node-metrics:${node?.id ?? ""}`, () => (node ? getNodeMetrics(node.id) : Promise.resolve(null)), 15000);
@@ -107,7 +111,7 @@ export function DashboardPage() {
   const visibleAttention = attention.filter((item) => !dismissed.has(attentionKey(item)));
   const visibleFailed = failedTasks.filter((task) => !dismissed.has(taskKey(task)));
   const showPoolWarn = poolWarnText !== "" && !warnHidden && !warningHidden(poolWarnText) && !dismissed.has(poolKey);
-  const attentionCount = visibleAttention.length + visibleFailed.length + (showPoolWarn ? 1 : 0);
+  const attentionCount = visibleAttention.length + visibleFailed.length + (showPoolWarn ? 1 : 0) + (pendingApprovals > 0 ? 1 : 0);
   function dismiss(keys: string[]) {
     setDismissed((prev) => {
       const next = new Set(prev);
@@ -224,6 +228,12 @@ export function DashboardPage() {
         </div>
         {attentionCount > 0 ? (
           <div className="stack">
+            {pendingApprovals > 0 ? (
+              <p className="banner banner-warn" role="status">
+                {pendingApprovals === 1 ? "1 automation flow is" : `${pendingApprovals} automation flows are`} waiting for approval.{" "}
+                <Link href="/iam/approvals">Review</Link>
+              </p>
+            ) : null}
             {visibleAttention.map((item) => (
               <p key={item.href} className="banner banner-warn" role="status">
                 {item.text} <Link href={item.href}>Open</Link>{" "}

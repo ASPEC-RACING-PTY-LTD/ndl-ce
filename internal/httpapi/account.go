@@ -868,6 +868,10 @@ func (s *Server) consoleIPRecovery(w http.ResponseWriter, r *http.Request) {
 		did = append(did, "lockout cleared")
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "console.ip_recovery", "ok", u.Username+": "+strings.Join(did, ", "))
+	if len(did) > 0 {
+		s.notifyUser(ctx, p.User.ClusterID, u.ID, noteIPRecovery, "Sign-in access recovered from the host",
+			"Someone with root on the host changed your sign-in access: "+strings.Join(did, ", ")+".", "/me?tab=security")
+	}
 	out := allowlistJSON(prof)
 	out["username"] = u.Username
 	out["done"] = did
@@ -969,30 +973,4 @@ func (s *Server) putTrustedProxies(w http.ResponseWriter, r *http.Request) {
 	s.invalidateProxies()
 	s.audit(r, p.User.ClusterID, p.User.ID, "settings.trusted_proxies.update", "ok", fmt.Sprintf("manual=%d detected_off=%d", len(req.Manual), len(req.DetectedOff)))
 	writeJSON(w, http.StatusOK, s.trustedProxiesJSON(r, p.User.ClusterID))
-}
-
-// ---- root account ----
-
-// rootUserID is the account that claimed the appliance: the oldest person
-// holding the admin role. Only it may manage itself; other admins cannot.
-func (s *Server) rootUserID(ctx context.Context, clusterID string) string {
-	users, err := s.Store.ListUsers(ctx, clusterID)
-	if err != nil {
-		return ""
-	}
-	best := ""
-	var at time.Time
-	for _, u := range users {
-		if u.Kind == appdb.UserKindService {
-			continue
-		}
-		roles, _ := s.Store.UserRoles(ctx, u.ID)
-		if !containsString(roles, rbac.Admin) {
-			continue
-		}
-		if best == "" || u.CreatedAt.Before(at) || (u.CreatedAt.Equal(at) && u.ID < best) {
-			best, at = u.ID, u.CreatedAt
-		}
-	}
-	return best
 }

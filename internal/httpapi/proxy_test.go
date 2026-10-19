@@ -77,7 +77,7 @@ func TestProxyPagesAreGatedAndValidated(t *testing.T) {
 	if code, _, raw := e.call(e.admin, "POST", "/api/v1/proxies/caddy/service", `{"action":"reload"}`); code != 422 || !strings.Contains(raw, "Error: bad") {
 		t.Fatalf("failure %d %s", code, raw)
 	}
-	viewer := loginRole(t, e.ts, e.mem, "proxyviewer", rbac.Viewer)
+	viewer := loginRole(t, e.ts, e.mem, "proxyviewer", rbac.User)
 	if code, _, _ := e.call(viewer, "POST", "/api/v1/proxies/caddy/service", `{"action":"reload"}`); code != http.StatusForbidden {
 		t.Fatalf("viewer may not change proxies: %d", code)
 	}

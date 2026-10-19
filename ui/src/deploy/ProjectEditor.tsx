@@ -31,7 +31,7 @@ function Field({ label, hint, children }: { label: string; hint?: ReactNode; chi
 }
 
 /**
- * ProjectEditor is the Owner's form for a project: where it is, the
+ * ProjectEditor is the SuperAdmin's form for a project: where it is, the
  * commands that update it, how updates are found and when it deploys on
  * its own. Commands run exactly as written, with bash, in the folder.
  */

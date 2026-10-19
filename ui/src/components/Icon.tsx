@@ -54,7 +54,8 @@ export type IconName =
   | "cloud"
   | "globe"
   | "logout"
-  | "check";
+  | "check"
+  | "bell";
 
 const PATHS: Record<IconName, ReactNode> = {
   shield: <path d="M8 1.8 13 3.6v4c0 3.2-2.1 5.6-5 6.6-2.9-1-5-3.4-5-6.6v-4L8 1.8zM5.8 8l1.6 1.6 2.9-3" />,
@@ -112,6 +113,7 @@ const PATHS: Record<IconName, ReactNode> = {
   ),
   logout: <path d="M6.2 2.5H3.4v11h2.8M10.2 5l3 3-3 3M13.2 8H6" />,
   check: <path d="m3.2 8.4 3 3 6.6-6.8" />,
+  bell: <path d="M4 11.2V7.4a4 4 0 0 1 8 0v3.8l1.2 1.4H2.8L4 11.2zM6.6 13.8a1.5 1.5 0 0 0 2.8 0" />,
   "sort-up": <path d="M5 9.5 8 6.5 11 9.5" />,
   "sort-down": <path d="M5 6.5 8 9.5 11 6.5" />,
   transfer: <path d="M2.8 5.2h9.4L9.6 2.6M13.2 10.8H3.8l2.6 2.6" />,

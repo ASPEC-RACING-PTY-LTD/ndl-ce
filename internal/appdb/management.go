@@ -167,7 +167,7 @@ func (m *Memory) CountEnabledAdmins(_ context.Context, clusterID string) (int, e
 			continue
 		}
 		for _, r := range roles {
-			if r == "admin" {
+			if r == "superadmin" {
 				n++
 				break
 			}

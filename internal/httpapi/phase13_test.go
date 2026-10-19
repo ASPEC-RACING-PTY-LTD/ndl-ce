@@ -87,7 +87,7 @@ func TestMFAEnrollChallengeAndViewerAuditDenied(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), u)
-	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.User)
 	vlogin, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
 	var viewCookie string
 	for _, c := range vlogin.Cookies() {
@@ -177,7 +177,7 @@ func TestTokenPermissionsCannotExceedCreator(t *testing.T) {
 	cluster, _ := mem.GetCluster(context.Background())
 	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op"}
 	_ = mem.CreateUser(context.Background(), op)
-	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Admin)
 	plain := "ndl_op_phase13"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: op.ID, Name: "op",
@@ -289,7 +289,7 @@ func TestOperatorCanEnrollMFAAndCannotBindAdmin(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op13", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), op)
-	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Admin)
 	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"op13","password":"password1"}`))
 	var opCookie string
 	for _, c := range login.Cookies() {
@@ -327,7 +327,7 @@ func TestOperatorCanEnrollMFAAndCannotBindAdmin(t *testing.T) {
 	if err := json.Unmarshal(b, &created); err != nil || created.ID == "" {
 		t.Fatal(string(b))
 	}
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+created.ID+"/roles", strings.NewReader(`{"role":"admin"}`))
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+created.ID+"/roles", strings.NewReader(`{"role":"superadmin"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: opCookie})
 	res, _ = ts.Client().Do(req)
@@ -336,7 +336,7 @@ func TestOperatorCanEnrollMFAAndCannotBindAdmin(t *testing.T) {
 		t.Fatalf("admin group bind %d %s", res.StatusCode, b)
 	}
 	_ = res.Body.Close()
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+created.ID+"/roles", strings.NewReader(`{"role":"operator"}`))
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+created.ID+"/roles", strings.NewReader(`{"role":"admin"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: opCookie})
 	res, _ = ts.Client().Do(req)
@@ -736,7 +736,7 @@ func TestPhase13BindGroupRoleFailsClosedWhenPersistMisses(t *testing.T) {
 	if err := mem.CreateUser(context.Background(), view); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.Viewer); err != nil {
+	if err := mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.User); err != nil {
 		t.Fatal(err)
 	}
 
@@ -765,7 +765,7 @@ func TestPhase13BindGroupRoleFailsClosedWhenPersistMisses(t *testing.T) {
 	}
 	s.Store = missBindGroupRoleStore{Store: mem}
 
-	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/roles", strings.NewReader(`{"role":"operator"}`))
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/groups/"+gid+"/roles", strings.NewReader(`{"role":"admin"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
 	res, _ = ts.Client().Do(req)
@@ -801,8 +801,8 @@ func TestPhase13BindGroupRoleFailsClosedWhenPersistMisses(t *testing.T) {
 	if got.StatusCode != http.StatusOK {
 		t.Fatalf("GET /me %d %s", got.StatusCode, body)
 	}
-	if strings.Contains(string(body), `"operator"`) {
-		t.Fatalf("GET /me must not claim operator after persist miss: %s", body)
+	if strings.Contains(string(body), `"roles":["admin"`) || strings.Contains(string(body), `,"admin"]`) {
+		t.Fatalf("GET /me must not claim admin after persist miss: %s", body)
 	}
 }
 

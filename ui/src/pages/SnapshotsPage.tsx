@@ -23,7 +23,7 @@ function workloadIDFromPath(): string {
 }
 
 function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 function capabilityBanner(capability: SnapshotCapability | null): string | null {

@@ -598,6 +598,15 @@ type Store interface {
 	ListTrustedProxies(ctx context.Context, clusterID string) ([]TrustedProxy, error)
 	ReplaceTrustedProxies(ctx context.Context, clusterID string, items []TrustedProxy) error
 
+	// IAM settings and notifications (iam_settings.go).
+	GetIAMSettings(ctx context.Context, clusterID string) (IAMSettings, error)
+	PutIAMSettings(ctx context.Context, s IAMSettings) error
+	CreateNotification(ctx context.Context, n Notification) error
+	ListNotifications(ctx context.Context, clusterID, userID string, unreadOnly bool, limit int) ([]Notification, error)
+	CountUnreadNotifications(ctx context.Context, clusterID, userID string) (int, error)
+	// MarkNotificationsRead marks ids read, or every unread one when ids is empty.
+	MarkNotificationsRead(ctx context.Context, clusterID, userID string, ids []string, at time.Time) error
+
 	AutomationStore
 }
 

@@ -84,11 +84,11 @@ type Tunnel struct {
 	ErrorCount int           `json:"error_count"`
 	// CurrentErrors counts errors inside StatusScope; ErrorCount is the
 	// whole TunnelWindow and is history once CurrentErrors is zero.
-	CurrentErrors int    `json:"current_errors"`
-	LastErrorAt   string `json:"last_error_at,omitempty"`
-	Links      []TunnelLink  `json:"links,omitempty"`
-	Health     string        `json:"health"`
-	Reason     string        `json:"reason,omitempty"`
+	CurrentErrors int          `json:"current_errors"`
+	LastErrorAt   string       `json:"last_error_at,omitempty"`
+	Links         []TunnelLink `json:"links,omitempty"`
+	Health        string       `json:"health"`
+	Reason        string       `json:"reason,omitempty"`
 }
 
 var (
@@ -528,9 +528,9 @@ func appendUnique(list []string, v string) []string {
 
 // ErrHostTunnelProtected refuses a change to the host's own cloudflared.
 // That tunnel usually carries the panel itself, so No-dal never starts,
-// restarts, installs, updates or removes it unless an Owner approved that
+// restarts, installs, updates or removes it unless a SuperAdmin approved that
 // one change.
-var ErrHostTunnelProtected = errors.New("No-dal does not manage the host's own cloudflared tunnel; an Owner must approve this change")
+var ErrHostTunnelProtected = errors.New("No-dal does not manage the host's own cloudflared tunnel; a SuperAdmin must approve this change")
 
 // IsHostMachine reports whether machineID names the host itself.
 func IsHostMachine(machineID string) bool {
@@ -543,7 +543,7 @@ func HostTunnelAdvice(unit string) string {
 		unit = "cloudflared"
 	}
 	return "Check it on the host as root: systemctl status " + unit + " and journalctl -u " + unit + " -n 100. " +
-		"If it needs a restart, run systemctl restart " + unit + ", or approve the restart here as an Owner. " +
+		"If it needs a restart, run systemctl restart " + unit + ", or approve the restart here as a SuperAdmin. " +
 		"Restarting it briefly drops every connection through the tunnel, including this panel."
 }
 

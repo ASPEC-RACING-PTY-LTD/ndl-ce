@@ -12,7 +12,7 @@ vi.mock("./components/FileEditor", () => ({
 const admin: MeResponse = {
   user_id: "user-1",
   username: "admin",
-  roles: ["admin"],
+  roles: ["superadmin"],
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
@@ -21,7 +21,7 @@ const admin: MeResponse = {
 const viewer: MeResponse = {
   user_id: "user-2",
   username: "view",
-  roles: ["viewer"],
+  roles: ["user"],
   edition: "ce",
   ux_level: "expert",
   expert_ack: true,
@@ -240,7 +240,7 @@ describe("App", () => {
           email: "",
           email_secondary: "",
           email_verified: false,
-          roles: ["admin"],
+          roles: ["superadmin"],
           mfa_enabled: false,
           ip_allowlist: { enabled: false, entries: [] },
         },
@@ -1614,7 +1614,7 @@ describe("App", () => {
           email: "",
           email_secondary: "",
           email_verified: false,
-          roles: ["admin"],
+          roles: ["superadmin"],
           mfa_enabled: false,
           ip_allowlist: { enabled: false, entries: [] },
         },
@@ -1641,8 +1641,8 @@ describe("App", () => {
         status: 200,
         body: {
           roles: [
-            { name: "admin", title: "Owner", summary: "", permissions: [], rank: 0, builtin: true, login: true, user_count: 1, owner: true, editable: false },
-            { name: "viewer", title: "User", summary: "", permissions: ["events.read"], rank: 3, builtin: true, login: true, user_count: 0, owner: false, editable: true },
+            { name: "superadmin", title: "SuperAdmin", summary: "", permissions: [], rank: 0, builtin: true, login: true, user_count: 1, owner: true, editable: false },
+            { name: "user", title: "User", summary: "", permissions: ["events.read"], rank: 3, builtin: true, login: true, user_count: 0, owner: false, editable: true },
           ],
           groups: [],
           users: [],

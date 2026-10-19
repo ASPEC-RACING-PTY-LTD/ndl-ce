@@ -44,6 +44,7 @@ var (
 	ErrNotFound     = errors.New("flow not found")
 	ErrNotPublished = errors.New("publish the flow before running it")
 	ErrDisabled     = errors.New("the flow is turned off")
+	ErrNotApproved  = errors.New("this version of the flow is not approved")
 )
 
 // StartRequest starts one run.
@@ -147,6 +148,11 @@ func (s *Service) Definition(ctx context.Context, f appdb.AutomationFlow) (*flow
 	}
 	if v == nil {
 		return nil, ErrNotPublished
+	}
+	// Only an approved version runs, and only the definition the approval
+	// covered.
+	if v.Status != appdb.FlowVersionApproved || (v.Hash != "" && DefinitionHash(v.Definition) != v.Hash) {
+		return nil, ErrNotApproved
 	}
 	d, err = flowdef.Parse(v.Definition)
 	if err != nil {

@@ -56,7 +56,7 @@ func (s *Server) planOCINetwork(ctx context.Context, p *principal, networkID, mo
 	case oci.NetworkNone:
 		return ociNetPlan{Mode: mode}, nil
 	case oci.NetworkHost:
-		if !hasRole(p, rbac.Admin) {
+		if !hasRole(p, rbac.SuperAdmin) {
 			return plan, errForbidden("only admin may put a container on the host network")
 		}
 		return plan, nil
@@ -262,7 +262,7 @@ func (s *Server) updateOCIConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.Privileged != nil {
-		if *req.Privileged && !hasRole(p, rbac.Admin) {
+		if *req.Privileged && !hasRole(p, rbac.SuperAdmin) {
 			s.audit(r, p.User.ClusterID, p.User.ID, "workload.oci.privileged", "denied", row.ID)
 			writeErr(w, http.StatusForbidden, "only admin may make a container privileged")
 			return

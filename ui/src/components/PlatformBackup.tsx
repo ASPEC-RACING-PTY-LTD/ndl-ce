@@ -30,7 +30,7 @@ export function recoverySummary(st: PlatformBackupStatus | null | undefined): st
 
 /**
  * PlatformBackupPanel shows the encrypted backup of NDL-CE itself and how
- * many protected workloads can be recovered from offsite backups. An Owner
+ * many protected workloads can be recovered from offsite backups. A SuperAdmin
  * can back up now, verify deeply, choose the target and rotate the key.
  */
 export function PlatformBackupPanel({ owner, targets }: { owner: boolean; targets: BackupTarget[] }) {
@@ -96,14 +96,14 @@ export function PlatformBackupPanel({ owner, targets }: { owner: boolean; target
             {problem ? ` · ${problem}` : last ? ` · ${formatBytes(last.size ?? 0)} · verified · ${st.snapshot?.published?.length ?? 0} kept` : " · runs daily"}
           </span>
           <span className={"bk-stat" + (waiting.length ? " is-warn" : "")}>
-            Owners who can unlock it <b>{(st.owners_ready ?? []).length}</b>
+            SuperAdmins who can unlock it <b>{(st.owners_ready ?? []).length}</b>
             {waiting.length ? ` · Waiting for ${waiting.join(", ")} to sign in` : ""}
           </span>
         </div>
         <p className="bk-hint">
           The database, configuration, backup keys and the index of every restore point are encrypted on this host and
           kept in {st.target ? `${st.target.name} (${st.target.bucket})` : "an object storage target"} under ndl-platform/.
-          Only an Owner's password unlocks them; the bucket's credentials alone cannot. To recover on a new host, choose
+          Only a SuperAdmin's password unlocks them; the bucket's credentials alone cannot. To recover on a new host, choose
           "Recover an existing NDL-CE" on its setup screen.
         </p>
         {health?.items?.length ? (
@@ -180,7 +180,7 @@ export function PlatformBackupPanel({ owner, targets }: { owner: boolean; target
           }}
         >
           <p>
-            A new key is made and wrapped with your password. Other Owners can unlock it after their next sign-in. Platform
+            A new key is made and wrapped with your password. Other SuperAdmins can unlock it after their next sign-in. Platform
             backups made with the old key are deleted once one with the new key is verified.
           </p>
           <p>

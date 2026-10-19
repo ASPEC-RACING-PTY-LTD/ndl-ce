@@ -47,7 +47,7 @@ describe("PlatformBackupPanel", () => {
     expect(recoverySummary(status)).toBe("2 of 3 workloads recoverable");
   });
 
-  it("rotates the key only with the Owner's password", async () => {
+  it("rotates the key only with the SuperAdmin's password", async () => {
     api.getPlatformBackup.mockResolvedValue(status);
     api.rotatePlatformBackupKey.mockResolvedValue(status);
     render(<PlatformBackupPanel owner targets={[]} />);

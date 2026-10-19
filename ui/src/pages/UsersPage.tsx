@@ -52,7 +52,7 @@ export function UsersPage() {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
-  const [newRole, setNewRole] = useState("viewer");
+  const [newRole, setNewRole] = useState("user");
   const [target, setTarget] = useState<ManagedUser | null>(null);
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
   const [resetPassword, setResetPassword] = useState("");
@@ -105,7 +105,7 @@ export function UsersPage() {
       setUsername("");
       setDisplayName("");
       setPassword("");
-      setNewRole("viewer");
+      setNewRole("user");
       setCreating(false);
       await reload();
     } catch (err) {
@@ -182,7 +182,7 @@ export function UsersPage() {
       <PageHeader
         id="users-heading"
         title="Users"
-        kicker="People and service identities on this appliance. The last Owner cannot be removed, disabled, or demoted."
+        kicker="People and service identities on this appliance. The last SuperAdmin cannot be removed, disabled, or demoted."
         actions={
           <div className="btn-row is-flush">
             {canSecurity ? <MfaPolicyButton /> : null}
@@ -236,9 +236,9 @@ export function UsersPage() {
             minLength={8}
           />
           <SelectField id="new-role" label="Role" value={newRole} onChange={(e) => setNewRole(e.target.value)}>
-            <option value="viewer">User</option>
-            <option value="operator">Admin</option>
-            {canRoles ? <option value="admin">Owner</option> : null}
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+            {canRoles ? <option value="superadmin">SuperAdmin</option> : null}
           </SelectField>
         </form>
       </Dialog>
@@ -287,9 +287,9 @@ export function UsersPage() {
             Role
             <select className="field-input" value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="">All roles</option>
-              <option value="admin">Owner</option>
-              <option value="operator">Admin</option>
-              <option value="viewer">User</option>
+              <option value="superadmin">SuperAdmin</option>
+              <option value="admin">Admin</option>
+              <option value="user">User</option>
             </select>
           </label>
           <label className="field-label">
@@ -318,7 +318,7 @@ export function UsersPage() {
           rows={items.map((row) => {
             // The root account is only managed by itself.
             const rootLocked = Boolean(row.is_root && user?.user_id !== row.id);
-            const primary = row.roles?.includes("admin") ? "admin" : row.roles?.includes("operator") ? "operator" : row.roles?.[0] || "";
+            const primary = row.roles?.includes("superadmin") ? "superadmin" : row.roles?.includes("admin") ? "admin" : row.roles?.[0] || "";
             const actions = [];
             if (canUpdate) {
               actions.push({
@@ -356,15 +356,15 @@ export function UsersPage() {
             if (canUpdate && canRoles && !row.protected) {
               actions.push({
                 label: "Make User",
-                onClick: () => void onChangeRole(row, "viewer"),
+                onClick: () => void onChangeRole(row, "user"),
               });
               actions.push({
                 label: "Make Admin",
-                onClick: () => void onChangeRole(row, "operator"),
+                onClick: () => void onChangeRole(row, "admin"),
               });
               actions.push({
-                label: "Make Owner",
-                onClick: () => void onChangeRole(row, "admin"),
+                label: "Make SuperAdmin",
+                onClick: () => void onChangeRole(row, "superadmin"),
               });
             }
             if (canRevoke) {

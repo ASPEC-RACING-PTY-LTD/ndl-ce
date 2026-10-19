@@ -7,6 +7,8 @@ import { isIAMPath, moduleForPath } from "../nav/modules";
 const IAM_CRUMBS: Record<string, string> = {
   "/users": "Users",
   "/iam/access": "Access control",
+  "/iam/approvals": "Approvals",
+  "/notifications": "Notifications",
   "/api-access": "API Access",
 };
 import { gameServerCrumbs, isGameServersContext } from "../nav/gameServers";
@@ -26,6 +28,7 @@ import { SidebarAccount } from "./shell/SidebarAccount";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { usePref } from "../prefs";
 import { NAV_ORDER_KEY, applyNavOrder, moveNavItem, type NavOrder } from "../nav/disclosure";
+import { NotificationBell } from "./shell/NotificationBell";
 import { TaskIndicator } from "./shell/TaskIndicator";
 import { UpdateBanner } from "./shell/UpdateBanner";
 
@@ -366,6 +369,7 @@ export function Shell({ children }: { children: ReactNode }) {
             >
               Search
             </button>
+            {user ? <NotificationBell /> : null}
           </div>
         </header>
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

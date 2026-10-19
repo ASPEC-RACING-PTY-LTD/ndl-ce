@@ -1,13 +1,13 @@
 export function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 export function isAdmin(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin"));
+  return Boolean(roles?.includes("superadmin"));
 }
 
 export function mutateHint(roles: string[] | undefined): string | null {
-  return canMutate(roles) ? null : "Requires operator or administrator.";
+  return canMutate(roles) ? null : "Requires Admin or SuperAdmin.";
 }
 
 export type GrantUser = {
@@ -28,10 +28,10 @@ export function hasGrant(user: GrantUser | null | undefined, perm: string): bool
       return true;
     }
   }
-  if (user.roles?.includes("admin")) {
+  if (user.roles?.includes("superadmin")) {
     return true;
   }
-  if (user.roles?.includes("operator")) {
+  if (user.roles?.includes("admin")) {
     return (
       perm === "api_access.manage" ||
       perm === "updates.manage" ||

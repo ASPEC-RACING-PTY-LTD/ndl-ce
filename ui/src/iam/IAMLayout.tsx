@@ -12,6 +12,7 @@ const SECTIONS: Section[] = [
   { href: "/users", label: "Users", icon: "users", permissions: ["users.read"] },
   { href: "/iam/access", label: "Access control", icon: "shield", permissions: ["roles.manage", "identity.group.manage"] },
   { href: "/api-access", label: "API Access", icon: "key", permissions: ["api_access.manage", "identity.token.create"] },
+  { href: "/iam/approvals", label: "Approvals", icon: "check", permissions: ["approvals.view"] },
   { href: "/audit", label: "Audit log", icon: "activity", permissions: ["audit.read"] },
 ];
 

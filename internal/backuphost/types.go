@@ -111,7 +111,7 @@ type Request struct {
 	ImportKey string `json:"import_key,omitempty"`
 	// KeepImages captures the kept image copies made by ActionExportImages.
 	KeepImages bool `json:"keep_images,omitempty"`
-	// UseTags are image references the Owner approved pulling by tag when
+	// UseTags are image references the SuperAdmin approved pulling by tag when
 	// their recorded digest is gone; RepoTokens are one-time clone tokens
 	// by repository path. Never logged or stored.
 	UseTags    []string          `json:"use_tags,omitempty"`

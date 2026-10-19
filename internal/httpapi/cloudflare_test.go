@@ -571,8 +571,8 @@ func TestCloudflarePermissionsAndRateLimits(t *testing.T) {
 	e.fake.AddZone(cfAcctA, "racing.example")
 	tA := e.fake.AddTunnel(cfAcctA, "shared")
 	e.addCredentials()
-	viewer := loginRole(t, e.ts, e.mem, "cfviewer", rbac.Viewer)
-	operator := loginRole(t, e.ts, e.mem, "cfoperator", rbac.Operator)
+	viewer := loginRole(t, e.ts, e.mem, "cfviewer", rbac.User)
+	operator := loginRole(t, e.ts, e.mem, "cfoperator", rbac.Admin)
 	if code, _, _ := e.call(viewer, "GET", "/api/v1/cloudflare/inventory", ""); code != 200 {
 		t.Fatal("viewers can see the inventory")
 	}
@@ -604,7 +604,7 @@ func TestCloudflarePermissionsGuideFallsBackAndCaches(t *testing.T) {
 	}))
 	defer docs.Close()
 	e.s.CFDocsURL = docs.URL
-	viewer := loginRole(t, e.ts, e.mem, "guideviewer", rbac.Viewer)
+	viewer := loginRole(t, e.ts, e.mem, "guideviewer", rbac.User)
 	code, out, raw := e.call(viewer, "GET", "/api/v1/cloudflare/permissions", "")
 	if code != 200 || out["source"] != "built-in" || !strings.Contains(raw, "dns_edit") {
 		t.Fatalf("guide %d %s", code, raw)

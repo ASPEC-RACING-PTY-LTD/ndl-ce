@@ -10,7 +10,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 const CONFIRM_ENABLE = "enable-tls";
 
 function canManage(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin"));
+  return Boolean(roles?.includes("superadmin"));
 }
 
 function modeLabel(mode: CertificateStatus["mode"]): string {

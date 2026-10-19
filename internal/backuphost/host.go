@@ -260,7 +260,7 @@ func (h *Host) capture(ctx context.Context, source string, req Request) (Result,
 	includes, excludes := backupscope.PlanCapture(prev)
 	excludes = append(excludes, defaultTechnicalExcludes(source)...)
 	// The workload's own rules (/.ndl-backup/rules.json) come last, so an
-	// Owner's skip or keep overrides the policy's scope. A damaged rules
+	// SuperAdmin's skip or keep overrides the policy's scope. A damaged rules
 	// file only means more is kept, so the backup goes on without it.
 	if rules, rerr := LoadRules(source); rerr != nil {
 		log.Printf("backup %s: ignoring workload rules: %v", req.WorkloadName, rerr)

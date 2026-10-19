@@ -125,8 +125,8 @@ func TestPhase20VMIOPermissionSplit(t *testing.T) {
 	vm.guest = guest.Status{NodalGA: guest.ChannelState{State: guest.StateOK}}
 	created := createPhase18VM(t, ts, cookie, poolID, netID, "perm-vm")
 	id := created["id"].(string)
-	op := loginRole(t, ts, mem, "oper20", rbac.Operator)
-	view := loginRole(t, ts, mem, "view20", rbac.Viewer)
+	op := loginRole(t, ts, mem, "oper20", rbac.Admin)
+	view := loginRole(t, ts, mem, "view20", rbac.User)
 
 	res := doCookie(t, ts, op, "POST", "/api/v1/workloads/"+id+"/terminal/sessions", `{"cwd":"/"}`)
 	if res.StatusCode != http.StatusCreated {

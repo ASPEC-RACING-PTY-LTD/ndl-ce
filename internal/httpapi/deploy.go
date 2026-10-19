@@ -85,14 +85,14 @@ func writeDeployErr(w http.ResponseWriter, err error) {
 	writeErr(w, http.StatusInternalServerError, err.Error())
 }
 
-// requireDeployOwner allows Owners only: they write the commands that run.
+// requireDeployOwner allows SuperAdmins only: they write the commands that run.
 func (s *Server) requireDeployOwner(w http.ResponseWriter, r *http.Request) (*principal, bool) {
 	p, ok := s.requireDocker(w, r, rbac.ComputeModify)
 	if !ok {
 		return nil, false
 	}
-	if !hasRole(p, rbac.Admin) {
-		writeErr(w, http.StatusForbidden, "only an Owner can change deployment commands, credentials and automation")
+	if !hasRole(p, rbac.SuperAdmin) {
+		writeErr(w, http.StatusForbidden, "only a SuperAdmin can change deployment commands, credentials and automation")
 		return nil, false
 	}
 	return p, true
@@ -232,7 +232,7 @@ func validGitName(s string) bool {
 	return s == "" || (gitNameRE.MatchString(s) && !strings.Contains(s, "..") && !strings.HasSuffix(s, "/") && !strings.HasSuffix(s, ".lock"))
 }
 
-// projectInput is what an Owner sends to create or change a project.
+// projectInput is what a SuperAdmin sends to create or change a project.
 type projectInput struct {
 	WorkloadID string                     `json:"workload_id"`
 	WorkingDir string                     `json:"working_dir"`
@@ -617,7 +617,7 @@ func (s *Server) listDeployProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"projects": out, "discovered": discovered, "settings": s.deploySettings(ctx, cid),
 		"running": running, "queued": len(active) - running,
-		"can_configure": hasRole(p, rbac.Admin), "can_deploy": rbac.Authorize(p.Grants, rbac.ComputeModify),
+		"can_configure": hasRole(p, rbac.SuperAdmin), "can_deploy": rbac.Authorize(p.Grants, rbac.ComputeModify),
 	})
 }
 

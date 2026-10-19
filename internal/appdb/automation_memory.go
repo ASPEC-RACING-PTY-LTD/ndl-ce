@@ -147,8 +147,47 @@ func (m *Memory) CreateAutomationFlowVersion(_ context.Context, v AutomationFlow
 	if v.CreatedAt.IsZero() {
 		v.CreatedAt = time.Now().UTC()
 	}
+	if v.Status == "" {
+		v.Status = FlowVersionApproved
+	}
 	a.versions[key] = v
 	return nil
+}
+
+func (m *Memory) DecideAutomationFlowVersion(_ context.Context, clusterID, flowID string, version int, d FlowVersionDecision) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a := m.am()
+	key := versionKey(flowID, version)
+	v, ok := a.versions[key]
+	if !ok || v.ClusterID != clusterID || v.Status != FlowVersionPending {
+		return ErrNotPending
+	}
+	at := d.DecidedAt
+	v.Status, v.DecidedBy, v.DecidedAt, v.DecisionNote = d.Status, d.DecidedBy, &at, d.Note
+	a.versions[key] = v
+	return nil
+}
+
+func (m *Memory) ListAutomationApprovals(_ context.Context, clusterID, status string, limit int) ([]AutomationFlowVersion, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []AutomationFlowVersion
+	for _, v := range m.am().versions {
+		if v.ClusterID == clusterID && v.NeedsApproval && (status == "" || v.Status == status) {
+			out = append(out, v)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].Version > out[j].Version
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (m *Memory) GetAutomationFlowVersion(_ context.Context, clusterID, flowID string, version int) (*AutomationFlowVersion, error) {

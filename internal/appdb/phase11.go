@@ -234,7 +234,7 @@ type BackupGitHold struct {
 	TargetID string
 	// ReposJSON is the []backup.GitRepo of the held repositories.
 	ReposJSON string
-	// Fingerprint changes when the held work changes, so the Owner is told
+	// Fingerprint changes when the held work changes, so the SuperAdmin is told
 	// once per change rather than on every scheduled run.
 	Fingerprint string
 	LastAction  string

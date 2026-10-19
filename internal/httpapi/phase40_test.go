@@ -121,9 +121,10 @@ func TestPhase40StoragePressureCreatesVisibleOperation(t *testing.T) {
 	if len(roles) != 1 || roles[0] != rbac.Automation {
 		t.Fatalf("automation role %v", roles)
 	}
-	grants := rbac.New().PermissionsForRole(roles[0])
-	if rbac.Authorize(grants, rbac.ComputeDelete) || rbac.Authorize(grants, rbac.IdentityTokenCreate) || rbac.Authorize(grants, rbac.FeatureManage) {
-		t.Fatal("automation must not inherit Operator")
+	// Flows run as the system (protected steps are held for approval
+	// instead), and the role is never a sign-in role.
+	if grants := rbac.New().PermissionsForRole(roles[0]); !rbac.Authorize(grants, rbac.ComputeDelete) || rbac.IsLoginRole(roles[0]) {
+		t.Fatalf("automation identity grants %v", grants)
 	}
 }
 
@@ -143,10 +144,10 @@ func TestPhase40AutomationStripsOperatorBind(t *testing.T) {
 	if err := mem.CreateUser(context.Background(), u); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Operator); err != nil {
+	if err := mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Admin); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.UnbindRole(context.Background(), cluster.ID, "missing-user", rbac.Operator); err != nil {
+	if err := mem.UnbindRole(context.Background(), cluster.ID, "missing-user", rbac.Admin); err != nil {
 		t.Fatal(err)
 	}
 
@@ -288,7 +289,7 @@ func TestPhase40ViewerCannotApply(t *testing.T) {
 	}
 	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), u)
-	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.User)
 	login, err := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
 	if err != nil {
 		t.Fatal(err)

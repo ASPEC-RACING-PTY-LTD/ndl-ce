@@ -287,7 +287,7 @@ func TestNetworkDangerousRequiresConfirmAndBlocksOperator(t *testing.T) {
 
 	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op"}
 	_ = mem.CreateUser(context.Background(), op)
-	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Admin)
 	plain := "ndl_op_token"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: op.ID, Name: "o",
@@ -409,7 +409,7 @@ func TestNetworkViewerCannotMutate(t *testing.T) {
 	_ = claimAdmin(t, ts, token)
 	viewer := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view"}
 	_ = mem.CreateUser(context.Background(), viewer)
-	_ = mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.User)
 	plain := "ndl_viewer_net"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: viewer.ID, Name: "v",

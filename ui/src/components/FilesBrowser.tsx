@@ -85,11 +85,11 @@ export function FilesBrowser({
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const host = kind === "node";
-  const canWrite = host ? Boolean(roles?.includes("admin")) : Boolean(roles?.includes("admin") || roles?.includes("operator"));
-  const canDownload = host ? Boolean(roles?.includes("admin")) : Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  const canWrite = host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
+  const canDownload = host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
   const canRead = host
-    ? roles?.includes("admin")
-    : Boolean(roles?.includes("admin") || roles?.includes("operator") || roles?.includes("viewer"));
+    ? roles?.includes("superadmin")
+    : Boolean(roles?.includes("superadmin") || roles?.includes("admin") || roles?.includes("user"));
   const [path, setPath] = useState(initialPath || "/");
   const [pathInput, setPathInput] = useState(displayPath(initialPath || "/"));
   useEffect(() => {

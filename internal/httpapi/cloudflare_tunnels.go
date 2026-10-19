@@ -178,7 +178,7 @@ func (s *Server) cloudflareConnector(w http.ResponseWriter, r *http.Request) {
 		Action    string `json:"action"`
 		Unit      string `json:"unit"`
 		Confirm   bool   `json:"confirm"`
-		// ApproveHost is an Owner's approval to touch the host's own tunnel.
+		// ApproveHost is a SuperAdmin's approval to touch the host's own tunnel.
 		ApproveHost bool `json:"approve_host"`
 	}
 	if err := readJSON(r, &in); err != nil {

@@ -169,8 +169,8 @@ func (m *Memory) ListGroupRoles(_ context.Context, clusterID, groupID string) ([
 }
 
 func (m *Memory) BindGroupRole(_ context.Context, clusterID, groupID, roleName string) error {
-	if roleName == "admin" {
-		return fmt.Errorf("groups cannot grant admin")
+	if roleName == "superadmin" {
+		return fmt.Errorf("groups cannot grant superadmin")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

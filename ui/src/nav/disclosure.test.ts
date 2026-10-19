@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { groupedModules, isCapabilityEnabled, paletteMatchesVisible, parseDisclosurePrefs, seedCustom, visibleModules } from "./disclosure";
 
-const admin = ["admin"];
+const admin = ["superadmin"];
 
 describe("nav disclosure", () => {
   it("defaults Simple to core virtualization without optional platform links", () => {
@@ -75,7 +75,7 @@ describe("nav disclosure", () => {
 
   it("shows the Audit Log, which holds tasks, to everyone and IAM to admins", () => {
     const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "advanced" }));
-    const viewer = visibleModules(prefs, {}, ["viewer"]).map((item) => item.id);
+    const viewer = visibleModules(prefs, {}, ["user"]).map((item) => item.id);
     const adminItems = visibleModules(prefs, {}, admin).map((item) => item.id);
     expect(viewer).toContain("audit");
     expect(viewer).not.toContain("iam");
@@ -88,7 +88,7 @@ describe("nav disclosure", () => {
 
   it("lets an operator reach IAM for API access without Users", () => {
     const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "advanced" }));
-    const items = visibleModules(prefs, {}, ["operator"]).map((item) => item.id);
+    const items = visibleModules(prefs, {}, ["admin"]).map((item) => item.id);
     expect(items).toContain("iam");
     expect(items).toContain("add-features");
     expect(items).toContain("updates");

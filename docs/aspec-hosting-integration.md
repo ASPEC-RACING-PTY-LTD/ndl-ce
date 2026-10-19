@@ -53,7 +53,7 @@ Every call sends `Authorization: Bearer ndl_...`.
 Set it up once per NDL-CE host:
 
 1. In NDL-CE, IAM, create a local user for the integration (for example
-   `aspec-hosting`) with the **Operator** role. Operator can create, start,
+   `aspec-hosting`) with the **Admin** role (`admin`). Admin can create, start,
    stop and delete workloads and game servers; it cannot change IAM roles,
    certificates or platform updates.
 2. Sign in as that user, open API Access and create a token. Copy the
@@ -274,11 +274,11 @@ after fixing the cause.
 
 ## Limits to know
 
-- The token is an Operator token: it can manage every workload on that NDL-CE
+- The token is an Admin token: it can manage every workload on that NDL-CE
   host. Use dedicated hosts for customer workloads, keep the token server-side
   and rotate it from API Access.
 - Suspend stops the workload; it does not block someone with NDL-CE access
   from starting it by hand.
 - One NDL-CE host per ASPEC node. NDL-CE does not place across hosts for ASPEC.
 - Customer workloads are unprivileged containers. NDL-CE refuses privileged
-  containers for Operator tokens, which matches `assertSafeWorkloadPolicy`.
+  containers for Admin tokens, which matches `assertSafeWorkloadPolicy`.

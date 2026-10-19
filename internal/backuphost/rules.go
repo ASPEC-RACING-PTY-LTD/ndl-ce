@@ -20,7 +20,7 @@ import (
 // reads them first.
 const RulesPath = "/.ndl-backup/rules.json"
 
-// WorkloadRules are an Owner's per-workload overrides: paths never backed
+// WorkloadRules are a SuperAdmin's per-workload overrides: paths never backed
 // up, and paths always backed up whatever the policy's scope would skip.
 // The most specific path wins, so a kept folder inside a skipped one is
 // still captured, and the other way round.

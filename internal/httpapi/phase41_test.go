@@ -208,7 +208,7 @@ func TestPhase41ProviderDownStillWorks(t *testing.T) {
 	}
 	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), u)
-	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.User)
 	login, err := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
 	if err != nil {
 		t.Fatal(err)

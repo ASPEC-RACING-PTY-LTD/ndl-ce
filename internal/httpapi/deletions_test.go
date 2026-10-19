@@ -71,7 +71,7 @@ func TestDeleteRequiresPermission(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	_ = claimAdmin(t, ts, token)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 	res := doCookie(t, ts, view, "DELETE", "/api/v1/storage/pools/"+uuid.NewString(), "")
 	_ = res.Body.Close()
 	if res.StatusCode != http.StatusForbidden {

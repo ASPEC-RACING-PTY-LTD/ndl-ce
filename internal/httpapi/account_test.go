@@ -209,7 +209,7 @@ func TestIPAllowlistWithoutMFAHasNoSelfRecovery(t *testing.T) {
 	hash, _ := auth.HashPassword("password-123")
 	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "ops", PasswordHash: hash, CreatedAt: time.Now()}
 	_ = mem.CreateUser(ctx, u)
-	_ = mem.BindRole(ctx, cluster.ID, u.ID, rbac.Viewer)
+	_ = mem.BindRole(ctx, cluster.ID, u.ID, rbac.User)
 	_ = mem.UpsertAccountProfile(ctx, appdb.AccountProfile{UserID: u.ID, ClusterID: cluster.ID, IPAllowlistOn: true,
 		IPAllowlist: []appdb.IPAllowEntry{{CIDR: "198.51.100.7/32"}}})
 	code, body, _ := acctCall(t, ts, "", "POST", "/auth/login", `{"username":"ops","password":"password-123"}`, "192.0.2.1")
@@ -237,7 +237,7 @@ func TestRootAccountIsManagedOnlyByItself(t *testing.T) {
 	hash, _ := auth.HashPassword("password-123")
 	other := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "second", PasswordHash: hash, CreatedAt: root.CreatedAt.Add(time.Hour)}
 	_ = mem.CreateUser(ctx, other)
-	_ = mem.BindRole(ctx, cluster.ID, other.ID, rbac.Admin)
+	_ = mem.BindRole(ctx, cluster.ID, other.ID, rbac.SuperAdmin)
 	_, _, res := acctCall(t, ts, "", "POST", "/auth/login", `{"username":"second","password":"password-123"}`, "")
 	otherCookie := sessionFrom(res)
 	if otherCookie == "" {

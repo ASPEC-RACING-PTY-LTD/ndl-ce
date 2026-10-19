@@ -19,11 +19,11 @@ import { DeleteButton } from "../components/DeleteButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 function canJoin(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 function canPromote(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin"));
+  return Boolean(roles?.includes("superadmin"));
 }
 
 export function ClusterPage() {

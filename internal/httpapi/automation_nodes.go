@@ -12,7 +12,6 @@ import (
 	"github.com/no-dal/ndl-ce/internal/automation"
 	"github.com/no-dal/ndl-ce/internal/automation/engine"
 	"github.com/no-dal/ndl-ce/internal/docker"
-	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
 // The No-dal steps. Each one is a thin adapter: it calls the existing API
@@ -101,8 +100,10 @@ func (s *Server) describeWorkload(ctx context.Context, clusterID string, wl appd
 	return fmt.Sprintf("%s %s on %s", workloadNoun(wl), wl.Name, s.nodeName(ctx, clusterID, firstNonEmpty(wl.DesiredNodeID, wl.NodeID)))
 }
 
-// autoPreview runs the shared checks: the workload lookup and the grant.
-func (s *Server) autoPreviewWorkload(ctx context.Context, in *engine.ExecInput, verb string, perms ...string) (engine.Preview, *appdb.Workload) {
+// autoPreviewWorkload runs the shared check: the workload lookup. Flows run
+// as the system, so there is no grant to check; protected steps are held
+// for approval when the flow is published instead.
+func (s *Server) autoPreviewWorkload(ctx context.Context, in *engine.ExecInput, verb string) (engine.Preview, *appdb.Workload) {
 	p := engine.Preview{}
 	wl, err := s.autoWorkload(ctx, in.ClusterID, in.String("workload"))
 	if err != nil {
@@ -112,9 +113,6 @@ func (s *Server) autoPreviewWorkload(ctx context.Context, in *engine.ExecInput, 
 	}
 	p.Would = fmt.Sprintf("would %s %s", verb, s.describeWorkload(ctx, in.ClusterID, *wl))
 	p.Target = wl.ID
-	if err := s.automationHasGrant(ctx, in.ClusterID, perms...); err != nil {
-		p.Problems = append(p.Problems, err.Error())
-	}
 	return p, wl
 }
 
@@ -138,7 +136,7 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 				return s.autoCall(ctx, in, http.MethodPost, "/api/v1/workloads/"+url.PathEscape(wl.ID)+"/"+action, map[string]any{}, nil, "")
 			},
 			Preview: func(ctx context.Context, in *engine.ExecInput) (engine.Preview, error) {
-				p, _ := s.autoPreviewWorkload(ctx, in, action, rbac.ComputeLifecycle)
+				p, _ := s.autoPreviewWorkload(ctx, in, action)
 				return p, nil
 			},
 		})
@@ -158,7 +156,7 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 			return s.autoCall(ctx, in, http.MethodPost, "/api/v1/workloads/"+url.PathEscape(wl.ID)+"/snapshots", map[string]any{"name": in.String("name")}, nil, "id")
 		},
 		Preview: func(ctx context.Context, in *engine.ExecInput) (engine.Preview, error) {
-			p, _ := s.autoPreviewWorkload(ctx, in, "snapshot", rbac.ComputeSnapshot, rbac.StorageSnapshot)
+			p, _ := s.autoPreviewWorkload(ctx, in, "snapshot")
 			if strings.TrimSpace(in.String("name")) == "" {
 				p.Problems = append(p.Problems, "a snapshot name is required")
 			}
@@ -187,9 +185,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 		},
 		Preview: func(ctx context.Context, in *engine.ExecInput) (engine.Preview, error) {
 			p := engine.Preview{}
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.BackupCreate); err != nil {
-				p.Problems = append(p.Problems, err.Error())
-			}
 			if ref := in.String("workload"); ref != "" {
 				wl, err := s.autoWorkload(ctx, in.ClusterID, ref)
 				if err != nil {
@@ -234,7 +229,7 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 				map[string]any{"dest_node_id": in.String("dest_node"), "mode": in.String("mode")}, nil, "id")
 		},
 		Preview: func(ctx context.Context, in *engine.ExecInput) (engine.Preview, error) {
-			p, wl := s.autoPreviewWorkload(ctx, in, "migrate", rbac.ComputeMigrate)
+			p, wl := s.autoPreviewWorkload(ctx, in, "migrate")
 			if wl == nil {
 				return p, nil
 			}
@@ -259,7 +254,7 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 			return s.autoCall(ctx, in, http.MethodPost, "/api/v1/workloads/"+url.PathEscape(wl.ID)+"/clone", map[string]any{"name": in.String("name")}, nil, "id")
 		},
 		Preview: func(ctx context.Context, in *engine.ExecInput) (engine.Preview, error) {
-			p, _ := s.autoPreviewWorkload(ctx, in, "clone", rbac.ComputeCreate)
+			p, _ := s.autoPreviewWorkload(ctx, in, "clone")
 			return p, nil
 		},
 	})
@@ -299,16 +294,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 					p.Problems = append(p.Problems, "no Docker container "+ref+" right now")
 				}
 			}
-			need := rbac.ComputeLifecycle
-			switch action {
-			case "start":
-				need = rbac.ComputeStart
-			case "stop":
-				need = rbac.ComputeStop
-			}
-			if err := s.automationHasGrant(ctx, in.ClusterID, need, rbac.ComputeLifecycle); err != nil {
-				p.Problems = append(p.Problems, err.Error())
-			}
 			return p, nil
 		},
 	})
@@ -324,9 +309,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 			p := engine.Preview{Would: "would fix unhealthy Docker containers on " + firstNonEmpty(in.String("machine"), "every machine")}
 			if !s.dockerEnabled(ctx, in.ClusterID) {
 				p.Problems = append(p.Problems, "Docker Management is not enabled")
-			}
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.ComputeLifecycle); err != nil {
-				p.Problems = append(p.Problems, err.Error())
 			}
 			return p, nil
 		},
@@ -349,9 +331,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 			if !s.dockerEnabled(ctx, in.ClusterID) {
 				p.Problems = append(p.Problems, "Docker Management is not enabled")
 			}
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.ComputeModify); err != nil {
-				p.Problems = append(p.Problems, err.Error())
-			}
 			return p, nil
 		},
 	})
@@ -370,9 +349,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 			}
 			if dockerPruneBusy.Load() {
 				p.Problems = append(p.Problems, "a Docker prune is already running")
-			}
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.ComputeLifecycle); err != nil {
-				p.Problems = append(p.Problems, err.Error())
 			}
 			return p, nil
 		},
@@ -421,9 +397,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 		Fields:      []engine.Field{autoTarget("monitor", "Monitor", "monitor", false, "Leave empty for every enabled monitor. {{ trigger.name }} is the monitor that went down.")},
 		TargetOf:    func(in *engine.ExecInput) string { return firstNonEmpty(in.String("monitor"), "all") },
 		Execute: func(ctx context.Context, in *engine.ExecInput) (engine.Result, error) {
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.PolicyApply); err != nil {
-				return engine.Result{}, err
-			}
 			if _, err := s.autoMonitor(ctx, in.ClusterID, in.String("monitor")); err != nil {
 				return engine.Result{}, err
 			}
@@ -438,9 +411,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 			if _, err := s.autoMonitor(ctx, in.ClusterID, in.String("monitor")); err != nil {
 				p.Problems = append(p.Problems, err.Error())
 			}
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.PolicyApply); err != nil {
-				p.Problems = append(p.Problems, err.Error())
-			}
 			return p, nil
 		},
 	})
@@ -450,9 +420,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 		Fields:      []engine.Field{{Key: "threshold_percent", Label: "Threshold percent", Type: "number", Default: 85, Required: true}},
 		TargetOf:    func(*engine.ExecInput) string { return "storage" },
 		Execute: func(ctx context.Context, in *engine.ExecInput) (engine.Result, error) {
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.PolicyApply); err != nil {
-				return engine.Result{}, err
-			}
 			spec, err := automation.ParseJSONSpec(automation.KindStoragePressure, "", in.Int("threshold_percent", 85), false, "")
 			if err != nil {
 				return engine.Result{}, err
@@ -487,9 +454,6 @@ func (s *Server) registerAutomationNodes(reg *engine.Registry) {
 				p.Would += "; pools over it now: " + strings.Join(hot, ", ")
 			} else {
 				p.Would += "; no pool is over it now"
-			}
-			if err := s.automationHasGrant(ctx, in.ClusterID, rbac.PolicyApply); err != nil {
-				p.Problems = append(p.Problems, err.Error())
 			}
 			return p, nil
 		},

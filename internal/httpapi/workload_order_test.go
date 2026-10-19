@@ -15,7 +15,7 @@ func TestWorkloadOrderIsSavedPerUser(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	admin := claimAdmin(t, ts, token)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 
 	res := doCookie(t, ts, view, "PATCH", "/api/v1/me", `{"workload_sort":"custom","workload_order":["b"," a ","b",""]}`)
 	if res.StatusCode != http.StatusOK {

@@ -196,7 +196,7 @@ func TestAlertWebhookSecretAndViewerDeny(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	admin := claimAdmin(t, ts, token)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 
 	res := doCookie(t, ts, view, "POST", "/api/v1/alerts", `{"name":"cpu","metric":"cpu.busy_ratio","op":"gt","threshold":0.8}`)
 	if res.StatusCode != http.StatusForbidden {

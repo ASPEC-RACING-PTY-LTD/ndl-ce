@@ -1,14 +1,17 @@
 package rbac
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAuthorizeMatrix(t *testing.T) {
 	c := New()
-	admin := c.PermissionsForRole(Admin)
-	op := c.PermissionsForRole(Operator)
-	view := c.PermissionsForRole(Viewer)
+	admin := c.PermissionsForRole(SuperAdmin)
+	op := c.PermissionsForRole(Admin)
+	view := c.PermissionsForRole(User)
 	if !Authorize(admin, IdentityTokenCreate) {
-		t.Fatal("admin")
+		t.Fatal("superadmin")
 	}
 	if !Authorize(op, IdentityTokenCreate) {
 		t.Fatal("operator tokens")
@@ -162,37 +165,23 @@ func TestAuthorizeMatrix(t *testing.T) {
 	}
 }
 
-func TestPermissionsForAutomationIsNarrowerThanOperator(t *testing.T) {
-	got := PermissionsForAutomation()
-	want := []string{PolicyApply, ComputeMigrate, ComputeRead, NodeRead, StorageRead}
-	if len(got) != len(want) {
-		t.Fatalf("grants %v", got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("grants %v", got)
+func TestRoleIdsMatchTheirNames(t *testing.T) {
+	for _, r := range BuiltInRoles() {
+		if r.Name != strings.ToLower(r.Title) {
+			t.Fatalf("role %q is shown as %q", r.Name, r.Title)
 		}
 	}
-	c := New()
-	op := c.PermissionsForRole(Operator)
-	view := c.PermissionsForRole(Viewer)
-	for _, p := range got {
-		if !Authorize(op, p) {
-			t.Fatalf("operator still has %s", p)
+	for old, want := range map[string]string{"owner": SuperAdmin, "operator": Admin, "viewer": User} {
+		if got, ok := LegacyRole(old); !ok || got != want {
+			t.Fatalf("legacy %s -> %s %v", old, got, ok)
 		}
 	}
-	if Authorize(view, PolicyApply) || Authorize(view, ComputeMigrate) {
-		t.Fatal("viewer must not run automation writes")
-	}
-	if Authorize(got, All) || Authorize(got, FeatureManage) || Authorize(got, ComputeDelete) || Authorize(got, SettingsLicenseManage) || Authorize(got, IdentityService) || Authorize(got, IdentityTokenCreate) {
-		t.Fatal("Operator is too broad; automation must not inherit it")
-	}
-	if !Authorize(got, ComputeMigrate) || !Authorize(got, PolicyApply) {
-		t.Fatal("automation reuses compute.migrate and policy.apply")
+	if _, ok := LegacyRole(Admin); ok {
+		t.Fatal("admin is a current id, not a legacy one")
 	}
 	seed := SeedRoles()
-	if len(seed[Automation]) == 0 || seed[Automation][0] != PolicyApply {
-		t.Fatalf("seed automation %v", seed[Automation])
+	if len(seed[Automation]) != 1 || seed[Automation][0] != All {
+		t.Fatalf("flows run as the system: %v", seed[Automation])
 	}
 }
 

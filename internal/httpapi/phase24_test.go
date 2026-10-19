@@ -248,7 +248,7 @@ func TestPhase24RestoreFileAndViewerDenied(t *testing.T) {
 
 	view := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view"}
 	_ = mem.CreateUser(context.Background(), view)
-	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.User)
 	plain := "ndl_view_verify"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: view.ID, Name: "v",

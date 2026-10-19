@@ -32,7 +32,7 @@ import (
 
 // Recovery rebuilds a lost NDL-CE on a fresh, unclaimed host from its
 // platform backup: connect the bucket with new credentials, unlock with an
-// Owner's password, map pools and networks onto this host, restore. It is
+// SuperAdmin's password, map pools and networks onto this host, restore. It is
 // offered only before setup is claimed, needs the setup token, and once a
 // restore starts, setup and other recoveries are locked.
 
@@ -257,7 +257,7 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 
-// recoverUnlock opens the newest snapshot with an Owner's password.
+// recoverUnlock opens the newest snapshot with a SuperAdmin's password.
 func (s *Server) recoverUnlock(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Token     string `json:"token"`
@@ -327,7 +327,7 @@ func (s *Server) recoverUnlock(w http.ResponseWriter, r *http.Request) {
 	if key == nil || snap == nil {
 		s.lock().Fail(lockKey, s.now())
 		if errors.Is(last, platformbackup.ErrLocked) {
-			writeErr(w, http.StatusUnauthorized, "that Owner username and password do not unlock this backup")
+			writeErr(w, http.StatusUnauthorized, "that SuperAdmin username and password do not unlock this backup")
 			return
 		}
 		writeErr(w, http.StatusUnprocessableEntity, last.Error())

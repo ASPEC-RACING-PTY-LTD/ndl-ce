@@ -121,7 +121,7 @@ export function StorageManagePage() {
     }
   }
 
-  // An Owner may delete what No-dal protects; mounted filesystems never.
+  // A SuperAdmin may delete what No-dal protects; mounted filesystems never.
   const deletable = (x: ScanItem) => canDelete && !x.mount && (!x.insight.protected || canOverride);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();

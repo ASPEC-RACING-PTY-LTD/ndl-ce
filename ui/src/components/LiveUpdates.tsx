@@ -18,7 +18,7 @@ function errorText(err: unknown, fallback: string): string {
 
 /**
  * LiveUpdatesPanel shows signed live updates: what runs now, what is
- * queued or waiting and why, the history, and Owner controls to upload a
+ * queued or waiting and why, the history, and SuperAdmin controls to upload a
  * bundle and roll back the newest update.
  */
 export function LiveUpdatesPanel({ owner }: { owner: boolean }) {

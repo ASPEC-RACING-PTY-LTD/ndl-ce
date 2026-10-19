@@ -4,7 +4,7 @@ import { App } from "../App";
 import type { MeResponse } from "../api/types";
 import { featuresOnRoute } from "../test/features";
 
-const admin: MeResponse = { user_id: "user-1", username: "admin", roles: ["admin"], edition: "ce", ux_level: "guided", expert_ack: false };
+const admin: MeResponse = { user_id: "user-1", username: "admin", roles: ["superadmin"], edition: "ce", ux_level: "guided", expert_ack: false };
 
 type Route = { status: number; body?: unknown } | ((init?: RequestInit, url?: URL) => { status: number; body?: unknown });
 

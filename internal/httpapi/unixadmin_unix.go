@@ -57,8 +57,8 @@ func (s *Server) localRootPrincipal(ctx context.Context) (*principal, error) {
 			Username:  "root",
 			Kind:      appdb.UserKindPerson,
 		},
-		Roles:  []string{rbac.Admin},
-		Grants: rbac.New().PermissionsForRole(rbac.Admin),
+		Roles:  []string{rbac.SuperAdmin},
+		Grants: rbac.New().PermissionsForRole(rbac.SuperAdmin),
 		SessID: LocalRootUserID,
 		AAL:    2,
 	}, nil

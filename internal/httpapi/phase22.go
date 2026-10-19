@@ -201,7 +201,7 @@ func (s *Server) importStackCompose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, svc := range parsed.Services {
-		if svc.Privileged && !hasRole(p, rbac.Admin) {
+		if svc.Privileged && !hasRole(p, rbac.SuperAdmin) {
 			s.audit(r, p.User.ClusterID, p.User.ID, "stack.import.privileged", "denied", svc.Name)
 			writeErr(w, http.StatusForbidden, "only admin may import privileged services")
 			return
@@ -347,7 +347,7 @@ func (s *Server) patchStackMember(w http.ResponseWriter, r *http.Request) {
 		md.Volumes = *req.Volumes
 	}
 	if req.Privileged != nil {
-		if *req.Privileged && !hasRole(p, rbac.Admin) {
+		if *req.Privileged && !hasRole(p, rbac.SuperAdmin) {
 			s.audit(r, p.User.ClusterID, p.User.ID, "stack.member.privileged", "denied", mem.ID)
 			writeErr(w, http.StatusForbidden, "only admin may set privileged on stack members")
 			return
@@ -457,7 +457,7 @@ func (s *Server) applyStackMembers(ctx context.Context, p *principal, stackID st
 			}
 			continue
 		}
-		if md.Privileged && !hasRole(p, rbac.Admin) {
+		if md.Privileged && !hasRole(p, rbac.SuperAdmin) {
 			_ = s.Store.UpdateStackMember(ctx, appdb.StackMember{
 				ID: mem.ID, ClusterID: p.User.ClusterID, Status: appdb.MemberStatusFailed,
 				Reason: "only admin may create privileged containers",

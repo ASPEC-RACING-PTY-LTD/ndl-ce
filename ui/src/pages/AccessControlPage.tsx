@@ -16,6 +16,7 @@ import { confirmAction } from "../confirm";
 import { LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
+import { AutomationCreatorsPanel } from "../iam/AutomationCreatorsPanel";
 import { Dialog } from "../ui/Dialog";
 
 // Access control: roles, groups and the permissions they carry, edited in
@@ -128,7 +129,8 @@ export function AccessControlPage() {
     try {
       for (const [key, d] of Object.entries(drafts)) {
         if (d.kind === "role") {
-          await saveIAMRole(d.name, { title: d.title, summary: d.summary, permissions: d.permissions, login: d.login });
+          const id = d.isNew ? roleIDFor(d.title) || d.name : d.name;
+          await saveIAMRole(id, { title: d.title, summary: d.summary, permissions: d.permissions, login: d.login });
         } else {
           await saveIAMGroup(d.id, { name: d.name, roles: d.roles, member_ids: d.members });
         }
@@ -147,13 +149,17 @@ export function AccessControlPage() {
   }
 
   function newRole() {
-    const raw = window.prompt("New role id (lowercase letters, digits, dashes)", "support");
-    const name = raw?.trim().toLowerCase();
-    if (!name) {
+    const title = window.prompt("New role name", "Support")?.trim();
+    const name = title ? roleIDFor(title) : "";
+    if (!title || !name) {
+      return;
+    }
+    if (data?.roles.some((r) => r.name === name)) {
+      setError(`A role with the id "${name}" already exists`);
       return;
     }
     const key = roleKey(name);
-    setDrafts((cur) => ({ ...cur, [key]: { kind: "role", isNew: true, name, title: name, summary: "", login: true, permissions: [] } }));
+    setDrafts((cur) => ({ ...cur, [key]: { kind: "role", isNew: true, name, title, summary: "", login: true, permissions: [] } }));
     setSelected(key);
   }
 
@@ -296,9 +302,11 @@ export function AccessControlPage() {
           )}
         </div>
       </div>
+      <AutomationCreatorsPanel roles={data.roles} />
       {ordering ? (
         <HierarchyDialog
           roles={data.roles}
+          aboveTop={Boolean(data.can_order_above_top)}
           onClose={() => setOrdering(false)}
           onSave={async (names) => {
             try {
@@ -389,12 +397,16 @@ function RoleEditor({
           </div>
         ) : null}
       </div>
-      {owner ? <p className="banner">The Owner role is always at the top of the hierarchy and has every permission.</p> : null}
+      {owner ? <p className="banner">The SuperAdmin role has every permission. Only the root SuperAdmin can rank roles above it.</p> : null}
+      {role?.above_top ? <p className="banner">This role is ranked above SuperAdmin. Only the root SuperAdmin manages it, and the root account holds its permissions.</p> : null}
       {!editable && !owner ? <p className="banner">This role is at or above yours in the hierarchy, so you can view it but not change it.</p> : null}
       <div className="iam-fields">
         <label className="field">
-          <span className="field-label">Title</span>
-          <input className="field-input" value={draft.title} disabled={!editable} onChange={(e) => set({ title: e.target.value })} />
+          <span className="field-label">Name</span>
+          <input className="field-input" value={draft.title} disabled={!editable || !draft.isNew} onChange={(e) => set({ title: e.target.value })} />
+          <span className="field-hint">
+            Id <code>{draft.isNew ? roleIDFor(draft.title) || draft.name : draft.name}</code>. The id follows the name, so renaming a role means creating a new one.
+          </span>
         </label>
         <label className="field iam-field-wide">
           <span className="field-label">Description</span>
@@ -545,14 +557,38 @@ function GroupEditor({
   );
 }
 
-function HierarchyDialog({ roles, onClose, onSave }: { roles: IAMRole[]; onClose: () => void; onSave: (names: string[]) => Promise<void> }) {
+/** The id a role named title gets; the server and migration 0076 use the same rule. */
+export function roleIDFor(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+function HierarchyDialog({
+  roles,
+  aboveTop,
+  onClose,
+  onSave,
+}: {
+  roles: IAMRole[];
+  /** Root may place roles above SuperAdmin; others order what is below it. */
+  aboveTop: boolean;
+  onClose: () => void;
+  onSave: (names: string[]) => Promise<void>;
+}) {
   const [order, setOrder] = useState(() => roles.map((r) => r.name));
   const [drag, setDrag] = useState<string | null>(null);
   const title = (n: string) => roles.find((r) => r.name === n)?.title ?? n;
+  const top = order.indexOf("superadmin");
+  const first = aboveTop ? 0 : top + 1;
+  const movable = (i: number) => i >= first;
   function move(name: string, to: number) {
     setOrder((cur) => {
       const next = cur.filter((n) => n !== name);
-      next.splice(Math.max(1, Math.min(to, next.length)), 0, name);
+      next.splice(Math.max(first, Math.min(to, next.length)), 0, name);
       return next;
     });
   }
@@ -572,17 +608,22 @@ function HierarchyDialog({ roles, onClose, onSave }: { roles: IAMRole[]; onClose
         </div>
       }
     >
-      <p className="field-hint">Top is the highest. A role cannot change, assign or act on any role above it. The Owner always stays first.</p>
+      <p className="field-hint">
+        Top is the highest. A role cannot change, assign or act on any role above it.{" "}
+        {aboveTop
+          ? "As the root SuperAdmin you can place roles above SuperAdmin; your account holds their permissions."
+          : "SuperAdmin and anything above it stay where they are; only the root SuperAdmin moves them."}
+      </p>
       <ol className="iam-order">
         {order.map((n, i) => (
           <li
             key={n}
             className={"iam-order-item" + (drag === n ? " is-dragging" : "")}
-            draggable={i > 0}
+            draggable={movable(i)}
             onDragStart={() => setDrag(n)}
             onDragOver={(e) => {
               e.preventDefault();
-              if (drag && drag !== n && i > 0) {
+              if (drag && drag !== n && movable(i)) {
                 move(drag, i);
               }
             }}
@@ -590,9 +631,9 @@ function HierarchyDialog({ roles, onClose, onSave }: { roles: IAMRole[]; onClose
           >
             <span className="iam-rank">{i + 1}</span>
             <span className="iam-list-label">{title(n)}</span>
-            {i > 0 ? (
+            {movable(i) ? (
               <span className="btn-row is-flush">
-                <button className="btn btn-ghost btn-sm" type="button" aria-label={`Move ${title(n)} up`} disabled={i <= 1} onClick={() => move(n, i - 1)}>
+                <button className="btn btn-ghost btn-sm" type="button" aria-label={`Move ${title(n)} up`} disabled={i <= first} onClick={() => move(n, i - 1)}>
                   ↑
                 </button>
                 <button className="btn btn-ghost btn-sm" type="button" aria-label={`Move ${title(n)} down`} disabled={i === order.length - 1} onClick={() => move(n, i + 1)}>

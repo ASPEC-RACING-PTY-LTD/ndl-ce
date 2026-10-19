@@ -137,7 +137,7 @@ func packageVersion() string {
 	return strings.TrimSpace(string(out))
 }
 
-// getLiveUpdates reports live update state. Owners see it in the UI; the
+// getLiveUpdates reports live update state. SuperAdmins see it in the UI; the
 // updater (root on the control socket) reads busy and migrations from it.
 func (s *Server) getLiveUpdates(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireOwner(w, r)

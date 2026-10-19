@@ -23,6 +23,10 @@ type BuiltinDeps struct {
 	HTTPClient func(allowPrivate bool, timeout time.Duration) *http.Client
 	// CheckURL refuses a destination before any request is sent.
 	CheckURL func(raw string) error
+	// CheckSelf refuses a destination that reaches the platform's own API
+	// unless the running flow may call it. It applies even when private
+	// network addresses are allowed.
+	CheckSelf func(ctx context.Context, in *ExecInput, raw string) error
 }
 
 // MaxResponseBytes caps what an HTTP step reads from a response.
@@ -389,6 +393,11 @@ func execHTTP(ctx context.Context, in *ExecInput, deps BuiltinDeps, method strin
 	u, err := url.ParseRequestURI(target)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return Result{}, fmt.Errorf("the URL must start with http:// or https://")
+	}
+	if deps.CheckSelf != nil {
+		if err := deps.CheckSelf(ctx, in, target); err != nil {
+			return Result{}, err
+		}
 	}
 	allowPrivate := in.Bool("allow_private_network")
 	if !allowPrivate && deps.CheckURL != nil {

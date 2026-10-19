@@ -172,7 +172,7 @@ func TestPhase35ViewerCannotEnableAndCoreStays(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	view := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view35", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), view)
-	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.User)
 	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view35","password":"password1"}`))
 	var viewCookie string
 	for _, c := range login.Cookies() {

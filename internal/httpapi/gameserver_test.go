@@ -236,7 +236,7 @@ func TestGameServerSecretsRedactedAndViewerDenied(t *testing.T) {
 	if err := mem.CreateUser(context.Background(), viewer); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.Viewer); err != nil {
+	if err := mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.User); err != nil {
 		t.Fatal(err)
 	}
 	plain := "ndl_viewer_gs"

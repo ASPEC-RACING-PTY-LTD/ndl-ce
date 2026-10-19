@@ -7,7 +7,7 @@ import type { MeResponse } from "../api/types";
 const admin: MeResponse = {
   user_id: "user-1",
   username: "admin",
-  roles: ["admin"],
+  roles: ["superadmin"],
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
@@ -17,7 +17,7 @@ const viewer: MeResponse = {
   ...admin,
   user_id: "user-2",
   username: "view",
-  roles: ["viewer"],
+  roles: ["user"],
 };
 
 const containers = [
@@ -133,7 +133,7 @@ describe("Workloads bulk delete", () => {
         };
       },
     });
-    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    // These check the prompt non-SuperAdmins see; SuperAdmins skip it (confirm.test.tsx).
     setAutoConfirm(false);
     fireEvent.click(screen.getByLabelText("Select AspecRacing"));
     fireEvent.click(screen.getByLabelText("Select SoundDock"));

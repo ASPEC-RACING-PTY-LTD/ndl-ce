@@ -202,7 +202,7 @@ func TestPhase21RejectHostBindRootAndPrivilegedDefault(t *testing.T) {
 	_ = mem.UpsertNode(context.Background(), appdb.Node{ID: nodeID, ClusterID: cluster.ID, Name: "local"})
 	opID := uuid.NewString()
 	_ = mem.CreateUser(context.Background(), appdb.User{ID: opID, ClusterID: cluster.ID, Username: "op", PasswordHash: hash})
-	_ = mem.BindRole(context.Background(), cluster.ID, opID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), cluster.ID, opID, rbac.Admin)
 	s.OCI = &fakeOCI{runtime: &oci.FakeRuntime{}}
 	ts2 := httptest.NewServer(s.Handler())
 	t.Cleanup(ts2.Close)

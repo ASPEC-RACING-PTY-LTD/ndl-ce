@@ -1,4 +1,4 @@
-// Package deploy runs an Owner's update commands for a Docker Compose
+// Package deploy runs a SuperAdmin's update commands for a Docker Compose
 // project inside the system container that holds it, streams their output
 // to a log file on the host and can stop the whole process tree.
 //

@@ -140,7 +140,7 @@ services:
 	poolID2, _ := seedCompute(t, mem, cluster.ID, nodeID)
 	opID := uuid.NewString()
 	_ = mem.CreateUser(context.Background(), appdb.User{ID: opID, ClusterID: cluster.ID, Username: "op", PasswordHash: hash})
-	_ = mem.BindRole(context.Background(), cluster.ID, opID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), cluster.ID, opID, rbac.Admin)
 	s.OCI = &fakeOCI{runtime: &oci.FakeRuntime{}}
 	s.Storage = fakeStorage{vol: storage.CreateVolumeResult{Handle: storage.VolumeHandle{
 		BackendType: storage.BackendDirectory, BackendRef: "volumes/container-root/x",
@@ -514,7 +514,7 @@ services:
 	hash, _ := auth.HashPassword("password1")
 	opID := uuid.NewString()
 	_ = mem.CreateUser(context.Background(), appdb.User{ID: opID, ClusterID: clusterID, Username: "op-edit", PasswordHash: hash})
-	_ = mem.BindRole(context.Background(), clusterID, opID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), clusterID, opID, rbac.Admin)
 	login, err := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"op-edit","password":"password1"}`))
 	if err != nil {
 		t.Fatal(err)

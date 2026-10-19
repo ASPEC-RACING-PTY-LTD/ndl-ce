@@ -3,7 +3,7 @@ import { filterPaletteActions, visiblePaletteActions } from "./palette";
 
 describe("command palette authorization", () => {
   it("hides Create VM and other mutations from a viewer, including Expert viewers", () => {
-    const actions = visiblePaletteActions(["viewer"]);
+    const actions = visiblePaletteActions(["user"]);
     expect(actions.some((a) => a.id === "create-vm")).toBe(false);
     expect(actions.some((a) => a.id === "import-vm")).toBe(false);
     expect(actions.some((a) => a.id === "templates")).toBe(false);
@@ -16,13 +16,13 @@ describe("command palette authorization", () => {
   });
 
   it("lists Create VM for operator and admin", () => {
-    expect(visiblePaletteActions(["operator"]).some((a) => a.id === "create-vm")).toBe(true);
     expect(visiblePaletteActions(["admin"]).some((a) => a.id === "create-vm")).toBe(true);
-    expect(visiblePaletteActions(["admin"]).some((a) => a.id === "audit")).toBe(true);
+    expect(visiblePaletteActions(["superadmin"]).some((a) => a.id === "create-vm")).toBe(true);
+    expect(visiblePaletteActions(["superadmin"]).some((a) => a.id === "audit")).toBe(true);
   });
 
   it("filters by label and keywords", () => {
-    const actions = visiblePaletteActions(["admin"]);
+    const actions = visiblePaletteActions(["superadmin"]);
     expect(filterPaletteActions(actions, "create vm").some((a) => a.id === "create-vm")).toBe(true);
     expect(filterPaletteActions(actions, "qemu").some((a) => a.id === "create-vm")).toBe(true);
     expect(filterPaletteActions(actions, "no-such-action")).toHaveLength(0);

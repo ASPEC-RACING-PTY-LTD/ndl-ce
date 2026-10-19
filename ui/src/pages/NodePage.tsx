@@ -225,7 +225,7 @@ function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }
 function RemoteNodeHelper() {
   const session = useSession();
   const mutate = Boolean(
-    session.status === "ready" && (session.user?.roles.includes("admin") || session.user?.roles.includes("operator")),
+    session.status === "ready" && (session.user?.roles.includes("superadmin") || session.user?.roles.includes("admin")),
   );
   const [workers, setWorkers] = useState<NodeSummary[]>([]);
   const [name, setName] = useState("worker-1");

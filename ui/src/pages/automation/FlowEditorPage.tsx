@@ -284,13 +284,28 @@ function WebhookPanel({ flow, mutate }: { flow: AutomationFlow; mutate: boolean 
   );
 }
 
+function versionStatusLabel(status?: string, by?: string): string {
+  switch (status) {
+    case "pending":
+      return "Waiting for approval";
+    case "denied":
+      return by ? `Denied by ${by}` : "Denied";
+    case "superseded":
+      return "Replaced by a newer request";
+    default:
+      return by ? `Approved by ${by}` : "Approved";
+  }
+}
+
 function VersionsPanel({ flow }: { flow: AutomationFlow }) {
-  const [items, setItems] = useState<{ version: number; published_by: string; note: string; created_at: string; current: boolean }[] | null>(null);
+  const [items, setItems] = useState<
+    { version: number; published_by: string; note: string; created_at: string; current: boolean; status?: string; decided_by?: string }[] | null
+  >(null);
   useEffect(() => {
     void listAutomationFlowVersions(flow.id)
       .then((r) => setItems((r.items ?? []) as never))
       .catch(() => setItems([]));
-  }, [flow.id, flow.published_version]);
+  }, [flow.id, flow.published_version, flow.pending_version]);
   if (!items) {
     return <LoadingState label="Loading versions" />;
   }
@@ -298,8 +313,14 @@ function VersionsPanel({ flow }: { flow: AutomationFlow }) {
     <article className="panel">
       <ResourceTable
         empty={<p className="muted">Not published yet.</p>}
-        headers={["Version", "Published by", "When", "Note"]}
-        rows={items.map((v) => [`v${v.version}${v.current ? " (live)" : ""}`, v.published_by, formatWhen(v.created_at), v.note])}
+        headers={["Version", "Published by", "When", "Approval", "Note"]}
+        rows={items.map((v) => [
+          `v${v.version}${v.current ? " (live)" : ""}`,
+          v.published_by,
+          formatWhen(v.created_at),
+          versionStatusLabel(v.status, v.decided_by),
+          v.note,
+        ])}
       />
     </article>
   );
@@ -312,7 +333,7 @@ export function FlowEditorPage() {
   const user = session.status === "ready" ? session.user : null;
   const mutate = hasGrant(user, "policy.apply");
   const runner = hasGrant(user, "policy.run");
-  const owner = Boolean(user?.roles?.includes("admin"));
+  const owner = Boolean(user?.roles?.includes("superadmin"));
   const [flow, setFlow] = useState<AutomationFlow | null>(null);
   const [cat, setCat] = useState<Catalogue>(EMPTY_CATALOGUE);
   const [model, setModel] = useState<Model | null>(null);
@@ -376,10 +397,11 @@ export function FlowEditorPage() {
     }
   }
 
-  async function act(fn: () => Promise<AutomationFlow>, done: string) {
+  async function act(fn: () => Promise<AutomationFlow>, done: string | ((f: AutomationFlow) => string)) {
     try {
-      setFlow(await fn());
-      setNotice(done);
+      const next = await fn();
+      setFlow(next);
+      setNotice(typeof done === "string" ? done : done(next));
       setError(null);
     } catch (err) {
       if (err instanceof ApiError && Array.isArray(err.body?.problems)) {
@@ -397,7 +419,13 @@ export function FlowEditorPage() {
     if (dirty && !(await save())) {
       return;
     }
-    await act(() => automationFlowAction(flow!.id, "publish", reason ? { skip_dry_run_reason: reason } : {}), "Published. Runs use the new version from now on.");
+    await act(
+      () => automationFlowAction(flow!.id, "publish", reason ? { skip_dry_run_reason: reason } : {}),
+      (f) =>
+        f.waiting_for_approval
+          ? `Version ${f.pending_version} is waiting for approval. ${f.published_version ? `Version ${f.published_version} keeps running until it is approved.` : "The flow cannot run until it is approved."}`
+          : "Published. Runs use the new version from now on.",
+    );
   }
 
   const state = !flow.published_version ? { s: "neutral", l: "Draft" } : flow.enabled ? { s: "running", l: "On" } : { s: "stopped", l: "Off" };
@@ -432,7 +460,7 @@ export function FlowEditorPage() {
               ) : null}
               {mutate ? (
                 <button className="btn btn-primary" type="button" onClick={() => void publish()}>
-                  Publish
+                  {flow.publish_needs_approval ? "Publish for approval" : "Publish"}
                 </button>
               ) : null}
               {mutate && flow.published_version ? (
@@ -489,6 +517,7 @@ export function FlowEditorPage() {
           }
         />
         {flow.disabled_reason ? <p className="banner">{flow.disabled_reason}</p> : null}
+        <ApprovalState flow={flow} canView={hasGrant(user, "approvals.view")} />
         {error ? <ErrorNotice error={error} action={automationErrorAction(error)} /> : null}
         {notice ? (
           <p className="banner banner-ok" role="status">
@@ -608,5 +637,33 @@ export function FlowEditorPage() {
         </Dialog>
       </section>
     </CatalogueContext.Provider>
+  );
+}
+
+/** ApprovalState shows a request waiting for approval, the last denial, and which steps need approval. */
+function ApprovalState({ flow, canView }: { flow: AutomationFlow; canView: boolean }) {
+  const steps = flow.protected_steps ?? [];
+  return (
+    <>
+      {flow.pending && flow.pending_version ? (
+        <p className="banner banner-warn" role="status">
+          Version {flow.pending_version} is waiting for approval (requested by {flow.pending.requested_by}).{" "}
+          {flow.published_version ? `Version ${flow.published_version} keeps running meanwhile.` : "The flow cannot run until it is approved."}{" "}
+          {flow.pending.draft_matches === false ? "The draft has changed since; publishing it replaces the request. " : ""}
+          {canView ? <Link href={`/iam/approvals?flow=${flow.id}&version=${flow.pending_version}`}>Review</Link> : null}
+        </p>
+      ) : null}
+      {flow.last_denied ? (
+        <p className="banner banner-error">
+          Version {flow.last_denied.version} was denied by {flow.last_denied.decided_by}
+          {flow.last_denied.note ? `: ${flow.last_denied.note}` : "."}
+        </p>
+      ) : null}
+      {flow.publish_needs_approval && steps.length ? (
+        <p className="field-hint">
+          Publishing needs approval because of: {steps.map((s) => `${s.name} (${s.reason})`).join("; ")}.
+        </p>
+      ) : null}
+    </>
   );
 }

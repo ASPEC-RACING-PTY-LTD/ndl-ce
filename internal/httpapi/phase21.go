@@ -140,7 +140,7 @@ func (s *Server) provisionOCI(ctx context.Context, p *principal, req createWorkl
 	if err := oci.ValidateImageRef(req.ImagePin); err != nil {
 		return appdb.Workload{}, false, errBadRequest(err.Error())
 	}
-	if req.Privileged && !hasRole(p, rbac.Admin) {
+	if req.Privileged && !hasRole(p, rbac.SuperAdmin) {
 		audit("workload.create.privileged", "denied", "operator cannot create privileged containers")
 		return appdb.Workload{}, false, errForbidden("only admin may create privileged containers")
 	}

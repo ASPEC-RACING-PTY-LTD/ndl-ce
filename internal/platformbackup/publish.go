@@ -45,7 +45,7 @@ type Store interface {
 	List(ctx context.Context, prefix string) ([]Object, error)
 }
 
-// Envelope holds the snapshot key wrapped for each Owner.
+// Envelope holds the snapshot key wrapped for each SuperAdmin.
 type Envelope struct {
 	Version   int       `json:"version"`
 	KeyID     string    `json:"key_id"`
@@ -54,7 +54,7 @@ type Envelope struct {
 	Wraps     []Wrap    `json:"wraps"`
 }
 
-// NewEnvelope builds the envelope for key from its Owners' wraps; wraps of
+// NewEnvelope builds the envelope for key from its SuperAdmins' wraps; wraps of
 // any other key are left out.
 func NewEnvelope(key []byte, wraps []Wrap, now time.Time) Envelope {
 	id := KeyID(key)
@@ -68,7 +68,7 @@ func NewEnvelope(key []byte, wraps []Wrap, now time.Time) Envelope {
 	return env
 }
 
-// Unlock returns the snapshot key for an Owner's sign-in name and password.
+// Unlock returns the snapshot key for a SuperAdmin's sign-in name and password.
 func (e Envelope) Unlock(username, password string) ([]byte, error) {
 	owner := OwnerID(username)
 	for _, w := range e.Wraps {
@@ -191,7 +191,7 @@ func savePointer(ctx context.Context, st Store, p Pointer, now time.Time) error 
 // overwritten before the new envelope is verified.
 func PublishEnvelope(ctx context.Context, st Store, env Envelope, verify func(Envelope) error, now time.Time) (*Pointer, error) {
 	if len(env.Wraps) == 0 {
-		return nil, fmt.Errorf("no Owner can unlock this key yet")
+		return nil, fmt.Errorf("no SuperAdmin can unlock this key yet")
 	}
 	cur, err := LoadPointer(ctx, st)
 	if err != nil {
@@ -276,14 +276,14 @@ func PublishSnapshot(ctx context.Context, st Store, key, archive []byte, ref Sna
 		return nil, err
 	}
 	if cur == nil || cur.Envelope == "" {
-		return nil, fmt.Errorf("no envelope is published yet, so a snapshot could not be unlocked; an Owner must sign in first")
+		return nil, fmt.Errorf("no envelope is published yet, so a snapshot could not be unlocked; a SuperAdmin must sign in first")
 	}
 	env, err := LoadEnvelope(ctx, st, cur.Envelope)
 	if err != nil {
 		return nil, err
 	}
 	if env.KeyID != KeyID(key) || env.KeyCheck != KeyCheck(key) {
-		return nil, fmt.Errorf("the published envelope is for another key; an Owner must sign in to publish the current one")
+		return nil, fmt.Errorf("the published envelope is for another key; a SuperAdmin must sign in to publish the current one")
 	}
 	blob, err := Seal(key, archive)
 	if err != nil {

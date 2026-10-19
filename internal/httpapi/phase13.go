@@ -247,6 +247,9 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 			"actor_kind":  auditActorKind(actor, e.ActorUserID),
 			"actor_label": auditActorName(actor, e.ActorUserID, username),
 		}
+		if via, _ := detail["via"].(string); via != "" {
+			row["actor_label"] = via
+		}
 		if e.ActorUserID != "" && appdb.ValidUUID(e.ActorUserID) {
 			row["actor_user_id"] = e.ActorUserID
 		}
@@ -371,15 +374,15 @@ func (s *Server) bindGroupRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "role is required")
 		return
 	}
-	role := strings.TrimSpace(req.Role)
+	role := canonicalRole(r, req.Role)
 	if role == "" {
 		writeErr(w, http.StatusBadRequest, "role is required")
 		return
 	}
 	switch role {
-	case rbac.Operator, rbac.Viewer:
+	case rbac.Admin, rbac.User:
 	default:
-		writeErr(w, http.StatusForbidden, "groups cannot grant admin; use operator or viewer")
+		writeErr(w, http.StatusForbidden, "groups cannot grant superadmin; use admin or user")
 		return
 	}
 	groupID := r.PathValue("id")
@@ -449,7 +452,7 @@ func (s *Server) createServicePrincipal(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusConflict, "service principal exists")
 		return
 	}
-	if err := s.Store.BindRole(r.Context(), p.User.ClusterID, u.ID, rbac.Operator); err != nil {
+	if err := s.Store.BindRole(r.Context(), p.User.ClusterID, u.ID, rbac.Admin); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -99,12 +99,12 @@ ON CONFLICT (cluster_id, username) DO UPDATE SET password_hash = EXCLUDED.passwo
 INSERT INTO role_bindings (id, cluster_id, user_id, role_id)
 SELECT gen_random_uuid(), '$CLUSTER', u.id, r.id
 FROM users u, roles r
-WHERE u.username='operator' AND r.name='operator' AND u.cluster_id=r.cluster_id
+WHERE u.username='operator' AND r.name='admin' AND u.cluster_id=r.cluster_id
 ON CONFLICT (user_id, role_id) DO NOTHING;
 INSERT INTO role_bindings (id, cluster_id, user_id, role_id)
 SELECT gen_random_uuid(), '$CLUSTER', u.id, r.id
 FROM users u, roles r
-WHERE u.username='viewer' AND r.name='viewer' AND u.cluster_id=r.cluster_id
+WHERE u.username='viewer' AND r.name='user' AND u.cluster_id=r.cluster_id
 ON CONFLICT (user_id, role_id) DO NOTHING;
 SQL
 

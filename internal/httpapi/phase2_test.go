@@ -125,7 +125,7 @@ func TestPhase2InventoryAndRBAC(t *testing.T) {
 	if err := mem.CreateUser(context.Background(), viewer); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.Viewer); err != nil {
+	if err := mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.User); err != nil {
 		t.Fatal(err)
 	}
 	viewCookie := loginAs(t, ts, "view", "password1")

@@ -427,6 +427,273 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /console/set-root:
+    post:
+      operationId: consoleSetRoot
+      summary: Host console only (root over the local control socket, nodalctl set-root). Make another SuperAdmin the root account. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleSetRootRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleSetRootResponse"
+        "400":
+          description: That account does not hold SuperAdmin or is disabled
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+  /iam/settings:
+    get:
+      operationId: getIAMSettings
+      summary: The root account, the automation creators setting and (SuperAdmins only) who may see and decide approvals. Requires identity.read.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IAMSettings"
+  /iam/settings/automation-creators:
+    put:
+      operationId: putAutomationCreators
+      summary: Set who may create and edit automation flows (a minimum role or chosen roles). Admins may change it until a SuperAdmin saves it; then only SuperAdmins, unless admins_may_edit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationCreatorsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IAMSettings"
+        "400":
+          description: Unknown role
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /iam/settings/approvals-access:
+    put:
+      operationId: putApprovalsAccess
+      summary: SuperAdmins only. Give roles approvals.view and approvals.decide (deciding includes viewing).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalsAccessRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IAMSettings"
+        "400":
+          description: Unknown role or permission
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /approvals:
+    get:
+      operationId: listApprovals
+      summary: Automation flow versions that went through approval, newest first. Requires approvals.view.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - pending
+              - approved
+              - denied
+              - superseded
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalList"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /approvals/{flow}/{version}:
+    get:
+      operationId: getApproval
+      summary: One request with its definition and the newest approved version before it, for a side-by-side diff. Requires approvals.view.
+      parameters:
+        - name: flow
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDetail"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+  /approvals/{flow}/{version}/approve:
+    post:
+      operationId: approveApproval
+      summary: Approve exactly this version (its hash); it runs from now on. Requires approvals.decide; you cannot decide your own request unless you are a SuperAdmin. The requester is notified.
+      parameters:
+        - name: flow
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecisionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approval"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: No longer waiting, or the version no longer matches its hash
+  /approvals/{flow}/{version}/deny:
+    post:
+      operationId: denyApproval
+      summary: Deny this version. The last approved version keeps running and the draft rolls back to it; with none the flow stays a draft that cannot run. The requester is notified.
+      parameters:
+        - name: flow
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecisionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approval"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: No longer waiting
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: Your notifications, newest first (the newest 500 are kept).
+      parameters:
+        - name: unread
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationList"
+  /notifications/unread-count:
+    get:
+      operationId: notificationsUnreadCount
+      summary: How many of your notifications are unread (the header bell polls this).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationUnread"
+  /notifications/read:
+    post:
+      operationId: markNotificationsRead
+      summary: Mark the listed notifications read, or all of them when ids is empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationReadRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationUnread"
   /settings/trusted-proxies:
     get:
       operationId: getTrustedProxies
@@ -4448,7 +4715,7 @@ paths:
   /docker/tunnels/action:
     post:
       operationId: dockerTunnelAction
-      summary: Start or restart a cloudflared service. Admin only. The host's own cloudflared is refused (409, code host_tunnel_protected, with advice) unless an Owner sends approve_host.
+      summary: Start or restart a cloudflared service. Admin only. The host's own cloudflared is refused (409, code host_tunnel_protected, with advice) unless a SuperAdmin sends approve_host.
       requestBody:
         required: true
         content:
@@ -4471,7 +4738,7 @@ paths:
                     - restart
                 approve_host:
                   type: boolean
-                  description: An Owner's approval to change the host's own cloudflared tunnel.
+                  description: A SuperAdmin's approval to change the host's own cloudflared tunnel.
       responses:
         "200":
           description: Done
@@ -4632,7 +4899,7 @@ paths:
                 $ref: "#/components/schemas/DeploySettings"
     put:
       operationId: putDeploySettings
-      summary: Owner only. Change deployment limits, log folder, retention and defaults.
+      summary: SuperAdmin only. Change deployment limits, log folder, retention and defaults.
       requestBody:
         required: true
         content:
@@ -4647,7 +4914,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeploySettings"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
   /docker/deploy/projects:
     get:
       operationId: listDeployProjects
@@ -4661,7 +4928,7 @@ paths:
                 $ref: "#/components/schemas/DeployProjectList"
     post:
       operationId: createDeployProject
-      summary: Owner only. Give a Compose project's folder in a system container update commands.
+      summary: SuperAdmin only. Give a Compose project's folder in a system container update commands.
       requestBody:
         required: true
         content:
@@ -4676,7 +4943,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeployProject"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
         "409":
           description: That folder in that container is already a project
   /docker/deploy/projects/{id}:
@@ -4698,7 +4965,7 @@ paths:
                 $ref: "#/components/schemas/DeployProject"
     put:
       operationId: updateDeployProject
-      summary: Owner only. Change a project's commands, Git settings, automation, notifications or environment.
+      summary: SuperAdmin only. Change a project's commands, Git settings, automation, notifications or environment.
       parameters:
         - name: id
           in: path
@@ -4719,10 +4986,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeployProject"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
     delete:
       operationId: deleteDeployProject
-      summary: Owner only. Forget a project and its deployment history and logs. The folder is not touched.
+      summary: SuperAdmin only. Forget a project and its deployment history and logs. The folder is not touched.
       parameters:
         - name: id
           in: path
@@ -4737,7 +5004,7 @@ paths:
   /docker/deploy/projects/{id}/deploy:
     post:
       operationId: deployProject
-      summary: Operators and Owners. Queue a run of the project's update commands. force starts it even while a backup of its container runs.
+      summary: Operators and SuperAdmins. Queue a run of the project's update commands. force starts it even while a backup of its container runs.
       parameters:
         - name: id
           in: path
@@ -4787,7 +5054,7 @@ paths:
   /docker/deploy/projects/{id}/check:
     post:
       operationId: checkDeployProject
-      summary: Operators and Owners. Ask the project's Git remote for new commits now (CodeHold ch, then GitHub gh, then Git).
+      summary: Operators and SuperAdmins. Ask the project's Git remote for new commits now (CodeHold ch, then GitHub gh, then Git).
       parameters:
         - name: id
           in: path
@@ -4804,14 +5071,14 @@ paths:
   /docker/deploy/check:
     post:
       operationId: checkAllDeployProjects
-      summary: Operators and Owners. Check every project for new commits in the background.
+      summary: Operators and SuperAdmins. Check every project for new commits in the background.
       responses:
         "202":
           description: Started, or already running
   /docker/deploy/bulk:
     post:
       operationId: bulkDeploy
-      summary: Operators and Owners. Queue the chosen projects, or every project with an update (due). Each runs on its own within the limits.
+      summary: Operators and SuperAdmins. Queue the chosen projects, or every project with an update (due). Each runs on its own within the limits.
       requestBody:
         required: true
         content:
@@ -4837,7 +5104,7 @@ paths:
   /docker/deploy/projects/{id}/webhook:
     post:
       operationId: setDeployWebhook
-      summary: Owner only. Turn a project's push webhook on with a new secret (shown once), or off.
+      summary: SuperAdmin only. Turn a project's push webhook on with a new secret (shown once), or off.
       parameters:
         - name: id
           in: path
@@ -4861,7 +5128,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeployWebhook"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
   /docker/deployments:
     get:
       operationId: listDeployments
@@ -4948,7 +5215,7 @@ paths:
   /docker/deployments/{id}/cancel:
     post:
       operationId: cancelDeployment
-      summary: Operators and Owners. Cancel a queued deployment, or stop a running one and every process it started.
+      summary: Operators and SuperAdmins. Cancel a queued deployment, or stop a running one and every process it started.
       parameters:
         - name: id
           in: path
@@ -4967,7 +5234,7 @@ paths:
   /docker/deployments/{id}/force:
     post:
       operationId: forceDeployment
-      summary: Operators and Owners. Deploy anyway; start a deployment that waits for a backup of its container.
+      summary: Operators and SuperAdmins. Deploy anyway; start a deployment that waits for a backup of its container.
       parameters:
         - name: id
           in: path
@@ -7958,7 +8225,7 @@ paths:
   /backups/git-holds/{workload}:
     post:
       operationId: resolveBackupGitHold
-      summary: Owner only. "retry" backs the workload up again after the work was committed and pushed by hand; "save" has NDL-CE commit and push it from inside the guest (secret-like, database and large files are left out and never read), then retries.
+      summary: SuperAdmin only. "retry" backs the workload up again after the work was committed and pushed by hand; "save" has NDL-CE commit and push it from inside the guest (secret-like, database and large files are left out and never read), then retries.
       parameters:
         - name: workload
           in: path
@@ -7979,7 +8246,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/BackupGitHoldResult"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
         "404":
           description: Not held
         "422":
@@ -7987,7 +8254,7 @@ paths:
   /platform-backup:
     get:
       operationId: getPlatformBackup
-      summary: The NDL-CE platform backup (database, configuration, keys and restore-point index, encrypted and unlockable only with an Owner's password) and how many protected workloads are recoverable from offsite backups
+      summary: The NDL-CE platform backup (database, configuration, keys and restore-point index, encrypted and unlockable only with a SuperAdmin's password) and how many protected workloads are recoverable from offsite backups
       responses:
         "200":
           description: Platform backup status
@@ -7999,7 +8266,7 @@ paths:
           description: Unauthenticated
     patch:
       operationId: updatePlatformBackup
-      summary: Owner only. Turn the platform backup on or off, or choose its object storage target.
+      summary: SuperAdmin only. Turn the platform backup on or off, or choose its object storage target.
       requestBody:
         required: true
         content:
@@ -8014,7 +8281,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlatformBackupStatus"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
   /workloads/{id}/backup-files:
     get:
       operationId: listWorkloadBackupFiles
@@ -8114,7 +8381,7 @@ paths:
   /live-updates:
     get:
       operationId: getLiveUpdates
-      summary: Owner only. Live update state, history, queued bundles and what an update would wait for.
+      summary: SuperAdmin only. Live update state, history, queued bundles and what an update would wait for.
       responses:
         "200":
           description: Live update status
@@ -8123,11 +8390,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/LiveUpdateStatus"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
   /live-updates/bundles:
     post:
       operationId: uploadLiveUpdateBundle
-      summary: Owner only. Queue a signed live update bundle; it is verified before it is accepted.
+      summary: SuperAdmin only. Queue a signed live update bundle; it is verified before it is accepted.
       requestBody:
         required: true
         content:
@@ -8143,7 +8410,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/LiveUpdateQueued"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
         "409":
           description: Live updates are not set up, or no signing key is trusted
         "422":
@@ -8151,7 +8418,7 @@ paths:
   /live-updates/rollback:
     post:
       operationId: rollbackLiveUpdate
-      summary: Owner only. Ask the updater to undo the newest live update.
+      summary: SuperAdmin only. Ask the updater to undo the newest live update.
       responses:
         "202":
           description: Rollback requested
@@ -8163,13 +8430,13 @@ paths:
                   requested:
                     type: boolean
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
         "409":
           description: Live updates are not set up
   /platform-backup/run:
     post:
       operationId: runPlatformBackup
-      summary: Owner only. Back the platform up now; the snapshot is uploaded, read back and decrypted before it is published.
+      summary: SuperAdmin only. Back the platform up now; the snapshot is uploaded, read back and decrypted before it is published.
       responses:
         "200":
           description: Platform backup status
@@ -8178,7 +8445,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlatformBackupStatus"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
         "422":
           description: The backup failed
   /platform-backup/verify:
@@ -8200,7 +8467,7 @@ paths:
   /platform-backup/rotate:
     post:
       operationId: rotatePlatformBackupKey
-      summary: Owner only, with their password. Replace the platform backup key; other Owners can unlock again after their next sign-in. Copies of old envelopes or snapshots downloaded before stay readable with the passwords of that time.
+      summary: SuperAdmin only, with their password. Replace the platform backup key; other SuperAdmins can unlock again after their next sign-in. Copies of old envelopes or snapshots downloaded before stay readable with the passwords of that time.
       requestBody:
         required: true
         content:
@@ -8257,7 +8524,7 @@ paths:
   /setup/recover/unlock:
     post:
       operationId: recoverUnlock
-      summary: Unlock the newest platform snapshot with an Owner's username and password; returns what will be restored and the pools and networks to map onto this host
+      summary: Unlock the newest platform snapshot with a SuperAdmin's username and password; returns what will be restored and the pools and networks to map onto this host
       security: []
       requestBody:
         required: true
@@ -8310,7 +8577,7 @@ paths:
   /recovery/workloads/{id}/restore:
     post:
       operationId: restoreRecoveredWorkload
-      summary: Owner only. Bring a recovered workload back (id "all" for every one not restored yet) in the background - base image for Smart and Custom backups, then its data, then repositories at the recorded commit, images by digest and compose projects. A workload that needs attention resumes with the approvals given.
+      summary: SuperAdmin only. Bring a recovered workload back (id "all" for every one not restored yet) in the background - base image for Smart and Custom backups, then its data, then repositories at the recorded commit, images by digest and compose projects. A workload that needs attention resumes with the approvals given.
       parameters:
         - name: id
           in: path
@@ -8330,7 +8597,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/RecoveryWorkloads"
         "403":
-          description: Not an Owner
+          description: Not a SuperAdmin
         "409":
           description: Not recovered, or the bucket connection is not verified
   /backups/workload-options:
@@ -8996,7 +9263,7 @@ paths:
   /groups/{id}/roles:
     post:
       operationId: bindGroupRole
-      summary: Bind operator or viewer to a group. Admin cannot be granted through a group.
+      summary: Bind a role to a group. SuperAdmin cannot be granted through a group (the old ids operator and viewer are still accepted for one release).
       parameters:
         - name: id
           in: path
@@ -11484,7 +11751,7 @@ paths:
   /automations/flows/{id}/publish:
     post:
       operationId: publishAutomationFlow
-      summary: Freeze the draft as version N+1. Drafts with steps that change things need a passing test run first (an Owner may skip it with a reason).
+      summary: Freeze the draft as version N+1. Drafts with steps that change things need a passing test run first (a SuperAdmin may skip it with a reason). A version holding protected steps that a SuperAdmin did not build waits for approval (202) while the version running now keeps running. Calls to ndl-ce's own API are refused (403) below SuperAdmin.
       parameters:
         - name: id
           in: path
@@ -11504,6 +11771,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AutomationFlow"
+        "202":
+          description: Recorded and waiting for approval; the running version is unchanged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "403":
+          description: Not an automation creator, or a step calls ndl-ce's own API
         "409":
           description: Automation is disabled, or the change conflicts
         "422":
@@ -12379,6 +12654,387 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AutomationProblem"
+        protected_steps:
+          type: array
+          description: Steps of the draft that need approval (single-flow responses only).
+          items:
+            $ref: "#/components/schemas/ProtectedStep"
+        publish_needs_approval:
+          type: boolean
+          description: Publishing the draft now would wait for approval.
+        draft_tainted:
+          type: boolean
+          description: Someone below SuperAdmin changed the draft since it was last approved, so it has no SuperAdmin exemption.
+        pending_version:
+          type: integer
+          description: The version waiting for approval, 0 if none.
+        pending:
+          $ref: "#/components/schemas/AutomationFlowPending"
+        last_denied:
+          $ref: "#/components/schemas/AutomationFlowDenied"
+        waiting_for_approval:
+          type: boolean
+    AutomationFlowPending:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - requested_by
+        - created_at
+        - draft_matches
+      properties:
+        version:
+          type: integer
+        requested_by:
+          type: string
+        created_at:
+          type: string
+        draft_matches:
+          type: boolean
+    AutomationFlowDenied:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - decided_by
+        - note
+      properties:
+        version:
+          type: integer
+        decided_by:
+          type: string
+        note:
+          type: string
+    ProtectedStep:
+      type: object
+      additionalProperties: false
+      required:
+        - node_id
+        - name
+        - type
+        - kind
+        - reason
+      properties:
+        node_id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        kind:
+          type: string
+          enum:
+            - harmful
+            - security
+            - own_api
+        reason:
+          type: string
+    Approval:
+      type: object
+      additionalProperties: true
+      required:
+        - flow_id
+        - flow_name
+        - version
+        - status
+        - hash
+        - requested_by
+        - requested_by_id
+        - note
+        - created_at
+        - protected_steps
+        - decided_by
+        - decided_at
+        - decision_note
+        - running_version
+      properties:
+        flow_id:
+          type: string
+        flow_name:
+          type: string
+        version:
+          type: integer
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - denied
+            - superseded
+        hash:
+          type: string
+        requested_by:
+          type: string
+        requested_by_id:
+          type: string
+        note:
+          type: string
+        created_at:
+          type: string
+        protected_steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProtectedStep"
+        decided_by:
+          type: string
+        decided_at:
+          type: string
+          nullable: true
+        decision_note:
+          type: string
+        running_version:
+          type: integer
+    ApprovalDetail:
+      type: object
+      additionalProperties: true
+      required:
+        - flow_id
+        - flow_name
+        - version
+        - status
+        - hash
+        - requested_by
+        - requested_by_id
+        - note
+        - created_at
+        - protected_steps
+        - decided_by
+        - decided_at
+        - decision_note
+        - running_version
+        - definition
+        - base_version
+        - base_definition
+        - can_decide
+      properties:
+        flow_id:
+          type: string
+        flow_name:
+          type: string
+        version:
+          type: integer
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - denied
+            - superseded
+        hash:
+          type: string
+        requested_by:
+          type: string
+        requested_by_id:
+          type: string
+        note:
+          type: string
+        created_at:
+          type: string
+        protected_steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProtectedStep"
+        decided_by:
+          type: string
+        decided_at:
+          type: string
+          nullable: true
+        decision_note:
+          type: string
+        running_version:
+          type: integer
+        definition:
+          type: object
+        base_version:
+          type: integer
+        base_definition:
+          type: object
+          nullable: true
+        can_decide:
+          type: boolean
+    ApprovalList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pending
+        - can_decide
+        - can_manage_access
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Approval"
+        pending:
+          type: integer
+        can_decide:
+          type: boolean
+        can_manage_access:
+          type: boolean
+    ApprovalDecisionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note:
+          type: string
+    AutomationCreators:
+      type: object
+      additionalProperties: false
+      required:
+        - min_role
+        - roles
+        - locked
+        - admins_may_edit
+        - can_edit
+        - i_may_create
+      properties:
+        min_role:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        locked:
+          type: boolean
+        admins_may_edit:
+          type: boolean
+        can_edit:
+          type: boolean
+        i_may_create:
+          type: boolean
+    AutomationCreatorsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        min_role:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        admins_may_edit:
+          type: boolean
+          description: SuperAdmins only. Saving as a SuperAdmin locks the setting to SuperAdmins unless this is true.
+    ApprovalsAccessRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - access
+      properties:
+        access:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+              enum:
+                - approvals.view
+                - approvals.decide
+    IAMSettings:
+      type: object
+      additionalProperties: false
+      required:
+        - root
+        - automation_creators
+      properties:
+        root:
+          type: object
+          additionalProperties: false
+          required:
+            - user_id
+            - username
+            - is_me
+          properties:
+            user_id:
+              type: string
+            username:
+              type: string
+            is_me:
+              type: boolean
+        automation_creators:
+          $ref: "#/components/schemas/AutomationCreators"
+        approvals_access:
+          type: object
+          description: SuperAdmins only.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    ConsoleSetRootRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+      properties:
+        username:
+          type: string
+    ConsoleSetRootResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - root
+      properties:
+        root:
+          type: string
+    Notification:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - kind
+        - title
+        - body
+        - link
+        - created_at
+        - read
+        - read_at
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        link:
+          type: string
+        created_at:
+          type: string
+        read:
+          type: boolean
+        read_at:
+          type: string
+          nullable: true
+    NotificationList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - unread
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        unread:
+          type: integer
+    NotificationUnread:
+      type: object
+      additionalProperties: false
+      required:
+        - unread
+      properties:
+        unread:
+          type: integer
+    NotificationReadRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
     AutomationFlowList:
       type: object
       additionalProperties: true
@@ -18092,7 +18748,7 @@ components:
           description: zstd level 1-22; 0 uses the default (19), -1 stores chunks uncompressed.
         ignore_uncommitted_git:
           type: boolean
-          description: Default true. When false, a Smart or Custom backup of a workload whose Git repositories have uncommitted or unpushed work is held and the Owner is told. Only an Owner may change it.
+          description: Default true. When false, a Smart or Custom backup of a workload whose Git repositories have uncommitted or unpushed work is held and the SuperAdmin is told. Only a SuperAdmin may change it.
         physical_bytes:
           type: integer
         pending_bytes:
@@ -19216,9 +19872,7 @@ components:
       properties:
         role:
           type: string
-          enum:
-            - operator
-            - viewer
+          description: A role id such as admin or user (or a custom role). superadmin is refused.
     ServicePrincipalListResponse:
       type: object
       additionalProperties: false

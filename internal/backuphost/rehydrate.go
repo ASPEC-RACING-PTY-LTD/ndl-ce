@@ -247,7 +247,7 @@ func rehydrateRepo(ctx context.Context, rootfs, guestID string, r backup.GitRepo
 			chownLikeParent(hostTmp)
 		} else if token != "" {
 			_ = os.RemoveAll(hostTmp)
-			// A token the Owner gave for this clone. It is used once, from a
+			// A token the SuperAdmin gave for this clone. It is used once, from a
 			// private file removed right after, never on a command line.
 			err = cloneWithToken(ctx, rootfs, guestID, remote.URL, tmp, name, token)
 			out.Via = "token"

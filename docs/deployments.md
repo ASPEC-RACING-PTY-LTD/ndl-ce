@@ -161,7 +161,7 @@ Cloudflare tunnel.
 
 ## Permissions and audit
 
-| | Viewer | Operator | Owner |
+| | User | Admin | SuperAdmin |
 | --- | --- | --- | --- |
 | See projects, progress, history, logs | yes | yes | yes |
 | Deploy, bulk deploy, check, cancel, deploy anyway | | yes | yes |

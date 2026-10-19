@@ -1,7 +1,8 @@
 package rbac
 
 // AllPermissions lists every permission a role can be given, for the role
-// editor. All ("*") is the Owner's and is not listed.
+// editor. All ("*") is the SuperAdmin's and is not listed, nor are the
+// approvals permissions, which only the Approvals page gives out.
 func AllPermissions() []string {
 	return []string{
 		IdentityRead,

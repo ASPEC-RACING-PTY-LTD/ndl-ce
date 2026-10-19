@@ -40,13 +40,15 @@ func autoUUID(s string) any {
 }
 
 const autoFlowCols = `id::text, cluster_id::text, name, description, draft::text, published_version, enabled, trigger_kind, event_kind,
-limits::text, dry_run_hash, consecutive_failures, disabled_reason, COALESCE(legacy_policy_id::text, ''), created_by, created_at, updated_at`
+limits::text, dry_run_hash, consecutive_failures, disabled_reason, COALESCE(legacy_policy_id::text, ''), pending_version, draft_tainted,
+created_by, created_at, updated_at`
 
 func scanAutoFlow(s interface{ Scan(...any) error }) (AutomationFlow, error) {
 	var f AutomationFlow
 	var draft, limits string
 	err := s.Scan(&f.ID, &f.ClusterID, &f.Name, &f.Description, &draft, &f.PublishedVersion, &f.Enabled, &f.TriggerKind, &f.EventKind,
-		&limits, &f.DryRunHash, &f.ConsecutiveFailures, &f.DisabledReason, &f.LegacyPolicyID, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt)
+		&limits, &f.DryRunHash, &f.ConsecutiveFailures, &f.DisabledReason, &f.LegacyPolicyID, &f.PendingVersion, &f.DraftTainted,
+		&f.CreatedBy, &f.CreatedAt, &f.UpdatedAt)
 	f.Draft, f.Limits = json.RawMessage(draft), json.RawMessage(limits)
 	return f, err
 }
@@ -54,10 +56,11 @@ func scanAutoFlow(s interface{ Scan(...any) error }) (AutomationFlow, error) {
 func (p *Postgres) CreateAutomationFlow(ctx context.Context, f AutomationFlow) error {
 	_, err := p.DB.ExecContext(ctx, `
 INSERT INTO automation_flows (id, cluster_id, name, description, draft, published_version, enabled, trigger_kind, event_kind,
-  limits, dry_run_hash, consecutive_failures, disabled_reason, legacy_policy_id, created_by)
-VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15)`,
+  limits, dry_run_hash, consecutive_failures, disabled_reason, legacy_policy_id, created_by, pending_version, draft_tainted)
+VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15,$16,$17)`,
 		f.ID, f.ClusterID, f.Name, f.Description, autoJSON(f.Draft), f.PublishedVersion, f.Enabled, f.TriggerKind, f.EventKind,
-		autoJSON(f.Limits), f.DryRunHash, f.ConsecutiveFailures, f.DisabledReason, autoUUID(f.LegacyPolicyID), f.CreatedBy)
+		autoJSON(f.Limits), f.DryRunHash, f.ConsecutiveFailures, f.DisabledReason, autoUUID(f.LegacyPolicyID), f.CreatedBy,
+		f.PendingVersion, f.DraftTainted)
 	return err
 }
 
@@ -107,10 +110,12 @@ func (p *Postgres) ListAutomationFlowsByTrigger(ctx context.Context, clusterID, 
 func (p *Postgres) UpdateAutomationFlow(ctx context.Context, f AutomationFlow) error {
 	res, err := p.DB.ExecContext(ctx, `
 UPDATE automation_flows SET name=$3, description=$4, draft=$5::jsonb, published_version=$6, enabled=$7, trigger_kind=$8, event_kind=$9,
-  limits=$10::jsonb, dry_run_hash=$11, consecutive_failures=$12, disabled_reason=$13, legacy_policy_id=$14, updated_at=now()
+  limits=$10::jsonb, dry_run_hash=$11, consecutive_failures=$12, disabled_reason=$13, legacy_policy_id=$14,
+  pending_version=$15, draft_tainted=$16, updated_at=now()
 WHERE cluster_id=$1 AND id=$2`,
 		f.ClusterID, f.ID, f.Name, f.Description, autoJSON(f.Draft), f.PublishedVersion, f.Enabled, f.TriggerKind, f.EventKind,
-		autoJSON(f.Limits), f.DryRunHash, f.ConsecutiveFailures, f.DisabledReason, autoUUID(f.LegacyPolicyID))
+		autoJSON(f.Limits), f.DryRunHash, f.ConsecutiveFailures, f.DisabledReason, autoUUID(f.LegacyPolicyID),
+		f.PendingVersion, f.DraftTainted)
 	if err != nil {
 		return err
 	}
@@ -125,49 +130,98 @@ func (p *Postgres) DeleteAutomationFlow(ctx context.Context, clusterID, id strin
 	return err
 }
 
+const autoVersionCols = `flow_id::text, cluster_id::text, version, definition::text, published_by, note, status, definition_hash,
+needs_approval, protected_steps::text, exempt, requested_by_id, decided_by, decided_at, decision_note, created_at`
+
+func scanAutoVersion(s interface{ Scan(...any) error }) (AutomationFlowVersion, error) {
+	var v AutomationFlowVersion
+	var def, prot string
+	var decided sql.NullTime
+	err := s.Scan(&v.FlowID, &v.ClusterID, &v.Version, &def, &v.PublishedBy, &v.Note, &v.Status, &v.Hash,
+		&v.NeedsApproval, &prot, &v.Exempt, &v.RequestedByID, &v.DecidedBy, &decided, &v.DecisionNote, &v.CreatedAt)
+	v.Definition, v.Protected, v.DecidedAt = json.RawMessage(def), json.RawMessage(prot), autoTimePtr(decided)
+	return v, err
+}
+
+func autoJSONArray(raw json.RawMessage) string {
+	if len(raw) == 0 || !json.Valid(raw) {
+		return "[]"
+	}
+	return string(raw)
+}
+
 func (p *Postgres) CreateAutomationFlowVersion(ctx context.Context, v AutomationFlowVersion) error {
+	if v.Status == "" {
+		v.Status = FlowVersionApproved
+	}
 	_, err := p.DB.ExecContext(ctx, `
-INSERT INTO automation_flow_versions (flow_id, cluster_id, version, definition, published_by, note) VALUES ($1,$2,$3,$4::jsonb,$5,$6)`,
-		v.FlowID, v.ClusterID, v.Version, autoJSON(v.Definition), v.PublishedBy, v.Note)
+INSERT INTO automation_flow_versions (flow_id, cluster_id, version, definition, published_by, note, status, definition_hash,
+  needs_approval, protected_steps, exempt, requested_by_id, decided_by, decided_at, decision_note)
+VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15)`,
+		v.FlowID, v.ClusterID, v.Version, autoJSON(v.Definition), v.PublishedBy, v.Note, v.Status, v.Hash,
+		v.NeedsApproval, autoJSONArray(v.Protected), v.Exempt, v.RequestedByID, v.DecidedBy, autoTime(v.DecidedAt), v.DecisionNote)
 	return err
 }
 
 func (p *Postgres) GetAutomationFlowVersion(ctx context.Context, clusterID, flowID string, version int) (*AutomationFlowVersion, error) {
-	var v AutomationFlowVersion
-	var def string
-	err := p.DB.QueryRowContext(ctx, `
-SELECT flow_id::text, cluster_id::text, version, definition::text, published_by, note, created_at
-FROM automation_flow_versions WHERE cluster_id=$1 AND flow_id=$2 AND version=$3`, clusterID, flowID, version).
-		Scan(&v.FlowID, &v.ClusterID, &v.Version, &def, &v.PublishedBy, &v.Note, &v.CreatedAt)
+	if !ValidUUID(flowID) {
+		return nil, nil
+	}
+	v, err := scanAutoVersion(p.DB.QueryRowContext(ctx, `SELECT `+autoVersionCols+`
+FROM automation_flow_versions WHERE cluster_id=$1 AND flow_id=$2 AND version=$3`, clusterID, flowID, version))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	v.Definition = json.RawMessage(def)
 	return &v, nil
 }
 
-func (p *Postgres) ListAutomationFlowVersions(ctx context.Context, clusterID, flowID string) ([]AutomationFlowVersion, error) {
-	rows, err := p.DB.QueryContext(ctx, `
-SELECT flow_id::text, cluster_id::text, version, definition::text, published_by, note, created_at
-FROM automation_flow_versions WHERE cluster_id=$1 AND flow_id=$2 ORDER BY version DESC`, clusterID, flowID)
+func (p *Postgres) listAutoVersions(ctx context.Context, q string, args ...any) ([]AutomationFlowVersion, error) {
+	rows, err := p.DB.QueryContext(ctx, `SELECT `+autoVersionCols+` FROM automation_flow_versions `+q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []AutomationFlowVersion
 	for rows.Next() {
-		var v AutomationFlowVersion
-		var def string
-		if err := rows.Scan(&v.FlowID, &v.ClusterID, &v.Version, &def, &v.PublishedBy, &v.Note, &v.CreatedAt); err != nil {
+		v, err := scanAutoVersion(rows)
+		if err != nil {
 			return nil, err
 		}
-		v.Definition = json.RawMessage(def)
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+func (p *Postgres) ListAutomationFlowVersions(ctx context.Context, clusterID, flowID string) ([]AutomationFlowVersion, error) {
+	if !ValidUUID(flowID) {
+		return nil, nil
+	}
+	return p.listAutoVersions(ctx, `WHERE cluster_id=$1 AND flow_id=$2 ORDER BY version DESC`, clusterID, flowID)
+}
+
+func (p *Postgres) DecideAutomationFlowVersion(ctx context.Context, clusterID, flowID string, version int, d FlowVersionDecision) error {
+	res, err := p.DB.ExecContext(ctx, `
+UPDATE automation_flow_versions SET status=$4, decided_by=$5, decided_at=$6, decision_note=$7
+WHERE cluster_id=$1 AND flow_id=$2 AND version=$3 AND status='pending'`,
+		clusterID, flowID, version, d.Status, d.DecidedBy, d.DecidedAt, d.Note)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotPending
+	}
+	return nil
+}
+
+func (p *Postgres) ListAutomationApprovals(ctx context.Context, clusterID, status string, limit int) ([]AutomationFlowVersion, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	return p.listAutoVersions(ctx, `WHERE cluster_id=$1 AND needs_approval AND ($2 = '' OR status=$2) ORDER BY created_at DESC, version DESC LIMIT $3`,
+		clusterID, status, limit)
 }
 
 const autoConnCols = `id::text, cluster_id::text, name, kind, config::text, sealed, created_by, created_at, updated_at`

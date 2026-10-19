@@ -9,7 +9,7 @@ vi.mock("../components/FileEditor", () => ({ FileEditor: () => null }));
 const admin: MeResponse = {
   user_id: "user-1",
   username: "admin",
-  roles: ["admin"],
+  roles: ["superadmin"],
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
@@ -177,7 +177,7 @@ describe("Terminal file drop", () => {
   it("asks before pasting three or more lines", async () => {
     installIO();
     await openTerminal();
-    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    // These check the prompt non-SuperAdmins see; SuperAdmins skip it (confirm.test.tsx).
     setAutoConfirm(false);
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const termEl = await screen.findByTestId("xterm");

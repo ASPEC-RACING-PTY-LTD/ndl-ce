@@ -2,14 +2,30 @@ package rbac
 
 import "strings"
 
-// Built-in roles.
+// Built-in roles. Each id matches the name the UI shows: SuperAdmin is the
+// highest role, Admin runs the appliance, User reads it.
 const (
-	Admin    = "admin"
-	Operator = "operator"
-	Viewer   = "viewer"
-	// Automation is the Phase 40 service identity. It is not a login role.
+	SuperAdmin = "superadmin"
+	Admin      = "admin"
+	User       = "user"
+	// Automation labels the identity flows run as. It is not a login role.
 	Automation = "automation"
 )
+
+// legacyRoles maps role ids used before roles were renamed to match the UI
+// (migration 0076) to the current ids. "admin" is not listed: it now names
+// the Admin role, which used to be "operator".
+//
+// Remove after the release that follows 0076: nothing in the database uses
+// the old ids, this only catches API clients that still send them.
+var legacyRoles = map[string]string{"owner": SuperAdmin, "operator": Admin, "viewer": User}
+
+// LegacyRole returns the current id for a role id from before the rename,
+// and whether name was such an id.
+func LegacyRole(name string) (string, bool) {
+	cur, ok := legacyRoles[strings.ToLower(strings.TrimSpace(name))]
+	return cur, ok
+}
 
 // Permissions used in Phase 1. Later phases add more names.
 const (
@@ -112,7 +128,12 @@ const (
 	CloudflareRead        = "cloudflare.read"
 	CloudflareManage      = "cloudflare.manage"
 	CloudflareCredentials = "cloudflare.credentials"
-	All                   = "*"
+	// Approvals: see and decide automation flow versions that hold
+	// protected steps. SuperAdmins have both; they give them to other roles
+	// on the Approvals page only, never in the role editor.
+	ApprovalsView   = "approvals.view"
+	ApprovalsDecide = "approvals.decide"
+	All             = "*"
 
 	TokenPresetReadonlyDebug = "readonly-debug"
 	TokenPresetFullAudit     = "full-audit"
@@ -127,9 +148,9 @@ func New() Catalog { return Catalog{} }
 // PermissionsForRole returns the built-in grant list.
 func (Catalog) PermissionsForRole(role string) []string {
 	switch role {
-	case Admin:
+	case SuperAdmin:
 		return []string{All}
-	case Operator:
+	case Admin:
 		return []string{
 			IdentityRead, IdentityTokenCreate, IdentityTokenRevoke, IdentityMFA, IdentityGroupManage, ClusterRead,
 			NodeRead, EventsRead, MetricsRead, AlertRead, AlertManage,
@@ -149,22 +170,15 @@ func (Catalog) PermissionsForRole(role string) []string {
 			GameServerReinstall, GameServerDelete, GameServerAdmin,
 			CloudflareRead, CloudflareManage,
 		}
-	case Viewer:
+	case User:
 		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead, GameServerRead, CloudflareRead}
 	case Automation:
-		return PermissionsForAutomation()
+		// Flows run as the system: a flow does exactly what it was built to
+		// do. Protected steps are held for approval instead (see httpapi).
+		return []string{All}
 	default:
 		return nil
 	}
-}
-
-// PermissionsForAutomation is the grant list for the automation service
-// identity. Operator is too broad for that actor (tokens, feature manage,
-// compute delete, backups). Bind this list rather than Operator. PolicyRun
-// names the narrow evaluate grant; the list reuses PolicyApply and
-// ComputeMigrate only.
-func PermissionsForAutomation() []string {
-	return []string{PolicyApply, ComputeMigrate, ComputeRead, NodeRead, StorageRead}
 }
 
 // PermissionsForTokenPreset returns a scoped REST grant list. Unknown presets return nil.
@@ -200,9 +214,9 @@ func Authorize(grants []string, permission string) bool {
 func SeedRoles() map[string][]string {
 	c := New()
 	return map[string][]string{
+		SuperAdmin: c.PermissionsForRole(SuperAdmin),
 		Admin:      c.PermissionsForRole(Admin),
-		Operator:   c.PermissionsForRole(Operator),
-		Viewer:     c.PermissionsForRole(Viewer),
+		User:       c.PermissionsForRole(User),
 		Automation: c.PermissionsForRole(Automation),
 	}
 }
@@ -217,35 +231,34 @@ type RoleMeta struct {
 	Immutable bool
 }
 
-// BuiltInRoles is the immutable role catalog. Viewer is a standard user,
-// operator is an admin, and admin is the owner / super-admin.
+// BuiltInRoles is the immutable role catalog.
 func BuiltInRoles() []RoleMeta {
 	return []RoleMeta{
 		{
-			Name:      Viewer,
+			Name:      User,
 			Title:     "User",
 			Summary:   "Read the appliance. Personal account and MFA stay available. Management is hidden.",
 			Login:     true,
 			Immutable: true,
 		},
 		{
-			Name:      Operator,
+			Name:      Admin,
 			Title:     "Admin",
 			Summary:   "Operate workloads, features, updates, groups, and API tokens. Cannot manage users, roles, license, audit, or security policy.",
 			Login:     true,
 			Immutable: true,
 		},
 		{
-			Name:      Admin,
-			Title:     "Owner",
-			Summary:   "Super-admin. Full control including users, roles, license, audit, and security policy. The last Owner cannot be removed, disabled, or demoted.",
+			Name:      SuperAdmin,
+			Title:     "SuperAdmin",
+			Summary:   "The highest role. Full control including users, roles, license, audit, and security policy. The last SuperAdmin cannot be removed, disabled, or demoted.",
 			Login:     true,
 			Immutable: true,
 		},
 		{
 			Name:      Automation,
 			Title:     "Automation",
-			Summary:   "Service identity for policy automation. Not a sign-in role and cannot be assigned to a person.",
+			Summary:   "The identity flows run as. Flows do what they were built to do; protected steps need approval. Not a sign-in role and cannot be assigned to a person.",
 			Login:     false,
 			Immutable: true,
 		},
@@ -254,13 +267,13 @@ func BuiltInRoles() []RoleMeta {
 
 // LoginRoles are the roles a person account may be assigned.
 func LoginRoles() []string {
-	return []string{Viewer, Operator, Admin}
+	return []string{User, Admin, SuperAdmin}
 }
 
 // IsLoginRole reports whether name is a person sign-in role.
 func IsLoginRole(name string) bool {
 	switch name {
-	case Viewer, Operator, Admin:
+	case User, Admin, SuperAdmin:
 		return true
 	default:
 		return false

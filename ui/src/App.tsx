@@ -40,7 +40,9 @@ import { FeaturesPage } from "./pages/FeaturesPage";
 import { KubernetesPage } from "./pages/KubernetesPage";
 import { StorePage } from "./pages/StorePage";
 import { AutomationPage } from "./pages/AutomationPage";
+import { ApprovalsPage } from "./iam/ApprovalsPage";
 import { AutomationHome } from "./pages/automation/AutomationHome";
+import { NotificationsPage } from "./pages/NotificationsPage";
 import { FlowEditorPage } from "./pages/automation/FlowEditorPage";
 import { RunPage } from "./pages/automation/RunPage";
 import { AskPage } from "./pages/AskPage";
@@ -326,6 +328,18 @@ function matchPage(path: string) {
         </RequireGrant>
       </IAMLayout>
     );
+  }
+  if (path === "/iam/approvals") {
+    return (
+      <IAMLayout>
+        <RequireGrant permission="approvals.view">
+          <ApprovalsPage />
+        </RequireGrant>
+      </IAMLayout>
+    );
+  }
+  if (path === "/notifications") {
+    return <NotificationsPage />;
   }
   if (path === "/audit") {
     // Without audit.read the page shows tasks only.

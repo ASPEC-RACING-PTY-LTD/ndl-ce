@@ -100,7 +100,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "certificates", label: "Certificates", href: "/settings/certificates", keywords: ["tls", "https"] },
   { id: "mfa", label: "Authenticator", href: "/settings/mfa", keywords: ["totp", "mfa"] },
   { id: "users", label: "Users", href: "/users", keywords: ["accounts", "rbac", "people"] },
-  { id: "roles", label: "Roles & Permissions", href: "/roles", keywords: ["rbac", "owner", "admin"] },
+  { id: "roles", label: "Roles & Permissions", href: "/roles", keywords: ["rbac", "superadmin", "admin"] },
   { id: "security", label: "Security", href: "/settings/security", keywords: ["mfa", "lockout", "session"] },
   {
     id: "updates",
@@ -129,15 +129,15 @@ export function paletteAllowed(roles: string[] | undefined, require?: PaletteReq
   if (!require) {
     return true;
   }
+  const superAdmin = Boolean(roles?.includes("superadmin"));
   const admin = Boolean(roles?.includes("admin"));
-  const operator = Boolean(roles?.includes("operator"));
   switch (require) {
     case "mutate":
     case "update":
     case "groups":
-      return admin || operator;
+      return superAdmin || admin;
     case "audit":
-      return admin;
+      return superAdmin;
     default:
       return false;
   }

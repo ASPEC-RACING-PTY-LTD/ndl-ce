@@ -38,7 +38,7 @@ func gitHoldFingerprint(repos []backup.GitRepo) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// recordGitHold stores a held workload and tells the Owner once per change.
+// recordGitHold stores a held workload and tells the SuperAdmin once per change.
 func (s *Server) recordGitHold(ctx context.Context, clusterID string, wl appdb.Workload, run *appdb.BackupRun, repos []backup.GitRepo) error {
 	raw, _ := json.Marshal(repos)
 	fp := gitHoldFingerprint(repos)
@@ -126,16 +126,16 @@ func (s *Server) listBackupGitHolds(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveBackupGitHold acts on a held workload. "retry" backs it up again
-// (after the Owner committed and pushed by hand); "save" has the agent
+// (after the SuperAdmin committed and pushed by hand); "save" has the agent
 // commit and push the work from inside the guest, leaving secret-like files
-// out, then retries. Only an Owner may do either.
+// out, then retries. Only a SuperAdmin may do either.
 func (s *Server) resolveBackupGitHold(w http.ResponseWriter, r *http.Request) {
 	p, err := s.require(w, r, rbac.BackupCreate)
 	if err != nil {
 		return
 	}
-	if !hasRole(p, rbac.Admin) {
-		writeErr(w, http.StatusForbidden, "only an Owner can release a held backup")
+	if !hasRole(p, rbac.SuperAdmin) {
+		writeErr(w, http.StatusForbidden, "only a SuperAdmin can release a held backup")
 		return
 	}
 	var req struct {

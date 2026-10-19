@@ -139,7 +139,7 @@ func (s *Server) canGame(ctx context.Context, p *principal, srv *appdb.GameServe
 	}
 	acl, _ := s.Store.GetGameACL(ctx, srv.ID, p.User.ID)
 	if acl == nil {
-		return rbac.Authorize(p.Grants, rbac.GameServerAdmin) || (action == "view" && rbac.Authorize(p.Grants, rbac.GameServerRead) && hasRole(p, rbac.Operator))
+		return rbac.Authorize(p.Grants, rbac.GameServerAdmin) || (action == "view" && rbac.Authorize(p.Grants, rbac.GameServerRead) && hasRole(p, rbac.Admin))
 	}
 	var grants []string
 	_ = json.Unmarshal(acl.Grants, &grants)

@@ -58,11 +58,11 @@ import { Box, BoxDock, BoxesProvider, CreateMenu, useBoxes, type BoxInfo } from 
 import { WorkloadFiles } from "../components/WorkloadFiles";
 
 function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 function isAdmin(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin"));
+  return Boolean(roles?.includes("superadmin"));
 }
 
 const OBJECT_KINDS = ["s3", "r2", "aws", "b2", "minio"] as const;
@@ -1121,7 +1121,7 @@ export function BackupsPage() {
         bandwidth_limit_bps: Math.round(bandwidth * 1024 * 1024),
         cache_retention_hours: Math.max(0, Math.round(cacheHours)),
         compression_level: Number(compressionLevel),
-        // Only an Owner may change it; others never send it.
+        // Only a SuperAdmin may change it; others never send it.
         ...(isAdmin(roles) && ignoreUncommittedGit !== (workspace?.ignore_uncommitted_git !== false)
           ? { ignore_uncommitted_git: ignoreUncommittedGit }
           : {}),
@@ -2654,8 +2654,8 @@ export function BackupsPage() {
         </label>
         <p className="field-hint">
             Smart backups leave Git repositories to Git and record the exact commit to re-clone. When this is off, a
-            workload whose repositories have uncommitted or unpushed work is not backed up until an Owner saves it,
-            lets NDL-CE commit and push it, or turns this back on. Only an Owner can change it.
+            workload whose repositories have uncommitted or unpushed work is not backed up until a SuperAdmin saves it,
+            lets NDL-CE commit and push it, or turns this back on. Only a SuperAdmin can change it.
         </p>
       </ConfirmDialog>
     </section>

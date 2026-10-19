@@ -49,7 +49,7 @@ export function MfaPolicyButton() {
             </p>
             <p className="meta">
               Sessions last {settings.session_ttl_hours} h. Sign-in locks for {settings.lockout_minutes} min after {settings.lockout_max_failures}{" "}
-              failures in {settings.lockout_window_minutes} min. Lost Owner access: <code>{settings.recover_admin}</code> on the host.
+              failures in {settings.lockout_window_minutes} min. Lost SuperAdmin access: <code>{settings.recover_admin}</code> on the host.
             </p>
           </div>
         ) : !error ? (

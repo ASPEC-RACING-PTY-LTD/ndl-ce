@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
-	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
 func enableAutomation(t *testing.T, mem *appdb.Memory) {
@@ -57,17 +56,6 @@ func (a *autoTest) call(method, path, body string, headers map[string]string) (i
 	_ = json.Unmarshal(raw, &out)
 	out["_raw"] = string(raw)
 	return res.StatusCode, out
-}
-
-func (a *autoTest) grantAutomation(perms ...string) {
-	a.t.Helper()
-	if err := a.mem.SaveRoleDef(context.Background(), appdb.RoleDef{
-		ClusterID: a.cluster, Name: rbac.Automation, Title: "Automation", BuiltIn: true, Customized: true,
-		Permissions: append(rbac.PermissionsForAutomation(), perms...),
-	}); err != nil {
-		a.t.Fatal(err)
-	}
-	forgetRoleDefs(a.cluster)
 }
 
 func (a *autoTest) step(runID string) *appdb.AutomationRun {
@@ -174,16 +162,11 @@ func TestAutomationDestructivePublishNeedsDryRunAndUsesTheHandler(t *testing.T) 
 	if code != http.StatusConflict || body["needs_dry_run"] != true {
 		t.Fatalf("publish without a test %d %v", code, body["_raw"])
 	}
-	// The automation role cannot restart workloads yet: the test says so.
+	// Flows run as the system: the test needs no extra grants.
 	code, body = a.call("POST", "/api/v1/automations/flows/"+id+"/dry-run", `{}`, nil)
 	raw := body["_raw"].(string)
-	if code != http.StatusOK || !strings.Contains(raw, "would restart container web-1") || !strings.Contains(raw, "compute.lifecycle") {
+	if code != http.StatusOK || !strings.Contains(raw, "would restart container web-1") || body["flow"].(map[string]any)["dry_run_passed"] != true {
 		t.Fatalf("dry run %d %s", code, raw)
-	}
-	a.grantAutomation(rbac.ComputeLifecycle)
-	code, body = a.call("POST", "/api/v1/automations/flows/"+id+"/dry-run", `{}`, nil)
-	if code != http.StatusOK || body["flow"].(map[string]any)["dry_run_passed"] != true {
-		t.Fatalf("dry run %d %v", code, body["_raw"])
 	}
 	ops, _ := a.mem.ListOperations(context.Background(), a.cluster, 100)
 	for _, op := range ops {

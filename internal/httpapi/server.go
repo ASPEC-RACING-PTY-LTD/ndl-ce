@@ -232,6 +232,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/users/{id}/unlock", s.unlockUser)
 	mux.HandleFunc("POST /api/v1/users/{id}/mfa/reset", s.resetUserMFA)
 	mux.HandleFunc("POST /api/v1/console/ip-recovery", s.consoleIPRecovery)
+	mux.HandleFunc("POST /api/v1/console/set-root", s.consoleSetRoot)
 	mux.HandleFunc("GET /api/v1/settings/trusted-proxies", s.getTrustedProxies)
 	mux.HandleFunc("PUT /api/v1/settings/trusted-proxies", s.putTrustedProxies)
 	mux.HandleFunc("GET /api/v1/users", s.listUsers)
@@ -253,6 +254,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/tokens/{id}/roll", s.rollToken)
 	mux.HandleFunc("GET /api/v1/tokens/{id}/usage", s.tokenUsage)
 	mux.HandleFunc("GET /api/v1/iam/access", s.iamAccess)
+	mux.HandleFunc("GET /api/v1/iam/settings", s.getIAMSettings)
+	mux.HandleFunc("PUT /api/v1/iam/settings/automation-creators", s.putAutomationCreators)
+	mux.HandleFunc("PUT /api/v1/iam/settings/approvals-access", s.putApprovalsAccess)
 	mux.HandleFunc("PUT /api/v1/iam/roles/order", s.iamRoleOrder)
 	mux.HandleFunc("PUT /api/v1/iam/roles/{name}", s.iamSaveRole)
 	mux.HandleFunc("DELETE /api/v1/iam/roles/{name}", s.iamDeleteRole)
@@ -507,6 +511,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/automations/nodes", s.automationCatalogue)
 	mux.HandleFunc("GET /api/v1/automations/templates", s.automationTemplatesAPI)
 	mux.HandleFunc("POST /api/v1/hooks/flows/{token}", s.automationHookIn)
+	mux.HandleFunc("GET /api/v1/approvals", s.listApprovals)
+	mux.HandleFunc("GET /api/v1/approvals/{flow}/{version}", s.getApproval)
+	mux.HandleFunc("POST /api/v1/approvals/{flow}/{version}/approve", s.decideApproval(true))
+	mux.HandleFunc("POST /api/v1/approvals/{flow}/{version}/deny", s.decideApproval(false))
+	mux.HandleFunc("GET /api/v1/notifications", s.listNotifications)
+	mux.HandleFunc("GET /api/v1/notifications/unread-count", s.notificationsUnread)
+	mux.HandleFunc("POST /api/v1/notifications/read", s.markNotificationsRead)
 	mux.HandleFunc("GET /api/v1/ai/providers", s.listAIProviders)
 	mux.HandleFunc("POST /api/v1/ai/providers", s.createAIProvider)
 	mux.HandleFunc("GET /api/v1/ai/profiles", s.listAIProfiles)
@@ -979,7 +990,11 @@ func (s *Server) setupClaim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "could not create user")
 		return
 	}
-	if err := s.Store.BindRole(r.Context(), cluster.ID, user.ID, rbac.Admin); err != nil {
+	if err := s.Store.BindRole(r.Context(), cluster.ID, user.ID, rbac.SuperAdmin); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.setRootUser(r.Context(), cluster.ID, user.ID, user.Username); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1044,7 +1059,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
-	// The password is right: keep this Owner able to unlock the platform
+	// The password is right: keep this SuperAdmin able to unlock the platform
 	// backup with it.
 	s.platformOwnerSignedIn(cluster.ID, *user, req.Password)
 	if s.refuseBlockedLogin(w, r, *user) {
@@ -1154,6 +1169,8 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "token.create", "ok", tok.ID)
+	s.notifyUser(r.Context(), p.User.ClusterID, ownerID, noteTokenCreated, "New API token: "+tok.Name,
+		"An API token was created on your account by "+p.User.Username+". Revoke it on API Access if you did not expect this.", "/api-access")
 	out := map[string]any{
 		"id":          tok.ID,
 		"prefix":      tok.Prefix,
@@ -1272,12 +1289,21 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 	return s.asPrincipal(r.Context(), *u, sess.ID, sess.AAL, "", nil)
 }
 
+// grantsForUser resolves what u may do from its roles. Root also holds the
+// permissions of roles ranked above SuperAdmin.
+func (s *Server) grantsForUser(ctx context.Context, u appdb.User, roles []string) []string {
+	if containsString(roles, rbac.SuperAdmin) && u.ID == s.rootUserID(ctx, u.ClusterID) {
+		roles = append(append([]string(nil), roles...), rolesAboveSuperAdmin(s.roleDefs(ctx, u.ClusterID))...)
+	}
+	return s.grantsForRoles(ctx, u.ClusterID, roles)
+}
+
 func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string, aal int, tokenID string, tokenPerms []string) (*principal, error) {
 	roles, err := s.Store.UserRoles(ctx, u.ID)
 	if err != nil {
 		return nil, err
 	}
-	grants := s.grantsForRoles(ctx, u.ClusterID, roles)
+	grants := s.grantsForUser(ctx, u, roles)
 	if len(tokenPerms) > 0 {
 		filtered := make([]string, 0, len(tokenPerms))
 		for _, perm := range tokenPerms {
@@ -1327,7 +1353,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user appdb
 func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User, aal int) {
 	roles, _ := s.Store.UserRoles(r.Context(), user.ID)
 	if user.ID == LocalRootUserID && len(roles) == 0 {
-		roles = []string{rbac.Admin}
+		roles = []string{rbac.SuperAdmin}
 	}
 	mfaEnabled := false
 	if method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID); err == nil && method != nil && method.Enabled {
@@ -1338,7 +1364,7 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	}
 	prefs, _ := s.Store.GetUserPrefs(r.Context(), user.ID)
 	level, ack, ackAt := prefsJSON(prefs)
-	grants := rbac.GrantsForRoles(roles)
+	grants := s.grantsForUser(r.Context(), user, roles)
 	clusterMFA := false
 	if c, err := s.Store.GetCluster(r.Context()); err == nil && c != nil {
 		clusterMFA = c.MFARequired
@@ -1404,8 +1430,17 @@ func (s *Server) ensureCluster(ctx context.Context) error {
 
 func (s *Server) audit(r *http.Request, clusterID, actor, action, result, detail string) {
 	body := json.RawMessage(`{}`)
+	fields := map[string]string{}
 	if detail != "" {
-		b, _ := json.Marshal(map[string]string{"detail": detail})
+		fields["detail"] = detail
+	}
+	// A flow's steps call the API as the automation identity; the entry
+	// names the flow and its creator.
+	if via := automationFlowLabelFrom(r.Context()); via != "" {
+		fields["via"] = via
+	}
+	if len(fields) > 0 {
+		b, _ := json.Marshal(fields)
 		body = b
 	}
 	_ = s.Store.InsertAudit(r.Context(), appdb.AuditEvent{

@@ -6,7 +6,7 @@ one, connect the same bucket and get everything back.
 
 ## What is kept
 
-Once a day, and when an Owner chooses **Backups → Disaster recovery → Back up
+Once a day, and when a SuperAdmin chooses **Backups → Disaster recovery → Back up
 platform now**, NDL-CE builds one archive:
 
 - a `pg_dump` of the control database: accounts, roles, settings, secrets,
@@ -25,7 +25,7 @@ target, or the one chosen) under the fixed prefix `ndl-platform/`:
 | Object | Holds |
 | --- | --- |
 | `ndl-platform/pointer.json` | Plaintext index: current and previous envelope, published snapshots. No secrets. |
-| `ndl-platform/envelopes/<time>-<id>.json` | The snapshot key wrapped for each Owner. |
+| `ndl-platform/envelopes/<time>-<id>.json` | The snapshot key wrapped for each SuperAdmin. |
 | `ndl-platform/snapshots/<time>-<id>.ndlp` | Encrypted snapshots. |
 | `ndl-platform/tmp/` | Uploads not yet verified. |
 
@@ -33,29 +33,29 @@ Workload wipes (`backups/`) never touch `ndl-platform/`.
 
 ## Who can unlock it
 
-The snapshot key is wrapped once per Owner (every user with the Owner role)
-with a key derived from that Owner's password with Argon2id (64 MiB, 3
-passes, random salt). Owners are identified in the envelope by a hash of
-their sign-in name, never by name. A wrap is made or refreshed when an Owner:
+The snapshot key is wrapped once per SuperAdmin (every user with the SuperAdmin role)
+with a key derived from that SuperAdmin's password with Argon2id (64 MiB, 3
+passes, random salt). SuperAdmins are identified in the envelope by a hash of
+their sign-in name, never by name. A wrap is made or refreshed when a SuperAdmin:
 
 - claims setup,
 - signs in, and their wrap is missing or does not open with the password
   they just used,
 - has their password reset.
 
-The password is used only for that and is never stored. Owners that are
+The password is used only for that and is never stored. SuperAdmins that are
 removed, disabled or demoted are left out of the next envelope.
 
 Access to the bucket and the ability to decrypt are separate: the bucket's
 credentials reveal only ciphertext and salted wraps. There is no recovery
-key; at least one Owner must remember their password.
+key; at least one SuperAdmin must remember their password.
 
 ## How it is written
 
 Nothing already published is overwritten before its replacement is verified.
 
 - **Envelopes** are written as new objects, read back, compared byte for byte,
-  checked against the local key (and unlocked with the Owner's password when
+  checked against the local key (and unlocked with the SuperAdmin's password when
   it is at hand), and only then does the pointer switch to them. The previous
   envelope stays as a fallback; older ones are deleted. Only the last two
   verified envelopes exist.
@@ -82,8 +82,8 @@ notification channels.
 
 ## Rotating the key
 
-**Rotate key** (Owner, with their password) makes a new snapshot key, wraps it
-for that Owner, publishes the envelope and backs up at once. Other Owners can
+**Rotate key** (SuperAdmin, with their password) makes a new snapshot key, wraps it
+for that SuperAdmin, publishes the envelope and backs up at once. Other SuperAdmins can
 unlock the new key after their next sign-in. Snapshots of the old key are
 deleted only after one with the new key is verified; until then the previous
 envelope still opens them.

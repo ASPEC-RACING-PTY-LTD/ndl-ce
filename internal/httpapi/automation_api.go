@@ -178,7 +178,7 @@ type flowBody struct {
 }
 
 func (s *Server) createAutomationFlow(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -224,10 +224,13 @@ func (s *Server) createAutomationFlow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "name is required (at most 120 characters)")
 		return
 	}
+	if !s.allowOwnAPI(w, r, p, def) {
+		return
+	}
 	lim, _ := json.Marshal(limits.Normalized())
 	f := appdb.AutomationFlow{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, Name: name, Description: strings.TrimSpace(desc),
-		Draft: def.Encode(), Limits: lim, CreatedBy: p.User.Username,
+		Draft: def.Encode(), Limits: lim, CreatedBy: p.User.Username, DraftTainted: !isOwner(p),
 	}
 	if err := s.Store.CreateAutomationFlow(r.Context(), f); err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
@@ -258,11 +261,12 @@ func (s *Server) getAutomationFlow(w http.ResponseWriter, r *http.Request) {
 	if d, err := flowdef.Parse(f.Draft); err == nil {
 		out["problems"] = flowdef.Validate(d, s.automation().reg)
 	}
+	s.addApprovalJSON(r.Context(), p, *f, out)
 	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) patchAutomationFlow(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -296,6 +300,12 @@ func (s *Server) patchAutomationFlow(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("a flow has at most %d steps", flowdef.MaxNodes))
 			return
 		}
+		if !s.allowOwnAPI(w, r, p, d) {
+			return
+		}
+		if engine.DefinitionHash(d.Encode()) != engine.DefinitionHash(f.Draft) {
+			taintDraft(p, f)
+		}
 		f.Draft = d.Encode()
 	}
 	if req.Limits != nil {
@@ -311,11 +321,12 @@ func (s *Server) patchAutomationFlow(w http.ResponseWriter, r *http.Request) {
 	if d, err := flowdef.Parse(f.Draft); err == nil {
 		out["problems"] = flowdef.Validate(d, s.automation().reg)
 	}
+	s.addApprovalJSON(r.Context(), p, *f, out)
 	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) deleteAutomationFlow(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -366,7 +377,7 @@ func (s *Server) validateAutomationFlow(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) publishAutomationFlow(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -389,36 +400,22 @@ func (s *Server) publishAutomationFlow(w http.ResponseWriter, r *http.Request) {
 		writeProblems(w, problems)
 		return
 	}
+	if !s.allowOwnAPI(w, r, p, d) {
+		return
+	}
 	if destructive := st.reg.HasDestructive(d); len(destructive) > 0 && f.DryRunHash != engine.DefinitionHash(f.Draft) {
 		reason := strings.TrimSpace(req.SkipDryRunReason)
-		if reason == "" || !hasRole(p, rbac.Admin) {
+		if reason == "" || !hasRole(p, rbac.SuperAdmin) {
 			msg := "steps " + strings.Join(destructive, ", ") + " change things: run a test of this draft before publishing"
 			if reason != "" {
-				msg += "; only an Owner can publish without a test"
+				msg += "; only a SuperAdmin can publish without a test"
 			}
 			writeJSON(w, http.StatusConflict, map[string]any{"error": msg, "needs_dry_run": true, "destructive": destructive})
 			return
 		}
 		s.audit(r, p.User.ClusterID, p.User.ID, "automation.flow.publish.skip_dry_run", "ok", f.ID+": "+reason)
 	}
-	version := f.PublishedVersion + 1
-	if err := s.Store.CreateAutomationFlowVersion(r.Context(), appdb.AutomationFlowVersion{
-		FlowID: f.ID, ClusterID: f.ClusterID, Version: version, Definition: d.Encode(), PublishedBy: p.User.Username, Note: strings.TrimSpace(req.Note),
-	}); err != nil {
-		writeErr(w, http.StatusConflict, "could not record the version: "+err.Error())
-		return
-	}
-	f.PublishedVersion, f.TriggerKind, f.EventKind = version, d.TriggerKind(), d.EventKind()
-	if err := s.Store.UpdateAutomationFlow(r.Context(), *f); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if err := st.svc.SyncTrigger(r.Context(), *f); err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "automation.flow.publish", "ok", fmt.Sprintf("%s v%d", f.ID, version))
-	writeJSON(w, http.StatusOK, s.flowJSON(r.Context(), *f, nil))
+	s.publishVersion(w, r, p, f, d, strings.TrimSpace(req.Note))
 }
 
 func (s *Server) setAutomationFlowEnabled(enabled bool) http.HandlerFunc {
@@ -457,7 +454,7 @@ func (s *Server) setAutomationFlowEnabled(enabled bool) http.HandlerFunc {
 }
 
 func (s *Server) cloneAutomationFlow(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -471,8 +468,12 @@ func (s *Server) cloneAutomationFlow(w http.ResponseWriter, r *http.Request) {
 	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
 		name = strings.TrimSpace(*req.Name)
 	}
+	if d, err := flowdef.Parse(f.Draft); err == nil && !s.allowOwnAPI(w, r, p, d) {
+		return
+	}
 	c := appdb.AutomationFlow{
 		ID: uuid.NewString(), ClusterID: f.ClusterID, Name: name, Description: f.Description, Draft: f.Draft, Limits: f.Limits, CreatedBy: p.User.Username,
+		DraftTainted: !isOwner(p) || f.DraftTainted,
 	}
 	if err := s.Store.CreateAutomationFlow(r.Context(), c); err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
@@ -514,7 +515,7 @@ func autoStatus(err error) int {
 	switch {
 	case errors.Is(err, engine.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, engine.ErrNotPublished), errors.Is(err, engine.ErrDisabled), errors.Is(err, engine.ErrBusy):
+	case errors.Is(err, engine.ErrNotPublished), errors.Is(err, engine.ErrDisabled), errors.Is(err, engine.ErrBusy), errors.Is(err, engine.ErrNotApproved):
 		return http.StatusConflict
 	}
 	return http.StatusUnprocessableEntity
@@ -610,6 +611,7 @@ func (s *Server) listAutomationFlowVersions(w http.ResponseWriter, r *http.Reque
 		out = append(out, map[string]any{
 			"version": v.Version, "definition": autoDecode(v.Definition), "published_by": v.PublishedBy, "note": v.Note,
 			"created_at": v.CreatedAt.UTC().Format(time.RFC3339), "current": v.Version == f.PublishedVersion,
+			"status": v.Status, "needs_approval": v.NeedsApproval, "decided_by": v.DecidedBy, "decision_note": v.DecisionNote,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
@@ -867,7 +869,7 @@ func (s *Server) getAutomationWebhook(w http.ResponseWriter, r *http.Request) {
 // rotate). The token and secret are shown once; only hashes are stored.
 func (s *Server) putAutomationWebhook(rotate bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+		p, ok := s.requireAutomationEdit(w, r)
 		if !ok {
 			return
 		}
@@ -1072,7 +1074,7 @@ func (s *Server) listAutomationConnections(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) createAutomationConnection(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -1114,7 +1116,7 @@ func (s *Server) loadConnection(w http.ResponseWriter, r *http.Request, p *princ
 }
 
 func (s *Server) patchAutomationConnection(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -1155,7 +1157,7 @@ func (s *Server) patchAutomationConnection(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) deleteAutomationConnection(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}
@@ -1174,7 +1176,7 @@ func (s *Server) deleteAutomationConnection(w http.ResponseWriter, r *http.Reque
 // testAutomationConnection opens the credential and, when the connection
 // has a test_url, sends one GET with it through the SSRF-safe client.
 func (s *Server) testAutomationConnection(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	p, ok := s.requireAutomationEdit(w, r)
 	if !ok {
 		return
 	}

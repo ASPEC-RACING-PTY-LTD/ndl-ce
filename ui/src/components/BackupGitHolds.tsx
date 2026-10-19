@@ -16,7 +16,7 @@ function errorText(err: unknown, fallback: string): string {
 
 /**
  * BackupGitHolds lists workloads whose backup is held because a Git
- * repository has work that is not committed and pushed, and lets an Owner
+ * repository has work that is not committed and pushed, and lets a SuperAdmin
  * retry after saving it by hand, have NDL-CE commit and push it, or go back
  * to ignoring uncommitted Git work.
  */
@@ -121,7 +121,7 @@ export function BackupGitHolds({ owner, onChanged }: { owner: boolean; onChanged
               </button>
             </div>
           ) : (
-            <p className="field-hint">An Owner can release this backup.</p>
+            <p className="field-hint">A SuperAdmin can release this backup.</p>
           )}
         </article>
       ))}

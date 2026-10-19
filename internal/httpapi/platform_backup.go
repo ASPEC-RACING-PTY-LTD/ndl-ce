@@ -38,7 +38,7 @@ type PlatformHooks struct {
 	Store func(tgt appdb.BackupTarget) platformbackup.Store
 	// KDF replaces the Argon2id cost.
 	KDF *platformbackup.KDF
-	// Sync runs Owner sign-in work inline instead of in the background.
+	// Sync runs SuperAdmin sign-in work inline instead of in the background.
 	Sync bool
 	// NoTick stops scheduled platform backups (tests).
 	NoTick bool
@@ -69,7 +69,7 @@ const (
 type platformState struct {
 	Disabled bool   `json:"disabled,omitempty"`
 	TargetID string `json:"target_id,omitempty"`
-	// Wraps are the snapshot key wrapped for each Owner, by user id.
+	// Wraps are the snapshot key wrapped for each SuperAdmin, by user id.
 	Wraps     map[string]platformbackup.Wrap `json:"wraps,omitempty"`
 	Envelope  platformEnvelopeState          `json:"envelope"`
 	Snapshot  platformSnapshotState          `json:"snapshot"`
@@ -82,7 +82,7 @@ type platformState struct {
 type platformEnvelopeState struct {
 	Key         string     `json:"key,omitempty"`
 	KeyID       string     `json:"key_id,omitempty"`
-	Owners      int        `json:"owners,omitempty"`
+	SuperAdmins int        `json:"owners,omitempty"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	Error       string     `json:"error,omitempty"`
 	// Dirty is set when the envelope must be published again.
@@ -286,7 +286,7 @@ func (a *agentPlatformStore) List(ctx context.Context, prefix string) ([]platfor
 	return objs, nil
 }
 
-// platformOwners are the enabled people with the Owner (admin) role.
+// platformOwners are the enabled people with the SuperAdmin role.
 func (s *Server) platformOwners(ctx context.Context, clusterID string) map[string]appdb.User {
 	users, _ := s.Store.ListUsers(ctx, clusterID)
 	out := map[string]appdb.User{}
@@ -296,7 +296,7 @@ func (s *Server) platformOwners(ctx context.Context, clusterID string) map[strin
 		}
 		roles, _ := s.Store.UserRoles(ctx, u.ID)
 		for _, r := range roles {
-			if r == rbac.Admin {
+			if r == rbac.SuperAdmin {
 				out[u.ID] = u
 			}
 		}
@@ -304,7 +304,7 @@ func (s *Server) platformOwners(ctx context.Context, clusterID string) map[strin
 	return out
 }
 
-// platformOwnerSignedIn wraps the snapshot key for an Owner whose password
+// platformOwnerSignedIn wraps the snapshot key for a SuperAdmin whose password
 // was just checked (sign-in, setup, password change) and publishes the
 // envelope when it changed. Others are ignored. The password is used only
 // here and is not kept.
@@ -364,9 +364,9 @@ func (s *Server) platformOwnerSignedIn(clusterID string, user appdb.User, passwo
 
 type platformOwnerCreds struct{ username, password string }
 
-// publishPlatformEnvelope publishes the wraps of the current Owners. It must
+// publishPlatformEnvelope publishes the wraps of the current SuperAdmins. It must
 // be called with s.platform.mu held. With creds, the published envelope is
-// also unlocked with that Owner's password before it is switched to.
+// also unlocked with that SuperAdmin's password before it is switched to.
 func (s *Server) publishPlatformEnvelope(ctx context.Context, clusterID string, st *platformState, key []byte, creds *platformOwnerCreds) {
 	owners := s.platformOwners(ctx, clusterID)
 	id := platformbackup.KeyID(key)
@@ -374,7 +374,7 @@ func (s *Server) publishPlatformEnvelope(ctx context.Context, clusterID string, 
 	for uid, w := range st.Wraps {
 		u, ok := owners[uid]
 		if !ok || w.Owner != platformbackup.OwnerID(u.Username) {
-			// No longer an Owner, or renamed: the wrap goes.
+			// No longer a SuperAdmin, or renamed: the wrap goes.
 			delete(st.Wraps, uid)
 			continue
 		}
@@ -402,7 +402,7 @@ func (s *Server) publishPlatformEnvelope(ctx context.Context, clusterID string, 
 		if creds != nil {
 			k, err := got.Unlock(creds.username, creds.password)
 			if err != nil || hex.EncodeToString(k) != hex.EncodeToString(key) {
-				return errors.New("the envelope read back does not unlock with the Owner's password")
+				return errors.New("the envelope read back does not unlock with the SuperAdmin's password")
 			}
 		}
 		return nil
@@ -413,7 +413,7 @@ func (s *Server) publishPlatformEnvelope(ctx context.Context, clusterID string, 
 		return
 	}
 	now := s.now()
-	st.Envelope = platformEnvelopeState{Key: ptr.Envelope, KeyID: id, Owners: len(wraps), PublishedAt: &now}
+	st.Envelope = platformEnvelopeState{Key: ptr.Envelope, KeyID: id, SuperAdmins: len(wraps), PublishedAt: &now}
 	st.Snapshot.Published = ptr.Snapshots
 }
 
@@ -590,7 +590,7 @@ func (s *Server) platformSnapshotLocked(ctx context.Context, clusterID string, s
 		return err
 	}
 	if key == nil {
-		return errors.New("an Owner must sign in once so the platform backup can be unlocked with their password")
+		return errors.New("a SuperAdmin must sign in once so the platform backup can be unlocked with their password")
 	}
 	tgt := s.platformTarget(ctx, clusterID, *st)
 	if tgt == nil {
@@ -845,8 +845,8 @@ func (s *Server) requireOwner(w http.ResponseWriter, r *http.Request) (*principa
 	if err != nil {
 		return nil, false
 	}
-	if !hasRole(p, rbac.Admin) {
-		writeErr(w, http.StatusForbidden, "only an Owner can manage the platform backup")
+	if !hasRole(p, rbac.SuperAdmin) {
+		writeErr(w, http.StatusForbidden, "only a SuperAdmin can manage the platform backup")
 		return nil, false
 	}
 	return p, true
@@ -927,8 +927,8 @@ func (s *Server) verifyPlatformBackupAPI(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, s.platformJSON(ctx, p.User.ClusterID, st))
 }
 
-// rotatePlatformKey replaces the snapshot key. The Owner confirms with their
-// password; their wrap of the new key is published at once and other Owners'
+// rotatePlatformKey replaces the snapshot key. The SuperAdmin confirms with their
+// password; their wrap of the new key is published at once and other SuperAdmins'
 // at their next sign-in. A snapshot under the new key follows, and snapshots
 // of the old key are deleted only once it is verified. Copies of old
 // envelopes or snapshots someone already downloaded are not affected.

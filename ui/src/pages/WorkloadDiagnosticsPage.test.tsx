@@ -13,7 +13,7 @@ const api = vi.hoisted(() => ({
   getDocker: vi.fn(),
   getWorkloadMetrics: vi.fn(),
 }));
-const session = vi.hoisted(() => ({ roles: ["admin"] as string[] }));
+const session = vi.hoisted(() => ({ roles: ["superadmin"] as string[] }));
 
 vi.mock("../api/client", () => api);
 vi.mock("../session", () => ({
@@ -77,7 +77,7 @@ function report(d: GPUDiagnosis, current = true): WorkloadGPUDiagnostics {
 
 beforeEach(() => {
   window.history.replaceState({}, "", `/workloads/${ID}/diagnostics`);
-  session.roles = ["admin"];
+  session.roles = ["superadmin"];
   api.getWorkload.mockResolvedValue(workload);
   api.getDocker.mockResolvedValue({ machines: [] });
   api.getWorkloadMetrics.mockResolvedValue({ status: "available", series: [] });
@@ -174,7 +174,7 @@ describe("WorkloadDiagnosticsPage", () => {
   });
 
   it("hides reapply from read-only roles", async () => {
-    session.roles = ["viewer"];
+    session.roles = ["user"];
     api.getWorkloadGPUDiagnostics.mockResolvedValue(report(diagnosis("present", false)));
     render(<WorkloadDiagnosticsPage />);
 

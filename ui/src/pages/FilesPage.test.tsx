@@ -7,7 +7,7 @@ import type { MeResponse } from "../api/types";
 const admin: MeResponse = {
   user_id: "user-1",
   username: "admin",
-  roles: ["admin"],
+  roles: ["superadmin"],
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
@@ -227,7 +227,7 @@ describe("Files manager", () => {
     const fetchMock = await openFiles({
       "POST /api/v1/workloads/wl-1/files/delete": { status: 200, body: { ok: true, path: "etc" } },
     });
-    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    // These check the prompt non-SuperAdmins see; SuperAdmins skip it (confirm.test.tsx).
     setAutoConfirm(false);
     fireEvent.click(await screen.findByLabelText("Select etc"));
     fireEvent.click(await screen.findByRole("button", { name: /delete selected/i }));

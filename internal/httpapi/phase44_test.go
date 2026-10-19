@@ -33,7 +33,7 @@ func TestMigrationViewerDeniedAndSecretsRedacted(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	viewer := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), viewer)
-	_ = mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, viewer.ID, rbac.User)
 	viewCookie := loginAs(t, ts, "view", "password1")
 
 	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/migration/adapters", nil)

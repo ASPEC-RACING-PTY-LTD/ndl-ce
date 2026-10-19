@@ -71,8 +71,8 @@ limits and outages stop the call and are reported.
 
 | Grant | Default roles | Allows |
 | --- | --- | --- |
-| `cloudflare.read` | viewer, operator, admin | See the inventory, diagnose routes |
-| `cloudflare.manage` | operator, admin | Tunnels, routes, DNS, connectors, moves, publishing |
+| `cloudflare.read` | user, admin, superadmin | See the inventory, diagnose routes |
+| `cloudflare.manage` | admin, superadmin | Tunnels, routes, DNS, connectors, moves, publishing |
 | `cloudflare.credentials` | admin | Add, rotate and remove API tokens |
 
 Every change is recorded in the audit log.

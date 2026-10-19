@@ -133,7 +133,7 @@ func (p *Postgres) CountAdmins(ctx context.Context, clusterID string) (int, erro
 SELECT count(*)
 FROM role_bindings b
 JOIN roles r ON r.id = b.role_id
-WHERE b.cluster_id = $1 AND r.name = 'admin'`, clusterID)
+WHERE b.cluster_id = $1 AND r.name = 'superadmin'`, clusterID)
 	var n int
 	if err := row.Scan(&n); err != nil {
 		return 0, err
@@ -147,7 +147,7 @@ SELECT count(*)
 FROM role_bindings b
 JOIN roles r ON r.id = b.role_id
 JOIN users u ON u.id = b.user_id
-WHERE b.cluster_id = $1 AND r.name = 'admin' AND u.disabled_at IS NULL`, clusterID)
+WHERE b.cluster_id = $1 AND r.name = 'superadmin' AND u.disabled_at IS NULL`, clusterID)
 	var n int
 	if err := row.Scan(&n); err != nil {
 		return 0, err
@@ -155,13 +155,23 @@ WHERE b.cluster_id = $1 AND r.name = 'admin' AND u.disabled_at IS NULL`, cluster
 	return n, nil
 }
 
+// EnsureRoles seeds the built-in roles with their order and titles. On
+// later starts it refreshes the permissions of built-in roles nobody has
+// edited; an edited (customized) role keeps its list, and a role an admin
+// has reordered keeps its rank.
 func (p *Postgres) EnsureRoles(ctx context.Context, clusterID string, roles map[string][]string) error {
 	for name, perms := range roles {
+		rank, _, login, title := builtinRoleDefaults(name)
 		_, err := p.DB.ExecContext(ctx, `
-INSERT INTO roles (id, cluster_id, name, permissions)
-VALUES ($1, $2, $3, string_to_array($4, ','))
-ON CONFLICT (cluster_id, name) DO UPDATE SET permissions = EXCLUDED.permissions`,
-			uuid.NewString(), clusterID, name, strings.Join(perms, ","))
+INSERT INTO roles (id, cluster_id, name, permissions, title, rank, builtin, login)
+VALUES ($1, $2, $3, string_to_array($4, ','), $5, $6, true, $7)
+ON CONFLICT (cluster_id, name) DO UPDATE SET
+    permissions = CASE WHEN roles.customized THEN roles.permissions ELSE EXCLUDED.permissions END,
+    rank = CASE WHEN roles.builtin THEN roles.rank ELSE EXCLUDED.rank END,
+    title = CASE WHEN roles.title = '' THEN EXCLUDED.title ELSE roles.title END,
+    login = EXCLUDED.login,
+    builtin = true`,
+			uuid.NewString(), clusterID, name, strings.Join(perms, ","), title, rank, login)
 		if err != nil {
 			return err
 		}

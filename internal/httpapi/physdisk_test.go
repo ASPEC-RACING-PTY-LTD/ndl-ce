@@ -257,7 +257,7 @@ func TestPhysicalDiskViewerCannotAssign(t *testing.T) {
 	if err := mem.CreateUser(context.Background(), u); err != nil {
 		t.Fatal(err)
 	}
-	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.User)
 	vlogin, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
 	if vlogin.StatusCode != 200 {
 		t.Fatalf("login %d", vlogin.StatusCode)

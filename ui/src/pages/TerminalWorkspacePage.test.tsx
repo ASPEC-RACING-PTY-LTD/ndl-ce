@@ -10,7 +10,7 @@ vi.mock("../components/FileEditor", () => ({ FileEditor: () => null }));
 const admin: MeResponse = {
   user_id: "user-1",
   username: "admin",
-  roles: ["admin"],
+  roles: ["superadmin"],
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
@@ -19,7 +19,7 @@ const admin: MeResponse = {
 const operator: MeResponse = {
   user_id: "user-3",
   username: "oper",
-  roles: ["operator"],
+  roles: ["admin"],
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
@@ -28,7 +28,7 @@ const operator: MeResponse = {
 const viewer: MeResponse = {
   user_id: "user-2",
   username: "view",
-  roles: ["viewer"],
+  roles: ["user"],
   edition: "ce",
   ux_level: "expert",
   expert_ack: true,
@@ -572,7 +572,7 @@ describe("Terminal workspace", () => {
   it("does not silently start a stopped workload from the new terminal picker", async () => {
     installIO();
     await openWorkspace();
-    // These check the prompt non-Owners see; Owners skip it (confirm.test.tsx).
+    // These check the prompt non-SuperAdmins see; SuperAdmins skip it (confirm.test.tsx).
     setAutoConfirm(false);
     fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
     const dialog = await screen.findByRole("dialog", { name: /new terminal/i });

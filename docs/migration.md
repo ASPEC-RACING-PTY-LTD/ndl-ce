@@ -147,8 +147,8 @@ acknowledgement.
 - `migration.export`
 - `migration.manage`
 
-Viewing a workload does not grant migration rights. Viewer is read-only.
-Operator may import, export, and manage sources. Credentials are stored in
+Viewing a workload does not grant migration rights. The User role is read-only.
+Admin may import, export, and manage sources. Credentials are stored in
 `secrets.migration_source_credentials` and are never returned to the browser.
 
 ## Security

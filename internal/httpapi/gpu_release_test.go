@@ -222,7 +222,7 @@ func TestUnassignRequiresGPUAssignGrant(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	u := appdb.User{ID: uuid.NewString(), ClusterID: f.cluster, Username: "view", PasswordHash: hash}
 	_ = f.mem.CreateUser(context.Background(), u)
-	_ = f.mem.BindRole(context.Background(), f.cluster, u.ID, rbac.Viewer)
+	_ = f.mem.BindRole(context.Background(), f.cluster, u.ID, rbac.User)
 	login, err := f.ts.Client().Post(f.ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
 	if err != nil {
 		t.Fatal(err)

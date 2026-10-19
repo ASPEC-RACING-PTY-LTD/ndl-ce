@@ -577,7 +577,7 @@ export function UpdatesPage() {
           </dl>
         ) : null}
       </Dialog>
-      <LiveUpdatesPanel owner={Boolean(user?.roles?.includes("admin"))} />
+      <LiveUpdatesPanel owner={Boolean(user?.roles?.includes("superadmin"))} />
     </section>
   );
 }

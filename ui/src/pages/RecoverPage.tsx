@@ -16,7 +16,7 @@ function message(err: unknown, fallback: string): string {
 /**
  * RecoverPage rebuilds a lost NDL-CE on this unclaimed host from its
  * platform backup: connect the bucket with new credentials, unlock with an
- * Owner's password, map pools and networks onto this host, restore.
+ * SuperAdmin's password, map pools and networks onto this host, restore.
  */
 export function RecoverPage() {
   const [status, setStatus] = useState<RecoveryStatus | null>(null);
@@ -136,7 +136,7 @@ export function RecoverPage() {
             <p className="lede">
               Connect the R2 bucket that holds the platform backup. Use new Cloudflare credentials: the old ones should
               have been revoked with the lost host. Only reading the bucket is needed to find the backup; it stays locked
-              until an Owner's password opens it.
+              until a SuperAdmin's password opens it.
             </p>
             <Field id="recover-token" label="Setup token" type="text" autoComplete="off" spellCheck={false} value={token} onChange={(e) => setToken(e.target.value)} />
             <Field id="recover-account" label="Cloudflare account id" type="text" autoComplete="off" spellCheck={false} value={accountId} onChange={(e) => setAccountId(e.target.value)} />
@@ -172,12 +172,12 @@ export function RecoverPage() {
             <p className="lede">
               Found {found.snapshots} platform backup{found.snapshots === 1 ? "" : "s"}
               {found.newest ? `, the newest from ${formatWhen(found.newest)}` : ""}. Unlock it with the username and
-              password of an Owner of the lost NDL-CE.
+              password of a SuperAdmin of the lost NDL-CE.
             </p>
             {found.schema_level != null && found.local_schema_level != null && found.schema_level > found.local_schema_level ? (
               <p className="banner banner-error">This NDL-CE is older than the backup. Install the same or a newer version first.</p>
             ) : null}
-            <Field id="recover-username" label="Owner username" type="text" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <Field id="recover-username" label="SuperAdmin username" type="text" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} />
             <Field id="recover-password" label="Password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
             <button className="btn btn-primary" type="submit" disabled={busy}>
               {busy ? "Unlocking" : "Unlock"}
@@ -224,7 +224,7 @@ export function RecoverPage() {
 
         {step === "done" && result ? (
           <div className="form">
-            <p className="lede">NDL-CE was restored. Sign in with your Owner account from the lost host.</p>
+            <p className="lede">NDL-CE was restored. Sign in with your SuperAdmin account from the lost host.</p>
             {result.connection_verified ? (
               <p className="banner" role="status">
                 The new bucket connection was saved in place of the old credentials and tested.

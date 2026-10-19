@@ -8,7 +8,7 @@ import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 function canAsk(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator") || roles?.includes("viewer"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin") || roles?.includes("user"));
 }
 
 export function AskPage() {

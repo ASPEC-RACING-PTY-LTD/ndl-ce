@@ -128,8 +128,8 @@ WHERE g.cluster_id=$1 AND m.group_id=$2`, clusterID, groupID)
 }
 
 func (p *Postgres) BindGroupRole(ctx context.Context, clusterID, groupID, roleName string) error {
-	if roleName == "admin" {
-		return fmt.Errorf("groups cannot grant admin")
+	if roleName == "superadmin" {
+		return fmt.Errorf("groups cannot grant superadmin")
 	}
 	g, err := p.GetGroup(ctx, clusterID, groupID)
 	if err != nil {

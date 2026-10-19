@@ -382,12 +382,12 @@ func (s *Server) authorizeDanger(w http.ResponseWriter, r *http.Request, p *prin
 	}
 	admin := false
 	for _, role := range p.Roles {
-		if role == rbac.Admin {
+		if role == rbac.SuperAdmin {
 			admin = true
 		}
 	}
 	if !admin {
-		s.audit(r, p.User.ClusterID, p.User.ID, "network.confirm", "denied", "operator cannot enslave the management NIC")
+		s.audit(r, p.User.ClusterID, p.User.ID, "network.confirm", "denied", "only a SuperAdmin can enslave the management NIC")
 		writeErr(w, http.StatusForbidden, "operator cannot enslave the management NIC")
 		return false
 	}

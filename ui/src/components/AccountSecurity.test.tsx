@@ -7,7 +7,7 @@ import type { ManagedUser } from "../api/client";
 vi.mock("../session", () => ({
   useSession: () => ({
     status: "ready",
-    user: { user_id: "other", username: "second", roles: ["admin"], grants: ["users.update", "users.delete", "users.roles.manage"] },
+    user: { user_id: "other", username: "second", roles: ["superadmin"], grants: ["users.update", "users.delete", "users.roles.manage"] },
   }),
 }));
 
@@ -34,7 +34,7 @@ describe("UploadDialog", () => {
 
 describe("UserDetailDialog", () => {
   it("locks the root account for another admin", () => {
-    const root: ManagedUser = { id: "root-1", username: "owner", roles: ["admin"], status: "active", is_root: true };
+    const root: ManagedUser = { id: "root-1", username: "owner", roles: ["superadmin"], status: "active", is_root: true };
     render(<UserDetailDialog user={root} onClose={() => undefined} onChanged={() => undefined} />);
     expect(screen.getByText(/this is the root account/i)).toBeVisible();
     expect(screen.getByLabelText(/^username$/i)).toBeDisabled();

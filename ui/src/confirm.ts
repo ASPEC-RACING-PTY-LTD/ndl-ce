@@ -1,5 +1,5 @@
 /**
- * Owners are trusted to mean what they click: while one is signed in,
+ * SuperAdmins are trusted to mean what they click: while one is signed in,
  * confirmation prompts answer yes on their own. Everyone else is asked.
  * Prompts that collect something (a password, a name, a location) still
  * open; only plain "are you sure" questions are skipped.

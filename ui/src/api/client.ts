@@ -3744,6 +3744,8 @@ export type IAMRole = {
   login: boolean;
   user_count: number;
   owner: boolean;
+  /** Ranked above SuperAdmin; only the root SuperAdmin manages it. */
+  above_top?: boolean;
   editable: boolean;
 };
 
@@ -3755,6 +3757,9 @@ export type IAMAccess = {
   users: { id: string; username: string; display_name?: string }[];
   permissions: string[];
   can_order: boolean;
+  /** Only the root SuperAdmin may place roles above SuperAdmin. */
+  can_order_above_top?: boolean;
+  is_root?: boolean;
   can_manage_roles: boolean;
 };
 
@@ -3787,4 +3792,106 @@ export async function saveIAMGroup(id: string, body: { name?: string; member_ids
 
 export async function deleteIAMGroup(id: string): Promise<void> {
   return noContent(await request(`/groups/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+
+// --- IAM settings, approvals, notifications ---------------------------------
+
+export type AutomationCreators = {
+  min_role: string;
+  roles: string[];
+  locked: boolean;
+  admins_may_edit: boolean;
+  can_edit: boolean;
+  i_may_create: boolean;
+};
+
+export type IAMSettings = {
+  root: { user_id: string; username: string; is_me: boolean };
+  automation_creators: AutomationCreators;
+  /** SuperAdmins only: role -> approvals.view / approvals.decide. */
+  approvals_access?: Record<string, string[]>;
+};
+
+export async function getIAMSettings(): Promise<IAMSettings> {
+  return readJson(await request("/iam/settings"));
+}
+
+export async function saveAutomationCreators(body: { min_role?: string; roles?: string[]; admins_may_edit?: boolean }): Promise<IAMSettings> {
+  return readJson(await request("/iam/settings/automation-creators", { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function saveApprovalsAccess(access: Record<string, string[]>): Promise<IAMSettings> {
+  return readJson(await request("/iam/settings/approvals-access", { method: "PUT", body: JSON.stringify({ access }) }));
+}
+
+export type ProtectedStep = { node_id: string; name: string; type: string; kind: "harmful" | "security" | "own_api"; reason: string };
+
+export type ApprovalStatus = "pending" | "approved" | "denied" | "superseded";
+
+export type Approval = {
+  flow_id: string;
+  flow_name: string;
+  version: number;
+  status: ApprovalStatus;
+  hash: string;
+  requested_by: string;
+  requested_by_id: string;
+  note: string;
+  created_at: string;
+  protected_steps: ProtectedStep[];
+  decided_by: string;
+  decided_at: string | null;
+  decision_note: string;
+  running_version: number;
+};
+
+export type ApprovalDetail = Approval & {
+  definition: unknown;
+  base_version: number;
+  base_definition: unknown;
+  can_decide: boolean;
+};
+
+export type ApprovalList = { items: Approval[]; pending: number; can_decide: boolean; can_manage_access: boolean };
+
+export async function listApprovals(status?: ApprovalStatus): Promise<ApprovalList> {
+  const qs = status ? `?status=${status}` : "";
+  return readJson(await request(`/approvals${qs}`));
+}
+
+export async function getApproval(flowID: string, version: number): Promise<ApprovalDetail> {
+  return readJson(await request(`/approvals/${encodeURIComponent(flowID)}/${version}`));
+}
+
+export async function decideApproval(flowID: string, version: number, approve: boolean, note: string): Promise<Approval> {
+  const verb = approve ? "approve" : "deny";
+  return readJson(await request(`/approvals/${encodeURIComponent(flowID)}/${version}/${verb}`, { method: "POST", body: JSON.stringify({ note }) }));
+}
+
+export type AppNotification = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  link: string;
+  created_at: string;
+  read: boolean;
+  read_at: string | null;
+};
+
+export async function listNotifications(opts: { unread?: boolean; limit?: number } = {}): Promise<{ items: AppNotification[]; unread: number }> {
+  const qs = new URLSearchParams();
+  if (opts.unread) qs.set("unread", "true");
+  if (opts.limit) qs.set("limit", String(opts.limit));
+  const q = qs.toString();
+  return readJson(await request(`/notifications${q ? `?${q}` : ""}`));
+}
+
+export async function getUnreadNotifications(): Promise<{ unread: number }> {
+  return readJson(await request("/notifications/unread-count"));
+}
+
+/** Marks the given notifications read, or all of them when ids is empty. */
+export async function markNotificationsRead(ids: string[] = []): Promise<{ unread: number }> {
+  return readJson(await request("/notifications/read", { method: "POST", body: JSON.stringify({ ids }) }));
 }

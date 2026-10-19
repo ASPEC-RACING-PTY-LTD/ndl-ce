@@ -211,7 +211,7 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Privileged && !hasRole(p, rbac.Admin) {
+	if req.Privileged && !hasRole(p, rbac.SuperAdmin) {
 		s.audit(r, p.User.ClusterID, p.User.ID, "workload.create.privileged", "denied", "operator cannot create privileged containers")
 		writeErr(w, http.StatusForbidden, "only admin may create privileged containers")
 		return
@@ -552,7 +552,7 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 		}
 		req := lxc.LifecycleRequest{WorkloadID: row.ID, Action: action}
 		if action == "clone" {
-			if row.Privileged && !hasRole(p, rbac.Admin) {
+			if row.Privileged && !hasRole(p, rbac.SuperAdmin) {
 				s.audit(r, p.User.ClusterID, p.User.ID, "workload.clone.privileged", "denied", "operator cannot clone privileged containers")
 				writeErr(w, http.StatusForbidden, "only admin may clone privileged containers")
 				return

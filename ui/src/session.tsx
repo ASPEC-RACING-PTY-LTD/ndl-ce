@@ -53,8 +53,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
-  // Owners skip "are you sure" prompts (see confirm.ts).
-  const ownerSignedIn = state.status === "ready" && Boolean(state.user?.roles?.includes("admin"));
+  // SuperAdmins skip "are you sure" prompts (see confirm.ts).
+  const ownerSignedIn = state.status === "ready" && Boolean(state.user?.roles?.includes("superadmin"));
   useEffect(() => {
     setAutoConfirm(ownerSignedIn);
   }, [ownerSignedIn]);

@@ -41,7 +41,7 @@ type ConnectorRequest struct {
 	// Probe target, for ConnectorProbe.
 	Host string `json:"host,omitempty"`
 	Port int    `json:"port,omitempty"`
-	// HostApproved is set only after an Owner approved changing the host's
+	// HostApproved is set only after a SuperAdmin approved changing the host's
 	// own cloudflared; without it install, update and remove refuse the host.
 	HostApproved bool `json:"host_approved,omitempty"`
 }

@@ -90,14 +90,14 @@ func TestManagementRBACAndLastOwner(t *testing.T) {
 	}
 	_ = res.Body.Close()
 
-	create := authedJSON(t, ts, "POST", "/api/v1/users", ownerCookie, `{"username":"ndl-e2e-viewer","password":"viewer-pass","role":"viewer","display_name":"Disposable viewer"}`, nil)
+	create := authedJSON(t, ts, "POST", "/api/v1/users", ownerCookie, `{"username":"ndl-e2e-viewer","password":"viewer-pass","role":"user","display_name":"Disposable viewer"}`, nil)
 	if create.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(create.Body)
 		t.Fatalf("create viewer=%d %s", create.StatusCode, raw)
 	}
 	viewerID := readUserID(t, create)
 
-	createOp := authedJSON(t, ts, "POST", "/api/v1/users", ownerCookie, `{"username":"ndl-e2e-admin","password":"operator1","role":"operator"}`, nil)
+	createOp := authedJSON(t, ts, "POST", "/api/v1/users", ownerCookie, `{"username":"ndl-e2e-admin","password":"operator1","role":"admin"}`, nil)
 	if createOp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(createOp.Body)
 		t.Fatalf("create operator=%d %s", createOp.StatusCode, raw)
@@ -172,7 +172,7 @@ func TestManagementRBACAndLastOwner(t *testing.T) {
 	}
 	_ = del.Body.Close()
 
-	demote := authedJSON(t, ts, "PATCH", "/api/v1/users/"+owner.ID, ownerCookie, `{"role":"viewer"}`, nil)
+	demote := authedJSON(t, ts, "PATCH", "/api/v1/users/"+owner.ID, ownerCookie, `{"role":"user"}`, nil)
 	if demote.StatusCode != http.StatusConflict {
 		raw, _ := io.ReadAll(demote.Body)
 		t.Fatalf("demote last owner=%d %s", demote.StatusCode, raw)
@@ -186,7 +186,7 @@ func TestManagementRBACAndLastOwner(t *testing.T) {
 	}
 	_ = disable.Body.Close()
 
-	second := authedJSON(t, ts, "POST", "/api/v1/users", ownerCookie, `{"username":"ndl-e2e-owner2","password":"owner-pass","role":"admin"}`, nil)
+	second := authedJSON(t, ts, "POST", "/api/v1/users", ownerCookie, `{"username":"ndl-e2e-owner2","password":"owner-pass","role":"superadmin"}`, nil)
 	if second.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(second.Body)
 		t.Fatalf("second owner=%d %s", second.StatusCode, raw)
@@ -336,7 +336,7 @@ func TestSetupClaimDoesNotOverwriteExistingOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsString(roles, rbac.Admin) {
+	if !containsString(roles, rbac.SuperAdmin) {
 		t.Fatalf("roles=%v", roles)
 	}
 }
@@ -355,7 +355,7 @@ func TestMeIncludesGrants(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&me); err != nil {
 		t.Fatal(err)
 	}
-	if !containsString(me.Roles, rbac.Admin) || !containsString(me.Grants, rbac.All) {
+	if !containsString(me.Roles, rbac.SuperAdmin) || !containsString(me.Grants, rbac.All) {
 		t.Fatalf("me roles=%v grants=%v", me.Roles, me.Grants)
 	}
 }

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AutomationHome } from "./AutomationHome";
 
 vi.mock("../../session", () => ({
-  useSession: () => ({ status: "ready", setupOpen: false, user: { user_id: "u1", username: "admin", roles: ["admin"], grants: ["*"] } }),
+  useSession: () => ({ status: "ready", setupOpen: false, user: { user_id: "u1", username: "admin", roles: ["superadmin"], grants: ["*"] } }),
 }));
 
 function mockFetch(routes: Record<string, { status: number; body: unknown }>) {

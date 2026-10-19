@@ -157,6 +157,7 @@ type Memory struct {
 	gameHist           map[string][]string
 	gamePrefs          map[string]string
 	account            accountMem
+	iam                iamMem
 }
 
 // NewMemory returns an empty store.
@@ -297,7 +298,7 @@ func (m *Memory) CountAdmins(_ context.Context, clusterID string) (int, error) {
 			continue
 		}
 		for _, r := range roles {
-			if r == "admin" {
+			if r == "superadmin" {
 				n++
 				break
 			}
@@ -313,7 +314,11 @@ func (m *Memory) EnsureRoles(_ context.Context, clusterID string, roles map[stri
 		m.roles = map[string][]string{}
 	}
 	for name, perms := range roles {
-		m.roles[clusterID+"/"+name] = perms
+		key := clusterID + "/" + name
+		if m.roleMeta[key].Customized {
+			continue
+		}
+		m.roles[key] = perms
 	}
 	return nil
 }

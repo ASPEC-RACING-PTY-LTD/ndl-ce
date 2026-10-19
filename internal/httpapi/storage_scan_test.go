@@ -108,8 +108,8 @@ func TestStorageManagerScansExplainsAndDeletesSafely(t *testing.T) {
 	if code, _, _ = call(admin, "POST", "/api/v1/storage/scan/"+id+"/delete", `{"items":["leftovers"],"confirm":"yes"}`); code != 400 {
 		t.Fatal("the count must be typed to confirm")
 	}
-	viewer := loginRole(t, ts, mem, "scanview", rbac.Viewer)
-	operator := loginRole(t, ts, mem, "scanop", rbac.Operator)
+	viewer := loginRole(t, ts, mem, "scanview", rbac.User)
+	operator := loginRole(t, ts, mem, "scanop", rbac.Admin)
 	if code, _, _ = call(viewer, "GET", "/api/v1/storage/scan/"+id, ""); code != 200 {
 		t.Fatal("viewers can browse a scan")
 	}

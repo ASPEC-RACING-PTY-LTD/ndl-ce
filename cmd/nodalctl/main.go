@@ -37,6 +37,7 @@ func run(args []string) error {
   token create --name NAME
   recover-admin --username USER --password PASS
   recover-ip --username USER [--add-ip IP] [--disable-allowlist] [--clear-lockout]
+  set-root --username USER
   host-prepare
   node show
   node dest-listen --id ID --addr HOST:PORT
@@ -215,6 +216,8 @@ func run(args []string) error {
 		return cmdRecover(args[1:])
 	case "recover-ip":
 		return cmdRecoverIP(args[1:])
+	case "set-root":
+		return cmdSetRoot(args[1:])
 	case "host-prepare":
 		return install.HostPrepare()
 	case "node":
@@ -443,6 +446,20 @@ func cmdRecoverIP(args []string) error {
 		"clear_lockout":     f["clear-lockout"] == "true",
 	}
 	return postJSON("/api/v1/console/ip-recovery", body, false)
+}
+
+// cmdSetRoot makes another SuperAdmin the root account (the one other
+// SuperAdmins cannot manage). It works only as root on the host.
+func cmdSetRoot(args []string) error {
+	f := parseFlags(args)
+	user := strings.TrimSpace(f["username"])
+	if user == "" {
+		return fmt.Errorf("usage: nodalctl set-root --username USER")
+	}
+	if localControlSocket() == "" {
+		return fmt.Errorf("set-root must run as root on the host (the local control socket is not available)")
+	}
+	return postJSON("/api/v1/console/set-root", map[string]any{"username": user}, false)
 }
 
 func postJSON(path string, body any, saveSession bool) error {

@@ -16,8 +16,8 @@ func TestUIPrefsMergePerUser(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	_ = claimAdmin(t, ts, token)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
-	other := loginRole(t, ts, mem, "other", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
+	other := loginRole(t, ts, mem, "other", rbac.User)
 
 	patch := func(cookie string, body string) (int, map[string]any) {
 		t.Helper()

@@ -1,10 +1,10 @@
 // Package platformbackup keeps an encrypted copy of the NDL-CE platform
 // itself (database, configuration, the backup repository key and the index
 // of workload restore points) in a backup target, so a new host can recover
-// everything with only the target's credentials and an Owner's password.
+// everything with only the target's credentials and a SuperAdmin's password.
 //
 // The snapshot key never leaves the host in the clear. It is wrapped once
-// per Owner with a key derived from that Owner's password (Argon2id), and the
+// per SuperAdmin with a key derived from that SuperAdmin's password (Argon2id), and the
 // wraps are published as an envelope next to the snapshots. Access to the
 // bucket and the ability to decrypt are separate: bucket credentials alone
 // reveal only ciphertext and salted wraps.
@@ -39,9 +39,9 @@ type KDF struct {
 // DefaultKDF costs about a quarter of a second and 64 MiB per attempt.
 var DefaultKDF = KDF{Alg: "argon2id", Time: 3, MemoryKiB: 64 * 1024, Threads: 4}
 
-// Wrap is the snapshot key encrypted for one Owner.
+// Wrap is the snapshot key encrypted for one SuperAdmin.
 type Wrap struct {
-	// Owner identifies the Owner without naming them: see OwnerID.
+	// Owner identifies the SuperAdmin without naming them: see OwnerID.
 	Owner     string    `json:"owner"`
 	KeyID     string    `json:"key_id"`
 	KDF       KDF       `json:"kdf"`
@@ -75,7 +75,7 @@ func KeyCheck(key []byte) string {
 	return hex.EncodeToString(m.Sum(nil))
 }
 
-// OwnerID is the stable, non-reversible id of an Owner's sign-in name.
+// OwnerID is the stable, non-reversible id of a SuperAdmin's sign-in name.
 func OwnerID(username string) string {
 	sum := sha256.Sum256([]byte("ndl-owner:" + strings.ToLower(strings.TrimSpace(username))))
 	return hex.EncodeToString(sum[:])
@@ -103,7 +103,7 @@ func wrapAAD(owner, keyID string) []byte {
 	return []byte("ndl-platform wrap\x00" + owner + "\x00" + keyID)
 }
 
-// WrapKey encrypts key for the Owner signing in as username with password.
+// WrapKey encrypts key for the SuperAdmin signing in as username with password.
 func WrapKey(key []byte, username, password string, kdf KDF, now time.Time) (Wrap, error) {
 	if len(key) != KeySize {
 		return Wrap{}, fmt.Errorf("invalid snapshot key")

@@ -178,7 +178,7 @@ list/inspect reconciliation.
 
 ## Actions
 
-Operators can start, stop, restart, read logs, open a terminal (`docker
+Admins can start, stop, restart, read logs, open a terminal (`docker
 exec`), pull, and recreate. Terminals open in the existing Terminal
 workspace.
 

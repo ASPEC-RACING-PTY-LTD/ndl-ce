@@ -16,7 +16,7 @@ You need:
 - **new** Cloudflare credentials for the bucket: an API token with R2 access, or
   an R2 access key id and secret, plus the account id and the bucket name.
   Revoke the lost host's credentials; they are not needed and are replaced;
-- the username and password of an Owner of the lost NDL-CE.
+- the username and password of a SuperAdmin of the lost NDL-CE.
 
 ### Steps
 
@@ -25,7 +25,7 @@ You need:
 2. Enter the setup token, account id, bucket and the new credentials. An API
    token is turned into R2 S3 credentials (its id and the SHA-256 of its
    value). NDL-CE looks for the backup under `ndl-platform/`.
-3. Enter an Owner's username and password. They unlock the newest snapshot
+3. Enter a SuperAdmin's username and password. They unlock the newest snapshot
    (or, if that envelope does not open, the kept fallback). A wrong password
    is refused and repeated failures are throttled. A backup from a newer
    NDL-CE is refused: install the same or a newer version.
@@ -52,10 +52,10 @@ You need:
    The result is shown before any workload is restored.
 8. Installs the lost host's backup repository key, so its restore points
    can be decrypted.
-9. Restarts the control plane. Sign in with your Owner account.
+9. Restarts the control plane. Sign in with your SuperAdmin account.
 
 Access to the bucket and the ability to decrypt stay separate throughout: the
-bucket credentials find and download the backup, and only an Owner's password
+bucket credentials find and download the backup, and only a SuperAdmin's password
 opens it.
 
 ### Restoring the workloads
@@ -63,7 +63,7 @@ opens it.
 After recovery, **Backups → Recovered from a platform backup** lists every
 workload with its newest offsite restore point and, before anything runs,
 **the changes that were not backed up**: commits that were never pushed and
-uncommitted files in its Git repositories. An Owner chooses **Restore all
+uncommitted files in its Git repositories. A SuperAdmin chooses **Restore all
 workloads** or restores them one by one. For each workload:
 
 1. A system container is created again from its definition. For a Smart or
@@ -75,14 +75,14 @@ workloads** or restores them one by one. For each workload:
    - Git repositories are cloned again and checked out at the exact recorded
      commit. Credentials are tried in order: the workload's own (its
      `~/.git-credentials`, `~/.ssh`, `ch` login, kept in its backup), then
-     the host's CodeHold login (`ch clone`), then a token the Owner gives for
+     the host's CodeHold login (`ch clone`), then a token the SuperAdmin gives for
      that clone, which is used once and never stored. If none work it stops
      and asks. A commit that was never pushed cannot be cloned: the newest
      pushed ancestor is checked out instead, with a warning.
    - Images come back from a kept copy, else by their recorded digest
      (`repo@sha256:...`) and are tagged as before. Locally built images are
      rebuilt from the Dockerfile at the checked-out commit. If a digest is
-     gone, the Owner is asked before the tag is used instead.
+     gone, the SuperAdmin is asked before the tag is used instead.
    - Compose projects are started with the images above (no pulls by tag,
      no builds at start).
 4. It gets back the power it had: running workloads are left running,

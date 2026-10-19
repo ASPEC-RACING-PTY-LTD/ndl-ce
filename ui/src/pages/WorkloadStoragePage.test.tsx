@@ -10,7 +10,7 @@ const api = vi.hoisted(() => ({
   setWorkloadMounts: vi.fn(),
   workloadAction: vi.fn(),
 }));
-const session = vi.hoisted(() => ({ roles: ["admin"] as string[] }));
+const session = vi.hoisted(() => ({ roles: ["superadmin"] as string[] }));
 
 vi.mock("../api/client", () => api);
 vi.mock("../session", () => ({
@@ -38,7 +38,7 @@ function storage(over: Partial<WorkloadStorage> = {}): WorkloadStorage {
 describe("WorkloadStoragePage", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", `/workloads/${ID}/storage`);
-    session.roles = ["admin"];
+    session.roles = ["superadmin"];
     api.getWorkload.mockResolvedValue(workload);
     api.getWorkloadStorage.mockResolvedValue(storage());
   });
@@ -108,7 +108,7 @@ describe("WorkloadStoragePage", () => {
   });
 
   it("is read-only for viewers", async () => {
-    session.roles = ["viewer"];
+    session.roles = ["user"];
     render(<WorkloadStoragePage />);
     expect(await screen.findByText(/no extra storage is mounted/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /add storage/i })).not.toBeInTheDocument();

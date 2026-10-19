@@ -14,7 +14,7 @@ export function ImportVMPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
-  const admin = Boolean(roles?.includes("admin"));
+  const admin = Boolean(roles?.includes("superadmin"));
   const [images, setImages] = useState<LibraryItem[]>([]);
   const [pools, setPools] = useState<StoragePool[]>([]);
   const [nets, setNets] = useState<Network[]>([]);

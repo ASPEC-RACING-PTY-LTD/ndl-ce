@@ -115,6 +115,140 @@ export interface AutomationFlow {
   updated_at?: string;
   last_run?: Record<string, unknown>;
   problems?: AutomationProblem[];
+  protected_steps?: ProtectedStep[];
+  publish_needs_approval?: boolean;
+  draft_tainted?: boolean;
+  pending_version?: number;
+  pending?: AutomationFlowPending;
+  last_denied?: AutomationFlowDenied;
+  waiting_for_approval?: boolean;
+}
+
+export interface AutomationFlowPending {
+  version: number;
+  requested_by: string;
+  created_at: string;
+  draft_matches: boolean;
+}
+
+export interface AutomationFlowDenied {
+  version: number;
+  decided_by: string;
+  note: string;
+}
+
+export interface ProtectedStep {
+  node_id: string;
+  name: string;
+  type: string;
+  kind: "harmful" | "security" | "own_api";
+  reason: string;
+}
+
+export interface Approval {
+  flow_id: string;
+  flow_name: string;
+  version: number;
+  status: "pending" | "approved" | "denied" | "superseded";
+  hash: string;
+  requested_by: string;
+  requested_by_id: string;
+  note: string;
+  created_at: string;
+  protected_steps: ProtectedStep[];
+  decided_by: string;
+  decided_at: string;
+  decision_note: string;
+  running_version: number;
+}
+
+export interface ApprovalDetail {
+  flow_id: string;
+  flow_name: string;
+  version: number;
+  status: "pending" | "approved" | "denied" | "superseded";
+  hash: string;
+  requested_by: string;
+  requested_by_id: string;
+  note: string;
+  created_at: string;
+  protected_steps: ProtectedStep[];
+  decided_by: string;
+  decided_at: string;
+  decision_note: string;
+  running_version: number;
+  definition: Record<string, unknown>;
+  base_version: number;
+  base_definition: Record<string, unknown>;
+  can_decide: boolean;
+}
+
+export interface ApprovalList {
+  items: Approval[];
+  pending: number;
+  can_decide: boolean;
+  can_manage_access: boolean;
+}
+
+export interface ApprovalDecisionRequest {
+  note?: string;
+}
+
+export interface AutomationCreators {
+  min_role: string;
+  roles: string[];
+  locked: boolean;
+  admins_may_edit: boolean;
+  can_edit: boolean;
+  i_may_create: boolean;
+}
+
+export interface AutomationCreatorsRequest {
+  min_role?: string;
+  roles?: string[];
+  admins_may_edit?: boolean;
+}
+
+export interface ApprovalsAccessRequest {
+  access: Record<string, unknown>;
+}
+
+export interface IAMSettings {
+  root: Record<string, unknown>;
+  automation_creators: AutomationCreators;
+  approvals_access?: Record<string, unknown>;
+}
+
+export interface ConsoleSetRootRequest {
+  username: string;
+}
+
+export interface ConsoleSetRootResponse {
+  root: string;
+}
+
+export interface Notification {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  link: string;
+  created_at: string;
+  read: boolean;
+  read_at: string;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  unread: number;
+}
+
+export interface NotificationUnread {
+  unread: number;
+}
+
+export interface NotificationReadRequest {
+  ids?: string[];
 }
 
 export interface AutomationFlowList {
@@ -3022,7 +3156,7 @@ export interface AddGroupMemberRequest {
 }
 
 export interface BindGroupRoleRequest {
-  role: "operator" | "viewer";
+  role: string;
 }
 
 export interface ServicePrincipalListResponse {
@@ -3883,6 +4017,28 @@ export type UnlockUserPath = "/api/v1/users/{id}/unlock";
 export type ResetUserMFAPath = "/api/v1/users/{id}/mfa/reset";
 
 export type ConsoleIPRecoveryPath = "/api/v1/console/ip-recovery";
+
+export type ConsoleSetRootPath = "/api/v1/console/set-root";
+
+export type GetIAMSettingsPath = "/api/v1/iam/settings";
+
+export type PutAutomationCreatorsPath = "/api/v1/iam/settings/automation-creators";
+
+export type PutApprovalsAccessPath = "/api/v1/iam/settings/approvals-access";
+
+export type ListApprovalsPath = "/api/v1/approvals";
+
+export type GetApprovalPath = "/api/v1/approvals/{flow}/{version}";
+
+export type ApproveApprovalPath = "/api/v1/approvals/{flow}/{version}/approve";
+
+export type DenyApprovalPath = "/api/v1/approvals/{flow}/{version}/deny";
+
+export type ListNotificationsPath = "/api/v1/notifications";
+
+export type NotificationsUnreadCountPath = "/api/v1/notifications/unread-count";
+
+export type MarkNotificationsReadPath = "/api/v1/notifications/read";
 
 export type GetTrustedProxiesPath = "/api/v1/settings/trusted-proxies";
 

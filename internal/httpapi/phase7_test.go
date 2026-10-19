@@ -83,7 +83,7 @@ func operatorToken(t *testing.T, mem *appdb.Memory, clusterID string) string {
 	if err := mem.CreateUser(context.Background(), op); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.BindRole(context.Background(), clusterID, op.ID, rbac.Operator); err != nil {
+	if err := mem.BindRole(context.Background(), clusterID, op.ID, rbac.Admin); err != nil {
 		t.Fatal(err)
 	}
 	plain := "ndl_op_lab_token"

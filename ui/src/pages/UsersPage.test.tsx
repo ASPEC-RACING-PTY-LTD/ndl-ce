@@ -6,7 +6,7 @@ import type { MeResponse } from "../api/types";
 const owner: MeResponse = {
   user_id: "user-1",
   username: "owner",
-  roles: ["admin"],
+  roles: ["superadmin"],
   grants: ["*"],
   edition: "ce",
   ux_level: "guided",
@@ -16,7 +16,7 @@ const owner: MeResponse = {
 const viewer: MeResponse = {
   user_id: "user-2",
   username: "viewer",
-  roles: ["viewer"],
+  roles: ["user"],
   grants: ["identity.read"],
   edition: "ce",
   ux_level: "guided",
@@ -76,7 +76,7 @@ describe("Users management", () => {
               id: "u1",
               username: "owner",
               display_name: "Owner",
-              roles: ["admin"],
+              roles: ["superadmin"],
               status: "active",
               mfa_status: "not_enrolled",
               api_token_count: 0,
@@ -90,7 +90,7 @@ describe("Users management", () => {
     window.history.replaceState({}, "", "/users");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^users$/i })).toBeVisible();
-    expect(await screen.findByText(/last owner/i)).toBeVisible();
+    expect(await screen.findByText(/last superadmin/i)).toBeVisible();
   });
 
   it("forbids a standard user from opening Users", async () => {

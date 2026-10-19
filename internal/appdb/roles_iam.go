@@ -158,13 +158,13 @@ func (m *Memory) ListRoleDefs(_ context.Context, clusterID string) ([]RoleDef, e
 
 func builtinRoleDefaults(name string) (int, bool, bool, string) {
 	switch name {
+	case "superadmin":
+		return 0, true, true, "SuperAdmin"
 	case "admin":
-		return 0, true, true, "Owner"
-	case "operator":
 		return 1, true, true, "Admin"
 	case "automation":
 		return 2, true, false, "Automation"
-	case "viewer":
+	case "user":
 		return 3, true, true, "User"
 	}
 	return 100, false, true, name

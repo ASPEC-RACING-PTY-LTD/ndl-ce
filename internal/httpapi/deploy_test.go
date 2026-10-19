@@ -177,8 +177,8 @@ func TestDeployProjectDefaultsAndPermissions(t *testing.T) {
 	if p["name"] != "shop" || p["working_dir"] != "/srv/shop" || len(cmds) != 1 || cmds[0].(map[string]any)["run"] != appdb.DefaultDeployCommand {
 		t.Fatalf("defaults %v", p)
 	}
-	operator := loginRole(t, e.ts, e.mem, "deployop", rbac.Operator)
-	viewer := loginRole(t, e.ts, e.mem, "deployview", rbac.Viewer)
+	operator := loginRole(t, e.ts, e.mem, "deployop", rbac.Admin)
+	viewer := loginRole(t, e.ts, e.mem, "deployview", rbac.User)
 	if code, _ := e.call(t, operator, "PUT", "/api/v1/docker/deploy/projects/"+id, `{"config":{"commands":[{"run":"rm -rf /"}]}}`); code != http.StatusForbidden {
 		t.Fatalf("operator changed commands: %d", code)
 	}
@@ -315,7 +315,7 @@ func TestDeployLimitsAndBackupWait(t *testing.T) {
 	if gotC["status"] != appdb.DeployWaiting || !strings.Contains(gotC["waiting_for"].(string), "backup") {
 		t.Fatalf("c %v", gotC)
 	}
-	operator := loginRole(t, e.ts, e.mem, "deployop2", rbac.Operator)
+	operator := loginRole(t, e.ts, e.mem, "deployop2", rbac.Admin)
 	if code, _ := e.call(t, operator, "POST", "/api/v1/docker/deployments/"+dc["id"].(string)+"/force", ""); code != http.StatusAccepted {
 		t.Fatalf("force %d", code)
 	}
@@ -343,7 +343,7 @@ func TestDeployOnePerContainer(t *testing.T) {
 func TestDeployCancelQueuedAndRunning(t *testing.T) {
 	e := newDeployEnv(t)
 	ctx := context.Background()
-	operator := loginRole(t, e.ts, e.mem, "deployop3", rbac.Operator)
+	operator := loginRole(t, e.ts, e.mem, "deployop3", rbac.Admin)
 	a := e.project(t, e.ct, "a", t.TempDir(), "sleep 300")
 	_, da := e.call(t, e.owner, "POST", "/api/v1/docker/deploy/projects/"+a+"/deploy", "")
 	if code, _ := e.call(t, operator, "POST", "/api/v1/docker/deployments/"+da["id"].(string)+"/cancel", ""); code != http.StatusAccepted {
@@ -571,7 +571,7 @@ func TestBulkDeployDueAndChosen(t *testing.T) {
 		p.State.Due = true
 		_ = e.mem.UpdateDeployProjectState(ctx, e.cid, id, p.State)
 	}
-	operator := loginRole(t, e.ts, e.mem, "bulkop", rbac.Operator)
+	operator := loginRole(t, e.ts, e.mem, "bulkop", rbac.Admin)
 	code, res := e.call(t, operator, "POST", "/api/v1/docker/deploy/bulk", `{"due":true}`)
 	if code != http.StatusAccepted || len(res["queued"].([]any)) != 2 || res["batch_id"] == "" {
 		t.Fatalf("due %d %v", code, res)
@@ -722,7 +722,7 @@ func TestDeployWebhookChecksAndDeploysOnlyWhenAutomatic(t *testing.T) {
 	e := newDeployEnv(t)
 	_, work, commit := gitRepo(t)
 	id := e.gitProject(t, work, "git")
-	operator := loginRole(t, e.ts, e.mem, "hookop", rbac.Operator)
+	operator := loginRole(t, e.ts, e.mem, "hookop", rbac.Admin)
 	if code, _ := e.call(t, operator, "POST", "/api/v1/docker/deploy/projects/"+id+"/webhook", `{"enabled":true}`); code != http.StatusForbidden {
 		t.Fatalf("operator made a webhook: %d", code)
 	}

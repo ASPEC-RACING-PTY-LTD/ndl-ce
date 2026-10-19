@@ -147,7 +147,7 @@ describe("DeployPage", () => {
     expect(((await screen.findByLabelText(/Secret/)) as HTMLInputElement).value).toBe("s".repeat(64));
   });
 
-  it("hides Owner controls from Operators", async () => {
+  it("hides SuperAdmin controls from Admins", async () => {
     api.listDeployProjects.mockResolvedValue(list({ can_configure: false }));
     render(<DeployPage />);
     await screen.findByText("shop");

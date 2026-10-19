@@ -3,6 +3,7 @@ package appdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -63,10 +64,24 @@ type AutomationFlow struct {
 	DisabledReason      string
 	// LegacyPolicyID links a flow made from an old policy.
 	LegacyPolicyID string
-	CreatedBy      string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// PendingVersion is the version waiting for approval, 0 if none.
+	PendingVersion int
+	// DraftTainted is set when someone below SuperAdmin created or edited the
+	// draft since it was last published; the next version then loses the
+	// SuperAdmin exemption from approval.
+	DraftTainted bool
+	CreatedBy    string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
+
+// Flow version statuses. Only approved versions run.
+const (
+	FlowVersionApproved   = "approved"
+	FlowVersionPending    = "pending"
+	FlowVersionDenied     = "denied"
+	FlowVersionSuperseded = "superseded"
+)
 
 // AutomationFlowVersion is a frozen, published definition.
 type AutomationFlowVersion struct {
@@ -76,7 +91,34 @@ type AutomationFlowVersion struct {
 	Definition  json.RawMessage
 	PublishedBy string
 	Note        string
-	CreatedAt   time.Time
+	// Status is approved, pending, denied or superseded.
+	Status string
+	// Hash is the hash of Definition the approval covers.
+	Hash string
+	// NeedsApproval marks a version that went through approval.
+	NeedsApproval bool
+	// Protected lists its protected steps (JSON array).
+	Protected json.RawMessage
+	// Exempt marks a version a SuperAdmin published from a draft only
+	// SuperAdmins edited.
+	Exempt        bool
+	RequestedByID string
+	DecidedBy     string
+	DecidedAt     *time.Time
+	DecisionNote  string
+	CreatedAt     time.Time
+}
+
+// ErrNotPending is returned when a decision is made on a version that is no
+// longer waiting for approval.
+var ErrNotPending = errors.New("that version is no longer waiting for approval")
+
+// FlowVersionDecision records an approval decision on a version.
+type FlowVersionDecision struct {
+	Status    string
+	DecidedBy string
+	DecidedAt time.Time
+	Note      string
 }
 
 // AutomationConnection is a saved credential. Sealed is never returned by
@@ -235,6 +277,12 @@ type AutomationStore interface {
 	CreateAutomationFlowVersion(ctx context.Context, v AutomationFlowVersion) error
 	GetAutomationFlowVersion(ctx context.Context, clusterID, flowID string, version int) (*AutomationFlowVersion, error)
 	ListAutomationFlowVersions(ctx context.Context, clusterID, flowID string) ([]AutomationFlowVersion, error)
+	// DecideAutomationFlowVersion sets a version's status; it fails unless
+	// the version is still pending.
+	DecideAutomationFlowVersion(ctx context.Context, clusterID, flowID string, version int, d FlowVersionDecision) error
+	// ListAutomationApprovals lists versions that needed approval, newest
+	// first, optionally with one status.
+	ListAutomationApprovals(ctx context.Context, clusterID, status string, limit int) ([]AutomationFlowVersion, error)
 
 	CreateAutomationConnection(ctx context.Context, c AutomationConnection) error
 	GetAutomationConnection(ctx context.Context, clusterID, id string) (*AutomationConnection, error)

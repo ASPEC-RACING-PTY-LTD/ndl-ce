@@ -38,7 +38,7 @@ function Harness({ canApprove, calls }: { canApprove: boolean; calls: boolean[] 
 }
 
 describe("host tunnel approval", () => {
-  it("shows the advice and retries only after an Owner approves", async () => {
+  it("shows the advice and retries only after a SuperAdmin approves", async () => {
     const calls: boolean[] = [];
     render(<Harness canApprove calls={calls} />);
     fireEvent.click(screen.getByRole("button", { name: "Restart" }));
@@ -49,11 +49,11 @@ describe("host tunnel approval", () => {
     expect(calls).toEqual([false, true]);
   });
 
-  it("leaves the host alone when declined, and a non-Owner cannot approve", async () => {
+  it("leaves the host alone when declined, and a non-SuperAdmin cannot approve", async () => {
     const calls: boolean[] = [];
     render(<Harness canApprove={false} calls={calls} />);
     fireEvent.click(screen.getByRole("button", { name: "Restart" }));
-    expect(await screen.findByText(/only an owner can approve/i)).toBeInTheDocument();
+    expect(await screen.findByText(/only a superadmin can approve/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /approve and continue/i })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     await waitFor(() => expect(document.querySelector("output")?.textContent).toMatch(/left the host's tunnel alone/i));

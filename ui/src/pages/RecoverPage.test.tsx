@@ -22,7 +22,7 @@ function type(label: string, value: string) {
 }
 
 describe("RecoverPage", () => {
-  it("connects with an API token, unlocks with an Owner password, maps the host and restores", async () => {
+  it("connects with an API token, unlocks with a SuperAdmin password, maps the host and restores", async () => {
     api.getRecoveryStatus.mockResolvedValue({ available: true });
     api.recoverConnect.mockResolvedValue({ session_id: "s1", snapshots: 3, newest: "2026-10-16T01:00:00Z", schema_level: 66, local_schema_level: 66 });
     api.recoverUnlock.mockResolvedValue({
@@ -45,7 +45,7 @@ describe("RecoverPage", () => {
     expect(api.recoverConnect).toHaveBeenCalledWith(expect.objectContaining({ api_token: "cf-token", bucket: "ndl" }));
     expect(api.recoverConnect.mock.calls[0][0]).not.toHaveProperty("secret_access_key");
 
-    type("Owner username", "admin");
+    type("SuperAdmin username", "admin");
     type("Password", "pw");
     fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
     await screen.findByText(/Backup of old-host/);

@@ -19,7 +19,7 @@ import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 function classLabel(app: StoreApp): string {

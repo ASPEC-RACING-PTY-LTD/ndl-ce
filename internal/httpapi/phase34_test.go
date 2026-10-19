@@ -272,7 +272,7 @@ func TestPhase34ReplicaDSNNeverReturned(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op34", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), op)
-	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Admin)
 	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"op34","password":"password1"}`))
 	var opCookie string
 	for _, c := range login.Cookies() {

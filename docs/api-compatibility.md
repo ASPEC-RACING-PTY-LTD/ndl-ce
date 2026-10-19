@@ -8,7 +8,7 @@ Compatibility for this freeze:
 - Existing `/api/v1` paths remain. Additive fields and routes may appear
   after 1.0. Removing or renaming a frozen path is a breaking change.
 - RBAC stays deny-by-default. New permissions must not appear as silent
-  grants on viewer.
+  grants on the User role (`user`).
 - Secrets never appear in list JSON (license keys, Cephx, registry
   passwords, Store private keys, AI provider keys).
 - The agent proto still has no `Host.Exec`. Plans and policies cannot

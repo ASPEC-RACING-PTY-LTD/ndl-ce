@@ -8,6 +8,6 @@ export function uxLevel(user: { ux_level?: string } | null | undefined): UXLevel
 }
 
 export function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("admin") || roles?.includes("operator"));
+  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 

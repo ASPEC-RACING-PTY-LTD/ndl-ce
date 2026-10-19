@@ -72,7 +72,7 @@ func TestHostDiskEndpoints(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}
 	_ = mem.CreateUser(ctx, u)
-	_ = mem.BindRole(ctx, cluster.ID, u.ID, rbac.Viewer)
+	_ = mem.BindRole(ctx, cluster.ID, u.ID, rbac.User)
 	login, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
 	var view string
 	for _, c := range login.Cookies() {

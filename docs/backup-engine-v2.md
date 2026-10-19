@@ -301,14 +301,14 @@ whole-rootfs tar format.
   guest by itself.
 
   **Uncommitted Git work.** Backups → Workspace → *Ignore uncommitted Git
-  repositories* is on by default. When an Owner turns it off, a Smart or
+  repositories* is on by default. When a SuperAdmin turns it off, a Smart or
   Custom backup of a workload with a repository that has commits on no
   remote, or changes Git and the backup do not hold, is held: no restore
-  point is made, the run fails with "backup held", and the Owner is told
+  point is made, the run fails with "backup held", and the SuperAdmin is told
   once per change (event `backup.git_hold` and notification channels). A
   changed file the backup keeps anyway (an untracked `.env`, database or
   small config file) does not hold it. The Backups page lists held workloads
-  with the repositories, branches and changed paths, and an Owner can:
+  with the repositories, branches and changed paths, and a SuperAdmin can:
   - commit and push by hand, then choose *I saved it, back up now*;
   - choose *Commit and push for me*: the agent runs Git inside the guest,
     as its root with its own Git credentials, stages tracked changes and new

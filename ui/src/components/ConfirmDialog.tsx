@@ -28,7 +28,7 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   // A plain "are you sure" dialog (nothing to fill in) confirms itself for
-  // an Owner; see confirm.ts.
+  // a SuperAdmin; see confirm.ts.
   const body = useRef<HTMLDivElement>(null);
   const fired = useRef(false);
   useEffect(() => {

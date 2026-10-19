@@ -277,7 +277,7 @@ func TestWorkloadViewerReadOnlyAndOperatorDeniedPrivileged(t *testing.T) {
 
 	op := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "op"}
 	_ = mem.CreateUser(context.Background(), op)
-	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Operator)
+	_ = mem.BindRole(context.Background(), cluster.ID, op.ID, rbac.Admin)
 	plain := "ndl_op_token"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: op.ID, Name: "op",
@@ -299,7 +299,7 @@ func TestWorkloadViewerReadOnlyAndOperatorDeniedPrivileged(t *testing.T) {
 
 	view := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view"}
 	_ = mem.CreateUser(context.Background(), view)
-	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.User)
 	vtok := "ndl_view_token"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: view.ID, Name: "v",
@@ -430,7 +430,7 @@ func TestBulkDeleteWorkloads(t *testing.T) {
 
 	view := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view-bulk"}
 	_ = mem.CreateUser(context.Background(), view)
-	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, view.ID, rbac.User)
 	vtok := "ndl_view_bulk"
 	_ = mem.CreateToken(context.Background(), appdb.APIToken{
 		ID: uuid.NewString(), ClusterID: cluster.ID, UserID: view.ID, Name: "v",

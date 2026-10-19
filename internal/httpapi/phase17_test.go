@@ -17,7 +17,7 @@ func TestExpertDoesNotGrantPermissions(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	_ = claimAdmin(t, ts, token)
-	view := loginRole(t, ts, mem, "view", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view", rbac.User)
 
 	res := doCookie(t, ts, view, "PATCH", "/api/v1/me", `{"ux_level":"expert"}`)
 	if res.StatusCode != http.StatusUnprocessableEntity {
@@ -59,7 +59,7 @@ func TestExpertAckIsOneTime(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 	_ = claimAdmin(t, ts, token)
-	view := loginRole(t, ts, mem, "view2", rbac.Viewer)
+	view := loginRole(t, ts, mem, "view2", rbac.User)
 
 	res := doCookie(t, ts, view, "GET", "/api/v1/me", "")
 	if res.StatusCode != 200 {

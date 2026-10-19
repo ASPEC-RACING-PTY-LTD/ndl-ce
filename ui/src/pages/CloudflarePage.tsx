@@ -1378,7 +1378,7 @@ function NewTunnelDialog({ open, accounts, onClose, onCreated }: { open: boolean
 
 function DeployDialog({ tunnel, machines, supported, onClose, onDone }: { tunnel: CfTunnel | null; machines: CfMachine[]; supported: boolean; onClose: () => void; onDone: (msg: string) => void }) {
   // The host's own cloudflared is not No-dal's to manage, so a container is
-  // the default; the host needs an Owner's approval.
+  // the default; the host needs a SuperAdmin's approval.
   const firstGuest = machines.find((m) => m.kind !== "host")?.id ?? "host";
   const [machine, setMachine] = useState(firstGuest);
   const [busy, setBusy] = useState(false);
@@ -1425,7 +1425,7 @@ function DeployDialog({ tunnel, machines, supported, onClose, onDone }: { tunnel
       {!supported ? <p className="banner banner-warn">This node's agent cannot deploy connectors yet; update No-dal on the node.</p> : null}
       <p className="field-hint">
         cloudflared is installed from Cloudflare's signed package repository if it is missing, and runs as its own service. The tunnel token is written
-        only to a root-only file on that machine. No-dal does not manage the host&apos;s own cloudflared; running a connector there needs an Owner&apos;s
+        only to a root-only file on that machine. No-dal does not manage the host&apos;s own cloudflared; running a connector there needs a SuperAdmin&apos;s
         approval.
       </p>
       <div className="field">
@@ -1436,7 +1436,7 @@ function DeployDialog({ tunnel, machines, supported, onClose, onDone }: { tunnel
           {machines.map((m) => (
             <option key={m.id} value={m.id}>
               {m.name}
-              {m.kind === "host" ? " (this host, needs Owner approval)" : ""}
+              {m.kind === "host" ? " (this host, needs SuperAdmin approval)" : ""}
             </option>
           ))}
         </select>

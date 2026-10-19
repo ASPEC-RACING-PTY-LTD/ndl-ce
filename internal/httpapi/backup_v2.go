@@ -44,7 +44,7 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 		CacheRetentionHours *int   `json:"cache_retention_hours"`
 		CompressionLevel    *int   `json:"compression_level"`
 		// IgnoreUncommittedGit (default true) backs up workloads whatever
-		// the state of their Git repositories. Only an Owner may change it.
+		// the state of their Git repositories. Only a SuperAdmin may change it.
 		IgnoreUncommittedGit *bool `json:"ignore_uncommitted_git"`
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -82,8 +82,8 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	clearHolds := false
 	if req.IgnoreUncommittedGit != nil {
-		if !hasRole(p, rbac.Admin) {
-			writeErr(w, http.StatusForbidden, "only an Owner can change how uncommitted Git work is handled")
+		if !hasRole(p, rbac.SuperAdmin) {
+			writeErr(w, http.StatusForbidden, "only a SuperAdmin can change how uncommitted Git work is handled")
 			return
 		}
 		cur.HoldUncommittedGit = !*req.IgnoreUncommittedGit

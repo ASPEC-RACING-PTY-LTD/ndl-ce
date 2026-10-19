@@ -32,7 +32,7 @@ function errText(err: unknown, fallback: string): string {
 }
 
 function primaryRole(u: ManagedUser): string {
-  return u.roles?.includes("admin") ? "admin" : u.roles?.includes("operator") ? "operator" : u.roles?.[0] || "viewer";
+  return u.roles?.includes("superadmin") ? "superadmin" : u.roles?.includes("admin") ? "admin" : u.roles?.[0] || "user";
 }
 
 /**
@@ -59,7 +59,7 @@ export function UserDetailDialog({
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [email2, setEmail2] = useState("");
-  const [role, setRole] = useState("viewer");
+  const [role, setRole] = useState("user");
   const [newPassword, setNewPassword] = useState("");
   const [deleteText, setDeleteText] = useState("");
   const [allow, setAllow] = useState<IPAllowlist | null>(null);
@@ -253,11 +253,11 @@ export function UserDetailDialog({
         <div className="form">
           <label htmlFor="ud-role">Role</label>
           <select id="ud-role" className="field-input" value={role} disabled={!canRoles} onChange={(e) => setRole(e.target.value)}>
-            <option value="viewer">User</option>
-            <option value="operator">Admin</option>
-            <option value="admin">Owner</option>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+            <option value="superadmin">SuperAdmin</option>
           </select>
-          <p className="field-hint">You can only assign roles below your own. The last Owner cannot be demoted.</p>
+          <p className="field-hint">You can only assign roles below your own. The last SuperAdmin cannot be demoted.</p>
           {canRoles ? (
             <div className="btn-row is-flush">
               <button

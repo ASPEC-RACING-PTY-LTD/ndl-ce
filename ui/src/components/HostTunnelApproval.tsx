@@ -21,7 +21,7 @@ function hostRefusal(err: unknown): Pending | null {
 /**
  * useHostTunnelApproval runs a tunnel change and, when the server refuses it
  * because it would touch the host's own cloudflared, shows what to do by
- * hand and lets an Owner approve that one change.
+ * hand and lets a SuperAdmin approve that one change.
  */
 export function useHostTunnelApproval() {
   const [pending, setPending] = useState<Pending | null>(null);
@@ -68,7 +68,7 @@ export function useHostTunnelApproval() {
         every connection through it, including this page.
       </p>
       {pending?.advice ? <p className="field-hint">{pending.advice}</p> : null}
-      {pending && !pending.canApprove ? <p className="field-hint">Only an Owner can approve this change.</p> : null}
+      {pending && !pending.canApprove ? <p className="field-hint">Only a SuperAdmin can approve this change.</p> : null}
     </ConfirmDialog>
   );
 

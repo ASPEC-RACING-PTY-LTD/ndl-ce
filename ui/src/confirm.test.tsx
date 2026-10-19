@@ -9,8 +9,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Owner confirmation bypass", () => {
-  it("asks everyone else and answers yes for an Owner", () => {
+describe("SuperAdmin confirmation bypass", () => {
+  it("asks everyone else and answers yes for a SuperAdmin", () => {
     const ask = vi.spyOn(window, "confirm").mockReturnValue(false);
     expect(confirmAction("Delete?")).toBe(false);
     expect(ask).toHaveBeenCalledTimes(1);
@@ -19,7 +19,7 @@ describe("Owner confirmation bypass", () => {
     expect(ask).toHaveBeenCalledTimes(1);
   });
 
-  it("confirms a plain dialog for an Owner, but not one with something to fill in", () => {
+  it("confirms a plain dialog for a SuperAdmin, but not one with something to fill in", () => {
     setAutoConfirm(true);
     const plain = vi.fn();
     render(

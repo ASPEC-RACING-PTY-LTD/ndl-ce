@@ -158,7 +158,7 @@ func TestGPUViewerDeniedAndVFIONeedsSnapshot(t *testing.T) {
 	hash, _ := auth.HashPassword("password1")
 	u := appdb.User{ID: uuid.NewString(), ClusterID: cluster.ID, Username: "view", PasswordHash: hash}
 	_ = mem.CreateUser(context.Background(), u)
-	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.Viewer)
+	_ = mem.BindRole(context.Background(), cluster.ID, u.ID, rbac.User)
 	vlogin, _ := ts.Client().Post(ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"view","password":"password1"}`))
 	var viewCookie string
 	for _, c := range vlogin.Cookies() {

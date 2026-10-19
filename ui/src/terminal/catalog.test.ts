@@ -46,18 +46,18 @@ describe("filterTermTargets", () => {
 
 describe("canOpenTermTarget", () => {
   it("excludes viewers and stopped workloads", () => {
-    expect(canOpenTermTarget(alpine, ["viewer"])).toBe(false);
-    expect(canOpenTermTarget(host, ["operator"])).toBe(false);
-    expect(canOpenTermTarget(host, ["admin"])).toBe(true);
-    expect(canOpenTermTarget(alpine, ["operator"])).toBe(true);
-    expect(canOpenTermTarget(stopped, ["admin"])).toBe(false);
+    expect(canOpenTermTarget(alpine, ["user"])).toBe(false);
+    expect(canOpenTermTarget(host, ["admin"])).toBe(false);
+    expect(canOpenTermTarget(host, ["superadmin"])).toBe(true);
+    expect(canOpenTermTarget(alpine, ["admin"])).toBe(true);
+    expect(canOpenTermTarget(stopped, ["superadmin"])).toBe(false);
   });
 });
 
 describe("buildTermCatalog", () => {
   it("omits hosts for operators and includes node metadata on workloads", () => {
     const catalog = buildTermCatalog({
-      roles: ["operator"],
+      roles: ["admin"],
       nodes: [{ id: "node-2", name: "no-dal-02", status: "available" }],
       workloads: [
         { id: "wl-a", name: "Alpine", kind: "system-container", status: "running", node_id: "node-2" },
@@ -75,7 +75,7 @@ describe("buildTermCatalog", () => {
 
   it("includes hosts only for admin", () => {
     const catalog = buildTermCatalog({
-      roles: ["admin"],
+      roles: ["superadmin"],
       nodes: [{ id: "node-1", name: "no-dal-01", status: "available" }],
       workloads: [],
     });

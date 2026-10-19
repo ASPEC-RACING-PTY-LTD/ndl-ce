@@ -508,7 +508,7 @@ function TokenDialog({
             <dt>Expiry</dt>
             <dd>{tok.expires_at ? formatWhen(tok.expires_at) : "No expiry"}</dd>
             <dt>Scope</dt>
-            <dd>{tok.preset || ((tok.permissions ?? []).length ? `${tok.permissions!.length} permissions` : "Owner's role")}</dd>
+            <dd>{tok.preset || ((tok.permissions ?? []).length ? `${tok.permissions!.length} permissions` : "Creator's role")}</dd>
             <dt>Prefix</dt>
             <dd>
               <code>{tok.prefix}…</code>

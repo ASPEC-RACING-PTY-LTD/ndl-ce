@@ -35,11 +35,11 @@ export function kindLabel(kind?: string): string {
 
 export function roleLabel(role: string): string {
   switch (role) {
+    case "superadmin":
+      return "SuperAdmin";
     case "admin":
-      return "Owner";
-    case "operator":
       return "Admin";
-    case "viewer":
+    case "user":
       return "User";
     case "automation":
       return "Automation";

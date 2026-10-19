@@ -422,7 +422,7 @@ func redactViewer(p *principal) bool {
 		return false
 	}
 	for _, role := range p.Roles {
-		if role == rbac.Admin || role == rbac.Operator {
+		if role == rbac.SuperAdmin || role == rbac.Admin {
 			return false
 		}
 	}
