@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/no-dal/ndl-ce/internal/backuphost"
 )
@@ -111,9 +112,17 @@ func (h *Handler) relocateBackupRepo(ctx context.Context, raw string) (backuphos
 		return backuphost.Result{}, fmt.Errorf("the new repository cannot be inside the current one or contain it")
 	}
 	points := host.RestorePoints()
-	if !host.Idle() {
-		return backuphost.Result{}, fmt.Errorf("a backup, upload or cleanup is running; try again when it finishes")
+	// Wait for a clean-up that is already running (one starts when the
+	// repository opens and after captures), then keep captures and clean-up
+	// off the old repository until the copy is done. Checking Idle alone
+	// left a gap where a queued clean-up could start mid-copy.
+	qctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	release, err := host.Quiesce(qctx)
+	cancel()
+	if err != nil {
+		return backuphost.Result{}, err
 	}
+	defer release()
 	if entries, err := os.ReadDir(dest); err == nil && len(entries) > 0 {
 		if _, err := os.Stat(filepath.Join(dest, "packs")); err != nil || points > 0 {
 			return backuphost.Result{}, fmt.Errorf("%s is not empty; choose an empty location", dest)

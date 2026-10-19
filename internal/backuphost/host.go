@@ -38,8 +38,12 @@ type Host struct {
 	staleBytes  int64
 	gcMu        sync.Mutex
 	gcPending   string
-	lastGC      *GCReport
-	keyPath     string
+	// quiet is set by Quiesce: no capture starts and no GC runs.
+	quiet bool
+	// closed is set by Close; a GC that was waiting does not run.
+	closed  bool
+	lastGC  *GCReport
+	keyPath string
 }
 
 // Options open the host repository.
@@ -588,6 +592,10 @@ func (h *Host) acquireCapture(ctx context.Context, workloadID string) error {
 		h.mu.Lock()
 		if h.busy == nil {
 			h.busy = map[string]struct{}{}
+		}
+		if h.quiet || h.closed {
+			h.mu.Unlock()
+			return fmt.Errorf("the backup repository is being moved; try again when it finishes")
 		}
 		if _, ok := h.busy[id]; ok {
 			h.mu.Unlock()

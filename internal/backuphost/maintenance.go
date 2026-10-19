@@ -3,10 +3,12 @@ package backuphost
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -202,8 +204,14 @@ func (h *Host) runGC(ctx context.Context, reason string) GCReport {
 	defer h.gcMu.Unlock()
 	h.mu.Lock()
 	settings := h.settings
+	stopped := h.closed
 	h.mu.Unlock()
 	rep := GCReport{Reason: reason, StartedAt: time.Now().UTC()}
+	if stopped {
+		// The repository was moved or closed while this run waited.
+		rep.Error = "the backup repository is closed"
+		return rep
+	}
 	stats, err := h.repo.CollectGarbageWith(backup.GCOptions{
 		RepackLiveRatio: backup.DefaultRepackLiveRatio,
 		ReserveBytes:    h.effectiveReserve(settings.MinHostFreeBytes),
@@ -332,9 +340,54 @@ func (h *Host) Idle() bool {
 	return true
 }
 
+// ErrNotIdle is returned by Quiesce while a capture or upload is running.
+var ErrNotIdle = errors.New("a backup, upload or cleanup is running; try again when it finishes")
+
+// Quiesce waits for a running clean-up (GC) to finish and then holds the
+// repository still until release is called: no capture starts and no GC
+// runs. It fails at once if a capture or upload is in progress, and with
+// ErrNotIdle if ctx ends while it waits for the clean-up.
+func (h *Host) Quiesce(ctx context.Context) (release func(), err error) {
+	locked := make(chan struct{})
+	go func() {
+		h.gcMu.Lock()
+		close(locked)
+	}()
+	select {
+	case <-locked:
+	case <-ctx.Done():
+		go func() {
+			<-locked
+			h.gcMu.Unlock()
+		}()
+		return nil, ErrNotIdle
+	}
+	h.mu.Lock()
+	if len(h.busy) > 0 {
+		h.mu.Unlock()
+		h.gcMu.Unlock()
+		return nil, ErrNotIdle
+	}
+	h.quiet = true
+	h.mu.Unlock()
+	undo := func() {
+		h.mu.Lock()
+		h.quiet = false
+		h.mu.Unlock()
+		h.gcMu.Unlock()
+	}
+	if h.pendingJobs() > 0 {
+		undo()
+		return nil, ErrNotIdle
+	}
+	var once sync.Once
+	return func() { once.Do(undo) }, nil
+}
+
 // Close stops the upload queues. The host must not be used afterwards.
 func (h *Host) Close() {
 	h.mu.Lock()
+	h.closed = true
 	qs := h.queues
 	h.queues = map[string]*backup.UploadQueue{}
 	h.mu.Unlock()
