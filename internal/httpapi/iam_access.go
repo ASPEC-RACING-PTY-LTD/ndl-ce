@@ -92,7 +92,15 @@ func isOwner(p *principal) bool { return containsString(p.Roles, rbac.Admin) }
 
 // mayActOnUser reports whether p may manage targetUserID (and its tokens).
 func (s *Server) mayActOnUser(ctx context.Context, p *principal, targetUserID string) bool {
-	if isOwner(p) || targetUserID == p.User.ID {
+	if targetUserID == p.User.ID || p.User.ID == LocalRootUserID {
+		return true
+	}
+	// The root account (the one that claimed the appliance) is managed only
+	// by itself or from the host console, never by another admin.
+	if root := s.rootUserID(ctx, p.User.ClusterID); root != "" && targetUserID == root {
+		return false
+	}
+	if isOwner(p) {
 		return true
 	}
 	roles, err := s.Store.UserRoles(ctx, targetUserID)

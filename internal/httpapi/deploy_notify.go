@@ -408,7 +408,7 @@ func (s *Server) deployWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	_, secret, err := s.Store.DeployProjectSecrets(ctx, cluster.ID, proj.ID)
 	if err != nil || !webhookSigned(r, body, secret) {
-		s.auditInternal(cluster.ID, "", "docker.deploy.webhook", "refused", proj.Name+": bad or missing signature from "+r.RemoteAddr)
+		s.auditInternal(cluster.ID, "", "docker.deploy.webhook", "refused", proj.Name+": bad or missing signature from "+s.clientIP(r))
 		writeErr(w, http.StatusUnauthorized, "the signature does not match")
 		return
 	}

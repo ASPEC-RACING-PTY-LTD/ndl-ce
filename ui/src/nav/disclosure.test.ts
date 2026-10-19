@@ -98,8 +98,17 @@ describe("nav disclosure", () => {
 
   it("pins the current page so deep links stay reachable", () => {
     const prefs = parseDisclosurePrefs(null);
-    const items = visibleModules(prefs, {}, admin, "/settings/cluster");
-    expect(items.some((item) => item.id === "cluster")).toBe(true);
+    const items = visibleModules(prefs, {}, admin, "/templates");
+    expect(items.some((item) => item.id === "templates")).toBe(true);
+  });
+
+  it("never shows or pins a disabled feature, in any layout", () => {
+    for (const template of ["simple", "advanced", "custom"] as const) {
+      const prefs = { ...parseDisclosurePrefs(null), template, customVisible: ["cluster", "automation"] };
+      const ids = visibleModules(prefs, {}, admin, "/settings/cluster").map((item) => item.id);
+      expect(ids).not.toContain("cluster");
+      expect(ids).not.toContain("automation");
+    }
   });
 
   it("keeps create actions in Search while hiding optional destinations on Simple", () => {
@@ -113,9 +122,9 @@ describe("nav disclosure", () => {
 
   it("merges pinned modules into an existing group", () => {
     const prefs = parseDisclosurePrefs(null);
-    const groups = groupedModules(visibleModules(prefs, {}, admin, "/settings/cluster"));
+    const groups = groupedModules(visibleModules(prefs, {}, admin, "/templates"));
     const labels = groups.map((group) => group.label);
-    expect(labels.filter((label) => label === "Infrastructure")).toHaveLength(1);
-    expect(groups.find((group) => group.label === "Infrastructure")?.items.map((item) => item.id)).toContain("cluster");
+    expect(labels.filter((label) => label === "Compute")).toHaveLength(1);
+    expect(groups.find((group) => group.label === "Compute")?.items.map((item) => item.id)).toContain("templates");
   });
 });

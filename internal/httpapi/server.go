@@ -9,7 +9,6 @@ import (
 	"github.com/no-dal/ndl-ce/internal/buildinfo"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"os"
 	"path"
@@ -63,36 +62,42 @@ type LogsRPC interface {
 type Server struct {
 	// tokenUseSeen throttles API token usage writes (token|ip -> last write).
 	tokenUseSeen sync.Map
-	Store        appdb.Store
-	Lockout      *auth.Lockout
-	Agent        Agent
-	Observer     Observer
-	Logs         LogsRPC
-	HTTPClient   *http.Client
-	Storage      StorageRPC
-	Network      NetworkRPC
-	Workloads    WorkloadRPC
-	IO           IORPC
-	QEMU         QemuRPC
-	VM           VMRPC
-	OCI          OCIRPC
-	Docker       DockerRPC
-	Backup       BackupRPC
-	Object       ObjectRPC
-	Verify       VerifyRPC
-	Update       UpdateRPC
-	GPU          GPURPC
-	ZFS          ZFSRPC
-	LVM          LVMRPC
-	Datastore    DatastoreRPC
-	Distributed  DistributedRPC
-	K8sProcs     func() []string
-	OSDProcs     func() []string
-	AICompleter  ai.Completer
-	LicenseProbe LicenseProbe
-	Hub          *EventHub
-	Migrate      migrate.Runtime
-	UI           fs.FS
+	// trusted caches the trusted proxies used to read client addresses.
+	trusted trustedProxyCache
+	// ipRecovery holds pending IP allowlist recoveries (challenge id -> ip).
+	ipRecovery sync.Map
+	// ipRecoveryLimit rate-limits IP allowlist recovery attempts.
+	ipRecoveryLimit recoveryLimiter
+	Store           appdb.Store
+	Lockout         *auth.Lockout
+	Agent           Agent
+	Observer        Observer
+	Logs            LogsRPC
+	HTTPClient      *http.Client
+	Storage         StorageRPC
+	Network         NetworkRPC
+	Workloads       WorkloadRPC
+	IO              IORPC
+	QEMU            QemuRPC
+	VM              VMRPC
+	OCI             OCIRPC
+	Docker          DockerRPC
+	Backup          BackupRPC
+	Object          ObjectRPC
+	Verify          VerifyRPC
+	Update          UpdateRPC
+	GPU             GPURPC
+	ZFS             ZFSRPC
+	LVM             LVMRPC
+	Datastore       DatastoreRPC
+	Distributed     DistributedRPC
+	K8sProcs        func() []string
+	OSDProcs        func() []string
+	AICompleter     ai.Completer
+	LicenseProbe    LicenseProbe
+	Hub             *EventHub
+	Migrate         migrate.Runtime
+	UI              fs.FS
 	// LiveUpdates locates live update state, inbox and trusted keys.
 	LiveUpdates LiveUpdatePaths
 	// Deployer runs project deployments; nil uses the local agent.
@@ -163,6 +168,7 @@ type Server struct {
 	docker         *dockerCache
 	dockerOnce     sync.Once
 	deployState    deployRuntime
+	auto           automationState
 	destOverride   *destAgentOverride
 	Game           *gameserver.Runtime
 	// GameHost runs game server containers and owns their folders. In
@@ -210,6 +216,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/v1/me", s.me)
 	mux.HandleFunc("PATCH /api/v1/me", s.patchMe)
+	mux.HandleFunc("GET /api/v1/me/profile", s.getMyProfile)
+	mux.HandleFunc("PATCH /api/v1/me/profile", s.patchMyProfile)
+	mux.HandleFunc("POST /api/v1/me/password", s.changeMyPassword)
+	mux.HandleFunc("POST /api/v1/me/sessions/revoke-others", s.signOutOtherSessions)
+	mux.HandleFunc("PUT /api/v1/me/avatar", s.putMyAvatar)
+	mux.HandleFunc("DELETE /api/v1/me/avatar", s.deleteMyAvatar)
+	mux.HandleFunc("POST /api/v1/me/mfa/disable", s.disableMyMFA)
+	mux.HandleFunc("GET /api/v1/me/ip", s.getMyIP)
+	mux.HandleFunc("GET /api/v1/me/ip-allowlist", s.getMyAllowlist)
+	mux.HandleFunc("PUT /api/v1/me/ip-allowlist", s.putMyAllowlist)
+	mux.HandleFunc("GET /api/v1/users/{id}/avatar", s.getUserAvatar)
+	mux.HandleFunc("GET /api/v1/users/{id}/ip-allowlist", s.getUserAllowlist)
+	mux.HandleFunc("PUT /api/v1/users/{id}/ip-allowlist", s.putUserAllowlist)
+	mux.HandleFunc("POST /api/v1/users/{id}/unlock", s.unlockUser)
+	mux.HandleFunc("POST /api/v1/users/{id}/mfa/reset", s.resetUserMFA)
+	mux.HandleFunc("POST /api/v1/console/ip-recovery", s.consoleIPRecovery)
+	mux.HandleFunc("GET /api/v1/settings/trusted-proxies", s.getTrustedProxies)
+	mux.HandleFunc("PUT /api/v1/settings/trusted-proxies", s.putTrustedProxies)
 	mux.HandleFunc("GET /api/v1/users", s.listUsers)
 	mux.HandleFunc("POST /api/v1/users", s.createUser)
 	mux.HandleFunc("GET /api/v1/users/{id}", s.getUser)
@@ -450,6 +474,39 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/policies", s.createAutomationPolicy)
 	mux.HandleFunc("POST /api/v1/policies/{id}/apply", s.applyAutomationPolicy)
 	mux.HandleFunc("GET /api/v1/policy-runs", s.listPolicyRuns)
+	mux.HandleFunc("GET /api/v1/automations/flows", s.listAutomationFlows)
+	mux.HandleFunc("POST /api/v1/automations/flows", s.createAutomationFlow)
+	mux.HandleFunc("GET /api/v1/automations/flows/{id}", s.getAutomationFlow)
+	mux.HandleFunc("PATCH /api/v1/automations/flows/{id}", s.patchAutomationFlow)
+	mux.HandleFunc("DELETE /api/v1/automations/flows/{id}", s.deleteAutomationFlow)
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/validate", s.validateAutomationFlow)
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/publish", s.publishAutomationFlow)
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/enable", s.setAutomationFlowEnabled(true))
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/disable", s.setAutomationFlowEnabled(false))
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/clone", s.cloneAutomationFlow)
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/execute", s.executeAutomationFlow)
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/dry-run", s.dryRunAutomationFlow)
+	mux.HandleFunc("GET /api/v1/automations/flows/{id}/versions", s.listAutomationFlowVersions)
+	mux.HandleFunc("GET /api/v1/automations/flows/{id}/runs", s.listAutomationFlowRuns)
+	mux.HandleFunc("GET /api/v1/automations/flows/{id}/webhook", s.getAutomationWebhook)
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/webhook", s.putAutomationWebhook(false))
+	mux.HandleFunc("POST /api/v1/automations/flows/{id}/webhook/rotate", s.putAutomationWebhook(true))
+	mux.HandleFunc("GET /api/v1/automations/runs", s.listAutomationRuns)
+	mux.HandleFunc("GET /api/v1/automations/runs/{id}", s.getAutomationRun)
+	mux.HandleFunc("POST /api/v1/automations/runs/{id}/cancel", s.cancelAutomationRun)
+	mux.HandleFunc("POST /api/v1/automations/runs/{id}/retry", s.retryAutomationRun)
+	mux.HandleFunc("POST /api/v1/automations/runs/{id}/approve", s.approveAutomationRun)
+	mux.HandleFunc("GET /api/v1/automations/runs/{id}/nodes", s.listAutomationRunNodes)
+	mux.HandleFunc("GET /api/v1/automations/runs/{id}/logs", s.listAutomationRunLogs)
+	mux.HandleFunc("GET /api/v1/automations/connections", s.listAutomationConnections)
+	mux.HandleFunc("POST /api/v1/automations/connections", s.createAutomationConnection)
+	mux.HandleFunc("PATCH /api/v1/automations/connections/{id}", s.patchAutomationConnection)
+	mux.HandleFunc("DELETE /api/v1/automations/connections/{id}", s.deleteAutomationConnection)
+	mux.HandleFunc("POST /api/v1/automations/connections/{id}/test", s.testAutomationConnection)
+	mux.HandleFunc("GET /api/v1/automations/targets", s.automationTargetsAPI)
+	mux.HandleFunc("GET /api/v1/automations/nodes", s.automationCatalogue)
+	mux.HandleFunc("GET /api/v1/automations/templates", s.automationTemplatesAPI)
+	mux.HandleFunc("POST /api/v1/hooks/flows/{token}", s.automationHookIn)
 	mux.HandleFunc("GET /api/v1/ai/providers", s.listAIProviders)
 	mux.HandleFunc("POST /api/v1/ai/providers", s.createAIProvider)
 	mux.HandleFunc("GET /api/v1/ai/profiles", s.listAIProfiles)
@@ -725,7 +782,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/alerts/channels/{id}", s.deleteConfig(appdb.ConfigNotifyChannel, rbac.AlertManage, "alert.channel.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/registries/{id}", s.deleteConfig(appdb.ConfigRegistry, rbac.ComputeCreate, "registry.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/node-groups/{id}", s.deleteConfig(appdb.ConfigNodeGroup, rbac.NodeUpdate, "node_group.delete", nil))
-	mux.HandleFunc("DELETE /api/v1/policies/{id}", s.deleteConfig(appdb.ConfigPolicy, rbac.PolicyApply, "policy.delete", nil))
+	mux.HandleFunc("DELETE /api/v1/policies/{id}", s.automationGate(s.deleteConfig(appdb.ConfigPolicy, rbac.PolicyApply, "policy.delete", nil)))
 	mux.HandleFunc("DELETE /api/v1/ai/providers/{id}", s.deleteConfig(appdb.ConfigAIProvider, rbac.AIManage, "ai.provider.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/ai/profiles/{id}", s.deleteConfig(appdb.ConfigAIProfile, rbac.AIManage, "ai.profile.delete", nil))
 	mux.HandleFunc("DELETE /api/v1/networks/vlans/{id}", s.deleteVLAN)
@@ -962,11 +1019,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if host == "" {
-		host = r.RemoteAddr
-	}
-	key := host + "|" + strings.ToLower(strings.TrimSpace(req.Username))
+	key := s.clientIP(r) + "|" + strings.ToLower(strings.TrimSpace(req.Username))
 	if err := s.lock().Check(key, s.now()); err != nil {
 		writeErr(w, http.StatusTooManyRequests, err.Error())
 		return
@@ -994,6 +1047,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// The password is right: keep this Owner able to unlock the platform
 	// backup with it.
 	s.platformOwnerSignedIn(cluster.ID, *user, req.Password)
+	if s.refuseBlockedLogin(w, r, *user) {
+		s.lock().Success(key)
+		return
+	}
 	method, _, _, err := s.Store.GetMFAMethod(r.Context(), user.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "mfa state is unavailable")
@@ -1043,6 +1100,10 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	p, err := s.principal(r)
+	if errors.Is(err, errIPNotAllowed) {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error(), "code": "ip_not_allowed", "ip": s.clientIP(r)})
+		return
+	}
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return
@@ -1144,6 +1205,13 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) require(w http.ResponseWriter, r *http.Request, perm string) (*principal, error) {
 	p, err := s.principal(r)
+	if errors.Is(err, errIPNotAllowed) {
+		// Signed in elsewhere, but this address is not on the account's
+		// allowlist: the UI sends the user back to sign-in, where MFA can
+		// recover access.
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error(), "code": "ip_not_allowed", "ip": s.clientIP(r)})
+		return nil, err
+	}
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return nil, err
@@ -1179,6 +1247,9 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 		if err != nil || u == nil || userDisabled(*u) {
 			return nil, errors.New("invalid token")
 		}
+		if s.ipBlocked(r.Context(), *u, s.clientIP(r)) {
+			return nil, errIPNotAllowed
+		}
 		_ = s.Store.TouchTokenLastUsed(r.Context(), row.ID, s.now())
 		s.noteTokenUse(r, row.ID)
 		return s.asPrincipal(r.Context(), *u, "", 1, row.ID, row.Permissions)
@@ -1194,6 +1265,9 @@ func (s *Server) principal(r *http.Request) (*principal, error) {
 	u, err := s.Store.GetUser(r.Context(), sess.UserID)
 	if err != nil || u == nil || userDisabled(*u) {
 		return nil, errors.New("invalid session")
+	}
+	if s.ipBlocked(r.Context(), *u, s.clientIP(r)) {
+		return nil, errIPNotAllowed
 	}
 	return s.asPrincipal(r.Context(), *u, sess.ID, sess.AAL, "", nil)
 }
@@ -1285,6 +1359,9 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 		"ux_level":                level,
 		"expert_ack":              ack,
 	}
+	if av, _ := s.Store.GetUserAvatar(r.Context(), user.ID); av != nil {
+		out["avatar_updated_at"] = av.UpdatedAt.UTC().Format(time.RFC3339)
+	}
 	if ackAt != "" {
 		out["expert_ack_at"] = ackAt
 	}
@@ -1337,7 +1414,7 @@ func (s *Server) audit(r *http.Request, clusterID, actor, action, result, detail
 		ActorUserID: actor,
 		Action:      action,
 		Result:      result,
-		RemoteAddr:  r.RemoteAddr,
+		RemoteAddr:  s.clientIP(r),
 		Detail:      body,
 		CreatedAt:   s.now(),
 	})

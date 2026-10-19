@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -15,8 +16,8 @@ import (
 )
 
 func (s *Server) listAutomationPolicies(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.PolicyRead)
-	if err != nil {
+	p, ok := s.requireAutomation(w, r, rbac.PolicyRead)
+	if !ok {
 		return
 	}
 	items, err := s.Store.ListPolicies(r.Context(), p.User.ClusterID)
@@ -32,8 +33,8 @@ func (s *Server) listAutomationPolicies(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) createAutomationPolicy(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.PolicyApply)
-	if err != nil {
+	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -50,6 +51,7 @@ func (s *Server) createAutomationPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var spec *automation.Spec
+	var err error
 	if strings.TrimSpace(req.YAML) != "" {
 		spec, err = automation.ParseYAML([]byte(req.YAML))
 	} else {
@@ -80,12 +82,17 @@ func (s *Server) createAutomationPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "policy.create", "ok", row.ID)
+	// Policies are a compatibility shim over Automations: each one also
+	// gets its equivalent (turned off) flow.
+	if err := s.flowFromPolicy(r.Context(), row); err != nil {
+		log.Printf("automation: policy %s has no flow: %v", row.Name, err)
+	}
 	writeJSON(w, http.StatusCreated, automationPolicyJSON(row))
 }
 
 func (s *Server) applyAutomationPolicy(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.PolicyApply)
-	if err != nil {
+	p, ok := s.requireAutomation(w, r, rbac.PolicyApply)
+	if !ok {
 		return
 	}
 	pol, err := s.Store.GetPolicy(r.Context(), p.User.ClusterID, r.PathValue("id"))
@@ -138,8 +145,8 @@ func (s *Server) applyAutomationPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listPolicyRuns(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.PolicyRead)
-	if err != nil {
+	p, ok := s.requireAutomation(w, r, rbac.PolicyRead)
+	if !ok {
 		return
 	}
 	items, err := s.Store.ListPolicyRuns(r.Context(), p.User.ClusterID, 50)

@@ -1,5 +1,268 @@
 /* Generated from api/openapi/nodal.v1.yaml. Do not edit by hand. */
 
+export interface AccountProfile {
+  user_id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  email_secondary: string;
+  email_verified: boolean;
+  roles: string[];
+  mfa_enabled: boolean;
+  created_at?: string;
+  last_login_at?: string;
+  avatar_updated_at?: string;
+  ip_allowlist: IPAllowlist;
+}
+
+export interface AccountProfilePatch {
+  display_name?: string;
+  email?: string;
+  email_secondary?: string;
+  current_password?: string;
+}
+
+export interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
+  sign_out_others?: boolean;
+}
+
+export interface MFADisableRequest {
+  password: string;
+  code: string;
+}
+
+export interface IPAllowEntry {
+  cidr: string;
+  note?: string;
+  added_by?: string;
+  added_at?: string;
+}
+
+export interface IPAllowlist {
+  enabled: boolean;
+  entries: IPAllowEntry[];
+  current_ip?: string;
+  mfa_enabled?: boolean;
+  username?: string;
+  done?: string[];
+  disabled_account?: boolean;
+}
+
+export interface IPAllowlistInput {
+  enabled: boolean;
+  entries: Record<string, unknown>[];
+}
+
+export interface ConsoleIPRecoveryRequest {
+  username: string;
+  add_ip?: string;
+  disable_allowlist?: boolean;
+  clear_lockout?: boolean;
+}
+
+export interface ClientIPInfo {
+  ip: string;
+  peer: string;
+  via_proxy: boolean;
+  proxy?: Record<string, unknown>;
+}
+
+export interface TrustedProxy {
+  id: string;
+  cidr: string;
+  kind: "cloudflared" | "generic";
+  source?: string;
+  note?: string;
+  enabled: boolean;
+}
+
+export interface TrustedProxies {
+  detected: TrustedProxy[];
+  manual: TrustedProxy[];
+  current: Record<string, unknown>;
+}
+
+export interface TrustedProxiesInput {
+  manual: Record<string, unknown>[];
+  detected_off: string[];
+}
+
+export interface AutomationProblem {
+  path: string;
+  message: string;
+}
+
+export interface AutomationFlow {
+  id: string;
+  name: string;
+  description?: string;
+  enabled?: boolean;
+  published_version?: number;
+  trigger_kind?: string;
+  event_kind?: string;
+  draft?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+  draft_changed?: boolean;
+  dry_run_passed?: boolean;
+  destructive?: string[];
+  consecutive_failures?: number;
+  disabled_reason?: string;
+  legacy_policy_id?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_run?: Record<string, unknown>;
+  problems?: AutomationProblem[];
+}
+
+export interface AutomationFlowList {
+  items: AutomationFlow[];
+}
+
+export interface AutomationFlowRequest {
+  name?: string;
+  description?: string;
+  definition?: Record<string, unknown>;
+  limits?: Record<string, unknown>;
+  template?: string;
+  inputs?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+}
+
+export interface AutomationPublishRequest {
+  note?: string;
+  skip_dry_run_reason?: string;
+}
+
+export interface AutomationDryRunRequest {
+  published?: boolean;
+  payload?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+  sample?: string;
+}
+
+export interface AutomationValidation {
+  ok: boolean;
+  problems: AutomationProblem[];
+  destructive?: string[];
+}
+
+export interface AutomationRun {
+  id: string;
+  flow_id?: string;
+  flow_name?: string;
+  version?: number;
+  mode?: string;
+  status: string;
+  trigger_kind?: string;
+  trigger_payload?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+  idempotency_key?: string;
+  correlation_id?: string;
+  caused_by_run?: string;
+  chain_depth?: number;
+  retry_of?: string;
+  started_by?: string;
+  error?: string;
+  wake_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  created_at?: string;
+  report?: Record<string, unknown>;
+  steps?: number;
+  pending_approvals?: Record<string, unknown>[];
+  definition?: Record<string, unknown>;
+}
+
+export interface AutomationRunList {
+  items: AutomationRun[];
+}
+
+export interface AutomationRunStart {
+  run: AutomationRun;
+  existing?: boolean;
+}
+
+export interface AutomationDryRunResult {
+  run: AutomationRun;
+  flow?: AutomationFlow;
+}
+
+export interface AutomationApproveRequest {
+  node_id?: string;
+  approved: boolean;
+  note?: string;
+}
+
+export interface AutomationItems {
+  items: Record<string, unknown>[];
+}
+
+export interface AutomationVersionList {
+  items: Record<string, unknown>[];
+}
+
+export interface AutomationWebhook {
+  exists: boolean;
+  path_prefix?: string;
+  rotated_at?: string;
+  deliveries?: Record<string, unknown>[];
+}
+
+export interface AutomationWebhookSecret {
+  path: string;
+  token: string;
+  secret: string;
+  secret_header?: string;
+}
+
+export interface AutomationConnection {
+  id: string;
+  name: string;
+  kind: string;
+  config?: Record<string, unknown>;
+  secret_fields?: string[];
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AutomationConnectionList {
+  items: AutomationConnection[];
+}
+
+export interface AutomationConnectionRequest {
+  name?: string;
+  kind?: string;
+  config?: Record<string, unknown>;
+  secret?: Record<string, unknown>;
+}
+
+export interface AutomationConnectionTest {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  message?: string;
+}
+
+export interface AutomationCatalogue {
+  items: Record<string, unknown>[];
+  events?: Record<string, unknown>[];
+  triggers?: Record<string, unknown>[];
+  schedule_presets?: string[];
+  condition_ops?: string[];
+  limits?: Record<string, unknown>;
+  fixed_limits?: Record<string, unknown>;
+}
+
+export interface AutomationHookResult {
+  run_id?: string;
+  status?: string;
+  existing?: boolean;
+}
+
 export interface DeployCommand {
   run: string;
   continue_on_error?: boolean;
@@ -312,6 +575,7 @@ export interface MeResponse {
   cluster_id?: string;
   grants?: string[];
   display_name?: string;
+  avatar_updated_at?: string;
   aal?: number;
   mfa_enabled?: boolean;
   mfa_enforced?: boolean;
@@ -764,9 +1028,10 @@ export interface RollingUpdatePreview {
 }
 
 export interface Feature {
-  id: "vm" | "ct" | "oci" | "docker" | "gameservers" | "cloudflare" | "caddy" | "nginx" | "codehold" | "gpu" | "k8s" | "distributed_storage" | "ai";
+  id: "vm" | "ct" | "oci" | "docker" | "gameservers" | "cloudflare" | "caddy" | "nginx" | "codehold" | "gpu" | "k8s" | "distributed_storage" | "ai" | "automation";
   title: string;
   enabled: boolean;
+  installed?: boolean;
   core: boolean;
   package?: string;
   package_status: "not_configured" | "unavailable" | "installed" | "removed";
@@ -2359,11 +2624,11 @@ export interface BackupRemoteSweep {
 }
 
 export interface BackupStorageEvent {
-  at?: string;
-  kind?: string;
-  ok?: boolean;
+  at: string;
+  kind: string;
+  ok: boolean;
   workload_id?: string;
-  message?: string;
+  message: string;
 }
 
 export interface BackupStoragePool {
@@ -2400,13 +2665,13 @@ export interface BackupUnmanagedPoint {
 
 export interface BackupStorageReport {
   repository_move?: BackupRepositoryMove;
-  workspace?: BackupWorkspace;
-  pools?: BackupStoragePool[];
-  warnings?: string[];
-  events?: BackupStorageEvent[];
-  retention?: BackupStorageWorkload[];
-  unmanaged_restore_points?: BackupUnmanagedPoint[];
-  deleted_workload_backups?: BackupStorageWorkload[];
+  workspace: BackupWorkspace;
+  pools: BackupStoragePool[];
+  warnings: string[];
+  events: BackupStorageEvent[];
+  retention: BackupStorageWorkload[];
+  unmanaged_restore_points: BackupUnmanagedPoint[];
+  deleted_workload_backups: BackupStorageWorkload[];
 }
 
 export interface BackupMaintenanceResponse {
@@ -2420,31 +2685,31 @@ export interface BackupRelocateRequest {
 }
 
 export interface BackupLocation {
-  pool_id?: string;
-  name?: string;
-  backend_type?: string;
+  pool_id: string;
+  name: string;
+  backend_type: string;
   target_path?: string;
   repo_path?: string;
   total_bytes?: number;
   usable_bytes?: number;
-  root_filesystem?: boolean;
-  recommended?: boolean;
-  usable?: boolean;
+  root_filesystem: boolean;
+  recommended: boolean;
+  usable: boolean;
   reason?: string;
 }
 
 export interface BackupLocationListResponse {
-  items?: BackupLocation[];
+  items: BackupLocation[];
 }
 
 export interface BackupKeyExportResponse {
-  key?: string;
-  format?: string;
+  key: string;
+  format: string;
   note?: string;
 }
 
 export interface BackupProtectRequest {
-  protected?: boolean;
+  protected: boolean;
 }
 
 export interface BackupProtectResponse {
@@ -2453,7 +2718,7 @@ export interface BackupProtectResponse {
 }
 
 export interface BackupWipeRequest {
-  confirm_name?: string;
+  confirm_name: string;
 }
 
 export interface BackupWipeResponse {
@@ -2499,7 +2764,7 @@ export interface BackupRemoteUsage {
 }
 
 export interface BackupTargetUsageResponse {
-  target_id?: string;
+  target_id: string;
   usage?: BackupRemoteUsage;
 }
 
@@ -3595,6 +3860,32 @@ export type LogoutPath = "/api/v1/auth/logout";
 
 export type GetMePath = "/api/v1/me";
 
+export type GetMyProfilePath = "/api/v1/me/profile";
+
+export type ChangeMyPasswordPath = "/api/v1/me/password";
+
+export type SignOutOtherSessionsPath = "/api/v1/me/sessions/revoke-others";
+
+export type PutMyAvatarPath = "/api/v1/me/avatar";
+
+export type DisableMyMFAPath = "/api/v1/me/mfa/disable";
+
+export type GetMyIPPath = "/api/v1/me/ip";
+
+export type GetMyAllowlistPath = "/api/v1/me/ip-allowlist";
+
+export type GetUserAvatarPath = "/api/v1/users/{id}/avatar";
+
+export type GetUserAllowlistPath = "/api/v1/users/{id}/ip-allowlist";
+
+export type UnlockUserPath = "/api/v1/users/{id}/unlock";
+
+export type ResetUserMFAPath = "/api/v1/users/{id}/mfa/reset";
+
+export type ConsoleIPRecoveryPath = "/api/v1/console/ip-recovery";
+
+export type GetTrustedProxiesPath = "/api/v1/settings/trusted-proxies";
+
 export type ListUsersPath = "/api/v1/users";
 
 export type GetUserPath = "/api/v1/users/{id}";
@@ -3608,6 +3899,20 @@ export type RevokeUserTokensPath = "/api/v1/users/{id}/tokens/revoke";
 export type ListRolesPath = "/api/v1/roles";
 
 export type GetSecuritySettingsPath = "/api/v1/settings/security";
+
+export type IamAccessPath = "/api/v1/iam/access";
+
+export type ReorderRolesPath = "/api/v1/iam/roles/order";
+
+export type PutIAMRolePath = "/api/v1/iam/roles/{name}";
+
+export type PutIAMGroupPath = "/api/v1/iam/groups/{id}";
+
+export type PatchTokenPath = "/api/v1/tokens/{id}";
+
+export type TokenUsagePath = "/api/v1/tokens/{id}/usage";
+
+export type RollTokenPath = "/api/v1/tokens/{id}/roll";
 
 export type ListTokensPath = "/api/v1/tokens";
 
@@ -4462,3 +4767,57 @@ export type RetryCodeholdRunnerPath = "/api/v1/codehold/runners/{id}/retry";
 export type DisableCodeholdPath = "/api/v1/codehold/disable";
 
 export type GetCodeholdPendingPath = "/api/v1/codehold/pending";
+
+export type ListAutomationFlowsPath = "/api/v1/automations/flows";
+
+export type GetAutomationFlowPath = "/api/v1/automations/flows/{id}";
+
+export type ValidateAutomationFlowPath = "/api/v1/automations/flows/{id}/validate";
+
+export type PublishAutomationFlowPath = "/api/v1/automations/flows/{id}/publish";
+
+export type EnableAutomationFlowPath = "/api/v1/automations/flows/{id}/enable";
+
+export type DisableAutomationFlowPath = "/api/v1/automations/flows/{id}/disable";
+
+export type CloneAutomationFlowPath = "/api/v1/automations/flows/{id}/clone";
+
+export type ExecuteAutomationFlowPath = "/api/v1/automations/flows/{id}/execute";
+
+export type DryRunAutomationFlowPath = "/api/v1/automations/flows/{id}/dry-run";
+
+export type ListAutomationFlowVersionsPath = "/api/v1/automations/flows/{id}/versions";
+
+export type ListAutomationFlowRunsPath = "/api/v1/automations/flows/{id}/runs";
+
+export type GetAutomationWebhookPath = "/api/v1/automations/flows/{id}/webhook";
+
+export type RotateAutomationWebhookPath = "/api/v1/automations/flows/{id}/webhook/rotate";
+
+export type ListAutomationRunsPath = "/api/v1/automations/runs";
+
+export type GetAutomationRunPath = "/api/v1/automations/runs/{id}";
+
+export type CancelAutomationRunPath = "/api/v1/automations/runs/{id}/cancel";
+
+export type RetryAutomationRunPath = "/api/v1/automations/runs/{id}/retry";
+
+export type ApproveAutomationRunPath = "/api/v1/automations/runs/{id}/approve";
+
+export type ListAutomationRunNodesPath = "/api/v1/automations/runs/{id}/nodes";
+
+export type ListAutomationRunLogsPath = "/api/v1/automations/runs/{id}/logs";
+
+export type ListAutomationConnectionsPath = "/api/v1/automations/connections";
+
+export type PatchAutomationConnectionPath = "/api/v1/automations/connections/{id}";
+
+export type TestAutomationConnectionPath = "/api/v1/automations/connections/{id}/test";
+
+export type ListAutomationTargetsPath = "/api/v1/automations/targets";
+
+export type GetAutomationCataloguePath = "/api/v1/automations/nodes";
+
+export type ListAutomationTemplatesPath = "/api/v1/automations/templates";
+
+export type AutomationWebhookInPath = "/api/v1/hooks/flows/{token}";

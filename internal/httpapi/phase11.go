@@ -1048,7 +1048,8 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 	s.runScheduledBackupJobs(ctx, cluster.ID)
 }
 
-func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID, captureMode string, scopeJSON json.RawMessage) (appdb.BackupRun, error) {
+func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID, captureMode string, scopeJSON json.RawMessage) (result appdb.BackupRun, resultErr error) {
+	defer func() { s.automationBackupEvent(ctx, clusterID, workloadID, result, resultErr) }()
 	ctx, untrack, err := s.trackBackup(ctx, workloadID)
 	if err != nil {
 		return appdb.BackupRun{}, err

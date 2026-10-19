@@ -25,6 +25,8 @@ import { useSession } from "../session";
 import { Field } from "../components/Field";
 import { SelectField } from "../components/form/SelectField";
 import { Dialog } from "../ui/Dialog";
+import { UserDetailDialog } from "../components/UserDetailDialog";
+import { TrustedProxiesPanel } from "../components/TrustedProxiesPanel";
 
 type ConfirmKind = "delete" | "disable" | "reset" | "sessions" | "tokens" | "mfa" | null;
 
@@ -55,6 +57,7 @@ export function UsersPage() {
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [detail, setDetail] = useState<ManagedUser | null>(null);
 
   async function reload() {
     const body = await listManagedUsers({ q: query, role, status, sort });
@@ -311,7 +314,10 @@ export function UsersPage() {
         <ResourceTable
           headers={headers}
           empty={<EmptyState title="No users match">{total === 0 ? "No accounts are visible." : "Try a different search or filter."}</EmptyState>}
+          onRowClick={(i) => setDetail(items[i] ?? null)}
           rows={items.map((row) => {
+            // The root account is only managed by itself.
+            const rootLocked = Boolean(row.is_root && user?.user_id !== row.id);
             const primary = row.roles?.includes("admin") ? "admin" : row.roles?.includes("operator") ? "operator" : row.roles?.[0] || "";
             const actions = [];
             if (canUpdate) {
@@ -387,6 +393,9 @@ export function UsersPage() {
                 },
               });
             }
+            if (rootLocked) {
+              actions.length = 0;
+            }
             return [
               <div key="user">
                 <strong>{row.display_name || row.username}</strong>
@@ -394,6 +403,7 @@ export function UsersPage() {
                   {row.username}
                   {row.kind === "service" ? " · service" : ""}
                   {row.protected ? " · last owner" : ""}
+                  {row.is_root ? " · root" : ""}
                 </div>
               </div>,
               roleLabel(primary),
@@ -406,12 +416,29 @@ export function UsersPage() {
               String(row.api_token_count ?? 0),
               row.created_at ? formatWhen(row.created_at) : "Not reported",
               row.last_login_at ? formatWhen(row.last_login_at) : "Never",
-              actions.length ? <ActionMenu key="act" items={actions} /> : null,
+              actions.length ? (
+                <span key="act" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                  <ActionMenu items={actions} />
+                </span>
+              ) : null,
             ];
           })}
         />
-        <p className="field-hint">{total} account{total === 1 ? "" : "s"}</p>
+        <p className="field-hint">
+          {total} account{total === 1 ? "" : "s"}. Click a row for details and every action.
+        </p>
       </div>
+      {canSecurity ? <TrustedProxiesPanel /> : null}
+      <UserDetailDialog
+        user={detail}
+        onClose={() => setDetail(null)}
+        onChanged={async () => {
+          const body = await listManagedUsers({ q: query, role, status, sort });
+          setItems(body.items ?? []);
+          setTotal(body.total ?? 0);
+          setDetail((cur) => (cur ? (body.items ?? []).find((u) => u.id === cur.id) ?? null : null));
+        }}
+      />
       <ConfirmDialog
         open={Boolean(confirm && target)}
         title={

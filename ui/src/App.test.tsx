@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { GetHealthPath } from "./generated/openapi";
 import type { MeResponse } from "./api/types";
+import { enableUICapabilities, featuresOnRoute } from "./test/features";
 
 vi.mock("./components/FileEditor", () => ({
   FileEditor: () => null,
@@ -86,7 +87,7 @@ const defaultRoutes = {
   "/api/v1/cluster/update": { status: 200, body: { preview: [], note: "Rolling drains one node" } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
   "/api/v1/stacks": { status: 200, body: { items: [] } },
-  "/api/v1/features": { status: 200, body: { items: [] } },
+  "/api/v1/features": featuresOnRoute,
   "/api/v1/storage/images": { status: 200, body: { items: [] } },
   "/api/v1/policies": { status: 200, body: { items: [] } },
   "/api/v1/policy-runs": { status: 200, body: { items: [] } },
@@ -122,6 +123,8 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  beforeEach(() => enableUICapabilities());
+
   it("renders the setup form", async () => {
     window.history.replaceState({}, "", "/setup");
     mockApi({
@@ -157,8 +160,10 @@ describe("App", () => {
 
   it("shows the local node without fake infrastructure data", async () => {
     window.history.replaceState({}, "", "/");
+    globalThis.localStorage?.clear();
     mockApi({
       ...defaultRoutes,
+      "/api/v1/features": { status: 200, body: { items: [] } },
       "/api/v1/me": { status: 200, body: admin },
       "/api/v1/nodes": {
         status: 200,
@@ -226,16 +231,31 @@ describe("App", () => {
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/me/profile": {
+        status: 200,
+        body: {
+          user_id: "user-1",
+          username: "admin",
+          display_name: "",
+          email: "",
+          email_secondary: "",
+          email_verified: false,
+          roles: ["admin"],
+          mfa_enabled: false,
+          ip_allowlist: { enabled: false, entries: [] },
+        },
+      },
     });
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /account/i })).toBeVisible();
-    expect(screen.getByText("user-1")).toBeVisible();
-    expect(screen.getByText("ce")).toBeVisible();
-    expect(screen.getAllByText("admin").length).toBeGreaterThan(0);
-    expect(screen.getByRole("radio", { name: /^guided$/i })).toBeChecked();
-    expect(screen.getByRole("radio", { name: /^expert$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^admin$/i })).toBeVisible();
+    expect(await screen.findByText("user-1")).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^email$/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^appearance$/i }));
+    expect(await screen.findByRole("radio", { name: /guided/i })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: /expert/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^sidebar layout$/i })).toBeVisible();
   });
 
   it("posts setup claim JSON and opens the dashboard", async () => {
@@ -884,15 +904,15 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^add features$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^add features$/i })).toBeVisible();
     expect(await screen.findByText(/enabling kubernetes does not start kubelet/i)).toBeVisible();
-    expect(await screen.findByText(/base install light/i)).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^gpu services$/i })).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^kubernetes$/i })).toBeVisible();
     expect(screen.getAllByRole("button", { name: /^install$/i }).length).toBeGreaterThan(0);
     expect(screen.queryByText(/kubelet started yes/i)).not.toBeInTheDocument();
   });
 
-  it("keeps capability enablement when switching navigation templates", async () => {
+  it("shows a capability in the sidebar only once it is enabled", async () => {
     window.history.replaceState({}, "", "/settings/features");
+    globalThis.localStorage?.clear();
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
@@ -904,24 +924,29 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^add features$/i })).toBeVisible();
     expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: /^advanced$/i }));
-    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("radio", { name: /^simple$/i }));
-    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
-    const clustering = screen.getByRole("heading", { name: /^clustering$/i }).closest("article");
+    const clustering = (await screen.findByRole("heading", { name: /^clustering$/i })).closest("article");
     expect(clustering).toBeTruthy();
+    expect(within(clustering as HTMLElement).getByText(/^disabled$/i)).toBeVisible();
     fireEvent.click(within(clustering as HTMLElement).getByRole("button", { name: /^enable$/i }));
-    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("radio", { name: /^advanced$/i }));
-    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("radio", { name: /^simple$/i }));
-    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("radio", { name: /^custom$/i }));
-    expect(await screen.findByRole("heading", { name: /^custom modules$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("checkbox", { name: /^cluster$/i }));
-    expect(screen.queryByRole("link", { name: /^cluster$/i })).not.toBeInTheDocument();
-    expect(within(clustering as HTMLElement).getByText(/^enabled$/i)).toBeVisible();
+    expect(await screen.findByRole("link", { name: /^cluster$/i })).toBeVisible();
+    const after = screen.getByRole("heading", { name: /^clustering$/i }).closest("article");
+    expect(within(after as HTMLElement).getByText(/^enabled$/i)).toBeVisible();
+  });
+
+  it("shows a disabled feature's address as a disabled page with a way back", async () => {
+    window.history.replaceState({}, "", "/automation");
+    globalThis.localStorage?.clear();
+    mockApi({
+      ...defaultRoutes,
+      "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/features": { status: 200, body: { base_install: "light", gpu_optional: true, items: [] } },
+    });
+    render(<App />);
+    expect(await screen.findByText(/^this feature is disabled$/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /^go back$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^enable feature$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^visit features page$/i })).toBeVisible();
+    expect(screen.queryByRole("link", { name: /^automation$/i })).not.toBeInTheDocument();
   });
 
   it("renders the kubernetes page with no kube process by default", async () => {
@@ -985,7 +1010,7 @@ describe("App", () => {
   });
 
   it("renders the automation page with a storage-pressure policy", async () => {
-    window.history.replaceState({}, "", "/automation");
+    window.history.replaceState({}, "", "/automation/policies");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
@@ -1009,7 +1034,6 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^automation$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^automation$/i })).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^storage pressure$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^apply policy$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /^create policy$/i })).toBeVisible();
@@ -1581,16 +1605,31 @@ describe("App", () => {
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
       "/api/v1/mfa": { status: 200, body: { enabled: false, kind: "not_configured" } },
+      "/api/v1/me/profile": {
+        status: 200,
+        body: {
+          user_id: "user-1",
+          username: "admin",
+          display_name: "",
+          email: "",
+          email_secondary: "",
+          email_verified: false,
+          roles: ["admin"],
+          mfa_enabled: false,
+          ip_allowlist: { enabled: false, entries: [] },
+        },
+      },
+      "/api/v1/me/ip-allowlist": { status: 200, body: { enabled: false, entries: [], current_ip: "127.0.0.1", mfa_enabled: false } },
+      "/api/v1/me/ip": { status: 200, body: { ip: "127.0.0.1", peer: "127.0.0.1", via_proxy: false } },
     });
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /^authenticator$/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^multi-factor authentication$/i })).toBeVisible();
     expect(screen.queryByRole("link", { name: /^mfa$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^groups$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^audit$/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/webauthn is not implemented yet/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /^enroll totp$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^set up mfa$/i })).toBeVisible();
   });
 
   it("sends /groups to Access control and shows an honest empty group list", async () => {

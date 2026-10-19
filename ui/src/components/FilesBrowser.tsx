@@ -28,6 +28,7 @@ import { fileTypeLabel } from "../labels";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { ErrorNotice } from "./ErrorNotice";
+import { UploadDialog } from "./UploadDialog";
 
 type Dialog =
   | { kind: "mkdir" }
@@ -204,6 +205,8 @@ export function FilesBrowser({
     }
   }
 
+  const [uploadOpen, setUploadOpen] = useState(false);
+
   async function onUploadList(list: FileList | File[] | null) {
     const files = list ? Array.from(list) : [];
     if (files.length === 0) {
@@ -374,6 +377,16 @@ export function FilesBrowser({
     return items;
   }
 
+  const uploadDialog = (
+    <UploadDialog
+      open={uploadOpen}
+      destination={displayPath(path)}
+      onClose={() => setUploadOpen(false)}
+      upload={(file) => uploadFile(kind, id, joinPath(path, relName(file.name)), file)}
+      onDone={() => void reload(path)}
+    />
+  );
+
   const Wrap = embedded ? "div" : "section";
   return (
     <Wrap
@@ -392,6 +405,7 @@ export function FilesBrowser({
         }
       }}
     >
+      {uploadDialog}
       {embedded ? null : <PageHeader id="files-heading" title="Files" kicker={displayPath(path)} />}
       {error ? (
         <ErrorNotice error={error} />
@@ -453,7 +467,7 @@ export function FilesBrowser({
         </button>
         {canWrite ? (
           <>
-            <button className="btn btn-sm btn-secondary" type="button" onClick={() => fileInput.current?.click()} disabled={busy}>
+            <button className="btn btn-sm btn-secondary" type="button" onClick={() => setUploadOpen(true)} disabled={busy}>
               Upload
             </button>
             <input

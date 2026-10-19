@@ -587,6 +587,18 @@ type Store interface {
 
 	GetGameUserPref(ctx context.Context, clusterID, userID, key string) (string, error)
 	SetGameUserPref(ctx context.Context, clusterID, userID, key, value string) error
+
+	// Account profile, avatar and IP allowlist (account.go).
+	GetAccountProfile(ctx context.Context, userID string) (*AccountProfile, error)
+	UpsertAccountProfile(ctx context.Context, p AccountProfile) error
+	GetUserAvatar(ctx context.Context, userID string) (*UserAvatar, error)
+	SetUserAvatar(ctx context.Context, a UserAvatar) error
+	DeleteUserAvatar(ctx context.Context, userID string) error
+	RenameUser(ctx context.Context, clusterID, userID, username string) error
+	ListTrustedProxies(ctx context.Context, clusterID string) ([]TrustedProxy, error)
+	ReplaceTrustedProxies(ctx context.Context, clusterID string, items []TrustedProxy) error
+
+	AutomationStore
 }
 
 // Cluster is the appliance cluster of one.

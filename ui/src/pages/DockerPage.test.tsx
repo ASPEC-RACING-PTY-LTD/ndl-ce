@@ -103,9 +103,10 @@ describe("Docker page", () => {
     });
     window.history.replaceState({}, "", "/docker");
     render(<App />);
-    expect(await screen.findByRole("heading", { name: /^docker$/i })).toBeVisible();
-    expect(await screen.findByText(/docker management is not enabled/i)).toBeVisible();
-    expect(screen.getAllByRole("link", { name: /add features/i }).length).toBeGreaterThan(0);
+    // A disabled feature's page is never reachable: it shows the disabled page instead.
+    expect(await screen.findByText(/^this feature is disabled$/i)).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^docker management$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^visit features page$/i })).toBeVisible();
   });
 
   it("sorts groups into needs attention and healthy, restarts, and saves an ignore", async () => {

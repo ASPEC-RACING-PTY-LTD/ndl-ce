@@ -73,3 +73,18 @@ var ErrLocked = errLocked{}
 type errLocked struct{}
 
 func (errLocked) Error() string { return "too many failed login attempts" }
+
+// ClearSuffix clears every key ending in suffix (for example "|alice" for
+// all of a user's login buckets) and returns how many it cleared.
+func (l *Lockout) ClearSuffix(suffix string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for k := range l.seen {
+		if len(k) >= len(suffix) && k[len(k)-len(suffix):] == suffix {
+			delete(l.seen, k)
+			n++
+		}
+	}
+	return n
+}

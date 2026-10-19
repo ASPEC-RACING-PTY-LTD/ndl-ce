@@ -205,7 +205,7 @@ export function APIAccessPage() {
       case "type":
         return r.type === "service" ? "Service account" : "Personal";
       case "expires":
-        return r.expires ? formatWhen(r.expires) : r.token ? "No expiry" : "—";
+        return r.expires ? formatWhen(r.expires) : r.token ? "No expiry" : "-";
       case "used":
         return r.lastUsed ? <RelativeTime value={r.lastUsed} /> : "Never";
       case "status":

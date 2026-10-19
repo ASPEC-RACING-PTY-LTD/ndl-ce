@@ -373,7 +373,7 @@ export function WorkloadStoragePage() {
                       {m.pool_name || (m.pool_id ? "Pool" : "Host folder")}
                     </td>
                     <td>
-                      {m.size_bytes != null ? formatBytes(m.size_bytes) : "—"}
+                      {m.size_bytes != null ? formatBytes(m.size_bytes) : "Host disk"}
                     </td>
                     <td>{m.read_only ? "Read-only" : "Read and write"}</td>
                     {mutate ? (

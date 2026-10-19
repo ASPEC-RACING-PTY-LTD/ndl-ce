@@ -1,3 +1,4 @@
+import { defaultFilesPath } from "../files/workspace";
 import { FilesBrowser } from "../components/FilesBrowser";
 import { currentPath } from "../router";
 
@@ -29,7 +30,7 @@ export function FilesPage() {
       key={`${kind}:${id}`}
       kind={kind}
       id={id}
-      initialPath={query.get("path") || "/"}
+      initialPath={query.get("path") || defaultFilesPath(kind)}
       initialEdit={query.get("edit") || ""}
       onLocation={syncUrl}
     />

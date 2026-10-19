@@ -61,6 +61,7 @@ type Memory struct {
 	dockerPrefs        map[string]DockerPref
 	savedScripts       map[string]SavedScript
 	deploy             *deployMem
+	auto               *autoMem
 	uptimeMonitors     map[string]UptimeMonitor
 	uptimeEvents       []UptimeEvent
 	cfCreds            map[string]CloudflareCredential
@@ -155,6 +156,7 @@ type Memory struct {
 	gameFavs           map[string]GameConsoleFav
 	gameHist           map[string][]string
 	gamePrefs          map[string]string
+	account            accountMem
 }
 
 // NewMemory returns an empty store.

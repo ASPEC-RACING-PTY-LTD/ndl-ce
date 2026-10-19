@@ -84,6 +84,7 @@ type WorkspaceValue = {
   reconnect: (tabId: string) => void;
   /** reopen starts a new shell on the same target in the same tab. */
   reopen: (tabId: string) => void;
+  pruneRecents: (live: TermTarget[]) => void;
   replaceCurrent: (target: TermTarget) => string;
   setActive: (tabId: string) => void;
   nextTab: () => void;
@@ -778,6 +779,16 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     }
   }, [hydrated, connect]);
 
+  // pruneRecents drops workload recents that no longer exist (deleted
+  // workloads). Nodes are kept: a node can be briefly missing from a list.
+  const pruneRecents = useCallback((live: TermTarget[]) => {
+    const ids = new Set(live.filter((t) => t.kind === "workload").map((t) => t.id));
+    setRecents((cur) => {
+      const next = cur.filter((t) => t.kind !== "workload" || ids.has(t.id));
+      return next.length === cur.length ? cur : next;
+    });
+  }, []);
+
   const replaceCurrent = useCallback(
     (target: TermTarget) => {
       if (activeId) {
@@ -914,6 +925,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       reconnect,
       reopen,
       replaceCurrent,
+      pruneRecents,
       setActive: setActiveId,
       nextTab,
       prevTab,
@@ -942,6 +954,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       reconnect,
       reopen,
       replaceCurrent,
+      pruneRecents,
       nextTab,
       prevTab,
       attach,

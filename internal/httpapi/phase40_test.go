@@ -21,6 +21,7 @@ import (
 
 func TestPhase40StoragePressureCreatesVisibleOperation(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	cluster, _ := mem.GetCluster(context.Background())
 	node := seedNode(t, mem, cluster.ID, debianInv(), false)
 	ts := httptest.NewServer(s.Handler())
@@ -128,6 +129,7 @@ func TestPhase40StoragePressureCreatesVisibleOperation(t *testing.T) {
 
 func TestPhase40AutomationStripsOperatorBind(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	cluster, _ := mem.GetCluster(context.Background())
 	_ = seedNode(t, mem, cluster.ID, debianInv(), false)
 	ts := httptest.NewServer(s.Handler())
@@ -181,6 +183,7 @@ func TestPhase40AutomationStripsOperatorBind(t *testing.T) {
 
 func TestPhase40RequireApprovalNeedsConfirm(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	cluster, _ := mem.GetCluster(context.Background())
 	node := seedNode(t, mem, cluster.ID, debianInv(), false)
 	ts := httptest.NewServer(s.Handler())
@@ -272,6 +275,7 @@ func TestPhase40RequireApprovalNeedsConfirm(t *testing.T) {
 
 func TestPhase40ViewerCannotApply(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	cluster, _ := mem.GetCluster(context.Background())
 	seedNode(t, mem, cluster.ID, debianInv(), false)
 	ts := httptest.NewServer(s.Handler())
@@ -326,6 +330,7 @@ func TestPhase40ViewerCannotApply(t *testing.T) {
 
 func TestPhase40AttemptedMigrateFailureIsNotSucceeded(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	fake := migrate.NewFake()
 	fake.FailLive = true
 	s.Migrate = fake
@@ -426,6 +431,7 @@ func (f failCreatePolicyRunStore) CreatePolicyRun(context.Context, appdb.PolicyR
 
 func TestPhase40ApplyFailsClosedWhenRunPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	cluster, _ := mem.GetCluster(context.Background())
 	seedNode(t, mem, cluster.ID, debianInv(), false)
 	ts := httptest.NewServer(s.Handler())
@@ -463,6 +469,7 @@ func TestPhase40ApplyFailsClosedWhenRunPersistFails(t *testing.T) {
 
 func TestPhase40ApplyFailsClosedWhenMigrateOpPersistFails(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	cluster, _ := mem.GetCluster(context.Background())
 	node := seedNode(t, mem, cluster.ID, debianInv(), false)
 	ts := httptest.NewServer(s.Handler())

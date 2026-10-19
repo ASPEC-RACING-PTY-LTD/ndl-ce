@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import type { MeResponse } from "../api/types";
+import { featuresOnRoute } from "../test/features";
 
 const admin: MeResponse = { user_id: "user-1", username: "admin", roles: ["admin"], edition: "ce", ux_level: "guided", expert_ack: false };
 
@@ -34,6 +35,7 @@ const base: Record<string, Route> = {
   "/api/v1/tasks": { status: 200, body: { items: [] } },
   "/api/v1/cluster": { status: 200, body: { id: "c", name: "local", nodes: [] } },
   "/api/v1/workloads": { status: 200, body: { items: [] } },
+  "/api/v1/features": featuresOnRoute,
 };
 
 afterEach(() => {

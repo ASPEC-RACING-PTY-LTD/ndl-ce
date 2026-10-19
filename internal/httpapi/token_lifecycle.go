@@ -70,7 +70,7 @@ func (s *Server) auditTokenEnd(ctx context.Context, r *http.Request, clusterID, 
 	body, _ := json.Marshal(tokenSummary(tok, usage, reason, s.now()))
 	remote := "internal"
 	if r != nil {
-		remote = r.RemoteAddr
+		remote = s.clientIP(r)
 	}
 	_ = s.Store.InsertAudit(ctx, appdb.AuditEvent{
 		ID: uuid.NewString(), ClusterID: clusterID, ActorUserID: actor, Action: action,
@@ -108,7 +108,7 @@ func (s *Server) sweepExpiredTokens(ctx context.Context) {
 // noteTokenUse records the caller's IP for a token, at most once a minute
 // per token and IP.
 func (s *Server) noteTokenUse(r *http.Request, tokenID string) {
-	ip := r.RemoteAddr
+	ip := s.clientIP(r)
 	if host, _, err := net.SplitHostPort(ip); err == nil {
 		ip = host
 	}
@@ -250,7 +250,7 @@ func (s *Server) hardDeleteToken(w http.ResponseWriter, r *http.Request, p *prin
 	body, _ := json.Marshal(tokenSummary(tok, usage, "deleted", s.now()))
 	_ = s.Store.InsertAudit(r.Context(), appdb.AuditEvent{
 		ID: uuid.NewString(), ClusterID: p.User.ClusterID, ActorUserID: p.User.ID, Action: "token.delete",
-		Result: "ok", RemoteAddr: r.RemoteAddr, Detail: body, CreatedAt: s.now(),
+		Result: "ok", RemoteAddr: s.clientIP(r), Detail: body, CreatedAt: s.now(),
 	})
 	return true
 }

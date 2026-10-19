@@ -91,7 +91,8 @@ export function visibleModules(
   path?: string,
   grants?: string[],
 ): NavModule[] {
-  const allowed = NAV_MODULES.filter((mod) => allowedByRbac(mod, roles, grants));
+  // A disabled capability never shows, whatever the layout.
+  const allowed = NAV_MODULES.filter((mod) => allowedByRbac(mod, roles, grants) && capabilityOn(mod, prefs, featureEnabled));
   let chosen: NavModule[];
   if (prefs.template === "advanced") {
     chosen = allowed;
@@ -103,10 +104,15 @@ export function visibleModules(
       chosen = [...chosen].sort((a, b) => (rank.get(a.id) ?? 1000) - (rank.get(b.id) ?? 1000));
     }
   } else {
-    chosen = allowed.filter((mod) => mod.simple || (mod.capability && capabilityOn(mod, prefs, featureEnabled)));
+    chosen = allowed.filter((mod) => mod.simple || Boolean(mod.capability));
   }
   const current = path ? moduleForPath(path) : undefined;
-  if (current && allowedByRbac(current, roles, grants) && !chosen.some((mod) => mod.id === current.id)) {
+  if (
+    current &&
+    allowedByRbac(current, roles, grants) &&
+    capabilityOn(current, prefs, featureEnabled) &&
+    !chosen.some((mod) => mod.id === current.id)
+  ) {
     chosen = [...chosen, current];
   }
   return chosen;

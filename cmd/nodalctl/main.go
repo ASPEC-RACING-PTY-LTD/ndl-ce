@@ -36,6 +36,7 @@ func run(args []string) error {
   whoami
   token create --name NAME
   recover-admin --username USER --password PASS
+  recover-ip --username USER [--add-ip IP] [--disable-allowlist] [--clear-lockout]
   host-prepare
   node show
   node dest-listen --id ID --addr HOST:PORT
@@ -212,6 +213,8 @@ func run(args []string) error {
 		return cmdTokenCreate(args[2:])
 	case "recover-admin":
 		return cmdRecover(args[1:])
+	case "recover-ip":
+		return cmdRecoverIP(args[1:])
 	case "host-prepare":
 		return install.HostPrepare()
 	case "node":
@@ -419,6 +422,27 @@ func cmdGuestStatus(args []string) error {
 func cmdRecover(args []string) error {
 	f := parseFlags(args)
 	return install.RecoverAdmin(f["username"], f["password"])
+}
+
+// cmdRecoverIP undoes an IP allowlist lockout from the host. It talks to
+// the local control socket as root, so it works only on the host console or
+// over SSH; it never changes passwords or MFA or re-enables an account.
+func cmdRecoverIP(args []string) error {
+	f := parseFlags(args)
+	user := strings.TrimSpace(f["username"])
+	if user == "" {
+		return fmt.Errorf("usage: nodalctl recover-ip --username USER [--add-ip IP] [--disable-allowlist] [--clear-lockout]")
+	}
+	if localControlSocket() == "" {
+		return fmt.Errorf("recover-ip must run as root on the host (the local control socket is not available)")
+	}
+	body := map[string]any{
+		"username":          user,
+		"add_ip":            f["add-ip"],
+		"disable_allowlist": f["disable-allowlist"] == "true",
+		"clear_lockout":     f["clear-lockout"] == "true",
+	}
+	return postJSON("/api/v1/console/ip-recovery", body, false)
 }
 
 func postJSON(path string, body any, saveSession bool) error {

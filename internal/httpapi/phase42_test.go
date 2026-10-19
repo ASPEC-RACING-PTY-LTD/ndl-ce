@@ -210,6 +210,7 @@ func TestPhase42StoreInstallWithoutIDStops(t *testing.T) {
 
 func TestPhase42PolicyPlanUsesAutomationValidation(t *testing.T) {
 	s, mem, token := testServer(t)
+	enableAutomation(t, mem)
 	cluster, _ := mem.GetCluster(context.Background())
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()

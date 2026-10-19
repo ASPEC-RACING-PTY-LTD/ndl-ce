@@ -79,7 +79,10 @@ const baseRoutes: Record<string, { status: number; body?: unknown }> = {
   "/api/v1/features": {
     status: 200,
     body: {
-      items: [{ id: "docker", title: "Docker Management", enabled: true, core: false, package_status: "installed", runtime_status: "not_started", starts_runtime: false, kubelet_started: false, workload_count: 0 }],
+      items: [
+        { id: "docker", title: "Docker Management", enabled: true, core: false, package_status: "installed", runtime_status: "not_started", starts_runtime: false, kubelet_started: false, workload_count: 0 },
+        { id: "automation", title: "Automation", enabled: true, core: false, package_status: "not_configured", runtime_status: "not_started", starts_runtime: false, kubelet_started: false, workload_count: 0, software_only: true },
+      ],
     },
   },
 };
@@ -267,7 +270,7 @@ describe("Automation page", () => {
         return { status: 201, body: { id: "p1", name: "recover sites", kind: "uptime_check", action: "check_and_recover", target: "shop" } };
       },
     });
-    window.history.replaceState({}, "", "/automation");
+    window.history.replaceState({}, "", "/automation/policies");
     render(<App />);
     fireEvent.change(await screen.findByLabelText(/what it does/i), { target: { value: "uptime_check" } });
     fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "recover sites" } });

@@ -104,6 +104,362 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /me/profile:
+    get:
+      operationId: getMyProfile
+      summary: Your profile: names, emails, picture, MFA and IP allowlist. Not for API tokens.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountProfile"
+    patch:
+      operationId: patchMyProfile
+      summary: Change your display name (a UI label only; audit logs keep the username) and emails. Changing an email needs current_password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountProfilePatch"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountProfile"
+        "400":
+          description: Invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me/password:
+    post:
+      operationId: changeMyPassword
+      summary: Change your password. Signs out your other sessions unless sign_out_others is false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChangeRequest"
+      responses:
+        "204":
+          description: Done
+        "400":
+          description: Invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me/sessions/revoke-others:
+    post:
+      operationId: signOutOtherSessions
+      summary: Sign out every other session of your account.
+      responses:
+        "204":
+          description: Done
+  /me/avatar:
+    put:
+      operationId: putMyAvatar
+      summary: Upload a profile picture (PNG, JPEG or WebP, raw image body, 2 MB max).
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountProfile"
+        "413":
+          description: Too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Not an image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteMyAvatar
+      summary: Remove your profile picture.
+      responses:
+        "204":
+          description: Done
+  /me/mfa/disable:
+    post:
+      operationId: disableMyMFA
+      summary: Turn off your MFA with your password and a current code. Refused while your IP allowlist is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFADisableRequest"
+      responses:
+        "204":
+          description: Done
+        "403":
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: IP allowlist is on
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /me/ip:
+    get:
+      operationId: getMyIP
+      summary: The client address ndl-ce sees for this request and the trusted proxy it came through.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientIPInfo"
+  /me/ip-allowlist:
+    get:
+      operationId: getMyAllowlist
+      summary: Your account-level IP allowlist.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPAllowlist"
+    put:
+      operationId: putMyAllowlist
+      summary: Replace your IP allowlist. Turning it on needs MFA and your current address on the list.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IPAllowlistInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPAllowlist"
+        "400":
+          description: Invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: MFA missing or current address not listed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users/{id}/avatar:
+    get:
+      operationId: getUserAvatar
+      summary: A user's profile picture.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Image
+        "404":
+          description: No picture
+  /users/{id}/ip-allowlist:
+    get:
+      operationId: getUserAllowlist
+      summary: A user's IP allowlist (role hierarchy applies).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPAllowlist"
+    put:
+      operationId: putUserAllowlist
+      summary: Replace a user's IP allowlist or turn it off (role hierarchy applies; the root account only by itself).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IPAllowlistInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPAllowlist"
+        "403":
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: User has no MFA
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users/{id}/unlock:
+    post:
+      operationId: unlockUser
+      summary: Clear a user's failed-login lockouts.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Done
+        "403":
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users/{id}/mfa/reset:
+    post:
+      operationId: resetUserMFA
+      summary: Remove a user's MFA so they enrol again; their IP allowlist turns off. Requires X-Nodal-Confirm: reset-mfa.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Done
+        "403":
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Confirmation missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /console/ip-recovery:
+    post:
+      operationId: consoleIPRecovery
+      summary: Host console only (root over the local control socket): add an address to a user's allowlist, turn it off, or clear a lockout. Never changes passwords or MFA or re-enables accounts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleIPRecoveryRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IPAllowlist"
+        "403":
+          description: Refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /settings/trusted-proxies:
+    get:
+      operationId: getTrustedProxies
+      summary: Proxies whose client-address headers are believed: detected from the active setup, plus manual entries.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustedProxies"
+    put:
+      operationId: putTrustedProxies
+      summary: Replace manual trusted proxies and which detected ones are off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrustedProxiesInput"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustedProxies"
+        "400":
+          description: Invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /users:
     get:
       operationId: listUsers
@@ -252,6 +608,127 @@ paths:
       responses:
         "200":
           description: Policy
+        "403":
+          description: Forbidden
+  /iam/access:
+    get:
+      operationId: iamAccess
+      summary: Consolidated API access: users, service accounts and tokens with their roles. Requires identity.read.
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+  /iam/roles/order:
+    put:
+      operationId: reorderRoles
+      summary: Set role ranks (hierarchy order). A user may only move roles below their own.
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+  /iam/roles/{name}:
+    put:
+      operationId: putIAMRole
+      summary: Create or update a role's title, rank and permissions; hierarchy-checked.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+    delete:
+      operationId: deleteIAMRole
+      summary: Delete a custom role; hierarchy-checked.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+  /iam/groups/{id}:
+    put:
+      operationId: putIAMGroup
+      summary: Update a group's name, description, roles and members; hierarchy-checked.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+  /tokens/{id}:
+    patch:
+      operationId: patchToken
+      summary: Rename a token or change its expiry or permissions.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+    delete:
+      operationId: hardDeleteToken
+      summary: Permanently delete a token after an audit entry.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+  /tokens/{id}/usage:
+    get:
+      operationId: tokenUsage
+      summary: Recent addresses and times a token was used.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "403":
+          description: Forbidden
+  /tokens/{id}/roll:
+    post:
+      operationId: rollToken
+      summary: Issue a new secret for a token; the old one stops working.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
         "403":
           description: Forbidden
   /tokens:
@@ -10891,8 +11368,1335 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /automations/flows:
+    get:
+      operationId: listAutomationFlows
+      summary: Automation flows with their last run.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlowList"
+        "409":
+          description: Automation is disabled, or the change conflicts
+    post:
+      operationId: createAutomationFlow
+      summary: Create a flow from a definition, or from a starter template.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationFlowRequest"
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}:
+    get:
+      operationId: getAutomationFlow
+      summary: A flow, its draft and the draft's validation problems.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "409":
+          description: Automation is disabled, or the change conflicts
+    patch:
+      operationId: patchAutomationFlow
+      summary: Edit a flow's name, description, draft or limits. Published versions do not change.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationFlowRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "409":
+          description: Automation is disabled, or the change conflicts
+    delete:
+      operationId: deleteAutomationFlow
+      summary: Delete a flow; its unfinished runs are cancelled.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Done
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/validate:
+    post:
+      operationId: validateAutomationFlow
+      summary: Validate the draft (or a given definition). Problems are path and message pairs.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationFlowRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationValidation"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/publish:
+    post:
+      operationId: publishAutomationFlow
+      summary: Freeze the draft as version N+1. Drafts with steps that change things need a passing test run first (an Owner may skip it with a reason).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationPublishRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "409":
+          description: Automation is disabled, or the change conflicts
+        "422":
+          description: The flow has problems
+  /automations/flows/{id}/enable:
+    post:
+      operationId: enableAutomationFlow
+      summary: Turn a published flow on.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/disable:
+    post:
+      operationId: disableAutomationFlow
+      summary: Turn a flow off. Manual runs still work.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/clone:
+    post:
+      operationId: cloneAutomationFlow
+      summary: Copy a flow's draft into a new, unpublished flow.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationFlowRequest"
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationFlow"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/execute:
+    post:
+      operationId: executeAutomationFlow
+      summary: Run the published version now, as the automation identity.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationFlowRequest"
+      responses:
+        "202":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRunStart"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/dry-run:
+    post:
+      operationId: dryRunAutomationFlow
+      summary: Test run: evaluates triggers, conditions and branches for real, but action steps only report what they would do.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationDryRunRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationDryRunResult"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/versions:
+    get:
+      operationId: listAutomationFlowVersions
+      summary: Published versions, newest first.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationVersionList"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/runs:
+    get:
+      operationId: listAutomationFlowRuns
+      summary: A flow's runs, newest first.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: flow_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - live
+              - dry_run
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRunList"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/webhook:
+    get:
+      operationId: getAutomationWebhook
+      summary: Whether the flow has an inbound webhook, and its newest 100 deliveries (redacted).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationWebhook"
+        "409":
+          description: Automation is disabled, or the change conflicts
+    post:
+      operationId: createAutomationWebhook
+      summary: Create the inbound webhook. The token and secret are shown once; only hashes are stored.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationWebhookSecret"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/flows/{id}/webhook/rotate:
+    post:
+      operationId: rotateAutomationWebhook
+      summary: Replace the webhook's token and secret.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationWebhookSecret"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/runs:
+    get:
+      operationId: listAutomationRuns
+      summary: Runs of every flow, newest first.
+      parameters:
+        - name: flow_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - live
+              - dry_run
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRunList"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/runs/{id}:
+    get:
+      operationId: getAutomationRun
+      summary: One run with its definition, test report and pending approvals.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRun"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/runs/{id}/cancel:
+    post:
+      operationId: cancelAutomationRun
+      summary: Cancel a run that has not finished.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRun"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/runs/{id}/retry:
+    post:
+      operationId: retryAutomationRun
+      summary: Start a new run of the same version with the same trigger data.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRun"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/runs/{id}/approve:
+    post:
+      operationId: approveAutomationRun
+      summary: Approve or reject a step waiting for an approval.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationApproveRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRun"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/runs/{id}/nodes:
+    get:
+      operationId: listAutomationRunNodes
+      summary: Each step of a run with its attempts, input and output (redacted).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationItems"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/runs/{id}/logs:
+    get:
+      operationId: listAutomationRunLogs
+      summary: A run's log lines (redacted).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationItems"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/connections:
+    get:
+      operationId: listAutomationConnections
+      summary: Saved credentials. Secret values are never returned, only their field names.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationConnectionList"
+        "409":
+          description: Automation is disabled, or the change conflicts
+    post:
+      operationId: createAutomationConnection
+      summary: Save a credential. The secret part is encrypted.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationConnectionRequest"
+      responses:
+        "201":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationConnection"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/connections/{id}:
+    patch:
+      operationId: patchAutomationConnection
+      summary: Rename a connection or replace its secret.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationConnectionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationConnection"
+        "409":
+          description: Automation is disabled, or the change conflicts
+    delete:
+      operationId: deleteAutomationConnection
+      summary: Delete a connection.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Done
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/connections/{id}/test:
+    post:
+      operationId: testAutomationConnection
+      summary: Open the credential and, with a test_url, try it with one GET.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationConnectionTest"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/targets:
+    get:
+      operationId: listAutomationTargets
+      summary: What a step's target field can pick (workloads, containers, monitors, pools, scripts and so on).
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationItems"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/nodes:
+    get:
+      operationId: getAutomationCatalogue
+      summary: The step catalogue (fields for the editor), events, triggers and limits.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationCatalogue"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /automations/templates:
+    get:
+      operationId: listAutomationTemplates
+      summary: Starter flows.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationItems"
+        "409":
+          description: Automation is disabled, or the change conflicts
+  /hooks/flows/{token}:
+    post:
+      operationId: automationWebhookIn
+      summary: Inbound flow webhook (no session). The secret goes in X-Nodal-Webhook-Secret or as a bearer token. Bodies over 1 MB are refused.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Nodal-Webhook-Secret
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "202":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationHookResult"
+        "409":
+          description: Automation is disabled, or the change conflicts
+        "401":
+          description: The secret does not match
+        "404":
+          description: No such webhook
+        "413":
+          description: The body is larger than 1 MB
+        "429":
+          description: A safety limit dropped the trigger
 components:
   schemas:
+    AccountProfile:
+      type: object
+      required:
+        - user_id
+        - username
+        - display_name
+        - email
+        - email_secondary
+        - email_verified
+        - roles
+        - mfa_enabled
+        - ip_allowlist
+      properties:
+        user_id:
+          type: string
+        username:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        email_secondary:
+          type: string
+        email_verified:
+          type: boolean
+        roles:
+          type: array
+          items:
+            type: string
+        mfa_enabled:
+          type: boolean
+        created_at:
+          type: string
+        last_login_at:
+          type: string
+        avatar_updated_at:
+          type: string
+        ip_allowlist:
+          $ref: "#/components/schemas/IPAllowlist"
+    AccountProfilePatch:
+      type: object
+      properties:
+        display_name:
+          type: string
+        email:
+          type: string
+        email_secondary:
+          type: string
+        current_password:
+          type: string
+    PasswordChangeRequest:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+        sign_out_others:
+          type: boolean
+    MFADisableRequest:
+      type: object
+      required:
+        - password
+        - code
+      properties:
+        password:
+          type: string
+        code:
+          type: string
+    IPAllowEntry:
+      type: object
+      required:
+        - cidr
+      properties:
+        cidr:
+          type: string
+        note:
+          type: string
+        added_by:
+          type: string
+        added_at:
+          type: string
+    IPAllowlist:
+      type: object
+      required:
+        - enabled
+        - entries
+      properties:
+        enabled:
+          type: boolean
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/IPAllowEntry"
+        current_ip:
+          type: string
+        mfa_enabled:
+          type: boolean
+        username:
+          type: string
+        done:
+          type: array
+          items:
+            type: string
+        disabled_account:
+          type: boolean
+    IPAllowlistInput:
+      type: object
+      required:
+        - enabled
+        - entries
+      properties:
+        enabled:
+          type: boolean
+        entries:
+          type: array
+          items:
+            type: object
+            required:
+              - cidr
+            properties:
+              cidr:
+                type: string
+              note:
+                type: string
+    ConsoleIPRecoveryRequest:
+      type: object
+      required:
+        - username
+      properties:
+        username:
+          type: string
+        add_ip:
+          type: string
+        disable_allowlist:
+          type: boolean
+        clear_lockout:
+          type: boolean
+    ClientIPInfo:
+      type: object
+      required:
+        - ip
+        - peer
+        - via_proxy
+      properties:
+        ip:
+          type: string
+        peer:
+          type: string
+        via_proxy:
+          type: boolean
+        proxy:
+          type: object
+          properties:
+            cidr:
+              type: string
+            kind:
+              type: string
+            source:
+              type: string
+    TrustedProxy:
+      type: object
+      required:
+        - id
+        - cidr
+        - kind
+        - enabled
+      properties:
+        id:
+          type: string
+        cidr:
+          type: string
+        kind:
+          type: string
+          enum:
+            - cloudflared
+            - generic
+        source:
+          type: string
+        note:
+          type: string
+        enabled:
+          type: boolean
+    TrustedProxies:
+      type: object
+      required:
+        - detected
+        - manual
+        - current
+      properties:
+        detected:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrustedProxy"
+        manual:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrustedProxy"
+        current:
+          type: object
+          properties:
+            ip:
+              type: string
+            peer:
+              type: string
+            via_proxy:
+              type: boolean
+            headers:
+              type: object
+              additionalProperties:
+                type: string
+    TrustedProxiesInput:
+      type: object
+      required:
+        - manual
+        - detected_off
+      properties:
+        manual:
+          type: array
+          items:
+            type: object
+            required:
+              - cidr
+              - kind
+            properties:
+              cidr:
+                type: string
+              kind:
+                type: string
+                enum:
+                  - cloudflared
+                  - generic
+              note:
+                type: string
+              enabled:
+                type: boolean
+        detected_off:
+          type: array
+          items:
+            type: string
+    AutomationProblem:
+      type: object
+      additionalProperties: true
+      required:
+        - path
+        - message
+      properties:
+        path:
+          type: string
+        message:
+          type: string
+    AutomationFlow:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        published_version:
+          type: integer
+        trigger_kind:
+          type: string
+        event_kind:
+          type: string
+        draft:
+          type: object
+        limits:
+          type: object
+        draft_changed:
+          type: boolean
+        dry_run_passed:
+          type: boolean
+        destructive:
+          type: array
+          items:
+            type: string
+        consecutive_failures:
+          type: integer
+        disabled_reason:
+          type: string
+        legacy_policy_id:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        last_run:
+          type: object
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationProblem"
+    AutomationFlowList:
+      type: object
+      additionalProperties: true
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationFlow"
+    AutomationFlowRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        definition:
+          type: object
+        limits:
+          type: object
+        template:
+          type: string
+        inputs:
+          type: object
+        payload:
+          type: object
+    AutomationPublishRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        note:
+          type: string
+        skip_dry_run_reason:
+          type: string
+    AutomationDryRunRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        published:
+          type: boolean
+        payload:
+          type: object
+        inputs:
+          type: object
+        sample:
+          type: string
+    AutomationValidation:
+      type: object
+      additionalProperties: true
+      required:
+        - ok
+        - problems
+      properties:
+        ok:
+          type: boolean
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationProblem"
+        destructive:
+          type: array
+          items:
+            type: string
+    AutomationRun:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+        flow_id:
+          type: string
+        flow_name:
+          type: string
+        version:
+          type: integer
+        mode:
+          type: string
+        status:
+          type: string
+        trigger_kind:
+          type: string
+        trigger_payload:
+          type: object
+        inputs:
+          type: object
+        idempotency_key:
+          type: string
+        correlation_id:
+          type: string
+        caused_by_run:
+          type: string
+        chain_depth:
+          type: integer
+        retry_of:
+          type: string
+        started_by:
+          type: string
+        error:
+          type: string
+        wake_at:
+          type: string
+        started_at:
+          type: string
+        finished_at:
+          type: string
+        created_at:
+          type: string
+        report:
+          type: object
+        steps:
+          type: integer
+        pending_approvals:
+          type: array
+          items:
+            type: object
+        definition:
+          type: object
+    AutomationRunList:
+      type: object
+      additionalProperties: true
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationRun"
+    AutomationRunStart:
+      type: object
+      additionalProperties: true
+      required:
+        - run
+      properties:
+        run:
+          $ref: "#/components/schemas/AutomationRun"
+        existing:
+          type: boolean
+    AutomationDryRunResult:
+      type: object
+      additionalProperties: true
+      required:
+        - run
+      properties:
+        run:
+          $ref: "#/components/schemas/AutomationRun"
+        flow:
+          $ref: "#/components/schemas/AutomationFlow"
+    AutomationApproveRequest:
+      type: object
+      additionalProperties: true
+      required:
+        - approved
+      properties:
+        node_id:
+          type: string
+        approved:
+          type: boolean
+        note:
+          type: string
+    AutomationItems:
+      type: object
+      additionalProperties: true
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+    AutomationVersionList:
+      type: object
+      additionalProperties: true
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+    AutomationWebhook:
+      type: object
+      additionalProperties: true
+      required:
+        - exists
+      properties:
+        exists:
+          type: boolean
+        path_prefix:
+          type: string
+        rotated_at:
+          type: string
+        deliveries:
+          type: array
+          items:
+            type: object
+    AutomationWebhookSecret:
+      type: object
+      additionalProperties: true
+      required:
+        - path
+        - token
+        - secret
+      properties:
+        path:
+          type: string
+        token:
+          type: string
+        secret:
+          type: string
+        secret_header:
+          type: string
+    AutomationConnection:
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - name
+        - kind
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        config:
+          type: object
+        secret_fields:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    AutomationConnectionList:
+      type: object
+      additionalProperties: true
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationConnection"
+    AutomationConnectionRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        config:
+          type: object
+        secret:
+          type: object
+    AutomationConnectionTest:
+      type: object
+      additionalProperties: true
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+    AutomationCatalogue:
+      type: object
+      additionalProperties: true
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        events:
+          type: array
+          items:
+            type: object
+        triggers:
+          type: array
+          items:
+            type: object
+        schedule_presets:
+          type: array
+          items:
+            type: string
+        condition_ops:
+          type: array
+          items:
+            type: string
+        limits:
+          type: object
+        fixed_limits:
+          type: object
+    AutomationHookResult:
+      type: object
+      additionalProperties: true
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+        existing:
+          type: boolean
     DeployCommand:
       type: object
       required:
@@ -11653,6 +13457,8 @@ components:
           items:
             type: string
         display_name:
+          type: string
+        avatar_updated_at:
           type: string
         aal:
           type: integer
@@ -12739,10 +14545,14 @@ components:
             - k8s
             - distributed_storage
             - ai
+            - automation
         title:
           type: string
         enabled:
           type: boolean
+        installed:
+          type: boolean
+          description: Core, package installed, or a software-only feature that was turned on before.
         core:
           type: boolean
         package:
@@ -16403,7 +18213,11 @@ components:
     BackupStorageEvent:
       type: object
       additionalProperties: false
-      required: [at, kind, ok, message]
+      required:
+        - at
+        - kind
+        - ok
+        - message
       properties:
         at:
           type: string
@@ -16484,7 +18298,14 @@ components:
     BackupStorageReport:
       type: object
       additionalProperties: false
-      required: [workspace, pools, warnings, events, retention, unmanaged_restore_points, deleted_workload_backups]
+      required:
+        - workspace
+        - pools
+        - warnings
+        - events
+        - retention
+        - unmanaged_restore_points
+        - deleted_workload_backups
       properties:
         repository_move:
           $ref: "#/components/schemas/BackupRepositoryMove"
@@ -16540,7 +18361,13 @@ components:
     BackupLocation:
       type: object
       additionalProperties: false
-      required: [pool_id, name, backend_type, usable, root_filesystem, recommended]
+      required:
+        - pool_id
+        - name
+        - backend_type
+        - usable
+        - root_filesystem
+        - recommended
       properties:
         pool_id:
           type: string
@@ -16569,7 +18396,8 @@ components:
     BackupLocationListResponse:
       type: object
       additionalProperties: false
-      required: [items]
+      required:
+        - items
       properties:
         items:
           type: array
@@ -16578,7 +18406,9 @@ components:
     BackupKeyExportResponse:
       type: object
       additionalProperties: false
-      required: [key, format]
+      required:
+        - key
+        - format
       properties:
         key:
           type: string
@@ -16589,7 +18419,8 @@ components:
     BackupProtectRequest:
       type: object
       additionalProperties: false
-      required: [protected]
+      required:
+        - protected
       properties:
         protected:
           type: boolean
@@ -16604,7 +18435,8 @@ components:
     BackupWipeRequest:
       type: object
       additionalProperties: false
-      required: [confirm_name]
+      required:
+        - confirm_name
       properties:
         confirm_name:
           type: string
@@ -16688,7 +18520,8 @@ components:
     BackupTargetUsageResponse:
       type: object
       additionalProperties: false
-      required: [target_id]
+      required:
+        - target_id
       properties:
         target_id:
           type: string

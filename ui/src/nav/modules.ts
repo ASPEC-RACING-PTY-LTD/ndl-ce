@@ -164,7 +164,7 @@ export const NAV_MODULES: NavModule[] = [
     href: "/automation",
     label: "Automation",
     group: "Operations",
-    match: (p) => p === "/automation",
+    match: (p) => p === "/automation" || p.startsWith("/automation/"),
     simple: false,
     capability: "automation",
   },
@@ -279,7 +279,9 @@ export const CAPABILITIES: Capability[] = [
   {
     id: "automation",
     title: "Automation",
-    summary: "Storage pressure and policy automation.",
+    summary:
+      "Flows that react to events, schedules and webhooks and drive Workloads, Backups, Docker and saved scripts. Disabling it pauses every flow and deletes none.",
+    featureId: "automation",
     modules: ["automation"],
   },
   {
@@ -400,4 +402,30 @@ export function moduleById(id: string): NavModule | undefined {
 
 export function moduleForPath(path: string): NavModule | undefined {
   return NAV_MODULES.find((item) => item.match(path));
+}
+
+// Gated pages that have no sidebar entry of their own.
+const PATH_GATES: { capability: string; match: (p: string) => boolean }[] = [
+  { capability: "cloudflare", match: (p) => p === "/cloudflare" || p === "/network/cloudflare" || p.startsWith("/network/cloudflare/") },
+  { capability: "caddy", match: (p) => p === "/network/caddy" || p.startsWith("/network/caddy/") },
+  { capability: "nginx", match: (p) => p === "/network/nginx" || p.startsWith("/network/nginx/") },
+  { capability: "oci", match: (p) => p === "/workloads/new/oci" || p === "/stacks" || p.startsWith("/stacks/") },
+  { capability: "docker", match: (p) => p === "/uptime" },
+];
+
+/** capabilityForPath names the optional capability a page belongs to, if any. */
+export function capabilityForPath(path: string): string | undefined {
+  const gate = PATH_GATES.find((g) => g.match(path));
+  if (gate) {
+    return gate.capability;
+  }
+  return moduleForPath(path)?.capability;
+}
+
+/** capabilityForHref is capabilityForPath for a link, ignoring query and hash. */
+export function capabilityForHref(href: string): string | undefined {
+  if (!href.startsWith("/")) {
+    return undefined;
+  }
+  return capabilityForPath(href.split(/[?#]/)[0] || "/");
 }

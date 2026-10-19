@@ -8,6 +8,7 @@ import { THEME_KEY, parseThemePrefs, type ThemeMode } from "../../theme";
 import { Icon, type IconName } from "../Icon";
 import { Link } from "../Link";
 import { ThemeDialog } from "../ThemeDialog";
+import { Avatar } from "../Avatar";
 
 const MODES: { id: ThemeMode; label: string; icon: IconName }[] = [
   { id: "light", label: "Light mode", icon: "sun" },
@@ -65,9 +66,13 @@ export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapse
         title={collapsed ? name : undefined}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="account-initial" aria-hidden="true">
-          {initial}
-        </span>
+        {user.avatar_updated_at ? (
+          <Avatar userID={user.user_id} name={name} updatedAt={user.avatar_updated_at} size={28} />
+        ) : (
+          <span className="account-initial" aria-hidden="true">
+            {initial}
+          </span>
+        )}
         <span className="sidebar-account-name nav-link-label">
           <strong>{name}</strong>
           <span className="meta">{user.roles.length ? user.roles.map(roleLabel).join(", ") : "No roles"}</span>
@@ -92,14 +97,15 @@ export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapse
             ))}
             <button
               type="button"
-              className="btn btn-ghost btn-sm mode-theme-btn"
+              className="btn btn-ghost btn-sm btn-icon mode-theme-btn"
+              aria-label="Theme"
+              title="Theme"
               onClick={() => {
                 setOpen(false);
                 setThemeOpen(true);
               }}
             >
               <Icon name="palette" size={15} />
-              Theme
             </button>
           </div>
           <hr />

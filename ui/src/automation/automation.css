@@ -1,0 +1,400 @@
+/*
+ * Automations: the flow list, the guided step builder and the run viewer.
+ * Panels, buttons, fields and tables come from the shared styles; this file
+ * adds the step cards, branch columns and the report lines. Boxes size to
+ * their content.
+ */
+
+.au-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.au-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.au-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+
+.au-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.au-card-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.au-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.au-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-subtle);
+  color: var(--fg-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.au-chip.is-warn {
+  border-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--fg-primary);
+}
+
+.au-chip.is-bad {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--fg-primary);
+}
+
+.au-chip.is-ok {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+  color: var(--fg-primary);
+}
+
+/* The builder: a trigger card, then steps in a vertical line. */
+
+.au-builder {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  max-width: 880px;
+}
+
+.au-step {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.au-step.is-trigger {
+  border-left-color: var(--ok);
+}
+
+.au-step.is-logic {
+  border-left-color: var(--info);
+}
+
+.au-step.is-problem {
+  border-color: var(--danger);
+}
+
+.au-step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.au-step-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.au-step-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.au-step-title .meta {
+  font-size: 0.75rem;
+}
+
+.au-step-tools {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.au-gap {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  padding: 6px 0;
+}
+
+.au-gap::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--line);
+}
+
+.au-add {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.au-add:hover,
+.au-add:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.au-branches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.au-branch {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  background: var(--bg-subtle);
+  min-width: 0;
+}
+
+.au-branch-label {
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.au-branch.is-error {
+  border-color: var(--danger);
+}
+
+.au-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-2) var(--space-3);
+  align-items: start;
+}
+
+.au-fields .is-wide {
+  grid-column: 1 / -1;
+}
+
+.au-input-row {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.au-input-row > .field-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.au-field-error {
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+
+.au-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.au-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 170px) minmax(0, 1fr) auto;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.au-when-group {
+  border-left: 2px solid var(--accent-soft);
+  padding-left: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.au-when-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 120px minmax(0, 1fr) auto;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.au-picker {
+  max-height: 320px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.au-picker-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.au-picker-group > span {
+  width: 100%;
+  font-size: 0.75rem;
+  color: var(--fg-tertiary);
+}
+
+.au-catalogue {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-2);
+}
+
+.au-catalogue button {
+  text-align: left;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--fg-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.au-catalogue button:hover,
+.au-catalogue button:focus-visible {
+  border-color: var(--accent);
+}
+
+.au-catalogue small {
+  display: block;
+  color: var(--fg-tertiary);
+}
+
+/* Reports and run steps. */
+
+.au-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.au-report li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-1) var(--space-2);
+  border-left: 3px solid var(--line);
+}
+
+.au-report li.is-would {
+  border-left-color: var(--accent);
+}
+
+.au-report li.is-true {
+  border-left-color: var(--ok);
+}
+
+.au-report li.is-false {
+  border-left-color: var(--warn);
+}
+
+.au-report li.is-problem {
+  border-left-color: var(--danger);
+}
+
+.au-rule-result {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  color: var(--fg-secondary);
+}
+
+.au-json {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--bg-subtle);
+  border-radius: var(--radius);
+}
+
+.au-logs {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  max-height: 360px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--bg-subtle);
+  border-radius: var(--radius);
+  list-style: none;
+}
+
+.au-logs .is-error {
+  color: var(--danger);
+}
+
+.au-logs .is-warn {
+  color: var(--warn);
+}
+
+.au-limits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .au-rule,
+  .au-when-row {
+    grid-template-columns: 1fr;
+  }
+}

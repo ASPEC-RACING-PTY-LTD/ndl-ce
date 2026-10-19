@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
 import { RequireGrant } from "./components/RequireGrant";
+import { FeatureGate } from "./components/FeatureGate";
 import { APIAccessPage } from "./pages/APIAccessPage";
 import { AccessControlPage } from "./pages/AccessControlPage";
 import { UsersPage } from "./pages/UsersPage";
@@ -39,6 +40,9 @@ import { FeaturesPage } from "./pages/FeaturesPage";
 import { KubernetesPage } from "./pages/KubernetesPage";
 import { StorePage } from "./pages/StorePage";
 import { AutomationPage } from "./pages/AutomationPage";
+import { AutomationHome } from "./pages/automation/AutomationHome";
+import { FlowEditorPage } from "./pages/automation/FlowEditorPage";
+import { RunPage } from "./pages/automation/RunPage";
 import { AskPage } from "./pages/AskPage";
 import { PlansPage } from "./pages/PlansPage";
 import { LicensePage } from "./pages/LicensePage";
@@ -46,7 +50,6 @@ import { DocsPage } from "./pages/DocsPage";
 import { SnapshotsPage } from "./pages/SnapshotsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
-import { MFAPage } from "./pages/MFAPage";
 import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
@@ -263,7 +266,16 @@ function matchPage(path: string) {
     return <StorePage />;
   }
   if (path === "/automation") {
+    return <AutomationHome />;
+  }
+  if (path === "/automation/policies") {
     return <AutomationPage />;
+  }
+  if (/^\/automation\/flows\/[^/]+$/.test(path)) {
+    return <FlowEditorPage key={path} />;
+  }
+  if (/^\/automation\/runs\/[^/]+$/.test(path)) {
+    return <RunPage key={path} />;
   }
   if (path === "/ask") {
     return <AskPage />;
@@ -300,7 +312,8 @@ function matchPage(path: string) {
     return <Redirect to="/users" />;
   }
   if (path === "/settings/mfa") {
-    return <MFAPage />;
+    // MFA moved to Account → Security; the old address still lands there.
+    return <Redirect to="/me?tab=security" />;
   }
   if (path === "/groups" || path === "/roles" || path === "/roles/permissions") {
     return <Redirect to="/iam/access" />;
@@ -407,7 +420,7 @@ function AppRoutes() {
   return (
     <NavDisclosureProvider>
       <Shell>
-        <TerminalWorkspaceProvider>{withFrame(path, matchPage(path))}</TerminalWorkspaceProvider>
+        <TerminalWorkspaceProvider>{withFrame(path, <FeatureGate path={path}>{matchPage(path)}</FeatureGate>)}</TerminalWorkspaceProvider>
       </Shell>
     </NavDisclosureProvider>
   );

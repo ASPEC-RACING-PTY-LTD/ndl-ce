@@ -4,6 +4,7 @@ import type { Feature } from "../generated/openapi";
 import { useSession } from "../session";
 import {
   groupedModules,
+  isCapabilityEnabled,
   moveCustom,
   seedCustom,
   toggleCustomVisible,
@@ -32,6 +33,10 @@ type NavDisclosureValue = {
   prefs: DisclosurePrefs;
   features: Feature[];
   featureEnabled: Record<string, boolean>;
+  /** False until a feature list is known (cached or fetched). */
+  featuresLoaded: boolean;
+  /** capabilityOn reports whether a capability (backend or UI-only) is on. */
+  capabilityOn: (id: string) => boolean;
   setTemplate: (template: NavTemplate) => void;
   setUiEnabled: (id: string, on: boolean) => void;
   setCustomModule: (id: string, on: boolean) => void;
@@ -48,6 +53,7 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
   const [rawPrefs] = usePref<unknown>(DISCLOSURE_PREF, null);
   const prefs = useMemo(() => disclosureFromPref(rawPrefs), [rawPrefs]);
   const [features, setFeatures] = useState<Feature[]>(cachedFeatures);
+  const [featuresLoaded, setFeaturesLoaded] = useState(() => cachedFeatures().length > 0);
 
   const persist = useCallback((next: DisclosurePrefs) => {
     saveDisclosurePrefs(next);
@@ -60,6 +66,8 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
       storageSet(FEATURES_CACHE, JSON.stringify(list.items ?? []));
     } catch {
       // Keep the cached list; a failed read does not turn features off.
+    } finally {
+      setFeaturesLoaded(true);
     }
   }, []);
 
@@ -111,9 +119,22 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
     [persist, prefs],
   );
 
+  const capabilityOn = useCallback((id: string) => isCapabilityEnabled(id, prefs, featureEnabled), [prefs, featureEnabled]);
+
   const value = useMemo<NavDisclosureValue>(
-    () => ({ prefs, features, featureEnabled, setTemplate, setUiEnabled, setCustomModule, reorderCustom, reloadFeatures }),
-    [prefs, features, featureEnabled, setTemplate, setUiEnabled, setCustomModule, reorderCustom, reloadFeatures],
+    () => ({
+      prefs,
+      features,
+      featureEnabled,
+      featuresLoaded,
+      capabilityOn,
+      setTemplate,
+      setUiEnabled,
+      setCustomModule,
+      reorderCustom,
+      reloadFeatures,
+    }),
+    [prefs, features, featureEnabled, featuresLoaded, capabilityOn, setTemplate, setUiEnabled, setCustomModule, reorderCustom, reloadFeatures],
   );
 
   return <NavDisclosureContext.Provider value={value}>{children}</NavDisclosureContext.Provider>;
@@ -151,4 +172,13 @@ const NO_FEATURES: Record<string, boolean> = {};
 /** useFeatureFlags lists which optional features are on; empty outside the provider. */
 export function useFeatureFlags(): Record<string, boolean> {
   return useContext(NavDisclosureContext)?.featureEnabled ?? NO_FEATURES;
+}
+
+/** useCapabilityOn reports whether a capability is on; true outside the provider so nothing is hidden in isolation. */
+export function useCapabilityOn(id: string | undefined): boolean {
+  const ctx = useContext(NavDisclosureContext);
+  if (!id || !ctx) {
+    return true;
+  }
+  return ctx.capabilityOn(id);
 }

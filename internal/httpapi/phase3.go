@@ -607,6 +607,7 @@ func (s *Server) emitEvent(ctx context.Context, clusterID, nodeID, typ string, p
 	if s.Hub != nil {
 		s.Hub.Publish(e)
 	}
+	s.automationPlatformEvent(ctx, e)
 }
 
 func poolJSON(p appdb.StoragePool) map[string]any {

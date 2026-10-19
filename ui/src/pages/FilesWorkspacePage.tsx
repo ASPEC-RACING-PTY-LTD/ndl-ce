@@ -6,6 +6,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { useTabDrag } from "../components/useTabDrag";
 import { displayPath } from "../files/paths";
+import { defaultFilesPath } from "../files/workspace";
 import { kindLabel } from "../labels";
 import { navigate } from "../router";
 import { isAdmin } from "../rbac";
@@ -203,13 +204,16 @@ export function FilesWorkspacePage() {
       return;
     }
     const stored = loadStore(userId);
-    let list = (stored.tabs ?? []).filter((t) => t?.tabId && t.target?.id);
+    // Host tabs always reopen in /root; the user can still browse anywhere.
+    let list = (stored.tabs ?? [])
+      .filter((t) => t?.tabId && t.target?.id)
+      .map((t) => (t.target.kind === "node" ? { ...t, path: defaultFilesPath("node"), edit: "" } : t));
     let active = stored.activeId && list.some((t) => t.tabId === stored.activeId) ? stored.activeId : list[0]?.tabId ?? null;
     const q = new URLSearchParams(window.location.search);
     const kind = q.get("kind");
     const id = q.get("id");
     if ((kind === "node" || kind === "workload") && id) {
-      const path = q.get("path") || "/";
+      const path = q.get("path") || defaultFilesPath(kind);
       const same = list.find((t) => t.target.kind === kind && t.target.id === id && t.path === path);
       if (same) {
         active = same.tabId;
@@ -260,7 +264,7 @@ export function FilesWorkspacePage() {
     el.style.top = `${Math.max(margin, Math.min(menu.y, window.innerHeight - rect.height - margin))}px`;
   }, [menu]);
 
-  function open(target: FilesTarget, path = "/", after?: string) {
+  function open(target: FilesTarget, path = defaultFilesPath(target.kind), after?: string) {
     const tab: FilesTab = { tabId: newId(), target, path, edit: "" };
     setTabs((cur) => {
       const at = after ? cur.findIndex((t) => t.tabId === after) : -1;
@@ -407,7 +411,7 @@ export function FilesWorkspacePage() {
           <button type="button" role="menuitem" onClick={() => menuAction(() => open(menuTab.target, menuTab.path, menuTab.tabId))}>
             Duplicate
           </button>
-          <button type="button" role="menuitem" onClick={() => menuAction(() => open(menuTab.target, "/", menuTab.tabId))}>
+          <button type="button" role="menuitem" onClick={() => menuAction(() => open(menuTab.target, defaultFilesPath(menuTab.target.kind), menuTab.tabId))}>
             New Tab Here
           </button>
           <hr />

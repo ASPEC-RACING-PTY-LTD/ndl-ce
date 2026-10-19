@@ -16,6 +16,7 @@ const (
 	IDCaddy        = "caddy"
 	IDNginx        = "nginx"
 	IDCodehold     = "codehold"
+	IDAutomation   = "automation"
 	EnableK8s      = "enable-k8s"
 	DisableConfirm = "disable-feature"
 	// TinyK8sMemoryBytes is the RAM floor for Kubernetes without confirm.
@@ -29,6 +30,7 @@ const (
 	DockerReason               = "Docker Management is optional. Enabling it discovers Docker engines on this node and in system containers. It does not install Docker Engine."
 	GameServersReason          = "Game Servers is optional. Enabling it does not start servers or delete existing ones when later disabled."
 	CloudflareReason           = "Cloudflare is optional. Turning it off only hides it; tokens, tunnels, routes and connectors are kept and keep running."
+	AutomationReason           = "Automation is optional. Flows only run once they are published and turned on; disabling it pauses every flow and deletes none."
 	CaddyReason                = "Caddy is optional. Turning it on finds Caddy on this node and in system containers. Turning it off only hides it; Caddy and its sites are not changed."
 	NginxReason                = "Nginx is optional. Turning it on finds Nginx on this node and in system containers. Turning it off only hides it; Nginx and its sites are not changed."
 	CodeholdReason             = "CodeHold runners is optional. Turning it on lets this node host CodeHold Actions runners, one system container each. Turning it off asks what happens to their containers first."
@@ -60,6 +62,7 @@ func Catalog() []Module {
 		{ID: IDCaddy, Title: "Caddy", SoftwareOnly: true, DefaultReason: CaddyReason},
 		{ID: IDNginx, Title: "Nginx", SoftwareOnly: true, DefaultReason: NginxReason},
 		{ID: IDCodehold, Title: "CodeHold runners", SoftwareOnly: true, DefaultReason: CodeholdReason},
+		{ID: IDAutomation, Title: "Automation", SoftwareOnly: true, DefaultReason: AutomationReason},
 		{ID: IDGPU, Title: "GPU Services", Package: "nodal-feature-gpu", DefaultReason: GPUOptionalReason},
 		{ID: IDK8s, Title: "Kubernetes", Package: "nodal-feature-k8s", RequiresK8sAck: true, DefaultReason: K8sNotStartedReason},
 		{ID: IDDistStorage, Title: "Distributed Storage", Package: "nodal-feature-distributed-storage", DefaultReason: DistStorageReason},

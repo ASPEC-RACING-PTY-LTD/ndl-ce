@@ -488,6 +488,144 @@ export async function applyAutomationPolicy(
   );
 }
 
+// --- Automations ---
+
+export type AutomationFlow = import("../generated/openapi").AutomationFlow;
+export type AutomationRun = import("../generated/openapi").AutomationRun;
+export type AutomationProblem = import("../generated/openapi").AutomationProblem;
+export type AutomationConnection = import("../generated/openapi").AutomationConnection;
+
+async function autoNoContent(res: Response): Promise<void> {
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, await readErrorMessage(res));
+  }
+}
+
+function autoPost(path: string, body?: unknown, headers?: Record<string, string>): Promise<Response> {
+  return request(path, { method: "POST", headers, body: JSON.stringify(body ?? {}) });
+}
+
+export async function listAutomationFlows(): Promise<import("../generated/openapi").AutomationFlowList> {
+  return readJson(await request("/automations/flows"));
+}
+
+export async function getAutomationFlow(id: string): Promise<AutomationFlow> {
+  return readJson(await request(`/automations/flows/${encodeURIComponent(id)}`));
+}
+
+export async function createAutomationFlow(body: import("../generated/openapi").AutomationFlowRequest): Promise<AutomationFlow> {
+  return readJson(await autoPost("/automations/flows", body));
+}
+
+export async function patchAutomationFlow(id: string, body: import("../generated/openapi").AutomationFlowRequest): Promise<AutomationFlow> {
+  return readJson(await request(`/automations/flows/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }));
+}
+
+export async function deleteAutomationFlow(id: string): Promise<void> {
+  return autoNoContent(await request(`/automations/flows/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+
+export async function validateAutomationFlow(id: string, definition?: unknown): Promise<import("../generated/openapi").AutomationValidation> {
+  return readJson(await autoPost(`/automations/flows/${encodeURIComponent(id)}/validate`, definition ? { definition } : {}));
+}
+
+export async function automationFlowAction(
+  id: string,
+  action: "publish" | "enable" | "disable" | "clone",
+  body?: Record<string, unknown>,
+): Promise<AutomationFlow> {
+  return readJson(await autoPost(`/automations/flows/${encodeURIComponent(id)}/${action}`, body));
+}
+
+export async function executeAutomationFlow(
+  id: string,
+  body?: { inputs?: Record<string, unknown>; payload?: Record<string, unknown> },
+): Promise<import("../generated/openapi").AutomationRunStart> {
+  return readJson(await autoPost(`/automations/flows/${encodeURIComponent(id)}/execute`, body));
+}
+
+export async function dryRunAutomationFlow(
+  id: string,
+  body: import("../generated/openapi").AutomationDryRunRequest,
+): Promise<import("../generated/openapi").AutomationDryRunResult> {
+  return readJson(await autoPost(`/automations/flows/${encodeURIComponent(id)}/dry-run`, body));
+}
+
+export async function listAutomationFlowVersions(id: string): Promise<import("../generated/openapi").AutomationVersionList> {
+  return readJson(await request(`/automations/flows/${encodeURIComponent(id)}/versions`));
+}
+
+export async function listAutomationRuns(
+  params: { flow_id?: string; status?: string; mode?: string; limit?: number } = {},
+): Promise<import("../generated/openapi").AutomationRunList> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") {
+      qs.set(k, String(v));
+    }
+  }
+  const q = qs.toString();
+  return readJson(await request(`/automations/runs${q ? `?${q}` : ""}`));
+}
+
+export async function getAutomationRun(id: string): Promise<AutomationRun> {
+  return readJson(await request(`/automations/runs/${encodeURIComponent(id)}`));
+}
+
+export async function automationRunAction(id: string, action: "cancel" | "retry" | "approve", body?: Record<string, unknown>): Promise<AutomationRun> {
+  return readJson(await autoPost(`/automations/runs/${encodeURIComponent(id)}/${action}`, body));
+}
+
+export async function listAutomationRunNodes(id: string): Promise<import("../generated/openapi").AutomationItems> {
+  return readJson(await request(`/automations/runs/${encodeURIComponent(id)}/nodes`));
+}
+
+export async function listAutomationRunLogs(id: string): Promise<import("../generated/openapi").AutomationItems> {
+  return readJson(await request(`/automations/runs/${encodeURIComponent(id)}/logs`));
+}
+
+export async function getAutomationWebhook(id: string): Promise<import("../generated/openapi").AutomationWebhook> {
+  return readJson(await request(`/automations/flows/${encodeURIComponent(id)}/webhook`));
+}
+
+export async function createAutomationWebhook(id: string, rotate = false): Promise<import("../generated/openapi").AutomationWebhookSecret> {
+  return readJson(await autoPost(`/automations/flows/${encodeURIComponent(id)}/webhook${rotate ? "/rotate" : ""}`));
+}
+
+export async function listAutomationConnections(): Promise<import("../generated/openapi").AutomationConnectionList> {
+  return readJson(await request("/automations/connections"));
+}
+
+export async function saveAutomationConnection(
+  body: import("../generated/openapi").AutomationConnectionRequest,
+  id?: string,
+): Promise<AutomationConnection> {
+  if (id) {
+    return readJson(await request(`/automations/connections/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }));
+  }
+  return readJson(await autoPost("/automations/connections", body));
+}
+
+export async function deleteAutomationConnection(id: string): Promise<void> {
+  return autoNoContent(await request(`/automations/connections/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+
+export async function testAutomationConnection(id: string): Promise<import("../generated/openapi").AutomationConnectionTest> {
+  return readJson(await autoPost(`/automations/connections/${encodeURIComponent(id)}/test`));
+}
+
+export async function getAutomationCatalogue(): Promise<import("../generated/openapi").AutomationCatalogue> {
+  return readJson(await request("/automations/nodes"));
+}
+
+export async function listAutomationTargets(kind: string): Promise<import("../generated/openapi").AutomationItems> {
+  return readJson(await request(`/automations/targets?kind=${encodeURIComponent(kind)}`));
+}
+
+export async function listAutomationTemplates(): Promise<import("../generated/openapi").AutomationItems> {
+  return readJson(await request("/automations/templates"));
+}
+
 export async function askAI(
   body: import("../generated/openapi").AIAskRequest,
 ): Promise<import("../generated/openapi").AIAskResponse> {
@@ -2119,6 +2257,110 @@ export async function verifyMfa(body: import("../generated/openapi").MFAVerifyRe
   );
 }
 
+// ---- Account self-service ----
+
+export async function getMyProfile(): Promise<import("../generated/openapi").AccountProfile> {
+  return readJson(await request("/me/profile"));
+}
+
+export async function patchMyProfile(
+  body: import("../generated/openapi").AccountProfilePatch,
+): Promise<import("../generated/openapi").AccountProfile> {
+  return readJson(await request("/me/profile", { method: "PATCH", body: JSON.stringify(body) }));
+}
+
+export async function changeMyPassword(body: import("../generated/openapi").PasswordChangeRequest): Promise<void> {
+  const res = await request("/me/password", { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) {
+    await readJson(res);
+  }
+}
+
+export async function signOutOtherSessions(): Promise<void> {
+  const res = await request("/me/sessions/revoke-others", { method: "POST", body: "{}" });
+  if (!res.ok) {
+    await readJson(res);
+  }
+}
+
+export async function putMyAvatar(image: Blob): Promise<import("../generated/openapi").AccountProfile> {
+  return readJson(
+    await request("/me/avatar", { method: "PUT", body: image, headers: { "Content-Type": image.type || "image/png" } }),
+  );
+}
+
+export async function deleteMyAvatar(): Promise<void> {
+  const res = await request("/me/avatar", { method: "DELETE" });
+  if (!res.ok) {
+    await readJson(res);
+  }
+}
+
+/** avatarURL is a user's picture, versioned so a new upload shows at once. */
+export function avatarURL(userID: string, updatedAt?: string): string | null {
+  return updatedAt ? `${API_PREFIX}/users/${encodeURIComponent(userID)}/avatar?v=${encodeURIComponent(updatedAt)}` : null;
+}
+
+export async function disableMyMfa(body: import("../generated/openapi").MFADisableRequest): Promise<void> {
+  const res = await request("/me/mfa/disable", { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) {
+    await readJson(res);
+  }
+}
+
+export async function getMyIP(): Promise<import("../generated/openapi").ClientIPInfo> {
+  return readJson(await request("/me/ip"));
+}
+
+export async function getMyAllowlist(): Promise<import("../generated/openapi").IPAllowlist> {
+  return readJson(await request("/me/ip-allowlist"));
+}
+
+export async function putMyAllowlist(
+  body: import("../generated/openapi").IPAllowlistInput,
+): Promise<import("../generated/openapi").IPAllowlist> {
+  return readJson(await request("/me/ip-allowlist", { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function getUserAllowlist(id: string): Promise<import("../generated/openapi").IPAllowlist> {
+  return readJson(await request(`/users/${encodeURIComponent(id)}/ip-allowlist`));
+}
+
+export async function putUserAllowlist(
+  id: string,
+  body: import("../generated/openapi").IPAllowlistInput,
+): Promise<import("../generated/openapi").IPAllowlist> {
+  return readJson(await request(`/users/${encodeURIComponent(id)}/ip-allowlist`, { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function unlockUser(id: string): Promise<void> {
+  const res = await request(`/users/${encodeURIComponent(id)}/unlock`, { method: "POST", body: "{}" });
+  if (!res.ok) {
+    await readJson(res);
+  }
+}
+
+export async function resetUserMfa(id: string): Promise<void> {
+  const res = await request(`/users/${encodeURIComponent(id)}/mfa/reset`, {
+    method: "POST",
+    body: "{}",
+    headers: { "X-Nodal-Confirm": "reset-mfa" },
+  });
+  if (!res.ok) {
+    await readJson(res);
+  }
+}
+
+export async function getTrustedProxies(): Promise<import("../generated/openapi").TrustedProxies> {
+  return readJson(await request("/settings/trusted-proxies"));
+}
+
+export async function putTrustedProxies(
+  body: import("../generated/openapi").TrustedProxiesInput,
+): Promise<import("../generated/openapi").TrustedProxies> {
+  return readJson(await request("/settings/trusted-proxies", { method: "PUT", body: JSON.stringify(body) }));
+}
+
 export async function getMfa() {
   return readJson<import("../generated/openapi").MFAStatus>(await request("/mfa"));
 }
@@ -2473,6 +2715,12 @@ export type ManagedUser = {
   last_login_at?: string;
   disabled_at?: string;
   protected?: boolean;
+  /** The account that claimed the appliance; only it can manage itself. */
+  is_root?: boolean;
+  email?: string;
+  email_secondary?: string;
+  ip_allowlist_on?: boolean;
+  avatar_updated_at?: string;
 };
 
 export type RoleInfo = {
@@ -2510,7 +2758,15 @@ export async function createManagedUser(body: { username: string; password: stri
 
 export async function patchManagedUser(
   id: string,
-  body: { display_name?: string; disabled?: boolean; mfa_required?: boolean; role?: string },
+  body: {
+    display_name?: string;
+    disabled?: boolean;
+    mfa_required?: boolean;
+    role?: string;
+    username?: string;
+    email?: string;
+    email_secondary?: string;
+  },
   confirm?: string,
 ) {
   const headers: Record<string, string> = {};

@@ -304,6 +304,7 @@ func (s *Server) uptimeEvaluate(ctx context.Context, u appdb.UptimeMonitor, job 
 	_ = s.Store.PutUptimeMonitor(wctx, u)
 	_ = s.Store.AddUptimeEvent(wctx, event)
 	wcancel()
+	s.automationUptimeEvent(ctx, u, prev)
 	if job != nil {
 		if res.OK {
 			job.log("ok", "%s is up (%d ms)", u.Name, res.LatencyMS)

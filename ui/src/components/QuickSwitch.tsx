@@ -65,6 +65,7 @@ export function QuickSwitch({
   onClose,
   onOpenNew,
   onReplace,
+  onCatalog,
 }: {
   open: boolean;
   recents: TermTarget[];
@@ -73,6 +74,8 @@ export function QuickSwitch({
   onClose: () => void;
   onOpenNew: (target: TermTarget) => void;
   onReplace: (target: TermTarget) => void;
+  /** Called with the live targets once they load, so stale recents can be pruned. */
+  onCatalog?: (live: TermTarget[]) => void;
 }) {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
@@ -80,6 +83,7 @@ export function QuickSwitch({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [catalog, setCatalog] = useState<TermTarget[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [localNodeId, setLocalNodeId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [startTarget, setStartTarget] = useState<TermTarget | null>(null);
@@ -103,21 +107,25 @@ export function QuickSwitch({
       try {
         const [nodes, workloads, stacks] = await Promise.all([
           listNodes().catch(() => []),
-          listWorkloads().catch(() => ({ items: [] })),
+          listWorkloads().catch(() => null),
           listStacks().catch(() => ({ items: [] })),
         ]);
         if (cancelled) {
           return;
         }
         setLocalNodeId((nodes.find((n) => n.local) ?? (nodes.length === 1 ? nodes[0] : undefined))?.id ?? null);
-        setCatalog(
-          buildTermCatalog({
-            roles,
-            nodes,
-            workloads: workloads.items ?? [],
-            stacks: stacks.items ?? [],
-          }),
-        );
+        const live = buildTermCatalog({
+          roles,
+          nodes,
+          workloads: workloads?.items ?? [],
+          stacks: stacks.items ?? [],
+        });
+        setCatalog(live);
+        // Only a successful workload list can prove a workload is gone.
+        if (workloads) {
+          setCatalogLoaded(true);
+          onCatalog?.(live);
+        }
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : "Could not load targets");
@@ -145,8 +153,8 @@ export function QuickSwitch({
       out.push({ key: `local:${local.kind}:${local.id}`, target: local });
     }
     const recentHits = recents
-      .map((r) => catalog.find((t) => t.kind === r.kind && t.id === r.id) ?? r)
-      .filter((t) => !isLocal(t));
+      .map((r) => catalog.find((t) => t.kind === r.kind && t.id === r.id) ?? (catalogLoaded && r.kind === "workload" ? null : r))
+      .filter((t): t is TermTarget => t != null && !isLocal(t));
     if (recentHits.length) {
       out.push({ key: "h-recent", heading: "Recent" });
       for (const target of recentHits) {
@@ -164,7 +172,7 @@ export function QuickSwitch({
       }
     }
     return out;
-  }, [catalog, filtered, recents, searching, localNodeId]);
+  }, [catalog, catalogLoaded, filtered, recents, searching, localNodeId]);
 
   const targetRows = rows.map((r, i) => ({ row: r, index: i })).filter((x) => x.row.target);
   const gridRef = useRef<HTMLDivElement>(null);

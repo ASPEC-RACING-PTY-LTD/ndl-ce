@@ -579,6 +579,7 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 				return
 			}
 			s.audit(r, p.User.ClusterID, p.User.ID, "workload.delete", "ok", row.ID)
+			s.automationWorkloadEvent(r.Context(), p.User.ClusterID, *row, action)
 			writeJSON(w, http.StatusOK, s.workloadJSON(r.Context(), *row))
 			return
 		}
@@ -613,6 +614,7 @@ func (s *Server) lifecycleWorkload(action string) http.HandlerFunc {
 		}
 		s.finishOp(r.Context(), op, "succeeded", action, 100)
 		s.audit(r, p.User.ClusterID, p.User.ID, "workload."+action, "ok", row.ID)
+		s.automationWorkloadEvent(r.Context(), p.User.ClusterID, *row, action)
 		s.refreshWorkloads(r.Context(), p.User.ClusterID)
 		updated, _ := s.Store.GetWorkload(r.Context(), p.User.ClusterID, row.ID)
 		if updated == nil {

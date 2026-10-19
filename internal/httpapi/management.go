@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -216,10 +217,13 @@ func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		DisplayName *string `json:"display_name"`
-		Disabled    *bool   `json:"disabled"`
-		MFARequired *bool   `json:"mfa_required"`
-		Role        *string `json:"role"`
+		DisplayName    *string `json:"display_name"`
+		Disabled       *bool   `json:"disabled"`
+		MFARequired    *bool   `json:"mfa_required"`
+		Role           *string `json:"role"`
+		Username       *string `json:"username"`
+		Email          *string `json:"email"`
+		EmailSecondary *string `json:"email_secondary"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
@@ -232,6 +236,50 @@ func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		u.DisplayName = name
+	}
+	if req.Username != nil && strings.TrimSpace(*req.Username) != u.Username {
+		name := strings.TrimSpace(*req.Username)
+		if !validUsername(name) {
+			writeErr(w, http.StatusBadRequest, "username must be 1-64 letters, digits, dot, dash or underscore")
+			return
+		}
+		if err := s.Store.RenameUser(r.Context(), p.User.ClusterID, u.ID, name); err != nil {
+			if errors.Is(err, appdb.ErrUsernameTaken) {
+				writeErr(w, http.StatusConflict, err.Error())
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "user.rename", "ok", u.ID+": "+u.Username+" -> "+name)
+		u.Username = name
+	}
+	if req.Email != nil || req.EmailSecondary != nil {
+		prof := s.profileOf(r.Context(), *u)
+		if req.Email != nil {
+			v, err := cleanEmail(*req.Email)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if v != prof.Email {
+				prof.Email, prof.EmailVerifiedAt = v, nil
+			}
+		}
+		if req.EmailSecondary != nil {
+			v, err := cleanEmail(*req.EmailSecondary)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			prof.EmailSecondary = v
+		}
+		prof.UpdatedAt = s.now()
+		if err := s.Store.UpsertAccountProfile(r.Context(), prof); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "user.email.update", "ok", u.ID)
 	}
 	if req.MFARequired != nil {
 		u.MFARequired = *req.MFARequired
@@ -589,6 +637,14 @@ func (s *Server) userPublicJSON(ctx context.Context, u appdb.User) (map[string]a
 		"mfa_status":      mfaStatus,
 		"api_token_count": activeTokens,
 		"protected":       false,
+		"is_root":         u.ID == s.rootUserID(ctx, u.ClusterID),
+	}
+	prof := s.profileOf(ctx, u)
+	item["email"] = prof.Email
+	item["email_secondary"] = prof.EmailSecondary
+	item["ip_allowlist_on"] = prof.IPAllowlistOn
+	if av, _ := s.Store.GetUserAvatar(ctx, u.ID); av != nil {
+		item["avatar_updated_at"] = av.UpdatedAt.UTC().Format(time.RFC3339)
 	}
 	if !u.CreatedAt.IsZero() {
 		item["created_at"] = u.CreatedAt.UTC().Format(time.RFC3339)

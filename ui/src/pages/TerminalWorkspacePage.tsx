@@ -33,6 +33,7 @@ export function TerminalWorkspacePage() {
     closeDisconnected,
     reconnect,
     replaceCurrent,
+    pruneRecents,
   } = useTerminalWorkspace();
   const [qs, setQs] = useState(false);
   const [grid, setGrid] = useState<TermGridId>(() => {
@@ -317,6 +318,7 @@ export function TerminalWorkspacePage() {
         onClose={() => setQs(false)}
         onOpenNew={(target) => openNew(target)}
         onReplace={(target) => replaceCurrent(target)}
+        onCatalog={pruneRecents}
       />
     </section>
   );

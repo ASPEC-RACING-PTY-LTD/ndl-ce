@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { storageGet, storageSet } from "../storage";
 
 export type ResultsView = "grid" | "table";
@@ -41,6 +41,7 @@ export function ResultsToolbar({
   onSort,
   view,
   onView,
+  children,
 }: {
   label: string;
   query: string;
@@ -55,6 +56,8 @@ export function ResultsToolbar({
   onSort: (v: string) => void;
   view: ResultsView;
   onView: (v: ResultsView) => void;
+  /** Extra filters, drawn after the main filter. */
+  children?: ReactNode;
 }) {
   return (
     <div className="docker-toolbar results-toolbar" role="group" aria-label={label}>
@@ -75,6 +78,7 @@ export function ResultsToolbar({
           ))}
         </select>
       ) : null}
+      {children}
       <select className="field-input" aria-label="Sort by" value={sort} onChange={(e) => onSort(e.target.value)}>
         {sorts.map((o) => (
           <option key={o.value} value={o.value}>

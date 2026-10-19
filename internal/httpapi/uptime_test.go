@@ -165,7 +165,8 @@ func TestUptimeImportTestsThenSaves(t *testing.T) {
 }
 
 func TestSavedScriptsAndAutomationPolicies(t *testing.T) {
-	_, ts, cookie, _, fd := opsReady(t)
+	mem, ts, cookie, _, fd := opsReady(t)
+	enableAutomation(t, mem)
 	code, out := ociCall(t, ts, cookie, "POST", "/scripts", `{"kind":"docker","name":"nightly fix","body":"{\"steps\":[{\"action\":\"fix\"}]}"}`)
 	if code != http.StatusOK {
 		t.Fatalf("save %d %v", code, out["_raw"])

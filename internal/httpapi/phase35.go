@@ -76,6 +76,7 @@ func (s *Server) enableFeature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "feature.enable", "ok", mod.ID)
+	s.invalidateProxies()
 	if mod.ID == features.IDCodehold {
 		s.chWake()
 	}
@@ -149,6 +150,7 @@ func (s *Server) disableFeature(w http.ResponseWriter, r *http.Request) {
 	if mod.ID == features.IDDocker {
 		s.dockerIdle(r.Context())
 	}
+	s.invalidateProxies()
 	writeJSON(w, http.StatusOK, s.featureJSON(r, p.User.ClusterID, mod))
 }
 
@@ -167,7 +169,14 @@ func (s *Server) featuresJSON(r *http.Request, clusterID string) map[string]any 
 
 func (s *Server) featureJSON(r *http.Request, clusterID string, mod features.Module) map[string]any {
 	row := s.featureRow(r, clusterID, mod)
+	// installed: core, a package on disk, or a software-only feature that
+	// was turned on before (its row exists even while it is off).
+	installed := mod.Core || row.PackageStatus == appdb.FeatureInstalled
+	if mod.SoftwareOnly && !row.UpdatedAt.IsZero() {
+		installed = true
+	}
 	out := map[string]any{
+		"installed":       installed,
 		"id":              mod.ID,
 		"title":           mod.Title,
 		"enabled":         row.Enabled,

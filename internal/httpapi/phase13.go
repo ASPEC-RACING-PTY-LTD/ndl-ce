@@ -80,6 +80,9 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		if err := s.Store.ConsumeRecoveryHash(r.Context(), user.ID, h); err != nil {
 			s.lock().Fail(lockKey, s.now())
 			s.audit(r, user.ClusterID, user.ID, "auth.mfa.verify", "denied", ch.ID)
+			if _, recovering := s.ipRecovery.Load(ch.ID); recovering {
+				s.audit(r, user.ClusterID, user.ID, "auth.ip_recovery", "denied", "wrong mfa code")
+			}
 			writeErr(w, http.StatusUnauthorized, "invalid mfa code")
 			return
 		}
@@ -90,6 +93,16 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.lock().Success(lockKey)
+	if _, recovering := s.ipRecovery.Load(ch.ID); recovering {
+		if err := s.finishIPRecovery(r, *user, ch.ID); err != nil {
+			writeErr(w, http.StatusForbidden, err.Error())
+			return
+		}
+	} else if s.ipBlocked(r.Context(), *user, s.clientIP(r)) {
+		// The address changed between password and code.
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": errIPNotAllowed.Error(), "code": "ip_not_allowed", "ip": s.clientIP(r)})
+		return
+	}
 	_ = s.Store.TouchLastLogin(r.Context(), user.ID, s.now())
 	if err := s.issueSession(w, r, *user, 2); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

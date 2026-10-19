@@ -69,9 +69,8 @@ describe("Network hub", () => {
     mockApi(base({ cloudflare: false }));
     window.history.replaceState({}, "", "/cloudflare");
     render(<App />);
-    expect(await screen.findByText(/cloudflare is turned off/i)).toBeVisible();
-    expect(screen.getByText(/nothing was changed/i)).toBeVisible();
-    expect(window.location.pathname).toBe("/network/cloudflare");
+    expect(await screen.findByText(/^this feature is disabled$/i)).toBeVisible();
+    expect(screen.getByText(/turning it off only hides it/i)).toBeVisible();
   });
 });
 

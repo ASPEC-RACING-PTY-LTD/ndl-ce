@@ -14,7 +14,9 @@ export function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [challenge, setChallenge] = useState<MFAChallengeResponse | null>(null);
+  const [challenge, setChallenge] = useState<
+    (MFAChallengeResponse & { ip_recovery?: boolean; ip?: string; message?: string }) | null
+  >(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -49,6 +51,7 @@ export function LoginPage() {
       await session.refresh();
       navigate("/", { replace: true });
     } catch (err) {
+      // A blocked address without MFA cannot recover here; the message says who can help.
       setFormError(err instanceof ApiError ? err.message : "Sign in failed.");
     } finally {
       setBusy(false);
@@ -59,11 +62,14 @@ export function LoginPage() {
     <div className="auth-screen">
       <AuthBrand />
       <main className="panel auth-panel" aria-labelledby="login-heading">
-        <h1 id="login-heading">{challenge ? "Authenticator" : "Sign in"}</h1>
+        <h1 id="login-heading">{challenge?.ip_recovery ? "Recover access" : challenge ? "Authenticator" : "Sign in"}</h1>
         <p className="lede">
-          {challenge
-            ? "Enter a TOTP or recovery code. This is not a backup of the appliance."
-            : "Sign in with the administrator account created during setup."}
+          {challenge?.ip_recovery
+            ? (challenge.message ??
+              `This address is not on your IP allowlist. Enter your MFA code to recover access from ${challenge.ip ?? "here"}.`)
+            : challenge
+              ? "Enter a TOTP or recovery code. This is not a backup of the appliance."
+              : "Sign in with the administrator account created during setup."}
         </p>
         <form className="form" onSubmit={(event) => void onSubmit(event)} noValidate>
           {formError ? (
@@ -105,7 +111,7 @@ export function LoginPage() {
             </>
           )}
           <button className="btn btn-primary" type="submit" disabled={busy}>
-            {busy ? "Signing in" : "Sign in"}
+            {busy ? "Signing in" : challenge?.ip_recovery ? "Recover access" : "Sign in"}
           </button>
         </form>
         {setupOpen && !challenge ? (
