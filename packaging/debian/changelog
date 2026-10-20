@@ -1,4 +1,4 @@
-nodal (1.2.3) UNRELEASED; urgency=medium
+nodal (1.2.4) trixie; urgency=medium
 
   * Impact (backups): Smart backups now always leave out container images
     (Docker and containerd image layers, Podman storage and build caches),
@@ -18,7 +18,7 @@ nodal (1.2.3) UNRELEASED; urgency=medium
   * Management sidebar, page bars without repeated titles, an admin
     dashboard, one Create + menu, Updates notices only after Check.
 
- -- No-dal <packaging@no-dal.com>  Tue, 20 Oct 2026 04:00:00 +0000
+ -- No-dal <packaging@no-dal.com>  Tue, 20 Oct 2026 04:03:01 +0000
 
 nodal (1.2.3) trixie; urgency=medium
 
