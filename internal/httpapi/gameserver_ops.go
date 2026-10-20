@@ -1134,7 +1134,10 @@ func (s *Server) searchGameContent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, gameserver.HumanError(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "supported": true, "provider": tmpl.Content.Provider})
+	if items == nil {
+		items = []gameserver.ContentItem{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "supported": true, "provider": tmpl.Content.Provider, "kind": tmpl.Content.Kind, "loader": tmpl.Content.Loader})
 }
 
 func (s *Server) installGameContent(w http.ResponseWriter, r *http.Request) {

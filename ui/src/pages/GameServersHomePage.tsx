@@ -204,38 +204,45 @@ export function GameServersHomePage() {
 
   return (
     <section className="page gs-page" aria-labelledby="gs-home-title">
-      <nav className="gs-bar" aria-label="Game Servers">
-        <h1 id="gs-home-title" className="gs-bar-title">
+      {layout === "instance" ? (
+        // The Instance bar carries the views; the title stays for screen readers.
+        <h1 id="gs-home-title" className="visually-hidden">
           Game Servers
         </h1>
-        {(
-          [
-            ["all", "Servers"],
-            ["favorites", "Favourites"],
-            ["recent", "Recent"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className="gs-bar-link"
-            aria-current={filter === id ? "page" : undefined}
-            onClick={() => {
-              setStatusFilter("all");
-              navigate(gameServersHomeHref(id));
-            }}
-          >
-            {label}
-          </button>
-        ))}
-        {mutate && layout === "classic" ? (
-          <div className="btn-row is-flush gs-bar-actions">
-            <button className="btn btn-primary btn-sm" type="button" onClick={() => setQuickOpen(true)}>
-              Create server
+      ) : (
+        <nav className="gs-bar" aria-label="Game Servers">
+          <h1 id="gs-home-title" className="gs-bar-title">
+            Game Servers
+          </h1>
+          {(
+            [
+              ["all", "Servers"],
+              ["favorites", "Favourites"],
+              ["recent", "Recent"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className="gs-bar-link"
+              aria-current={filter === id ? "page" : undefined}
+              onClick={() => {
+                setStatusFilter("all");
+                navigate(gameServersHomeHref(id));
+              }}
+            >
+              {label}
             </button>
-          </div>
-        ) : null}
-      </nav>
+          ))}
+          {mutate ? (
+            <div className="btn-row is-flush gs-bar-actions">
+              <button className="btn btn-primary btn-sm" type="button" onClick={() => setQuickOpen(true)}>
+                Create server
+              </button>
+            </div>
+          ) : null}
+        </nav>
+      )}
       <QuickCreateDialog open={quickOpen} onClose={() => setQuickOpen(false)} />
 
       <div className="gs-toolbar">

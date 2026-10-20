@@ -172,8 +172,41 @@ export async function deleteConsoleFav(id: string, fid: string): Promise<unknown
   return readJson(`/game-servers/${id}/console/favorites/${fid}`, { method: "DELETE" });
 }
 
-export async function listGameFiles(id: string, path = ""): Promise<{ path: string; items: { name: string; dir: boolean; size: number }[] }> {
+export async function listGameFiles(
+  id: string,
+  path = "",
+): Promise<{ path: string; items: { name: string; dir: boolean; size: number; modified_at?: string }[] | null }> {
   return readJson(`/game-servers/${id}/files?path=${encodeURIComponent(path)}`);
+}
+
+export async function moveGameFile(id: string, from: string, to: string): Promise<unknown> {
+  return readJson(`/game-servers/${id}/files/move`, { method: "POST", body: JSON.stringify({ from, to }) });
+}
+
+export async function uploadGameFile(id: string, path: string, file: File, signal?: AbortSignal): Promise<void> {
+  const data = new FormData();
+  data.append("path", path);
+  data.append("file", file);
+  // Not readJson: the browser sets the multipart boundary itself.
+  const res = await fetch(`/api/v1/game-servers/${id}/files/upload`, { method: "POST", body: data, credentials: "include", signal });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error || `Upload failed (${res.status})`);
+  }
+}
+
+export async function downloadGameFile(id: string, path: string, filename: string): Promise<void> {
+  const res = await fetch(`/api/v1/game-servers/${id}/files/download?path=${encodeURIComponent(path)}`, { credentials: "include" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error || `Download failed (${res.status})`);
+  }
+  const href = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(href);
 }
 
 export async function readGameFile(id: string, path: string): Promise<{ path: string; content: string }> {
@@ -264,7 +297,10 @@ export async function listGameContent(id: string): Promise<{ items: GameContentI
   return readJson(`/game-servers/${id}/content`);
 }
 
-export async function searchGameContent(id: string, q: string): Promise<{ items: GameContentItem[]; supported?: boolean }> {
+export async function searchGameContent(
+  id: string,
+  q: string,
+): Promise<{ items: GameContentItem[] | null; supported?: boolean; provider?: string; kind?: string; loader?: string }> {
   return readJson(`/game-servers/${id}/content/search?q=${encodeURIComponent(q)}`);
 }
 

@@ -754,6 +754,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/groups/{id}/roles", s.bindGroupRole)
 	mux.HandleFunc("GET /api/v1/service-principals", s.listServicePrincipals)
 	mux.HandleFunc("POST /api/v1/service-principals", s.createServicePrincipal)
+	mux.HandleFunc("GET /api/v1/service-principals/{id}/references", s.servicePrincipalRefsAPI)
+	mux.HandleFunc("DELETE /api/v1/service-principals/{id}", s.deleteServicePrincipal)
 	mux.HandleFunc("POST /api/v1/secrets/reveal", s.revealSecret)
 	mux.HandleFunc("POST /api/v1/cluster/destroy", s.destroyCluster)
 	mux.HandleFunc("POST /api/v1/storage/volumes/{id}/unlock", s.unlockVolume)

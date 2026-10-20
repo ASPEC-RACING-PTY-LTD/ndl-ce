@@ -34,6 +34,10 @@ func (m Modrinth) Search(ctx context.Context, spec ContentSpec, query string) ([
 	}
 	facetJSON, _ := json.Marshal(facets)
 	u := "https://api.modrinth.com/v2/search?limit=20&query=" + url.QueryEscape(query) + "&facets=" + url.QueryEscape(string(facetJSON))
+	if strings.TrimSpace(query) == "" {
+		// An empty search is the browse view: most downloaded first.
+		u += "&index=downloads"
+	}
 	body, _, err := fetchURL(ctx, m.client(), u)
 	if err != nil {
 		return nil, err
@@ -51,7 +55,7 @@ func (m Modrinth) Search(ctx context.Context, spec ContentSpec, query string) ([
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("modrinth search is not valid JSON")
 	}
-	var out []ContentItem
+	out := make([]ContentItem, 0, len(parsed.Hits))
 	for _, hit := range parsed.Hits {
 		out = append(out, ContentItem{
 			Provider: "modrinth", ExternalID: hit.ProjectID, Name: hit.Title, Slug: hit.Slug,

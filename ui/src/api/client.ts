@@ -2481,6 +2481,30 @@ export type ServicePrincipalItem = {
   kind?: string;
 };
 
+/** A place a service account is still associated; blocking ones stop a normal delete. */
+export type ServicePrincipalReference = { kind: "token" | "group" | "role" | string; id: string; label: string; blocking: boolean };
+
+export async function getServicePrincipalReferences(id: string) {
+  return readJson<{ id: string; name: string; references: ServicePrincipalReference[]; can_force: boolean }>(
+    await request(`/service-principals/${encodeURIComponent(id)}/references`),
+  );
+}
+
+/**
+ * deleteServicePrincipal deletes a service account. While it still has
+ * live tokens or group memberships the server answers 409 with them in
+ * ApiError.body.references; force (SuperAdmin only) deletes anyway and
+ * removes every reference.
+ */
+export async function deleteServicePrincipal(id: string, force = false): Promise<void> {
+  const res = await request(`/service-principals/${encodeURIComponent(id)}${force ? "?force=true" : ""}`, { method: "DELETE" });
+  if (res.status === 409) {
+    // readJson throws with the body, so the caller gets the references.
+    await readJson(res);
+  }
+  return noContent(res);
+}
+
 export async function listServicePrincipals() {
   return readJson<{ items: ServicePrincipalItem[] }>(await request("/service-principals"));
 }

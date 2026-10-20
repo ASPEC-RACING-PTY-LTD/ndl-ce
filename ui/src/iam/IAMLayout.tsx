@@ -5,12 +5,18 @@ import { SectionScopeProvider } from "../components/PageHeader";
 import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 
-type Section = { href: string; label: string; icon: IconName; permissions: string[] };
+type Section = { href: string; label: string; icon: IconName; permissions: string[]; also?: string[] };
 
 const SECTIONS: Section[] = [
   { href: "/users", label: "Users", icon: "users", permissions: ["users.read"] },
-  { href: "/iam/access", label: "Access control", icon: "shield", permissions: ["roles.manage", "identity.group.manage"] },
-  { href: "/api-access", label: "API Access", icon: "key", permissions: ["api_access.manage", "identity.token.create"] },
+  // Access control holds API access too (tokens and service accounts).
+  {
+    href: "/iam/access",
+    label: "Access control",
+    icon: "shield",
+    permissions: ["roles.manage", "identity.group.manage", "api_access.manage", "identity.token.create"],
+    also: ["/api-access"],
+  },
   { href: "/iam/approvals", label: "Approvals", icon: "check", permissions: ["approvals.view"] },
   { href: "/audit", label: "Audit log", icon: "activity", permissions: ["audit.read"] },
 ];
@@ -32,11 +38,11 @@ export function IAMLayout({ children }: { children: ReactNode }) {
     label: s.label,
     href: s.href,
     icon: s.icon,
-    match: (p: string) => p === s.href,
+    match: (p: string) => p === s.href || Boolean(s.also?.includes(p)),
   }));
   return (
     <section className="page page-wide iam-page" aria-label="Identity and Access Management">
-      <PageNav id="iam" label="IAM" items={items} />
+      <PageNav id="iam" label="IAM" items={items} className="is-sub" />
       <SectionScopeProvider>{children}</SectionScopeProvider>
     </section>
   );

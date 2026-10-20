@@ -7,6 +7,8 @@ import { hasGrant } from "../rbac";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { useNavDisclosure } from "./NavDisclosure";
+import { GameServersBarLinks } from "./GameServersBarLinks";
+import { gameServerIdFromPath, isGameServersHomePath } from "./gameServers";
 import { ADMIN_SECTIONS, CREATE_ENTRIES, INSTANCE_SECTIONS, isAdminPath, isInstancePath, toPageNav, visibleSections, type CreateEntry, type Section } from "./sections";
 
 function useSections(sections: Section[]): Section[] {
@@ -92,12 +94,14 @@ export function CreateMenu() {
 
 function AdminBar() {
   const sections = useSections(ADMIN_SECTIONS);
-  return <PageNav id="admin" label="Administration" items={toPageNav(sections)} />;
+  return <PageNav id="admin" label="Administration" items={toPageNav(sections)} className="is-area" />;
 }
 
-function InstanceBar() {
+function InstanceBar({ path }: { path: string }) {
   const sections = useSections(INSTANCE_SECTIONS);
-  return <PageNav id="instance" label="Instance" items={toPageNav(sections)} actions={<CreateMenu />} />;
+  // On the Game Servers dashboard its filters join this bar instead of a second row.
+  const extra = isGameServersHomePath(path) ? <GameServersBarLinks /> : null;
+  return <PageNav id="instance" label="Instance" items={toPageNav(sections)} extra={extra} actions={<CreateMenu />} className="is-area" />;
 }
 
 /**
@@ -109,7 +113,9 @@ export function AreaFrame({ children }: { children: ReactNode }) {
   const path = usePath();
   const [nav] = useNavLayout();
   const [instance] = useInstanceLayout();
-  const bar = instance === "instance" && isInstancePath(path) ? <InstanceBar /> : nav === "modern" && isAdminPath(path) ? <AdminBar /> : null;
+  // A game server's own bar (GameServerFrame) takes the Instance bar's place on its pages.
+  const instanceBar = instance === "instance" && isInstancePath(path) && !gameServerIdFromPath(path);
+  const bar = instanceBar ? <InstanceBar path={path} /> : nav === "modern" && isAdminPath(path) ? <AdminBar /> : null;
   return (
     <>
       {bar}

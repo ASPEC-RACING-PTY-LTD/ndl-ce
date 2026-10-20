@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { agentFilesBackend } from "../files/backend";
 import { FileEditor } from "./FileEditor";
 import type { FileContent } from "../api/phase6";
 
@@ -43,8 +44,7 @@ describe("FileEditor", () => {
   it("refuses binary files and offers download", () => {
     render(
       <FileEditor
-        kind="workload"
-        id="wl-1"
+        backend={agentFilesBackend("workload", "wl-1")}
         dir="/"
         file={{ ...textFile, name: "blob.bin", binary: true, editable: false, content: undefined }}
         canWrite
@@ -61,8 +61,7 @@ describe("FileEditor", () => {
   it("rejects huge files instead of opening the editor", () => {
     render(
       <FileEditor
-        kind="workload"
-        id="wl-1"
+        backend={agentFilesBackend("workload", "wl-1")}
         dir="/"
         file={{ ...textFile, too_large: true, editable: false, content: undefined, size: 3 * 1024 * 1024 }}
         canWrite
@@ -81,8 +80,7 @@ describe("FileEditor", () => {
     const saved: string[] = [];
     render(
       <FileEditor
-        kind="workload"
-        id="wl-1"
+        backend={agentFilesBackend("workload", "wl-1")}
         dir="/"
         file={textFile}
         canWrite
@@ -101,8 +99,7 @@ describe("FileEditor", () => {
     installXHR(409, { error: "file changed on disk" });
     render(
       <FileEditor
-        kind="workload"
-        id="wl-1"
+        backend={agentFilesBackend("workload", "wl-1")}
         dir="/"
         file={textFile}
         canWrite
@@ -120,8 +117,7 @@ describe("FileEditor", () => {
   it("is read-only when writes are unavailable", () => {
     render(
       <FileEditor
-        kind="workload"
-        id="wl-1"
+        backend={agentFilesBackend("workload", "wl-1")}
         dir="/"
         file={{ ...textFile, editable: true }}
         canWrite={false}

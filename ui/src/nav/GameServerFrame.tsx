@@ -1,28 +1,38 @@
-import type { ReactNode } from "react";
-import { getGameServer } from "../gameservers/api";
+import { useState, type ReactNode } from "react";
+import { ApiError } from "../api/client";
+import { confirmAction } from "../confirm";
+import { ErrorNotice } from "../components/ErrorNotice";
+import { gamePower, getGameServer } from "../gameservers/api";
 import { statusLabel } from "../gameservers/caps";
+import type { GameServer } from "../gameservers/types";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { useQuery } from "../query";
+import { canMutate } from "../rbac";
 import { usePath } from "../router";
+import { useSession } from "../session";
 import { GS_ROOT, gameServerIdFromPath, gameServerSectionFromPath } from "./gameServers";
 import { buildGameServerNav } from "./gameServersNav";
 
+/** The query key a server's page and its bar share, so both show one copy. */
+export const gameServerQueryKey = (id: string) => `game-server:${id}`;
+
 /**
- * GameServerFrame is a server's own section bar (Overview, Console, Files,
- * ...) above its pages. It replaced the Game Servers sidebar, so the main
- * sidebar stays visible.
+ * GameServerFrame is a server's own bar: back, the server's name and state,
+ * its tabs and its power actions. It takes the Instance bar's place on the
+ * server's pages, so there is one bar, not two.
  */
 export function GameServerFrame({ children }: { children: ReactNode }) {
   const path = usePath();
   const id = gameServerIdFromPath(path) ?? "";
   const section = gameServerSectionFromPath(path) || "overview";
-  const q = useQuery(`game-server:${id}`, () => getGameServer(id), 8000);
+  const q = useQuery(gameServerQueryKey(id), () => getGameServer(id), 4000);
   const server = q.data?.id === id ? q.data : undefined;
   const links = buildGameServerNav(id, server, section).flatMap((g) => g.items);
+  const [error, setError] = useState<string | null>(null);
   return (
-    <div className="wl-frame">
-      <div className="wl-frame-bar">
+    <div className="wl-frame gs-frame">
+      <div className="wl-frame-bar gs-frame-bar">
         <Link href={GS_ROOT} className="wl-frame-back" aria-label="Back to Game Servers" title="Back to Game Servers">
           <Icon name="collapse" size={14} />
         </Link>
@@ -30,7 +40,7 @@ export function GameServerFrame({ children }: { children: ReactNode }) {
           <span className="wl-frame-name">{server?.name ?? (q.error ? "Game server" : "Loading")}</span>
           {server ? (
             <span className="wl-frame-meta">
-              {server.template_name || server.game} · {statusLabel(server.status)}
+              {server.template_name || server.game} · <span className={"gs-status is-" + server.status}>{statusLabel(server.status)}</span>
             </span>
           ) : null}
         </div>
@@ -42,8 +52,58 @@ export function GameServerFrame({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
+        {server ? <PowerActions server={server} onDone={q.reload} onError={setError} /> : null}
       </div>
+      {error ? <ErrorNotice error={error} /> : null}
       {children}
+    </div>
+  );
+}
+
+function PowerActions({ server, onDone, onError }: { server: GameServer; onDone: () => Promise<unknown>; onError: (msg: string | null) => void }) {
+  const session = useSession();
+  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const [busy, setBusy] = useState(false);
+  if (!mutate) {
+    return null;
+  }
+  const running = server.status === "running";
+
+  async function power(action: "start" | "stop" | "restart" | "kill") {
+    if (action === "kill" && !confirmAction("Force stop now? Unsaved world data may be lost.")) {
+      return;
+    }
+    setBusy(true);
+    onError(null);
+    try {
+      await gamePower(server.id, action);
+      await onDone();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : "Power action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="btn-row is-flush gs-frame-actions">
+      {running ? (
+        <>
+          <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void power("restart")}>
+            Restart
+          </button>
+          <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void power("stop")}>
+            Stop
+          </button>
+        </>
+      ) : (
+        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void power("start")}>
+          Start
+        </button>
+      )}
+      <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => void power("kill")}>
+        Force stop
+      </button>
     </div>
   );
 }

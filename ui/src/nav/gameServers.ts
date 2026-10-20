@@ -13,22 +13,29 @@ export const GS_SECTION_LABELS: Record<string, string> = {
   overview: "Overview",
   console: "Console",
   files: "Files",
-  config: "Configuration",
-  startup: "Startup",
   plugins: "Plugins",
   mods: "Mods",
   workshop: "Workshop",
   players: "Players",
-  backups: "Backups",
-  schedules: "Schedules",
-  network: "Networking",
-  resources: "Resources",
-  databases: "Databases",
-  activity: "Activity",
-  diagnostics: "Diagnostics",
-  settings: "Settings",
-  notes: "Settings",
-  users: "Settings",
+  backups: "Backups & Schedules",
+  settings: "Server Settings",
+};
+
+/**
+ * Sections that became part of a merged tab. Old links keep working: they
+ * open the tab and scroll to the section (gameServerAnchorFromPath).
+ */
+export const GS_MERGED_SECTIONS: Record<string, string> = {
+  schedules: "backups",
+  config: "settings",
+  startup: "settings",
+  network: "settings",
+  resources: "settings",
+  databases: "settings",
+  activity: "settings",
+  diagnostics: "settings",
+  notes: "settings",
+  users: "settings",
 };
 
 export function isGameServersContext(path: string): boolean {
@@ -68,10 +75,16 @@ export function gameServerSectionFromPath(path: string): string {
   }
   const parts = path.split("/").filter(Boolean);
   const raw = parts[2] || "overview";
-  if (raw === "notes" || raw === "users") {
-    return "settings";
+  return GS_MERGED_SECTIONS[raw] ?? raw;
+}
+
+/** gameServerAnchorFromPath is the merged section an old link points at, e.g. "config", or "". */
+export function gameServerAnchorFromPath(path: string): string {
+  if (!gameServerIdFromPath(path)) {
+    return "";
   }
-  return raw;
+  const raw = path.split("/").filter(Boolean)[2] ?? "";
+  return GS_MERGED_SECTIONS[raw] ? raw : "";
 }
 
 export function gameServerHref(id?: string, section?: string): string {

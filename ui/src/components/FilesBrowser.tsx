@@ -1,16 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  chmodFile,
-  chownFile,
-  copyFile,
-  deleteFile,
-  downloadFile,
-  listFiles,
-  mkdirFile,
-  moveFile,
-  readFileContent,
-  uploadFile,
-} from "../api/client";
 import type { FileContent, FileEntry } from "../api/phase6";
 import { ActionMenu } from "./ActionMenu";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -21,6 +9,7 @@ import { Icon } from "./Icon";
 import { Link } from "./Link";
 import { PageHeader } from "./PageHeader";
 import { ResourceTable } from "./ResourceTable";
+import { agentFilesBackend, gameFilesBackend } from "../files/backend";
 import { breadcrumbs, displayPath, destRel, joinPath, parentPath, relName } from "../files/paths";
 import { formatBytes } from "../format";
 import { workloadGuestIOReason } from "../guestIO";
@@ -57,7 +46,8 @@ function ownerLabel(entry: FileEntry): string {
 }
 
 export type FilesBrowserProps = {
-  kind: "node" | "workload";
+  /** game is a game server's data volume, through the game file API. */
+  kind: "node" | "workload" | "game";
   id: string;
   /** Directory to open first. */
   initialPath?: string;
@@ -85,11 +75,14 @@ export function FilesBrowser({
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const host = kind === "node";
-  const canWrite = host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-  const canDownload = host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-  const canRead = host
-    ? roles?.includes("superadmin")
-    : Boolean(roles?.includes("superadmin") || roles?.includes("admin") || roles?.includes("user"));
+  const game = kind === "game";
+  const backend = useMemo(() => (kind === "game" ? gameFilesBackend(id) : agentFilesBackend(kind, id)), [kind, id]);
+  // Game servers check per-server grants on the server, so the browser offers every action.
+  const canWrite = game || (host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin")));
+  const canDownload = canWrite;
+  const canRead =
+    game ||
+    (host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin") || roles?.includes("user")));
   const [path, setPath] = useState(initialPath || "/");
   const [pathInput, setPathInput] = useState(displayPath(initialPath || "/"));
   useEffect(() => {
@@ -101,7 +94,7 @@ export function FilesBrowser({
   const [error, setError] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ioReady, setIoReady] = useState(kind === "node");
+  const [ioReady, setIoReady] = useState(kind !== "workload");
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [dialogValue, setDialogValue] = useState("");
   const [editor, setEditor] = useState<FileContent | null>(null);
@@ -151,8 +144,7 @@ export function FilesBrowser({
   async function reload(next = path) {
     setListing(true);
     try {
-      const listed = await listFiles(kind, id, next);
-      setEntries(listed.entries ?? []);
+      setEntries(await backend.list(next));
       setPath(next);
       setSelected([]);
       syncUrl(next, editor ? (editor.name ?? "") : "");
@@ -172,8 +164,8 @@ export function FilesBrowser({
         if (!edit || cancelled) {
           return;
         }
-        const listed = await listFiles(kind, id, path);
-        const hit = listed.entries?.find((e) => e.name === edit && e.type !== "dir");
+        const listed = await backend.list(path);
+        const hit = listed.find((e) => e.name === edit && e.type !== "dir");
         if (hit) {
           await openEditor(hit);
         }
@@ -187,7 +179,7 @@ export function FilesBrowser({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRead, unsupported, ioReady, kind, id]);
+  }, [canRead, unsupported, ioReady, backend]);
 
   const selectedEntries = useMemo(
     () => entries.filter((e) => selected.includes(e.name)),
@@ -197,7 +189,7 @@ export function FilesBrowser({
   async function openEditor(entry: FileEntry) {
     setError(null);
     try {
-      const content = await readFileContent(kind, id, joinPath(path, entry.name));
+      const content = await backend.read(joinPath(path, entry.name));
       setEditor(content);
       syncUrl(path, entry.name);
     } catch (err) {
@@ -219,7 +211,7 @@ export function FilesBrowser({
       for (let i = 0; i < files.length; i += 1) {
         const file = files[i];
         setUploadNote(`Uploading ${i + 1}/${files.length}: ${file.name}`);
-        await uploadFile(kind, id, joinPath(path, relName(file.name)), file);
+        await backend.upload(joinPath(path, relName(file.name)), file);
       }
       setUploadNote(null);
       await reload(path);
@@ -239,35 +231,35 @@ export function FilesBrowser({
     setError(null);
     try {
       if (dialog.kind === "mkdir") {
-        await mkdirFile(kind, id, joinPath(path, relName(dialogValue)));
+        await backend.mkdir(joinPath(path, relName(dialogValue)));
       } else if (dialog.kind === "create") {
         const name = relName(dialogValue);
         const dest = joinPath(path, name);
-        await uploadFile(kind, id, dest, new File([""], name, { type: "text/plain" }));
+        await backend.upload(dest, new File([""], name, { type: "text/plain" }));
         setDialog(null);
         setDialogValue("");
         await reload(path);
         await openEditor({ name, type: "file", size: 0, path: dest });
         return;
       } else if (dialog.kind === "rename") {
-        await moveFile(kind, id, joinPath(path, dialog.entry.name), joinPath(path, relName(dialogValue)));
+        await backend.move(joinPath(path, dialog.entry.name), joinPath(path, relName(dialogValue)));
       } else if (dialog.kind === "move") {
         for (const entry of dialog.entries) {
-          await moveFile(kind, id, joinPath(path, entry.name), joinPath(destRel(dialogValue.trim() || path), entry.name));
+          await backend.move(joinPath(path, entry.name), joinPath(destRel(dialogValue.trim() || path), entry.name));
         }
-      } else if (dialog.kind === "copy") {
+      } else if (dialog.kind === "copy" && backend.copy) {
         for (const entry of dialog.entries) {
-          await copyFile(kind, id, joinPath(path, entry.name), joinPath(destRel(dialogValue.trim() || path), entry.name));
+          await backend.copy(joinPath(path, entry.name), joinPath(destRel(dialogValue.trim() || path), entry.name));
         }
-      } else if (dialog.kind === "chmod") {
+      } else if (dialog.kind === "chmod" && backend.chmod) {
         const mode = Number.parseInt(dialogValue.trim(), 8);
         if (!Number.isFinite(mode)) {
           throw new Error("Mode must be octal, for example 644");
         }
         for (const entry of dialog.entries) {
-          await chmodFile(kind, id, joinPath(path, entry.name), mode);
+          await backend.chmod(joinPath(path, entry.name), mode);
         }
-      } else if (dialog.kind === "chown") {
+      } else if (dialog.kind === "chown" && backend.chown) {
         const [uidRaw, gidRaw] = dialogValue.trim().split(":");
         const uid = Number.parseInt(uidRaw ?? "", 10);
         const gid = Number.parseInt(gidRaw ?? uidRaw ?? "", 10);
@@ -275,11 +267,11 @@ export function FilesBrowser({
           throw new Error("Owner must be uid:gid");
         }
         for (const entry of dialog.entries) {
-          await chownFile(kind, id, joinPath(path, entry.name), uid, gid);
+          await backend.chown(joinPath(path, entry.name), uid, gid);
         }
       } else if (dialog.kind === "delete") {
         for (const entry of dialog.entries) {
-          await deleteFile(kind, id, joinPath(path, entry.name), entry.mtime);
+          await backend.remove(joinPath(path, entry.name), entry.mtime);
         }
       }
       setDialog(null);
@@ -363,15 +355,21 @@ export function FilesBrowser({
     if (entry.type !== "dir") {
       items.push({ label: "Open", onClick: () => void openEditor(entry) });
       if (canDownload) {
-        items.push({ label: "Download", onClick: () => void downloadFile(kind, id, joinPath(path, entry.name), entry.name).catch((err) => setError(err instanceof Error ? err.message : "download failed")) });
+        items.push({ label: "Download", onClick: () => void backend.download(joinPath(path, entry.name), entry.name).catch((err) => setError(err instanceof Error ? err.message : "download failed")) });
       }
     }
     if (canWrite) {
       items.push({ label: "Rename", onClick: () => { setDialogValue(entry.name); setDialog({ kind: "rename", entry }); } });
       items.push({ label: "Move", onClick: () => { setDialogValue(path); setDialog({ kind: "move", entries: [entry] }); } });
-      items.push({ label: "Copy", onClick: () => { setDialogValue(path); setDialog({ kind: "copy", entries: [entry] }); } });
-      items.push({ label: "Permissions", onClick: () => { setDialogValue(formatMode(entry.mode) || "644"); setDialog({ kind: "chmod", entries: [entry] }); } });
-      items.push({ label: "Owner", onClick: () => { setDialogValue(entry.uid != null && entry.gid != null ? `${entry.uid}:${entry.gid}` : "0:0"); setDialog({ kind: "chown", entries: [entry] }); } });
+      if (backend.copy) {
+        items.push({ label: "Copy", onClick: () => { setDialogValue(path); setDialog({ kind: "copy", entries: [entry] }); } });
+      }
+      if (backend.chmod) {
+        items.push({ label: "Permissions", onClick: () => { setDialogValue(formatMode(entry.mode) || "644"); setDialog({ kind: "chmod", entries: [entry] }); } });
+      }
+      if (backend.chown) {
+        items.push({ label: "Owner", onClick: () => { setDialogValue(entry.uid != null && entry.gid != null ? `${entry.uid}:${entry.gid}` : "0:0"); setDialog({ kind: "chown", entries: [entry] }); } });
+      }
       items.push({ label: "Delete", onClick: () => setDialog({ kind: "delete", entries: [entry] }), danger: true });
     }
     return items;
@@ -382,7 +380,7 @@ export function FilesBrowser({
       open={uploadOpen}
       destination={displayPath(path)}
       onClose={() => setUploadOpen(false)}
-      upload={(file) => uploadFile(kind, id, joinPath(path, relName(file.name)), file)}
+      upload={(file) => backend.upload(joinPath(path, relName(file.name)), file)}
       onDone={() => void reload(path)}
     />
   );
@@ -489,10 +487,12 @@ export function FilesBrowser({
               <Icon name="create" size={14} />
               New folder
             </button>
-            <button className="btn btn-sm btn-ghost" type="button" onClick={() => (onTerminalHere ? onTerminalHere(path) : navigate(termHereHref))}>
-              <Icon name="terminal" size={14} />
-              Terminal Here
-            </button>
+            {!game || onTerminalHere ? (
+              <button className="btn btn-sm btn-ghost" type="button" onClick={() => (onTerminalHere ? onTerminalHere(path) : navigate(termHereHref))}>
+                <Icon name="terminal" size={14} />
+                Terminal Here
+              </button>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -501,9 +501,11 @@ export function FilesBrowser({
           <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(path); setDialog({ kind: "move", entries: selectedEntries }); }}>
             Move selected
           </button>
-          <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(path); setDialog({ kind: "copy", entries: selectedEntries }); }}>
-            Copy selected
-          </button>
+          {backend.copy ? (
+            <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(path); setDialog({ kind: "copy", entries: selectedEntries }); }}>
+              Copy selected
+            </button>
+          ) : null}
           <button className="btn btn-sm btn-danger" type="button" onClick={() => setDialog({ kind: "delete", entries: selectedEntries })}>
             Delete selected
           </button>
@@ -511,8 +513,7 @@ export function FilesBrowser({
       ) : null}
       {editor ? (
         <FileEditor
-          kind={kind}
-          id={id}
+          backend={backend}
           dir={path}
           file={editor}
           canWrite={canWrite}

@@ -52,9 +52,11 @@ export function AccessControlPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
-  const [ordering, setOrdering] = useState(false);
+  // The role order being edited in the list; null while it matches the server.
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [drag, setDrag] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -85,10 +87,36 @@ export function AccessControlPage() {
     return error ? <ErrorNotice error={error} /> : <LoadingState label="Loading roles and groups" />;
   }
 
-  const q = query.trim().toLowerCase();
-  const roles = data.roles.filter((r) => !q || `${r.title} ${r.name}`.toLowerCase().includes(q));
-  const groups = data.groups.filter((g) => !q || g.name.toLowerCase().includes(q));
+  const names = order ?? data.roles.map((r) => r.name);
+  const roles = names.map((n) => data.roles.find((r) => r.name === n)).filter((r): r is IAMRole => Boolean(r));
+  const groups = data.groups;
   const newRoles = Object.values(drafts).filter((d): d is RoleDraft => d.kind === "role" && d.isNew);
+  // Root may place roles above SuperAdmin; everyone else orders what is below it.
+  const firstMovable = data.can_order_above_top ? 0 : names.indexOf("superadmin") + 1;
+  const movable = (i: number) => Boolean(data.can_order) && i >= firstMovable;
+
+  function moveRole(name: string, to: number) {
+    const next = names.filter((n) => n !== name);
+    next.splice(Math.max(firstMovable, Math.min(to, next.length)), 0, name);
+    setOrder(next.join("|") === data!.roles.map((r) => r.name).join("|") ? null : next);
+  }
+
+  async function saveOrder() {
+    if (!order) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await setIAMRoleOrder(order);
+      setOrder(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not save the order");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function current(key: string): Draft | null {
     if (drafts[key]) {
@@ -148,32 +176,29 @@ export function AccessControlPage() {
     }
   }
 
-  function newRole() {
-    const title = window.prompt("New role name", "Support")?.trim();
-    const name = title ? roleIDFor(title) : "";
-    if (!title || !name) {
-      return;
+  /** newRole adds an unsaved role draft; it is created with "Save all changes". */
+  function newRole(title: string, summary: string): string | null {
+    const name = roleIDFor(title);
+    if (!name) {
+      return "Give the role a name";
     }
-    if (data?.roles.some((r) => r.name === name)) {
-      setError(`A role with the id "${name}" already exists`);
-      return;
+    if (data?.roles.some((r) => r.name === name) || drafts[roleKey(name)]) {
+      return `A role with the id "${name}" already exists`;
     }
     const key = roleKey(name);
-    setDrafts((cur) => ({ ...cur, [key]: { kind: "role", isNew: true, name, title, summary: "", login: true, permissions: [] } }));
+    setDrafts((cur) => ({ ...cur, [key]: { kind: "role", isNew: true, name, title, summary, login: true, permissions: [] } }));
     setSelected(key);
+    return null;
   }
 
-  async function newGroup() {
-    const name = window.prompt("New group name", "")?.trim();
-    if (!name) {
-      return;
-    }
+  async function newGroup(name: string): Promise<string | null> {
     try {
       const g = await createGroup(name);
       await load();
       setSelected(groupKey(g.id));
+      return null;
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not create the group");
+      return err instanceof ApiError ? err.message : "Could not create the group";
     }
   }
 
@@ -184,27 +209,9 @@ export function AccessControlPage() {
 
   return (
     <div className="iam-section" aria-labelledby="iam-access-heading">
-      <div className="iam-toolbar">
-        <h2 id="iam-access-heading" className="iam-section-title">
-          Access control
-        </h2>
-        <input className="field-input iam-search" type="search" aria-label="Search roles and groups" placeholder="Search roles and groups" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <div className="btn-row is-flush iam-toolbar-actions">
-          {data.can_order ? (
-            <button className="btn btn-sm btn-secondary" type="button" onClick={() => setOrdering(true)}>
-              Role hierarchy
-            </button>
-          ) : null}
-          {data.can_manage_roles ? (
-            <button className="btn btn-sm btn-secondary" type="button" onClick={newRole}>
-              New role
-            </button>
-          ) : null}
-          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void newGroup()}>
-            New group
-          </button>
-        </div>
-      </div>
+      <h2 id="iam-access-heading" className="visually-hidden">
+        Roles and groups
+      </h2>
       {error ? <ErrorNotice error={error} /> : null}
       {dirty ? (
         <div className="iam-savebar" role="status">
@@ -221,23 +228,76 @@ export function AccessControlPage() {
       ) : null}
       <div className="iam-split">
         <nav className="iam-list" aria-label="Roles and groups">
-          <p className="iam-list-head">Roles · highest first</p>
-          {[...roles.map((r) => ({ key: roleKey(r.name), label: r.title, meta: `${r.user_count} user(s)`, locked: !r.editable, rank: r.rank })),
-            ...newRoles.map((d) => ({ key: roleKey(d.name), label: d.title || d.name, meta: "new", locked: false, rank: 999 }))].map((it, i) => (
-            <button
-              key={it.key}
-              type="button"
-              className={"iam-list-item" + (selected === it.key ? " is-active" : "")}
-              aria-current={selected === it.key ? "true" : undefined}
-              onClick={() => setSelected(it.key)}
-            >
-              <span className="iam-rank">{it.rank === 999 ? "+" : i + 1}</span>
-              <span className="iam-list-label">{it.label}</span>
-              {drafts[it.key] ? <span className="iam-dot" aria-label="Unsaved changes" /> : null}
-              {it.locked ? <Icon name="lock" size={12} /> : null}
-              <span className="meta">{it.meta}</span>
-            </button>
-          ))}
+          <div className="iam-list-head">
+            <span>Roles · highest first</span>
+            <span className="btn-row is-flush">
+              {order ? (
+                <button className="btn btn-sm btn-ghost" type="button" disabled={saving} onClick={() => setOrder(null)}>
+                  Reset
+                </button>
+              ) : null}
+              {data.can_order ? (
+                <button className="btn btn-sm btn-primary" type="button" disabled={!order || saving} title="Save the role order" onClick={() => void saveOrder()}>
+                  Save
+                </button>
+              ) : null}
+              <button className="btn btn-sm btn-secondary btn-icon" type="button" aria-label="Create a role or group" title="Create a role or group" onClick={() => setCreating(true)}>
+                <Icon name="create" size={12} />
+              </button>
+            </span>
+          </div>
+          {data.can_order ? <p className="iam-list-hint">Drag to reorder, or Alt+Up/Down. A role cannot act on any role above it.</p> : null}
+          {roles.map((r, i) => {
+            const key = roleKey(r.name);
+            const canMove = movable(i);
+            return (
+              <button
+                key={key}
+                type="button"
+                draggable={canMove}
+                className={"iam-list-item" + (selected === key ? " is-active" : "") + (drag === r.name ? " is-dragging" : "") + (canMove ? " is-movable" : "")}
+                aria-current={selected === key ? "true" : undefined}
+                aria-keyshortcuts={canMove ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+                onClick={() => setSelected(key)}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  setDrag(r.name);
+                }}
+                onDragOver={(e) => {
+                  if (drag && canMove) {
+                    e.preventDefault();
+                    if (drag !== r.name) {
+                      moveRole(drag, i);
+                    }
+                  }
+                }}
+                onDragEnd={() => setDrag(null)}
+                onKeyDown={(e) => {
+                  if (canMove && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                    e.preventDefault();
+                    moveRole(r.name, e.key === "ArrowUp" ? i - 1 : i + 1);
+                  }
+                }}
+              >
+                <span className="iam-rank">{i + 1}</span>
+                <span className="iam-list-label">{r.title}</span>
+                {drafts[key] ? <span className="iam-dot" aria-label="Unsaved changes" /> : null}
+                {!r.editable || !canMove ? <Icon name="lock" size={12} /> : null}
+                <span className="meta">{r.user_count} user(s)</span>
+              </button>
+            );
+          })}
+          {newRoles.map((d) => {
+            const key = roleKey(d.name);
+            return (
+              <button key={key} type="button" className={"iam-list-item" + (selected === key ? " is-active" : "")} onClick={() => setSelected(key)}>
+                <span className="iam-rank">+</span>
+                <span className="iam-list-label">{d.title || d.name}</span>
+                <span className="iam-dot" aria-label="Unsaved changes" />
+                <span className="meta">new</span>
+              </button>
+            );
+          })}
           <p className="iam-list-head">Groups</p>
           {groups.length === 0 ? <p className="muted iam-list-empty">No groups yet.</p> : null}
           {groups.map((g) => {
@@ -303,22 +363,7 @@ export function AccessControlPage() {
         </div>
       </div>
       <AutomationCreatorsPanel roles={data.roles} />
-      {ordering ? (
-        <HierarchyDialog
-          roles={data.roles}
-          aboveTop={Boolean(data.can_order_above_top)}
-          onClose={() => setOrdering(false)}
-          onSave={async (names) => {
-            try {
-              await setIAMRoleOrder(names);
-              setOrdering(false);
-              await load();
-            } catch (err) {
-              setError(err instanceof ApiError ? err.message : "Could not save the order");
-            }
-          }}
-        />
-      ) : null}
+      {creating ? <CreateDialog canRole={data.can_manage_roles} onClose={() => setCreating(false)} onRole={newRole} onGroup={newGroup} /> : null}
     </div>
   );
 }
@@ -567,85 +612,90 @@ export function roleIDFor(title: string): string {
     .slice(0, 40);
 }
 
-function HierarchyDialog({
-  roles,
-  aboveTop,
+/** CreateDialog is the one + button: pick Role or Group, and the form below follows. */
+function CreateDialog({
+  canRole,
   onClose,
-  onSave,
+  onRole,
+  onGroup,
 }: {
-  roles: IAMRole[];
-  /** Root may place roles above SuperAdmin; others order what is below it. */
-  aboveTop: boolean;
+  canRole: boolean;
   onClose: () => void;
-  onSave: (names: string[]) => Promise<void>;
+  /** Adds a role draft; returns an error message or null. */
+  onRole: (title: string, summary: string) => string | null;
+  onGroup: (name: string) => Promise<string | null>;
 }) {
-  const [order, setOrder] = useState(() => roles.map((r) => r.name));
-  const [drag, setDrag] = useState<string | null>(null);
-  const title = (n: string) => roles.find((r) => r.name === n)?.title ?? n;
-  const top = order.indexOf("superadmin");
-  const first = aboveTop ? 0 : top + 1;
-  const movable = (i: number) => i >= first;
-  function move(name: string, to: number) {
-    setOrder((cur) => {
-      const next = cur.filter((n) => n !== name);
-      next.splice(Math.max(first, Math.min(to, next.length)), 0, name);
-      return next;
-    });
-  }
+  const [kind, setKind] = useState<"role" | "group">(canRole ? "role" : "group");
+  const [name, setName] = useState("");
+  const [summary, setSummary] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const id = roleIDFor(name);
   return (
-    <Dialog
-      open
-      title="Role hierarchy"
-      onClose={onClose}
-      footer={
+    <Dialog open title={kind === "role" ? "New role" : "New group"} onClose={onClose}>
+      <form
+        className="form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const title = name.trim();
+          if (!title) {
+            setError("A name is required");
+            return;
+          }
+          if (kind === "role") {
+            const err = onRole(title, summary.trim());
+            if (err) {
+              setError(err);
+              return;
+            }
+            onClose();
+            return;
+          }
+          setBusy(true);
+          void onGroup(title).then((err) => {
+            setBusy(false);
+            if (err) {
+              setError(err);
+              return;
+            }
+            onClose();
+          });
+        }}
+      >
+        <label className="field">
+          <span className="field-label">Type</span>
+          <select className="field-input" value={kind} onChange={(e) => setKind(e.target.value as "role" | "group")}>
+            {canRole ? <option value="role">Role</option> : null}
+            <option value="group">Group</option>
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Name</span>
+          <input className="field-input" value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder={kind === "role" ? "Support" : "Operators"} />
+          {kind === "role" ? (
+            <span className="field-hint">
+              Id <code>{id || "…"}</code>. Pick its permissions after creating it, then save.
+            </span>
+          ) : (
+            <span className="field-hint">Add roles and members after creating it.</span>
+          )}
+        </label>
+        {kind === "role" ? (
+          <label className="field">
+            <span className="field-label">Description</span>
+            <input className="field-input" value={summary} onChange={(e) => setSummary(e.target.value)} />
+          </label>
+        ) : null}
+        {error ? <ErrorNotice error={error} /> : null}
         <div className="btn-row">
           <button className="btn btn-ghost" type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn-primary" type="button" onClick={() => void onSave(order)}>
-            Save order
+          <button className="btn btn-primary" type="submit" disabled={busy}>
+            {kind === "role" ? "Add role" : busy ? "Creating" : "Create group"}
           </button>
         </div>
-      }
-    >
-      <p className="field-hint">
-        Top is the highest. A role cannot change, assign or act on any role above it.{" "}
-        {aboveTop
-          ? "As the root SuperAdmin you can place roles above SuperAdmin; your account holds their permissions."
-          : "SuperAdmin and anything above it stay where they are; only the root SuperAdmin moves them."}
-      </p>
-      <ol className="iam-order">
-        {order.map((n, i) => (
-          <li
-            key={n}
-            className={"iam-order-item" + (drag === n ? " is-dragging" : "")}
-            draggable={movable(i)}
-            onDragStart={() => setDrag(n)}
-            onDragOver={(e) => {
-              e.preventDefault();
-              if (drag && drag !== n && movable(i)) {
-                move(drag, i);
-              }
-            }}
-            onDragEnd={() => setDrag(null)}
-          >
-            <span className="iam-rank">{i + 1}</span>
-            <span className="iam-list-label">{title(n)}</span>
-            {movable(i) ? (
-              <span className="btn-row is-flush">
-                <button className="btn btn-ghost btn-sm" type="button" aria-label={`Move ${title(n)} up`} disabled={i <= first} onClick={() => move(n, i - 1)}>
-                  ↑
-                </button>
-                <button className="btn btn-ghost btn-sm" type="button" aria-label={`Move ${title(n)} down`} disabled={i === order.length - 1} onClick={() => move(n, i + 1)}>
-                  ↓
-                </button>
-              </span>
-            ) : (
-              <Icon name="lock" size={12} />
-            )}
-          </li>
-        ))}
-      </ol>
+      </form>
     </Dialog>
   );
 }

@@ -3,8 +3,7 @@ import { AuthBrand } from "./components/AuthBrand";
 import { Shell } from "./components/Shell";
 import { RequireGrant } from "./components/RequireGrant";
 import { FeatureGate } from "./components/FeatureGate";
-import { APIAccessPage } from "./pages/APIAccessPage";
-import { AccessControlPage } from "./pages/AccessControlPage";
+import { AccessControlArea } from "./iam/AccessControlArea";
 import { UsersPage } from "./pages/UsersPage";
 import { IAMLayout, iamSections } from "./iam/IAMLayout";
 import { ForbiddenPage } from "./pages/ForbiddenPage";
@@ -383,9 +382,7 @@ function matchPage(path: string) {
   if (path === "/iam/access") {
     return (
       <IAMLayout>
-        <RequireGrant permission="identity.read">
-          <AccessControlPage />
-        </RequireGrant>
+        <AccessControlArea view="roles" />
       </IAMLayout>
     );
   }
@@ -421,11 +418,10 @@ function matchPage(path: string) {
     return <BackupsPage />;
   }
   if (path === "/api-access") {
+    // API access lives under Access control; its address is kept for bookmarks.
     return (
       <IAMLayout>
-        <RequireGrant permission="api_access.manage">
-          <APIAccessPage />
-        </RequireGrant>
+        <AccessControlArea view="api" />
       </IAMLayout>
     );
   }

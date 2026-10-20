@@ -8,9 +8,9 @@ describe("Game Servers capability nav", () => {
     expect(labels).toContain("Overview");
     expect(labels).toContain("Console");
     expect(labels).toContain("Files");
-    expect(labels).toContain("Backups");
-    expect(labels).toContain("Diagnostics");
-    expect(labels).toContain("Settings");
+    expect(labels).toContain("Backups & Schedules");
+    expect(labels).toContain("Server Settings");
+    expect(labels).toHaveLength(5);
     expect(labels).not.toContain("Plugins");
     expect(labels).not.toContain("Mods");
     expect(labels).not.toContain("Workshop");

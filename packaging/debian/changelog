@@ -1,3 +1,26 @@
+nodal (1.2.5) UNRELEASED; urgency=medium
+
+  * Game Servers: one bar per server (name, state, tabs, Start, Restart,
+    Stop and Force stop) in place of the Instance bar. Tabs are Overview,
+    Console, Files, Mods, Players, Backups & Schedules and Server Settings,
+    with the old settings tabs as sections; old links still open them.
+  * Game Servers: the console uses the workload terminal, the Files tab
+    uses the workload file browser, and Mods lists popular mods on open,
+    marks installed ones and names the loader and source.
+  * Game Servers: backups, schedules, events and saved commands show again
+    (their fields were sent with the wrong names) and host paths of
+    backups are no longer sent to the browser.
+  * Access control: API access moved under Access control. Service
+    accounts can be deleted; one still in use lists its tokens and groups,
+    and a SuperAdmin can force delete it. Roles reorder by dragging in the
+    list, and one + button creates a role or a group.
+  * Administration: page bars join the area bar, the area bar dropdowns are
+    no longer hidden behind them, and the column editor is never clipped.
+  * Backups: one Management layout, delete from history, full reset, no
+    restore box.
+
+ -- No-dal <packaging@no-dal.com>  Wed, 21 Oct 2026 00:00:00 +0000
+
 nodal (1.2.4) trixie; urgency=medium
 
   * Impact (backups): Smart backups now always leave out container images

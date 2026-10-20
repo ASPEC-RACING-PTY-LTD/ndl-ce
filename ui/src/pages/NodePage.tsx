@@ -102,7 +102,7 @@ export function NodePage() {
         title="Node"
         kicker={`${nodes.host_os || "Host OS not reported"} · ${honestStatus(nodes.status)}${nodes.stale ? " (stale)" : ""}`}
       />
-      <PageNav id="node" label="Node" items={NODE_ITEMS} />
+      <PageNav id="node" label="Node" items={NODE_ITEMS} className="is-sub" />
       {tab === "summary" ? <NodeSummaryView id={id} fallback={nodes} /> : null}
       {tab === "hardware" ? <NodeHardwareView id={id} /> : null}
       {tab === "metrics" ? <NodeMetricsView id={id} /> : null}

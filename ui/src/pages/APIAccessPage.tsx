@@ -4,6 +4,7 @@ import {
   createAPIToken,
   createServicePrincipal,
   deleteAPIToken,
+  deleteServicePrincipal,
   getAPITokenUsage,
   listAPITokens,
   listServicePrincipals,
@@ -12,12 +13,14 @@ import {
   type APITokenItem,
   type CreatedAPIToken,
   type ServicePrincipalItem,
+  type ServicePrincipalReference,
   type TokenUsageItem,
 } from "../api/client";
 import { confirmAction } from "../confirm";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { Field } from "../components/Field";
+import { ForceDeleteDialog } from "../components/ForceDeleteDialog";
 import { SelectField } from "../components/form/SelectField";
 import { formatWhen } from "../format";
 import { hasGrant } from "../rbac";
@@ -85,6 +88,7 @@ export function APIAccessPage() {
   const [spName, setSpName] = useState("diag-agent");
   const [spPreset, setSpPreset] = useState("readonly-debug");
   const [spTtl, setSpTtl] = useState("168");
+  const [blocked, setBlocked] = useState<{ account: ServicePrincipalItem; references: ServicePrincipalReference[]; canForce: boolean } | null>(null);
   const table = useTablePrefs<Row>("iam.api-access", COLUMNS, { id: "name", dir: "asc" });
 
   const reload = useCallback(async () => {
@@ -106,6 +110,8 @@ export function APIAccessPage() {
       .map((t) => ({
         key: t.id,
         token: t,
+        // A service account's token row also carries the account, so the account can be deleted from it.
+        account: principals.find((sp) => sp.user_id === t.user_id),
         name: t.name,
         owner: t.username || t.user_id,
         type: t.user_kind === "service" ? "service" : "token",
@@ -184,6 +190,24 @@ export function APIAccessPage() {
     });
   }
 
+  /** deleteAccount deletes a service account; still in use, it opens the force delete list instead. */
+  async function deleteAccount(account: ServicePrincipalItem) {
+    setError(null);
+    try {
+      await deleteServicePrincipal(account.id);
+      setOpenKey(null);
+    } catch (err) {
+      const refs = err instanceof ApiError && err.status === 409 ? err.body?.references : undefined;
+      if (Array.isArray(refs)) {
+        setOpenKey(null);
+        setBlocked({ account, references: refs as ServicePrincipalReference[], canForce: Boolean(err instanceof ApiError && err.body?.can_force) });
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "Delete failed");
+    }
+    await reload().catch(() => undefined);
+  }
+
   function created(label: string, body: CreatedAPIToken | { token: string }) {
     setReveal({ label, token: body.token });
     setCreateOpen(false);
@@ -215,11 +239,8 @@ export function APIAccessPage() {
   };
 
   return (
-    <div className="iam-section" aria-labelledby="api-access-heading">
+    <div className="iam-section" aria-label="API access">
       <div className="iam-toolbar">
-        <h2 id="api-access-heading" className="iam-section-title">
-          API Access <span className="meta">{rows.length}</span>
-        </h2>
         <input
           className="field-input iam-search"
           type="search"
@@ -343,6 +364,21 @@ export function APIAccessPage() {
           onRolled={(token) => setReveal({ label: `New secret for ${open.name}`, token })}
           onChanged={() => void reload()}
           onError={setError}
+          onDeleteAccount={admin && open.account ? () => void deleteAccount(open.account!) : undefined}
+        />
+      ) : null}
+
+      {blocked ? (
+        <ForceDeleteDialog
+          name={blocked.account.name}
+          references={blocked.references}
+          canForce={blocked.canForce}
+          onClose={() => setBlocked(null)}
+          onForce={async () => {
+            await deleteServicePrincipal(blocked.account.id, true);
+            setBlocked(null);
+            await reload().catch(() => undefined);
+          }}
         />
       ) : null}
 
@@ -462,6 +498,7 @@ function TokenDialog({
   onRolled,
   onChanged,
   onError,
+  onDeleteAccount,
 }: {
   row: Row;
   canManage: boolean;
@@ -469,6 +506,8 @@ function TokenDialog({
   onRolled: (token: string) => void;
   onChanged: () => void;
   onError: (msg: string) => void;
+  /** Set for a service account the viewer may delete. */
+  onDeleteAccount?: () => void;
 }) {
   const tok = row.token;
   const [usage, setUsage] = useState<TokenUsageItem[] | null>(null);
@@ -600,11 +639,25 @@ function TokenDialog({
               >
                 Delete token
               </button>
+              {onDeleteAccount ? (
+                <button className="btn btn-danger" type="button" disabled={busy} onClick={onDeleteAccount}>
+                  Delete service account
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
       ) : (
-        <p className="muted">This service account has no token. Create a new service account to issue one.</p>
+        <div className="stack">
+          <p className="muted">This service account has no token. Delete it, or create a new service account to issue one.</p>
+          {onDeleteAccount ? (
+            <div className="btn-row iam-dialog-actions">
+              <button className="btn btn-danger" type="button" onClick={onDeleteAccount}>
+                Delete service account
+              </button>
+            </div>
+          ) : null}
+        </div>
       )}
     </Dialog>
   );

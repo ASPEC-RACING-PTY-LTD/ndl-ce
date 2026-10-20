@@ -15,7 +15,7 @@ const ITEMS: PageNavItem[] = [
 export function DockerHubPage({ tab }: { tab: DockerHubTab }) {
   return (
     <section className="page page-wide">
-      <PageNav id="docker" label="Docker" items={ITEMS} />
+      <PageNav id="docker" label="Docker" items={ITEMS} className="is-sub" />
       {tab === "docker" ? <DockerPage /> : tab === "deploy" ? <DeployPage /> : <UptimePage />}
     </section>
   );

@@ -1,8 +1,9 @@
 import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, downloadFile, uploadFile } from "../api/client";
+import { ApiError } from "../api/client";
 import type { FileContent } from "../api/phase6";
+import type { FilesBackend } from "../files/backend";
 import { languageFromName } from "../files/language";
 import { joinPath, parentPath, relName } from "../files/paths";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -31,8 +32,7 @@ export function ensureMonacoTheme() {
 }
 
 export function FileEditor({
-  kind,
-  id,
+  backend,
   dir,
   file,
   canWrite,
@@ -40,8 +40,7 @@ export function FileEditor({
   onSaved,
   onError,
 }: {
-  kind: "node" | "workload";
-  id: string;
+  backend: FilesBackend;
   dir: string;
   file: FileContent;
   canWrite: boolean;
@@ -95,7 +94,7 @@ export function FileEditor({
     setBusy(true);
     try {
       const blob = new File([value], dest.split("/").pop() || file.name, { type: "text/plain" });
-      await uploadFile(kind, id, dest, blob, {
+      await backend.upload(dest, blob, {
         expectedMtime: overwrite || dest !== originalPath ? undefined : file.mtime,
       });
       setOverwriteOpen(false);
@@ -126,7 +125,7 @@ export function FileEditor({
         <header className="files-editor-bar">
           <strong>{file.name}</strong>
           <span className="muted">Binary file</span>
-          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void downloadFile(kind, id, file.path || joinPath(dir, file.name), file.name)}>
+          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void backend.download(file.path || joinPath(dir, file.name), file.name)}>
             Download
           </button>
           <button className="btn btn-sm btn-ghost" type="button" onClick={onClose}>
@@ -146,7 +145,7 @@ export function FileEditor({
         <header className="files-editor-bar">
           <strong>{file.name}</strong>
           <span className="muted">Too large for the editor</span>
-          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void downloadFile(kind, id, file.path || joinPath(dir, file.name), file.name)}>
+          <button className="btn btn-sm btn-secondary" type="button" onClick={() => void backend.download(file.path || joinPath(dir, file.name), file.name)}>
             Download
           </button>
           <button className="btn btn-sm btn-ghost" type="button" onClick={onClose}>

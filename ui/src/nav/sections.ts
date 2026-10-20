@@ -40,8 +40,13 @@ export const ADMIN_SECTIONS: Section[] = [
     match: (p) => isIAMPath(p) || p === "/audit" || p === "/tasks",
     children: [
       { id: "users", label: "Users", href: "/users", permission: "users.read" },
-      { id: "access", label: "Access control", href: "/iam/access", anyPermission: ["roles.manage", "identity.group.manage"] },
-      { id: "api", label: "API Access", href: "/api-access", anyPermission: ["api_access.manage", "identity.token.create"] },
+      {
+        id: "access",
+        label: "Access control",
+        href: "/iam/access",
+        anyPermission: ["roles.manage", "identity.group.manage", "api_access.manage", "identity.token.create"],
+        match: exact("/iam/access", "/api-access"),
+      },
       { id: "approvals", label: "Approvals", href: "/iam/approvals", permission: "approvals.view" },
       { id: "audit", label: "Audit log", href: "/audit", match: exact("/audit", "/tasks") },
     ],
@@ -188,12 +193,8 @@ export const INSTANCE_SECTIONS: Section[] = [
     icon: "game",
     description: "Dedicated game servers.",
     capability: "gameservers",
+    // No dropdown: the dashboard's own filters join the bar while it is open.
     match: (p) => under("/game-servers", "/workloads/game-servers")(p),
-    children: [
-      { id: "gs-all", label: "All servers", href: "/game-servers", match: exact("/game-servers") },
-      { id: "gs-fav", label: "Favourites", href: "/game-servers/favourites" },
-      { id: "gs-recent", label: "Recent", href: "/game-servers/recent" },
-    ],
   },
   {
     id: "oci",

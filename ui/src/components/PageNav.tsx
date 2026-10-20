@@ -78,6 +78,7 @@ export function PageNav({
   id,
   label,
   items,
+  extra,
   actions,
   className,
 }: {
@@ -85,6 +86,8 @@ export function PageNav({
   /** label names the bar for screen readers; it is not shown. */
   label: string;
   items: PageNavItem[];
+  /** extra joins the current page's own links onto the bar, after its buttons. */
+  extra?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }) {
@@ -257,6 +260,7 @@ export function PageNav({
           );
         })}
       </ul>
+      {extra ? <div className="page-nav-extra">{extra}</div> : null}
       {actions ? <div className="page-nav-actions">{actions}</div> : null}
       <ContextMenu menu={menu.menu} onClose={menu.close} />
     </nav>

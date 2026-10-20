@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "../components/Icon";
+import { useFloatingPanel } from "./floating";
 import { usePref } from "../prefs";
 
 // Sortable tables with a column picker. Which columns show, the sort and any
@@ -130,27 +132,9 @@ export function SortHeader<T>({ column, prefs, className }: { column: TableColum
 export function ColumnEditor<T>({ prefs, extra, label = "Edit columns" }: { prefs: TablePrefs<T>; extra?: ReactNode; label?: string }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    function onDoc(e: MouseEvent) {
-      if (root.current && !root.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const panel = useRef<HTMLDivElement>(null);
+  // The panel floats on document.body so the table's overflow never clips it.
+  useFloatingPanel(open, root, panel, useCallback(() => setOpen(false), []));
   return (
     <div className="col-editor" ref={root}>
       <button
@@ -163,29 +147,32 @@ export function ColumnEditor<T>({ prefs, extra, label = "Edit columns" }: { pref
       >
         <Icon name="edit" size={14} />
       </button>
-      {open ? (
-        <div className="menu-panel col-editor-panel" role="dialog" aria-label={label}>
-          <p className="ctx-title">Columns</p>
-          {prefs.columns
-            .filter((c) => c.label)
-            .map((c) => (
-              <label key={c.id} className="check-row">
-                <input type="checkbox" checked={prefs.isVisible(c)} disabled={c.required} onChange={(e) => prefs.setVisible(c.id, e.target.checked)} />
-                <span>{c.label}</span>
-              </label>
-            ))}
-          {extra ? (
-            <>
+      {open
+        ? createPortal(
+            <div ref={panel} className="menu-panel is-floating col-editor-panel" role="dialog" aria-label={label}>
+              <p className="ctx-title">Columns</p>
+              {prefs.columns
+                .filter((c) => c.label)
+                .map((c) => (
+                  <label key={c.id} className="check-row">
+                    <input type="checkbox" checked={prefs.isVisible(c)} disabled={c.required} onChange={(e) => prefs.setVisible(c.id, e.target.checked)} />
+                    <span>{c.label}</span>
+                  </label>
+                ))}
+              {extra ? (
+                <>
+                  <hr />
+                  {extra}
+                </>
+              ) : null}
               <hr />
-              {extra}
-            </>
-          ) : null}
-          <hr />
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => prefs.reset()}>
-            Reset to default
-          </button>
-        </div>
-      ) : null}
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => prefs.reset()}>
+                Reset to default
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

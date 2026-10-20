@@ -81,7 +81,7 @@ export function ThemePage() {
   const themeSection = section === "colours" || section === "style" || section === "terminal";
   return (
     <section className="page page-wide theme-page" aria-labelledby="theme-heading">
-      <PageNav id="theme" label="Theme" items={NAV} />
+      <PageNav id="theme" label="Theme" items={NAV} className="is-sub" />
       <header className="page-header">
         <h1 id="theme-heading">{NAV.find((n) => n.id === section)?.label}</h1>
         <p className="page-lede">

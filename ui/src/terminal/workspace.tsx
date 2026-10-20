@@ -128,17 +128,22 @@ function loadStore(userId: string): StoredWorkspace {
   }
 }
 
+/** terminalOptions is the look every terminal shares: font, saved text size and theme colours. */
+export function terminalOptions() {
+  return {
+    cursorBlink: true,
+    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+    fontSize: clampTerminalFont(getPref(TERMINAL_FONT_KEY, null)),
+    theme: terminalColors(),
+  };
+}
+
 function makeTerm(): { term: Terminal; fit: FitAddon; holder: HTMLDivElement } {
   const holder = document.createElement("div");
   holder.className = "term-hold";
   holder.setAttribute("aria-hidden", "true");
   document.body.appendChild(holder);
-  const term = new Terminal({
-    cursorBlink: true,
-    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-    fontSize: clampTerminalFont(getPref(TERMINAL_FONT_KEY, null)),
-    theme: terminalColors(),
-  });
+  const term = new Terminal(terminalOptions());
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(holder);
