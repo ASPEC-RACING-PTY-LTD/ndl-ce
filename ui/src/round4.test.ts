@@ -26,6 +26,9 @@ describe("navigation model", () => {
     expect(isInstancePath("/workloads/abc")).toBe(true);
     expect(isInstancePath("/instance/vms")).toBe(true);
     expect(isInstancePath("/node")).toBe(false);
+    expect(isInstancePath("/docker")).toBe(false);
+    expect(isAdminPath("/docker/uptime")).toBe(true);
+    expect(isAdminPath("/codehold/cli")).toBe(true);
   });
 
   it("shows only areas a person may open, with features on", () => {
@@ -33,9 +36,12 @@ describe("navigation model", () => {
     expect(all).toContain("iam");
     expect(all).not.toContain("intelligence");
     expect(visibleSections(ADMIN_SECTIONS, plain, () => true).map((s) => s.id)).not.toContain("updates");
-    const inst = visibleSections(INSTANCE_SECTIONS, superadmin, (id) => id === "docker").map((s) => s.id);
-    expect(inst).toContain("docker");
-    expect(inst).not.toContain("game-servers");
+    const inst = visibleSections(INSTANCE_SECTIONS, superadmin, (id) => id === "gameservers").map((s) => s.id);
+    expect(inst).toEqual(["workloads", "vms", "game-servers", "templates", "registries"]);
+    // Docker and CodeHold live under Infrastructure.
+    const infra = visibleSections(ADMIN_SECTIONS, superadmin, () => true).find((s) => s.id === "infrastructure");
+    expect(infra?.children?.map((c) => c.id)).toEqual(expect.arrayContaining(["docker", "codehold", "codehold-cli"]));
+    expect(visibleSections(ADMIN_SECTIONS, superadmin, () => false).find((s) => s.id === "infrastructure")?.children?.map((c) => c.id)).not.toContain("docker");
   });
 
   it("keeps the modern sidebar short", () => {
@@ -44,9 +50,20 @@ describe("navigation model", () => {
     expect(modernNav(false).some((g) => g.label === "Administration")).toBe(false);
   });
 
+  it("puts every way to create an instance in + Create only", () => {
+    for (const sec of INSTANCE_SECTIONS) {
+      for (const c of sec.children ?? []) {
+        expect(c.href).not.toMatch(/\/new\/|\/create|\/import/);
+      }
+    }
+    expect(createEntries([], () => true).map((e) => e.href)).toEqual(
+      expect.arrayContaining(["/workloads/new/system-container", "/workloads/new/vm", "/workloads/import", "/workloads/new/oci", "/game-servers/create"]),
+    );
+  });
+
   it("orders + Create like the Instance bar", () => {
     const on = () => true;
-    expect(createEntries(["vms", "workloads", "oci", "game-servers"], on).map((e) => e.section)).toEqual(["vms", "workloads", "oci", "game-servers"]);
+    expect(createEntries(["vms", "workloads", "oci", "game-servers"], on).map((e) => e.section)).toEqual(["vms", "vms", "workloads", "oci", "game-servers"]);
     expect(createEntries([], (id) => id !== "oci").map((e) => e.section)).not.toContain("oci");
   });
 });

@@ -18,6 +18,7 @@ import (
 const (
 	applyUpdateConfirm      = "apply-update"
 	rollbackUpdateConfirm   = "rollback-update"
+	undoRollbackConfirm     = "undo-rollback"
 	enableRepositoryConfirm = "enable-repository"
 	// applyResultGrace is how long a running apply may go unreported by the
 	// host before it is recorded as failed.
@@ -171,9 +172,12 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 		body["backups_paused"] = reason
 	}
 	body["rollback"] = rollbackJSON(s.planRollback(r.Context(), p.User.ClusterID))
-	if last, err := s.Store.GetLatestUpdateOperationByAction(r.Context(), p.User.ClusterID, "apply"); err == nil && last != nil && last.CheckpointID != "" {
-		if at, _ := s.Store.CheckpointWiped(r.Context(), last.ID); at == nil {
-			body["previous_version_kept"] = true
+	body["undo_rollback"] = rollbackJSON(s.planUndoRollback(r.Context(), p.User.ClusterID))
+	for _, action := range []string{"apply", "rollback"} {
+		if last, err := s.Store.GetLatestUpdateOperationByAction(r.Context(), p.User.ClusterID, action); err == nil && last != nil && last.CheckpointID != "" {
+			if at, _ := s.Store.CheckpointWiped(r.Context(), last.ID); at == nil {
+				body["previous_version_kept"] = true
+			}
 		}
 	}
 	body["can_wipe_previous"] = isOwner(p) || p.User.ID == LocalRootUserID
@@ -341,6 +345,31 @@ func (s *Server) rollbackUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "update.rollback", op.Status, op.ID)
+	writeJSON(w, http.StatusOK, updateOperationJSON(op))
+}
+
+// undoRollback puts back the version and data a rollback replaced, from the
+// checkpoint the rollback saved first.
+func (s *Server) undoRollback(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.UpdatesManage)
+	if err != nil {
+		return
+	}
+	if strings.TrimSpace(r.Header.Get(confirmHeader)) != undoRollbackConfirm {
+		writeErr(w, http.StatusUnprocessableEntity, "undoing a rollback requires X-Nodal-Confirm: undo-rollback")
+		return
+	}
+	plan, reason := s.planUndoRollback(r.Context(), p.User.ClusterID)
+	if reason != "" {
+		writeErr(w, http.StatusConflict, reason)
+		return
+	}
+	op, err := s.startHostChange(r.Context(), p.User.ClusterID, actionUndoRollback, &plan)
+	if err != nil {
+		writeUpdateErr(w, err)
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "update.undo_rollback", op.Status, op.ID)
 	writeJSON(w, http.StatusOK, updateOperationJSON(op))
 }
 

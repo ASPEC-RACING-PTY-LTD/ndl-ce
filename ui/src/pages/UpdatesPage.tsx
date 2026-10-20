@@ -10,6 +10,7 @@ import {
   getUpdates,
   preflightUpdates,
   rollbackUpdates,
+  undoUpdateRollback,
   wipeUpdateRollback,
 } from "../api/client";
 import type {
@@ -33,7 +34,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 const APPLY_POLL_MS = 3_000;
 
 function applyRunning(op: UpdateOperation | null | undefined): boolean {
-  return (op?.action === "apply" || op?.action === "rollback") && op.status === "running" && !op.dry_run;
+  return (op?.action === "apply" || op?.action === "rollback" || op?.action === "undo-rollback") && op.status === "running" && !op.dry_run;
 }
 
 function packageStatusLabel(status: string): string {
@@ -159,7 +160,7 @@ export function UpdatesPage() {
     if (updating) {
       watchingApply.current = true;
       setApplyOutcome(null);
-    } else if (watchingApply.current && (currentOp?.action === "apply" || currentOp?.action === "rollback")) {
+    } else if (watchingApply.current && (currentOp?.action === "apply" || currentOp?.action === "rollback" || currentOp?.action === "undo-rollback")) {
       watchingApply.current = false;
       setApplyOutcome(currentOp);
     }
@@ -258,9 +259,10 @@ export function UpdatesPage() {
   async function onRollback() {
     const plan = status?.rollback;
     const db = plan?.restores_database
-      ? " The last update changed the database, so it is restored from the checkpoint saved before the update: changes made since then (new workloads, backups, settings) are lost."
+      ? " The last update changed the database, so it is restored from the checkpoint saved before the update: changes made since then (new workloads, backups, settings) are taken out."
       : " The database is kept as it is.";
-    if (!confirmAction(`Move every No-dal package back to version ${plan?.version ?? "the previous version"}?${db} Running backups are paused and run again afterwards. Guests keep running.`)) {
+    const keep = " A copy of the current version and database is saved first, so you can undo the rollback for 3 days and get those changes back.";
+    if (!confirmAction(`Move every No-dal package back to version ${plan?.version ?? "the previous version"}?${db}${keep} Running backups are paused and run again afterwards. Guests keep running.`)) {
       return;
     }
     await runAction(async () => {
@@ -269,9 +271,22 @@ export function UpdatesPage() {
     });
   }
 
+  async function onUndoRollback() {
+    const plan = status?.undo_rollback;
+    const db = plan?.restores_database
+      ? " The database goes back to the copy saved right before the rollback, so changes made since the rollback are lost."
+      : " The database is kept as it is.";
+    if (!confirmAction(`Undo the rollback and move every No-dal package back to version ${plan?.version ?? "the newer version"}?${db} A copy is saved first. Guests keep running.`)) {
+      return;
+    }
+    await runAction(async () => {
+      setLastOp(await undoUpdateRollback());
+    });
+  }
+
   async function onWipePrevious() {
     if (
-      !confirmAction("Delete the previous version kept for rollback?\n\nThe update can no longer be rolled back afterwards. This cannot be undone.")
+      !confirmAction("Delete the copies kept for rolling back (and for undoing a rollback)?\n\nAfterwards the update can no longer be rolled back, nor a rollback undone. This cannot be undone.")
     ) {
       return;
     }
@@ -285,6 +300,7 @@ export function UpdatesPage() {
   const windowEnds = status?.rollback?.window_ends_at;
   const actionsEnabled = mutate && hostSupported && !busy && !applyRunning(status?.last_operation ?? lastOp);
   const rollbackReady = status?.rollback?.available === true;
+  const undoReady = status?.undo_rollback?.available === true;
   const lastCheckCandidates = status?.last_check?.candidates ?? [];
   const available = preview
     ? { version: preview.version, url: preview.release_url }
@@ -329,8 +345,24 @@ export function UpdatesPage() {
         >
           Roll back update
         </button>
+        {undoReady ? (
+          <button
+            className="btn"
+            type="button"
+            disabled={!actionsEnabled}
+            title={`Back to ${status?.undo_rollback?.version ?? ""}`}
+            onClick={() => void onUndoRollback()}
+          >
+            Undo rollback
+          </button>
+        ) : null}
       </div>
       {!rollbackReady && status?.rollback?.reason ? <p className="field-hint">{status.rollback.reason}</p> : null}
+      {undoReady && status?.undo_rollback?.window_ends_at ? (
+        <p className="field-hint">
+          The rollback can be undone until {formatWhen(status.undo_rollback.window_ends_at)} from the copy saved before it ran.
+        </p>
+      ) : null}
       {rollbackReady && windowEnds ? (
         <p className="field-hint">
           Rollback is possible until {formatWhen(windowEnds)}. After that the previous version is deleted automatically.
@@ -365,7 +397,7 @@ export function UpdatesPage() {
 
       {updating ? (
         <p className="banner" role="status">
-          {currentOp?.action === "rollback" ? "Rolling back" : "Updating"}
+          {currentOp?.action === "rollback" ? "Rolling back" : currentOp?.action === "undo-rollback" ? "Undoing the rollback" : "Updating"}
           {status?.stage ? `: ${status.stage.toLowerCase()}` : ""}. The control plane restarts during it and this page
           reconnects on its own. Guests keep running.
           {status?.paused_backups ? ` ${status.paused_backups} running backup(s) were paused and run again afterwards.` : ""}
@@ -380,7 +412,7 @@ export function UpdatesPage() {
 
       {applyOutcome?.status === "succeeded" ? (
         <p className="banner" role="status">
-          {applyOutcome.action === "rollback" ? "Rollback finished" : "Update installed"}
+          {applyOutcome.action === "rollback" ? "Rollback finished" : applyOutcome.action === "undo-rollback" ? "Rollback undone" : "Update installed"}
           {applyOutcome.version ? ` (${applyOutcome.version})` : ""}. Reload to use the matching interface.{" "}
           <button className="btn" type="button" onClick={() => window.location.reload()}>
             Reload
@@ -390,7 +422,7 @@ export function UpdatesPage() {
 
       {applyOutcome?.status === "failed" ? (
         <ErrorNotice
-          title={applyOutcome.action === "rollback" ? "The rollback failed" : "The update failed"}
+          title={applyOutcome.action === "rollback" ? "The rollback failed" : applyOutcome.action === "undo-rollback" ? "Undoing the rollback failed" : "The update failed"}
           error={applyOutcome.error || "No reason was reported."}
         />
       ) : null}

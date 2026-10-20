@@ -1,3 +1,4 @@
+import { useInstanceLayout } from "../appearance/state";
 import { confirmAction } from "../confirm";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
@@ -39,6 +40,8 @@ function portText(server: GameServer): string {
 export function GameServersHomePage() {
   const path = usePath();
   const session = useSession();
+  // In the Instance layout creating lives in "+ Create" in the page bar.
+  const [layout] = useInstanceLayout();
   const { featureEnabled } = useNavDisclosure();
   const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
   const [items, setItems] = useState<GameServer[] | null>(null);
@@ -225,7 +228,7 @@ export function GameServersHomePage() {
             {label}
           </button>
         ))}
-        {mutate ? (
+        {mutate && layout === "classic" ? (
           <div className="btn-row is-flush gs-bar-actions">
             <button className="btn btn-primary btn-sm" type="button" onClick={() => setQuickOpen(true)}>
               Create server

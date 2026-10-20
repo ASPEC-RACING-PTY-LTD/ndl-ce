@@ -1,3 +1,4 @@
+import { useInstanceLayout } from "../appearance/state";
 import { confirmAction } from "../confirm";
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import {
@@ -92,6 +93,8 @@ export function OciPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
+  // In the Instance layout creating lives in "+ Create" in the page bar.
+  const [layout] = useInstanceLayout();
   const [workloads, setWorkloads] = useState<Workload[] | null>(null);
   const [groups, setGroups] = useState<Stack[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -382,9 +385,11 @@ export function OciPage() {
         actions={
           mutate ? (
             <div className="btn-row is-flush">
-              <button className="btn btn-primary" type="button" onClick={() => setCreating({ groupId: "" })}>
-                New container
-              </button>
+              {layout === "classic" ? (
+                <button className="btn btn-primary" type="button" onClick={() => setCreating({ groupId: "" })}>
+                  New container
+                </button>
+              ) : null}
               <button className="btn btn-secondary" type="button" onClick={() => setImporting(true)}>
                 Import Compose
               </button>

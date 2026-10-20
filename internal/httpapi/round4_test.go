@@ -229,3 +229,67 @@ func TestInstanceTemplates(t *testing.T) {
 		t.Fatalf("deleted template still found: %d", code)
 	}
 }
+
+// A rollback saves a checkpoint first, and undoing it puts the newer
+// version back with the database from right before the rollback.
+func TestRollbackCanBeUndoneFromItsCheckpoint(t *testing.T) {
+	a := newAutoTest(t)
+	host := &detachedUpdate{applyState: appdb.UpdateRunning}
+	a.s.Update = host
+	apply := appdb.UpdateOperation{
+		ID: uuid.NewString(), ClusterID: a.cluster, Action: "apply", Status: appdb.UpdateSucceeded,
+		Version: "1.1.5", CheckpointID: uuid.NewString(), SchemaVersion: "0001_init.sql",
+		Candidates: []appdb.UpdateCandidate{{Name: "nodal", CurrentVersion: "1.1.4", CandidateVersion: "1.1.5"}},
+		StartedAt:  time.Now().UTC().Add(-time.Hour),
+	}
+	if err := a.mem.CreateUpdateOperation(context.Background(), apply); err != nil {
+		t.Fatal(err)
+	}
+	_, status := a.call("GET", "/api/v1/updates", "", nil)
+	if u, _ := status["undo_rollback"].(map[string]any); u["available"] != false {
+		t.Fatalf("nothing to undo before a rollback: %v", u)
+	}
+	if code, out := a.call("POST", "/api/v1/updates/rollback", "", map[string]string{"X-Nodal-Confirm": "rollback-update"}); code != http.StatusOK {
+		t.Fatalf("rollback %d %v", code, out["_raw"])
+	}
+	a.s.waitHostChange()
+	if len(host.calls) < 2 || host.calls[len(host.calls)-2] != "checkpoint" || host.calls[len(host.calls)-1] != "rollback" {
+		t.Fatalf("a rollback must save a checkpoint first: %v", host.calls)
+	}
+	rb, _ := a.mem.GetLatestUpdateOperationByAction(context.Background(), a.cluster, "rollback")
+	if rb == nil || rb.CheckpointID == "" || rb.CheckpointID == apply.CheckpointID || !rb.RestoredDB {
+		t.Fatalf("the rollback must record its own checkpoint and that it restored the database: %+v", rb)
+	}
+	// The host unit finished the rollback.
+	now := time.Now().UTC()
+	rb.Status, rb.FinishedAt = appdb.UpdateSucceeded, &now
+	if err := a.mem.UpdateUpdateOperation(context.Background(), *rb); err != nil {
+		t.Fatal(err)
+	}
+	_, status = a.call("GET", "/api/v1/updates", "", nil)
+	undo, _ := status["undo_rollback"].(map[string]any)
+	if undo["available"] != true || undo["version"] != "1.1.5" || undo["restores_database"] != true {
+		t.Fatalf("undo plan %v", undo)
+	}
+	if code, _ := a.call("POST", "/api/v1/updates/rollback/undo", "", nil); code != http.StatusUnprocessableEntity {
+		t.Fatalf("an undo without the confirm header: %d", code)
+	}
+	before := len(host.reqs)
+	if code, out := a.call("POST", "/api/v1/updates/rollback/undo", "", map[string]string{"X-Nodal-Confirm": "undo-rollback"}); code != http.StatusOK || out["action"] != "undo-rollback" {
+		t.Fatalf("undo %d %v", code, out["_raw"])
+	}
+	a.s.waitHostChange()
+	if len(host.reqs) != before+1 {
+		t.Fatalf("undo did not reach the host: %+v", host.reqs)
+	}
+	req := host.reqs[len(host.reqs)-1]
+	if req.Action != "rollback" || req.Version != "1.1.5" || req.CheckpointID != rb.CheckpointID {
+		t.Fatalf("undo must put 1.1.5 back with the database saved before the rollback: %+v", req)
+	}
+	// The rollback's copy expires with the same 3-day window.
+	a.s.Now = func() time.Time { return time.Now().UTC().Add(rollbackWindow + 2*time.Hour) }
+	a.s.wipeExpiredCheckpoint(context.Background(), a.cluster)
+	if at, _ := a.mem.CheckpointWiped(context.Background(), rb.ID); at == nil {
+		t.Fatal("the rollback's checkpoint must be wiped after 3 days")
+	}
+}

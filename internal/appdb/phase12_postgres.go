@@ -23,10 +23,10 @@ func (p *Postgres) CreateUpdateOperation(ctx context.Context, op UpdateOperation
 		return err
 	}
 	_, err = p.DB.ExecContext(ctx, `
-		INSERT INTO update_operations (id, cluster_id, action, status, dry_run, error, version, packages, candidates, started_at, finished_at, checkpoint_id, schema_version)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE(string_to_array(NULLIF($8, ''), ','), '{}'),$9,$10,$11,$12,$13)`,
+		INSERT INTO update_operations (id, cluster_id, action, status, dry_run, error, version, packages, candidates, started_at, finished_at, checkpoint_id, schema_version, restored_db)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE(string_to_array(NULLIF($8, ''), ','), '{}'),$9,$10,$11,$12,$13,$14)`,
 		op.ID, op.ClusterID, op.Action, op.Status, op.DryRun, op.Error, op.Version, strings.Join(op.Packages, ","), candidates, op.StartedAt, nullTime(op.FinishedAt),
-		op.CheckpointID, op.SchemaVersion)
+		op.CheckpointID, op.SchemaVersion, op.RestoredDB)
 	return err
 }
 
@@ -35,7 +35,7 @@ func (p *Postgres) ListUpdateOperations(ctx context.Context, clusterID string, l
 		limit = 50
 	}
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version
+SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version, restored_db
 FROM update_operations WHERE cluster_id=$1 ORDER BY started_at DESC LIMIT $2`, clusterID, limit)
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ FROM update_operations WHERE cluster_id=$1 ORDER BY started_at DESC LIMIT $2`, c
 
 func (p *Postgres) GetLatestUpdateOperation(ctx context.Context, clusterID string) (*UpdateOperation, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version
+SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version, restored_db
 FROM update_operations WHERE cluster_id=$1 ORDER BY started_at DESC LIMIT 1`, clusterID)
 	op, err := scanUpdateOperation(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -68,7 +68,7 @@ FROM update_operations WHERE cluster_id=$1 ORDER BY started_at DESC LIMIT 1`, cl
 
 func (p *Postgres) GetLatestCheckUpdateOperation(ctx context.Context, clusterID string) (*UpdateOperation, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version
+SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version, restored_db
 FROM update_operations WHERE cluster_id=$1 AND action='check' AND version <> '' ORDER BY started_at DESC, id ASC LIMIT 1`, clusterID)
 	op, err := scanUpdateOperation(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -82,7 +82,7 @@ FROM update_operations WHERE cluster_id=$1 AND action='check' AND version <> '' 
 
 func (p *Postgres) GetLatestUpdateOperationByAction(ctx context.Context, clusterID, action string) (*UpdateOperation, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version
+SELECT id::text, cluster_id::text, action, status, dry_run, error, version, COALESCE(array_to_string(packages, ','), ''), candidates, started_at, finished_at, checkpoint_id, schema_version, restored_db
 FROM update_operations WHERE cluster_id=$1 AND action=$2 ORDER BY started_at DESC LIMIT 1`, clusterID, action)
 	op, err := scanUpdateOperation(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -103,10 +103,10 @@ func (p *Postgres) UpdateUpdateOperation(ctx context.Context, op UpdateOperation
 UPDATE update_operations
 SET action=$3, status=$4, dry_run=$5, error=$6, version=$7,
     packages=COALESCE(string_to_array(NULLIF($8, ''), ','), '{}'), candidates=$9, finished_at=$10,
-    checkpoint_id=$11, schema_version=$12
+    checkpoint_id=$11, schema_version=$12, restored_db=$13
 WHERE cluster_id=$1 AND id=$2`,
 		op.ClusterID, op.ID, op.Action, op.Status, op.DryRun, op.Error, op.Version, strings.Join(op.Packages, ","), candidates, nullTime(op.FinishedAt),
-		op.CheckpointID, op.SchemaVersion)
+		op.CheckpointID, op.SchemaVersion, op.RestoredDB)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func scanUpdateOperation(s rowScanner) (UpdateOperation, error) {
 	var finished sql.NullTime
 	var pkgCSV string
 	var candidateJSON []byte
-	if err := s.Scan(&op.ID, &op.ClusterID, &op.Action, &op.Status, &op.DryRun, &op.Error, &op.Version, &pkgCSV, &candidateJSON, &op.StartedAt, &finished, &op.CheckpointID, &op.SchemaVersion); err != nil {
+	if err := s.Scan(&op.ID, &op.ClusterID, &op.Action, &op.Status, &op.DryRun, &op.Error, &op.Version, &pkgCSV, &candidateJSON, &op.StartedAt, &finished, &op.CheckpointID, &op.SchemaVersion, &op.RestoredDB); err != nil {
 		return UpdateOperation{}, err
 	}
 	if len(candidateJSON) > 0 {

@@ -902,6 +902,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicProfile"
+  /updates/rollback/undo:
+    post:
+      operationId: undoUpdateRollback
+      summary: Undo the last rollback within 3 days, from the checkpoint it saved first. Needs X-Nodal-Confirm undo-rollback.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateOperation"
   /updates/rollback/wipe:
     post:
       operationId: wipeUpdateRollback
@@ -20108,6 +20119,7 @@ components:
             - checkpoint
             - apply
             - rollback
+            - undo-rollback
             - repository-enable
         status:
           type: string
@@ -20182,6 +20194,8 @@ components:
           type: string
           description: Why backups are paused right now. Absent when they are not.
         rollback:
+          $ref: "#/components/schemas/UpdateRollback"
+        undo_rollback:
           $ref: "#/components/schemas/UpdateRollback"
         previous_version_kept:
           type: boolean

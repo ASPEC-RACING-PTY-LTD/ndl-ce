@@ -3991,3 +3991,7 @@ export async function deleteInstanceTemplate(id: string): Promise<void> {
     await readJson(res);
   }
 }
+
+export async function undoUpdateRollback(): Promise<import("../generated/openapi").UpdateOperation> {
+  return readJson(await request("/updates/rollback/undo", { method: "POST", headers: { "X-Nodal-Confirm": "undo-rollback" } }));
+}

@@ -44,12 +44,19 @@ type rollbackPlan struct {
 	Version      string
 	CheckpointID string
 	RestoresDB   bool
+	// Candidates are the package moves, recorded on the rollback so that
+	// undoing it knows which versions to put back.
+	Candidates []appdb.UpdateCandidate
 	// WindowEnds is when the checkpoint is wiped and rollback ends.
 	WindowEnds time.Time
 }
 
+// actionUndoRollback puts back what a rollback replaced, from the checkpoint
+// the rollback took first.
+const actionUndoRollback = "undo-rollback"
+
 func hostChange(action string) bool {
-	return action == "apply" || action == "rollback"
+	return action == "apply" || action == "rollback" || action == actionUndoRollback
 }
 
 func (s *Server) setStage(stage string) {
@@ -164,7 +171,9 @@ func (s *Server) startHostChange(ctx context.Context, clusterID, action string, 
 	}
 	if plan != nil {
 		op.Version = plan.Version
-		op.CheckpointID = plan.CheckpointID
+		op.Candidates = plan.Candidates
+		op.RestoredDB = plan.RestoresDB
+		op.SchemaVersion = latestSchemaVersion()
 	}
 	if err := s.Store.CreateUpdateOperation(ctx, op); err != nil {
 		return op, errInternal("could not record update operation")
@@ -194,6 +203,10 @@ func (s *Server) runHostChange(ctx context.Context, op appdb.UpdateOperation, pl
 	}
 	fail := func(msg string) { done(appdb.UpdateFailed, msg) }
 	req := hostos.UpdateRequest{Action: op.Action, Channel: hostos.ChannelStable}
+	if op.Action == actionUndoRollback {
+		// The host moves packages the same way for both directions.
+		req.Action = "rollback"
+	}
 	if op.Action == "apply" {
 		pre, err := s.updater().HostUpdate(ctx, hostos.UpdateRequest{Action: "preflight", Channel: hostos.ChannelStable, DryRun: true})
 		switch {
@@ -235,21 +248,21 @@ func (s *Server) runHostChange(ctx context.Context, op appdb.UpdateOperation, pl
 	s.updateStage.mu.Lock()
 	s.updateStage.paused = paused
 	s.updateStage.mu.Unlock()
-	if op.Action == "apply" {
-		s.setStage("Saving a checkpoint")
-		id := uuid.NewString()
-		cp, err := s.updater().HostUpdate(ctx, hostos.UpdateRequest{Action: "checkpoint", Channel: hostos.ChannelStable, CheckpointID: id})
-		if err != nil || cp.Status != appdb.UpdateSucceeded {
-			reason := "update agent is unavailable"
-			if err == nil {
-				reason = firstNonEmpty(cp.Reason, "checkpoint failed")
-			}
-			fail("The checkpoint could not be saved, so the update did not start: " + reason)
-			return
+	// Every change is preceded by a checkpoint (packages and database), so
+	// an update can be rolled back and a rollback can be undone.
+	s.setStage("Saving a checkpoint")
+	id := uuid.NewString()
+	cp, err := s.updater().HostUpdate(ctx, hostos.UpdateRequest{Action: "checkpoint", Channel: hostos.ChannelStable, CheckpointID: id})
+	if err != nil || cp.Status != appdb.UpdateSucceeded {
+		reason := "update agent is unavailable"
+		if err == nil {
+			reason = firstNonEmpty(cp.Reason, "checkpoint failed")
 		}
-		op.CheckpointID = id
-		s.persistHostChange(ctx, op)
+		fail("The checkpoint could not be saved, so nothing was changed: " + reason)
+		return
 	}
+	op.CheckpointID = id
+	s.persistHostChange(ctx, op)
 	if op.Action == "apply" {
 		s.setStage("Installing the update")
 	} else {
@@ -291,7 +304,7 @@ func (s *Server) planRollback(ctx context.Context, clusterID string) (rollbackPl
 		return rollbackPlan{}, "The last update is still running."
 	}
 	if rb, err := s.Store.GetLatestUpdateOperationByAction(ctx, clusterID, "rollback"); err == nil && rb != nil &&
-		rb.StartedAt.After(last.StartedAt) && rb.Status == appdb.UpdateSucceeded {
+		rb.StartedAt.After(last.StartedAt) && rb.Status == appdb.UpdateSucceeded && !s.rollbackUndone(ctx, clusterID, *rb) {
 		return rollbackPlan{}, "The last update was already rolled back."
 	}
 	if last.CheckpointID == "" {
@@ -321,9 +334,63 @@ func (s *Server) planRollback(ctx context.Context, clusterID string) (rollbackPl
 		return rollbackPlan{}, "The versions installed before the last update were not recorded, so it cannot be rolled back."
 	}
 	plan := rollbackPlan{ApplyID: last.ID, Version: version, CheckpointID: last.CheckpointID, WindowEnds: ends}
+	for _, c := range last.Candidates {
+		plan.Candidates = append(plan.Candidates, appdb.UpdateCandidate{Name: c.Name, CurrentVersion: c.CandidateVersion, CandidateVersion: c.CurrentVersion})
+	}
 	// The database is only restored when the update changed its schema:
 	// otherwise everything done since the update is kept.
 	plan.RestoresDB = last.SchemaVersion == "" || last.SchemaVersion != latestSchemaVersion()
+	return plan, ""
+}
+
+// rollbackUndone reports whether an undo finished after the rollback rb.
+func (s *Server) rollbackUndone(ctx context.Context, clusterID string, rb appdb.UpdateOperation) bool {
+	u, err := s.Store.GetLatestUpdateOperationByAction(ctx, clusterID, actionUndoRollback)
+	return err == nil && u != nil && u.StartedAt.After(rb.StartedAt) && u.Status == appdb.UpdateSucceeded
+}
+
+// planUndoRollback finds what the last rollback replaced, from the
+// checkpoint it took before it ran. It has the same 3-day window.
+func (s *Server) planUndoRollback(ctx context.Context, clusterID string) (rollbackPlan, string) {
+	rb, err := s.Store.GetLatestUpdateOperationByAction(ctx, clusterID, "rollback")
+	if err != nil || rb == nil || rb.DryRun {
+		return rollbackPlan{}, "Nothing has been rolled back, so there is nothing to undo."
+	}
+	if rb.Status == appdb.UpdateRunning {
+		return rollbackPlan{}, "The rollback is still running."
+	}
+	if rb.Status != appdb.UpdateSucceeded {
+		return rollbackPlan{}, "The last rollback did not finish, so there is nothing to undo."
+	}
+	if apply, err := s.Store.GetLatestUpdateOperationByAction(ctx, clusterID, "apply"); err == nil && apply != nil && apply.StartedAt.After(rb.StartedAt) {
+		return rollbackPlan{}, "An update was installed after the rollback, so it can no longer be undone."
+	}
+	if s.rollbackUndone(ctx, clusterID, *rb) {
+		return rollbackPlan{}, "The last rollback was already undone."
+	}
+	if rb.CheckpointID == "" {
+		return rollbackPlan{}, "No checkpoint was saved before the last rollback, so it cannot be undone."
+	}
+	if at, _ := s.Store.CheckpointWiped(ctx, rb.ID); at != nil {
+		return rollbackPlan{}, "The copy saved before the rollback was wiped on " + at.UTC().Format("2 Jan 2006 15:04 UTC") + ", so the rollback can no longer be undone."
+	}
+	ends := rollbackEnds(*rb)
+	if !s.now().Before(ends) {
+		return rollbackPlan{}, "The 3-day window to undo the rollback closed on " + ends.UTC().Format("2 Jan 2006 15:04 UTC") + "."
+	}
+	version := ""
+	for _, c := range rb.Candidates {
+		if c.CurrentVersion != "" && (c.Name == "nodal" || version == "") {
+			version = c.CurrentVersion
+		}
+	}
+	if version == "" {
+		return rollbackPlan{}, "The versions installed before the rollback were not recorded, so it cannot be undone."
+	}
+	plan := rollbackPlan{ApplyID: rb.ID, Version: version, CheckpointID: rb.CheckpointID, WindowEnds: ends, RestoresDB: rb.RestoredDB}
+	for _, c := range rb.Candidates {
+		plan.Candidates = append(plan.Candidates, appdb.UpdateCandidate{Name: c.Name, CurrentVersion: c.CandidateVersion, CandidateVersion: c.CurrentVersion})
+	}
 	return plan, ""
 }
 

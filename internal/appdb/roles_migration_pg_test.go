@@ -225,6 +225,22 @@ func TestRoleRenameMigrationOnPostgres(t *testing.T) {
 		t.Fatalf("delete template %v %v", ok, err)
 	}
 
+	// A rollback records that it restored the database (for undoing it).
+	op := UpdateOperation{ID: uuid.NewString(), ClusterID: cluster, Action: "rollback", Status: "succeeded", CheckpointID: uuid.NewString(), RestoredDB: true}
+	if err := pg.CreateUpdateOperation(ctx, op); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := pg.GetLatestUpdateOperationByAction(ctx, cluster, "rollback"); err != nil || got == nil || !got.RestoredDB || got.CheckpointID != op.CheckpointID {
+		t.Fatalf("rollback op %+v %v", got, err)
+	}
+	op.RestoredDB = false
+	if err := pg.UpdateUpdateOperation(ctx, op); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := pg.GetLatestUpdateOperationByAction(ctx, cluster, "rollback"); got == nil || got.RestoredDB {
+		t.Fatalf("restored_db not updated: %+v", got)
+	}
+
 	// Running 0076 again changes nothing.
 	snap := snapshot()
 	if _, err := db.ExecContext(ctx, rename.SQL); err != nil {

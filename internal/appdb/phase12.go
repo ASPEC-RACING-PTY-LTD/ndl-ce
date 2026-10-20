@@ -28,11 +28,14 @@ type UpdateOperation struct {
 	Candidates []UpdateCandidate
 	StartedAt  time.Time
 	FinishedAt *time.Time
-	// CheckpointID is the checkpoint an apply took right before installing.
+	// CheckpointID is the checkpoint an apply (or a rollback) took right
+	// before changing anything.
 	CheckpointID string
 	// SchemaVersion is the newest database migration before an apply. A
 	// rollback restores the checkpoint's database only when it changed.
 	SchemaVersion string
+	// RestoredDB is set on a rollback that restored the database.
+	RestoredDB bool
 }
 
 type UpdateCandidate struct {

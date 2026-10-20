@@ -51,13 +51,24 @@ export const ADMIN_SECTIONS: Section[] = [
     label: "Infrastructure",
     href: "/node",
     icon: "node",
-    description: "This node, storage, networking and the cluster.",
-    match: (p) => p === "/node" || p.startsWith("/node/") || under("/storage", "/network")(p) || p === "/cloudflare" || p === "/settings/cluster",
+    description: "This node, storage, networking, the cluster, Docker and CodeHold.",
+    match: (p) =>
+      p === "/node" ||
+      p.startsWith("/node/") ||
+      under("/storage", "/network", "/docker")(p) ||
+      p === "/cloudflare" ||
+      p === "/uptime" ||
+      p === "/settings/cluster" ||
+      p === "/codehold" ||
+      p === "/codehold/cli",
     children: [
       { id: "node", label: "Node", href: "/node", match: (p) => p === "/node" || p.startsWith("/node/") },
       { id: "storage", label: "Storage", href: "/storage", match: under("/storage") },
       { id: "network", label: "Network", href: "/network", match: (p) => under("/network")(p) || p === "/cloudflare" },
       { id: "cluster", label: "Cluster", href: "/settings/cluster", capability: "clustering" },
+      { id: "docker", label: "Docker", href: "/docker", capability: "docker", match: (p) => under("/docker")(p) || p === "/uptime" },
+      { id: "codehold", label: "CodeHold runners", href: "/codehold", capability: "codehold", match: exact("/codehold") },
+      { id: "codehold-cli", label: "CodeHold CLI", href: "/codehold/cli", capability: "codehold" },
     ],
   },
   {
@@ -160,10 +171,7 @@ export const INSTANCE_SECTIONS: Section[] = [
       p === "/workloads/new/system-container" ||
       p === "/instance/components" ||
       (p.startsWith("/workloads/") && !["/workloads/new/vm", "/workloads/new/oci", "/workloads/import"].includes(p) && !p.startsWith("/workloads/game-servers")),
-    children: [
-      { id: "create-ct", label: "Create system container", href: "/workloads/new/system-container" },
-      { id: "components", label: "Components", href: "/instance/components" },
-    ],
+    children: [{ id: "components", label: "Components", href: "/instance/components" }],
   },
   {
     id: "vms",
@@ -172,10 +180,6 @@ export const INSTANCE_SECTIONS: Section[] = [
     icon: "monitor",
     description: "Virtual machines.",
     match: exact("/instance/vms", "/workloads/new/vm", "/workloads/import"),
-    children: [
-      { id: "create-vm", label: "Create VM", href: "/workloads/new/vm" },
-      { id: "import-vm", label: "Import VM", href: "/workloads/import" },
-    ],
   },
   {
     id: "game-servers",
@@ -189,7 +193,6 @@ export const INSTANCE_SECTIONS: Section[] = [
       { id: "gs-all", label: "All servers", href: "/game-servers", match: exact("/game-servers") },
       { id: "gs-fav", label: "Favourites", href: "/game-servers/favourites" },
       { id: "gs-recent", label: "Recent", href: "/game-servers/recent" },
-      { id: "gs-create", label: "Create game server", href: "/game-servers/create" },
     ],
   },
   {
@@ -200,34 +203,6 @@ export const INSTANCE_SECTIONS: Section[] = [
     description: "Docker-compatible images run as lightweight containers.",
     capability: "oci",
     match: exact("/oci", "/workloads/new/oci"),
-    children: [{ id: "create-oci", label: "Create OCI container", href: "/workloads/new/oci" }],
-  },
-  {
-    id: "docker",
-    label: "Docker",
-    href: "/docker",
-    icon: "globe",
-    description: "Docker engines on this node and in containers.",
-    capability: "docker",
-    match: under("/docker"),
-    children: [
-      { id: "docker-engines", label: "Engines", href: "/docker", match: exact("/docker") },
-      { id: "docker-deploy", label: "Deployments", href: "/docker/deploy" },
-      { id: "docker-uptime", label: "Uptime", href: "/docker/uptime" },
-    ],
-  },
-  {
-    id: "codehold",
-    label: "CodeHold",
-    href: "/codehold",
-    icon: "activity",
-    description: "CodeHold runners and the CodeHold CLI.",
-    capability: "codehold",
-    match: exact("/codehold", "/codehold/cli"),
-    children: [
-      { id: "codehold-runners", label: "Runners", href: "/codehold", match: exact("/codehold") },
-      { id: "codehold-cli", label: "CodeHold CLI", href: "/codehold/cli" },
-    ],
   },
   {
     id: "templates",
@@ -247,12 +222,17 @@ export const INSTANCE_SECTIONS: Section[] = [
   },
 ];
 
-/** The order the "+ Create" menu lists instance types in, by main button id. */
+/**
+ * Every way to create an instance, in the order of the main buttons they
+ * belong to. Creating lives only in "+ Create": no instance type has a
+ * create button of its own.
+ */
 export const CREATE_ENTRIES: { section: string; label: string; href: string; capability?: string }[] = [
   { section: "workloads", label: "System container", href: "/workloads/new/system-container" },
   { section: "game-servers", label: "Game server", href: "/game-servers/create", capability: "gameservers" },
   { section: "oci", label: "OCI container", href: "/workloads/new/oci", capability: "oci" },
   { section: "vms", label: "Virtual machine", href: "/workloads/new/vm" },
+  { section: "vms", label: "Import a VM disk", href: "/workloads/import" },
 ];
 
 type Who = { roles?: string[]; grants?: string[] } | null;

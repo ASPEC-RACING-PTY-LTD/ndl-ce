@@ -736,6 +736,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/updates/checkpoint", s.checkpointUpdates)
 	mux.HandleFunc("POST /api/v1/updates/apply", s.applyUpdates)
 	mux.HandleFunc("POST /api/v1/updates/rollback", s.rollbackUpdates)
+	mux.HandleFunc("POST /api/v1/updates/rollback/undo", s.undoRollback)
 	mux.HandleFunc("POST /api/v1/updates/rollback/wipe", s.wipeRollback)
 	mux.HandleFunc("POST /api/v1/updates/repository", s.enableUpdateRepository)
 	mux.HandleFunc("POST /api/v1/auth/mfa/verify", s.verifyMFA)

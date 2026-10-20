@@ -3175,7 +3175,7 @@ export interface UpdateCandidate {
 
 export interface UpdateOperation {
   id: string;
-  action: "check" | "preflight" | "checkpoint" | "apply" | "rollback" | "repository-enable";
+  action: "check" | "preflight" | "checkpoint" | "apply" | "rollback" | "undo-rollback" | "repository-enable";
   status: "running" | "succeeded" | "failed" | "unsupported";
   dry_run: boolean;
   error?: string;
@@ -3199,6 +3199,7 @@ export interface UpdateStatus {
   paused_backups?: number;
   backups_paused?: string;
   rollback?: UpdateRollback;
+  undo_rollback?: UpdateRollback;
   previous_version_kept?: boolean;
   can_wipe_previous?: boolean;
   impact_notices?: UpdateImpactNotice[];
@@ -4217,6 +4218,8 @@ export type GetAppearancePath = "/api/v1/settings/appearance";
 export type GetMyAppearancePath = "/api/v1/me/appearance";
 
 export type GetUserProfilePath = "/api/v1/users/{id}/profile";
+
+export type UndoUpdateRollbackPath = "/api/v1/updates/rollback/undo";
 
 export type WipeUpdateRollbackPath = "/api/v1/updates/rollback/wipe";
 

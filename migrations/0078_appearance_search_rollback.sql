@@ -21,11 +21,14 @@ CREATE TABLE IF NOT EXISTS update_notices_delivered (
     PRIMARY KEY (cluster_id, notice_id)
 );
 
--- The checkpoint an apply took is wiped 3 days after the update, or sooner
--- by a SuperAdmin. After that the update cannot be rolled back.
+-- The checkpoint an apply (or a rollback) took is wiped 3 days later, or
+-- sooner by a SuperAdmin. After that it cannot be rolled back (or undone).
+-- restored_db records that a rollback restored the database, so undoing it
+-- restores the copy saved right before the rollback.
 ALTER TABLE update_operations
     ADD COLUMN IF NOT EXISTS checkpoint_wiped_at timestamptz,
-    ADD COLUMN IF NOT EXISTS checkpoint_wiped_by text NOT NULL DEFAULT '';
+    ADD COLUMN IF NOT EXISTS checkpoint_wiped_by text NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS restored_db boolean NOT NULL DEFAULT false;
 
 -- Social profile: shown to other signed-in people.
 ALTER TABLE account_profiles

@@ -272,19 +272,23 @@ func rollbackEnds(op appdb.UpdateOperation) time.Time {
 	return at.Add(rollbackWindow)
 }
 
+// wipeExpiredCheckpoint deletes the checkpoints of the last update and the
+// last rollback once their 3-day windows have closed.
 func (s *Server) wipeExpiredCheckpoint(ctx context.Context, clusterID string) {
-	last, err := s.Store.GetLatestUpdateOperationByAction(ctx, clusterID, "apply")
-	if err != nil || last == nil || last.CheckpointID == "" || last.Status == appdb.UpdateRunning {
-		return
-	}
-	if s.now().Before(rollbackEnds(*last)) {
-		return
-	}
-	if at, _ := s.Store.CheckpointWiped(ctx, last.ID); at != nil {
-		return
-	}
-	if err := s.wipeCheckpoint(ctx, *last, "system"); err != nil {
-		log.Printf("update: wiping the checkpoint of %s: %v", last.ID, err)
+	for _, action := range []string{"apply", "rollback"} {
+		last, err := s.Store.GetLatestUpdateOperationByAction(ctx, clusterID, action)
+		if err != nil || last == nil || last.CheckpointID == "" || last.Status == appdb.UpdateRunning {
+			continue
+		}
+		if s.now().Before(rollbackEnds(*last)) {
+			continue
+		}
+		if at, _ := s.Store.CheckpointWiped(ctx, last.ID); at != nil {
+			continue
+		}
+		if err := s.wipeCheckpoint(ctx, *last, "system"); err != nil {
+			log.Printf("update: wiping the checkpoint of %s: %v", last.ID, err)
+		}
 	}
 }
 
@@ -315,23 +319,32 @@ func (s *Server) wipeRollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	last, err := s.Store.GetLatestUpdateOperationByAction(ctx, p.User.ClusterID, "apply")
-	if err != nil || last == nil || last.CheckpointID == "" {
+	// The copies kept for the last update and for the last rollback.
+	var targets []appdb.UpdateOperation
+	for _, action := range []string{"apply", "rollback"} {
+		last, err := s.Store.GetLatestUpdateOperationByAction(ctx, p.User.ClusterID, action)
+		if err != nil || last == nil || last.CheckpointID == "" {
+			continue
+		}
+		if last.Status == appdb.UpdateRunning {
+			writeErr(w, http.StatusConflict, "the "+action+" is still running")
+			return
+		}
+		if at, _ := s.Store.CheckpointWiped(ctx, last.ID); at != nil {
+			continue
+		}
+		targets = append(targets, *last)
+	}
+	if len(targets) == 0 {
 		writeErr(w, http.StatusConflict, "there is no previous version to wipe")
 		return
 	}
-	if last.Status == appdb.UpdateRunning {
-		writeErr(w, http.StatusConflict, "the update is still running")
-		return
+	for _, op := range targets {
+		if err := s.wipeCheckpoint(ctx, op, p.User.Username); err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		s.audit(r, p.User.ClusterID, p.User.ID, "update.rollback.wipe", "ok", op.ID)
 	}
-	if at, _ := s.Store.CheckpointWiped(ctx, last.ID); at != nil {
-		writeErr(w, http.StatusConflict, "the previous version was already wiped")
-		return
-	}
-	if err := s.wipeCheckpoint(ctx, *last, p.User.Username); err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	s.audit(r, p.User.ClusterID, p.User.ID, "update.rollback.wipe", "ok", last.ID)
 	writeJSON(w, http.StatusOK, rollbackJSON(s.planRollback(ctx, p.User.ClusterID)))
 }

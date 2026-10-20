@@ -16,6 +16,7 @@ import { canMutate } from "../rbac";
 import { useSession } from "../session";
 import { Segmented } from "../ui/Segmented";
 import { CreateMenu } from "../nav/AreaFrames";
+import { useInstanceLayout } from "../appearance/state";
 import { navigate } from "../router";
 import { moveId, orderWorkloads, savedSort, shiftId, type WorkloadSort } from "../workloadOrder";
 
@@ -174,6 +175,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
   }
 
   const t = TITLES[kind];
+  const [layout] = useInstanceLayout();
   const showSelect = mutate && !editing;
   const leadCol = showSelect || editing;
   const nameSort = sort === "name" ? "name-desc" : "name";
@@ -188,31 +190,13 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
         actions={
           mutate ? (
             <div className="btn-row is-flush">
-              {kind === "vm" ? (
-                <>
-                  <Link className="btn btn-ghost" href="/workloads/import">
-                    Import VM
-                  </Link>
-                  <Link className="btn btn-primary" href="/workloads/new/vm">
-                    <Icon name="create" size={14} />
-                    Create VM
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <Link className="btn btn-ghost" href="/instance/components">
-                    Components
-                  </Link>
-                  {kind === "system-container" ? (
-                    <Link className="btn btn-primary" href="/workloads/new/system-container">
-                      <Icon name="create" size={14} />
-                      Create system container
-                    </Link>
-                  ) : (
-                    <CreateMenu />
-                  )}
-                </>
-              )}
+              {kind !== "vm" ? (
+                <Link className="btn btn-ghost" href="/instance/components">
+                  Components
+                </Link>
+              ) : null}
+              {/* In the Instance layout "+ Create" is in the page bar above. */}
+              {layout === "classic" ? <CreateMenu /> : null}
             </div>
           ) : null
         }
