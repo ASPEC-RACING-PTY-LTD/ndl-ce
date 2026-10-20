@@ -273,7 +273,7 @@ describe("Cloudflare permissions", () => {
   });
 });
 
-describe("Extensions page", () => {
+describe("Components page", () => {
   it("shows a failed Compose install with its reason and retries, updates all", async () => {
     const posts: string[] = [];
     mockApi({
@@ -306,7 +306,7 @@ describe("Extensions page", () => {
     });
     window.history.replaceState({}, "", "/workloads/w1/extensions");
     render(<App />);
-    const table = await screen.findByRole("table", { name: /extensions/i });
+    const table = await screen.findByRole("table", { name: /components/i });
     expect(within(table).getByText("context canceled")).toBeVisible();
     expect(within(table).getByText(/not in this image/i)).toBeVisible();
     fireEvent.click(within(table).getByRole("button", { name: /^retry$/i }));
@@ -403,11 +403,11 @@ describe("Create system container", () => {
     render(<App />);
     fireEvent.change(await screen.findByLabelText(/^name$/i), { target: { value: "vault" } });
     const steps = screen.getByRole("navigation", { name: /create steps/i });
-    fireEvent.click(within(steps).getByRole("button", { name: /extras/i }));
+    fireEvent.click(within(steps).getByRole("button", { name: /components/i }));
     fireEvent.click(await screen.findByText("Docker Compose"));
     fireEvent.click(within(steps).getByRole("button", { name: /review/i }));
     fireEvent.click(await screen.findByRole("button", { name: /create system container/i }));
-    expect(await screen.findByText(/extensions install in the background/i)).toBeVisible();
+    expect(await screen.findByText(/components install in the background/i)).toBeVisible();
     expect(await screen.findByText(/docker compose failed: context canceled/i, {}, { timeout: 8000 })).toBeVisible();
     expect(screen.getByText(/docker engine installed/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /retry failed setup/i })).toBeVisible();

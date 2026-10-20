@@ -79,6 +79,11 @@ export function unbindPrefs(): void {
   bound = false;
 }
 
+/** allPrefs is every saved preference (a snapshot; do not mutate). */
+export function allPrefs(): Record<string, unknown> {
+  return values;
+}
+
 export function getPref<T>(key: string, fallback: T): T {
   const v = values[key];
   return v === undefined ? fallback : (v as T);

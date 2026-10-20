@@ -10,6 +10,7 @@ const (
 	UpdateStatus          = "status"
 	UpdatePreflight       = "preflight"
 	UpdateCheckpoint      = "checkpoint"
+	UpdateCheckpointWipe  = "checkpoint-wipe"
 	UpdateApply           = "apply"
 	UpdateApplyStatus     = "apply-status"
 	UpdateRepoEnable      = "repository-enable"

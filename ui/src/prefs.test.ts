@@ -64,7 +64,13 @@ describe("themes", () => {
   });
 
   it("ignore saved values that are not themes", () => {
-    expect(parseThemePrefs({ mode: "neon", theme: "nope", accent: "red;}" })).toEqual({ mode: "system", theme: "nodal", accent: null });
+    expect(parseThemePrefs({ mode: "neon", theme: "nope", accent: "red;}", style: "evil", tokens: { "--x": "url(a)" } })).toEqual({
+      mode: "system",
+      theme: "nodal",
+      accent: null,
+      secondary: null,
+      style: "bubble",
+    });
   });
 });
 

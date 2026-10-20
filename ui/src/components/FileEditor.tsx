@@ -11,7 +11,7 @@ import { Field } from "./Field";
 loader.config({ monaco });
 
 let themeReady = false;
-function ensureTheme() {
+export function ensureMonacoTheme() {
   if (themeReady) {
     return;
   }
@@ -63,7 +63,7 @@ export function FileEditor({
   const originalPath = file.path || joinPath(dir, file.name);
 
   useEffect(() => {
-    ensureTheme();
+    ensureMonacoTheme();
   }, []);
 
   useEffect(() => {

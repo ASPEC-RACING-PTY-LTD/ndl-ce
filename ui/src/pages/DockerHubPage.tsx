@@ -1,25 +1,21 @@
-import { navigate } from "../router";
+import { PageNav, type PageNavItem } from "../components/PageNav";
 import { DeployPage } from "./DeployPage";
 import { DockerPage } from "./DockerPage";
 import { UptimePage } from "./UptimePage";
 
 export type DockerHubTab = "docker" | "deploy" | "uptime";
 
-/** DockerHubPage holds Docker, Deployments and Uptime under one sidebar entry, switched at the top. */
+const ITEMS: PageNavItem[] = [
+  { id: "docker", label: "Docker", href: "/docker", icon: "globe", match: (p) => p === "/docker" },
+  { id: "deploy", label: "Deployments", href: "/docker/deploy", icon: "transfer" },
+  { id: "uptime", label: "Uptime", href: "/docker/uptime", icon: "activity" },
+];
+
+/** DockerHubPage holds Docker, Deployments and Uptime under one sidebar entry, switched from its page bar. */
 export function DockerHubPage({ tab }: { tab: DockerHubTab }) {
   return (
     <section className="page page-wide">
-      <nav className="segmented" aria-label="Docker sections">
-        <button type="button" aria-pressed={tab === "docker"} onClick={() => navigate("/docker")}>
-          Docker
-        </button>
-        <button type="button" aria-pressed={tab === "deploy"} onClick={() => navigate("/docker/deploy")}>
-          Deployments
-        </button>
-        <button type="button" aria-pressed={tab === "uptime"} onClick={() => navigate("/docker/uptime")}>
-          Uptime
-        </button>
-      </nav>
+      <PageNav id="docker" label="Docker" icon="globe" items={ITEMS} />
       {tab === "docker" ? <DockerPage /> : tab === "deploy" ? <DeployPage /> : <UptimePage />}
     </section>
   );

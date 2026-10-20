@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
-import { Icon, type IconName } from "../components/Icon";
-import { Link } from "../components/Link";
+import type { IconName } from "../components/Icon";
+import { PageNav } from "../components/PageNav";
 import { SectionScopeProvider } from "../components/PageHeader";
 import { hasGrant } from "../rbac";
-import { usePath } from "../router";
 import { useSession } from "../session";
 
 type Section = { href: string; label: string; icon: IconName; permissions: string[] };
@@ -22,26 +21,22 @@ export function iamSections(user: { roles?: string[]; grants?: string[] } | null
 }
 
 /**
- * IAM pages share a header bar of sections across the top, so each page
+ * IAM pages share a page bar of sections across the top, so each page
  * gets the full width below it.
  */
 export function IAMLayout({ children }: { children: ReactNode }) {
-  const path = usePath();
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
+  const items = SECTIONS.filter((s) => s.permissions.some((p) => hasGrant(user, p))).map((s) => ({
+    id: s.href,
+    label: s.label,
+    href: s.href,
+    icon: s.icon,
+    match: (p: string) => p === s.href,
+  }));
   return (
     <section className="page page-wide iam-page" aria-label="Identity and Access Management">
-      <nav className="iam-bar" aria-label="IAM sections">
-        <span className="iam-bar-title">
-          <Icon name="shield" size={16} /> IAM
-        </span>
-        {SECTIONS.filter((s) => s.permissions.some((p) => hasGrant(user, p))).map((s) => (
-          <Link key={s.href} href={s.href} className="iam-bar-link" aria-current={path === s.href ? "page" : undefined}>
-            <Icon name={s.icon} size={14} />
-            {s.label}
-          </Link>
-        ))}
-      </nav>
+      <PageNav id="iam" label="IAM" icon="shield" items={items} />
       <SectionScopeProvider>{children}</SectionScopeProvider>
     </section>
   );

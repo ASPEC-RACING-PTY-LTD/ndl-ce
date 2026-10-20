@@ -171,6 +171,16 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 		body["backups_paused"] = reason
 	}
 	body["rollback"] = rollbackJSON(s.planRollback(r.Context(), p.User.ClusterID))
+	if last, err := s.Store.GetLatestUpdateOperationByAction(r.Context(), p.User.ClusterID, "apply"); err == nil && last != nil && last.CheckpointID != "" {
+		if at, _ := s.Store.CheckpointWiped(r.Context(), last.ID); at == nil {
+			body["previous_version_kept"] = true
+		}
+	}
+	body["can_wipe_previous"] = isOwner(p) || p.User.ID == LocalRootUserID
+	if version, notices := s.impact.get(); len(notices) > 0 {
+		body["impact_notices"] = notices
+		body["impact_version"] = version
+	}
 	writeJSON(w, http.StatusOK, body)
 }
 
@@ -220,12 +230,14 @@ func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
 		"changelog": changelog,
 		"dry_run":   true,
 	}
-	if version := availableVersion(upgrades); version != "" {
+	version := availableVersion(upgrades)
+	if version != "" {
 		body["version"] = version
 		if url := hostos.ReleaseURL(version); url != "" {
 			body["release_url"] = url
 		}
 	}
+	body["impact_notices"] = s.releaseNotices(r.Context(), p.User.ClusterID, version, res.Changelog)
 	writeJSON(w, http.StatusOK, body)
 }
 
@@ -465,13 +477,21 @@ func (s *Server) TickUpdateCheck(ctx context.Context) bool {
 	if err != nil || cluster == nil || cluster.SetupCompletedAt == nil {
 		return false
 	}
-	_, op, err := s.runUpdateOperation(ctx, cluster.ID, hostos.UpdateRequest{
+	res, op, err := s.runUpdateOperation(ctx, cluster.ID, hostos.UpdateRequest{
 		Action: "check", Channel: hostos.ChannelStable, DryRun: true,
 	})
 	if err != nil {
 		log.Printf("background update check: %v", err)
 		return false
 	}
+	var upgrades []map[string]string
+	for _, it := range res.Items {
+		if it.Action == "upgrade" {
+			upgrades = append(upgrades, map[string]string{"name": it.Name, "candidate_version": it.CandidateVersion})
+		}
+	}
+	// People affected by the next release hear about it before it is applied.
+	s.releaseNotices(ctx, cluster.ID, availableVersion(upgrades), res.Changelog)
 	return op.Status == appdb.UpdateSucceeded
 }
 

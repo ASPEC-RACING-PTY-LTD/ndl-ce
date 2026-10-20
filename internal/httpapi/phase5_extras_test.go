@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/no-dal/ndl-ce/internal/guestextras"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -110,8 +111,21 @@ func TestWorkloadCreateKeepsWorkloadWhenExtrasFail(t *testing.T) {
 	}
 	waitExtras(t, s, id)
 	exts, _ := mem.ListWorkloadExtensions(context.Background(), cluster.ID, id)
-	if len(exts) != 1 || exts[0].ExtraID != "docker" || exts[0].State != appdb.ExtensionFailed || exts[0].Message != "package install failed" {
+	byID := map[string]appdb.WorkloadExtension{}
+	for _, e := range exts {
+		byID[e.ExtraID] = e
+	}
+	if d := byID["docker"]; d.State != appdb.ExtensionFailed || d.Message != "package install failed" {
 		t.Fatalf("the failure and its reason must be recorded per extension: %+v", exts)
+	}
+	// The baseline tools are recorded too, so a failure there can be shown and retried.
+	for _, b := range guestextras.BaselineIDs() {
+		if _, ok := byID[b]; !ok {
+			t.Fatalf("baseline extra %s not recorded: %+v", b, exts)
+		}
+	}
+	if len(exts) != 1+len(guestextras.BaselineIDs()) {
+		t.Fatalf("only the picked extra and the baseline tools are recorded: %+v", exts)
 	}
 	row, err := mem.GetWorkload(context.Background(), cluster.ID, id)
 	if err != nil || row == nil {

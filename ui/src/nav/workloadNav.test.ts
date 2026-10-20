@@ -24,7 +24,7 @@ describe("buildWorkloadNav", () => {
       "Storage",
       "Storage",
       "Software",
-      "Extensions",
+      "Components",
       "Protection",
       "Snapshots",
       "Operations",

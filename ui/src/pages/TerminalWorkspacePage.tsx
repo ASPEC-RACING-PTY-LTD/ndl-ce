@@ -20,7 +20,7 @@ export function TerminalWorkspacePage() {
     activeId,
     recents,
     active,
-    setActive,
+    focusTab,
     openNew,
     newHere,
     duplicate,
@@ -136,7 +136,7 @@ export function TerminalWorkspacePage() {
                 if (drag.consumeClick()) {
                   return;
                 }
-                setActive(tab.tabId);
+                focusTab(tab.tabId);
               }}
               onMouseDown={(event) => {
                 if (event.button === 1) {
@@ -178,7 +178,7 @@ export function TerminalWorkspacePage() {
             <select
               className="field-input"
               value={activeId ?? ""}
-              onChange={(event) => setActive(event.target.value)}
+              onChange={(event) => focusTab(event.target.value)}
               aria-label="All terminal sessions"
             >
               {tabs.map((tab) => (

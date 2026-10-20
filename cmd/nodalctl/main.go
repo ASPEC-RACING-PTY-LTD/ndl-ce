@@ -188,7 +188,7 @@ func run(args []string) error {
   group add --name NAME
   group list
   group member add --id ID --user-id USER
-  group role bind --id ID --role operator|viewer
+  group role bind --id ID --role admin|user
   gpu list
   gpu assign --gpu-id BDF --workload-id ID --mode render|compute|encode|vfio [--exclusive]
   logs [--unit UNIT] [--lines N]
@@ -2029,11 +2029,11 @@ func cmdGroup(args []string) error {
 		return postJSON("/api/v1/groups/"+f["id"]+"/members", map[string]any{"user_id": userID}, true)
 	case "role":
 		if len(args) < 2 || args[1] != "bind" {
-			return fmt.Errorf("usage: nodalctl group role bind --id ID --role operator|viewer")
+			return fmt.Errorf("usage: nodalctl group role bind --id ID --role admin|user")
 		}
 		f := parseFlags(args[2:])
 		if f["id"] == "" || f["role"] == "" {
-			return fmt.Errorf("usage: nodalctl group role bind --id ID --role operator|viewer")
+			return fmt.Errorf("usage: nodalctl group role bind --id ID --role admin|user")
 		}
 		return postJSON("/api/v1/groups/"+f["id"]+"/roles", map[string]any{"role": f["role"]}, true)
 	default:

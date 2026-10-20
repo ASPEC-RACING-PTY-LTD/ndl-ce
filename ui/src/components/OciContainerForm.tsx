@@ -66,11 +66,14 @@ function parseEnv(text: string): { name: string; value: string }[] {
 export function OciContainerForm({
   workload,
   defaultGroupId = "",
+  preset,
   onDone,
   onCancel,
 }: {
   workload?: Workload;
   defaultGroupId?: string;
+  /** preset fills a new container's form from a settings template. */
+  preset?: { image?: string; cpus?: number; memory_bytes?: number; env?: Record<string, string> };
   onDone: (w: Workload, message: string) => void;
   onCancel?: () => void;
 }) {
@@ -88,11 +91,11 @@ export function OciContainerForm({
   const [pools, setPools] = useState<StoragePool[]>([]);
 
   const [name, setName] = useState(workload?.name ?? "");
-  const [image, setImage] = useState(spec.image_pin ?? workload?.image_pin ?? "");
+  const [image, setImage] = useState(spec.image_pin ?? workload?.image_pin ?? preset?.image ?? "");
   const [registryId, setRegistryId] = useState(spec.registry_id ?? "");
   const [groupId, setGroupId] = useState(defaultGroupId);
-  const [cpus, setCpus] = useState(String(spec.resources?.cpus ?? workload?.cpus ?? 1));
-  const [memoryGB, setMemoryGB] = useState(gbFromBytes(spec.resources?.memory_bytes ?? workload?.memory_bytes, 0.5));
+  const [cpus, setCpus] = useState(String(spec.resources?.cpus ?? workload?.cpus ?? preset?.cpus ?? 1));
+  const [memoryGB, setMemoryGB] = useState(gbFromBytes(spec.resources?.memory_bytes ?? workload?.memory_bytes ?? preset?.memory_bytes, 0.5));
   const initialMode = (spec.network_mode === "bridge" || spec.network_mode === "host" ? spec.network_mode : editing ? "none" : "bridge") as
     | "none"
     | "bridge"

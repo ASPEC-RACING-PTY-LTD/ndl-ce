@@ -75,6 +75,16 @@ import { SessionProvider, useSession } from "./session";
 import { ErrorNotice } from "./components/ErrorNotice";
 import { GlobalContextMenu } from "./components/ContextMenu";
 import { bindPrefsUser, unbindPrefs } from "./prefs";
+import { loadAppearanceDefaults, resetAppearanceDefaults, useInstanceLayout } from "./appearance/state";
+import { AdminHome, AreaFrame } from "./nav/AreaFrames";
+import { ThemePage } from "./pages/ThemePage";
+import { ThemeManagementPage } from "./pages/admin/ThemeManagementPage";
+import { SearchManagementPage } from "./pages/admin/SearchManagementPage";
+import { InstanceHomePage } from "./pages/InstanceHomePage";
+import { ComponentsPage } from "./pages/ComponentsPage";
+import { CodeholdCLIDialog } from "./components/CodeholdCLIDialog";
+import { ProfilePage, PublicProfilePage } from "./pages/ProfilePage";
+import { canMutate } from "./rbac";
 
 function GateNotice({ children }: { children: string }) {
   return (
@@ -104,15 +114,64 @@ function IAMHome() {
   return <Redirect to={first.href} />;
 }
 
+/** WorkloadsRoute is /workloads: system containers only in the Instance layout, everything in the classic one. */
+function WorkloadsRoute() {
+  const [layout] = useInstanceLayout();
+  return <WorkloadsPage fixedKind={layout === "instance" ? "system-container" : undefined} />;
+}
+
+function CodeholdCLIRoute() {
+  const session = useSession();
+  return <CodeholdCLIDialog open asPage canChange={canMutate(session.status === "ready" ? session.user?.roles : undefined)} onClose={() => undefined} />;
+}
+
 function matchPage(path: string) {
   if (path === "/me") {
     return <MePage />;
+  }
+  if (path === "/profile") {
+    return <ProfilePage />;
+  }
+  if (/^\/people\/[^/]+$/.test(path)) {
+    return <PublicProfilePage key={path} id={decodeURIComponent(path.split("/")[2])} />;
+  }
+  if (path === "/theme" || path.startsWith("/theme/")) {
+    return <ThemePage />;
+  }
+  if (path === "/admin") {
+    return <AdminHome />;
+  }
+  if (path === "/admin/theme") {
+    return (
+      <RequireGrant permission="settings.appearance.manage">
+        <ThemeManagementPage />
+      </RequireGrant>
+    );
+  }
+  if (path === "/admin/search") {
+    return (
+      <RequireGrant permission="search.manage">
+        <SearchManagementPage />
+      </RequireGrant>
+    );
+  }
+  if (path === "/instance") {
+    return <InstanceHomePage />;
+  }
+  if (path === "/instance/vms") {
+    return <WorkloadsPage fixedKind="vm" />;
+  }
+  if (path === "/instance/components") {
+    return <ComponentsPage />;
+  }
+  if (path === "/codehold/cli") {
+    return <CodeholdCLIRoute />;
   }
   if (path === "/tasks") {
     // Tasks live in the Audit Log; this keeps old links working.
     return <AuditPage initialSource="task" />;
   }
-  if (path === "/events" || path === "/node/events") {
+  if (path === "/events") {
     return <EventsPage />;
   }
   if (path === "/alerts") {
@@ -213,7 +272,7 @@ function matchPage(path: string) {
     return <WorkloadDetailPage />;
   }
   if (path === "/workloads") {
-    return <WorkloadsPage />;
+    return <WorkloadsRoute />;
   }
   if (path === "/uptime" || path === "/docker/uptime") {
     // Uptime lives on the Docker page; the old address still lands there.
@@ -434,7 +493,9 @@ function AppRoutes() {
   return (
     <NavDisclosureProvider>
       <Shell>
-        <TerminalWorkspaceProvider>{withFrame(path, <FeatureGate path={path}>{matchPage(path)}</FeatureGate>)}</TerminalWorkspaceProvider>
+        <TerminalWorkspaceProvider>
+          <AreaFrame>{withFrame(path, <FeatureGate path={path}>{matchPage(path)}</FeatureGate>)}</AreaFrame>
+        </TerminalWorkspaceProvider>
       </Shell>
     </NavDisclosureProvider>
   );
@@ -460,10 +521,25 @@ function PrefsBinder() {
   return null;
 }
 
+/** AppearanceBinder loads the theme and layouts an admin set for this person. */
+function AppearanceBinder() {
+  const session = useSession();
+  const uid = session.status === "ready" ? (session.user?.user_id ?? "") : "";
+  useEffect(() => {
+    if (uid) {
+      void loadAppearanceDefaults();
+    } else {
+      resetAppearanceDefaults();
+    }
+  }, [uid]);
+  return null;
+}
+
 export function App() {
   return (
     <SessionProvider>
       <PrefsBinder />
+      <AppearanceBinder />
       <GlobalContextMenu />
       <AppRoutes />
     </SessionProvider>

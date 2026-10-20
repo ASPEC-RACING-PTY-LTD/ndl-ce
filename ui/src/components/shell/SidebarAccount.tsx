@@ -7,7 +7,6 @@ import { useSession } from "../../session";
 import { THEME_KEY, parseThemePrefs, type ThemeMode } from "../../theme";
 import { Icon, type IconName } from "../Icon";
 import { Link } from "../Link";
-import { ThemeDialog } from "../ThemeDialog";
 import { Avatar } from "../Avatar";
 
 const MODES: { id: ThemeMode; label: string; icon: IconName }[] = [
@@ -16,11 +15,10 @@ const MODES: { id: ThemeMode; label: string; icon: IconName }[] = [
   { id: "system", label: "Match system", icon: "monitor" },
 ];
 
-/** SidebarAccount is the account button at the bottom of the sidebar. Its popup holds the account links, light and dark mode and the theme picker. */
+/** SidebarAccount is the account button at the bottom of the sidebar. Its popup holds the account links, light and dark mode and a way to the Theme page. */
 export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapsed: boolean }) {
   const session = useSession();
   const [open, setOpen] = useState(false);
-  const [themeOpen, setThemeOpen] = useState(false);
   const [rawTheme, setTheme] = usePref<unknown>(THEME_KEY, null);
   const theme = parseThemePrefs(rawTheme);
   const root = useRef<HTMLDivElement>(null);
@@ -102,20 +100,24 @@ export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapse
               title="Theme"
               onClick={() => {
                 setOpen(false);
-                setThemeOpen(true);
+                navigate("/theme");
               }}
             >
               <Icon name="palette" size={15} />
             </button>
           </div>
           <hr />
-          <Link href="/me" role="menuitem" onClick={() => setOpen(false)}>
+          <Link href="/profile" role="menuitem" onClick={() => setOpen(false)}>
             <Icon name="account" size={14} />
-            Account
+            Profile
           </Link>
-          <Link href="/settings/mfa" role="menuitem" onClick={() => setOpen(false)}>
-            <Icon name="key" size={14} />
-            Authenticator
+          <Link href="/me" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="settings" size={14} />
+            Settings
+          </Link>
+          <Link href="/theme" role="menuitem" onClick={() => setOpen(false)}>
+            <Icon name="palette" size={14} />
+            Theme
           </Link>
           <hr />
           <button type="button" role="menuitem" onClick={() => void onLogout()}>
@@ -124,7 +126,6 @@ export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapse
           </button>
         </div>
       ) : null}
-      <ThemeDialog open={themeOpen} onClose={() => setThemeOpen(false)} />
     </div>
   );
 }

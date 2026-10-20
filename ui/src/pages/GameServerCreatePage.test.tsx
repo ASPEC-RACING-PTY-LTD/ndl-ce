@@ -11,6 +11,8 @@ const admin: MeResponse = {
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
+  // These tests cover the classic sidebar, which lists every page.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 function jsonResponse(status: number, body?: unknown): Response {
@@ -234,7 +236,8 @@ describe("Create Game Server catalogue", () => {
     expect(await screen.findByLabelText(/admin password/i)).toBeVisible();
     expect(screen.getAllByLabelText(/server name/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    expect(await screen.findByRole("combobox")).toBeVisible();
+    // The header search box is a combobox too; the wizard's is in the page.
+    expect(await within(screen.getByRole("main")).findByRole("combobox")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /install server/i })).toBeVisible();

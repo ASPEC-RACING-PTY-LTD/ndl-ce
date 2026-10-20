@@ -17,6 +17,9 @@ import { canMutate, isAdmin } from "../rbac";
 import { storageGet, storageSet } from "../storage";
 import { useSession } from "../session";
 import "@xterm/xterm/css/xterm.css";
+import { TERMINAL_FONT_KEY, clampTerminalFont, stepTerminalFont } from "../appearance/state";
+import { getPref, setPref, subscribePrefs } from "../prefs";
+import { terminalColors } from "../theme";
 import { pushRecent } from "./catalog";
 import { decodeFrame, encodeFrame, encodeResize } from "./frames";
 import { defaultTabTitle } from "./names";
@@ -87,6 +90,8 @@ type WorkspaceValue = {
   pruneRecents: (live: TermTarget[]) => void;
   replaceCurrent: (target: TermTarget) => string;
   setActive: (tabId: string) => void;
+  /** focusTab makes a tab active and puts the keyboard in its terminal. */
+  focusTab: (tabId: string) => void;
   nextTab: () => void;
   prevTab: () => void;
   attach: (tabId: string, el: HTMLElement) => void;
@@ -128,12 +133,62 @@ function makeTerm(): { term: Terminal; fit: FitAddon; holder: HTMLDivElement } {
   holder.className = "term-hold";
   holder.setAttribute("aria-hidden", "true");
   document.body.appendChild(holder);
-  const term = new Terminal({ cursorBlink: true, fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" });
+  const term = new Terminal({
+    cursorBlink: true,
+    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+    fontSize: clampTerminalFont(getPref(TERMINAL_FONT_KEY, null)),
+    theme: terminalColors(),
+  });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(holder);
   registerTerminal(term);
+  // Ctrl + wheel steps the text size of every terminal; it is saved per person.
+  term.attachCustomWheelEventHandler?.((event) => {
+    if (!event.ctrlKey) {
+      return true;
+    }
+    event.preventDefault();
+    const cur = clampTerminalFont(getPref(TERMINAL_FONT_KEY, null));
+    const next = stepTerminalFont(cur, event.deltaY < 0 ? 1 : -1);
+    if (next !== cur) {
+      setPref(TERMINAL_FONT_KEY, next);
+    }
+    return false;
+  });
+  watchTerminalLook();
   return { term, fit, holder };
+}
+
+let lookWatched = false;
+let lastLook = "";
+
+// watchTerminalLook applies text size and theme colour changes to every open terminal.
+function watchTerminalLook(): void {
+  if (lookWatched) {
+    return;
+  }
+  lookWatched = true;
+  lastLook = JSON.stringify([clampTerminalFont(getPref(TERMINAL_FONT_KEY, null)), terminalColors()]);
+  subscribePrefs(() => {
+    const size = clampTerminalFont(getPref(TERMINAL_FONT_KEY, null));
+    const colours = terminalColors();
+    const look = JSON.stringify([size, colours]);
+    if (look === lastLook) {
+      return;
+    }
+    lastLook = look;
+    for (const [tabId, rt] of runtimes) {
+      rt.term.options.fontSize = size;
+      rt.term.options.theme = colours;
+      try {
+        rt.fit.fit();
+      } catch {
+        // jsdom has no canvas
+      }
+      sendPtySize(tabId);
+    }
+  });
 }
 
 // sendPtySize tells the remote shell the terminal's size. A shell that
@@ -841,6 +896,12 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
     sendPtySize(tabId);
   }, []);
 
+  const focusTab = useCallback((tabId: string) => {
+    setActiveId(tabId);
+    // After the pane has moved the terminal into view.
+    window.requestAnimationFrame(() => runtimes.get(tabId)?.term.focus());
+  }, []);
+
   const detach = useCallback((tabId: string) => {
     const rt = runtimes.get(tabId);
     if (!rt?.term.element) {
@@ -927,6 +988,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       replaceCurrent,
       pruneRecents,
       setActive: setActiveId,
+      focusTab,
       nextTab,
       prevTab,
       attach,
@@ -955,6 +1017,7 @@ export function TerminalWorkspaceProvider({ children }: { children: ReactNode })
       reopen,
       replaceCurrent,
       pruneRecents,
+      focusTab,
       nextTab,
       prevTab,
       attach,

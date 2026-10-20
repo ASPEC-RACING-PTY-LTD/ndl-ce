@@ -1270,6 +1270,8 @@ export type WorkloadExtra = {
   download?: boolean;
   /** New containers get it unless it is turned off for them. */
   default?: boolean;
+  /** Baseline tools go on every new container and are not listed for picking. */
+  baseline?: boolean;
 };
 
 export async function listWorkloadExtras(imagePin?: string) {
@@ -3894,4 +3896,98 @@ export async function getUnreadNotifications(): Promise<{ unread: number }> {
 /** Marks the given notifications read, or all of them when ids is empty. */
 export async function markNotificationsRead(ids: string[] = []): Promise<{ unread: number }> {
   return readJson(await request("/notifications/read", { method: "POST", body: JSON.stringify({ ids }) }));
+}
+
+// ---- Appearance, search, profiles, components (Round 4) ----
+
+export type MyAppearance = import("../generated/openapi").MyAppearance;
+export type AppearanceSettings = import("../generated/openapi").Appearance;
+export type SearchResults = import("../generated/openapi").SearchResults;
+export type SearchSettingsView = import("../generated/openapi").SearchSettingsView;
+export type SearchSettingsBody = import("../generated/openapi").SearchSettings;
+export type PublicProfile = import("../generated/openapi").PublicProfile;
+
+export async function getMyAppearance(): Promise<MyAppearance> {
+  return readJson(await request("/me/appearance"));
+}
+
+export async function getAppearanceSettings(): Promise<AppearanceSettings> {
+  return readJson(await request("/settings/appearance"));
+}
+
+export async function putAppearanceSettings(body: Partial<AppearanceSettings>): Promise<AppearanceSettings> {
+  return readJson(await request("/settings/appearance", { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function searchAll(
+  q: string,
+  opts: { kinds?: string[]; status?: string; node?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<SearchResults> {
+  const p = new URLSearchParams({ q });
+  if (opts.kinds?.length) {
+    p.set("kind", opts.kinds.join(","));
+  }
+  if (opts.status) {
+    p.set("status", opts.status);
+  }
+  if (opts.node) {
+    p.set("node", opts.node);
+  }
+  if (opts.limit) {
+    p.set("limit", String(opts.limit));
+  }
+  return readJson(await request(`/search?${p.toString()}`, { signal: opts.signal }));
+}
+
+export async function getSearchSettings(): Promise<SearchSettingsView> {
+  return readJson(await request("/search/settings"));
+}
+
+export async function putSearchSettings(body: SearchSettingsBody): Promise<SearchSettingsView> {
+  return readJson(await request("/search/settings", { method: "PUT", body: JSON.stringify(body) }));
+}
+
+export async function startSearchIndex(): Promise<SearchSettingsView> {
+  return readJson(await request("/search/index", { method: "POST" }));
+}
+
+export async function cancelSearchIndex(): Promise<SearchSettingsView> {
+  return readJson(await request("/search/index/cancel", { method: "POST" }));
+}
+
+export async function clearDeepSearchIndex(): Promise<SearchSettingsView> {
+  return readJson(await request("/search/index/deep", { method: "DELETE" }));
+}
+
+export async function getUserProfile(id: string): Promise<PublicProfile> {
+  return readJson(await request(`/users/${encodeURIComponent(id)}/profile`));
+}
+
+export async function wipeUpdateRollback(): Promise<import("../generated/openapi").UpdateRollback> {
+  return readJson(await request("/updates/rollback/wipe", { method: "POST", headers: { "X-Nodal-Confirm": "wipe-rollback" } }));
+}
+
+export async function bulkInstallComponents(body: { workload_ids: string[]; extras: string[] }): Promise<import("../generated/openapi").BulkComponentsResult> {
+  return readJson(await request("/workload-extras/bulk", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export type InstanceTemplate = import("../generated/openapi").InstanceTemplate;
+
+export async function listInstanceTemplates(kind?: string): Promise<{ items: InstanceTemplate[] }> {
+  return readJson(await request(`/instance-templates${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`));
+}
+
+export async function getInstanceTemplate(id: string): Promise<InstanceTemplate> {
+  return readJson(await request(`/instance-templates/${encodeURIComponent(id)}`));
+}
+
+export async function createInstanceTemplate(body: import("../generated/openapi").InstanceTemplateCreate): Promise<InstanceTemplate> {
+  return readJson(await request("/instance-templates", { method: "POST", body: JSON.stringify(body) }));
+}
+
+export async function deleteInstanceTemplate(id: string): Promise<void> {
+  const res = await request(`/instance-templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    await readJson(res);
+  }
 }

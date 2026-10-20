@@ -432,6 +432,14 @@ func (s *Server) setAutomationFlowEnabled(enabled bool) http.HandlerFunc {
 			writeErr(w, http.StatusConflict, "publish the flow before turning it on")
 			return
 		}
+		// A flow the approvals update turned off ran before protected steps
+		// needed approval: below SuperAdmin it must be approved first.
+		if enabled && f.DisabledReason == flowDisabledByUpdate && !isOwner(p) {
+			if def, err := s.automation().svc.Definition(r.Context(), *f); err == nil && len(s.protectedSteps(r.Context(), p.User.ClusterID, def)) > 0 {
+				writeErr(w, http.StatusConflict, "this flow has protected steps: publish it again so a SuperAdmin can approve it, or ask a SuperAdmin to turn it on")
+				return
+			}
+		}
 		f.Enabled = enabled
 		if enabled {
 			f.ConsecutiveFailures, f.DisabledReason = 0, ""

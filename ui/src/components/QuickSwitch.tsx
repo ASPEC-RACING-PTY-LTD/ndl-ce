@@ -95,6 +95,12 @@ export function QuickSwitch({
     storageSet(LAYOUT_KEY, next);
   }
 
+  // The latest callback, so a new function from the parent does not reload the list.
+  const onCatalogRef = useRef(onCatalog);
+  useEffect(() => {
+    onCatalogRef.current = onCatalog;
+  }, [onCatalog]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -124,7 +130,7 @@ export function QuickSwitch({
         // Only a successful workload list can prove a workload is gone.
         if (workloads) {
           setCatalogLoaded(true);
-          onCatalog?.(live);
+          onCatalogRef.current?.(live);
         }
       } catch (err) {
         if (!cancelled) {

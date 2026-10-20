@@ -44,6 +44,8 @@ type rollbackPlan struct {
 	Version      string
 	CheckpointID string
 	RestoresDB   bool
+	// WindowEnds is when the checkpoint is wiped and rollback ends.
+	WindowEnds time.Time
 }
 
 func hostChange(action string) bool {
@@ -295,6 +297,13 @@ func (s *Server) planRollback(ctx context.Context, clusterID string) (rollbackPl
 	if last.CheckpointID == "" {
 		return rollbackPlan{}, "The last update stopped before it installed anything, so there is nothing to roll back."
 	}
+	if at, _ := s.Store.CheckpointWiped(ctx, last.ID); at != nil {
+		return rollbackPlan{}, "The previous version was wiped on " + at.UTC().Format("2 Jan 2006 15:04 UTC") + ", so the last update can no longer be rolled back."
+	}
+	ends := rollbackEnds(*last)
+	if !s.now().Before(ends) {
+		return rollbackPlan{}, "The 3-day rollback window closed on " + ends.UTC().Format("2 Jan 2006 15:04 UTC") + "."
+	}
 	version := ""
 	for _, c := range last.Candidates {
 		if c.CurrentVersion == "" {
@@ -311,7 +320,7 @@ func (s *Server) planRollback(ctx context.Context, clusterID string) (rollbackPl
 	if version == "" {
 		return rollbackPlan{}, "The versions installed before the last update were not recorded, so it cannot be rolled back."
 	}
-	plan := rollbackPlan{ApplyID: last.ID, Version: version, CheckpointID: last.CheckpointID}
+	plan := rollbackPlan{ApplyID: last.ID, Version: version, CheckpointID: last.CheckpointID, WindowEnds: ends}
 	// The database is only restored when the update changed its schema:
 	// otherwise everything done since the update is kept.
 	plan.RestoresDB = last.SchemaVersion == "" || last.SchemaVersion != latestSchemaVersion()
@@ -322,5 +331,8 @@ func rollbackJSON(plan rollbackPlan, reason string) map[string]any {
 	if reason != "" {
 		return map[string]any{"available": false, "reason": reason}
 	}
-	return map[string]any{"available": true, "version": plan.Version, "restores_database": plan.RestoresDB}
+	return map[string]any{
+		"available": true, "version": plan.Version, "restores_database": plan.RestoresDB,
+		"window_ends_at": plan.WindowEnds.UTC().Format(time.RFC3339),
+	}
 }

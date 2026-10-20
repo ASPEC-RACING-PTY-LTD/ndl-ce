@@ -298,7 +298,10 @@ export function navIcon(label: string): IconName {
     case "Dashboard":
       return "dashboard";
     case "Workloads":
+    case "Instance":
       return "workloads";
+    case "Administration":
+      return "shield";
     case "Game Servers":
       return "game";
     case "Terminal":

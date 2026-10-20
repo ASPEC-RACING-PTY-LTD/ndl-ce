@@ -77,7 +77,37 @@ const STATUS_FILTERS = [
   { value: "available", label: "Not installed" },
 ];
 
+/**
+ * FEATURE_POPULARITY orders features by how widely self-hosters use them,
+ * from the selfh.st 2024 and 2025 surveys and r/selfhosted (Docker first,
+ * then reverse proxies and remote access, then the rest).
+ */
+export const FEATURE_POPULARITY = [
+  "docker",
+  "nginx",
+  "cloudflare",
+  "caddy",
+  "gpu",
+  "oci",
+  "gameservers",
+  "automation",
+  "clustering",
+  "advanced-storage",
+  "advanced-network",
+  "kubernetes",
+  "codehold",
+  "ai",
+  "integrations",
+];
+
+/** popularityRank is a feature's place in FEATURE_POPULARITY; unknown ones go last. */
+export function popularityRank(id: string): number {
+  const i = FEATURE_POPULARITY.indexOf(id);
+  return i < 0 ? FEATURE_POPULARITY.length : i;
+}
+
 const SORTS = [
+  { value: "popular", label: "Most used" },
   { value: "name", label: "Name" },
   { value: "category", label: "Category" },
   { value: "status", label: "Status" },
@@ -98,7 +128,7 @@ export function FeaturesPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
-  const [sort, setSort] = useState("name");
+  const [sort, setSort] = useState("popular");
   const [view, setView] = useResultsView("ndl-features-view", "grid");
   const [codeholdOff, setCodeholdOff] = useState(false);
   const focus = useMemo(() => new URLSearchParams(window.location.search).get("focus"), []);
@@ -177,8 +207,6 @@ export function FeaturesPage() {
   }
 
   const items = useMemo(() => list?.items ?? [], [list]);
-  const catalogIds = new Set(CAPABILITIES.map((cap) => cap.featureId).filter((id): id is string => Boolean(id)));
-  const coreItems = items.filter((item) => !catalogIds.has(item.id));
 
   const rows = useMemo(
     () =>
@@ -212,6 +240,9 @@ export function FeaturesPage() {
       }
       if (sort === "status") {
         return STATE_ORDER[a.state] - STATE_ORDER[b.state] || a.title.localeCompare(b.title);
+      }
+      if (sort === "popular") {
+        return popularityRank(a.cap.id) - popularityRank(b.cap.id) || a.title.localeCompare(b.title);
       }
       return a.title.localeCompare(b.title);
     });
@@ -405,23 +436,13 @@ export function FeaturesPage() {
       </ResultsToolbar>
 
       {!list && !error ? <LoadingState label="Loading features" /> : null}
-      {list && status !== "available" ? section("Installed", installed, "No installed feature matches.") : null}
-      {list && (status === "all" || status === "available") ? section("Available", available, "Every feature is installed.") : null}
-
-      {coreItems.length > 0 ? (
-        <article className="stack">
-          <h2>Included with the appliance</h2>
-          <ul className="feature-included">
-            {coreItems.map((item) => (
-              <li key={item.id}>{item.title}</li>
-            ))}
-          </ul>
-        </article>
+      {list ? (
+        <div className="features-split">
+          {status !== "available" ? section("Installed", installed, "No installed feature matches.") : null}
+          {status === "all" || status === "available" ? section("Not installed", available, "Every feature is installed.") : null}
+        </div>
       ) : null}
 
-      <p className="field-hint">
-        Sidebar layout moved to <Link href="/me?tab=appearance">Account → Appearance</Link>.
-      </p>
     </section>
   );
 }

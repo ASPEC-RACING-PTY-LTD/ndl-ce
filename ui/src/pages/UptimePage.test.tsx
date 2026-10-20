@@ -236,9 +236,10 @@ describe("Uptime on the Docker page", () => {
     render(<App />);
     await screen.findAllByRole("article", { name: /^monitor /i });
     expect(window.location.pathname).toBe("/docker/uptime");
-    const sections = screen.getByRole("navigation", { name: /docker sections/i });
-    expect(within(sections).getByRole("button", { name: /^uptime$/i })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("link", { name: /^uptime$/i })).toBeNull();
+    const sections = screen.getByRole("navigation", { name: /^docker$/i });
+    expect(within(sections).getByRole("link", { name: /^uptime$/i })).toHaveAttribute("aria-current", "page");
+    // Uptime has no sidebar entry of its own.
+    expect(within(screen.getByRole("navigation", { name: /^appliance$/i })).queryByRole("link", { name: /^uptime$/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /^scan docker$/i }));
     const dialog = await screen.findByRole("dialog", { name: /scan docker for sites/i });
@@ -254,7 +255,7 @@ describe("Uptime on the Docker page", () => {
     });
     expect(await within(dialog).findByText(/^saved\.$/i)).toBeVisible();
 
-    fireEvent.click(within(sections).getByRole("button", { name: /^docker$/i }));
+    fireEvent.click(within(sections).getByRole("link", { name: /^docker$/i }));
     expect(window.location.pathname).toBe("/docker");
   });
 });

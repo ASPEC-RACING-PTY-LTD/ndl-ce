@@ -374,7 +374,7 @@ func (s *Server) bindGroupRole(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "role is required")
 		return
 	}
-	role := canonicalRole(r, req.Role)
+	role := strings.TrimSpace(req.Role)
 	if role == "" {
 		writeErr(w, http.StatusBadRequest, "role is required")
 		return

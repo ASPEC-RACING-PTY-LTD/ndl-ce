@@ -607,6 +607,27 @@ type Store interface {
 	// MarkNotificationsRead marks ids read, or every unread one when ids is empty.
 	MarkNotificationsRead(ctx context.Context, clusterID, userID string, ids []string, at time.Time) error
 
+	// Appearance and search settings, update notices, rollback window and
+	// the search index (ui_settings.go).
+	GetUISettings(ctx context.Context, clusterID string) (UISettings, error)
+	PutUISettings(ctx context.Context, s UISettings) error
+	UpdateNoticeDelivered(ctx context.Context, clusterID, noticeID string) (bool, error)
+	MarkUpdateNoticeDelivered(ctx context.Context, clusterID, noticeID string) error
+	CheckpointWiped(ctx context.Context, opID string) (*time.Time, error)
+	MarkCheckpointWiped(ctx context.Context, opID, by string, at time.Time) error
+	ListInstanceTemplates(ctx context.Context, clusterID string) ([]InstanceTemplate, error)
+	GetInstanceTemplate(ctx context.Context, clusterID, id string) (*InstanceTemplate, error)
+	CreateInstanceTemplate(ctx context.Context, t InstanceTemplate) error
+	DeleteInstanceTemplate(ctx context.Context, clusterID, id string) (bool, error)
+	UpsertSearchDocs(ctx context.Context, docs []SearchDoc) error
+	DeleteStaleSearchDocs(ctx context.Context, clusterID, scope string, kinds []string, before time.Time) error
+	DeleteSearchDocs(ctx context.Context, clusterID, scope string) error
+	SearchDocs(ctx context.Context, q SearchQuery) ([]SearchDoc, error)
+	CountSearchDocs(ctx context.Context, clusterID string) (map[string]int, error)
+	CreateSearchJob(ctx context.Context, j SearchJob) error
+	UpdateSearchJob(ctx context.Context, j SearchJob) error
+	LatestSearchJob(ctx context.Context, clusterID string) (*SearchJob, error)
+
 	AutomationStore
 }
 

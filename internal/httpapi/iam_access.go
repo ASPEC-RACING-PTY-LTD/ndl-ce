@@ -227,7 +227,7 @@ func (s *Server) iamSaveRole(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	name := canonicalRole(r, strings.ToLower(strings.TrimSpace(r.PathValue("name"))))
+	name := strings.ToLower(strings.TrimSpace(r.PathValue("name")))
 	if name == rbac.SuperAdmin {
 		writeErr(w, http.StatusForbidden, "the SuperAdmin role always has every permission")
 		return
@@ -261,10 +261,6 @@ func (s *Server) iamSaveRole(w http.ResponseWriter, r *http.Request) {
 		if defs[i].Rank > maxRank {
 			maxRank = defs[i].Rank
 		}
-	}
-	if _, legacy := rbac.LegacyRole(name); legacy && existing == nil {
-		writeErr(w, http.StatusBadRequest, "that id belongs to a renamed built-in role; pick another name")
-		return
 	}
 	if existing != nil && !s.mayActOnRole(ctx, p, name) {
 		writeErr(w, http.StatusForbidden, "that role is at or above yours in the role hierarchy")
@@ -344,7 +340,7 @@ func (s *Server) iamDeleteRole(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	name := canonicalRole(r, r.PathValue("name"))
+	name := strings.TrimSpace(r.PathValue("name"))
 	if name == rbac.SuperAdmin {
 		writeErr(w, http.StatusForbidden, "the SuperAdmin role cannot be deleted")
 		return
@@ -359,7 +355,7 @@ func (s *Server) iamDeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Users who held the role can move to another one first.
-	if to := canonicalRole(r, r.URL.Query().Get("reassign")); to != "" && to != name {
+	if to := strings.TrimSpace(r.URL.Query().Get("reassign")); to != "" && to != name {
 		if !s.mayActOnRole(ctx, p, to) {
 			writeErr(w, http.StatusForbidden, "you cannot assign that role")
 			return
@@ -463,7 +459,7 @@ func (s *Server) iamSaveGroup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.Roles != nil {
-		roles = uniqueStrings(canonicalRoles(r, *req.Roles))
+		roles = uniqueStrings(*req.Roles)
 		if roles == nil {
 			roles = []string{}
 		}

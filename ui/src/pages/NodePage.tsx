@@ -9,15 +9,22 @@ import {
   getNodeMetrics,
   getNodeCapacity,
   getNodeSmart,
+  listEvents,
   listNodes,
   listWG,
   createWGPeer,
 } from "../api/client";
-import type { Capability, HardwareResponse, MetricsResponse, NodeSummary } from "../api/phase2";
+import type { Capability, EventItem, HardwareResponse, MetricSeries, MetricsResponse, NodeSummary } from "../api/phase2";
 import { MetricChart } from "../components/MetricChart";
 import { Link } from "../components/Link";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
+import { PageNav, type PageNavItem } from "../components/PageNav";
+import { FilesBrowser } from "../components/FilesBrowser";
+import { defaultFilesPath } from "../files/workspace";
+import { TerminalPage } from "./TerminalPage";
+import { usePref } from "../prefs";
+import { Segmented } from "../ui/Segmented";
 import { GpuPage } from "./GpuPage";
 import { formatBytes, formatWhen, honestStatus } from "../format";
 import { usePath } from "../router";
@@ -87,18 +94,7 @@ export function NodePage() {
     );
   }
 
-  const tab = path.startsWith("/node/hardware")
-    ? "hardware"
-    : path.startsWith("/node/metrics")
-      ? "metrics"
-      : path.startsWith("/node/logs")
-        ? "logs"
-      : path.startsWith("/node/events")
-        ? "events"
-      : path.startsWith("/node/gpu")
-        ? "gpu"
-        : "summary";
-
+  const tab = nodeTab(path);
   return (
     <section className="page page-wide" aria-labelledby="node-heading">
       <PageHeader
@@ -106,35 +102,57 @@ export function NodePage() {
         title="Node"
         kicker={`${nodes.host_os || "Host OS not reported"} · ${honestStatus(nodes.status)}${nodes.stale ? " (stale)" : ""}`}
       />
-      <nav className="subnav" aria-label="Node sections">
-        <Link href="/node" aria-current={tab === "summary" ? "page" : undefined}>
-          Summary
-        </Link>
-        <Link href="/node/hardware" aria-current={tab === "hardware" ? "page" : undefined}>
-          Hardware
-        </Link>
-        <Link href="/node/gpu" aria-current={tab === "gpu" ? "page" : undefined}>
-          GPU
-        </Link>
-        <Link href="/node/metrics" aria-current={tab === "metrics" ? "page" : undefined}>
-          Metrics
-        </Link>
-        <Link href="/node/logs" aria-current={tab === "logs" ? "page" : undefined}>
-          Logs
-        </Link>
-        <Link href="/events" aria-current={tab === "events" ? "page" : undefined}>
-          Events
-        </Link>
-        <Link href={`/nodes/${id}/terminal`}>Terminal</Link>
-        <Link href={`/nodes/${id}/files`}>Files</Link>
-      </nav>
+      <PageNav id="node" label="Node" icon="node" items={NODE_ITEMS} />
       {tab === "summary" ? <NodeSummaryView id={id} fallback={nodes} /> : null}
       {tab === "hardware" ? <NodeHardwareView id={id} /> : null}
-      {tab === "gpu" ? <GpuPage /> : null}
       {tab === "metrics" ? <NodeMetricsView id={id} /> : null}
-      {tab === "logs" ? <NodeLogsView id={id} /> : null}
+      {tab === "activity" ? <NodeActivityView id={id} /> : null}
+      {tab === "terminal" ? <TerminalPage key={id} target={{ kind: "node", id }} embedded /> : null}
+      {tab === "files" ? (
+        <div className="embed-files">
+          <div className="btn-row is-flush embed-actions">
+            <Link className="btn btn-ghost btn-sm" href="/files">
+              Open in Files
+            </Link>
+          </div>
+          <FilesBrowser key={id} kind="node" id={id} initialPath={defaultFilesPath("node")} embedded />
+        </div>
+      ) : null}
     </section>
   );
+}
+
+export type NodeTab = "summary" | "hardware" | "metrics" | "activity" | "terminal" | "files";
+
+const NODE_ITEMS: PageNavItem[] = [
+  { id: "summary", label: "Summary", href: "/node", icon: "node", match: (p) => p === "/node" },
+  { id: "hardware", label: "Hardware", href: "/node/hardware", icon: "diagnostics", match: (p) => nodeTab(p) === "hardware" },
+  { id: "metrics", label: "Metrics", href: "/node/metrics", icon: "activity" },
+  { id: "activity", label: "Events and logs", href: "/node/activity", icon: "events", match: (p) => nodeTab(p) === "activity" },
+  { id: "terminal", label: "Terminal", href: "/node/terminal", icon: "terminal" },
+  { id: "files", label: "Files", href: "/node/files", icon: "files" },
+];
+
+/** nodeTab maps a /node address to its section; old GPU, logs and events addresses land on their new homes. */
+export function nodeTab(path: string): NodeTab {
+  const part = path.split("/")[2] ?? "";
+  switch (part) {
+    case "hardware":
+    case "gpu":
+      return "hardware";
+    case "metrics":
+      return "metrics";
+    case "activity":
+    case "logs":
+    case "events":
+      return "activity";
+    case "terminal":
+      return "terminal";
+    case "files":
+      return "files";
+    default:
+      return "summary";
+  }
 }
 
 function NodeSummaryView({ id, fallback }: { id: string; fallback: NodeSummary }) {
@@ -247,7 +265,10 @@ function RemoteNodeHelper() {
     setBusy(true);
     setError(null);
     try {
-      const created = await createWGPeer({ name, endpoint: endpoint || undefined });
+      const created = await createWGPeer({
+        name,
+        endpoint: endpoint || undefined,
+      });
       setSnippet(
         JSON.stringify(
           {
@@ -332,6 +353,13 @@ function RemoteNodeHelper() {
 
 function NodeHardwareView({ id }: { id: string }) {
   const [hw, setHw] = useState<HardwareResponse | null>(null);
+  const [rawLayout, setRawLayout] = usePref<unknown>("node.hardware.layout", null);
+  const layout = parseLayout(
+    rawLayout,
+    HARDWARE_SECTIONS.map((x) => x.id),
+  );
+  const setLayout = (v: HardwareSection[] | undefined) => setRawLayout(v ?? null);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,6 +382,41 @@ function NodeHardwareView({ id }: { id: string }) {
     return <p>{hw.message || honestStatus(hw.status)}</p>;
   }
   const inv = hw.inventory as Inventory;
+  const hasGpu = (inv.gpus ?? []).length > 0;
+  const sections: Record<HardwareSection, ReactNode> = {
+    cpu: <HardwareTable title="CPU" rows={[inv.cpu ?? {}]} keys={["vendor", "model", "architecture", "sockets", "cores", "threads", "status"]} />,
+    memory: <HardwareTable title="Memory" rows={[inv.memory ?? {}]} keys={["total_bytes", "available_bytes", "dimm_status", "status"]} />,
+    gpu: hasGpu ? (
+      <article className="panel">
+        <h2>GPUs</h2>
+        <HardwareTable title="Detected" rows={inv.gpus ?? []} keys={["id", "vendor", "pci", "driver"]} bare />
+        <GpuPage />
+      </article>
+    ) : null,
+    disks: (
+      <HardwareTable
+        title="Block devices"
+        rows={inv.block_devices ?? []}
+        keys={["name", "model", "size_bytes", "kind", "transport", "smart_status"]}
+      />
+    ),
+    nics: <HardwareTable title="Network interfaces" rows={inv.nics ?? []} keys={["name", "mac", "state", "speed_mbps", "driver", "kind"]} />,
+    pci: <HardwareTable title="PCI" rows={inv.pci ?? []} keys={["address", "vendor", "device", "class", "driver"]} />,
+    usb: <HardwareTable title="USB" rows={inv.usb ?? []} keys={["address", "vendor", "product", "name"]} />,
+    temps: (
+      <HardwareTable title="Temperatures" rows={inv.temperatures ?? []} keys={["id", "name", "label", "milli_c", "status"]} empty="Unavailable" />
+    ),
+    firmware: (
+      <HardwareTable
+        title="IOMMU groups"
+        rows={iommuRows(inv.iommu)}
+        keys={["id", "devices"]}
+        empty={iommuEmpty(inv.iommu)}
+      />
+    ),
+    iommu: <HardwareTable title="IOMMU groups" rows={iommuRows(inv.iommu)} keys={["id", "devices"]} empty={iommuEmpty(inv.iommu)} />,
+  };
+  const shown = layout.filter((k) => sections[k] !== null);
   return (
     <div className="stack">
       {hw.stale ? (
@@ -361,27 +424,102 @@ function NodeHardwareView({ id }: { id: string }) {
           This inventory is stale. Values are the last observation, not zeros.
         </p>
       ) : null}
-      <HardwareTable title="CPU" rows={[inv.cpu ?? {}]} keys={["vendor", "model", "architecture", "sockets", "cores", "threads", "status"]} />
-      <HardwareTable title="Memory" rows={[inv.memory ?? {}]} keys={["total_bytes", "available_bytes", "dimm_status", "status"]} />
-      <HardwareTable title="Block devices" rows={inv.block_devices ?? []} keys={["name", "model", "size_bytes", "kind", "transport", "smart_status"]} />
-      <HardwareTable title="Network interfaces" rows={inv.nics ?? []} keys={["name", "mac", "state", "speed_mbps", "driver", "kind"]} />
-      <HardwareTable title="GPUs" rows={inv.gpus ?? []} keys={["id", "vendor", "pci", "driver"]} empty="None detected" />
-      <HardwareTable title="PCI" rows={inv.pci ?? []} keys={["address", "vendor", "device", "class", "driver"]} />
-      <HardwareTable title="USB" rows={inv.usb ?? []} keys={["address", "vendor", "product", "name"]} />
-      <HardwareTable title="Temperatures" rows={inv.temperatures ?? []} keys={["id", "name", "label", "milli_c", "status"]} empty="Unavailable" />
-      <HardwareTable title="Firmware" rows={[inv.firmware ?? {}]} keys={["sys_vendor", "product", "board", "bios_vendor", "bios_version", "status"]} />
-      <HardwareTable
-        title="IOMMU groups"
-        rows={iommuRows(inv.iommu)}
-        keys={["id", "devices"]}
-        empty={iommuEmpty(inv.iommu)}
-      />
+      <div className="btn-row is-flush">
+        <button className="btn btn-ghost btn-sm" type="button" aria-pressed={editing} onClick={() => setEditing((v) => !v)}>
+          {editing ? "Done" : "Customise layout"}
+        </button>
+      </div>
+      {editing ? (
+        <div className="panel widget-editor" aria-label="Hardware sections">
+          {HARDWARE_SECTIONS.filter((x) => x.id !== "gpu" || hasGpu).map((x) => {
+            const on = layout.includes(x.id);
+            return (
+              <div key={x.id} className="widget-editor-row">
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => setLayout(e.target.checked ? [...layout, x.id] : layout.filter((k) => k !== x.id))}
+                  />
+                  <span>{x.label}</span>
+                </label>
+                {on ? (
+                  <span className="btn-row is-flush">
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      type="button"
+                      aria-label={`Move ${x.label} earlier`}
+                      onClick={() => setLayout(shift(layout, x.id, -1))}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      type="button"
+                      aria-label={`Move ${x.label} later`}
+                      onClick={() => setLayout(shift(layout, x.id, 1))}
+                    >
+                      ↓
+                    </button>
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setLayout(undefined)}>
+            Reset
+          </button>
+        </div>
+      ) : null}
+      <div className="hw-grid">
+        {shown.map((k) => (
+          <div key={k} className={"hw-cell" + (k === "gpu" || k === "pci" || k === "iommu" ? " is-wide" : "")}>
+            {sections[k]}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
+type HardwareSection = "cpu" | "memory" | "gpu" | "disks" | "nics" | "pci" | "usb" | "temps" | "firmware" | "iommu";
+
+const HARDWARE_SECTIONS: { id: HardwareSection; label: string }[] = [
+  { id: "cpu", label: "CPU" },
+  { id: "memory", label: "Memory" },
+  { id: "gpu", label: "GPUs" },
+  { id: "disks", label: "Block devices" },
+  { id: "nics", label: "Network interfaces" },
+  { id: "pci", label: "PCI" },
+  { id: "usb", label: "USB" },
+  { id: "temps", label: "Temperatures" },
+  { id: "firmware", label: "Firmware" },
+  { id: "iommu", label: "IOMMU groups" },
+];
+
+/** parseLayout keeps known section ids in the saved order; nothing saved means all of them. */
+export function parseLayout<T extends string>(raw: unknown, all: readonly T[]): T[] {
+  if (!Array.isArray(raw)) {
+    return [...all];
+  }
+  return [...new Set(raw.filter((x): x is T => typeof x === "string" && (all as readonly string[]).includes(x)))];
+}
+
+function shift<T>(list: T[], id: T, delta: number): T[] {
+  const i = list.indexOf(id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= list.length) {
+    return list;
+  }
+  const next = [...list];
+  [next[i], next[j]] = [next[j], next[i]];
+  return next;
+}
+
 function NodeMetricsView({ id }: { id: string }) {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  const [view, setView] = usePref<"table" | "grid">("node.metrics.view", "table");
+  const [rawGrid, setRawGrid] = usePref<unknown>("node.metrics.grid", null);
   const [range, setRange] = useState("60");
   const [capacity, setCapacity] = useState<string>("Collecting");
   const [smart, setSmart] = useState<string>("Collecting");
@@ -420,37 +558,176 @@ function NodeMetricsView({ id }: { id: string }) {
     };
   }, [id, range]);
 
+  const series = metrics?.series ?? [];
+  const gridNames = parseLayout(
+    rawGrid,
+    series.map((x) => x.name),
+  );
   return (
     <div className="stack">
-      <label>
-        Range
-        <select value={range} onChange={(e) => setRange(e.target.value)}>
-          <option value="60">Last hour</option>
-          <option value="360">Last 6 hours</option>
-          <option value="1440">Last day</option>
-          <option value="10080">Last week</option>
-        </select>
-      </label>
-      <p className="muted">Capacity: {capacity}</p>
-      <p className="muted">SMART: {smart}</p>
+      <div className="toolbar">
+        <div className="toolbar-group">
+          <label className="field-inline">
+            Range
+            <select className="field-input" value={range} onChange={(e) => setRange(e.target.value)}>
+              <option value="60">Last hour</option>
+              <option value="360">Last 6 hours</option>
+              <option value="1440">Last day</option>
+              <option value="10080">Last week</option>
+            </select>
+          </label>
+          <Segmented<"table" | "grid">
+            ariaLabel="Metrics view"
+            value={view === "grid" ? "grid" : "table"}
+            onChange={(v) => setView(v)}
+            options={[
+              { id: "table", label: "Table" },
+              { id: "grid", label: "Charts" },
+            ]}
+          />
+        </div>
+      </div>
+      <dl className="kv-compact">
+        <dt>Capacity</dt>
+        <dd>{capacity}</dd>
+        <dt>SMART</dt>
+        <dd>{smart}</dd>
+      </dl>
       {!metrics ? (
         <p>Collecting data</p>
       ) : metrics.status === "stale" ? (
         <p className="chart-empty">Stale</p>
       ) : metrics.status === "unavailable" ? (
         <p className="chart-empty">Unavailable</p>
-      ) : !metrics.series.length ? (
+      ) : !series.length ? (
         <p className="chart-empty">Collecting data</p>
-      ) : (
-        <div className="card-grid">
-          {metrics.series.map((series) => (
-            <article className="panel" key={series.name}>
-              <h2>{series.name}</h2>
-              <MetricChart series={series} />
-            </article>
-          ))}
+      ) : view !== "grid" ? (
+        <div className="table-wrap">
+          <table aria-label="Metrics">
+            <thead>
+              <tr>
+                <th>Metric</th>
+                <th className="num">Now</th>
+                <th className="num">Lowest</th>
+                <th className="num">Highest</th>
+                <th className="num">Average</th>
+              </tr>
+            </thead>
+            <tbody>
+              {series.map((x) => {
+                const st = seriesStats(x);
+                return (
+                  <tr key={x.name}>
+                    <td>{x.name}</td>
+                    <td className="num">{metricValue(st.last, x.unit)}</td>
+                    <td className="num">{metricValue(st.min, x.unit)}</td>
+                    <td className="num">{metricValue(st.max, x.unit)}</td>
+                    <td className="num">{metricValue(st.avg, x.unit)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
+      ) : (
+        <>
+          <details className="panel metrics-pick">
+            <summary>Charts shown ({gridNames.length})</summary>
+            <div className="chip-row">
+              {series.map((x) => {
+                const on = gridNames.includes(x.name);
+                return (
+                  <button
+                    key={x.name}
+                    type="button"
+                    className="chip"
+                    aria-pressed={on}
+                    onClick={() => setRawGrid(on ? gridNames.filter((n) => n !== x.name) : [...gridNames, x.name])}
+                  >
+                    {x.name}
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+          <div className="fluid-grid">
+            {gridNames.map((name) => {
+              const x = series.find((v) => v.name === name);
+              return x ? (
+                <article className="panel" key={name}>
+                  <h2>{name}</h2>
+                  <MetricChart series={x} />
+                </article>
+              ) : null;
+            })}
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+/** seriesStats is the latest, lowest, highest and average value of a series. */
+export function seriesStats(x: MetricSeries): {
+  last?: number;
+  min?: number;
+  max?: number;
+  avg?: number;
+} {
+  const vals = x.points.map((p) => p.value).filter((v) => Number.isFinite(v));
+  if (!vals.length) {
+    return {};
+  }
+  return {
+    last: vals[vals.length - 1],
+    min: Math.min(...vals),
+    max: Math.max(...vals),
+    avg: vals.reduce((a, b) => a + b, 0) / vals.length,
+  };
+}
+
+function metricValue(v: number | undefined, unit?: string): string {
+  if (v === undefined) {
+    return "";
+  }
+  if (unit === "bytes") {
+    return formatBytes(v);
+  }
+  const n = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2).replace(/\.?0+$/, "");
+  return unit && unit !== "count" ? `${n} ${unit === "percent" ? "%" : unit}` : n;
+}
+
+/** NodeActivityView is this node's events and its service logs on one page. */
+function NodeActivityView({ id }: { id: string }) {
+  const [events, setEvents] = useState<EventItem[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    listEvents()
+      .then((items) => live && setEvents(items.filter((e) => !e.node_id || e.node_id === id).slice(0, 100)))
+      .catch(() => live && setEvents([]));
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  return (
+    <div className="node-activity">
+      <article className="panel">
+        <h2>Events</h2>
+        {events === null ? <LoadingState label="Loading events" /> : null}
+        {events && events.length === 0 ? <p className="muted">No events for this node.</p> : null}
+        {events && events.length > 0 ? (
+          <ul className="event-list">
+            {events.map((e) => (
+              <li key={e.id}>
+                <span className="cell-mono">{e.type}</span>
+                <span className="muted">{formatWhen(e.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <Link href="/events">All events</Link>
+      </article>
+      <NodeLogsView id={id} />
     </div>
   );
 }
@@ -483,6 +760,7 @@ function NodeLogsView({ id }: { id: string }) {
 
   return (
     <article className="panel">
+      <h2>Logs</h2>
       <label>
         Unit
         <select value={unit} onChange={(e) => setUnit(e.target.value)}>
@@ -507,16 +785,20 @@ function HardwareTable({
   rows,
   keys,
   empty,
+  bare = false,
 }: {
   title: string;
   rows: Record<string, unknown>[];
   keys: string[];
   empty?: string;
+  /** bare drops the panel, for a table inside another box. */
+  bare?: boolean;
 }) {
   const usable = rows.filter((row) => Object.keys(row).length > 0);
+  const Box = bare ? "div" : "article";
   return (
-    <article className="panel">
-      <h2>{title}</h2>
+    <Box className={bare ? undefined : "panel"}>
+      {bare ? <h3>{title}</h3> : <h2>{title}</h2>}
       {usable.length === 0 ? (
         <p>{empty || "Not reported"}</p>
       ) : (
@@ -541,7 +823,7 @@ function HardwareTable({
           </table>
         </div>
       )}
-    </article>
+    </Box>
   );
 }
 

@@ -64,23 +64,26 @@ func TestWorkloadCreateGetsCodeholdCLIUnlessTurnedOff(t *testing.T) {
 
 	// There is no built-in CodeHold server, so nothing is installed until an
 	// address is set.
+	// Every new container gets the baseline tools, so setup always runs;
+	// what matters is whether ch is in it.
+	hasCH := func() bool { return slices.Contains(fw.lastLife.Extras, guestextras.CodeholdCLI) }
 	create("unset", "")
-	if fw.setups != 0 {
+	if hasCH() {
 		t.Fatal("with no CodeHold address a new container must not get ch")
 	}
 	if code, b := do("PUT", "/api/v1/codehold-cli/settings", `{"url":"https://codehold.example.com","auto_install":true}`); code != 200 {
 		t.Fatalf("settings %d %s", code, b)
 	}
 	create("default", "")
-	if fw.setups != 1 || !slices.Equal(fw.lastLife.Extras, []string{guestextras.CodeholdCLI}) {
-		t.Fatalf("a new container must get ch by default: setups=%d extras=%v", fw.setups, fw.lastLife.Extras)
+	if !hasCH() || !slices.Equal(fw.lastLife.Extras, guestextras.WithBaseline([]string{guestextras.CodeholdCLI})) {
+		t.Fatalf("a new container must get ch and the baseline tools by default: extras=%v", fw.lastLife.Extras)
 	}
 	if fw.lastLife.Codehold == nil || fw.lastLife.Codehold.URL != "https://codehold.example.com" || fw.lastLife.Codehold.AccessClientSecret != "" {
 		t.Fatalf("the configured CodeHold address must be passed, without Access headers: %+v", fw.lastLife.Codehold)
 	}
 
 	create("opted-out", `,"codehold_cli":false`)
-	if fw.setups != 1 {
+	if hasCH() {
 		t.Fatal("codehold_cli false must keep ch out of that container")
 	}
 
@@ -88,11 +91,11 @@ func TestWorkloadCreateGetsCodeholdCLIUnlessTurnedOff(t *testing.T) {
 		t.Fatalf("settings %d %s", code, b)
 	}
 	create("global-off", "")
-	if fw.setups != 1 {
+	if hasCH() {
 		t.Fatal("with auto install off a new container must not get ch")
 	}
 	create("asked", `,"extras":["codehold-cli"]`)
-	if fw.setups != 2 || fw.lastLife.Codehold == nil || fw.lastLife.Codehold.URL != "https://code.example.com" {
+	if !hasCH() || fw.lastLife.Codehold == nil || fw.lastLife.Codehold.URL != "https://code.example.com" {
 		t.Fatalf("an explicit request must still install, from the configured address: %+v", fw.lastLife.Codehold)
 	}
 

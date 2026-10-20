@@ -44,7 +44,7 @@ describe("host tunnel approval", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restart" }));
     expect(await screen.findByText(/systemctl status cloudflared.service/)).toBeInTheDocument();
     expect(calls).toEqual([false]);
-    fireEvent.click(screen.getByRole("button", { name: /approve and continue/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /approve and continue/i }));
     await waitFor(() => expect(document.querySelector("output")?.textContent).toBe("restarted"));
     expect(calls).toEqual([false, true]);
   });

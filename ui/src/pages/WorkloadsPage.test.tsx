@@ -11,6 +11,8 @@ const admin: MeResponse = {
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
+  // The classic layout lists every instance type on /workloads.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 const viewer: MeResponse = {
@@ -18,6 +20,8 @@ const viewer: MeResponse = {
   user_id: "user-2",
   username: "view",
   roles: ["user"],
+  // The classic layout lists every instance type on /workloads.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 const containers = [

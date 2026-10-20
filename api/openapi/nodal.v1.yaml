@@ -694,6 +694,242 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationUnread"
+  /instance-templates:
+    get:
+      operationId: listInstanceTemplates
+      summary: Settings templates for system containers, OCI containers and game servers.
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceTemplateList"
+    post:
+      operationId: createInstanceTemplate
+      summary: Save a settings template, from fields or from an existing workload (compute.create).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstanceTemplateCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceTemplate"
+  /instance-templates/{id}:
+    get:
+      operationId: getInstanceTemplate
+      summary: One settings template.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceTemplate"
+    delete:
+      operationId: deleteInstanceTemplate
+      summary: Delete a settings template (compute.create).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+  /search:
+    get:
+      operationId: search
+      summary: Search everything the caller may see. Results are links; kind narrows to some result kinds.
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: node
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResults"
+  /search/settings:
+    get:
+      operationId: getSearchSettings
+      summary: Search settings, index sizes and the latest indexing run (search.manage).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchSettingsView"
+    put:
+      operationId: putSearchSettings
+      summary: Save search settings. Only SuperAdmins may change host file indexing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchSettings"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchSettingsView"
+  /search/index:
+    post:
+      operationId: startSearchIndex
+      summary: Start a deep indexing run. It runs in the background and resumes after a restart.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchSettingsView"
+  /search/index/cancel:
+    post:
+      operationId: cancelSearchIndex
+      summary: Stop the running deep indexing run.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchSettingsView"
+  /search/index/deep:
+    delete:
+      operationId: clearDeepSearchIndex
+      summary: Delete the deep index (file names). The primary index stays.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchSettingsView"
+  /settings/appearance:
+    get:
+      operationId: getAppearance
+      summary: Global theme, themes per role and group, layout defaults and the design profile limit (settings.appearance.manage).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appearance"
+    put:
+      operationId: putAppearance
+      summary: Save appearance settings. Only a SuperAdmin may change the design profile limit (1 to 3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Appearance"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appearance"
+  /me/appearance:
+    get:
+      operationId: getMyAppearance
+      summary: The theme and layouts the caller inherits from their group, role or the global setting.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyAppearance"
+  /users/{id}/profile:
+    get:
+      operationId: getUserProfile
+      summary: Someone's public profile (names, bio, picture, roles). No contact details.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicProfile"
+  /updates/rollback/wipe:
+    post:
+      operationId: wipeUpdateRollback
+      summary: Delete the previous version kept for rollback. SuperAdmin only; needs X-Nodal-Confirm wipe-rollback.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateRollback"
+  /workload-extras/bulk:
+    post:
+      operationId: bulkWorkloadComponents
+      summary: Install components on several system containers, or on all running ones when workload_ids is empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkComponentsRequest"
+      responses:
+        "202":
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkComponentsResult"
   /settings/trusted-proxies:
     get:
       operationId: getTrustedProxies
@@ -12386,6 +12622,10 @@ components:
           type: string
         avatar_updated_at:
           type: string
+        bio:
+          type: string
+        avatar_url:
+          type: string
         ip_allowlist:
           $ref: "#/components/schemas/IPAllowlist"
     AccountProfilePatch:
@@ -12396,6 +12636,10 @@ components:
         email:
           type: string
         email_secondary:
+          type: string
+        bio:
+          type: string
+        avatar_url:
           type: string
         current_password:
           type: string
@@ -13019,6 +13263,360 @@ components:
             $ref: "#/components/schemas/Notification"
         unread:
           type: integer
+    SearchResult:
+      type: object
+      required:
+        - kind
+        - id
+        - title
+        - link
+      properties:
+        kind:
+          type: string
+        id:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: string
+        link:
+          type: string
+        status:
+          type: string
+        node_id:
+          type: string
+    SearchFilter:
+      type: object
+      required:
+        - id
+        - label
+        - kinds
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        kinds:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        query:
+          type: string
+    SearchResults:
+      type: object
+      required:
+        - items
+        - counts
+        - filters
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResult"
+        counts:
+          type: object
+        filters:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchFilter"
+    DeepSearchSettings:
+      type: object
+      required:
+        - files
+        - host_files
+        - roots
+        - exclude
+        - max_depth
+        - max_files
+      properties:
+        files:
+          type: boolean
+        host_files:
+          type: boolean
+        roots:
+          type: array
+          items:
+            type: string
+        exclude:
+          type: array
+          items:
+            type: string
+        max_depth:
+          type: integer
+        max_files:
+          type: integer
+    SearchSettings:
+      type: object
+      required:
+        - deep
+        - filters
+      properties:
+        deep:
+          $ref: "#/components/schemas/DeepSearchSettings"
+        filters:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchFilter"
+        hidden_kinds:
+          type: array
+          items:
+            type: string
+    SearchKind:
+      type: object
+      required:
+        - id
+        - label
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+    SearchJob:
+      type: object
+      required:
+        - id
+        - status
+        - done
+        - total
+      properties:
+        id:
+          type: string
+        status:
+          enum:
+            - running
+            - done
+            - failed
+            - canceled
+        done:
+          type: integer
+        total:
+          type: integer
+        percent:
+          type: integer
+        eta_seconds:
+          type: integer
+        error:
+          type: string
+        started_by:
+          type: string
+        started_at:
+          type: string
+        updated_at:
+          type: string
+        finished_at:
+          type: string
+    SearchSettingsView:
+      type: object
+      required:
+        - settings
+        - kinds
+        - primary_count
+        - deep_count
+        - can_index_host
+      properties:
+        settings:
+          $ref: "#/components/schemas/SearchSettings"
+        kinds:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchKind"
+        primary_count:
+          type: integer
+        deep_count:
+          type: integer
+        job:
+          $ref: "#/components/schemas/SearchJob"
+        can_index_host:
+          type: boolean
+        primary_refreshed_at:
+          type: string
+    Appearance:
+      type: object
+      properties:
+        theme:
+          type: object
+        role_themes:
+          type: object
+        group_themes:
+          type: object
+        nav_layout:
+          enum:
+            - modern
+            - classic
+        instance_layout:
+          enum:
+            - instance
+            - classic
+        profile_limit:
+          type: integer
+        can_set_profile_limit:
+          type: boolean
+    MyAppearance:
+      type: object
+      required:
+        - nav_layout
+        - instance_layout
+        - profile_limit
+        - can_manage
+      properties:
+        theme:
+          type: object
+        theme_source:
+          type: string
+        nav_layout:
+          enum:
+            - modern
+            - classic
+        instance_layout:
+          enum:
+            - instance
+            - classic
+        profile_limit:
+          type: integer
+        can_manage:
+          type: boolean
+    InstanceTemplate:
+      type: object
+      required:
+        - id
+        - kind
+        - name
+        - spec
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+        source_workload_id:
+          type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+    InstanceTemplateList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstanceTemplate"
+    InstanceTemplateCreate:
+      type: object
+      properties:
+        kind:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        spec:
+          type: object
+          additionalProperties: true
+        workload_id:
+          type: string
+    PublicProfile:
+      type: object
+      required:
+        - user_id
+        - username
+        - display_name
+        - bio
+        - roles
+      properties:
+        user_id:
+          type: string
+        username:
+          type: string
+        display_name:
+          type: string
+        bio:
+          type: string
+        avatar_url:
+          type: string
+        avatar_updated_at:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        disabled:
+          type: boolean
+        created_at:
+          type: string
+    UpdateImpactNotice:
+      type: object
+      required:
+        - id
+        - audience
+        - text
+        - applies
+      properties:
+        id:
+          type: string
+        audience:
+          type: string
+        text:
+          type: string
+        applies:
+          type: boolean
+        detail:
+          type: string
+    BulkComponentsRequest:
+      type: object
+      required:
+        - extras
+      properties:
+        workload_ids:
+          type: array
+          items:
+            type: string
+        extras:
+          type: array
+          items:
+            type: string
+    BulkComponentsSkip:
+      type: object
+      required:
+        - id
+        - name
+        - reason
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        reason:
+          type: string
+    BulkComponentsResult:
+      type: object
+      required:
+        - started
+        - skipped
+        - extras
+      properties:
+        started:
+          type: array
+          items:
+            type: string
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkComponentsSkip"
+        extras:
+          type: array
+          items:
+            type: string
     NotificationUnread:
       type: object
       additionalProperties: false
@@ -16336,6 +16934,9 @@ components:
         download:
           type: boolean
           description: Installed from a download, not the guest's package manager.
+        baseline:
+          type: boolean
+          description: Installed on every new system container; not offered as a choice.
         default:
           type: boolean
           description: New containers get this extra unless it is turned off for them.
@@ -19582,6 +20183,18 @@ components:
           description: Why backups are paused right now. Absent when they are not.
         rollback:
           $ref: "#/components/schemas/UpdateRollback"
+        previous_version_kept:
+          type: boolean
+          description: True while the previous version is kept for rollback.
+        can_wipe_previous:
+          type: boolean
+          description: True for SuperAdmins, the only ones who may wipe the previous version.
+        impact_notices:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdateImpactNotice"
+        impact_version:
+          type: string
     UpdateRollback:
       type: object
       additionalProperties: false
@@ -19599,6 +20212,9 @@ components:
         restores_database:
           type: boolean
           description: True when the update changed the database, so the checkpoint taken before it is restored and later changes are lost.
+        window_ends_at:
+          type: string
+          description: When the 3-day rollback window closes and the previous version is wiped.
     UpdatePreviewItem:
       type: object
       additionalProperties: false
@@ -19656,6 +20272,10 @@ components:
         release_url:
           type: string
           description: GitHub release page for version. Absent when no published release can be named.
+        impact_notices:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpdateImpactNotice"
     UpdatePreflightCheck:
       type: object
       additionalProperties: false

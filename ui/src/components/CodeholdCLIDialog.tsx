@@ -56,7 +56,18 @@ function summaryLine(r: CodeholdCLIRollout): string {
  * where it comes from, whether new containers get it, and a bulk install or
  * update (with a dry run first) across the existing ones.
  */
-export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean; onClose: () => void; canChange: boolean }) {
+export function CodeholdCLIDialog({
+  open,
+  onClose,
+  canChange,
+  asPage = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  canChange: boolean;
+  /** asPage draws the same controls as a page (CodeHold → CodeHold CLI). */
+  asPage?: boolean;
+}) {
   const [settings, setSettings] = useState<CodeholdCLISettings | null>(null);
   const [rollout, setRollout] = useState<CodeholdCLIRollout | null>(null);
   const [update, setUpdate] = useState(false);
@@ -116,7 +127,11 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
     setBusy(true);
     setError(null);
     try {
-      const body = await startCodeholdCLIRollout({ dry_run: dryRun, update, include_stopped: includeStopped });
+      const body = await startCodeholdCLIRollout({
+        dry_run: dryRun,
+        update,
+        include_stopped: includeStopped,
+      });
       setRollout(body.rollout);
       if (dryRun) setChecked(true);
     } catch (err) {
@@ -129,35 +144,32 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
   const rows = rollout ? [...rollout.targets, ...(rollout.skipped ?? [])].sort((a, b) => a.name.localeCompare(b.name)) : [];
   const url = settings?.url.trim().replace(/\/+$/, "") || "";
 
-  return (
-    <Dialog
-      open={open}
-      title="CodeHold CLI in containers"
-      wide
-      onClose={onClose}
-      footer={
-        <div className="btn-row">
-          <button className="btn btn-ghost" type="button" onClick={onClose}>
-            Close
-          </button>
-          <span className="theme-spacer" />
-          <button className="btn btn-secondary" type="button" disabled={busy || running} onClick={() => void start(true)}>
-            Dry run
-          </button>
-          {canChange ? (
-            <button
-              className="btn btn-primary"
-              type="button"
-              disabled={busy || running || !checked}
-              title={checked ? undefined : "Run a dry run first"}
-              onClick={() => void start(false)}
-            >
-              {update ? "Install or update now" : "Install now"}
-            </button>
-          ) : null}
-        </div>
-      }
-    >
+  const buttons = (
+    <div className="btn-row">
+      {asPage ? null : (
+        <button className="btn btn-ghost" type="button" onClick={onClose}>
+          Close
+        </button>
+      )}
+      <span className="theme-spacer" />
+      <button className="btn btn-secondary" type="button" disabled={busy || running} onClick={() => void start(true)}>
+        Dry run
+      </button>
+      {canChange ? (
+        <button
+          className="btn btn-primary"
+          type="button"
+          disabled={busy || running || !checked}
+          title={checked ? undefined : "Run a dry run first"}
+          onClick={() => void start(false)}
+        >
+          {update ? "Install or update now" : "Install now"}
+        </button>
+      ) : null}
+    </div>
+  );
+  const content = (
+    <>
       {error ? <ErrorNotice error={error} /> : null}
       {settings === null && !error ? <LoadingState label="Reading settings" /> : null}
       {settings ? (
@@ -189,7 +201,12 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
                 max={20}
                 value={settings.concurrency}
                 disabled={!canChange}
-                onChange={(e) => setSettings({ ...settings, concurrency: Number(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    concurrency: Number(e.target.value) || 0,
+                  })
+                }
               />
             </label>
             <label className="field">
@@ -201,7 +218,12 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
                 max={3600}
                 value={settings.timeout_seconds}
                 disabled={!canChange}
-                onChange={(e) => setSettings({ ...settings, timeout_seconds: Number(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    timeout_seconds: Number(e.target.value) || 0,
+                  })
+                }
               />
             </label>
           </div>
@@ -267,6 +289,23 @@ export function CodeholdCLIDialog({ open, onClose, canChange }: { open: boolean;
           )}
         </>
       ) : null}
+    </>
+  );
+  if (asPage) {
+    return (
+      <section className="page page-wide" aria-labelledby="ch-cli-heading">
+        <header className="page-header">
+          <h1 id="ch-cli-heading">CodeHold CLI</h1>
+          <p className="page-lede">The ch client in system containers.</p>
+        </header>
+        <div className="panel admin-box">{content}</div>
+        <div className="sticky-actions">{buttons}</div>
+      </section>
+    );
+  }
+  return (
+    <Dialog open={open} title="CodeHold CLI in containers" wide onClose={onClose} footer={buttons}>
+      {content}
     </Dialog>
   );
 }

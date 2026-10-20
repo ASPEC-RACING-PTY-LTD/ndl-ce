@@ -41,7 +41,7 @@ export const featuresOnRoute = { status: 200, body: { items: featureItems(), bas
 export function enableUICapabilities(ids: string[] = ["clustering", "integrations", "advanced-network"]) {
   globalThis.localStorage?.setItem(
     "ndl-nav-disclosure",
-    JSON.stringify({ version: 1, template: "simple", enabled: ids, customVisible: [], customOrder: [] }),
+    JSON.stringify({ version: 1, enabled: ids }),
   );
 }
 

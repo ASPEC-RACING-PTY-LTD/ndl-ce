@@ -24,10 +24,20 @@ function cwdFromQuery(): string | null {
   return new URLSearchParams(window.location.search).get("cwd");
 }
 
-export function TerminalPage() {
+export function TerminalPage({
+  target: fixed,
+  embedded = false,
+}: {
+  /** target opens this host or workload instead of the one in the address. */
+  target?: { kind: "node" | "workload"; id: string };
+  /** embedded draws only the terminal, for another page (the Node page). */
+  embedded?: boolean;
+} = {}) {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const { kind, id } = idsFromPath();
+  const fromPath = idsFromPath();
+  const kind = fixed?.kind ?? fromPath.kind;
+  const id = fixed?.id ?? fromPath.id;
   const host = kind === "node";
   const canOpen = host ? isAdmin(roles) : canMutate(roles);
   const cwdParam = cwdFromQuery();
@@ -143,6 +153,20 @@ export function TerminalPage() {
           {host ? "Host terminal requires admin." : "Terminal requires operator or admin."}
         </p>
       </section>
+    );
+  }
+
+  if (embedded) {
+    return (
+      <div className="embed-term">
+        {error ? <ErrorNotice error={error} /> : null}
+        <div className="btn-row is-flush embed-actions">
+          <Link className="btn btn-ghost btn-sm" href="/terminal">
+            Open in Terminals
+          </Link>
+        </div>
+        <TerminalPane workspaceLink target={{ kind, id, name: existing?.target.name }} />
+      </div>
     );
   }
 

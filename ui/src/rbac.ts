@@ -35,6 +35,7 @@ export function hasGrant(user: GrantUser | null | undefined, perm: string): bool
     return (
       perm === "api_access.manage" ||
       perm === "updates.manage" ||
+      perm === "search.manage" ||
       perm === "feature.manage" ||
       perm === "identity.token.create" ||
       perm === "identity.group.manage" ||

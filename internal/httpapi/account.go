@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/netip"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -230,6 +231,8 @@ func (s *Server) profileJSON(ctx context.Context, u appdb.User) map[string]any {
 		"roles":           roles,
 		"mfa_enabled":     s.mfaEnabled(ctx, u.ID),
 		"ip_allowlist":    allowlistJSON(prof),
+		"bio":             prof.Bio,
+		"avatar_url":      prof.AvatarURL,
 	}
 	if !u.CreatedAt.IsZero() {
 		out["created_at"] = u.CreatedAt.UTC().Format(time.RFC3339)
@@ -275,6 +278,8 @@ func (s *Server) patchMyProfile(w http.ResponseWriter, r *http.Request) {
 		DisplayName     *string `json:"display_name"`
 		Email           *string `json:"email"`
 		EmailSecondary  *string `json:"email_secondary"`
+		Bio             *string `json:"bio"`
+		AvatarURL       *string `json:"avatar_url"`
 		CurrentPassword string  `json:"current_password"`
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -339,6 +344,28 @@ func (s *Server) patchMyProfile(w http.ResponseWriter, r *http.Request) {
 			changed = append(changed, "display_name")
 		}
 	}
+	if req.Bio != nil {
+		bio := strings.TrimSpace(*req.Bio)
+		if len([]rune(bio)) > maxBioLen {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("bio is longer than %d characters", maxBioLen))
+			return
+		}
+		if bio != prof.Bio {
+			prof.Bio = bio
+			changed = append(changed, "bio")
+		}
+	}
+	if req.AvatarURL != nil {
+		v, err := cleanAvatarURL(*req.AvatarURL)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if v != prof.AvatarURL {
+			prof.AvatarURL = v
+			changed = append(changed, "avatar_url")
+		}
+	}
 	prof.UpdatedAt = s.now()
 	if err := s.Store.UpsertAccountProfile(ctx, prof); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -348,6 +375,55 @@ func (s *Server) patchMyProfile(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, u.ClusterID, u.ID, "account.profile.update", "ok", strings.Join(changed, ","))
 	}
 	writeJSON(w, http.StatusOK, s.profileJSON(ctx, *u))
+}
+
+const maxBioLen = 600
+
+// cleanAvatarURL accepts an https image address, or empty to clear it.
+func cleanAvatarURL(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", nil
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Scheme != "https" || u.Host == "" || len(v) > 512 || u.User != nil {
+		return "", errors.New("the picture address must be an https:// link of up to 512 characters")
+	}
+	return u.String(), nil
+}
+
+// getUserPublicProfile is what any signed-in person sees when they open
+// someone's profile: names, bio, picture and roles. No contact details.
+func (s *Server) getUserPublicProfile(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.IdentityRead)
+	if err != nil {
+		return
+	}
+	ctx := r.Context()
+	u, _ := s.Store.GetUser(ctx, r.PathValue("id"))
+	if u == nil || u.ClusterID != p.User.ClusterID || u.Kind == appdb.UserKindService {
+		writeErr(w, http.StatusNotFound, "user not found")
+		return
+	}
+	prof := s.profileOf(ctx, *u)
+	roles, _ := s.Store.UserRoles(ctx, u.ID)
+	titles := []string{}
+	for _, d := range s.roleDefs(ctx, u.ClusterID) {
+		if containsString(roles, d.Name) {
+			titles = append(titles, firstNonEmpty(d.Title, d.Name))
+		}
+	}
+	out := map[string]any{
+		"user_id": u.ID, "username": u.Username, "display_name": u.DisplayName, "bio": prof.Bio,
+		"avatar_url": prof.AvatarURL, "roles": titles, "disabled": userDisabled(*u),
+	}
+	if !u.CreatedAt.IsZero() {
+		out["created_at"] = u.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	if av, _ := s.Store.GetUserAvatar(ctx, u.ID); av != nil {
+		out["avatar_updated_at"] = av.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) changeMyPassword(w http.ResponseWriter, r *http.Request) {

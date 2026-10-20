@@ -352,7 +352,8 @@ func (s *Server) createWorkload(w http.ResponseWriter, r *http.Request) {
 	if row.NodeID == "" {
 		row.NodeID = node.ID
 	}
-	if op, err := s.startExtensionsJob(p.User.ClusterID, row, req.Extras, extensionInstall); err != nil {
+	// Every new system container gets the baseline tools as well.
+	if op, err := s.startExtensionsJob(p.User.ClusterID, row, guestextras.WithBaseline(req.Extras), extensionInstall); err != nil {
 		out["setup_status"] = "warnings"
 		out["setup_warnings"] = []lxc.SetupWarning{{Extra: "setup", Message: err.Error()}}
 	} else if op != nil {

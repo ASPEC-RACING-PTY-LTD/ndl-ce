@@ -47,6 +47,13 @@ func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if next, ok := set[designProfilesKey]; ok {
+			limit := s.appearance(r.Context(), p.User.ClusterID).limit()
+			if err := checkDesignProfiles(cur[designProfilesKey], next, limit); err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		if err := s.Store.MergeUserUIPrefs(r.Context(), p.User.ID, p.User.ClusterID, set, remove); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
@@ -176,7 +183,7 @@ func cleanUIPrefs(cur, patch map[string]json.RawMessage) (map[string]json.RawMes
 			delete(sizes, k)
 			continue
 		}
-		if len(trimmed) > maxUIPrefValue {
+		if len(trimmed) > maxUIPrefValue && !(k == designProfilesKey && len(trimmed) <= maxProfilesBytes) {
 			return nil, nil, fmt.Errorf("ui_prefs %s is too large", k)
 		}
 		if !json.Valid(trimmed) {

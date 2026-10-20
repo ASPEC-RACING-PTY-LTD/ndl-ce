@@ -22,6 +22,7 @@ const (
 	noteIPRecovery      = "security.ip_recovery"
 	noteFlowDisabled    = "automation.disabled"
 	noteTokenCreated    = "security.token_created"
+	noteUpdateImpact    = "update.impact"
 	noteRolesChanged    = "security.roles_changed"
 )
 

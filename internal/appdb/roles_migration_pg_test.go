@@ -92,6 +92,8 @@ func TestRoleRenameMigrationOnPostgres(t *testing.T) {
 	exec(`INSERT INTO group_role_bindings (group_id, role_id) VALUES ($1,$2), ($1,$3)`, group, ids["operator"], ids["support"])
 	flowAlice, flowBob := uuid.NewString(), uuid.NewString()
 	exec(`INSERT INTO automation_flows (id, cluster_id, name, created_by) VALUES ($1,$2,'a','alice'), ($3,$2,'b','bob')`, flowAlice, cluster, flowBob)
+	flowOn := uuid.NewString()
+	exec(`INSERT INTO automation_flows (id, cluster_id, name, created_by, enabled) VALUES ($1,$2,'on','alice',true)`, flowOn, cluster)
 
 	if err := store.Apply(ctx, store.SQLDB{DB: db}, after); err != nil {
 		t.Fatal(err)
@@ -184,6 +186,43 @@ func TestRoleRenameMigrationOnPostgres(t *testing.T) {
 	_ = db.QueryRowContext(ctx, `SELECT draft_tainted FROM automation_flows WHERE id=$1`, flowBob).Scan(&taintB)
 	if taintA || !taintB {
 		t.Fatalf("taint alice=%v bob=%v", taintA, taintB)
+	}
+
+	// 0077 turns off every flow that was on, saying why.
+	var onEnabled bool
+	var onReason string
+	_ = db.QueryRowContext(ctx, `SELECT enabled, disabled_reason FROM automation_flows WHERE id=$1`, flowOn).Scan(&onEnabled, &onReason)
+	if onEnabled || !strings.Contains(onReason, "Turned off by the update") {
+		t.Fatalf("flow left on by 0077: enabled=%v reason=%q", onEnabled, onReason)
+	}
+
+	// 0078: appearance and search settings, search index and templates.
+	pg := &Postgres{DB: db}
+	if err := pg.PutUISettings(ctx, UISettings{ClusterID: cluster, Appearance: []byte(`{"nav_layout":"classic"}`), Search: []byte(`{}`), UpdatedBy: "alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := pg.GetUISettings(ctx, cluster); err != nil || !strings.Contains(string(got.Appearance), "classic") {
+		t.Fatalf("ui settings %s %v", got.Appearance, err)
+	}
+	if err := pg.UpsertSearchDocs(ctx, []SearchDoc{{ClusterID: cluster, Kind: "user", RefID: alice, Scope: "primary", Title: "alice", Body: "superadmin", Link: "/users", Permission: "users.read"}}); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := pg.SearchDocs(ctx, SearchQuery{ClusterID: cluster, Text: "alic", Allowed: func(p string) bool { return p == "users.read" }, Limit: 10})
+	if err != nil || len(docs) != 1 {
+		t.Fatalf("search %v %v", docs, err)
+	}
+	if docs, _ := pg.SearchDocs(ctx, SearchQuery{ClusterID: cluster, Text: "alic", Allowed: func(p string) bool { return p == "events.read" }, Limit: 10}); len(docs) != 0 {
+		t.Fatalf("search ignored access: %v", docs)
+	}
+	tmpl := InstanceTemplate{ID: uuid.NewString(), ClusterID: cluster, Kind: "oci", Name: "app", Spec: []byte(`{"image":"nginx"}`)}
+	if err := pg.CreateInstanceTemplate(ctx, tmpl); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := pg.ListInstanceTemplates(ctx, cluster); err != nil || len(list) != 1 || !strings.Contains(string(list[0].Spec), "nginx") {
+		t.Fatalf("templates %v %v", list, err)
+	}
+	if ok, err := pg.DeleteInstanceTemplate(ctx, cluster, tmpl.ID); err != nil || !ok {
+		t.Fatalf("delete template %v %v", ok, err)
 	}
 
 	// Running 0076 again changes nothing.

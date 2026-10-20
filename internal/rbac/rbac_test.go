@@ -171,14 +171,6 @@ func TestRoleIdsMatchTheirNames(t *testing.T) {
 			t.Fatalf("role %q is shown as %q", r.Name, r.Title)
 		}
 	}
-	for old, want := range map[string]string{"owner": SuperAdmin, "operator": Admin, "viewer": User} {
-		if got, ok := LegacyRole(old); !ok || got != want {
-			t.Fatalf("legacy %s -> %s %v", old, got, ok)
-		}
-	}
-	if _, ok := LegacyRole(Admin); ok {
-		t.Fatal("admin is a current id, not a legacy one")
-	}
 	seed := SeedRoles()
 	if len(seed[Automation]) != 1 || seed[Automation][0] != All {
 		t.Fatalf("flows run as the system: %v", seed[Automation])

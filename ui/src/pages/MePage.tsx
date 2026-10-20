@@ -1,45 +1,31 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ApiError,
   changeMyPassword,
   confirmMfa,
-  deleteMyAvatar,
   disableMyMfa,
   enrollMfa,
   getMe,
   getMyAllowlist,
   getMyIP,
   getMyProfile,
-  patchMe,
   patchMyProfile,
   putMyAllowlist,
-  putMyAvatar,
   signOutOtherSessions,
 } from "../api/client";
 import type { AccountProfile, ClientIPInfo, IPAllowlist, MFAEnrollResponse } from "../generated/openapi";
-import { Avatar, squareImage } from "../components/Avatar";
+import { Avatar } from "../components/Avatar";
+import { Link } from "../components/Link";
+import { NotificationsSection } from "./ThemePage";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { LoadingState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
-import { SidebarLayoutSettings } from "../components/SidebarLayoutSettings";
 import { formatWhen } from "../format";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { Segmented } from "../ui/Segmented";
-import { SelectionCard } from "../ui/SelectionCard";
-import { uxLevel, type UXLevel } from "../ux";
 
-type Tab = "profile" | "security" | "appearance";
-
-const LEVELS: { id: UXLevel; label: string; hint: string }[] = [
-  { id: "guided", label: "Guided", hint: "Step through create forms. Same APIs as Advanced." },
-  { id: "advanced", label: "Advanced", hint: "One form with every field visible. Same APIs as Guided." },
-  {
-    id: "expert",
-    label: "Expert",
-    hint: "Same forms plus a read-only JSON preview of the request body. Does not grant permissions.",
-  },
-];
+type Tab = "account" | "security" | "notifications";
 
 function errText(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : err instanceof Error ? err.message : fallback;
@@ -47,7 +33,7 @@ function errText(err: unknown, fallback: string): string {
 
 function tabFromURL(): Tab {
   const t = new URLSearchParams(window.location.search).get("tab");
-  return t === "security" || t === "appearance" ? t : "profile";
+  return t === "security" || t === "notifications" ? t : "account";
 }
 
 export function MePage() {
@@ -69,9 +55,16 @@ export function MePage() {
     void reload();
   }, [reload]);
 
+  // The interface level moved to Theme → Other.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "appearance") {
+      navigate("/theme/other", { replace: true });
+    }
+  }, []);
+
   function setTab(next: Tab) {
     setTabState(next);
-    navigate(next === "profile" ? "/me" : `/me?tab=${next}`, { replace: true });
+    navigate(next === "account" ? "/me" : `/me?tab=${next}`, { replace: true });
   }
 
   async function refreshUser() {
@@ -96,8 +89,13 @@ export function MePage() {
         <Avatar userID={user.user_id} name={shown} updatedAt={profile?.avatar_updated_at ?? user.avatar_updated_at} size={56} />
         <PageHeader
           id="me-heading"
-          title={shown}
-          kicker={`Signed in as ${user.username}${user.roles.length ? ` · ${user.roles.join(", ")}` : ""}`}
+          title="Settings"
+          kicker={`${shown} · signed in as ${user.username}${user.roles.length ? ` · ${user.roles.join(", ")}` : ""}`}
+          actions={
+            <Link className="btn btn-ghost" href="/profile">
+              Edit profile
+            </Link>
+          }
         />
       </div>
       <div className="hub-tabs">
@@ -106,16 +104,16 @@ export function MePage() {
           value={tab}
           onChange={setTab}
           options={[
-            { id: "profile", label: "Profile" },
-            { id: "security", label: "Security" },
-            { id: "appearance", label: "Appearance" },
+            { id: "account", label: "Account" },
+            { id: "security", label: "Security and Authenticator" },
+            { id: "notifications", label: "Notifications" },
           ]}
         />
       </div>
       {loadError ? <ErrorNotice error={loadError} /> : null}
       {!profile && !loadError ? <LoadingState label="Loading account" /> : null}
-      {profile && tab === "profile" ? (
-        <ProfileTab
+      {profile && tab === "account" ? (
+        <AccountTab
           profile={profile}
           onSaved={(p) => {
             setProfile(p);
@@ -123,21 +121,19 @@ export function MePage() {
           }}
         />
       ) : null}
+      {tab === "notifications" ? <NotificationsSection /> : null}
       {profile && tab === "security" ? <SecurityTab profile={profile} onChanged={() => void reload().then(refreshUser)} /> : null}
-      {tab === "appearance" ? <AppearanceTab /> : null}
     </section>
   );
 }
 
-function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSaved: (p: AccountProfile) => void }) {
-  const [displayName, setDisplayName] = useState(profile.display_name);
+function AccountTab({ profile, onSaved }: { profile: AccountProfile; onSaved: (p: AccountProfile) => void }) {
   const [email, setEmail] = useState(profile.email);
   const [email2, setEmail2] = useState(profile.email_secondary);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const emailChanged = email.trim() !== profile.email || email2.trim() !== profile.email_secondary;
 
   async function save() {
@@ -145,48 +141,12 @@ function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSaved: (p
     setError(null);
     setNotice(null);
     try {
-      const body: Parameters<typeof patchMyProfile>[0] = { display_name: displayName.trim() };
-      if (emailChanged) {
-        body.email = email.trim();
-        body.email_secondary = email2.trim();
-        body.current_password = password;
-      }
-      const next = await patchMyProfile(body);
+      const next = await patchMyProfile({ email: email.trim(), email_secondary: email2.trim(), current_password: password });
       setPassword("");
-      setNotice("Profile saved.");
+      setNotice("Email saved.");
       onSaved(next);
     } catch (err) {
       setError(errText(err, "Save failed"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onPicture(file: File | undefined) {
-    if (!file) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const blob = await squareImage(file);
-      onSaved(await putMyAvatar(blob));
-      setNotice("Picture updated.");
-    } catch (err) {
-      setError(errText(err, "Upload failed"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removePicture() {
-    setBusy(true);
-    try {
-      await deleteMyAvatar();
-      onSaved({ ...profile, avatar_updated_at: undefined });
-      setNotice("Picture removed.");
-    } catch (err) {
-      setError(errText(err, "Remove failed"));
     } finally {
       setBusy(false);
     }
@@ -201,41 +161,7 @@ function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSaved: (p
         </p>
       ) : null}
       <article className="panel stack">
-        <h2>Picture</h2>
-        <div className="inline-actions">
-          <Avatar userID={profile.user_id} name={profile.display_name || profile.username} updatedAt={profile.avatar_updated_at} size={72} />
-          <div className="btn-row is-flush">
-            <button className="btn" type="button" disabled={busy} onClick={() => fileInput.current?.click()}>
-              {profile.avatar_updated_at ? "Change picture" : "Upload picture"}
-            </button>
-            {profile.avatar_updated_at ? (
-              <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => void removePicture()}>
-                Remove
-              </button>
-            ) : null}
-          </div>
-          <input
-            ref={fileInput}
-            className="visually-hidden"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            aria-label="Choose a picture"
-            onChange={(e) => {
-              void onPicture(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </div>
-        <p className="field-hint">PNG, JPEG or WebP. It is cropped to a square.</p>
-      </article>
-
-      <article className="panel stack">
-        <h2>Names</h2>
-        <label htmlFor="acct-display">Display name</label>
-        <input id="acct-display" className="field-input" value={displayName} maxLength={128} onChange={(e) => setDisplayName(e.target.value)} />
-        <p className="field-hint">
-          Shown in the interface instead of your username. Audit logs and admins still see <code>{profile.username}</code>.
-        </p>
+        <h2>Account</h2>
         <dl className="definition-list">
           <div>
             <dt>Username</dt>
@@ -290,8 +216,8 @@ function ProfileTab({ profile, onSaved }: { profile: AccountProfile; onSaved: (p
       </article>
 
       <div className="btn-row is-flush">
-        <button className="btn btn-primary" type="button" disabled={busy || (emailChanged && !password)} onClick={() => void save()}>
-          Save profile
+        <button className="btn btn-primary" type="button" disabled={busy || !emailChanged || !password} onClick={() => void save()}>
+          Save email
         </button>
       </div>
     </div>
@@ -654,76 +580,5 @@ function SessionsPanel() {
         </button>
       </div>
     </article>
-  );
-}
-
-function AppearanceTab() {
-  const session = useSession();
-  const user = session.status === "ready" ? session.user : null;
-  const [level, setLevel] = useState<UXLevel>(uxLevel(user));
-  const [ack, setAck] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  if (!user) {
-    return null;
-  }
-  const alreadyAcked = Boolean(user.expert_ack);
-
-  async function onSave() {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      if (level === "expert" && !alreadyAcked && !ack) {
-        setError("Expert requires a one-time acknowledgement.");
-        return;
-      }
-      session.applyUser(await patchMe({ ux_level: level, expert_ack: ack || undefined }));
-      setNotice("Interface level saved.");
-    } catch (err) {
-      setError(errText(err, "Save failed"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="account-grid">
-      <article className="panel stack">
-        <h2>Interface level</h2>
-        <p className="lede">Guided, Advanced and Expert change how forms are shown. They never change what you may do.</p>
-        {error ? <ErrorNotice error={error} /> : null}
-        {notice ? (
-          <p className="banner banner-ok" role="status">
-            {notice}
-          </p>
-        ) : null}
-        <div className="feature-templates" role="radiogroup" aria-label="Interface level">
-          {LEVELS.map((item) => (
-            <SelectionCard
-              key={item.id}
-              role="radio"
-              title={item.label}
-              description={item.hint}
-              selected={level === item.id}
-              onSelect={() => setLevel(item.id)}
-            />
-          ))}
-        </div>
-        {level === "expert" && !alreadyAcked ? (
-          <label className="check-row">
-            <input type="checkbox" checked={ack} onChange={(event) => setAck(event.target.checked)} /> I understand Expert mode does not
-            grant extra permissions and only shows more of the same APIs.
-          </label>
-        ) : null}
-        <div className="btn-row is-flush">
-          <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void onSave()}>
-            Save interface level
-          </button>
-        </div>
-      </article>
-      <SidebarLayoutSettings />
-    </div>
   );
 }

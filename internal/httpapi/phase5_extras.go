@@ -260,6 +260,7 @@ func extensionJSON(av guestextras.Availability, x *appdb.WorkloadExtension) map[
 	out := map[string]any{
 		"id": av.Extra.ID, "name": av.Extra.Name, "description": av.Extra.Description, "category": av.Extra.Category,
 		"requires": av.Extra.Requires, "available": av.Available, "state": appdb.ExtensionMissing, "requested": false,
+		"baseline": av.Extra.Baseline,
 	}
 	if av.Reason != "" {
 		out["unavailable_reason"] = av.Reason
@@ -394,4 +395,60 @@ func (s *Server) changeWorkloadExtensions(w http.ResponseWriter, r *http.Request
 		out["operation_id"] = op.ID
 	}
 	writeJSON(w, http.StatusAccepted, out)
+}
+
+// bulkWorkloadExtras installs extras (Components) on several system
+// containers at once, or on every running one when no ids are given.
+func (s *Server) bulkWorkloadExtras(w http.ResponseWriter, r *http.Request) {
+	p, err := s.require(w, r, rbac.ComputeModify)
+	if err != nil {
+		return
+	}
+	var req struct {
+		WorkloadIDs []string `json:"workload_ids"`
+		Extras      []string `json:"extras"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	extras := guestextras.Resolve(req.Extras)
+	if len(extras) == 0 {
+		writeErr(w, http.StatusBadRequest, "pick at least one component")
+		return
+	}
+	ctx := r.Context()
+	rows, err := s.Store.ListWorkloads(ctx, p.User.ClusterID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	want := map[string]bool{}
+	for _, id := range req.WorkloadIDs {
+		want[id] = true
+	}
+	started := []string{}
+	skipped := []map[string]string{}
+	for _, row := range rows {
+		if len(want) > 0 && !want[row.ID] {
+			continue
+		}
+		if row.Kind != lxc.KindSystemContainer {
+			if len(want) > 0 {
+				skipped = append(skipped, map[string]string{"id": row.ID, "name": row.Name, "reason": "components install on system containers only"})
+			}
+			continue
+		}
+		if row.DesiredPower == "stopped" || strings.EqualFold(row.Status, lxc.StatusStopped) {
+			skipped = append(skipped, map[string]string{"id": row.ID, "name": row.Name, "reason": "stopped; start it first"})
+			continue
+		}
+		if _, err := s.startExtensionsJob(p.User.ClusterID, row, extras, extensionInstall); err != nil {
+			skipped = append(skipped, map[string]string{"id": row.ID, "name": row.Name, "reason": err.Error()})
+			continue
+		}
+		started = append(started, row.ID)
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "workload.components.bulk", "ok", strings.Join(extras, ","))
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": started, "skipped": skipped, "extras": extras})
 }

@@ -12,6 +12,8 @@ export interface AccountProfile {
   created_at?: string;
   last_login_at?: string;
   avatar_updated_at?: string;
+  bio?: string;
+  avatar_url?: string;
   ip_allowlist: IPAllowlist;
 }
 
@@ -19,6 +21,8 @@ export interface AccountProfilePatch {
   display_name?: string;
   email?: string;
   email_secondary?: string;
+  bio?: string;
+  avatar_url?: string;
   current_password?: string;
 }
 
@@ -241,6 +245,153 @@ export interface Notification {
 export interface NotificationList {
   items: Notification[];
   unread: number;
+}
+
+export interface SearchResult {
+  kind: string;
+  id: string;
+  title: string;
+  subtitle?: string;
+  link: string;
+  status?: string;
+  node_id?: string;
+}
+
+export interface SearchFilter {
+  id: string;
+  label: string;
+  kinds: string[];
+  status?: string;
+  query?: string;
+}
+
+export interface SearchResults {
+  items: SearchResult[];
+  counts: Record<string, unknown>;
+  filters: SearchFilter[];
+}
+
+export interface DeepSearchSettings {
+  files: boolean;
+  host_files: boolean;
+  roots: string[];
+  exclude: string[];
+  max_depth: number;
+  max_files: number;
+}
+
+export interface SearchSettings {
+  deep: DeepSearchSettings;
+  filters: SearchFilter[];
+  hidden_kinds?: string[];
+}
+
+export interface SearchKind {
+  id: string;
+  label: string;
+}
+
+export interface SearchJob {
+  id: string;
+  status: "running" | "done" | "failed" | "canceled";
+  done: number;
+  total: number;
+  percent?: number;
+  eta_seconds?: number;
+  error?: string;
+  started_by?: string;
+  started_at?: string;
+  updated_at?: string;
+  finished_at?: string;
+}
+
+export interface SearchSettingsView {
+  settings: SearchSettings;
+  kinds: SearchKind[];
+  primary_count: number;
+  deep_count: number;
+  job?: SearchJob;
+  can_index_host: boolean;
+  primary_refreshed_at?: string;
+}
+
+export interface Appearance {
+  theme?: Record<string, unknown>;
+  role_themes?: Record<string, unknown>;
+  group_themes?: Record<string, unknown>;
+  nav_layout?: "modern" | "classic";
+  instance_layout?: "instance" | "classic";
+  profile_limit?: number;
+  can_set_profile_limit?: boolean;
+}
+
+export interface MyAppearance {
+  theme?: Record<string, unknown>;
+  theme_source?: string;
+  nav_layout: "modern" | "classic";
+  instance_layout: "instance" | "classic";
+  profile_limit: number;
+  can_manage: boolean;
+}
+
+export interface InstanceTemplate {
+  id: string;
+  kind: string;
+  name: string;
+  description?: string;
+  spec: Record<string, unknown>;
+  source_workload_id?: string;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface InstanceTemplateList {
+  items: InstanceTemplate[];
+}
+
+export interface InstanceTemplateCreate {
+  kind?: string;
+  name?: string;
+  description?: string;
+  spec?: Record<string, unknown>;
+  workload_id?: string;
+}
+
+export interface PublicProfile {
+  user_id: string;
+  username: string;
+  display_name: string;
+  bio: string;
+  avatar_url?: string;
+  avatar_updated_at?: string;
+  roles: string[];
+  disabled?: boolean;
+  created_at?: string;
+}
+
+export interface UpdateImpactNotice {
+  id: string;
+  audience: string;
+  text: string;
+  applies: boolean;
+  detail?: string;
+}
+
+export interface BulkComponentsRequest {
+  workload_ids?: string[];
+  extras: string[];
+}
+
+export interface BulkComponentsSkip {
+  id: string;
+  name: string;
+  reason: string;
+}
+
+export interface BulkComponentsResult {
+  started: string[];
+  skipped: BulkComponentsSkip[];
+  extras: string[];
 }
 
 export interface NotificationUnread {
@@ -1647,6 +1798,7 @@ export interface WorkloadExtra {
   available: boolean;
   unavailable_reason?: string;
   download?: boolean;
+  baseline?: boolean;
   default?: boolean;
 }
 
@@ -3047,6 +3199,10 @@ export interface UpdateStatus {
   paused_backups?: number;
   backups_paused?: string;
   rollback?: UpdateRollback;
+  previous_version_kept?: boolean;
+  can_wipe_previous?: boolean;
+  impact_notices?: UpdateImpactNotice[];
+  impact_version?: string;
 }
 
 export interface UpdateRollback {
@@ -3054,6 +3210,7 @@ export interface UpdateRollback {
   reason?: string;
   version?: string;
   restores_database?: boolean;
+  window_ends_at?: string;
 }
 
 export interface UpdatePreviewItem {
@@ -3070,6 +3227,7 @@ export interface UpdatePreview {
   dry_run: true;
   version?: string;
   release_url?: string;
+  impact_notices?: UpdateImpactNotice[];
 }
 
 export interface UpdatePreflightCheck {
@@ -4039,6 +4197,30 @@ export type ListNotificationsPath = "/api/v1/notifications";
 export type NotificationsUnreadCountPath = "/api/v1/notifications/unread-count";
 
 export type MarkNotificationsReadPath = "/api/v1/notifications/read";
+
+export type ListInstanceTemplatesPath = "/api/v1/instance-templates";
+
+export type GetInstanceTemplatePath = "/api/v1/instance-templates/{id}";
+
+export type SearchPath = "/api/v1/search";
+
+export type GetSearchSettingsPath = "/api/v1/search/settings";
+
+export type StartSearchIndexPath = "/api/v1/search/index";
+
+export type CancelSearchIndexPath = "/api/v1/search/index/cancel";
+
+export type ClearDeepSearchIndexPath = "/api/v1/search/index/deep";
+
+export type GetAppearancePath = "/api/v1/settings/appearance";
+
+export type GetMyAppearancePath = "/api/v1/me/appearance";
+
+export type GetUserProfilePath = "/api/v1/users/{id}/profile";
+
+export type WipeUpdateRollbackPath = "/api/v1/updates/rollback/wipe";
+
+export type BulkWorkloadComponentsPath = "/api/v1/workload-extras/bulk";
 
 export type GetTrustedProxiesPath = "/api/v1/settings/trusted-proxies";
 

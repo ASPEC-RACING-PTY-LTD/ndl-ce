@@ -33,7 +33,7 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	roleFilter := canonicalRole(r, r.URL.Query().Get("role"))
+	roleFilter := strings.TrimSpace(r.URL.Query().Get("role"))
 	statusFilter := strings.TrimSpace(r.URL.Query().Get("status"))
 	kindFilter := strings.TrimSpace(r.URL.Query().Get("kind"))
 	sortKey := strings.TrimSpace(r.URL.Query().Get("sort"))
@@ -151,7 +151,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Username = strings.TrimSpace(req.Username)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
-	req.Role = canonicalRole(r, req.Role)
+	req.Role = strings.TrimSpace(req.Role)
 	if req.Role == "" {
 		req.Role = rbac.User
 	}
@@ -314,7 +314,7 @@ func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Role != nil {
-		if err := s.replaceLoginRole(w, r, p, *u, canonicalRole(r, *req.Role)); err != nil {
+		if err := s.replaceLoginRole(w, r, p, *u, strings.TrimSpace(*req.Role)); err != nil {
 			return
 		}
 	}

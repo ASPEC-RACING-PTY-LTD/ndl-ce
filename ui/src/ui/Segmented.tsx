@@ -5,7 +5,7 @@ export function Segmented<T extends string>({
   onChange,
 }: {
   value: T;
-  options: { id: T; label: string }[];
+  options: { id: T; label: string; disabled?: boolean }[];
   ariaLabel: string;
   onChange: (value: T) => void;
 }) {
@@ -16,6 +16,7 @@ export function Segmented<T extends string>({
           key={option.id}
           type="button"
           aria-pressed={value === option.id}
+          disabled={option.disabled}
           onClick={() => onChange(option.id)}
         >
           {option.label}

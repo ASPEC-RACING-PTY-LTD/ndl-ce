@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ const (
 	ChannelStable         = debian.ChannelStable
 	UpdateApplyStatus     = debian.UpdateApplyStatus
 	UpdateRepoEnable      = debian.UpdateRepoEnable
+	UpdateCheckpointWipe  = debian.UpdateCheckpointWipe
 	UpdateFeatureInstall  = debian.UpdateFeatureInstall
 	UpdateFeatureRemove   = debian.UpdateFeatureRemove
 	UpdateK8sRuntimeStart = debian.UpdateK8sRuntimeStart
@@ -200,6 +202,8 @@ func RunUpdate(ctx context.Context, p Platform, req UpdateRequest, exec ExecFunc
 		return runPreflight(ctx, res, exec), nil
 	case debian.UpdateCheckpoint:
 		return runCheckpoint(ctx, req, res, exec)
+	case debian.UpdateCheckpointWipe:
+		return wipeCheckpoint(req, res, exec == nil), nil
 	case debian.UpdateApply:
 		return runApply(ctx, req, res, exec)
 	case debian.UpdateApplyStatus:
@@ -558,6 +562,36 @@ func CheckpointDumpExists(id string) bool {
 	info, err := os.Stat(filepath.Join(checkpointDir, id+".sql"))
 	return err == nil && info.Size() > 0
 }
+
+// wipeCheckpoint deletes one checkpoint (its package tar and database
+// dump). After that the update it was taken for cannot be rolled back.
+func wipeCheckpoint(req UpdateRequest, res UpdateResult, dryRun bool) UpdateResult {
+	id := strings.TrimSpace(req.CheckpointID)
+	res.CheckpointID = id
+	if !checkpointIDRe.MatchString(id) {
+		res.Status = "failed"
+		res.Reason = "checkpoint id is invalid"
+		return res
+	}
+	if dryRun {
+		res.Status = "planned"
+		res.Reason = "Checkpoint wipe was planned. Host files were not touched."
+		return res
+	}
+	for _, ext := range []string{".tar", ".sql"} {
+		if err := os.Remove(filepath.Join(checkpointDir, id+ext)); err != nil && !os.IsNotExist(err) {
+			res.Status = "failed"
+			res.Reason = "could not delete the checkpoint: " + err.Error()
+			return res
+		}
+	}
+	res.Status = "succeeded"
+	return res
+}
+
+// checkpointIDRe matches the uuids checkpoints are named by, so a wipe
+// cannot reach outside the checkpoint directory.
+var checkpointIDRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // KeepCheckpoints is how many update checkpoints are kept on disk.
 const KeepCheckpoints = 3

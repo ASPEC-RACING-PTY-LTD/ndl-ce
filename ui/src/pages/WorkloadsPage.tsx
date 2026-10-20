@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent } from
 import { bulkDeleteWorkloads, listNodes, listWorkloads, patchMe } from "../api/client";
 import type { NodeSummary } from "../api/phase2";
 import type { Workload } from "../api/phase5";
-import { CodeholdCLIDialog } from "../components/CodeholdCLIDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeleteButton } from "../components/DeleteButton";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
@@ -16,11 +15,15 @@ import { useQuery } from "../query";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
 import { Segmented } from "../ui/Segmented";
+import { CreateMenu } from "../nav/AreaFrames";
+import { navigate } from "../router";
 import { moveId, orderWorkloads, savedSort, shiftId, type WorkloadSort } from "../workloadOrder";
 
 const containerKind = "system-container";
 
-type KindFilter = "all" | "system-container" | "vm" | "oci";
+/** FixedKind limits the page to one instance type (the Instance layout's Workloads and VMs pages). */
+export type FixedKind = "system-container" | "vm";
+type KindFilter = "all" | FixedKind;
 
 function isContainer(w: Workload): boolean {
   return w.kind === containerKind;
@@ -41,18 +44,24 @@ function hostLive(node: NodeSummary): boolean {
   return st === "available" || st === "ready" || st === "running" || st === "online";
 }
 
-export function WorkloadsPage() {
+const TITLES: Record<KindFilter, { title: string; lede: string; noun: string }> = {
+  all: { title: "Workloads", lede: "System containers, virtual machines and OCI applications on this appliance.", noun: "workloads" },
+  "system-container": { title: "Workloads", lede: "System containers on this appliance.", noun: "containers" },
+  vm: { title: "VMs", lede: "Virtual machines on this appliance.", noun: "VMs" },
+};
+
+export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
   const session = useSession();
   const me = session.status === "ready" ? session.user : null;
   const mutate = canMutate(me?.roles);
   const workloadsQ = useQuery("workloads", () => listWorkloads(), 10000);
   const nodesQ = useQuery("nodes", () => listNodes(), 15000);
-  const items = useMemo(() => workloadsQ.data?.items ?? [], [workloadsQ.data]);
+  const kind: KindFilter = fixedKind ?? "all";
+  const items = useMemo(() => (workloadsQ.data?.items ?? []).filter((w) => kind === "all" || w.kind === kind), [workloadsQ.data, kind]);
   const nodes = useMemo(() => nodesQ.data ?? [], [nodesQ.data]);
   const loading = workloadsQ.loading && !workloadsQ.data;
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<KindFilter>("all");
   const [sort, setSort] = useState<WorkloadSort>(() => savedSort(me?.workload_sort));
   const [order, setOrder] = useState<string[]>(() => me?.workload_order ?? []);
   const [editing, setEditing] = useState(false);
@@ -77,7 +86,7 @@ export function WorkloadsPage() {
     [ordered, q, kind, editing],
   );
   const hosts = useMemo(
-    () => (editing || (!q && kind === "all") ? nodes : nodes.filter((n) => (n.name || n.id).toLowerCase().includes(q) && kind === "all")),
+    () => (kind === "vm" ? [] : editing || !q ? nodes : nodes.filter((n) => (n.name || n.id).toLowerCase().includes(q))),
     [nodes, q, kind, editing],
   );
 
@@ -164,7 +173,7 @@ export function WorkloadsPage() {
     }
   }
 
-  const [chOpen, setChOpen] = useState(false);
+  const t = TITLES[kind];
   const showSelect = mutate && !editing;
   const leadCol = showSelect || editing;
   const nameSort = sort === "name" ? "name-desc" : "name";
@@ -173,43 +182,41 @@ export function WorkloadsPage() {
     <section className="page page-wide" aria-labelledby="workloads-heading">
       <PageHeader
         id="workloads-heading"
-        icon="workloads"
-        title="Workloads"
-        kicker={
-          items.length
-            ? `${counts.total} workloads · ${counts.running} running · ${counts.stopped} not running`
-            : "System containers, virtual machines and OCI applications on this appliance."
-        }
+        icon={kind === "vm" ? "monitor" : "workloads"}
+        title={t.title}
+        kicker={items.length ? `${counts.total} ${t.noun} · ${counts.running} running · ${counts.stopped} not running` : t.lede}
         actions={
           mutate ? (
             <div className="btn-row is-flush">
-              <button className="btn btn-ghost" type="button" onClick={() => setChOpen(true)}>
-                CodeHold CLI
-              </button>
-              <Link className="btn btn-ghost" href="/templates">
-                Templates
-              </Link>
-              <Link className="btn btn-ghost" href="/oci">
-                OCI Containers
-              </Link>
-              <Link className="btn btn-ghost" href="/workloads/import">
-                Import VM
-              </Link>
-              <Link className="btn btn-secondary" href="/workloads/new/oci">
-                Create OCI
-              </Link>
-              <Link className="btn btn-secondary" href="/workloads/new/vm">
-                Create VM
-              </Link>
-              <Link className="btn btn-primary" href="/workloads/new/system-container">
-                <Icon name="create" size={14} />
-                Create system container
-              </Link>
+              {kind === "vm" ? (
+                <>
+                  <Link className="btn btn-ghost" href="/workloads/import">
+                    Import VM
+                  </Link>
+                  <Link className="btn btn-primary" href="/workloads/new/vm">
+                    <Icon name="create" size={14} />
+                    Create VM
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link className="btn btn-ghost" href="/instance/components">
+                    Components
+                  </Link>
+                  {kind === "system-container" ? (
+                    <Link className="btn btn-primary" href="/workloads/new/system-container">
+                      <Icon name="create" size={14} />
+                      Create system container
+                    </Link>
+                  ) : (
+                    <CreateMenu />
+                  )}
+                </>
+              )}
             </div>
           ) : null
         }
       />
-      <CodeholdCLIDialog open={chOpen} canChange={mutate} onClose={() => setChOpen(false)} />
       {error ? <ErrorState>{error}</ErrorState> : null}
       {saveError ? <ErrorState>{saveError}</ErrorState> : null}
       {results ? (
@@ -234,26 +241,24 @@ export function WorkloadsPage() {
               <input
                 className="field-input"
                 type="search"
-                placeholder="Search by name or type"
+                placeholder={kind === "all" ? "Search by name or type" : "Search by name"}
                 value={query}
                 disabled={editing}
                 onChange={(e) => setQuery(e.target.value)}
-                aria-label="Search workloads"
+                aria-label={`Search ${t.noun}`}
               />
             </label>
-            <Segmented<KindFilter>
-              ariaLabel="Workload type"
-              value={editing ? "all" : kind}
-              onChange={(next) => !editing && setKind(next)}
-              options={[
-                { id: "all", label: "All" },
-                { id: "system-container", label: "Containers" },
-                { id: "vm", label: "VMs" },
-                { id: "oci", label: "OCI" },
-              ]}
-            />
           </div>
           <div className="toolbar-group">
+            {mutate && selectedItems.length > 0 && !editing ? (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => navigate(`/instance/components?ids=${encodeURIComponent(selectedItems.map((w) => w.id).join(","))}`)}
+              >
+                Install components ({selectedItems.length})
+              </button>
+            ) : null}
             {mutate && selectedItems.length > 0 && !editing ? (
               <button className="btn btn-danger" type="button" disabled={busy} onClick={() => setConfirmOpen(true)}>
                 <Icon name="delete" size={14} />
@@ -280,8 +285,8 @@ export function WorkloadsPage() {
         {loading ? (
           <LoadingState label="Loading workloads" />
         ) : filtered.length === 0 && hosts.length === 0 ? (
-          <EmptyState icon="workloads" title={q || kind !== "all" ? "No matching workloads" : "No workloads yet"}>
-            {q || kind !== "all"
+          <EmptyState icon="workloads" title={q ? `No matching ${t.noun}` : `No ${t.noun} yet`}>
+            {q
               ? "Nothing matches that search."
               : mutate
                 ? "Create a VM or system container when a usable storage pool and guest network are available."
@@ -451,7 +456,7 @@ export function WorkloadsPage() {
             </table>
           </div>
         )}
-        {!loading && filtered.length === 0 && hosts.length > 0 && (q || kind !== "all") ? (
+        {!loading && filtered.length === 0 && hosts.length > 0 && q ? (
           <EmptyState title="No matching workloads">Nothing matches that search.</EmptyState>
         ) : null}
       </div>

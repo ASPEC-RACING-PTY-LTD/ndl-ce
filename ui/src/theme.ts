@@ -7,12 +7,61 @@ import { getPref, subscribePrefs } from "./prefs";
 
 export type ThemeMode = "system" | "light" | "dark";
 
+/** A style sets shape only: corners, depth, borders, spacing and motion. */
+export type StyleId = "bubble" | "plain" | "boxy" | "compact" | "glass";
+
+export type Density = "comfortable" | "compact" | "spacious";
+
 export type ThemePrefs = {
   mode: ThemeMode;
   theme: string;
   /** accent overrides the theme's accent: a hex colour, or "rainbow". */
   accent?: string | null;
+  /** secondary colours secondary buttons, chips and tags: a hex colour. */
+  secondary?: string | null;
+  style?: StyleId;
+  density?: Density;
+  /** radius overrides the style's corner radius, in pixels (0 to 32). */
+  radius?: number | null;
+  /** tokens override CSS variables, from the theme code editor. */
+  tokens?: Record<string, string>;
+  /** terminal colours: background, foreground, cursor and the 16 ANSI colours. */
+  terminal?: Record<string, string>;
 };
+
+export const STYLES: { id: StyleId; label: string; description: string }[] = [
+  { id: "bubble", label: "Bubble", description: "Soft, rounded and lightly layered. The default." },
+  { id: "plain", label: "Plain", description: "Flat with thin borders and small corners." },
+  { id: "boxy", label: "Modern Boxy", description: "Square corners, strong borders, crisp contrast." },
+  { id: "compact", label: "Compact", description: "Bubble shapes with tighter spacing for dense screens." },
+  { id: "glass", label: "Glass", description: "Frosted panels over a subtle backdrop." },
+];
+
+export const DEFAULT_STYLE: StyleId = "bubble";
+
+/** Terminal colour names the theme can set. */
+export const TERMINAL_COLOR_KEYS = [
+  "background",
+  "foreground",
+  "cursor",
+  "selectionBackground",
+  "black",
+  "red",
+  "green",
+  "yellow",
+  "blue",
+  "magenta",
+  "cyan",
+  "white",
+  "brightBlack",
+  "brightRed",
+  "brightGreen",
+  "brightYellow",
+  "brightBlue",
+  "brightMagenta",
+  "brightCyan",
+  "brightWhite",
+] as const;
 
 export type ThemePreset = {
   id: string;
@@ -49,7 +98,40 @@ export const ACCENT_SWATCHES: { label: string; hex: string }[] = [
   { label: "Yellow", hex: "#eab308" },
 ];
 
-export const DEFAULT_THEME: ThemePrefs = { mode: "system", theme: "nodal", accent: null };
+export const DEFAULT_THEME: ThemePrefs = { mode: "system", theme: "nodal", accent: null, secondary: null, style: DEFAULT_STYLE };
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const TOKEN_NAME = /^--[a-z][a-z0-9-]{0,63}$/;
+const TOKEN_VALUE = /^[a-zA-Z0-9 #%.,()+\-*/'"_]{1,200}$/;
+const TOKEN_BAD = /(url\s*\(|expression\s*\(|javascript:|@import|\\|<|>|;|\{|\})/i;
+
+/** safeTokenValue reports why a CSS value is not allowed in a theme, or "" when it is. */
+export function unsafeTokenValue(v: string): string {
+  if (TOKEN_BAD.test(v)) {
+    return "only colours, sizes and font names are allowed";
+  }
+  if (!TOKEN_VALUE.test(v)) {
+    return "contains characters a theme value cannot use";
+  }
+  return "";
+}
+
+export function validTokenName(name: string): boolean {
+  return TOKEN_NAME.test(name);
+}
+
+function cleanMap(raw: unknown, key: (k: string) => boolean): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && key(k) && !unsafeTokenValue(v)) {
+      out[k] = v;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 export function presetFor(id: string): ThemePreset {
   return THEMES.find((t) => t.id === id) ?? THEMES[0];
@@ -62,8 +144,27 @@ export function parseThemePrefs(raw: unknown): ThemePrefs {
   const r = raw as Partial<ThemePrefs>;
   const mode = r.mode === "light" || r.mode === "dark" || r.mode === "system" ? r.mode : "system";
   const theme = THEMES.some((t) => t.id === r.theme) ? (r.theme as string) : "nodal";
-  const accent = r.accent === "rainbow" || (typeof r.accent === "string" && /^#[0-9a-f]{6}$/i.test(r.accent)) ? r.accent : null;
-  return { mode, theme, accent };
+  const accent = r.accent === "rainbow" || (typeof r.accent === "string" && HEX.test(r.accent)) ? r.accent : null;
+  const secondary = typeof r.secondary === "string" && HEX.test(r.secondary) ? r.secondary : null;
+  const style = STYLES.some((x) => x.id === r.style) ? (r.style as StyleId) : DEFAULT_STYLE;
+  const density = r.density === "compact" || r.density === "spacious" ? r.density : undefined;
+  const radius = typeof r.radius === "number" && r.radius >= 0 && r.radius <= 32 ? r.radius : null;
+  const out: ThemePrefs = { mode, theme, accent, secondary, style };
+  if (density) {
+    out.density = density;
+  }
+  if (radius !== null) {
+    out.radius = radius;
+  }
+  const tokens = cleanMap(r.tokens, validTokenName);
+  if (tokens) {
+    out.tokens = tokens;
+  }
+  const terminal = cleanMap(r.terminal, (k) => (TERMINAL_COLOR_KEYS as readonly string[]).includes(k));
+  if (terminal) {
+    out.terminal = terminal;
+  }
+  return out;
 }
 
 /** hexToOklch converts an sRGB colour to OKLCH lightness, chroma and hue. */
@@ -107,9 +208,43 @@ export function resolveTheme(p: ThemePrefs): ResolvedTheme {
   return out;
 }
 
+// Custom tokens set by the last applied theme, removed when it changes.
+let appliedTokens: string[] = [];
+
 /** applyTheme sets the theme tokens on the page. */
 export function applyTheme(p: ThemePrefs, root: HTMLElement = document.documentElement): void {
   const t = resolveTheme(p);
+  root.dataset.style = p.style ?? DEFAULT_STYLE;
+  if (p.density && p.density !== "comfortable") {
+    root.dataset.density = p.density;
+  } else {
+    delete root.dataset.density;
+  }
+  if (typeof p.radius === "number") {
+    root.style.setProperty("--radius-user", `${p.radius}px`);
+  } else {
+    root.style.removeProperty("--radius-user");
+  }
+  if (p.secondary) {
+    const sec = hexToOklch(p.secondary);
+    root.dataset.secondary = "custom";
+    root.style.setProperty("--secondary-h", String(Math.round(sec.h)));
+    root.style.setProperty("--secondary-c", String(sec.c < 0.03 ? 0.02 : Math.min(0.2, Math.max(0.08, sec.c))));
+  } else {
+    delete root.dataset.secondary;
+    root.style.removeProperty("--secondary-h");
+    root.style.removeProperty("--secondary-c");
+  }
+  for (const name of appliedTokens) {
+    root.style.removeProperty(name);
+  }
+  appliedTokens = [];
+  for (const [name, value] of Object.entries(p.tokens ?? {})) {
+    if (validTokenName(name) && !unsafeTokenValue(value)) {
+      root.style.setProperty(name, value);
+      appliedTokens.push(name);
+    }
+  }
   if (p.mode === "system") {
     delete root.dataset.mode;
   } else {
@@ -161,9 +296,34 @@ export function previewColors(p: ThemePrefs, dark: boolean) {
       };
 }
 
-/** savedTheme reads the cached theme preference. */
+// The theme a person inherits from their group, role or the global
+// setting, used until they pick their own.
+let inherited: ThemePrefs | null = null;
+const inheritListeners = new Set<() => void>();
+
+export function setInheritedTheme(raw: unknown): void {
+  inherited = raw && typeof raw === "object" ? parseThemePrefs(raw) : null;
+  for (const l of inheritListeners) {
+    l();
+  }
+}
+
+export function inheritedTheme(): ThemePrefs | null {
+  return inherited;
+}
+
+/** savedTheme reads the person's own theme, else the inherited one. */
 export function savedTheme(): ThemePrefs {
-  return parseThemePrefs(getPref<unknown>(THEME_KEY, null));
+  const own = getPref<unknown>(THEME_KEY, null);
+  if (own) {
+    return parseThemePrefs(own);
+  }
+  return inherited ?? DEFAULT_THEME;
+}
+
+/** terminalColors is the terminal colour set of the live theme. */
+export function terminalColors(): Record<string, string> {
+  return (previewing ?? savedTheme()).terminal ?? {};
 }
 
 let previewing: ThemePrefs | null = null;
@@ -190,5 +350,6 @@ export function startThemeSync(): void {
   };
   sync();
   subscribePrefs(sync);
+  inheritListeners.add(sync);
   window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change", () => applyTheme(previewing ?? savedTheme()));
 }

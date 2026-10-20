@@ -158,6 +158,8 @@ type Memory struct {
 	gamePrefs          map[string]string
 	account            accountMem
 	iam                iamMem
+	ui                 uiMem
+	tmpl               tmplMem
 }
 
 // NewMemory returns an empty store.

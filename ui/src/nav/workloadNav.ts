@@ -133,7 +133,7 @@ export function buildWorkloadNav(opts: {
       items: [
         {
           href: `/workloads/${id}/extensions`,
-          label: "Extensions",
+          label: "Components",
           icon: "settings",
           current: leaf === "extensions",
         },

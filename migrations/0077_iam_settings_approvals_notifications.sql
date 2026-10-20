@@ -69,11 +69,18 @@ ALTER TABLE automation_flows
     ADD COLUMN IF NOT EXISTS pending_version integer NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS draft_tainted boolean NOT NULL DEFAULT false;
 
--- Existing flows keep running as they are; the next publish of a flow that
--- a SuperAdmin did not create goes through approval if it holds protected
--- steps.
+-- Flows that a SuperAdmin did not create lose the exemption: their next
+-- publish goes through approval if it holds protected steps.
 UPDATE automation_flows f SET draft_tainted = NOT EXISTS (
     SELECT 1 FROM users u
     JOIN role_bindings b ON b.user_id = u.id
     JOIN roles r ON r.id = b.role_id
     WHERE u.cluster_id = f.cluster_id AND u.username = f.created_by AND r.name = 'superadmin');
+
+-- Every flow that was on before this update is turned off, so nothing runs
+-- unreviewed under the new rules. The reason text is matched by the control
+-- plane (flowDisabledByUpdate), which tells everyone who manages flows.
+UPDATE automation_flows
+SET enabled = false,
+    disabled_reason = 'Turned off by the update that added flow approvals. Review it, then turn it back on.'
+WHERE enabled;

@@ -1,3 +1,4 @@
+import { flowsOffByUpdate } from "../../automation/updateDisabled";
 import { useEffect, useState } from "react";
 import {
   ApiError,
@@ -112,9 +113,21 @@ function FlowsTab({ mutate }: { mutate: boolean }) {
       if (sort === "last_run") return String((b.last_run as { created_at?: string })?.created_at ?? "").localeCompare(String((a.last_run as { created_at?: string })?.created_at ?? ""));
       return a.name.localeCompare(b.name);
     });
+  const offByUpdate = flowsOffByUpdate(items);
   return (
     <>
       {error ? <ErrorNotice error={error} /> : null}
+      {offByUpdate.length ? (
+        <div className="banner banner-warn" role="status">
+          <p>
+            The update that added flow approvals turned off {offByUpdate.length === 1 ? "1 flow" : `${offByUpdate.length} flows`} that were on. Review
+            each one, then turn it back on. Flows with protected steps need a SuperAdmin to turn them on again.
+          </p>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => setFilter("attention")}>
+            Show them
+          </button>
+        </div>
+      ) : null}
       <div className="btn-row is-flush">
         {mutate ? (
           <button className="btn btn-primary" type="button" onClick={() => setCreating(true)}>

@@ -134,8 +134,8 @@ func (s *Server) putAutomationCreators(w http.ResponseWriter, r *http.Request) {
 	for _, d := range defs {
 		known[d.Name] = d.Name != rbac.Automation
 	}
-	min := canonicalRole(r, strings.TrimSpace(req.MinRole))
-	roles := uniqueStrings(canonicalRoles(r, req.Roles))
+	min := strings.TrimSpace(req.MinRole)
+	roles := uniqueStrings(req.Roles)
 	if min == "" && len(roles) == 0 {
 		min = rbac.Admin
 	}
@@ -203,7 +203,7 @@ func (s *Server) putApprovalsAccess(w http.ResponseWriter, r *http.Request) {
 	access := map[string][]string{}
 	var parts []string
 	for role, perms := range req.Access {
-		role = canonicalRole(r, role)
+		role = strings.TrimSpace(role)
 		if !known[role] {
 			writeErr(w, http.StatusBadRequest, "unknown role "+role)
 			return

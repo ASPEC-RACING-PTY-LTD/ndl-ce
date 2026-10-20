@@ -323,14 +323,10 @@ func TestApprovalsAccessAndNotifications(t *testing.T) {
 	}
 }
 
-func TestLegacyRoleIDsAccepted(t *testing.T) {
+func TestOldRoleIDsRejected(t *testing.T) {
 	a := newAutoTest(t)
-	code, body := a.call("POST", "/api/v1/users", `{"username":"old","password":"password1-long","role":"operator"}`, nil)
-	if code != http.StatusCreated && code != http.StatusOK {
-		t.Fatalf("create with old id %d %v", code, body["_raw"])
-	}
-	roles, _ := a.mem.UserRoles(context.Background(), a.userID("old"))
-	if len(roles) != 1 || roles[0] != rbac.Admin {
-		t.Fatalf("roles %v", roles)
+	code, _ := a.call("POST", "/api/v1/users", `{"username":"old","password":"password1-long","role":"operator"}`, nil)
+	if code == http.StatusCreated || code == http.StatusOK {
+		t.Fatalf("old role id accepted: %d", code)
 	}
 }

@@ -14,6 +14,8 @@ const admin: MeResponse = {
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
+  // These tests move between pages through the classic sidebar.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 const operator: MeResponse = {
@@ -23,6 +25,8 @@ const operator: MeResponse = {
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
+  // These tests move between pages through the classic sidebar.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 const viewer: MeResponse = {
@@ -32,6 +36,8 @@ const viewer: MeResponse = {
   edition: "ce",
   ux_level: "expert",
   expert_ack: true,
+  // These tests move between pages through the classic sidebar.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 function jsonResponse(status: number, body?: unknown): Response {

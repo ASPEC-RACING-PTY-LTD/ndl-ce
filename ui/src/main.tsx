@@ -5,6 +5,7 @@ import "./styles.css";
 import "./content.css";
 import "./design.css";
 import "./backups.css";
+import "./appearance.css";
 import { startThemeSync } from "./theme";
 import { installTableSorting } from "./ui/autoSort";
 

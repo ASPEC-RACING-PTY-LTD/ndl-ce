@@ -23,12 +23,7 @@ export function saveDisclosurePrefs(prefs: DisclosurePrefs): void {
 }
 
 export function resetDisclosurePrefs(): DisclosurePrefs {
-  const next = {
-    ...EMPTY_PREFS,
-    enabled: [],
-    customVisible: [],
-    customOrder: [],
-  };
+  const next: DisclosurePrefs = { ...EMPTY_PREFS, enabled: [] };
   saveDisclosurePrefs(next);
   return next;
 }

@@ -8,7 +8,16 @@ import { startThemeSync } from "../theme";
 // main.tsx starts this in the app.
 startThemeSync();
 
-const admin: MeResponse = { user_id: "user-1", username: "admin", roles: ["superadmin"], edition: "ce", ux_level: "guided", expert_ack: false };
+const admin: MeResponse = {
+  user_id: "user-1",
+  username: "admin",
+  roles: ["superadmin"],
+  edition: "ce",
+  ux_level: "guided",
+  expert_ack: false,
+  // These tests cover the classic sidebar, which lists every page.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
+};
 
 type Route = { status: number; body?: unknown } | ((init?: RequestInit, url?: URL) => { status: number; body?: unknown });
 
@@ -182,13 +191,10 @@ describe("Sidebar", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^admin menu$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^light mode$/i }));
     expect(document.documentElement.dataset.mode).toBe("light");
+    // Theme is a page now; the popup button opens it.
     fireEvent.click(screen.getByRole("button", { name: /^theme$/i }));
-    const dlg = await screen.findByRole("dialog", { name: /^theme$/i });
-    fireEvent.click(within(dlg).getByRole("radio", { name: /^pink$/i }));
-    expect(document.documentElement.style.getPropertyValue("--accent-h")).not.toBe("132");
-    fireEvent.click(within(dlg).getByRole("button", { name: /^cancel$/i }));
-    // Cancel puts the saved theme back.
-    expect(document.documentElement.style.getPropertyValue("--accent-h")).toBe("132");
+    expect(window.location.pathname).toBe("/theme");
+    expect(await screen.findByRole("heading", { name: /^colours$/i })).toBeVisible();
   });
 });
 

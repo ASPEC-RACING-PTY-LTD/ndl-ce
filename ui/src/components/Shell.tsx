@@ -1,17 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getHealth } from "../api/client";
 import type { HealthResponse } from "../api/types";
-import { useVisibleNav } from "../nav/NavDisclosure";
-import { isIAMPath, moduleForPath } from "../nav/modules";
-
-const IAM_CRUMBS: Record<string, string> = {
-  "/users": "Users",
-  "/iam/access": "Access control",
-  "/iam/approvals": "Approvals",
-  "/notifications": "Notifications",
-  "/api-access": "API Access",
-};
-import { gameServerCrumbs, isGameServersContext } from "../nav/gameServers";
+import { useNavDisclosure, useVisibleNav } from "../nav/NavDisclosure";
+import type { NavModule } from "../nav/modules";
+import { ADMIN_SECTIONS, isAdminPath, isInstancePath, visibleSections } from "../nav/sections";
+import { useNavLayout } from "../appearance/state";
 import { selectedTargetFromPath, viewFromPath } from "../nav/match";
 import { saveLastView } from "../nav/prefs";
 import { navigate, usePath } from "../router";
@@ -20,8 +13,6 @@ import { hasGrant } from "../rbac";
 import { HostDiskBanner } from "./HostDisk";
 import { storageGet, storageSet } from "../storage";
 import { BrandMark } from "./BrandMark";
-import { CommandPalette } from "./CommandPalette";
-import { OPEN_PALETTE } from "./ContextMenu";
 import { Icon, navIcon } from "./Icon";
 import { Link } from "./Link";
 import { SidebarAccount } from "./shell/SidebarAccount";
@@ -29,103 +20,37 @@ import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { usePref } from "../prefs";
 import { NAV_ORDER_KEY, applyNavOrder, moveNavItem, type NavOrder } from "../nav/disclosure";
 import { NotificationBell } from "./shell/NotificationBell";
-import { TaskIndicator } from "./shell/TaskIndicator";
+import { GlobalSearch } from "./shell/GlobalSearch";
 import { UpdateBanner } from "./shell/UpdateBanner";
 
 const SIDEBAR_KEY = "ndl-sidebar-collapsed";
 
-const TAB_LABELS: Record<string, string> = {
-  terminal: "Terminal",
-  files: "Files",
-  settings: "Settings",
-  snapshots: "Snapshots",
-  hardware: "Hardware",
-  metrics: "Metrics",
-  console: "Console",
-  gpus: "GPUs",
-  gpu: "GPU",
-  logs: "Logs",
-  clone: "Clone",
-  migrate: "Migrate",
-  operations: "Operations",
-  machine: "USB",
-};
+type NavGroup = { label: string; items: NavModule[] };
 
-function crumbs(path: string): { href: string; label: string }[] {
-  if (path === "/") {
-    return [{ href: "/", label: "Dashboard" }];
+/**
+ * modernNav is the short sidebar of the modern layout: Dashboard, the
+ * Compute pages and one Administration entry. Everything else is reached
+ * from each area's page bar.
+ */
+export function modernNav(showAdmin: boolean): NavGroup[] {
+  const groups: NavGroup[] = [
+    { label: "Overview", items: [{ id: "dashboard", href: "/", label: "Dashboard", group: "Overview", match: (p) => p === "/" }] },
+    {
+      label: "Compute",
+      items: [
+        { id: "instance", href: "/instance", label: "Instance", group: "Compute", match: isInstancePath },
+        { id: "terminal", href: "/terminal", label: "Terminal", group: "Compute", match: (p) => p === "/terminal" },
+        { id: "files", href: "/files", label: "Files", group: "Compute", match: (p) => p === "/files" },
+      ],
+    },
+  ];
+  if (showAdmin) {
+    groups.push({
+      label: "Administration",
+      items: [{ id: "admin", href: "/admin", label: "Administration", group: "Administration", match: isAdminPath }],
+    });
   }
-  if (path === "/terminal") {
-    return [{ href: "/terminal", label: "Terminal" }];
-  }
-  if (path === "/workloads/new/vm") {
-    return [
-      { href: "/workloads", label: "Workloads" },
-      { href: path, label: "Create VM" },
-    ];
-  }
-  if (path === "/workloads/new/oci") {
-    return [
-      { href: "/workloads", label: "Workloads" },
-      { href: path, label: "Create OCI" },
-    ];
-  }
-  if (path.startsWith("/workloads/new")) {
-    return [
-      { href: "/workloads", label: "Workloads" },
-      { href: path, label: "Create system container" },
-    ];
-  }
-  if (path === "/workloads/import") {
-    return [
-      { href: "/workloads", label: "Workloads" },
-      { href: path, label: "Import VM" },
-    ];
-  }
-  if (isGameServersContext(path)) {
-    return gameServerCrumbs(path);
-  }
-  if (path.startsWith("/workloads/")) {
-    const parts = path.split("/").filter(Boolean);
-    const base = `/workloads/${parts[1]}`;
-    const trail = [
-      { href: "/workloads", label: "Workloads" },
-      { href: base, label: "Workload" },
-    ];
-    if (parts[2]) {
-      trail.push({ href: path, label: TAB_LABELS[parts[2]] ?? parts[2] });
-    }
-    return trail;
-  }
-  if (path.startsWith("/nodes/")) {
-    const parts = path.split("/").filter(Boolean);
-    const base = `/nodes/${parts[1]}`;
-    const trail = [
-      { href: "/workloads", label: "Workloads" },
-      { href: base, label: "Host" },
-    ];
-    if (parts[2]) {
-      trail.push({ href: path, label: TAB_LABELS[parts[2]] ?? parts[2] });
-    }
-    return trail;
-  }
-  if (path.startsWith("/node")) {
-    const parts = path.split("/").filter(Boolean);
-    const trail = [{ href: "/node", label: "Node" }];
-    const tab = parts[parts.length - 1];
-    if (TAB_LABELS[tab]) {
-      trail.push({ href: path, label: TAB_LABELS[tab] });
-    }
-    return trail;
-  }
-  if (isIAMPath(path) && path !== "/iam") {
-    return [
-      { href: "/iam", label: "IAM" },
-      { href: path, label: IAM_CRUMBS[path] ?? "IAM" },
-    ];
-  }
-  const top = moduleForPath(path);
-  return top ? [{ href: top.href, label: top.label }] : [{ href: path, label: "Page" }];
+  return groups;
 }
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -133,7 +58,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     const saved = storageGet(SIDEBAR_KEY);
     if (saved === "1") {
@@ -168,23 +92,6 @@ export function Shell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const open = () => setPaletteOpen(true);
-    window.addEventListener(OPEN_PALETTE, open);
-    return () => window.removeEventListener(OPEN_PALETTE, open);
-  }, []);
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setPaletteOpen((open) => !open);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  useEffect(() => {
     if (selectedTargetFromPath(path)) {
       saveLastView(viewFromPath(path));
     }
@@ -199,7 +106,11 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   const [navOrder, setNavOrder] = usePref<NavOrder>(NAV_ORDER_KEY, {});
-  const groups = applyNavOrder(useVisibleNav(path), navOrder);
+  const [layout] = useNavLayout();
+  const { capabilityOn } = useNavDisclosure();
+  const classic = useVisibleNav();
+  const showAdmin = visibleSections(ADMIN_SECTIONS, user, capabilityOn).length > 0;
+  const groups = applyNavOrder(layout === "classic" ? classic : modernNav(showAdmin), navOrder);
   const navMenu = useContextMenu();
   const [drag, setDrag] = useState<{ group: string; id: string } | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
@@ -226,7 +137,6 @@ export function Shell({ children }: { children: ReactNode }) {
   }
   const healthOk = health?.status === "ok";
   const healthLabel = healthOk ? "Healthy" : health ? "Degraded" : "Unavailable";
-  const trail = crumbs(path);
 
   return (
     <div className={collapsed ? "shell is-collapsed" : "shell"}>
@@ -242,6 +152,16 @@ export function Shell({ children }: { children: ReactNode }) {
             No-dal
           </Link>
           <span className="edition-badge">CE</span>
+          <button
+            className="btn btn-ghost btn-sm btn-icon sidebar-collapse"
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={toggleSidebar}
+          >
+            <Icon name={collapsed ? "expand" : "collapse"} />
+          </button>
         </div>
         <nav className="sidebar-nav" aria-label="Appliance">
           {(
@@ -322,57 +242,20 @@ export function Shell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-footer">
           {user ? <SidebarAccount user={user} collapsed={collapsed} /> : null}
-          <button
-            className="btn btn-ghost btn-sm btn-icon sidebar-collapse"
-            type="button"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={toggleSidebar}
-          >
-            <Icon name={collapsed ? "expand" : "collapse"} />
-          </button>
         </div>
       </aside>
       <div className="shell-body">
         <header className="shell-header">
-          <nav className="shell-crumbs" aria-label="Breadcrumb">
-            {trail.map((crumb, i) => (
-              <span key={`${crumb.href}-${crumb.label}`}>
-                {i > 0 ? <span className="muted"> / </span> : null}
-                {i === trail.length - 1 ? (
-                  <span className="crumb" aria-current="page">
-                    {crumb.label}
-                  </span>
-                ) : (
-                  <Link href={crumb.href} className="crumb">
-                    {crumb.label}
-                  </Link>
-                )}
-              </span>
-            ))}
-          </nav>
-          <div className="shell-tools">
-            <span
-              className={`health-chip ${healthOk ? "is-ok" : health ? "is-warn" : "is-bad"}`}
-              title={healthOk ? "Control plane is available" : "Control plane health is unavailable"}
-            >
-              <Icon name={healthOk ? "success" : health ? "warning" : "error"} size={14} />
-              {healthLabel}
-            </span>
-            <TaskIndicator />
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              aria-keyshortcuts="Control+K Meta+K"
-              onClick={() => setPaletteOpen(true)}
-            >
-              Search
-            </button>
-            {user ? <NotificationBell /> : null}
-          </div>
+          <span
+            className={`health-chip ${healthOk ? "is-ok" : health ? "is-warn" : "is-bad"}`}
+            title={healthOk ? "Control plane is available" : "Control plane health is unavailable"}
+          >
+            <Icon name={healthOk ? "success" : health ? "warning" : "error"} size={14} />
+            {healthLabel}
+          </span>
+          <GlobalSearch />
+          <div className="shell-tools">{user ? <NotificationBell /> : null}</div>
         </header>
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         <ContextMenu menu={navMenu.menu} onClose={navMenu.close} />
         <main id="main" className="shell-main">
           <UpdateBanner />

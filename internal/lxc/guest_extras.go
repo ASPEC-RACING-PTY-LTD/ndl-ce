@@ -85,6 +85,8 @@ func (e *Engine) installDownloadExtra(ctx context.Context, req LifecycleRequest,
 	switch av.Extra.ID {
 	case guestextras.CodeholdCLI:
 		return e.installGuestCodeholdCLI(ctx, req.WorkloadID, pin, family, av.Packages, mode, req.Codehold)
+	case guestextras.Cloudflared:
+		return e.installGuestCloudflared(ctx, req.WorkloadID, family, av.Packages, mode)
 	}
 	return ExtraChange{Extra: av.Extra.ID}, fmt.Errorf("no installer for %s", av.Extra.ID)
 }

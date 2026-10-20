@@ -218,6 +218,8 @@ func Run(cfg Config) error {
 	go srv.RunDockerPrune(runCtx)
 	go srv.RunDeployments(runCtx)
 	go srv.RunAutomations(runCtx)
+	go srv.RunUpdateHousekeeping(runCtx)
+	go srv.RunSearchIndexer(runCtx)
 	go observer{
 		Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups,
 		Alerts: srv.TickAlerts, UpdateCheck: srv.TickUpdateCheck,

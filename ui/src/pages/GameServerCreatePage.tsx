@@ -1,3 +1,4 @@
+import { num, str, strMap, useTemplateFromURL } from "../instanceTemplates";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, listNodes } from "../api/client";
 import { Link } from "../components/Link";
@@ -49,6 +50,7 @@ export function GameServerCreatePage() {
   const [preflight, setPreflight] = useState<PreflightState | null>(null);
   // The game whose server types are open, kept while moving between steps.
   const [game, setGame] = useState<string | null>(null);
+  const { template: preset } = useTemplateFromURL("game-server");
   const [picked, setPicked] = useState<CatalogueItem | null>(null);
   const prefs = useCataloguePrefs();
   const { markRecent } = prefs;
@@ -111,7 +113,11 @@ export function GameServerCreatePage() {
           if (err instanceof ApiError && (err.status === 404 || err.status === 405 || err.status === 501)) {
             setPreflight({ key: bodyKey, status: "unsupported" });
           } else {
-            setPreflight({ key: bodyKey, status: "error", message: err instanceof Error ? err.message : "Preflight check failed" });
+            setPreflight({
+              key: bodyKey,
+              status: "error",
+              message: err instanceof Error ? err.message : "Preflight check failed",
+            });
           }
         });
     }, PREFLIGHT_DELAY_MS);
@@ -152,6 +158,20 @@ export function GameServerCreatePage() {
         setCpus(tmpl.default_cpus || 2);
         setMemoryMb(tmpl.default_memory_mb || 2048);
         setDiskMb(tmpl.default_disk_mb || 8192);
+        // A settings template for this game overrides the game's defaults.
+        if (preset && str(preset.spec, "game_template_id") === item.id) {
+          const c = num(preset.spec, "cpus");
+          const mem = num(preset.spec, "memory_bytes");
+          const disk = num(preset.spec, "disk_bytes");
+          if (c) setCpus(c);
+          if (mem) setMemoryMb(Math.round(mem / 1024 / 1024));
+          if (disk) setDiskMb(Math.round(disk / 1024 / 1024));
+          const presetEnv = strMap(preset.spec, "env");
+          for (const k of Object.keys(presetEnv)) {
+            if (k in next) next[k] = presetEnv[k];
+          }
+          setEnv({ ...next });
+        }
         setPreflight(null);
         markRecent(item.id);
         setPicked(item);
@@ -162,7 +182,7 @@ export function GameServerCreatePage() {
         setBusy(false);
       }
     },
-    [markRecent],
+    [markRecent, preset],
   );
 
   // Keep the card callback identity stable so memoised cards do not re-render.
@@ -213,7 +233,12 @@ export function GameServerCreatePage() {
         },
         ...(cur ?? []),
       ]);
-      await pick({ id: tmpl.id, name: tmpl.name, game: tmpl.game, builtin: false });
+      await pick({
+        id: tmpl.id,
+        name: tmpl.name,
+        game: tmpl.game,
+        builtin: false,
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Import failed");
     } finally {

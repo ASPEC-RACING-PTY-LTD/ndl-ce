@@ -46,7 +46,7 @@ export function WorkloadExtensionsPage() {
       setNote(res.note ?? null);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read extensions");
+      setError(err instanceof Error ? err.message : "Could not read components");
       setItems((cur) => cur ?? []);
     }
   }
@@ -88,7 +88,7 @@ export function WorkloadExtensionsPage() {
   if (!items) {
     return (
       <section className="page">
-        <LoadingState label="Checking extensions" />
+        <LoadingState label="Checking components" />
       </section>
     );
   }
@@ -98,7 +98,7 @@ export function WorkloadExtensionsPage() {
     <section className="page page-wide" aria-labelledby="ext-heading">
       <PageHeader
         id="ext-heading"
-        title={`Extensions${name ? ` on ${name}` : ""}`}
+        title={`Components${name ? ` on ${name}` : ""}`}
         kicker={
           <>
             Optional software inside this container. Changes run in the background and do not depend on this page staying open.{" "}
@@ -168,7 +168,7 @@ export function WorkloadExtensionsPage() {
         </div>
       ) : null}
       <div className="table-wrap">
-        <table aria-label="Extensions">
+        <table aria-label="Components">
           <thead>
             <tr>
               {mutate ? <th /> : null}

@@ -16,6 +16,8 @@ const admin: MeResponse = {
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
+  // These tests cover the classic sidebar, which lists every page.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 const viewer: MeResponse = {
@@ -25,6 +27,8 @@ const viewer: MeResponse = {
   edition: "ce",
   ux_level: "expert",
   expert_ack: true,
+  // These tests cover the classic sidebar, which lists every page.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 function jsonResponse(status: number, body?: unknown): Response {
@@ -249,13 +253,13 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /^admin$/i })).toBeVisible();
+    // /me is Settings now; the profile and the interface level moved out.
+    expect(await screen.findByRole("heading", { name: /^settings$/i })).toBeVisible();
     expect(await screen.findByText("user-1")).toBeVisible();
     expect(screen.getByRole("heading", { name: /^email$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^appearance$/i }));
-    expect(await screen.findByRole("radio", { name: /guided/i })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("radio", { name: /expert/i })).toBeVisible();
-    expect(screen.getByRole("heading", { name: /^sidebar layout$/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /edit profile/i })).toHaveAttribute("href", "/profile");
+    expect(screen.queryByRole("button", { name: /^appearance$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^sidebar layout$/i })).not.toBeInTheDocument();
   });
 
   it("posts setup claim JSON and opens the dashboard", async () => {
@@ -583,8 +587,10 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^workloads$/i })).toBeVisible();
     expect(await screen.findByText(/no workloads yet/i)).toBeVisible();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /create system container/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /create vm/i })).toBeVisible();
+    // Classic layout: one "Create" menu lists every type.
+    fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
+    expect(screen.getByRole("menuitem", { name: /system container/i })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: /virtual machine/i })).toBeVisible();
   });
 
   it("imports generated OpenAPI path types", () => {
@@ -1733,6 +1739,10 @@ describe("App", () => {
           ],
         },
       },
+      "/api/v1/nodes/node-1/hardware": {
+        status: 200,
+        body: { status: "ok", inventory: { gpus: [{ id: "gpu0", vendor: "NVIDIA", pci: "0000:02:00.0", driver: "nvidia" }] } },
+      },
       "/api/v1/gpus": {
         status: 200,
         body: {
@@ -1759,8 +1769,9 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("link", { name: /^gpu$/i })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: /^gpus$/i })).toBeVisible();
+    // GPU moved into Hardware; the old address lands there.
+    const hw = await screen.findByRole("link", { name: /^hardware$/i });
+    expect(hw).toHaveAttribute("aria-current", "page");
     expect(await screen.findByText(/0000:02:00.1 audio/i)).toBeVisible();
     expect(await screen.findByText(/creating a workload without a gpu does not attach \/dev\/dri/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^assign gpu$/i })).not.toBeInTheDocument();
@@ -1781,37 +1792,44 @@ describe("App", () => {
     expect(screen.queryByText(/^firing$/i)).not.toBeInTheDocument();
   });
 
-  it("hides Create VM in the command palette for a viewer", async () => {
+  it("hides Create VM in header search for a viewer", async () => {
     window.history.replaceState({}, "", "/");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: viewer },
+      "/api/v1/search": { status: 200, body: { items: [], counts: {}, filters: [] } },
     });
 
     render(<App />);
-    expect(await screen.findByRole("button", { name: /^search$/i })).toBeVisible();
-    await waitFor(() => {
-      if (!screen.queryByRole("dialog", { name: /command palette/i })) {
-        fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-      }
-      expect(screen.getByRole("dialog", { name: /command palette/i })).toBeVisible();
-    });
-    expect(screen.queryByRole("button", { name: /^create vm$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /jump to tasks/i })).toBeVisible();
+    const box = await screen.findByRole("combobox", { name: /search everything/i });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(box).toHaveFocus();
+    fireEvent.change(box, { target: { value: "create" } });
+    expect(await screen.findByRole("option", { name: /create game server/i, hidden: true }).catch(() => null)).toBeNull();
+    expect(screen.queryByRole("option", { name: /^create vm$/i })).not.toBeInTheDocument();
+    fireEvent.change(box, { target: { value: "tasks" } });
+    expect(await screen.findByRole("option", { name: /jump to tasks/i })).toHaveAttribute("href", "/tasks");
   });
 
-  it("lists Create VM in the command palette for an admin", async () => {
+  it("lists Create VM in header search for an admin", async () => {
     window.history.replaceState({}, "", "/");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
+      "/api/v1/search": {
+        status: 200,
+        body: { items: [{ kind: "user", id: "u9", title: "alice", link: "/users?user=u9" }], counts: { user: 1 }, filters: [] },
+      },
     });
 
     render(<App />);
-    expect(await screen.findByRole("button", { name: /^search$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^search$/i }));
-    expect(await screen.findByRole("dialog", { name: /command palette/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^create vm$/i })).toBeVisible();
+    const box = await screen.findByRole("combobox", { name: /search everything/i });
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: "create vm" } });
+    expect(await screen.findByRole("option", { name: /^create vm$/i })).toHaveAttribute("href", "/workloads/new/vm");
+    fireEvent.change(box, { target: { value: "alice" } });
+    // Server results are links, so middle-click opens them in a new tab.
+    expect(await screen.findByRole("option", { name: /alice/i })).toHaveAttribute("href", "/users?user=u9");
   });
 
   it("shows imported Compose groups on the OCI page instead of a Stacks page", async () => {

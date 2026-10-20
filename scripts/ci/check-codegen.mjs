@@ -28,6 +28,22 @@ const beforeGo = snapshot(listTree("gen"));
 
 execFileSync(process.execPath, ["scripts/generate-openapi.mjs"], { stdio: "inherit" });
 
+// buf clears gen/ before running its plugins, so a missing plugin would
+// leave the committed code deleted. Check every tool first.
+function onPath(cmd) {
+  try {
+    execFileSync(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const missing = ["buf", "protoc-gen-go", "protoc-gen-connect-go"].filter((cmd) => !onPath(cmd));
+if (missing.length > 0) {
+  console.error(`Cannot check protobuf codegen: ${missing.join(", ")} not installed. gen/ was left untouched.`);
+  process.exit(1);
+}
+
 try {
   execFileSync("buf", ["generate"], { stdio: "inherit" });
 } catch {

@@ -2,15 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { listFeatures } from "../api/client";
 import type { Feature } from "../generated/openapi";
 import { useSession } from "../session";
-import {
-  groupedModules,
-  isCapabilityEnabled,
-  moveCustom,
-  seedCustom,
-  toggleCustomVisible,
-  visibleModules,
-  type DisclosurePrefs,
-} from "./disclosure";
+import { groupedModules, isCapabilityEnabled, visibleModules, type DisclosurePrefs } from "./disclosure";
 import { DISCLOSURE_PREF, disclosureFromPref, saveDisclosurePrefs } from "./disclosurePrefs";
 import { usePref } from "../prefs";
 import { storageGet, storageSet } from "../storage";
@@ -27,7 +19,7 @@ function cachedFeatures(): Feature[] {
     return [];
   }
 }
-import { CAPABILITIES, type NavTemplate } from "./modules";
+import { CAPABILITIES } from "./modules";
 
 type NavDisclosureValue = {
   prefs: DisclosurePrefs;
@@ -37,19 +29,13 @@ type NavDisclosureValue = {
   featuresLoaded: boolean;
   /** capabilityOn reports whether a capability (backend or UI-only) is on. */
   capabilityOn: (id: string) => boolean;
-  setTemplate: (template: NavTemplate) => void;
   setUiEnabled: (id: string, on: boolean) => void;
-  setCustomModule: (id: string, on: boolean) => void;
-  reorderCustom: (id: string, delta: number) => void;
   reloadFeatures: () => Promise<void>;
 };
 
 const NavDisclosureContext = createContext<NavDisclosureValue | null>(null);
 
 export function NavDisclosureProvider({ children }: { children: ReactNode }) {
-  const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const grants = session.status === "ready" ? session.user?.grants : undefined;
   const [rawPrefs] = usePref<unknown>(DISCLOSURE_PREF, null);
   const prefs = useMemo(() => disclosureFromPref(rawPrefs), [rawPrefs]);
   const [features, setFeatures] = useState<Feature[]>(cachedFeatures);
@@ -83,41 +69,12 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
     return out;
   }, [features]);
 
-  const setTemplate = useCallback(
-    (template: NavTemplate) => {
-      const cur = prefs;
-      let next = { ...cur, template };
-      if (template === "custom" && next.customVisible.length === 0) {
-        const snapshot = visibleModules({ ...cur, template: cur.template === "custom" ? "simple" : cur.template }, featureEnabled, roles, undefined, grants).map(
-          (mod) => mod.id,
-        );
-        next = seedCustom({ ...next, template: "custom" }, snapshot);
-      }
-      saveDisclosurePrefs(next);
-    },
-    [featureEnabled, grants, prefs, roles],
-  );
-
   const setUiEnabled = useCallback((id: string, on: boolean) => {
     persist({
       ...prefs,
       enabled: on ? Array.from(new Set([...prefs.enabled, id])) : prefs.enabled.filter((item) => item !== id),
     });
   }, [persist, prefs]);
-
-  const setCustomModule = useCallback(
-    (id: string, on: boolean) => {
-      persist(toggleCustomVisible(prefs, id, on));
-    },
-    [persist, prefs],
-  );
-
-  const reorderCustom = useCallback(
-    (id: string, delta: number) => {
-      persist(moveCustom(prefs, id, delta));
-    },
-    [persist, prefs],
-  );
 
   const capabilityOn = useCallback((id: string) => isCapabilityEnabled(id, prefs, featureEnabled), [prefs, featureEnabled]);
 
@@ -128,13 +85,10 @@ export function NavDisclosureProvider({ children }: { children: ReactNode }) {
       featureEnabled,
       featuresLoaded,
       capabilityOn,
-      setTemplate,
       setUiEnabled,
-      setCustomModule,
-      reorderCustom,
       reloadFeatures,
     }),
-    [prefs, features, featureEnabled, featuresLoaded, capabilityOn, setTemplate, setUiEnabled, setCustomModule, reorderCustom, reloadFeatures],
+    [prefs, features, featureEnabled, featuresLoaded, capabilityOn, setUiEnabled, reloadFeatures],
   );
 
   return <NavDisclosureContext.Provider value={value}>{children}</NavDisclosureContext.Provider>;
@@ -148,12 +102,12 @@ export function useNavDisclosure(): NavDisclosureValue {
   return ctx;
 }
 
-export function useVisibleNav(path: string) {
+export function useVisibleNav() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const grants = session.status === "ready" ? session.user?.grants : undefined;
   const { prefs, featureEnabled } = useNavDisclosure();
-  const items = visibleModules(prefs, featureEnabled, roles, path, grants);
+  const items = visibleModules(prefs, featureEnabled, roles, grants);
   return groupedModules(items);
 }
 

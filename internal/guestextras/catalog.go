@@ -17,12 +17,40 @@ const (
 	// distribution package: the binary is downloaded from the configured
 	// CodeHold server (see Download).
 	CodeholdCLI = "codehold-cli"
+	// Cloudflared is the Cloudflare Tunnel connector, installed from
+	// Cloudflare's signed apt repository.
+	Cloudflared = "cloudflared"
+	Tailscale   = "tailscale"
+	Python      = "python3"
+	NodeJS      = "nodejs"
+	Golang      = "golang"
+	BuildTools  = "build-essential"
+	Nginx       = "nginx"
+	Caddy       = "caddy"
+	Postgres    = "postgresql"
+	MariaDB     = "mariadb"
+	Redis       = "redis"
+	Fail2ban    = "fail2ban"
+	Htop        = "htop"
+	Tmux        = "tmux"
+	Vim         = "vim"
+	Rsync       = "rsync"
+	Restic      = "restic"
+	NetTools    = "net-tools"
+	Openssh     = "openssh-server"
+	Podman      = "podman"
+	Ansible     = "ansible"
+	Wireguard   = "wireguard-tools"
 )
 
 const (
 	CategoryContainers  = "containers"
 	CategoryDevelopment = "development"
 	CategoryUtilities   = "utilities"
+	CategoryNetworking  = "networking"
+	CategoryWeb         = "web"
+	CategoryDatabases   = "databases"
+	CategoryTools       = "tools"
 )
 
 // Extra is a guest package the operator can preinstall on a new system container.
@@ -37,6 +65,11 @@ type Extra struct {
 	// guest's package manager. Prereqs are the packages that download needs.
 	Download bool
 	Prereqs  []string
+	// Baseline extras go on every new system container without being
+	// offered; the UI only shows them when installing one failed.
+	Baseline bool
+	// DebianOnly extras are packaged for Debian-based images only.
+	DebianOnly bool
 }
 
 // Availability describes whether an extra can be installed for a guest image.
@@ -52,15 +85,38 @@ func Catalog() []Extra {
 	return []Extra{
 		{ID: Docker, Name: "Docker Engine", Description: "Container runtime", Category: CategoryContainers, NeedsNesting: true},
 		{ID: Compose, Name: "Docker Compose", Description: "Compose v2 plugin", Category: CategoryContainers, Requires: []string{Docker}, NeedsNesting: true},
+		{ID: Podman, Name: "Podman", Description: "Daemonless container engine", Category: CategoryContainers, NeedsNesting: true},
+		{ID: Cloudflared, Name: "Cloudflare Tunnel (cloudflared)", Description: "Publish services through a Cloudflare Tunnel", Category: CategoryNetworking, Download: true, Prereqs: []string{Curl, CACertificates}, DebianOnly: true},
+		{ID: Tailscale, Name: "Tailscale", Description: "Join your tailnet (WireGuard mesh VPN)", Category: CategoryNetworking, NeedsNesting: false},
+		{ID: Wireguard, Name: "WireGuard tools", Description: "wg and wg-quick", Category: CategoryNetworking},
+		{ID: Openssh, Name: "OpenSSH server", Description: "Log in over SSH", Category: CategoryNetworking},
+		{ID: Fail2ban, Name: "Fail2ban", Description: "Ban hosts that brute-force logins", Category: CategoryNetworking},
+		{ID: Nginx, Name: "Nginx", Description: "Web server and reverse proxy", Category: CategoryWeb},
+		{ID: Caddy, Name: "Caddy", Description: "Web server with automatic HTTPS", Category: CategoryWeb},
+		{ID: Postgres, Name: "PostgreSQL", Description: "Relational database", Category: CategoryDatabases},
+		{ID: MariaDB, Name: "MariaDB", Description: "MySQL-compatible database", Category: CategoryDatabases},
+		{ID: Redis, Name: "Redis", Description: "In-memory key-value store", Category: CategoryDatabases},
 		{ID: Git, Name: "Git", Description: "Version control", Category: CategoryDevelopment},
 		{ID: GitHubCLI, Name: "GitHub CLI", Description: "GitHub command line", Category: CategoryDevelopment},
-		{ID: Curl, Name: "curl", Description: "HTTP client", Category: CategoryUtilities},
-		{ID: Wget, Name: "wget", Description: "File transfer", Category: CategoryUtilities},
-		{ID: Jq, Name: "jq", Description: "JSON processor", Category: CategoryUtilities},
-		{ID: CACertificates, Name: "ca-certificates", Description: "TLS trust store", Category: CategoryUtilities},
-		{ID: Unzip, Name: "unzip", Description: "Extract zip archives", Category: CategoryUtilities},
-		{ID: Zip, Name: "zip", Description: "Create zip archives", Category: CategoryUtilities},
 		{ID: CodeholdCLI, Name: "CodeHold CLI (ch)", Description: "CodeHold Git client", Category: CategoryDevelopment, Download: true, Prereqs: []string{Curl, CACertificates}},
+		{ID: Python, Name: "Python 3", Description: "Python with pip and venv", Category: CategoryDevelopment},
+		{ID: NodeJS, Name: "Node.js", Description: "JavaScript runtime with npm", Category: CategoryDevelopment},
+		{ID: Golang, Name: "Go", Description: "Go toolchain", Category: CategoryDevelopment},
+		{ID: BuildTools, Name: "Build tools", Description: "gcc, make and friends", Category: CategoryDevelopment},
+		{ID: Ansible, Name: "Ansible", Description: "Configuration management", Category: CategoryDevelopment},
+		{ID: Htop, Name: "htop", Description: "Process viewer", Category: CategoryTools},
+		{ID: Tmux, Name: "tmux", Description: "Terminal multiplexer", Category: CategoryTools},
+		{ID: Vim, Name: "Vim", Description: "Text editor", Category: CategoryTools},
+		{ID: Rsync, Name: "rsync", Description: "Fast file sync", Category: CategoryTools},
+		{ID: Restic, Name: "restic", Description: "Encrypted backups", Category: CategoryTools},
+		{ID: NetTools, Name: "Network tools", Description: "ping, dig, ip, ss and friends", Category: CategoryTools},
+		// Baseline: on every new system container, not offered.
+		{ID: Curl, Name: "curl", Description: "HTTP client", Category: CategoryUtilities, Baseline: true},
+		{ID: Wget, Name: "wget", Description: "File transfer", Category: CategoryUtilities, Baseline: true},
+		{ID: Jq, Name: "jq", Description: "JSON processor", Category: CategoryUtilities, Baseline: true},
+		{ID: CACertificates, Name: "ca-certificates", Description: "TLS trust store", Category: CategoryUtilities, Baseline: true},
+		{ID: Unzip, Name: "unzip", Description: "Extract zip archives", Category: CategoryUtilities, Baseline: true},
+		{ID: Zip, Name: "zip", Description: "Create zip archives", Category: CategoryUtilities, Baseline: true},
 	}
 }
 
@@ -81,6 +137,28 @@ func byID(id string) (Extra, bool) {
 		}
 	}
 	return Extra{}, false
+}
+
+// BaselineIDs are the extras every new system container gets.
+func BaselineIDs() []string {
+	var out []string
+	for _, e := range Catalog() {
+		if e.Baseline {
+			out = append(out, e.ID)
+		}
+	}
+	return out
+}
+
+// WithBaseline is selected plus the baseline extras.
+func WithBaseline(selected []string) []string {
+	return Resolve(append(BaselineIDs(), selected...))
+}
+
+// IsBaseline reports whether id is a baseline extra.
+func IsBaseline(id string) bool {
+	e, ok := byID(id)
+	return ok && e.Baseline
 }
 
 // Resolve expands dependencies (Compose requires Docker) and drops unknowns.
@@ -129,6 +207,11 @@ func AvailabilityFor(pin, extraID string) Availability {
 	}
 	av := Availability{Extra: extra, Available: true}
 	family := Family(pin)
+	if extra.DebianOnly && family != "debian" && pin != "" {
+		av.Available = false
+		av.Reason = extra.Name + " is only packaged for Debian-based images"
+		return av
+	}
 	if extra.Download {
 		return downloadAvailability(av, pin, family)
 	}
@@ -205,6 +288,7 @@ func Describe(pin string) []map[string]any {
 			"needs_nesting": extra.NeedsNesting,
 			"available":     av.Available,
 			"download":      extra.Download,
+			"baseline":      extra.Baseline,
 		}
 		if av.Reason != "" {
 			item["unavailable_reason"] = av.Reason
@@ -239,6 +323,48 @@ func debianPackages(id string) []string {
 		return []string{"unzip"}
 	case Zip:
 		return []string{"zip"}
+	case Tailscale:
+		return []string{"tailscale"}
+	case Wireguard:
+		return []string{"wireguard-tools"}
+	case Openssh:
+		return []string{"openssh-server"}
+	case Fail2ban:
+		return []string{"fail2ban"}
+	case Nginx:
+		return []string{"nginx"}
+	case Caddy:
+		return []string{"caddy"}
+	case Postgres:
+		return []string{"postgresql"}
+	case MariaDB:
+		return []string{"mariadb-server"}
+	case Redis:
+		return []string{"redis-server"}
+	case Python:
+		return []string{"python3", "python3-pip", "python3-venv"}
+	case NodeJS:
+		return []string{"nodejs", "npm"}
+	case Golang:
+		return []string{"golang-go"}
+	case BuildTools:
+		return []string{"build-essential"}
+	case Ansible:
+		return []string{"ansible"}
+	case Htop:
+		return []string{"htop"}
+	case Tmux:
+		return []string{"tmux"}
+	case Vim:
+		return []string{"vim"}
+	case Rsync:
+		return []string{"rsync"}
+	case Restic:
+		return []string{"restic"}
+	case NetTools:
+		return []string{"iputils-ping", "dnsutils", "iproute2", "net-tools"}
+	case Podman:
+		return []string{"podman"}
 	default:
 		return nil
 	}
@@ -266,6 +392,48 @@ func alpinePackages(id string) []string {
 		return []string{"unzip"}
 	case Zip:
 		return []string{"zip"}
+	case Tailscale:
+		return []string{"tailscale"}
+	case Wireguard:
+		return []string{"wireguard-tools"}
+	case Openssh:
+		return []string{"openssh"}
+	case Fail2ban:
+		return []string{"fail2ban"}
+	case Nginx:
+		return []string{"nginx"}
+	case Caddy:
+		return []string{"caddy"}
+	case Postgres:
+		return []string{"postgresql"}
+	case MariaDB:
+		return []string{"mariadb", "mariadb-client"}
+	case Redis:
+		return []string{"redis"}
+	case Python:
+		return []string{"python3", "py3-pip"}
+	case NodeJS:
+		return []string{"nodejs", "npm"}
+	case Golang:
+		return []string{"go"}
+	case BuildTools:
+		return []string{"build-base"}
+	case Ansible:
+		return []string{"ansible"}
+	case Htop:
+		return []string{"htop"}
+	case Tmux:
+		return []string{"tmux"}
+	case Vim:
+		return []string{"vim"}
+	case Rsync:
+		return []string{"rsync"}
+	case Restic:
+		return []string{"restic"}
+	case NetTools:
+		return []string{"iputils", "bind-tools", "iproute2", "net-tools"}
+	case Podman:
+		return []string{"podman"}
 	default:
 		return nil
 	}

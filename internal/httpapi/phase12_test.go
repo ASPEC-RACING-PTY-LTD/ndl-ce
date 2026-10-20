@@ -507,7 +507,8 @@ func TestUpdatesRollbackUsesTheVersionsTheApplyReplaced(t *testing.T) {
 					{Name: "ndl-control", CurrentVersion: "1.1.4", CandidateVersion: "1.1.5"},
 					{Name: "nodal", CurrentVersion: "1.1.4", CandidateVersion: "1.1.5"},
 				},
-				StartedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+				// Inside the 3-day rollback window.
+				StartedAt: time.Now().UTC().Add(-2 * time.Hour),
 			}
 			if err := mem.CreateUpdateOperation(context.Background(), apply); err != nil {
 				t.Fatal(err)
@@ -515,7 +516,7 @@ func TestUpdatesRollbackUsesTheVersionsTheApplyReplaced(t *testing.T) {
 			for i := 0; i < 60; i++ {
 				_ = mem.CreateUpdateOperation(context.Background(), appdb.UpdateOperation{
 					ID: uuid.NewString(), ClusterID: cluster.ID, Action: "check", Status: appdb.UpdateSucceeded,
-					Version: "1.1.5", StartedAt: time.Date(2026, 2, 1, 0, i, 0, 0, time.UTC),
+					Version: "1.1.5", StartedAt: time.Now().UTC().Add(-time.Hour + time.Duration(i)*time.Second),
 				})
 			}
 			ts := httptest.NewServer(s.Handler())

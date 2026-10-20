@@ -1,4 +1,3 @@
-export type NavTemplate = "simple" | "advanced" | "custom";
 export type NavRequire = "audit" | "groups" | "update";
 
 export type NavModule = {
@@ -7,7 +6,6 @@ export type NavModule = {
   label: string;
   group: string;
   match: (path: string) => boolean;
-  simple: boolean;
   capability?: string;
   require?: NavRequire;
   permission?: string;
@@ -39,9 +37,6 @@ export function isIAMPath(p: string): boolean {
   );
 }
 
-/** Module ids that IAM replaced; saved custom navigation maps them to "iam". */
-export const IAM_LEGACY_MODULES = ["users", "roles", "api-access", "security", "groups"];
-
 export type Capability = {
   id: string;
   title: string;
@@ -52,7 +47,7 @@ export type Capability = {
 };
 
 export const NAV_MODULES: NavModule[] = [
-  { id: "dashboard", href: "/", label: "Dashboard", group: "Overview", match: (p) => p === "/", simple: true },
+  { id: "dashboard", href: "/", label: "Dashboard", group: "Overview", match: (p) => p === "/" },
   {
     id: "workloads",
     href: "/workloads",
@@ -61,7 +56,6 @@ export const NAV_MODULES: NavModule[] = [
     match: (p) =>
       (p === "/workloads" || p.startsWith("/workloads/")) &&
       !p.startsWith("/workloads/game-servers"),
-    simple: true,
   },
   {
     id: "game-servers",
@@ -73,18 +67,16 @@ export const NAV_MODULES: NavModule[] = [
       p.startsWith("/game-servers/") ||
       p === "/workloads/game-servers" ||
       p.startsWith("/workloads/game-servers/"),
-    simple: false,
     capability: "gameservers",
   },
-  { id: "terminal", href: "/terminal", label: "Terminal", group: "Compute", match: (p) => p === "/terminal", simple: true },
-  { id: "files", href: "/files", label: "Files", group: "Compute", match: (p) => p === "/files", simple: true },
+  { id: "terminal", href: "/terminal", label: "Terminal", group: "Compute", match: (p) => p === "/terminal" },
+  { id: "files", href: "/files", label: "Files", group: "Compute", match: (p) => p === "/files" },
   {
     id: "oci",
     href: "/oci",
     label: "OCI Containers",
     group: "Compute",
     match: (p) => p === "/oci",
-    simple: false,
     capability: "oci",
   },
   {
@@ -93,7 +85,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Docker",
     group: "Compute",
     match: (p) => p === "/docker" || p.startsWith("/docker/"),
-    simple: false,
     capability: "docker",
   },
   {
@@ -102,18 +93,16 @@ export const NAV_MODULES: NavModule[] = [
     label: "CodeHold Runners",
     group: "Compute",
     match: (p) => p === "/codehold",
-    simple: false,
     capability: "codehold",
   },
-  { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates", simple: false },
-  { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries", simple: false },
+  { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates" },
+  { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries" },
   {
     id: "node",
     href: "/node",
     label: "Node",
     group: "Infrastructure",
     match: (p) => p === "/node" || (p.startsWith("/node/") && !p.startsWith("/nodes/")),
-    simple: true,
   },
   {
     id: "storage",
@@ -121,7 +110,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Storage",
     group: "Infrastructure",
     match: (p) => p === "/storage" || p.startsWith("/storage/"),
-    simple: true,
   },
   {
     id: "network",
@@ -130,7 +118,6 @@ export const NAV_MODULES: NavModule[] = [
     group: "Infrastructure",
     // Cloudflare, Caddy and Nginx live under Network.
     match: (p) => p === "/network" || p.startsWith("/network/") || p === "/cloudflare",
-    simple: true,
   },
   {
     id: "cluster",
@@ -138,7 +125,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Cluster",
     group: "Infrastructure",
     match: (p) => p === "/settings/cluster",
-    simple: false,
     capability: "clustering",
   },
   {
@@ -146,18 +132,16 @@ export const NAV_MODULES: NavModule[] = [
     href: "/events",
     label: "Events",
     group: "Operations",
-    match: (p) => p === "/events" || p === "/node/events",
-    simple: false,
+    match: (p) => p === "/events",
   },
-  { id: "alerts", href: "/alerts", label: "Alerts", group: "Operations", match: (p) => p === "/alerts", simple: false },
-  { id: "backups", href: "/backups", label: "Backups", group: "Operations", match: (p) => p === "/backups", simple: true },
+  { id: "alerts", href: "/alerts", label: "Alerts", group: "Operations", match: (p) => p === "/alerts" },
+  { id: "backups", href: "/backups", label: "Backups", group: "Operations", match: (p) => p === "/backups" },
   {
     id: "import-export",
     href: "/import-export",
     label: "Import / Export",
     group: "Operations",
     match: (p) => p === "/import-export",
-    simple: true,
   },
   {
     id: "automation",
@@ -165,7 +149,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Automation",
     group: "Operations",
     match: (p) => p === "/automation" || p.startsWith("/automation/"),
-    simple: false,
     capability: "automation",
   },
   {
@@ -174,7 +157,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Ask",
     group: "Intelligence",
     match: (p) => p === "/ask",
-    simple: false,
     capability: "ai",
   },
   {
@@ -183,7 +165,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Plans",
     group: "Intelligence",
     match: (p) => p === "/plans",
-    simple: false,
     capability: "ai",
   },
   {
@@ -192,17 +173,15 @@ export const NAV_MODULES: NavModule[] = [
     label: "Store",
     group: "Catalog",
     match: (p) => p === "/store",
-    simple: false,
     capability: "integrations",
   },
-  { id: "docs", href: "/docs", label: "Docs", group: "Catalog", match: (p) => p === "/docs", simple: false },
+  { id: "docs", href: "/docs", label: "Docs", group: "Catalog", match: (p) => p === "/docs" },
   {
     id: "iam",
     href: "/iam",
     label: "IAM",
     group: "Management",
     match: (p) => isIAMPath(p),
-    simple: true,
     anyPermission: IAM_PERMISSIONS,
   },
   {
@@ -211,7 +190,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Add Features",
     group: "Management",
     match: (p) => p === "/settings/features",
-    simple: true,
     permission: "feature.manage",
   },
   {
@@ -220,7 +198,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Updates",
     group: "Management",
     match: (p) => p === "/settings/updates",
-    simple: true,
     permission: "updates.manage",
   },
   {
@@ -229,7 +206,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "License",
     group: "Management",
     match: (p) => p === "/settings/license",
-    simple: true,
     permission: "settings.license.manage",
   },
   {
@@ -238,7 +214,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Audit Log",
     group: "Management",
     match: (p) => p === "/audit" || p === "/tasks",
-    simple: true,
   },
   {
     id: "kubernetes",
@@ -246,7 +221,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Kubernetes",
     group: "Management",
     match: (p) => p === "/settings/kubernetes",
-    simple: false,
     capability: "kubernetes",
     permission: "feature.manage",
   },
@@ -256,7 +230,6 @@ export const NAV_MODULES: NavModule[] = [
     label: "Certificates",
     group: "Management",
     match: (p) => p === "/settings/certificates",
-    simple: false,
     capability: "integrations",
     permission: "settings.tls.manage",
   },
@@ -378,24 +351,6 @@ export const CAPABILITIES: Capability[] = [
   },
 ];
 
-export const TEMPLATES: { id: NavTemplate; label: string; summary: string }[] = [
-  {
-    id: "simple",
-    label: "Simple",
-    summary: "Core virtualization: guests, storage, network, backups, and Add Features.",
-  },
-  {
-    id: "advanced",
-    label: "Advanced",
-    summary: "Full appliance navigation. Capability enablement is unchanged.",
-  },
-  {
-    id: "custom",
-    label: "Custom",
-    summary: "Choose, hide, and reorder modules. Enablement is unchanged.",
-  },
-];
-
 export function moduleById(id: string): NavModule | undefined {
   return NAV_MODULES.find((item) => item.id === id);
 }
@@ -411,6 +366,7 @@ const PATH_GATES: { capability: string; match: (p: string) => boolean }[] = [
   { capability: "nginx", match: (p) => p === "/network/nginx" || p.startsWith("/network/nginx/") },
   { capability: "oci", match: (p) => p === "/workloads/new/oci" || p === "/stacks" || p.startsWith("/stacks/") },
   { capability: "docker", match: (p) => p === "/uptime" },
+  { capability: "codehold", match: (p) => p === "/codehold/cli" },
 ];
 
 /** capabilityForPath names the optional capability a page belongs to, if any. */

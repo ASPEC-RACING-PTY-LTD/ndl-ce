@@ -30,7 +30,11 @@ type AccountProfile struct {
 	EmailVerifiedAt *time.Time
 	IPAllowlistOn   bool
 	IPAllowlist     []IPAllowEntry
-	UpdatedAt       time.Time
+	// Bio and AvatarURL are the social profile other people see. AvatarURL
+	// is used when no picture was uploaded.
+	Bio       string
+	AvatarURL string
+	UpdatedAt time.Time
 }
 
 // UserAvatar is a profile picture, stored as the uploaded image.
@@ -171,9 +175,9 @@ func (p *Postgres) GetAccountProfile(ctx context.Context, userID string) (*Accou
 	var verified sql.NullTime
 	var list []byte
 	err := p.DB.QueryRowContext(ctx, `
-SELECT user_id::text, cluster_id::text, email, email_secondary, email_verified_at, ip_allowlist_on, ip_allowlist, updated_at
+SELECT user_id::text, cluster_id::text, email, email_secondary, email_verified_at, ip_allowlist_on, ip_allowlist, bio, avatar_url, updated_at
 FROM account_profiles WHERE user_id=$1`, userID).Scan(
-		&out.UserID, &out.ClusterID, &out.Email, &out.EmailSecondary, &verified, &out.IPAllowlistOn, &list, &out.UpdatedAt)
+		&out.UserID, &out.ClusterID, &out.Email, &out.EmailSecondary, &verified, &out.IPAllowlistOn, &list, &out.Bio, &out.AvatarURL, &out.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -204,12 +208,13 @@ func (p *Postgres) UpsertAccountProfile(ctx context.Context, a AccountProfile) e
 		a.UpdatedAt = time.Now().UTC()
 	}
 	_, err = p.DB.ExecContext(ctx, `
-INSERT INTO account_profiles (user_id, cluster_id, email, email_secondary, email_verified_at, ip_allowlist_on, ip_allowlist, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO account_profiles (user_id, cluster_id, email, email_secondary, email_verified_at, ip_allowlist_on, ip_allowlist, bio, avatar_url, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (user_id) DO UPDATE SET
   email=EXCLUDED.email, email_secondary=EXCLUDED.email_secondary, email_verified_at=EXCLUDED.email_verified_at,
-  ip_allowlist_on=EXCLUDED.ip_allowlist_on, ip_allowlist=EXCLUDED.ip_allowlist, updated_at=EXCLUDED.updated_at`,
-		a.UserID, a.ClusterID, a.Email, a.EmailSecondary, a.EmailVerifiedAt, a.IPAllowlistOn, raw, a.UpdatedAt)
+  ip_allowlist_on=EXCLUDED.ip_allowlist_on, ip_allowlist=EXCLUDED.ip_allowlist, bio=EXCLUDED.bio, avatar_url=EXCLUDED.avatar_url,
+  updated_at=EXCLUDED.updated_at`,
+		a.UserID, a.ClusterID, a.Email, a.EmailSecondary, a.EmailVerifiedAt, a.IPAllowlistOn, raw, a.Bio, a.AvatarURL, a.UpdatedAt)
 	return err
 }
 

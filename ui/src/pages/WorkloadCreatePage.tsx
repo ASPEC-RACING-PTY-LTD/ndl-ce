@@ -30,7 +30,6 @@ import { NetworkPicker, preferredGuestNetwork } from "../components/form/Network
 import { OsImagePicker } from "../components/form/OsImagePicker";
 import { StoragePicker } from "../components/form/StoragePicker";
 import { PageHeader } from "../components/PageHeader";
-import { UxModeToggle } from "../components/UxModeToggle";
 import { FALLBACK_IMAGE_PINS, kindLabel, osLabel } from "../labels";
 import { canMutate, isAdmin, mutateHint } from "../rbac";
 import { navigate } from "../router";
@@ -40,7 +39,8 @@ import { isAdvanced, isExpert, type UxLevel } from "../ux-mode";
 import { bytesFromGB, parseMemoryGB } from "../memory";
 import { Checkbox } from "../ui/Checkbox";
 import { SelectionCard } from "../ui/SelectionCard";
-import { toggleExtra } from "../workloadExtras";
+import { groupExtras, toggleExtra } from "../workloadExtras";
+import { num, str, useTemplateFromURL } from "../instanceTemplates";
 
 type Step = "basics" | "resources" | "network" | "extras" | "review" | "progress";
 
@@ -48,7 +48,7 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "basics", label: "Basics" },
   { id: "resources", label: "Resources" },
   { id: "network", label: "Network" },
-  { id: "extras", label: "Extras" },
+  { id: "extras", label: "Components" },
   { id: "review", label: "Review" },
 ];
 
@@ -64,7 +64,8 @@ export function WorkloadCreatePage() {
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const admin = isAdmin(roles);
   const mutate = canMutate(roles);
-  const [mode, setMode] = useState<UxLevel>(uxLevel(session.status === "ready" ? session.user : null));
+  // The level comes from Theme → Other; it is no longer switched per page.
+  const mode: UxLevel = uxLevel(session.status === "ready" ? session.user : null);
   const [step, setStep] = useState<Step>("basics");
   const [pools, setPools] = useState<StoragePool[]>([]);
   const [nets, setNets] = useState<Network[]>([]);
@@ -98,7 +99,10 @@ export function WorkloadCreatePage() {
   const [cfHost, setCfHost] = useState("");
   const [cfProto, setCfProto] = useState("http");
   const [cfPort, setCfPort] = useState("80");
-  const [publishState, setPublishState] = useState<{ state: "todo" | "active" | "done" | "failed"; message?: string } | null>(null);
+  const [publishState, setPublishState] = useState<{
+    state: "todo" | "active" | "done" | "failed";
+    message?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!extWatch || !created?.id) {
@@ -142,7 +146,11 @@ export function WorkloadCreatePage() {
           return { ...row, state: "done", label: `${label} installed` };
         }
         if (x.state === "failed") {
-          return { ...row, state: "todo", label: `${label} failed${x.message ? `: ${x.message}` : ""}` };
+          return {
+            ...row,
+            state: "todo",
+            label: `${label} failed${x.message ? `: ${x.message}` : ""}`,
+          };
         }
         return { ...row, state: "active", label: `Installing ${label}` };
       }),
@@ -158,7 +166,17 @@ export function WorkloadCreatePage() {
         setCfInv(inv);
         setCfTunnel((inv.tunnels ?? []).find((t) => t.remote_managed)?.id ?? "");
       })
-      .catch(() => setCfInv({ fetched_at: "", refreshing: false, accounts: [], tunnels: [], routes: [], dns: [], errors: [] }));
+      .catch(() =>
+        setCfInv({
+          fetched_at: "",
+          refreshing: false,
+          accounts: [],
+          tunnels: [],
+          routes: [],
+          dns: [],
+          errors: [],
+        }),
+      );
   }, [publish, cfInv]);
 
   async function publishWhenReady(id: string) {
@@ -166,7 +184,10 @@ export function WorkloadCreatePage() {
     if (!tunnel) {
       return;
     }
-    setPublishState({ state: "active", message: "Waiting for the container's address" });
+    setPublishState({
+      state: "active",
+      message: "Waiting for the container's address",
+    });
     for (let i = 0; i < 30; i++) {
       try {
         const info = await getWorkloadCloudflare(id);
@@ -180,16 +201,25 @@ export function WorkloadCreatePage() {
             port: Number(cfPort) || 0,
             dns: true,
           });
-          setPublishState({ state: "done", message: `${res.hostname} goes to ${res.service}` });
+          setPublishState({
+            state: "done",
+            message: `${res.hostname} goes to ${res.service}`,
+          });
           return;
         }
       } catch (err) {
-        setPublishState({ state: "failed", message: err instanceof Error ? err.message : "Publishing failed" });
+        setPublishState({
+          state: "failed",
+          message: err instanceof Error ? err.message : "Publishing failed",
+        });
         return;
       }
       await new Promise((r) => window.setTimeout(r, 3000));
     }
-    setPublishState({ state: "failed", message: "The container did not get an address in time; publish it from the workload page" });
+    setPublishState({
+      state: "failed",
+      message: "The container did not get an address in time; publish it from the workload page",
+    });
   }
 
   useEffect(() => {
@@ -253,17 +283,57 @@ export function WorkloadCreatePage() {
     setDiskGB(found.diskGB);
   }
 
+  // A settings template (?template=) fills the form once the lists it refers to are loaded.
+  const { template: tmpl, error: tmplError } = useTemplateFromURL("system-container");
+  const tmplApplied = useRef(false);
+  useEffect(() => {
+    if (!tmpl || tmplApplied.current || nets.length === 0) {
+      return;
+    }
+    tmplApplied.current = true;
+    const spec = tmpl.spec;
+    const image = str(spec, "image_pin");
+    if (image) {
+      setPin(image);
+    }
+    const c = num(spec, "cpus");
+    const mem = num(spec, "memory_bytes");
+    const disk = num(spec, "disk_bytes");
+    if (c || mem || disk) {
+      setPreset("custom");
+    }
+    if (c) {
+      setCpus(String(c));
+    }
+    if (mem) {
+      setMemoryGB(String(Math.round((mem / 1024 ** 3) * 100) / 100));
+    }
+    if (disk) {
+      setDiskGB(String(Math.round(disk / 1024 ** 3)));
+    }
+    const net = str(spec, "network_id");
+    if (net && nets.some((n) => n.id === net)) {
+      setNetworkID(net);
+    }
+    const poolPick = str(spec, "pool_id");
+    if (poolPick && pools.some((p) => p.id === poolPick)) {
+      setPoolID(poolPick);
+    }
+    if (spec?.privileged === true) {
+      setPrivileged(true);
+    }
+    if (typeof spec?.autostart === "boolean") {
+      setAutostart(spec.autostart);
+    }
+    if (Array.isArray(spec?.extras) && spec.extras.length > 0) {
+      setExtras(spec.extras.filter((x): x is string => typeof x === "string"));
+    }
+  }, [tmpl, nets, pools]);
+
   const pool = pools.find((p) => p.id === poolID);
   const net = nets.find((n) => n.id === networkID);
   const hint = mutateHint(roles);
-  const grouped = useMemo(() => {
-    const cats = ["containers", "development", "utilities"] as const;
-    return cats.map((category) => ({
-      category,
-      label: category === "containers" ? "Containers" : category === "development" ? "Development" : "Utilities",
-      items: catalog.filter((item) => item.category === category),
-    }));
-  }, [catalog]);
+  const grouped = useMemo(() => groupExtras(catalog), [catalog]);
 
   async function onCreate() {
     setBusy(true);
@@ -275,7 +345,11 @@ export function WorkloadCreatePage() {
       { id: "rootfs", label: `${osLabel(pin)} rootfs prepared`, state: "todo" },
       { id: "network", label: "Network configured", state: "todo" },
       { id: "start", label: "Container started", state: "todo" },
-      ...extraRows.map((label, i) => ({ id: extras[i], label: `Installing ${label}`, state: "todo" as const })),
+      ...extraRows.map((label, i) => ({
+        id: extras[i],
+        label: `Installing ${label}`,
+        state: "todo" as const,
+      })),
       { id: "final", label: "Finalising", state: "todo" },
     ]);
     try {
@@ -319,6 +393,30 @@ export function WorkloadCreatePage() {
   const failedExtras = Object.entries(extState)
     .filter(([id, x]) => x.state === "failed" && extras.includes(id))
     .map(([id, x]) => ({ extra: id, message: x.message ?? "failed" }));
+  // Baseline tools are not picked, so their failures get their own notice.
+  const failedBaseline = Object.entries(extState)
+    .filter(([id, x]) => x.state === "failed" && !extras.includes(id) && catalog.some((c) => c.id === id && c.baseline))
+    .map(([id, x]) => ({ extra: id, message: x.message ?? "failed" }));
+  const [baselineDismissed, setBaselineDismissed] = useState(false);
+
+  async function fixBaseline() {
+    if (!created?.id) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await changeWorkloadExtensions(created.id, {
+        action: "install",
+        extras: failedBaseline.map((w) => w.extra),
+      });
+      setExtWatch(true);
+      setBaselineDismissed(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Retry failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function retryFailed() {
     if (!created?.id) {
@@ -327,7 +425,10 @@ export function WorkloadCreatePage() {
     const ids = failedExtras.map((w) => w.extra);
     setBusy(true);
     try {
-      await changeWorkloadExtensions(created.id, { action: "install", extras: ids.length ? ids : extras });
+      await changeWorkloadExtensions(created.id, {
+        action: "install",
+        extras: ids.length ? ids : extras,
+      });
       setExtWatch(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Retry failed");
@@ -340,13 +441,14 @@ export function WorkloadCreatePage() {
 
   return (
     <section className="page page-wide" aria-labelledby="create-ct-heading">
-      <PageHeader
-        id="create-ct-heading"
-        title="Create system container"
-        kicker="Official LXC images. Unprivileged is the default."
-        actions={<UxModeToggle value={mode} onChange={setMode} />}
-      />
+      <PageHeader id="create-ct-heading" title="Create system container" kicker="Official LXC images. Unprivileged is the default." />
       {error ? <ErrorState>{error}</ErrorState> : null}
+      {tmplError ? <ErrorState>{tmplError}</ErrorState> : null}
+      {tmpl ? (
+        <p className="banner" role="status">
+          Filled in from the template {tmpl.name}. Change anything before creating.
+        </p>
+      ) : null}
       {step !== "progress" ? (
         <div className="wizard-layout">
           <nav className="wizard-steps" aria-label="Create steps">
@@ -601,7 +703,7 @@ export function WorkloadCreatePage() {
         </div>
       ) : (
         <article className="stack">
-          <h2>{warnings.length ? "Workload created with setup warnings" : extWatch ? "Created; installing extensions" : created ? "Created" : "Creating"}</h2>
+          <h2>{warnings.length ? "Workload created with setup warnings" : extWatch ? "Created; installing components" : created ? "Created" : "Creating"}</h2>
           <ol className="progress-steps">
             {progress.map((item) => (
               <li key={item.id} className={"progress-step is-" + item.state}>
@@ -612,13 +714,30 @@ export function WorkloadCreatePage() {
           </ol>
           {extWatch ? (
             <p className="banner" role="status">
-              Extensions install in the background and keep going if you leave this page. Their progress is also on the workload's Extensions page.
+              Components install in the background and keep going if you leave this page. Their progress is also on the workload's Components page.
             </p>
           ) : null}
           {publishState ? (
             <p className={"banner " + (publishState.state === "failed" ? "banner-warn" : publishState.state === "done" ? "banner-ok" : "")} role="status">
               Cloudflare: {publishState.message}
             </p>
+          ) : null}
+          {failedBaseline.length && !baselineDismissed && !extWatch ? (
+            <div className="banner banner-warn" role="status">
+              <p>
+                Some basic tools every container gets did not install:{" "}
+                {failedBaseline.map((w) => `${catalog.find((item) => item.id === w.extra)?.name || w.extra} (${w.message})`).join(", ")}. The
+                container works without them.
+              </p>
+              <div className="btn-row">
+                <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => void fixBaseline()}>
+                  Try to fix it
+                </button>
+                <button className="btn btn-ghost" type="button" onClick={() => setBaselineDismissed(true)}>
+                  Carry on without them
+                </button>
+              </div>
+            </div>
           ) : null}
           {warnings.length ? (
             <div className="banner banner-warn" role="status">
@@ -642,7 +761,7 @@ export function WorkloadCreatePage() {
               </button>
               {extras.length ? (
                 <button className="btn btn-secondary" type="button" onClick={() => navigate(`/workloads/${created.id}/extensions`)}>
-                  Extensions
+                  Components
                 </button>
               ) : null}
             </div>

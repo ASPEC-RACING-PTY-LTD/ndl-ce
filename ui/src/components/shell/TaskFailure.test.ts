@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRecentFailure } from "./TaskIndicator";
+import { isRecentFailure } from "./NotificationBell";
 
 describe("isRecentFailure", () => {
   const now = Date.parse("2026-09-14T12:00:00Z");

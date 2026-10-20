@@ -1,130 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { groupedModules, isCapabilityEnabled, paletteMatchesVisible, parseDisclosurePrefs, seedCustom, visibleModules } from "./disclosure";
+import { groupedModules, isCapabilityEnabled, parseDisclosurePrefs, visibleModules } from "./disclosure";
 
 const admin = ["superadmin"];
 
 describe("nav disclosure", () => {
-  it("defaults Simple to core virtualization without optional platform links", () => {
-    const prefs = parseDisclosurePrefs(null);
-    const items = visibleModules(prefs, {}, admin);
-    const labels = items.map((item) => item.label);
+  it("shows every page a SuperAdmin may open, without optional features that are off", () => {
+    const labels = visibleModules(parseDisclosurePrefs(null), {}, admin).map((item) => item.label);
     expect(labels).toContain("Dashboard");
     expect(labels).toContain("Workloads");
-    expect(labels).toContain("Storage");
-    expect(labels).toContain("Add Features");
+    expect(labels).toContain("Templates");
     expect(labels).toContain("IAM");
-    expect(labels).not.toContain("Users");
     expect(labels).toContain("Audit Log");
     expect(labels).not.toContain("Cluster");
-    expect(labels).not.toContain("Automation");
-    expect(labels).not.toContain("Ask");
     expect(labels).not.toContain("Docker");
     expect(labels).not.toContain("Game Servers");
   });
 
-  it("shows Game Servers on Simple when the gameservers feature is enabled", () => {
-    const prefs = parseDisclosurePrefs(null);
-    const items = visibleModules(prefs, { gameservers: true }, admin);
-    expect(items.map((item) => item.label)).toContain("Game Servers");
-    const game = items.find((item) => item.id === "game-servers");
-    expect(game?.group).toBe("Compute");
-    expect(game?.href).toBe("/game-servers");
+  it("shows a feature's page once the feature is on", () => {
+    const items = visibleModules(parseDisclosurePrefs(null), { gameservers: true, docker: true }, admin);
+    expect(items.map((item) => item.label)).toEqual(expect.arrayContaining(["Game Servers", "Docker"]));
     const compute = items.filter((item) => item.group === "Compute").map((item) => item.id);
     expect(compute.indexOf("workloads")).toBeLessThan(compute.indexOf("game-servers"));
   });
 
-  it("shows Docker on Simple when the docker feature is enabled", () => {
-    const prefs = parseDisclosurePrefs(null);
-    const items = visibleModules(prefs, { docker: true }, admin);
-    expect(items.map((item) => item.label)).toContain("Docker");
-  });
-
-  it("adds enabled optional modules on Simple without showing the rest of Advanced", () => {
-    const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "simple", enabled: ["clustering"] }));
-    const items = visibleModules(prefs, { k8s: true }, admin);
-    const labels = items.map((item) => item.label);
-    expect(labels).toContain("Cluster");
-    expect(labels).toContain("Kubernetes");
-    expect(labels).not.toContain("Ask");
-  });
-
-  it("keeps Custom visibility independent of enablement", () => {
-    const prefs = parseDisclosurePrefs(
-      JSON.stringify({ version: 1, template: "custom", enabled: ["clustering"], customVisible: ["dashboard"], customOrder: ["dashboard"] }),
-    );
+  it("keeps UI-only capabilities and drops the old layout fields", () => {
+    const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "custom", enabled: ["clustering"], customVisible: ["dashboard"] }));
+    expect(prefs).toEqual({ version: 1, enabled: ["clustering"] });
     expect(isCapabilityEnabled("clustering", prefs, {})).toBe(true);
-    const items = visibleModules(prefs, {}, admin);
-    expect(items.map((item) => item.id)).toEqual(["dashboard"]);
+    expect(visibleModules(prefs, {}, admin).map((item) => item.label)).toContain("Cluster");
   });
 
-  it("does not drop Custom config when switching templates", () => {
-    const custom = parseDisclosurePrefs(
-      JSON.stringify({
-        version: 1,
-        template: "advanced",
-        enabled: ["automation"],
-        customVisible: ["workloads", "storage"],
-        customOrder: ["storage", "workloads"],
-      }),
-    );
-    expect(custom.enabled).toEqual(["automation"]);
-    expect(custom.customVisible).toEqual(["workloads", "storage"]);
-    const seeded = seedCustom({ ...custom, template: "custom", customVisible: [], customOrder: [] }, ["dashboard", "node"]);
-    expect(seeded.customVisible).toEqual(["dashboard", "node"]);
-  });
-
-  it("shows the Audit Log, which holds tasks, to everyone and IAM to admins", () => {
-    const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "advanced" }));
+  it("shows the Audit Log to everyone and IAM to admins", () => {
+    const prefs = parseDisclosurePrefs(null);
     const viewer = visibleModules(prefs, {}, ["user"]).map((item) => item.id);
     const adminItems = visibleModules(prefs, {}, admin).map((item) => item.id);
     expect(viewer).toContain("audit");
     expect(viewer).not.toContain("iam");
     expect(viewer).not.toContain("add-features");
-    expect(adminItems).toContain("audit");
     expect(adminItems).toContain("iam");
     expect(groupedModules(visibleModules(prefs, {}, admin)).some((g) => g.label === "Management")).toBe(true);
-    expect(groupedModules(visibleModules(prefs, {}, admin)).some((g) => g.label === "Settings")).toBe(false);
   });
 
-  it("lets an operator reach IAM for API access without Users", () => {
-    const prefs = parseDisclosurePrefs(JSON.stringify({ version: 1, template: "advanced" }));
-    const items = visibleModules(prefs, {}, ["admin"]).map((item) => item.id);
-    expect(items).toContain("iam");
-    expect(items).toContain("add-features");
-    expect(items).toContain("updates");
-    expect(items).toContain("audit");
+  it("lets an admin reach IAM, features and updates but not the license", () => {
+    const items = visibleModules(parseDisclosurePrefs(null), {}, ["admin"]).map((item) => item.id);
+    expect(items).toEqual(expect.arrayContaining(["iam", "add-features", "updates", "audit"]));
     expect(items).not.toContain("license");
   });
 
-  it("pins the current page so deep links stay reachable", () => {
-    const prefs = parseDisclosurePrefs(null);
-    const items = visibleModules(prefs, {}, admin, "/templates");
-    expect(items.some((item) => item.id === "templates")).toBe(true);
-  });
-
-  it("never shows or pins a disabled feature, in any layout", () => {
-    for (const template of ["simple", "advanced", "custom"] as const) {
-      const prefs = { ...parseDisclosurePrefs(null), template, customVisible: ["cluster", "automation"] };
-      const ids = visibleModules(prefs, {}, admin, "/settings/cluster").map((item) => item.id);
-      expect(ids).not.toContain("cluster");
-      expect(ids).not.toContain("automation");
-    }
-  });
-
-  it("keeps create actions in Search while hiding optional destinations on Simple", () => {
-    const prefs = parseDisclosurePrefs(null);
-    const ids = new Set(visibleModules(prefs, {}, admin).map((item) => item.id));
-    expect(paletteMatchesVisible({ id: "create-vm", href: "/workloads/new/vm" }, ids)).toBe(true);
-    expect(paletteMatchesVisible({ id: "features", href: "/settings/features" }, ids)).toBe(true);
-    expect(paletteMatchesVisible({ id: "cluster", href: "/settings/cluster" }, ids)).toBe(false);
-    expect(paletteMatchesVisible({ id: "ask", href: "/ask" }, ids)).toBe(false);
-  });
-
-  it("merges pinned modules into an existing group", () => {
-    const prefs = parseDisclosurePrefs(null);
-    const groups = groupedModules(visibleModules(prefs, {}, admin, "/templates"));
-    const labels = groups.map((group) => group.label);
-    expect(labels.filter((label) => label === "Compute")).toHaveLength(1);
-    expect(groups.find((group) => group.label === "Compute")?.items.map((item) => item.id)).toContain("templates");
+  it("puts each group once", () => {
+    const labels = groupedModules(visibleModules(parseDisclosurePrefs(null), {}, admin)).map((g) => g.label);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 });

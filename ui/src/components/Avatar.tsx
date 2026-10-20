@@ -14,18 +14,23 @@ export function Avatar({
   userID,
   name,
   updatedAt,
+  url,
   size = 32,
 }: {
   userID: string;
   name: string;
   updatedAt?: string;
+  /** url is a picture address the person gave; an uploaded picture wins. */
+  url?: string;
   size?: number;
 }) {
-  const src = avatarURL(userID, updatedAt);
+  const src = avatarURL(userID, updatedAt) || (url && url.startsWith("https://") ? url : undefined);
   const [broken, setBroken] = useState<string | null>(null);
   const style = { width: size, height: size, fontSize: Math.max(10, Math.round(size * 0.4)) };
   if (src && broken !== src) {
-    return <img className="avatar" src={src} alt="" width={size} height={size} style={style} onError={() => setBroken(src)} />;
+    return (
+      <img className="avatar" src={src} alt="" width={size} height={size} style={style} referrerPolicy="no-referrer" onError={() => setBroken(src)} />
+    );
   }
   return (
     <span className="avatar avatar-initials" style={style} aria-hidden="true">

@@ -10,6 +10,8 @@ const admin: MeResponse = {
   edition: "ce",
   ux_level: "guided",
   expert_ack: false,
+  // These tests cover the classic sidebar, which lists every page.
+  ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 
 function jsonResponse(status: number, body?: unknown): Response {

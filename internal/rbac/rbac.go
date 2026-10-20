@@ -12,21 +12,6 @@ const (
 	Automation = "automation"
 )
 
-// legacyRoles maps role ids used before roles were renamed to match the UI
-// (migration 0076) to the current ids. "admin" is not listed: it now names
-// the Admin role, which used to be "operator".
-//
-// Remove after the release that follows 0076: nothing in the database uses
-// the old ids, this only catches API clients that still send them.
-var legacyRoles = map[string]string{"owner": SuperAdmin, "operator": Admin, "viewer": User}
-
-// LegacyRole returns the current id for a role id from before the rename,
-// and whether name was such an id.
-func LegacyRole(name string) (string, bool) {
-	cur, ok := legacyRoles[strings.ToLower(strings.TrimSpace(name))]
-	return cur, ok
-}
-
 // Permissions used in Phase 1. Later phases add more names.
 const (
 	IdentityRead           = "identity.read"
@@ -133,7 +118,11 @@ const (
 	// on the Approvals page only, never in the role editor.
 	ApprovalsView   = "approvals.view"
 	ApprovalsDecide = "approvals.decide"
-	All             = "*"
+	// Search settings and indexing (Admin by default); appearance settings:
+	// the global theme and themes per role or group (SuperAdmin by default).
+	SearchManage     = "search.manage"
+	AppearanceManage = "settings.appearance.manage"
+	All              = "*"
 
 	TokenPresetReadonlyDebug = "readonly-debug"
 	TokenPresetFullAudit     = "full-audit"
@@ -168,7 +157,7 @@ func (Catalog) PermissionsForRole(role string) []string {
 			GameServerRead, GameServerCreate, GameServerPower, GameServerConsole, GameServerFiles, GameServerConfig,
 			GameServerContent, GameServerBackup, GameServerSchedule, GameServerNetwork, GameServerUsers,
 			GameServerReinstall, GameServerDelete, GameServerAdmin,
-			CloudflareRead, CloudflareManage,
+			CloudflareRead, CloudflareManage, SearchManage,
 		}
 	case User:
 		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead, GameServerRead, CloudflareRead}

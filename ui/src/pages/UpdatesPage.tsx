@@ -10,6 +10,7 @@ import {
   getUpdates,
   preflightUpdates,
   rollbackUpdates,
+  wipeUpdateRollback,
 } from "../api/client";
 import type {
   UpdateCheckpoint,
@@ -222,9 +223,11 @@ export function UpdatesPage() {
   }
 
   async function onApply() {
+    const affecting = (preview?.impact_notices ?? status?.impact_notices ?? []).filter((n) => n.applies);
+    const impact = affecting.length ? `\n\nThis update changes things you use:\n${affecting.map((n) => `- ${n.text}`).join("\n")}` : "";
     if (
       !confirmAction(
-        "Install the latest release?\n\nPreflight runs first and a checkpoint of the control-plane database is saved, so the update can be rolled back. Running backups are paused and run again automatically afterwards. The control plane restarts during the update and this page reconnects on its own. Guests keep running.",
+        `Install the latest release?${impact}\n\nPreflight runs first and a checkpoint of the control-plane database is saved, so the update can be rolled back for 3 days. Running backups are paused and run again automatically afterwards. The control plane restarts during the update and this page reconnects on its own. Guests keep running.`,
       )
     ) {
       return;
@@ -266,7 +269,20 @@ export function UpdatesPage() {
     });
   }
 
+  async function onWipePrevious() {
+    if (
+      !confirmAction("Delete the previous version kept for rollback?\n\nThe update can no longer be rolled back afterwards. This cannot be undone.")
+    ) {
+      return;
+    }
+    await runAction(async () => {
+      await wipeUpdateRollback();
+    });
+  }
+
   const hostSupported = status?.host_supported === true;
+  const notices = preview?.impact_notices ?? status?.impact_notices ?? [];
+  const windowEnds = status?.rollback?.window_ends_at;
   const actionsEnabled = mutate && hostSupported && !busy && !applyRunning(status?.last_operation ?? lastOp);
   const rollbackReady = status?.rollback?.available === true;
   const lastCheckCandidates = status?.last_check?.candidates ?? [];
@@ -315,6 +331,37 @@ export function UpdatesPage() {
         </button>
       </div>
       {!rollbackReady && status?.rollback?.reason ? <p className="field-hint">{status.rollback.reason}</p> : null}
+      {rollbackReady && windowEnds ? (
+        <p className="field-hint">
+          Rollback is possible until {formatWhen(windowEnds)}. After that the previous version is deleted automatically.
+          {status?.rollback?.restores_database ? " Rolling back restores the database from before the update, so changes made since are lost." : ""}
+        </p>
+      ) : null}
+      {status?.previous_version_kept && status.can_wipe_previous ? (
+        <div className="btn-row">
+          <button className="btn btn-danger btn-sm" type="button" disabled={busy || updating} onClick={() => void onWipePrevious()}>
+            Delete previous version now
+          </button>
+          <span className="field-hint">SuperAdmin only. Frees the space used by the rollback copy.</span>
+        </div>
+      ) : null}
+      {notices.length ? (
+        <article className="panel update-notices">
+          <h2>
+            Before you update
+            {status?.impact_version ? ` to ${status.impact_version}` : ""}
+          </h2>
+          <ul>
+            {notices.map((n) => (
+              <li key={n.id} className={n.applies ? "is-applies" : "muted"}>
+                <strong>{n.audience}:</strong> {n.text}
+                {n.detail ? <span className="meta"> {n.detail}</span> : null}
+                {n.applies ? <span className="chip chip-sm">Affects you</span> : null}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ) : null}
 
       {updating ? (
         <p className="banner" role="status">
@@ -402,108 +449,59 @@ export function UpdatesPage() {
               onClick={op ? () => setDetailsOpen(true) : undefined}
             />
           </div>
-          <article className="panel">
-            <h2>Host support</h2>
-            {hostSupported ? (
-              <dl className="definition-list">
-                <div>
-                  <dt>Channel</dt>
-                  <dd>{status.channel}</dd>
-                </div>
-                <div>
-                  <dt>Host</dt>
-                  <dd>Supported</dd>
-                </div>
-                <div>
-                  <dt>Detail</dt>
-                  <dd>{status.host_reason || "None"}</dd>
-                </div>
-              </dl>
-            ) : (
-              <>
-                <p className="banner banner-warn" role="status">
-                  Unsupported
-                  {status.host_reason ? `. ${status.host_reason}` : "."}
-                </p>
-                <p>
-                  Platform updates are not available on this host. The UI will not pretend an upgrade
-                  succeeded.
-                </p>
-              </>
-            )}
-            <p className="field-hint">
-              On supported Debian hosts, updates use the signed Debian repository configured at
-              install time. This page never reports package-manager success on its own.
-            </p>
-          </article>
-
-          <article className="panel">
-            <h2>Packages</h2>
-            {status.packages.length === 0 ? (
-              <p>Not configured</p>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Version</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {status.packages.map((pkg) => (
-                      <tr key={pkg.name}>
-                        <td>{pkg.name}</td>
-                        <td>{pkg.version || "Not reported"}</td>
-                        <td>{packageStatusLabel(pkg.status)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </article>
-
-          {preflight ? (
+          <div className="updates-grid">
             <article className="panel">
-              <h2>Preflight</h2>
-              <dl className="definition-list">
-                <div>
-                  <dt>Result</dt>
-                  <dd>{preflight.ok ? "Ok" : "Not ready"}</dd>
-                </div>
-                <div>
-                  <dt>Kernel</dt>
-                  <dd>{preflight.kernel_ok ? "Ok" : "Not ok"}</dd>
-                </div>
-                <div>
-                  <dt>ZFS</dt>
-                  <dd>{preflight.zfs_ok ? "Ok" : "Not ok"}</dd>
-                </div>
-                <div>
-                  <dt>NVIDIA</dt>
-                  <dd>{preflight.nvidia_ok ? "Ok" : "Not ok"}</dd>
-                </div>
-              </dl>
-              {preflight.checks.length === 0 ? (
-                <p>No checks reported.</p>
+              <h2>Host support</h2>
+              {hostSupported ? (
+                <dl className="definition-list">
+                  <div>
+                    <dt>Channel</dt>
+                    <dd>{status.channel}</dd>
+                  </div>
+                  <div>
+                    <dt>Host</dt>
+                    <dd>Supported</dd>
+                  </div>
+                  <div>
+                    <dt>Detail</dt>
+                    <dd>{status.host_reason || "None"}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <>
+                  <p className="banner banner-warn" role="status">
+                    Unsupported
+                    {status.host_reason ? `. ${status.host_reason}` : "."}
+                  </p>
+                  <p>Platform updates are not available on this host. The UI will not pretend an upgrade succeeded.</p>
+                </>
+              )}
+              <p className="field-hint">
+                On supported Debian hosts, updates use the signed Debian repository configured at install time. This page never reports
+                package-manager success on its own.
+              </p>
+            </article>
+
+            <article className="panel">
+              <h2>Packages</h2>
+              {status.packages.length === 0 ? (
+                <p>Not configured</p>
               ) : (
                 <div className="table-wrap">
                   <table>
                     <thead>
                       <tr>
-                        <th>Check</th>
+                        <th>Name</th>
+                        <th>Version</th>
                         <th>Status</th>
-                        <th>Detail</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {preflight.checks.map((check) => (
-                        <tr key={check.name}>
-                          <td>{check.name}</td>
-                          <td>{checkStatusLabel(check.status)}</td>
-                          <td>{check.detail || "None"}</td>
+                      {status.packages.map((pkg) => (
+                        <tr key={pkg.name}>
+                          <td>{pkg.name}</td>
+                          <td>{pkg.version || "Not reported"}</td>
+                          <td>{packageStatusLabel(pkg.status)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -511,31 +509,79 @@ export function UpdatesPage() {
                 </div>
               )}
             </article>
-          ) : null}
 
-          {checkpoint ? (
-            <article className="panel">
-              <h2>Checkpoint</h2>
-              <dl className="definition-list">
-                <div>
-                  <dt>ID</dt>
-                  <dd>{checkpoint.id}</dd>
-                </div>
-                <div>
-                  <dt>Locator</dt>
-                  <dd>{checkpoint.locator || "Not reported"}</dd>
-                </div>
-                <div>
-                  <dt>Postgres dump</dt>
-                  <dd>{checkpoint.postgres_dump ? "Yes" : "No"}</dd>
-                </div>
-                <div>
-                  <dt>Status</dt>
-                  <dd>{checkpointStatusLabel(checkpoint.status)}</dd>
-                </div>
-              </dl>
-            </article>
-          ) : null}
+            {preflight ? (
+              <article className="panel">
+                <h2>Preflight</h2>
+                <dl className="definition-list">
+                  <div>
+                    <dt>Result</dt>
+                    <dd>{preflight.ok ? "Ok" : "Not ready"}</dd>
+                  </div>
+                  <div>
+                    <dt>Kernel</dt>
+                    <dd>{preflight.kernel_ok ? "Ok" : "Not ok"}</dd>
+                  </div>
+                  <div>
+                    <dt>ZFS</dt>
+                    <dd>{preflight.zfs_ok ? "Ok" : "Not ok"}</dd>
+                  </div>
+                  <div>
+                    <dt>NVIDIA</dt>
+                    <dd>{preflight.nvidia_ok ? "Ok" : "Not ok"}</dd>
+                  </div>
+                </dl>
+                {preflight.checks.length === 0 ? (
+                  <p>No checks reported.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Check</th>
+                          <th>Status</th>
+                          <th>Detail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preflight.checks.map((check) => (
+                          <tr key={check.name}>
+                            <td>{check.name}</td>
+                            <td>{checkStatusLabel(check.status)}</td>
+                            <td>{check.detail || "None"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </article>
+            ) : null}
+
+            {checkpoint ? (
+              <article className="panel">
+                <h2>Checkpoint</h2>
+                <dl className="definition-list">
+                  <div>
+                    <dt>ID</dt>
+                    <dd>{checkpoint.id}</dd>
+                  </div>
+                  <div>
+                    <dt>Locator</dt>
+                    <dd>{checkpoint.locator || "Not reported"}</dd>
+                  </div>
+                  <div>
+                    <dt>Postgres dump</dt>
+                    <dd>{checkpoint.postgres_dump ? "Yes" : "No"}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{checkpointStatusLabel(checkpoint.status)}</dd>
+                  </div>
+                </dl>
+              </article>
+            ) : null}
+          </div>
         </>
       ) : null}
 

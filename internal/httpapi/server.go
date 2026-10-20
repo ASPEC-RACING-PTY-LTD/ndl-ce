@@ -127,6 +127,8 @@ type Server struct {
 	lastVerify      time.Time
 	alertBusy       atomic.Bool
 	updateCheckBusy atomic.Bool
+	impact          impactCache
+	search          searchState
 	updateMu        sync.Mutex
 	hold            backupHold
 	repoMove        repoMove
@@ -215,6 +217,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
 	mux.HandleFunc("GET /api/v1/me", s.me)
+	mux.HandleFunc("GET /api/v1/me/appearance", s.getMyAppearance)
+	mux.HandleFunc("GET /api/v1/settings/appearance", s.getAppearance)
+	mux.HandleFunc("PUT /api/v1/settings/appearance", s.putAppearance)
+	mux.HandleFunc("GET /api/v1/users/{id}/profile", s.getUserPublicProfile)
+	mux.HandleFunc("GET /api/v1/search", s.searchQuery)
+	mux.HandleFunc("GET /api/v1/search/settings", s.getSearchSettings)
+	mux.HandleFunc("PUT /api/v1/search/settings", s.putSearchSettings)
+	mux.HandleFunc("GET /api/v1/instance-templates", s.listInstanceTemplates)
+	mux.HandleFunc("POST /api/v1/instance-templates", s.createInstanceTemplate)
+	mux.HandleFunc("GET /api/v1/instance-templates/{id}", s.getInstanceTemplate)
+	mux.HandleFunc("DELETE /api/v1/instance-templates/{id}", s.deleteInstanceTemplate)
+	mux.HandleFunc("POST /api/v1/search/index", s.startSearchIndex)
+	mux.HandleFunc("POST /api/v1/search/index/cancel", s.cancelSearchIndex)
+	mux.HandleFunc("DELETE /api/v1/search/index/deep", s.clearDeepIndex)
 	mux.HandleFunc("PATCH /api/v1/me", s.patchMe)
 	mux.HandleFunc("GET /api/v1/me/profile", s.getMyProfile)
 	mux.HandleFunc("PATCH /api/v1/me/profile", s.patchMyProfile)
@@ -556,6 +572,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/workloads", s.listWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)
 	mux.HandleFunc("GET /api/v1/workload-extras", s.listWorkloadExtras)
+	mux.HandleFunc("POST /api/v1/workload-extras/bulk", s.bulkWorkloadExtras)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/setup-extras", s.setupWorkloadExtras)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/extensions", s.listWorkloadExtensions)
 	mux.HandleFunc("GET /api/v1/cloudflare/credentials", s.listCloudflareCredentials)
@@ -719,6 +736,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/updates/checkpoint", s.checkpointUpdates)
 	mux.HandleFunc("POST /api/v1/updates/apply", s.applyUpdates)
 	mux.HandleFunc("POST /api/v1/updates/rollback", s.rollbackUpdates)
+	mux.HandleFunc("POST /api/v1/updates/rollback/wipe", s.wipeRollback)
 	mux.HandleFunc("POST /api/v1/updates/repository", s.enableUpdateRepository)
 	mux.HandleFunc("POST /api/v1/auth/mfa/verify", s.verifyMFA)
 	mux.HandleFunc("GET /api/v1/mfa", s.getMFA)

@@ -50,3 +50,31 @@ func TestResolveDropsUnknown(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestBaselineExtras(t *testing.T) {
+	base := BaselineIDs()
+	for _, id := range []string{Curl, Wget, Jq, CACertificates, Unzip, Zip} {
+		if !IsBaseline(id) {
+			t.Fatalf("%s should be a baseline extra", id)
+		}
+	}
+	if IsBaseline(Docker) || IsBaseline("nope") {
+		t.Fatal("only the basic tools are baseline")
+	}
+	got := WithBaseline([]string{Compose})
+	for _, id := range append(base, Docker, Compose) {
+		found := false
+		for _, g := range got {
+			found = found || g == id
+		}
+		if !found {
+			t.Fatalf("WithBaseline lost %s: %v", id, got)
+		}
+	}
+	if av := AvailabilityFor("alpine/3.21/amd64/default", Cloudflared); av.Available {
+		t.Fatal("cloudflared is Debian only")
+	}
+	if av := AvailabilityFor("debian/trixie/amd64/default", Cloudflared); !av.Available {
+		t.Fatalf("cloudflared on Debian: %+v", av)
+	}
+}
