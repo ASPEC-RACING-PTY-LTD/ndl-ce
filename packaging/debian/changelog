@@ -1,5 +1,38 @@
-nodal (1.5.0) trixie; urgency=medium
+nodal (1.2.2) UNRELEASED; urgency=medium
 
+  * Impact (automation): every automation flow that was on is turned off by
+    this update, because flows now need approval. Review each one on the
+    Automations page and turn it back on.
+  * Impact (everyone): the built-in role ids changed: admin is now
+    superadmin, operator is now admin and viewer is now user. Scripts and
+    API calls that name the old ids must use the new ones.
+  * Impact (updates): an update can be rolled back for 3 days, then the
+    previous version is deleted. A rollback saves a copy first and can
+    itself be undone for 3 days.
+  * New look: five styles (Bubble by default, Plain, Modern Boxy, Compact,
+    Glass), a secondary colour, terminal colours, a theme code editor and a
+    Theme page with up to 3 design profiles per person. Admins set themes
+    for everyone, per role and per group.
+  * New navigation: a short sidebar (Dashboard, Instance, Terminal, Files,
+    Administration) with a page bar per area whose buttons can be
+    reordered. The classic sidebar stays available.
+  * Search box in the header finds anything you may see, with filters. An
+    optional background job indexes file names and resumes after restarts.
+  * The bell holds notifications and tasks, with pop-ups you can turn off.
+  * Instance: an overview with widgets and one table of everything, VMs and
+    Components pages, one "+ Create" menu, templates for system containers,
+    OCI containers and game servers as well as VMs.
+  * Every new system container gets curl, wget, jq, ca-certificates, unzip
+    and zip. More components: Cloudflared, Tailscale, WireGuard, Nginx,
+    Caddy, PostgreSQL, MariaDB, Redis, Python, Node.js, Go and others, and
+    installs on many containers at once.
+  * Node page: events and logs together, terminal and files inside the
+    page, a metrics table, GPUs under Hardware, layouts you can change.
+  * Terminals: as many in the grid as fit, a free placement mode, the
+    keyboard follows a click, and Ctrl+scroll changes the text size.
+  * SuperAdmin role, automation approvals and notifications; IAM settings.
+  * Profile (picture, display name, bio) and Settings are separate pages.
+  * Docker and CodeHold moved under Administration > Infrastructure.
   * Live updates: signed updates of the web UI, control plane and agent
     apply without a package build. The UI switches instantly; the control
     plane and agent are checked, swapped, restarted and health-checked, and
