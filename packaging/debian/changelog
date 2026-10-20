@@ -1,3 +1,25 @@
+nodal (1.2.3) UNRELEASED; urgency=medium
+
+  * Impact (backups): Smart backups now always leave out container images
+    (Docker and containerd image layers, Podman storage and build caches),
+    wherever they are kept. Turn on Keep a copy for a container whose
+    images cannot be pulled again.
+  * Backups: pausing a policy stops its running backups and uploads at once;
+    resuming runs each stopped backup again from the start. Run now on a
+    paused policy queues a run for when it is resumed, and Clear queue drops
+    what is waiting.
+  * Backups: a new default layout with one Management box (policies and
+    every management button) and a Backup Status box (sizes in MB, GB or TB
+    beside recent runs, plus where backups are stored). The older layout is
+    under Settings, Enable Legacy UI.
+  * Backups: closing or reloading the page no longer cancels a Run now.
+  * Backups: the Leave out list of an All workloads policy now says Leave out
+    on every row.
+  * Management sidebar, page bars without repeated titles, an admin
+    dashboard, one Create + menu, Updates notices only after Check.
+
+ -- No-dal <packaging@no-dal.com>  Tue, 20 Oct 2026 04:00:00 +0000
+
 nodal (1.2.3) trixie; urgency=medium
 
   * Impact (automation): every automation flow that was on is turned off by

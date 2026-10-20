@@ -35,11 +35,16 @@ type backupHold struct {
 	mu      sync.Mutex
 	reason  string
 	cancels map[string]context.CancelFunc
+	// policyOf maps a tracked backup to its policy, so pausing one policy
+	// stops only its backups.
+	policyOf map[string]string
+	// stopped holds the policies whose backups a pause cancelled.
+	stopped map[string]bool
 }
 
-// trackBackup registers a backup so an update can cancel it. It refuses
-// while backups are paused.
-func (s *Server) trackBackup(ctx context.Context, workloadID string) (context.Context, func(), error) {
+// trackBackup registers a backup so an update, or pausing its policy, can
+// cancel it. It refuses while backups are paused.
+func (s *Server) trackBackup(ctx context.Context, workloadID, policyID string) (context.Context, func(), error) {
 	s.hold.mu.Lock()
 	defer s.hold.mu.Unlock()
 	if s.hold.reason != "" {
@@ -51,9 +56,16 @@ func (s *Server) trackBackup(ctx context.Context, workloadID string) (context.Co
 	cctx, cancel := context.WithCancel(ctx)
 	key := workloadID + "\x00" + time.Now().Format(time.RFC3339Nano)
 	s.hold.cancels[key] = cancel
+	if policyID != "" {
+		if s.hold.policyOf == nil {
+			s.hold.policyOf = map[string]string{}
+		}
+		s.hold.policyOf[key] = policyID
+	}
 	return cctx, func() {
 		s.hold.mu.Lock()
 		delete(s.hold.cancels, key)
+		delete(s.hold.policyOf, key)
 		s.hold.mu.Unlock()
 		cancel()
 	}, nil

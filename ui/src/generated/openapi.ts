@@ -2330,6 +2330,8 @@ export interface BackupPolicy {
   last_run_at?: string;
   capture_mode?: "smart" | "custom" | "full";
   paused?: boolean;
+  run_queued?: boolean;
+  queued_runs?: number;
   scope_json?: Record<string, unknown>;
   offsite_keep_daily?: number;
   offsite_keep_weekly?: number;
@@ -2393,6 +2395,8 @@ export interface BackupPlanItem {
 
 export interface BackupRunListResponse {
   items: BackupRun[];
+  summary?: Record<string, unknown>;
+  queued?: boolean;
 }
 
 export interface RunBackupRequest {
@@ -4781,6 +4785,8 @@ export type ListBackupPoliciesPath = "/api/v1/backups/policies";
 export type UpdateBackupPolicyPath = "/api/v1/backups/policies/{id}";
 
 export type RunBackupPolicyPath = "/api/v1/backups/policies/{id}/run";
+
+export type ClearBackupPolicyQueuePath = "/api/v1/backups/policies/{id}/queue/clear";
 
 export type ListBackupRunsPath = "/api/v1/backups/runs";
 

@@ -25,6 +25,7 @@ import {
   restoreBackupFile,
   runBackup,
   runBackupPolicy,
+  clearBackupPolicyQueue,
   testBackupTarget,
   updateBackupPolicy,
   verifyBackupArtifact,
@@ -54,6 +55,8 @@ import { PlatformBackupPanel } from "../components/PlatformBackup";
 import { RecoveryWorkloads } from "../components/RecoveryWorkloads";
 import { KeepImages } from "../components/KeepImages";
 import { BackupSizes } from "../components/BackupSizes";
+import { usePref } from "../prefs";
+import { Switch } from "../ui/Switch";
 import { Box, BoxDock, BoxesProvider, CreateMenu, useBoxes, type BoxInfo } from "../components/BackupBoxes";
 import { WorkloadFiles } from "../components/WorkloadFiles";
 
@@ -127,7 +130,7 @@ function policyScopeLabel(policy: BackupPolicy, workloads: Workload[]): string {
     const excluded = (policy.excluded_workload_ids ?? []).map((id) => workloads.find((w) => w.id === id)?.name ?? id);
     const n = workloads.length - excluded.length;
     const base = workloads.length === 0 ? "All workloads" : `All workloads (${n} current)`;
-    return excluded.length ? `${base}, except ${excluded.join(", ")}` : base;
+    return excluded.length ? `${base}, leaving out ${excluded.join(", ")}` : base;
   }
   const ids = policy.workload_ids?.length ? policy.workload_ids : policy.workload_id ? [policy.workload_id] : [];
   if (ids.length === 0) {
@@ -678,6 +681,8 @@ export function BackupsPage() {
   // refreshKey reloads panels that fetch their own data after a change here.
   const [refreshKey, setRefreshKey] = useState(0);
   const boxes = useBoxes(["images", "files"]);
+  // The new layout is the default; the older box layout is an option.
+  const [legacyUI, setLegacyUI] = usePref<boolean>("backups.legacyUI", false);
 
   // Everything loads at once. Backups render as soon as the backup lists
   // arrive; workloads, nodes and workspace settings fill in when they do.
@@ -1139,10 +1144,24 @@ export function BackupsPage() {
     setBusy(true);
     setError(null);
     try {
+      // A paused policy only queues the run; it is made on Resume.
       await runBackupPolicy(policy.id);
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Backup run failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onClearQueue(policy: BackupPolicy) {
+    setBusy(true);
+    setError(null);
+    try {
+      await clearBackupPolicyQueue(policy.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not clear the queue");
     } finally {
       setBusy(false);
     }
@@ -1349,57 +1368,9 @@ export function BackupsPage() {
   const dedupeSaved = logicalBytes > physicalBytes ? logicalBytes - physicalBytes : 0;
   const hasR2Target = (targets ?? []).some((t) => t.kind === "r2");
 
-  return (
-    <BoxesProvider value={boxes.value}>
-    <section className="page page-wide bk" aria-labelledby="backups-heading">
-      <PageHeader
-        id="backups-heading"
-        title="Backups"
-        kicker="Backups are independent copies. Snapshots are not backups."
-      />
 
-      <div className="bk-bar">
-        <BoxDock boxes={BOXES} value={boxes.value} />
-        <div className="bk-bar-actions">
-          {mutate ? (
-            <CreateMenu
-              items={[
-                { label: "Policy", onSelect: () => openPolicyDialog() },
-                {
-                  label: "Target",
-                  onSelect: () => {
-                    resetTargetForm();
-                    setDialog({ kind: "target" });
-                  },
-                },
-              ]}
-            />
-          ) : null}
-          {mutate ? (
-            <button className="btn" type="button" onClick={() => setDialog({ kind: "workspace" })}>
-              Settings
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {error ? <ErrorNotice error={error} /> : null}
-
-      {loadState === "collecting" ? (
-        <p className="banner" role="status">
-          Collecting
-        </p>
-      ) : null}
-
-      {loadState === "unavailable" && !error ? (
-        <p className="banner banner-error" role="alert">
-          Unavailable
-        </p>
-      ) : null}
-
-      {loadState === "ready" ? (
-        <>
-          <div className="bk-stats" aria-label="Backup summary">
+  const statsSpans = (
+    <>
             <span className="bk-stat is-ok" title="Backups uploaded to the cloud and checked there">
               Safe in the cloud <b>{protectionSummary.protected}</b>
             </span>
@@ -1429,33 +1400,14 @@ export function BackupsPage() {
             >
               Left to upload <b>{workspace?.pending_bytes != null ? formatBytes(pendingBytes) : "Unknown"}</b>
             </span>
-          </div>
-
-          {workloads.some((w) => w.kind === "system-container") ? (
-            <Box id="images" title="Container image copies" short="Image copies">
-              <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
-            </Box>
-          ) : null}
-          <Box id="files" title="Workload files and backup rules" short="Files & rules">
-            <WorkloadFiles workloads={workloads} mutate={mutate} onBackupsDeleted={() => void afterDelete()} />
-          </Box>
-          <Box id="sizes" title="Backup size" short="Size">
-            <BackupSizes
-              artifacts={artifacts ?? []}
-              workloadName={workloadName}
-              targets={targets ?? []}
-              onDeleteWorkload={mutate ? (id, name) => void onDeleteWorkloadBackups(id, name) : undefined}
-            />
-          </Box>
-          <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
-          <RecoveryWorkloads owner={isAdmin(roles)} />
-
-          <Box id="policies" title="Policies" short="Policies">
+    </>
+  );
+  const policiesPanel = (
           <section className="panel bk-panel" aria-labelledby="backup-policies-heading">
             <div className="bk-head">
               <h2 id="backup-policies-heading">Policies</h2>
               <span className="bk-hint">A policy backs up its workloads every night and keeps the copies its rules say.</span>
-              {mutate ? (
+              {mutate && legacyUI ? (
                 <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "adhoc" })}>
                   Back up one workload
                 </button>
@@ -1479,6 +1431,11 @@ export function BackupsPage() {
                         <div className="bk-item-title">
                           <h3>{p.name}</h3>
                           <span className={"bk-pill " + (p.paused ? "is-warn" : "is-ok")}>{p.paused ? "Paused" : "Runs nightly"}</span>
+                          {p.queued_runs ? (
+                            <span className="bk-pill is-warn" title="Runs on Resume: a queued Run now and backups the pause stopped">
+                              {p.queued_runs} queued
+                            </span>
+                          ) : null}
                           {latest ? <span className={"bk-pill " + runTone(latest.status)}>Last run: {runStatusLabel(latest.status)}</span> : null}
                         </div>
                         <div className="bk-item-meta">
@@ -1501,11 +1458,26 @@ export function BackupsPage() {
                       </div>
                       {mutate ? (
                         <div className="bk-actions">
-                          <button className="btn btn-primary btn-sm" type="button" disabled={busy} onClick={() => void onRunPolicy(p)}>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            type="button"
+                            disabled={busy}
+                            title={p.paused ? "Paused: this queues a run for when you press Resume" : undefined}
+                            onClick={() => void onRunPolicy(p)}
+                          >
                             Run now
                           </button>
                           <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onTogglePause(p)}>
                             {p.paused ? "Resume" : "Pause"}
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            type="button"
+                            disabled={busy || !p.queued_runs}
+                            title="Drop the queued run and the backups the pause stopped, so Resume does not run them"
+                            onClick={() => void onClearQueue(p)}
+                          >
+                            Clear queue
                           </button>
                           <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "history", policy: p })}>
                             History
@@ -1524,11 +1496,9 @@ export function BackupsPage() {
               </div>
             )}
           </section>
-          </Box>
-
-          <div className="bk-row">
-            <Box id="storage" title="Where backups are stored" short="Storage">
-            <BackupStoragePanel
+  );
+  const storagePanel = (part: "all" | "info" | "actions") => (
+            <BackupStoragePanel part={part}
               mutate={mutate}
               targets={targets ?? []}
               refreshKey={refreshKey}
@@ -1570,8 +1540,8 @@ export function BackupsPage() {
               }
             />
 
-            </Box>
-            <Box id="runs" title="Recent runs" short="Runs">
+  );
+  const runsPanel = (
             <section className="panel bk-panel" aria-labelledby="backup-runs-heading">
               <div className="bk-head">
                 <h2 id="backup-runs-heading">Recent runs</h2>
@@ -1651,11 +1621,8 @@ export function BackupsPage() {
                 </div>
               )}
             </section>
-            </Box>
-          </div>
-
-          <div className="bk-row is-even is-tall">
-          <Box id="restore" title="Restore points" short="Restore points">
+  );
+  const restorePanel = (
           <section className="panel bk-panel" aria-labelledby="backup-artifacts-heading">
             <div className="bk-head">
               <h2 id="backup-artifacts-heading">Restore points</h2>
@@ -1670,7 +1637,7 @@ export function BackupsPage() {
                     onChange={(e) => setArtifactQuery(e.target.value)}
                   />
                 ) : null}
-                {mutate ? (
+                {mutate && legacyUI ? (
                   <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
                     Export DR metadata
                   </button>
@@ -1767,11 +1734,169 @@ export function BackupsPage() {
               </div>
             )}
           </section>
+  );
+
+  return (
+    <BoxesProvider value={boxes.value}>
+    <section className="page page-wide bk" aria-labelledby="backups-heading">
+      <PageHeader
+        id="backups-heading"
+        title="Backups"
+        kicker="Backups are independent copies. Snapshots are not backups."
+      />
+
+      {legacyUI ? (
+      <div className="bk-bar">
+        <BoxDock boxes={BOXES} value={boxes.value} />
+        <div className="bk-bar-actions">
+          {mutate ? (
+            <CreateMenu
+              items={[
+                { label: "Policy", onSelect: () => openPolicyDialog() },
+                {
+                  label: "Target",
+                  onSelect: () => {
+                    resetTargetForm();
+                    setDialog({ kind: "target" });
+                  },
+                },
+              ]}
+            />
+          ) : null}
+          {mutate ? (
+            <button className="btn" type="button" onClick={() => setDialog({ kind: "workspace" })}>
+              Settings
+            </button>
+          ) : null}
+        </div>
+      </div>
+      ) : null}
+
+      {error ? <ErrorNotice error={error} /> : null}
+
+      {loadState === "collecting" ? (
+        <p className="banner" role="status">
+          Collecting
+        </p>
+      ) : null}
+
+      {loadState === "unavailable" && !error ? (
+        <p className="banner banner-error" role="alert">
+          Unavailable
+        </p>
+      ) : null}
+
+      {loadState === "ready" && legacyUI ? (
+        <>
+          <div className="bk-stats" aria-label="Backup summary">
+            {statsSpans}
+          </div>
+
+          {workloads.some((w) => w.kind === "system-container") ? (
+            <Box id="images" title="Container image copies" short="Image copies">
+              <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
+            </Box>
+          ) : null}
+          <Box id="files" title="Workload files and backup rules" short="Files & rules">
+            <WorkloadFiles workloads={workloads} mutate={mutate} onBackupsDeleted={() => void afterDelete()} />
+          </Box>
+          <Box id="sizes" title="Backup size" short="Size">
+            <BackupSizes
+              artifacts={artifacts ?? []}
+              workloadName={workloadName}
+              targets={targets ?? []}
+              onDeleteWorkload={mutate ? (id, name) => void onDeleteWorkloadBackups(id, name) : undefined}
+            />
+          </Box>
+          <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
+          <RecoveryWorkloads owner={isAdmin(roles)} />
+
+          <Box id="policies" title="Policies" short="Policies">
+            {policiesPanel}
+          </Box>
+
+          <div className="bk-row">
+            <Box id="storage" title="Where backups are stored" short="Storage">
+              {storagePanel("all")}
+            </Box>
+            <Box id="runs" title="Recent runs" short="Runs">
+              {runsPanel}
+            </Box>
+          </div>
+
+          <div className="bk-row is-even is-tall">
+          <Box id="restore" title="Restore points" short="Restore points">
+            {restorePanel}
           </Box>
           <Box id="dr" title="Disaster recovery" short="Recovery">
             <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
           </Box>
           </div>
+        </>
+      ) : null}
+
+      {loadState === "ready" && !legacyUI ? (
+        <>
+          <section className="panel bk-panel bk-manage" aria-labelledby="backup-manage-heading">
+            <div className="bk-head">
+              <h2 id="backup-manage-heading">Management</h2>
+            </div>
+            <div className="bk-manage-grid">
+              <div className="bk-manage-policies">{policiesPanel}</div>
+              <div className="bk-manage-actions" aria-label="Backup management">
+                {mutate ? (
+                  <div className="bk-actions is-stack">
+                    <button className="btn btn-primary btn-sm" type="button" onClick={() => openPolicyDialog()}>
+                      Create policy
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      onClick={() => {
+                        resetTargetForm();
+                        setDialog({ kind: "target" });
+                      }}
+                    >
+                      Add target
+                    </button>
+                    <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "adhoc" })}>
+                      Back up one workload
+                    </button>
+                    <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
+                      Export DR metadata
+                    </button>
+                  </div>
+                ) : null}
+                {storagePanel("actions")}
+                {mutate ? (
+                  <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "workspace" })}>
+                    Settings
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <BackupSizes
+              artifacts={artifacts ?? []}
+              workloadName={workloadName}
+              targets={targets ?? []}
+              onDeleteWorkload={mutate ? (id, name) => void onDeleteWorkloadBackups(id, name) : undefined}
+            status={{ leading: statsSpans, aside: runsPanel, footer: storagePanel("info") }}
+          />
+
+          <div className="bk-row is-even is-tall">
+            {restorePanel}
+            <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
+          </div>
+          {workloads.some((w) => w.kind === "system-container") ? (
+            <>
+              <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
+            </>
+          ) : null}
+            <WorkloadFiles workloads={workloads} mutate={mutate} onBackupsDeleted={() => void afterDelete()} />
+          <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
+          <RecoveryWorkloads owner={isAdmin(roles)} />
         </>
       ) : null}
 
@@ -2018,8 +2143,8 @@ export function BackupsPage() {
               Leave out{policyExcludedIds.length ? ` (${policyExcludedIds.length})` : ""}
             </p>
             <p className="field-hint">
-              Workloads ticked here are never backed up by this policy and are not counted as unprotected. Every other
-              workload, including ones created later, is covered.
+              Ticked workloads are NOT backed up. Every other workload, including ones created later, is. To back up
+              only some workloads, choose Selected workloads above instead.
             </p>
             <Field
               id="backup-policy-exclude-search"
@@ -2044,7 +2169,8 @@ export function BackupsPage() {
                           setPolicyExcludedIds((cur) => (excluded ? cur.filter((id) => id !== w.id) : [...cur, w.id]));
                         }}
                       />
-                      {w.name} <span className="muted">({w.kind})</span>
+                      {/* Says "Leave out" on every row: ticking here is the opposite of picking. */}
+                      <span aria-hidden="true">Leave out</span> {w.name} <span className="muted">({w.kind})</span>
                     </label>
                   );
                 })
@@ -2560,6 +2686,17 @@ export function BackupsPage() {
         onClose={() => setDialog(null)}
         onConfirm={() => void onSaveWorkspace()}
       >
+        <div className="field">
+          <Switch
+            id="backup-legacy-ui"
+            checked={legacyUI}
+            onChange={(e) => setLegacyUI(e.target.checked)}
+            label="Enable Legacy UI"
+          />
+          <p className="field-hint">
+            The older Backups layout: separate boxes you can minimize into the bar above. Saved for you only, right away.
+          </p>
+        </div>
         <p className="muted">
           Local Backup Engine V2 repository bounds. Capture fails before the host disk is exhausted. Remote upload is
           asynchronous and does not block the next capture.

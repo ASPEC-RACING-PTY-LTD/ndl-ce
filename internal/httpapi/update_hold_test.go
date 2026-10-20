@@ -12,7 +12,7 @@ import (
 
 func TestUpdatePausesRunningBackupsAndRefusesNewOnes(t *testing.T) {
 	s, _, _ := testServer(t)
-	ctx, untrack, err := s.trackBackup(context.Background(), "wl-1")
+	ctx, untrack, err := s.trackBackup(context.Background(), "wl-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,11 +26,11 @@ func TestUpdatePausesRunningBackupsAndRefusesNewOnes(t *testing.T) {
 	if !s.backupSuspended(ctx) {
 		t.Fatal("the running backup must see that it was paused")
 	}
-	if _, _, err := s.trackBackup(context.Background(), "wl-2"); !errors.Is(err, errBackupSuspended) {
+	if _, _, err := s.trackBackup(context.Background(), "wl-2", ""); !errors.Is(err, errBackupSuspended) {
 		t.Fatalf("new backups must wait for the update: %v", err)
 	}
 	s.resumeBackups()
-	_, done, err := s.trackBackup(context.Background(), "wl-2")
+	_, done, err := s.trackBackup(context.Background(), "wl-2", "")
 	if err != nil {
 		t.Fatalf("backups must run again after the update: %v", err)
 	}

@@ -166,8 +166,7 @@ describe("Backups page", () => {
     expect(screen.getByText(/no backup artifacts yet/i)).toBeVisible();
     expect(screen.getByText(/^safe in the cloud/i)).toBeVisible();
     expect(screen.getByText(/^stored on this host/i)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^create \+$/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /^policy$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^create policy$/i }));
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     expect(within(dialog).getByLabelText(/^selected workloads$/i)).toBeChecked();
     expect(within(dialog).getByLabelText(/^all workloads$/i)).not.toBeChecked();
@@ -256,8 +255,7 @@ describe("Backups page", () => {
     window.history.replaceState({}, "", "/backups");
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^policies$/i })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^create \+$/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /^policy$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^create policy$/i }));
     const dialog = await screen.findByRole("dialog", { name: /create backup policy/i });
     fireEvent.click(within(dialog).getByRole("checkbox", { name: /alpha/i }));
     fireEvent.click(within(dialog).getByLabelText(/^full machine \/ full lxc$/i));
@@ -645,7 +643,18 @@ describe("Backups page", () => {
     window.history.replaceState({}, "", "/backups");
     render(<App />);
 
-    expect(await screen.findByLabelText(/^backup size$/i)).toHaveTextContent("~2.0 GB on your workloads → ~40.0 MB in R2");
+    const status = await screen.findByRole("region", { name: /^backup status$/i });
+    await waitFor(() => expect(status).toHaveTextContent(/Total \(1 backup\) 40\.0 MB/));
+    expect(within(status).getByRole("table", { name: /backup size per workload/i })).toHaveTextContent("2.0 GB");
+    // The size units are MB, GB and TB.
+    fireEvent.click(within(status).getByRole("button", { name: "GB" }));
+    expect(status).toHaveTextContent(/Total \(1 backup\) 0\.04 GB/);
+    // The older layout comes back from Settings.
+    fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
+    const settings = await screen.findByRole("dialog", { name: /backup settings/i });
+    fireEvent.click(within(settings).getByRole("switch", { name: /enable legacy ui/i }));
+    expect(await screen.findByRole("button", { name: /^create \+$/i })).toBeVisible();
+    fireEvent.click(within(settings).getAllByRole("button", { name: /^cancel$|^close$/i })[0]);
 
     fireEvent.click(screen.getByRole("button", { name: /^details of alpha run/i }));
     const run = await screen.findByRole("dialog", { name: /backup run details/i });

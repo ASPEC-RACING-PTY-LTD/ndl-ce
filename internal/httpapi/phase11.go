@@ -102,6 +102,7 @@ func backupPolicyJSON(p appdb.BackupPolicy) map[string]any {
 		"schedule": p.Schedule, "keep_daily": p.KeepDaily, "keep_weekly": p.KeepWeekly, "keep_monthly": p.KeepMonthly,
 		"capture_mode":        firstNonEmpty(p.CaptureMode, appdb.BackupCaptureFull),
 		"paused":              p.Paused,
+		"run_queued":          p.RunQueued,
 		"offsite_keep_daily":  p.Offsite.KeepDaily,
 		"offsite_keep_weekly": p.Offsite.KeepWeekly, "offsite_keep_monthly": p.Offsite.KeepMonthly,
 	}
@@ -476,7 +477,9 @@ func (s *Server) listBackupPolicies(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		item.Offsite, _ = s.Store.GetBackupPolicyOffsite(r.Context(), p.User.ClusterID, item.ID)
-		out = append(out, backupPolicyJSON(item))
+		row := backupPolicyJSON(item)
+		row["queued_runs"] = s.queuedRunCount(r.Context(), p.User.ClusterID, item)
+		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
@@ -520,6 +523,7 @@ func (s *Server) updateBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	row.CreatedAt = existing.CreatedAt
 	row.LastRunAt = existing.LastRunAt
+	row.RunQueued = existing.RunQueued
 	if err := s.Store.UpdateBackupPolicy(r.Context(), row); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -527,6 +531,13 @@ func (s *Server) updateBackupPolicy(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.UpsertBackupPolicyOffsite(r.Context(), p.User.ClusterID, row.ID, row.Offsite); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	switch {
+	case row.Paused && !existing.Paused:
+		// Pausing stops the policy by force before answering.
+		s.pausePolicy(context.WithoutCancel(r.Context()), p.User.ClusterID, row.ID)
+	case !row.Paused && existing.Paused:
+		go s.resumePolicy(context.WithoutCancel(r.Context()), p.User.ClusterID, row.ID)
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "backup.policy.update", "ok", row.ID)
 	writeJSON(w, http.StatusOK, backupPolicyJSON(row))
@@ -543,6 +554,9 @@ func (s *Server) deleteBackupPolicy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "backup policy not found")
 		return
 	}
+	// A deleted policy's backups stop with it.
+	s.stopPolicyBackups(id)
+	defer s.clearPolicyStopped(id)
 	if err := s.Store.DeleteBackupPolicy(r.Context(), p.User.ClusterID, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -769,7 +783,26 @@ func (s *Server) runBackupPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) writePolicyRuns(w http.ResponseWriter, r *http.Request, clusterID, userID, policyID string) {
-	items, err := s.executePolicyBackups(r.Context(), clusterID, policyID)
+	pol, err := s.Store.GetBackupPolicy(r.Context(), clusterID, policyID)
+	if err != nil || pol == nil {
+		writeErr(w, http.StatusNotFound, "backup policy not found")
+		return
+	}
+	if pol.Paused {
+		// A paused policy runs nothing: Run now waits in its queue until
+		// the policy is resumed.
+		if err := s.Store.SetBackupPolicyRunQueued(r.Context(), clusterID, pol.ID, true); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.audit(r, clusterID, userID, "backup.run", "queued", pol.ID)
+		writeJSON(w, http.StatusAccepted, map[string]any{"items": []any{}, "queued": true,
+			"summary": map[string]int{"succeeded": 0, "succeeded_with_warnings": 0, "failed": 0, "running": 0, "interrupted": 0}})
+		return
+	}
+	// The backups must not end when the browser does: leaving or reloading
+	// the page used to cancel every capture of the run.
+	items, err := s.executePolicyBackups(context.WithoutCancel(r.Context()), clusterID, policyID)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -873,18 +906,36 @@ func (s *Server) ReconcileInterruptedBackupRuns(ctx context.Context) int {
 }
 
 func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID string) ([]appdb.BackupRun, error) {
+	return s.executePolicyBackupsFor(ctx, clusterID, policyID, nil)
+}
+
+// executePolicyBackupsFor runs a policy's backups; only, when not nil,
+// limits them to those workloads (resuming the ones a pause stopped).
+func (s *Server) executePolicyBackupsFor(ctx context.Context, clusterID, policyID string, only map[string]bool) ([]appdb.BackupRun, error) {
 	pol, err := s.Store.GetBackupPolicy(ctx, clusterID, policyID)
 	if err != nil || pol == nil {
 		return nil, errNotFound("backup policy not found")
 	}
+	if pol.Paused {
+		return nil, errPolicyPaused
+	}
 	if !s.beginPolicy(pol.ID) {
-		return nil, errConflict("backup policy is already running")
+		return nil, errPolicyBusy
 	}
 	defer s.endPolicy(pol.ID)
 	_ = s.Store.UpdateBackupPolicyLastRun(ctx, clusterID, pol.ID, s.now())
 	ids, err := s.policyWorkloadIDs(ctx, clusterID, *pol)
 	if err != nil {
 		return nil, err
+	}
+	if only != nil {
+		kept := ids[:0]
+		for _, id := range ids {
+			if only[id] {
+				kept = append(kept, id)
+			}
+		}
+		ids = kept
 	}
 	var (
 		mu        sync.Mutex
@@ -914,6 +965,13 @@ func (s *Server) executePolicyBackups(ctx context.Context, clusterID, policyID s
 			mu.Lock()
 			expiredV2 += pr.V2
 			mu.Unlock()
+			if err != nil && (errors.Is(err, errPolicyPaused) || s.policyStopped(pol.ID)) {
+				run = s.recordPolicyPaused(ctx, clusterID, pol.ID, pol.TargetID, workloadID)
+				mu.Lock()
+				runs = append(runs, run)
+				mu.Unlock()
+				return
+			}
 			if errors.Is(err, errBackupSuspended) {
 				run = s.recordSuspended(ctx, clusterID, pol.ID, pol.TargetID, workloadID)
 				mu.Lock()
@@ -1050,14 +1108,22 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 
 func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targetID, policyID, captureMode string, scopeJSON json.RawMessage) (result appdb.BackupRun, resultErr error) {
 	defer func() { s.automationBackupEvent(ctx, clusterID, workloadID, result, resultErr) }()
-	ctx, untrack, err := s.trackBackup(ctx, workloadID)
+	ctx, untrack, err := s.trackBackup(ctx, workloadID, policyID)
 	if err != nil {
 		return appdb.BackupRun{}, err
 	}
 	defer untrack()
+	if policyID != "" {
+		if pol, _ := s.Store.GetBackupPolicy(ctx, clusterID, policyID); pol != nil && pol.Paused {
+			return appdb.BackupRun{}, errPolicyPaused
+		}
+	}
 	if err := s.acquireBackupSlot(ctx, clusterID, workloadID); err != nil {
 		if s.backupSuspended(ctx) {
 			return appdb.BackupRun{}, errBackupSuspended
+		}
+		if ctx.Err() != nil && s.policyStopped(policyID) {
+			return appdb.BackupRun{}, errPolicyPaused
 		}
 		return appdb.BackupRun{}, err
 	}
@@ -1116,6 +1182,10 @@ func (s *Server) executeBackup(ctx context.Context, clusterID, workloadID, targe
 			// Paused by a platform update: it runs again afterwards.
 			run.Status = appdb.BackupInterrupted
 			run.Error = backupSuspendedError
+		} else if ctx.Err() != nil && s.policyStopped(policyID) {
+			// Its policy was paused: it runs again when it is resumed.
+			run.Status = appdb.BackupInterrupted
+			run.Error = policyPausedError
 		}
 		run.FinishedAt = &now
 		if err := s.Store.UpdateBackupRun(context.WithoutCancel(ctx), run); err != nil {

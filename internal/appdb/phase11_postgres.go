@@ -130,7 +130,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 
 func (p *Postgres) ListBackupPolicies(ctx context.Context, clusterID string) ([]BackupPolicy, error) {
 	rows, err := p.DB.QueryContext(ctx, `
-SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, ''), COALESCE(paused, false), COALESCE(excluded_workload_ids, '[]')
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, ''), COALESCE(paused, false), COALESCE(excluded_workload_ids, '[]'), COALESCE(run_queued, false)
 FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 	if err != nil {
 		return nil, err
@@ -160,7 +160,7 @@ FROM backup_policies WHERE cluster_id=$1 ORDER BY created_at ASC`, clusterID)
 
 func (p *Postgres) GetBackupPolicy(ctx context.Context, clusterID, id string) (*BackupPolicy, error) {
 	row := p.DB.QueryRowContext(ctx, `
-SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, ''), COALESCE(paused, false), COALESCE(excluded_workload_ids, '[]')
+SELECT id::text, cluster_id::text, name, COALESCE(workload_id::text, ''), target_id::text, schedule, keep_daily, keep_weekly, keep_monthly, last_run_at, created_at, COALESCE(scope, 'selected'), COALESCE(capture_mode, 'smart'), COALESCE(scope_json, ''), COALESCE(paused, false), COALESCE(excluded_workload_ids, '[]'), COALESCE(run_queued, false)
 FROM backup_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
 	pol, err := scanBackupPolicy(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -208,6 +208,18 @@ WHERE cluster_id=$1 AND id=$2`,
 
 func (p *Postgres) DeleteBackupPolicy(ctx context.Context, clusterID, id string) error {
 	res, err := p.DB.ExecContext(ctx, `DELETE FROM backup_policies WHERE cluster_id=$1 AND id=$2`, clusterID, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (p *Postgres) SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error {
+	res, err := p.DB.ExecContext(ctx, `UPDATE backup_policies SET run_queued=$3 WHERE cluster_id=$1 AND id=$2`, clusterID, id, queued)
 	if err != nil {
 		return err
 	}
@@ -453,7 +465,7 @@ func scanBackupPolicy(row rowScanner) (BackupPolicy, error) {
 	var pol BackupPolicy
 	var last sql.NullTime
 	var excluded string
-	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt, &pol.Scope, &pol.CaptureMode, &pol.ScopeJSON, &pol.Paused, &excluded)
+	err := row.Scan(&pol.ID, &pol.ClusterID, &pol.Name, &pol.WorkloadID, &pol.TargetID, &pol.Schedule, &pol.KeepDaily, &pol.KeepWeekly, &pol.KeepMonthly, &last, &pol.CreatedAt, &pol.Scope, &pol.CaptureMode, &pol.ScopeJSON, &pol.Paused, &excluded, &pol.RunQueued)
 	_ = json.Unmarshal([]byte(excluded), &pol.ExcludedWorkloadIDs)
 	if last.Valid {
 		t := last.Time

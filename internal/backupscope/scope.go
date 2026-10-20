@@ -202,6 +202,11 @@ func Discover(opts Options) (Preview, error) {
 		// Rebuildable trees by name (caches, toolchains, package stores,
 		// game content) are left out wherever they are, and not walked.
 		if d.IsDir() && mode != ModeFull {
+			if id, label := imageStoreDir(root, rel); id != "" {
+				it := upsert(id, KindReproducible, label, false, true)
+				addPath(it, "/"+rel)
+				return filepath.SkipDir
+			}
 			if id, label := reproducibleDir(rel); id != "" {
 				it := upsert(id+":"+rel, KindReproducible, label, false, true)
 				addPath(it, "/"+rel)
@@ -487,6 +492,11 @@ func applySelection(prev *Preview, sel Selection) {
 		}
 		if forced[it.ID] {
 			on = true
+		}
+		// Smart never captures container images, even when picked: they
+		// are pulled again on restore (or kept by Keep a copy).
+		if prev.Mode == ModeSmart && isImageStoreItem(it.ID) {
+			on = false
 		}
 		if denied[it.ID] {
 			on = false

@@ -207,6 +207,8 @@ type Store interface {
 	UpdateBackupPolicy(ctx context.Context, p BackupPolicy) error
 	DeleteBackupPolicy(ctx context.Context, clusterID, id string) error
 	UpdateBackupPolicyLastRun(ctx context.Context, clusterID, id string, at time.Time) error
+	// SetBackupPolicyRunQueued records or drops a Run now queued while paused.
+	SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error
 
 	CreateBackupRun(ctx context.Context, r BackupRun) error
 	ListBackupRuns(ctx context.Context, clusterID string) ([]BackupRun, error)

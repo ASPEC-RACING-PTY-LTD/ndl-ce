@@ -96,8 +96,10 @@ type BackupPolicy struct {
 	Offsite     BackupOffsite
 	CaptureMode string
 	ScopeJSON   string
-	// Paused stops the schedule; manual runs still work.
-	Paused    bool
+	// Paused stops the schedule and any run in progress; Run now queues.
+	Paused bool
+	// RunQueued is a Run now made while paused; it runs on resume.
+	RunQueued bool
 	LastRunAt *time.Time
 	CreatedAt time.Time
 }
@@ -426,6 +428,7 @@ func (m *Memory) UpdateBackupPolicy(_ context.Context, p BackupPolicy) error {
 	}
 	p.CreatedAt = existing.CreatedAt
 	p.LastRunAt = existing.LastRunAt
+	p.RunQueued = existing.RunQueued
 	m.backupPolicies[p.ID] = copyBackupPolicy(p)
 	return nil
 }
@@ -438,6 +441,18 @@ func (m *Memory) DeleteBackupPolicy(_ context.Context, clusterID, id string) err
 		return fmt.Errorf("backup policy not found")
 	}
 	delete(m.backupPolicies, id)
+	return nil
+}
+
+func (m *Memory) SetBackupPolicyRunQueued(_ context.Context, clusterID, id string, queued bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.backupPolicies[id]
+	if !ok || p.ClusterID != clusterID {
+		return fmt.Errorf("backup policy not found")
+	}
+	p.RunQueued = queued
+	m.backupPolicies[id] = p
 	return nil
 }
 

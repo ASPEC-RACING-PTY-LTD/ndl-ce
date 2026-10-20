@@ -794,3 +794,85 @@
 .bk-nowrap {
   white-space: nowrap;
 }
+
+/* New layout: Management and Backup Status ------------------------------ */
+
+.bk-manage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.bk-manage-actions {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--line-soft);
+}
+
+.bk-actions.is-stack {
+  display: grid;
+  justify-content: stretch;
+  gap: var(--space-2);
+}
+
+.bk-manage-actions .btn,
+.bk-actions.is-stack .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Boxes inside a box drop their own frame. */
+.bk-manage .panel,
+.bk-status .panel {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.bk-status-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.bk-status-sizes,
+.bk-status-runs {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.bk-table.is-compact th,
+.bk-table.is-compact td {
+  padding-block: 0.3rem;
+  white-space: nowrap;
+}
+
+.bk-storage-part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.bk-status > .bk-storage-part {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (max-width: 1100px) {
+  .bk-manage-grid,
+  .bk-status-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bk-manage-actions {
+    padding-left: 0;
+    border-left: 0;
+  }
+}

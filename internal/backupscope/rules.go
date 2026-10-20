@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/url"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -63,12 +64,67 @@ var reproducibleSuffixes = []struct{ suffix, label string }{
 	{".yarn/cache", "Package cache"},
 	{".yarn/berry/cache", "Package cache"},
 	{".local/share/pnpm", "Package cache"},
-	{".local/share/containers", "Container images"},
 	{"Content/Paks", "Game files"},
 	{"Binaries/Win64", "Game files"},
 	{"Binaries/Linux", "Game files"},
 	{"Engine/Binaries", "Game files"},
 	{"Engine/Content", "Game files"},
+}
+
+// Image stores hold container images and their unpacked layers. They are
+// pulled or rebuilt again, never data, so Smart always leaves them out,
+// wherever the engine keeps them: a Docker data-root anywhere (rootless
+// ~/.local/share/docker, a moved data-root), containerd (also inside k3s)
+// and Podman. Docker and Podman volumes beside them stay.
+var dockerImageDirs = map[string]bool{
+	"overlay2": true, "image": true, "buildkit": true, "containerd": true, "tmp": true,
+	"vfs": true, "fuse-overlayfs": true, "btrfs": true, "zfs": true, "aufs": true,
+}
+
+var podmanImageDirs = map[string]bool{
+	"overlay": true, "overlay-images": true, "overlay-layers": true,
+	"vfs": true, "vfs-images": true, "vfs-layers": true, "btrfs": true, "zfs": true,
+}
+
+// imageStoreDir reports whether rel (under root) is a container image
+// store, by containerd's own directory names or by sitting in a Docker or
+// Podman storage root.
+func imageStoreDir(root, rel string) (id, label string) {
+	base := path.Base(rel)
+	if strings.HasPrefix(base, "io.containerd.snapshotter.v1.") || base == "io.containerd.content.v1.content" {
+		return "images:" + rel, "Container image layers"
+	}
+	parent := filepath.Join(root, filepath.FromSlash(path.Dir(rel)))
+	if dockerImageDirs[base] && isDir(filepath.Join(parent, "volumes")) && (isDir(filepath.Join(parent, "containers")) || isDir(filepath.Join(parent, "network"))) {
+		return "images:" + rel, "Docker image layers"
+	}
+	if podmanImageDirs[base] && (exists(filepath.Join(parent, "storage.lock")) || isDir(filepath.Join(parent, "libpod"))) {
+		return "images:" + rel, "Container image layers"
+	}
+	return "", ""
+}
+
+// isImageStoreItem reports whether a preview item is a container image
+// store, which Smart never captures, even when selected.
+func isImageStoreItem(id string) bool {
+	if strings.HasPrefix(id, "images:") {
+		return true
+	}
+	switch id {
+	case "repro:docker-overlay", "repro:docker-image", "repro:docker-buildkit", "repro:docker-containerd", "repro:containerd", "repro:docker-tmp":
+		return true
+	}
+	return false
+}
+
+func isDir(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
+}
+
+func exists(p string) bool {
+	_, err := os.Lstat(p)
+	return err == nil
 }
 
 // reproducibleDir reports whether the directory rel is rebuildable, with an

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { getBackupTargetUsage } from "../api/client";
 import type { BackupArtifact, BackupTarget } from "../generated/openapi";
 
@@ -6,7 +6,10 @@ const OPEN_KEY = "ndl.backups.sizes.open";
 const UNIT_KEY = "ndl.backups.sizes.unit";
 const FREE_TIER_BYTES = 10e9;
 
-type Unit = "MB" | "MiB";
+export type Unit = "MB" | "GB" | "TB";
+
+const UNITS: Unit[] = ["MB", "GB", "TB"];
+const UNIT_BYTES: Record<Unit, number> = { MB: 1e6, GB: 1e9, TB: 1e12 };
 
 function readPref(key: string): string | null {
   try {
@@ -29,13 +32,15 @@ export function gb(bytes: number): string {
   return `${(bytes / 1e9).toFixed(bytes >= 10e9 ? 0 : 1)} GB`;
 }
 
-/** small shows a stored size in MB or MiB, switching to GB past 1 GB. */
+/** small shows a stored size in the chosen unit (decimal MB, GB or TB). */
 export function small(bytes: number, unit: Unit): string {
-  if (bytes >= 1e9) {
-    return gb(bytes);
-  }
-  const n = unit === "MiB" ? bytes / 1048576 : bytes / 1e6;
-  return `${n.toFixed(n >= 100 ? 0 : 1)} ${unit}`;
+  const n = bytes / UNIT_BYTES[unit];
+  return `${n.toFixed(n >= 100 || n === 0 ? 0 : n >= 10 ? 1 : 2)} ${unit}`;
+}
+
+function readUnit(): Unit {
+  const saved = readPref(UNIT_KEY);
+  return saved === "GB" || saved === "TB" ? saved : "MB";
 }
 
 /** before is a restore point's size on the workload before compression. */
@@ -67,15 +72,21 @@ export function BackupSizes({
   workloadName,
   targets,
   onDeleteWorkload,
+  status,
 }: {
   artifacts: BackupArtifact[];
   workloadName: (id: string) => string;
   targets: BackupTarget[];
   /** onDeleteWorkload deletes every backup of a workload. */
   onDeleteWorkload?: (id: string, name: string) => void;
+  /**
+   * status makes it the new layout's Backup Status box: always open, its
+   * summary as pills after leading, its table beside aside, footer below.
+   */
+  status?: { leading: ReactNode; aside: ReactNode; footer?: ReactNode };
 }) {
   const [open, setOpen] = useState(() => readPref(OPEN_KEY) === "1");
-  const [unit, setUnit] = useState<Unit>(() => (readPref(UNIT_KEY) === "MiB" ? "MiB" : "MB"));
+  const [unit, setUnit] = useState<Unit>(readUnit);
   const [measured, setMeasured] = useState<number | null>(null);
   const [measuring, setMeasuring] = useState(false);
   const [measureError, setMeasureError] = useState<string | null>(null);
@@ -126,6 +137,16 @@ export function BackupSizes({
     writePref(UNIT_KEY, next);
   }
 
+  const unitToggle = (
+    <div className="bk-toggle" role="group" aria-label="Size unit">
+      {UNITS.map((u) => (
+        <button key={u} type="button" className={"btn btn-sm" + (unit === u ? " is-selected" : "")} aria-pressed={unit === u} onClick={() => pickUnit(u)}>
+          {u}
+        </button>
+      ))}
+    </div>
+  );
+
   function measure() {
     if (!cloud) {
       return;
@@ -136,6 +157,94 @@ export function BackupSizes({
       .then((res) => setMeasured(res.usage?.total_bytes ?? 0))
       .catch((err) => setMeasureError(err instanceof Error ? err.message : "Could not measure"))
       .finally(() => setMeasuring(false));
+  }
+
+  if (status) {
+    const meter = cloud && stats.count > 0 ? (
+      <div className="bk-meter-row">
+        <div className={"bk-meter" + (share >= 0.9 ? " is-danger" : share >= 0.75 ? " is-warn" : "")} aria-label="Cloud free tier use">
+          <span style={{ width: `${Math.min(100, share * 100)}%` }} />
+        </div>
+        <span className="bk-hint">{small(cloudTotal, unit)} of the 10 GB free tier</span>
+        <button className="btn btn-sm" type="button" disabled={measuring} onClick={measure}>
+          {measuring ? "Measuring" : "Measure exactly"}
+        </button>
+        {measureError ? <span className="bk-hint is-danger">{measureError}</span> : null}
+      </div>
+    ) : null;
+    return (
+      <section className="panel bk-panel bk-status" aria-labelledby="backup-status-heading">
+        <div className="bk-head">
+          <h2 id="backup-status-heading">Backup Status</h2>
+          {unitToggle}
+        </div>
+        <div className="bk-stats" aria-label="Backup summary">
+          {status.leading}
+          {stats.count > 0 ? (
+            <>
+              <span className="bk-stat" title={stats.latest ? `${gb(before(stats.latest))} on the workload before compression` : undefined}>
+                Latest backup{stats.latest ? ` (${workloadName(stats.latest.workload_id)})` : ""} <b>{stats.latest ? small(landed(stats.latest), unit) : "None"}</b>
+              </span>
+              <span className="bk-stat" title={`${gb(stats.avgBefore)} on the workload before compression`}>
+                Average per backup <b>{small(stats.avgLanded, unit)}</b>
+              </span>
+              <span className="bk-stat" title={`${gb(stats.fleetBefore)} on your workloads before compression`}>
+                Total ({stats.count} backup{stats.count === 1 ? "" : "s"}) <b>{small(cloudTotal, unit)}</b>
+                {measured != null ? " measured" : ""}
+              </span>
+            </>
+          ) : null}
+        </div>
+        <div className="bk-status-grid">
+          <div className="bk-status-sizes">
+            {stats.count === 0 ? (
+              <p className="bk-hint">Sizes show after the first backup.</p>
+            ) : (
+              <div className="bk-scroll is-short">
+                <table className="bk-table is-compact" aria-label="Backup size per workload">
+                  <thead>
+                    <tr>
+                      <th>Workload</th>
+                      <th className="bk-num">Before</th>
+                      <th className="bk-num">Latest</th>
+                      <th className="bk-num">Total</th>
+                      {onDeleteWorkload ? <th className="bk-actions-col" /> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.list.map((r) => (
+                      <tr key={r.id}>
+                        <td>{r.name}</td>
+                        <td className="bk-num">{gb(r.latestBefore)}</td>
+                        <td className="bk-num">{small(r.latestLanded, unit)}</td>
+                        <td className="bk-num" title={`${r.count} backup${r.count === 1 ? "" : "s"}`}>
+                          {small(r.totalLanded, unit)} <span className="bk-hint">({r.count})</span>
+                        </td>
+                        {onDeleteWorkload ? (
+                          <td className="bk-actions-col">
+                            <button
+                              className="btn btn-sm btn-ghost btn-danger-text"
+                              type="button"
+                              aria-label={`Delete all backups of ${r.name}`}
+                              onClick={() => onDeleteWorkload(r.id, r.name)}
+                            >
+                              Delete all
+                            </button>
+                          </td>
+                        ) : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {meter}
+          </div>
+          <div className="bk-status-runs">{status.aside}</div>
+        </div>
+        {status.footer}
+      </section>
+    );
   }
 
   if (stats.count === 0) {
@@ -168,13 +277,7 @@ export function BackupSizes({
             "Before" is the data on the workload. "In the cloud" is what was uploaded after compression and skipping
             data already stored. Numbers are approximate.
           </p>
-          <div className="bk-toggle" role="group" aria-label="Size unit">
-            {(["MB", "MiB"] as Unit[]).map((u) => (
-              <button key={u} type="button" className={"btn btn-sm" + (unit === u ? " is-selected" : "")} aria-pressed={unit === u} onClick={() => pickUnit(u)}>
-                {u}
-              </button>
-            ))}
-          </div>
+          {unitToggle}
         </div>
         <table className="bk-table" aria-label="Backup size summary">
           <thead>

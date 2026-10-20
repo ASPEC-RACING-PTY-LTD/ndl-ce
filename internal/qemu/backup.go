@@ -44,6 +44,7 @@ const (
 	BackupV2Expire         = "v2-expire"
 	BackupV2Workspace      = "v2-workspace"
 	BackupV2Enqueue        = "v2-enqueue"
+	BackupV2Dequeue        = "v2-dequeue"
 	BackupV2GC             = "v2-gc"
 	BackupV2RemoteUsage    = "v2-remote-usage"
 	BackupV2Relocate       = "v2-relocate"

@@ -1887,6 +1887,11 @@ export async function deleteBackupPolicy(id: string): Promise<void> {
   throw new ApiError(res.status, await readErrorMessage(res));
 }
 
+/** clearBackupPolicyQueue drops a paused policy's queued Run now and the backups its pause stopped. */
+export async function clearBackupPolicyQueue(id: string): Promise<{ cleared: number }> {
+  return readJson(await request(`/backups/policies/${id}/queue/clear`, { method: "POST", body: JSON.stringify({}) }));
+}
+
 export async function runBackupPolicy(id: string): Promise<import("../generated/openapi").BackupRunListResponse> {
   return readJson(
     await request(`/backups/policies/${id}/run`, {

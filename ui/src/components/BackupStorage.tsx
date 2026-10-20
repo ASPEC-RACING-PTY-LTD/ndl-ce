@@ -173,6 +173,7 @@ export function BackupStoragePanel({
   targetActions,
   targetStatus,
   refreshKey = 0,
+  part = "all",
 }: {
   mutate: boolean;
   targets: BackupTarget[];
@@ -181,6 +182,11 @@ export function BackupStoragePanel({
   targetStatus?: (t: BackupTarget) => string;
   /** refreshKey reloads the report when the page changes backups. */
   refreshKey?: number;
+  /**
+   * part splits the panel for the new Backups layout: "actions" is only
+   * its management buttons (with their notices), "info" everything else.
+   */
+  part?: "all" | "info" | "actions";
 }) {
   const [report, setReport] = useState<BackupStorageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -330,17 +336,28 @@ export function BackupStoragePanel({
   const objectTargets = targets.filter((t) => ["r2", "s3", "aws", "b2", "minio"].includes(t.kind));
   const failedEvents = (report?.events ?? []).filter((e) => !e.ok);
 
+  const showInfo = part !== "actions";
+  const showActions = part !== "info";
+  const Wrap = part === "all" ? "article" : "div";
   return (
-    <article className="panel bk-panel" id="backup-storage" aria-labelledby="backup-storage-heading">
-      <div className="bk-head">
-        <h2 id="backup-storage-heading">Where backups are stored</h2>
-      </div>
+    <Wrap
+      className={part === "all" ? "panel bk-panel" : "bk-storage-part"}
+      id={part === "actions" ? undefined : "backup-storage"}
+      aria-labelledby={part === "actions" ? undefined : "backup-storage-heading"}
+    >
+      {part !== "actions" ? (
+        <div className="bk-head">
+          {part === "all" ? <h2 id="backup-storage-heading">Where backups are stored</h2> : <h3 id="backup-storage-heading">Where backups are stored</h3>}
+        </div>
+      ) : null}
       {error ? <ErrorNotice error={error} /> : null}
       {notice ? (
         <p className="banner banner-ok" role="status">
           {notice}
         </p>
       ) : null}
+      {showInfo ? (
+      <>
       {ws && ws.key_exported === false && !keySaved ? (
         <div className="banner banner-warn" role="status">
           <p>
@@ -526,8 +543,10 @@ export function BackupStoragePanel({
         </table>
       ) : null}
 
-      {mutate ? (
-        <div className="bk-actions is-footer">
+      </>
+      ) : null}
+      {mutate && showActions ? (
+        <div className={part === "actions" ? "bk-actions is-stack" : "bk-actions is-footer"}>
           <button className="btn btn-sm" type="button" disabled={busy} onClick={onMaintenance}>
             {busy ? "Working" : "Clean up now"}
           </button>
@@ -587,6 +606,6 @@ export function BackupStoragePanel({
           />
         ) : null}
       </ConfirmDialog>
-    </article>
+    </Wrap>
   );
 }

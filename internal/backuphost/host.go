@@ -163,6 +163,8 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		out, err = h.wipeRemote(ctx, req)
 	case ActionEnqueue:
 		out, err = h.enqueue(ctx, req)
+	case ActionDequeue:
+		out, err = h.dequeue(req)
 	case ActionGitSave:
 		out, err = h.gitSave(ctx, src, req)
 	case ActionPlatformObject:
@@ -556,6 +558,24 @@ func (h *Host) enqueue(ctx context.Context, req Request) (Result, error) {
 	}
 	if err := q.EnqueueBackup(state); err != nil {
 		return Result{}, err
+	}
+	return h.status(req)
+}
+
+// dequeue drops the pending upload jobs of one restore point from every
+// target queue. Its upload state is kept, so enqueue picks it up again.
+func (h *Host) dequeue(req Request) (Result, error) {
+	if req.Namespace == "" || req.BackupID == "" {
+		return Result{}, fmt.Errorf("dequeue requires namespace and backup_id")
+	}
+	h.mu.Lock()
+	queues := make([]*backup.UploadQueue, 0, len(h.queues))
+	for _, q := range h.queues {
+		queues = append(queues, q)
+	}
+	h.mu.Unlock()
+	for _, q := range queues {
+		q.RemoveJobs(req.Namespace, req.BackupID)
 	}
 	return h.status(req)
 }
