@@ -1,4 +1,4 @@
-nodal (1.2.2) UNRELEASED; urgency=medium
+nodal (1.2.3) trixie; urgency=medium
 
   * Impact (automation): every automation flow that was on is turned off by
     this update, because flows now need approval. Review each one on the
@@ -59,7 +59,7 @@ nodal (1.2.2) UNRELEASED; urgency=medium
   * Owners skip plain confirmation prompts.
   * API responses are no longer cacheable, so lists never come back stale.
 
- -- No-dal <packaging@no-dal.com>  Sat, 17 Oct 2026 03:00:00 +0000
+ -- No-dal <packaging@no-dal.com>  Tue, 20 Oct 2026 01:31:56 +0000
 
 nodal (1.2.2) trixie; urgency=medium
 
