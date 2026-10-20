@@ -95,7 +95,7 @@ export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapse
             ))}
             <button
               type="button"
-              className="btn btn-ghost btn-sm btn-icon mode-theme-btn"
+              className="btn btn-ghost btn-sm btn-icon"
               aria-label="Theme"
               title="Theme"
               onClick={() => {
@@ -114,10 +114,6 @@ export function SidebarAccount({ user, collapsed }: { user: MeResponse; collapse
           <Link href="/me" role="menuitem" onClick={() => setOpen(false)}>
             <Icon name="settings" size={14} />
             Settings
-          </Link>
-          <Link href="/theme" role="menuitem" onClick={() => setOpen(false)}>
-            <Icon name="palette" size={14} />
-            Theme
           </Link>
           <hr />
           <button type="button" role="menuitem" onClick={() => void onLogout()}>

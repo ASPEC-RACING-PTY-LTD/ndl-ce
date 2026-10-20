@@ -241,7 +241,23 @@ func (s *Server) checkUpdates(w http.ResponseWriter, r *http.Request) {
 			body["release_url"] = url
 		}
 	}
-	body["impact_notices"] = s.releaseNotices(r.Context(), p.User.ClusterID, version, res.Changelog)
+	// Notices come only with an update, from every release newer than the
+	// installed one; with nothing to install there is nothing to warn about.
+	notices := []releaseImpact{}
+	if version != "" {
+		installed := ""
+		for _, it := range res.Items {
+			if it.Name == "nodal" {
+				installed = it.CurrentVersion
+			}
+		}
+		if n := s.releaseNotices(r.Context(), p.User.ClusterID, version, pendingChangelog(res.Changelog, installed)); n != nil {
+			notices = n
+		}
+	} else {
+		s.impact.set("", nil)
+	}
+	body["impact_notices"] = notices
 	writeJSON(w, http.StatusOK, body)
 }
 

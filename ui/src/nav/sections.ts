@@ -223,16 +223,24 @@ export const INSTANCE_SECTIONS: Section[] = [
 ];
 
 /**
- * Every way to create an instance, in the order of the main buttons they
- * belong to. Creating lives only in "+ Create": no instance type has a
+ * Every way to create an instance or a template, in the order of the main
+ * buttons they belong to. Creating lives only in "Create +": no page has a
  * create button of its own.
  */
-export const CREATE_ENTRIES: { section: string; label: string; href: string; capability?: string }[] = [
+export type CreateEntry = { section: string; label: string; href: string; capability?: string; group?: "Templates" };
+
+export const CREATE_ENTRIES: CreateEntry[] = [
   { section: "workloads", label: "System container", href: "/workloads/new/system-container" },
   { section: "game-servers", label: "Game server", href: "/game-servers/create", capability: "gameservers" },
   { section: "oci", label: "OCI container", href: "/workloads/new/oci", capability: "oci" },
+  { section: "oci", label: "OCI app from Compose", href: "/oci?new=compose", capability: "oci" },
+  { section: "oci", label: "OCI container group", href: "/oci?new=group", capability: "oci" },
   { section: "vms", label: "Virtual machine", href: "/workloads/new/vm" },
   { section: "vms", label: "Import a VM disk", href: "/workloads/import" },
+  { section: "templates", group: "Templates", label: "System container template", href: "/templates?new=system-container" },
+  { section: "templates", group: "Templates", label: "OCI container template", href: "/templates?new=oci", capability: "oci" },
+  { section: "templates", group: "Templates", label: "Game server template", href: "/templates?new=game-server", capability: "gameservers" },
+  { section: "templates", group: "Templates", label: "VM template", href: "/templates?new=vm" },
 ];
 
 type Who = { roles?: string[]; grants?: string[] } | null;

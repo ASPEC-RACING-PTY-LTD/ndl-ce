@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -89,14 +90,88 @@ type releaseImpact struct {
 	Text     string `json:"text"`
 	Applies  bool   `json:"applies"`
 	Detail   string `json:"detail,omitempty"`
+	// Version is the release whose changelog entry lists the notice.
+	Version string `json:"version,omitempty"`
+}
+
+// changelogHeadRe matches a Debian changelog entry's first line,
+// "nodal (1.2.3) trixie; urgency=medium", capturing the version.
+var changelogHeadRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.\-]*\s+\(([^)\s]+)\)`)
+
+var versionNumRe = regexp.MustCompile(`\d+`)
+
+// compareVersions orders two package versions by their numbers
+// (1.10.0 > 1.9.2), ignoring an epoch. It returns -1, 0 or 1.
+func compareVersions(a, b string) int {
+	nums := func(v string) []int {
+		if i := strings.Index(v, ":"); i >= 0 {
+			v = v[i+1:]
+		}
+		var out []int
+		for _, d := range versionNumRe.FindAllString(v, -1) {
+			n, _ := strconv.Atoi(d)
+			out = append(out, n)
+		}
+		return out
+	}
+	na, nb := nums(a), nums(b)
+	for i := 0; i < len(na) || i < len(nb); i++ {
+		var x, y int
+		if i < len(na) {
+			x = na[i]
+		}
+		if i < len(nb) {
+			y = nb[i]
+		}
+		if x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+// pendingChangelog keeps the changelog entries newer than installed, so an
+// update over several releases lists every one of them and the installed
+// release's own entries are left out. A changelog without Debian entry
+// lines is kept whole.
+func pendingChangelog(changelog, installed string) string {
+	if installed == "" {
+		return changelog
+	}
+	var b strings.Builder
+	keep, sawHead := false, false
+	for _, line := range strings.Split(changelog, "\n") {
+		if m := changelogHeadRe.FindStringSubmatch(line); m != nil {
+			sawHead = true
+			keep = compareVersions(m[1], installed) > 0
+		}
+		if keep {
+			b.WriteString(line)
+			b.WriteByte('\n')
+		}
+	}
+	if !sawHead {
+		return changelog
+	}
+	return b.String()
 }
 
 // parseImpactNotices reads impact lines from a changelog. A line's text
-// continues on the indented lines after it.
+// continues on the indented lines after it. The same notice in several
+// releases is listed once, under the newest.
 func parseImpactNotices(changelog string) []releaseImpact {
 	var out []releaseImpact
+	seen := map[string]bool{}
+	version := ""
 	lines := strings.Split(changelog, "\n")
 	for i := 0; i < len(lines); i++ {
+		if h := changelogHeadRe.FindStringSubmatch(lines[i]); h != nil {
+			version = h[1]
+			continue
+		}
 		m := impactLineRe.FindStringSubmatch(lines[i])
 		if m == nil {
 			continue
@@ -116,7 +191,12 @@ func parseImpactNotices(changelog string) []releaseImpact {
 			audience = audienceUpdates
 		}
 		sum := sha256.Sum256([]byte(audience + "\x00" + text))
-		out = append(out, releaseImpact{ID: hex.EncodeToString(sum[:8]), Audience: audience, Text: text})
+		id := hex.EncodeToString(sum[:8])
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, releaseImpact{ID: id, Audience: audience, Text: text, Version: version})
 	}
 	return out
 }

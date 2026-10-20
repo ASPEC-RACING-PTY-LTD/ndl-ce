@@ -8,7 +8,7 @@ const me = { user_id: "u1", username: "admin", roles: ["superadmin"], edition: "
 afterEach(() => vi.unstubAllGlobals());
 
 describe("create buttons", () => {
-  it("are only in + Create in the Instance layout", async () => {
+  it("are only in Create + in the Instance layout", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost").pathname;
       const body = path === "/api/v1/me" ? me : path === "/api/v1/workloads" ? { items: [] } : path === "/api/v1/nodes" ? { items: [] } : {};

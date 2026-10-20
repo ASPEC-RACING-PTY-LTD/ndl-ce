@@ -11,7 +11,7 @@ const admin: MeResponse = {
   ux_level: "guided",
   expert_ack: false,
   // The classic layout keeps "New container" on the page; the Instance
-  // layout creates through "+ Create" only.
+  // layout creates through "Create +" only.
   ui_prefs: { "layout.nav": "classic", "layout.instance": "classic" },
 };
 

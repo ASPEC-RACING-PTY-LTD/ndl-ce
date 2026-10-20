@@ -58,7 +58,7 @@ export function MePage() {
   // The interface level moved to Theme → Other.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("tab") === "appearance") {
-      navigate("/theme/other", { replace: true });
+      navigate("/theme/layout", { replace: true });
     }
   }, []);
 

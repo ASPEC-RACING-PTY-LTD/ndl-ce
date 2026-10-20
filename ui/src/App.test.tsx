@@ -589,8 +589,8 @@ describe("App", () => {
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
     // Classic layout: one "Create" menu lists every type.
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
-    expect(screen.getByRole("menuitem", { name: /system container/i })).toBeVisible();
-    expect(screen.getByRole("menuitem", { name: /virtual machine/i })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: /^system container$/i })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: /^virtual machine$/i })).toBeVisible();
   });
 
   it("imports generated OpenAPI path types", () => {

@@ -33,7 +33,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { Dialog } from "../ui/Dialog";
 import { usePoll } from "../query";
-import { navigate } from "../router";
+import { navigate, useSearchParam } from "../router";
 import { canMutate } from "../rbac";
 import { useSession } from "../session";
 
@@ -93,7 +93,7 @@ export function OciPage() {
   const session = useSession();
   const roles = session.status === "ready" ? session.user?.roles : undefined;
   const mutate = canMutate(roles);
-  // In the Instance layout creating lives in "+ Create" in the page bar.
+  // In the Instance layout creating lives in "Create +" in the page bar.
   const [layout] = useInstanceLayout();
   const [workloads, setWorkloads] = useState<Workload[] | null>(null);
   const [groups, setGroups] = useState<Stack[]>([]);
@@ -108,6 +108,20 @@ export function OciPage() {
   const [groupName, setGroupName] = useState("");
   const [renaming, setRenaming] = useState<Stack | null>(null);
   const [deleting, setDeleting] = useState<Stack | null>(null);
+  // Create + opens Import Compose and New group with ?new=compose or ?new=group.
+  const want = useSearchParam("new");
+  useEffect(() => {
+    if (want !== "compose" && want !== "group") {
+      return;
+    }
+    if (want === "compose") {
+      setImporting(true);
+    } else {
+      setGroupName("");
+      setNewGroup(true);
+    }
+    navigate("/oci", { replace: true });
+  }, [want]);
   const [deleteContainers, setDeleteContainers] = useState(false);
   const [moving, setMoving] = useState<Workload | null>(null);
   const [moveTo, setMoveTo] = useState("");
@@ -383,13 +397,11 @@ export function OciPage() {
         title="OCI Containers"
         kicker="Run Docker-compatible images directly, no Docker Engine needed. Group containers to manage an app together; drag a container onto a group to move it."
         actions={
-          mutate ? (
+          mutate && layout === "classic" ? (
             <div className="btn-row is-flush">
-              {layout === "classic" ? (
-                <button className="btn btn-primary" type="button" onClick={() => setCreating({ groupId: "" })}>
-                  New container
-                </button>
-              ) : null}
+              <button className="btn btn-primary" type="button" onClick={() => setCreating({ groupId: "" })}>
+                New container
+              </button>
               <button className="btn btn-secondary" type="button" onClick={() => setImporting(true)}>
                 Import Compose
               </button>

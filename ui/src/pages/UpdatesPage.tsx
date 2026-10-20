@@ -224,7 +224,7 @@ export function UpdatesPage() {
   }
 
   async function onApply() {
-    const affecting = (preview?.impact_notices ?? status?.impact_notices ?? []).filter((n) => n.applies);
+    const affecting = (preview?.version ? (preview.impact_notices ?? []) : []).filter((n) => n.applies);
     const impact = affecting.length ? `\n\nThis update changes things you use:\n${affecting.map((n) => `- ${n.text}`).join("\n")}` : "";
     if (
       !confirmAction(
@@ -296,7 +296,9 @@ export function UpdatesPage() {
   }
 
   const hostSupported = status?.host_supported === true;
-  const notices = preview?.impact_notices ?? status?.impact_notices ?? [];
+  // Notices show only after Check for updates finds an update, and cover
+  // every release between this one and it.
+  const notices = preview?.version ? (preview.impact_notices ?? []) : [];
   const windowEnds = status?.rollback?.window_ends_at;
   const actionsEnabled = mutate && hostSupported && !busy && !applyRunning(status?.last_operation ?? lastOp);
   const rollbackReady = status?.rollback?.available === true;
@@ -380,13 +382,13 @@ export function UpdatesPage() {
       {notices.length ? (
         <article className="panel update-notices">
           <h2>
-            Before you update
-            {status?.impact_version ? ` to ${status.impact_version}` : ""}
+            Before you update to {preview?.version}
           </h2>
           <ul>
             {notices.map((n) => (
               <li key={n.id} className={n.applies ? "is-applies" : "muted"}>
                 <strong>{n.audience}:</strong> {n.text}
+                {n.version && n.version !== preview?.version ? <span className="meta"> (from {n.version})</span> : null}
                 {n.detail ? <span className="meta"> {n.detail}</span> : null}
                 {n.applies ? <span className="chip chip-sm">Affects you</span> : null}
               </li>
@@ -471,7 +473,7 @@ export function UpdatesPage() {
 
       {loadState === "ready" && status ? (
         <>
-          <div className="summary-grid">
+          <div className="summary-grid updates-summary">
             <SummaryCard label="Channel" value={status.channel || "Not reported"} />
             <SummaryCard label="Host" value={hostSupported ? "Supported" : "Unsupported"} meta={hostSupported ? status.host_reason || undefined : undefined} />
             <SummaryCard
@@ -482,7 +484,7 @@ export function UpdatesPage() {
             />
           </div>
           <div className="updates-grid">
-            <article className="panel">
+            <article className="panel updates-host">
               <h2>Host support</h2>
               {hostSupported ? (
                 <dl className="definition-list">

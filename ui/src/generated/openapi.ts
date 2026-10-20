@@ -375,6 +375,7 @@ export interface UpdateImpactNotice {
   text: string;
   applies: boolean;
   detail?: string;
+  version?: string;
 }
 
 export interface BulkComponentsRequest {

@@ -6,9 +6,10 @@ import { autoGrid, freeRect } from "./components/TerminalGrid";
 import { mergeRows } from "./components/shell/GlobalSearch";
 import { modernNav } from "./components/Shell";
 import { createHref, num, str, strMap } from "./instanceTemplates";
+import { daysUntil, recentCount } from "./nav/AdminDashboard";
 import { createEntries } from "./nav/AreaFrames";
 import { ADMIN_SECTIONS, INSTANCE_SECTIONS, isAdminPath, isInstancePath, visibleSections } from "./nav/sections";
-import { popularityRank } from "./pages/FeaturesPage";
+import { featureState, popularityRank } from "./pages/FeaturesPage";
 import { filterInstances, parseWidgets } from "./pages/InstanceHomePage";
 import { nodeTab, parseLayout, seriesStats } from "./pages/NodePage";
 import { validAvatarURL } from "./pages/ProfilePage";
@@ -47,10 +48,11 @@ describe("navigation model", () => {
   it("keeps the modern sidebar short", () => {
     const labels = modernNav(true).flatMap((g) => g.items.map((i) => i.label));
     expect(labels).toEqual(["Dashboard", "Instance", "Terminal", "Files", "Administration"]);
-    expect(modernNav(false).some((g) => g.label === "Administration")).toBe(false);
+    expect(modernNav(true).map((g) => g.label)).toEqual(["Overview", "Compute", "Management"]);
+    expect(modernNav(false).some((g) => g.label === "Management")).toBe(false);
   });
 
-  it("puts every way to create an instance in + Create only", () => {
+  it("puts every way to create an instance in Create + only", () => {
     for (const sec of INSTANCE_SECTIONS) {
       for (const c of sec.children ?? []) {
         expect(c.href).not.toMatch(/\/new\/|\/create|\/import/);
@@ -61,9 +63,21 @@ describe("navigation model", () => {
     );
   });
 
-  it("orders + Create like the Instance bar", () => {
+  it("orders Create + like the Instance bar", () => {
     const on = () => true;
-    expect(createEntries(["vms", "workloads", "oci", "game-servers"], on).map((e) => e.section)).toEqual(["vms", "vms", "workloads", "oci", "game-servers"]);
+    expect(createEntries(["vms", "workloads", "oci", "game-servers"], on).map((e) => e.section)).toEqual([
+      "vms",
+      "vms",
+      "workloads",
+      "oci",
+      "oci",
+      "oci",
+      "game-servers",
+      "templates",
+      "templates",
+      "templates",
+      "templates",
+    ]);
     expect(createEntries([], (id) => id !== "oci").map((e) => e.section)).not.toContain("oci");
   });
 });
@@ -183,5 +197,28 @@ describe("other pages", () => {
       { id: "c", name: "c", enabled: false, disabled_reason: "failed 5 times" },
     ] as Parameters<typeof flowsOffByUpdate>[0];
     expect(flowsOffByUpdate(flows).map((f) => f.id)).toEqual(["a"]);
+  });
+});
+
+describe("round 5", () => {
+  it("counts the admin dashboard's last day", () => {
+    const now = Date.parse("2026-10-20T12:00:00Z");
+    expect(recentCount(["2026-10-20T01:00:00Z", "2026-10-18T12:00:00Z", undefined, "bad"], now)).toBe(1);
+    expect(daysUntil("2026-10-25T12:00:00Z", now)).toBe(5);
+    expect(daysUntil(undefined, now)).toBeNull();
+  });
+
+  it("puts template creation in Create + after the instances", () => {
+    const entries = createEntries([], () => true);
+    const firstTemplate = entries.findIndex((e) => e.group === "Templates");
+    expect(firstTemplate).toBeGreaterThan(0);
+    expect(entries.slice(firstTemplate).every((e) => e.group === "Templates")).toBe(true);
+    expect(entries.map((e) => e.href)).toEqual(expect.arrayContaining(["/templates?new=vm", "/templates?new=system-container", "/oci?new=compose", "/oci?new=group"]));
+    expect(createEntries([], (id) => id !== "oci").map((e) => e.href)).not.toContain("/templates?new=oci");
+  });
+
+  it("keeps turned-off features apart from installed ones", () => {
+    const f = { id: "docker", title: "Docker", enabled: false, installed: true, core: false, package_status: "installed", runtime_status: "installed", starts_runtime: false, kubelet_started: false, workload_count: 0 } as const;
+    expect(featureState(f, false)).toBe("disabled");
   });
 });

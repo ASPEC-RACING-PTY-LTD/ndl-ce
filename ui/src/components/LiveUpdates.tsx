@@ -89,7 +89,7 @@ export function LiveUpdatesPanel({ owner }: { owner: boolean }) {
   const busyNow = st?.busy ?? [];
   const canRollBack = (st?.history ?? []).some((e) => e.action === "apply" && e.result === "applied" && !e.rolled_back);
   return (
-    <section className="panel bk-panel" aria-labelledby="live-updates-heading">
+    <section className="panel bk-panel live-updates-panel" aria-labelledby="live-updates-heading">
       <div className="bk-head">
         <h2 id="live-updates-heading">Live updates</h2>
         <div className="bk-actions">

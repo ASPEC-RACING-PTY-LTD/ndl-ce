@@ -40,7 +40,7 @@ function portText(server: GameServer): string {
 export function GameServersHomePage() {
   const path = usePath();
   const session = useSession();
-  // In the Instance layout creating lives in "+ Create" in the page bar.
+  // In the Instance layout creating lives in "Create +" in the page bar.
   const [layout] = useInstanceLayout();
   const { featureEnabled } = useNavDisclosure();
   const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
@@ -292,7 +292,7 @@ export function GameServersHomePage() {
         <EmptyState
           title="No game servers yet"
           action={
-            mutate ? (
+            mutate && layout === "classic" ? (
               <button className="btn btn-primary" type="button" onClick={() => setQuickOpen(true)}>
                 Create your first server
               </button>

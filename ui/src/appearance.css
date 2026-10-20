@@ -331,15 +331,39 @@ body {
   position: static;
 }
 
-.page-nav-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-right: var(--space-2);
-  padding: 0 var(--space-3) 0 var(--space-2);
-  border-right: 1px solid var(--line);
-  font-weight: 650;
+/* Room between a bar and what sits under it. */
+.page-nav {
+  margin-bottom: var(--space-3);
+}
+
+/*
+ * Under a page bar the bar already says where you are, so a page's own
+ * title, icon and subtitle are not shown. The title stays for screen
+ * readers; a header left with nothing to click takes no space.
+ */
+.shell-main:has(.page-nav) :is(h1, .page-header:not(.is-section) .page-title) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
+}
+
+.shell-main:has(.page-nav) :is(h1 + .page-lede, .page-header .page-lede, .page-header:not(.is-section) .page-kicker, .page-header:not(.is-section) .page-icon) {
+  display: none;
+}
+
+.shell-main:has(.page-nav) .page-header:not(.is-section):not(:has(button, a, select, input)) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.shell-main:has(.page-nav) .page-header:not(.is-section) .page-header-row {
+  justify-content: flex-end;
 }
 
 .page-nav-list {
@@ -467,11 +491,6 @@ body {
   margin-left: auto;
 }
 
-@media (max-width: 40rem) {
-  .page-nav-title {
-    display: none;
-  }
-}
 
 /* Theme page --------------------------------------------------------------- */
 
@@ -1132,31 +1151,6 @@ body {
 }
 
 /* ---- Administration home and "+ Create" ---- */
-.admin-cards {
-  --fluid-min: 16rem;
-}
-
-.admin-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: var(--space-4);
-  color: inherit;
-  text-decoration: none;
-  transition: transform 0.15s var(--spring), border-color 0.15s;
-}
-
-.admin-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--accent);
-}
-
-.admin-card-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .create-menu {
   position: relative;
 }
@@ -1377,15 +1371,131 @@ body {
 }
 
 /* ---- Updates ---- */
+/* Each Updates box is as wide as what it shows, not a share of the row. */
 .updates-grid {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
-  align-items: start;
+  align-items: flex-start;
 }
 
 .updates-grid > .panel {
   margin: 0;
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: min(100%, 46rem);
+}
+
+.updates-grid > .updates-host {
+  max-width: min(100%, 24rem);
+}
+
+.updates-summary {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.updates-summary > .summary-card {
+  flex: 0 1 auto;
+  width: fit-content;
+  min-width: 10rem;
+  max-width: min(100%, 22rem);
+}
+
+.live-updates-panel {
+  max-width: min(100%, 56rem);
+}
+
+.theme-legacy {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.theme-legacy-title {
+  font-size: 1rem;
+}
+
+/* Admin dashboard ------------------------------------------------------- */
+
+.admin-stats {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  align-items: start;
+}
+
+.admin-stat {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  margin: 0;
+}
+
+.admin-stat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--fg-secondary);
+  font-weight: 600;
+}
+
+.admin-stat-main {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-stat-lines {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.admin-stat-lines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.admin-stat-lines dt {
+  color: var(--fg-secondary);
+}
+
+.admin-stat-lines dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.admin-stat-lines .is-ok dd {
+  color: var(--ok, inherit);
+}
+
+.admin-stat-lines .is-warn dd {
+  color: var(--warn, inherit);
+  font-weight: 600;
+}
+
+.admin-stat-lines .is-bad dd {
+  color: var(--danger, inherit);
+  font-weight: 600;
+}
+
+.create-menu-group {
+  display: block;
+  padding: 0.45rem 0.7rem 0.2rem;
+  color: var(--fg-secondary);
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .update-notices ul {

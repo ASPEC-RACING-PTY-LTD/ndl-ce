@@ -246,8 +246,9 @@ export function FeaturesPage() {
       }
       return a.title.localeCompare(b.title);
     });
-  const installed = visible.filter((r) => r.state !== "available");
-  const available = visible.filter((r) => r.state === "available");
+  // Turned-off features sit with the ones not installed: Installed is what is on.
+  const installed = visible.filter((r) => r.state === "enabled" || r.state === "core");
+  const available = visible.filter((r) => r.state === "disabled" || r.state === "available");
   const enabledCount = rows.filter((row) => row.on).length;
 
   function actions(row: (typeof rows)[number]) {
@@ -438,8 +439,8 @@ export function FeaturesPage() {
       {!list && !error ? <LoadingState label="Loading features" /> : null}
       {list ? (
         <div className="features-split">
-          {status !== "available" ? section("Installed", installed, "No installed feature matches.") : null}
-          {status === "all" || status === "available" ? section("Not installed", available, "Every feature is installed.") : null}
+          {status === "all" || status === "enabled" ? section("Installed", installed, "No installed feature matches.") : null}
+          {status !== "enabled" ? section("Not installed", available, "Every feature is installed.") : null}
         </div>
       ) : null}
 

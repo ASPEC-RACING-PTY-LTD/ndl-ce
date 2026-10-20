@@ -13583,6 +13583,9 @@ components:
           type: boolean
         detail:
           type: string
+        version:
+          type: string
+          description: The release whose changelog entry lists the notice.
     BulkComponentsRequest:
       type: object
       required:

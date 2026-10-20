@@ -195,7 +195,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
                   Components
                 </Link>
               ) : null}
-              {/* In the Instance layout "+ Create" is in the page bar above. */}
+              {/* In the Instance layout "Create +" is in the page bar above. */}
               {layout === "classic" ? <CreateMenu /> : null}
             </div>
           ) : null

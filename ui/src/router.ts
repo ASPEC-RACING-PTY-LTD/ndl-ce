@@ -57,3 +57,21 @@ export function useHistoryState(): unknown {
 
   return state;
 }
+
+/** useSearchParam is one query value, kept current as the URL changes. */
+export function useSearchParam(name: string): string | null {
+  const read = () => new URLSearchParams(window.location.search).get(name);
+  const [value, setValue] = useState(read);
+
+  useEffect(() => {
+    const onPop = () => {
+      setValue(new URLSearchParams(window.location.search).get(name));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+    };
+  }, [name]);
+
+  return value;
+}

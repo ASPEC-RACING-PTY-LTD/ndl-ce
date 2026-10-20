@@ -30,7 +30,7 @@ import { Segmented } from "../ui/Segmented";
 import { Switch } from "../ui/Switch";
 import { uxLevel } from "../ux";
 
-type Section = "colours" | "style" | "code" | "layout" | "notifications" | "terminal" | "profiles" | "other";
+type Section = "colours" | "style" | "code" | "layout" | "notifications" | "terminal" | "profiles";
 
 const NAV: PageNavItem[] = [
   { id: "colours", label: "Colours", href: "/theme", icon: "palette", match: (p) => p === "/theme" },
@@ -40,11 +40,14 @@ const NAV: PageNavItem[] = [
   { id: "notifications", label: "Notifications", href: "/theme/notifications", icon: "bell" },
   { id: "terminal", label: "Terminal", href: "/theme/terminal", icon: "terminal" },
   { id: "profiles", label: "Design profiles", href: "/theme/profiles", icon: "users" },
-  { id: "other", label: "Other", href: "/theme/other", icon: "more" },
 ];
 
 function sectionOf(path: string): Section {
-  const s = path.split("/")[2] as Section | undefined;
+  const s = path.split("/")[2] as Section | "other" | undefined;
+  // The old Other page moved into Layout, under Legacy.
+  if (s === "other") {
+    return "layout";
+  }
   return s && NAV.some((n) => n.id === s) ? s : "colours";
 }
 
@@ -78,7 +81,7 @@ export function ThemePage() {
   const themeSection = section === "colours" || section === "style" || section === "terminal";
   return (
     <section className="page page-wide theme-page" aria-labelledby="theme-heading">
-      <PageNav id="theme" label="Theme" icon="palette" items={NAV} />
+      <PageNav id="theme" label="Theme" items={NAV} />
       <header className="page-header">
         <h1 id="theme-heading">{NAV.find((n) => n.id === section)?.label}</h1>
         <p className="page-lede">
@@ -120,7 +123,6 @@ export function ThemePage() {
       {section === "layout" ? <LayoutSection /> : null}
       {section === "notifications" ? <NotificationsSection /> : null}
       {section === "profiles" ? <ProfilesSection /> : null}
-      {section === "other" ? <OtherSection /> : null}
     </section>
   );
 }
@@ -191,6 +193,7 @@ function LayoutSection() {
         </p>
       </div>
       <p className="field-hint">Page bars: drag a button to move it, or right-click it. The order is saved for you on every page.</p>
+      <LegacySection />
     </div>
   );
 }
@@ -351,7 +354,8 @@ function ProfilesSection() {
   );
 }
 
-function OtherSection() {
+/** LegacySection holds older options kept for people who still use them. */
+function LegacySection() {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const [level, setLevel] = useState(uxLevel(user));
@@ -375,9 +379,10 @@ function OtherSection() {
   }
 
   return (
-    <div className="panel theme-editor">
+    <div className="theme-legacy">
+      <h2 className="theme-legacy-title">Legacy</h2>
       <div className="theme-row">
-        <span className="field-label">Form detail (legacy)</span>
+        <span className="field-label">Form detail</span>
         <div aria-busy={busy}>
           <UxModeToggle value={level} onChange={(v) => void change(v)} />
         </div>

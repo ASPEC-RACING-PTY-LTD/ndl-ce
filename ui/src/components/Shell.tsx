@@ -29,7 +29,7 @@ type NavGroup = { label: string; items: NavModule[] };
 
 /**
  * modernNav is the short sidebar of the modern layout: Dashboard, the
- * Compute pages and one Administration entry. Everything else is reached
+ * Compute pages and one Administration entry under Management. Everything else is reached
  * from each area's page bar.
  */
 export function modernNav(showAdmin: boolean): NavGroup[] {
@@ -46,8 +46,8 @@ export function modernNav(showAdmin: boolean): NavGroup[] {
   ];
   if (showAdmin) {
     groups.push({
-      label: "Administration",
-      items: [{ id: "admin", href: "/admin", label: "Administration", group: "Administration", match: isAdminPath }],
+      label: "Management",
+      items: [{ id: "admin", href: "/admin", label: "Administration", group: "Management", match: isAdminPath }],
     });
   }
   return groups;

@@ -77,14 +77,13 @@ function itemActive(item: PageNavItem | PageNavChild, path: string): boolean {
 export function PageNav({
   id,
   label,
-  icon,
   items,
   actions,
   className,
 }: {
   id: string;
+  /** label names the bar for screen readers; it is not shown. */
   label: string;
-  icon?: IconName;
   items: PageNavItem[];
   actions?: ReactNode;
   className?: string;
@@ -147,10 +146,6 @@ export function PageNav({
         }
       }}
     >
-      <span className="page-nav-title">
-        {icon ? <Icon name={icon} size={16} /> : null}
-        {label}
-      </span>
       <ul className="page-nav-list" role="list">
         {ordered.map((item) => {
           const active = item.id === activeId;

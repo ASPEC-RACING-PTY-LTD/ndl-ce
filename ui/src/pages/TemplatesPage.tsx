@@ -13,7 +13,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
-import { navigate } from "../router";
+import { navigate, useSearchParam } from "../router";
 import { useSession } from "../session";
 import { canMutate } from "../ux";
 import { ErrorNotice } from "../components/ErrorNotice";
@@ -43,14 +43,18 @@ function SettingsTemplates({
   kind,
   items,
   mutate,
+  open,
+  onClose,
   onChanged,
 }: {
   kind: SettingsKind;
   items: InstanceTemplate[];
   mutate: boolean;
+  /** open shows the new-template dialog; Create + opens it with ?new=<kind>. */
+  open: boolean;
+  onClose: () => void;
   onChanged: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [source, setSource] = useState("");
   const [sources, setSources] = useState<Workload[]>([]);
@@ -103,7 +107,7 @@ function SettingsTemplates({
         if (Number(memGB) > 0) spec.memory_bytes = Math.round(Number(memGB) * 1024 ** 3);
         await createInstanceTemplate({ kind, name: name.trim(), spec });
       }
-      setOpen(false);
+      onClose();
       setName("");
       onChanged();
     } catch (err) {
@@ -115,14 +119,7 @@ function SettingsTemplates({
 
   return (
     <section className="stack" aria-label={KIND_TITLES[kind]}>
-      <div className="components-head">
-        <h2>{KIND_TITLES[kind]}</h2>
-        {mutate ? (
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => setOpen(true)}>
-            New template
-          </button>
-        ) : null}
-      </div>
+      <h2>{KIND_TITLES[kind]}</h2>
       <div className="card-grid">
         {items.length === 0 ? <p className="muted">None yet.</p> : null}
         {items.map((t) => (
@@ -147,11 +144,11 @@ function SettingsTemplates({
         ))}
       </div>
       <ConfirmDialog
-        open={open}
+        open={open && mutate}
         title={`New ${KIND_TITLES[kind].replace(/ templates$/, "").toLowerCase()} template`}
         confirmLabel="Save template"
         confirmDisabled={busy || (!name.trim() && !source) || (kind === "game-server" && !game)}
-        onClose={() => setOpen(false)}
+        onClose={onClose}
         onConfirm={() => void save()}
       >
         {error ? <ErrorNotice error={error} /> : null}
@@ -205,7 +202,9 @@ export function TemplatesPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(false);
+  const want = useSearchParam("new");
+  const open = want === "vm" && mutate;
+  const close = () => navigate("/templates", { replace: true });
   const [settings, setSettings] = useState<InstanceTemplate[]>([]);
   const ociOn = useFeatureOn("oci");
   const gamesOn = useFeatureOn("gameservers");
@@ -235,28 +234,25 @@ export function TemplatesPage() {
         id="templates-heading"
         title="Templates"
         kicker="Reusable settings for every instance type. A VM template also keeps a disk snapshot; deploying makes a new VM with new UUIDs and a new MAC."
-        actions={
-          mutate ? (
-            <button className="btn btn-primary" type="button" onClick={() => setOpen(true)}>
-              Create VM template
-            </button>
-          ) : null
-        }
       />
       <SettingsTemplates
         kind="system-container"
         items={settings.filter((t) => t.kind === "system-container")}
         mutate={mutate}
+        open={want === "system-container"}
+        onClose={close}
         onChanged={() => void reloadSettings()}
       />
       {ociOn ? (
-        <SettingsTemplates kind="oci" items={settings.filter((t) => t.kind === "oci")} mutate={mutate} onChanged={() => void reloadSettings()} />
+        <SettingsTemplates kind="oci" items={settings.filter((t) => t.kind === "oci")} mutate={mutate} open={want === "oci"} onClose={close} onChanged={() => void reloadSettings()} />
       ) : null}
       {gamesOn ? (
         <SettingsTemplates
           kind="game-server"
           items={settings.filter((t) => t.kind === "game-server")}
           mutate={mutate}
+          open={want === "game-server"}
+          onClose={close}
           onChanged={() => void reloadSettings()}
         />
       ) : null}
@@ -264,14 +260,7 @@ export function TemplatesPage() {
       {error ? <ErrorNotice error={error} /> : null}
       <div className="card-grid">
         {items.length === 0 ? (
-          <article className="panel dashboard-card empty-card">
-            <p className="empty-title">No templates</p>
-            {mutate ? (
-              <button className="btn btn-primary" type="button" onClick={() => setOpen(true)}>
-                Create template
-              </button>
-            ) : null}
-          </article>
+          <p className="muted">None yet.</p>
         ) : (
           items.map((t) => (
             <article className="panel dashboard-card" key={t.id}>
@@ -309,21 +298,18 @@ export function TemplatesPage() {
           ))
         )}
       </div>
-      <p>
-        <Link href="/workloads/import">Import a disk image</Link>
-      </p>
       <ConfirmDialog
         open={open}
         title="Save as template"
         confirmLabel="Create template"
         confirmDisabled={busy || !sourceID}
-        onClose={() => setOpen(false)}
+        onClose={close}
         onConfirm={() => {
           setBusy(true);
           setError(null);
           void createTemplate({ workload_id: sourceID, name })
             .then(() => {
-              setOpen(false);
+              close();
               return reload();
             })
             .catch((err) => setError(err instanceof Error ? err.message : "Create failed"))

@@ -36,7 +36,7 @@ export function IAMLayout({ children }: { children: ReactNode }) {
   }));
   return (
     <section className="page page-wide iam-page" aria-label="Identity and Access Management">
-      <PageNav id="iam" label="IAM" icon="shield" items={items} />
+      <PageNav id="iam" label="IAM" items={items} />
       <SectionScopeProvider>{children}</SectionScopeProvider>
     </section>
   );

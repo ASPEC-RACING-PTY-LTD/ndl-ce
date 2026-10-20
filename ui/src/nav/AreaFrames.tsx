@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useInstanceLayout, useNavLayout } from "../appearance/state";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
@@ -7,7 +7,7 @@ import { hasGrant } from "../rbac";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { useNavDisclosure } from "./NavDisclosure";
-import { ADMIN_SECTIONS, CREATE_ENTRIES, INSTANCE_SECTIONS, isAdminPath, isInstancePath, toPageNav, visibleSections, type Section } from "./sections";
+import { ADMIN_SECTIONS, CREATE_ENTRIES, INSTANCE_SECTIONS, isAdminPath, isInstancePath, toPageNav, visibleSections, type CreateEntry, type Section } from "./sections";
 
 function useSections(sections: Section[]): Section[] {
   const session = useSession();
@@ -16,15 +16,17 @@ function useSections(sections: Section[]): Section[] {
   return visibleSections(sections, user, capabilityOn);
 }
 
-/** createEntries lists the "+ Create" choices in the order of the person's Instance bar. */
-export function createEntries(order: string[], capabilityOn: (id: string) => boolean) {
+/**
+ * createEntries lists the "Create +" choices: instances in the order of the
+ * person's Instance bar, then templates.
+ */
+export function createEntries(order: string[], capabilityOn: (id: string) => boolean): CreateEntry[] {
   const rank = new Map(order.map((id, i) => [id, i]));
-  return CREATE_ENTRIES.filter((e) => !e.capability || capabilityOn(e.capability)).sort(
-    (a, b) => (rank.get(a.section) ?? 99) - (rank.get(b.section) ?? 99),
-  );
+  const at = (e: CreateEntry) => (e.group ? 1000 : 0) + (rank.get(e.section) ?? 99);
+  return CREATE_ENTRIES.filter((e) => !e.capability || capabilityOn(e.capability)).sort((a, b) => at(a) - at(b));
 }
 
-/** CreateMenu is the "+ Create" button: every instance type, in the bar's order. */
+/** CreateMenu is the "Create +" button: every instance type and template, in the bar's order. */
 export function CreateMenu() {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
@@ -66,14 +68,21 @@ export function CreateMenu() {
   return (
     <div className="menu create-menu" ref={root}>
       <button className="btn btn-primary btn-sm" type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <Icon name="create" size={14} /> Create
+        Create <Icon name="create" size={14} />
       </button>
       {open ? (
         <div className="menu-panel create-menu-panel" role="menu" aria-label="Create">
-          {entries.map((e) => (
-            <Link key={e.href} href={e.href} role="menuitem" onClick={() => setOpen(false)}>
-              {e.label}
-            </Link>
+          {entries.map((e, i) => (
+            <Fragment key={e.href}>
+              {e.group && entries[i - 1]?.group !== e.group ? (
+                <span className="create-menu-group" role="presentation">
+                  {e.group}
+                </span>
+              ) : null}
+              <Link href={e.href} role="menuitem" onClick={() => setOpen(false)}>
+                {e.label}
+              </Link>
+            </Fragment>
           ))}
         </div>
       ) : null}
@@ -83,12 +92,12 @@ export function CreateMenu() {
 
 function AdminBar() {
   const sections = useSections(ADMIN_SECTIONS);
-  return <PageNav id="admin" label="Administration" icon="shield" items={toPageNav(sections)} />;
+  return <PageNav id="admin" label="Administration" items={toPageNav(sections)} />;
 }
 
 function InstanceBar() {
   const sections = useSections(INSTANCE_SECTIONS);
-  return <PageNav id="instance" label="Instance" icon="workloads" items={toPageNav(sections)} actions={<CreateMenu />} />;
+  return <PageNav id="instance" label="Instance" items={toPageNav(sections)} actions={<CreateMenu />} />;
 }
 
 /**
@@ -106,31 +115,5 @@ export function AreaFrame({ children }: { children: ReactNode }) {
       {bar}
       {children}
     </>
-  );
-}
-
-/** AdminHome is /admin: a card for every admin area this person may open. */
-export function AdminHome() {
-  const sections = useSections(ADMIN_SECTIONS);
-  return (
-    <section className="page page-wide" aria-labelledby="admin-heading">
-      <header className="page-header">
-        <h1 id="admin-heading">Administration</h1>
-        <p className="page-lede">Everything that runs the appliance. Drag the buttons above to put the ones you use first.</p>
-      </header>
-      {sections.length === 0 ? <p className="muted">You have no administration pages.</p> : null}
-      <div className="fluid-grid admin-cards">
-        {sections.map((s) => (
-          <Link key={s.id} href={s.href} className="panel admin-card">
-            <span className="admin-card-head">
-              <Icon name={s.icon} size={18} />
-              <strong>{s.label}</strong>
-            </span>
-            {s.description ? <span className="muted">{s.description}</span> : null}
-            {(s.children ?? []).length > 0 ? <span className="meta">{s.children!.map((c) => c.label).join(" · ")}</span> : null}
-          </Link>
-        ))}
-      </div>
-    </section>
   );
 }

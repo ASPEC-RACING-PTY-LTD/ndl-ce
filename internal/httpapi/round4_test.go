@@ -109,6 +109,26 @@ func TestParseImpactNotices(t *testing.T) {
 	}
 }
 
+func TestPendingChangelogCoversEveryNewerRelease(t *testing.T) {
+	log := "nodal (1.2.5) trixie; urgency=medium\n\n  * Impact (everyone): Five\n\n -- A <a@b>  Mon\n\n" +
+		"nodal (1.2.4) trixie; urgency=medium\n\n  * Impact (automation): Four\n  * Impact (everyone): Five\n\n -- A <a@b>  Mon\n\n" +
+		"nodal (1.2.3) trixie; urgency=medium\n\n  * Impact (updates): Three\n\n -- A <a@b>  Mon\n"
+	got := parseImpactNotices(pendingChangelog(log, "1.2.3"))
+	if len(got) != 2 || got[0].Text != "Five" || got[0].Version != "1.2.5" || got[1].Text != "Four" || got[1].Version != "1.2.4" {
+		t.Fatalf("two newer releases, the repeat listed once: %+v", got)
+	}
+	if n := parseImpactNotices(pendingChangelog(log, "1.2.5")); len(n) != 0 {
+		t.Fatalf("nothing newer is installed: %+v", n)
+	}
+	if compareVersions("1.10.0", "1.9.9") != 1 || compareVersions("1:1.2", "1.2") != 0 {
+		t.Fatal("version order")
+	}
+	// A changelog without entry lines is kept whole.
+	if pendingChangelog("* Impact: x", "1.0") != "* Impact: x" {
+		t.Fatal("plain changelog dropped")
+	}
+}
+
 func TestSearchFollowsPermissions(t *testing.T) {
 	a := newAutoTest(t)
 	viewer := loginRole(t, a.ts, a.mem, "viewer-person", rbac.User)
