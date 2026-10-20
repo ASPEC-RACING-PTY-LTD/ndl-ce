@@ -1887,6 +1887,18 @@ export async function deleteBackupPolicy(id: string): Promise<void> {
   throw new ApiError(res.status, await readErrorMessage(res));
 }
 
+/** deleteBackupPolicyHistory deletes a policy's run history; runs a restore point needs are kept. */
+export async function deleteBackupPolicyHistory(id: string): Promise<{ removed: number; kept: number }> {
+  return readJson(await request(`/backups/policies/${id}/runs`, { method: "DELETE" }));
+}
+
+/** resetBackups clean-slates the backup system; policies, targets and the key stay. */
+export async function resetBackups(): Promise<{ stopped: number; legacy_removed: number }> {
+  return readJson(
+    await request("/backups/reset", { method: "POST", headers: { "X-Nodal-Confirm": "backup-reset" }, body: JSON.stringify({}) }),
+  );
+}
+
 /** clearBackupPolicyQueue drops a paused policy's queued Run now and the backups its pause stopped. */
 export async function clearBackupPolicyQueue(id: string): Promise<{ cleared: number }> {
   return readJson(await request(`/backups/policies/${id}/queue/clear`, { method: "POST", body: JSON.stringify({}) }));

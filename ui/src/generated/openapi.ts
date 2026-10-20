@@ -4786,6 +4786,10 @@ export type UpdateBackupPolicyPath = "/api/v1/backups/policies/{id}";
 
 export type RunBackupPolicyPath = "/api/v1/backups/policies/{id}/run";
 
+export type DeleteBackupPolicyHistoryPath = "/api/v1/backups/policies/{id}/runs";
+
+export type ResetBackupsPath = "/api/v1/backups/reset";
+
 export type ClearBackupPolicyQueuePath = "/api/v1/backups/policies/{id}/queue/clear";
 
 export type ListBackupRunsPath = "/api/v1/backups/runs";

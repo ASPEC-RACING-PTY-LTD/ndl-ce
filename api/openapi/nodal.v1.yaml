@@ -8171,6 +8171,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /backups/policies/{id}/runs:
+    delete:
+      operationId: deleteBackupPolicyHistory
+      summary: Delete a policy's run history; runs a restore point still refers to are kept
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: History deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - removed
+                  - kept
+                properties:
+                  removed:
+                    type: integer
+                  kept:
+                    type: integer
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: Policy not found
+  /backups/reset:
+    post:
+      operationId: resetBackups
+      summary: Clean-slate the backup system. Stops every backup, empties the local repository (its key and target settings stay), deletes older format backups and every run, restore point and upload record. Policies and targets stay; objects in a cloud bucket are not touched. Requires X-Nodal-Confirm backup-reset.
+      responses:
+        "200":
+          description: Backups reset
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - stopped
+                  - legacy_removed
+                properties:
+                  stopped:
+                    type: integer
+                  legacy_removed:
+                    type: integer
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "409":
+          description: Missing confirmation, or the repository could not be reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /backups/policies/{id}/queue/clear:
     post:
       operationId: clearBackupPolicyQueue

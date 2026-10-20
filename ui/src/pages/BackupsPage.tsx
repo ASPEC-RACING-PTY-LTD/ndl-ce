@@ -26,6 +26,8 @@ import {
   runBackup,
   runBackupPolicy,
   clearBackupPolicyQueue,
+  deleteBackupPolicyHistory,
+  resetBackups,
   testBackupTarget,
   updateBackupPolicy,
   verifyBackupArtifact,
@@ -119,6 +121,20 @@ function runStatusLabel(status: BackupRun["status"]): string {
     default:
       return honestStatus(status);
   }
+}
+
+/** tookLabel is how long a run took, like "16 s" or "3 min". */
+export function tookLabel(start: string, end: string): string {
+  const ms = Date.parse(end) - Date.parse(start);
+  if (!Number.isFinite(ms) || ms < 0) {
+    return "";
+  }
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) {
+    return `${sec} s`;
+  }
+  const min = Math.round(sec / 60);
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
 }
 
 function retentionLabel(p: BackupPolicy): string {
@@ -596,7 +612,9 @@ type Dialog =
   | { kind: "artifact"; artifact: BackupArtifact }
   | { kind: "delete-policy"; policy: BackupPolicy }
   | { kind: "workspace" }
-  | { kind: "run"; run: BackupRun };
+  | { kind: "run"; run: BackupRun }
+  | { kind: "points"; workloadId: string }
+  | { kind: "reset" };
 
 // Boxes of the page, in page order, with the short name their minimized
 // button shows.
@@ -683,6 +701,8 @@ export function BackupsPage() {
   const boxes = useBoxes(["images", "files"]);
   // The new layout is the default; the older box layout is an option.
   const [legacyUI, setLegacyUI] = usePref<boolean>("backups.legacyUI", false);
+  const [historyNote, setHistoryNote] = useState("");
+  const [resetWord, setResetWord] = useState("");
 
   // Everything loads at once. Backups render as soon as the backup lists
   // arrive; workloads, nodes and workspace settings fill in when they do.
@@ -1154,6 +1174,38 @@ export function BackupsPage() {
     }
   }
 
+  // Deleting history asks no question: it only removes records, never a
+  // backup, and runs a restore point needs are kept.
+  async function onDeleteHistory(policy: BackupPolicy) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await deleteBackupPolicyHistory(policy.id);
+      setHistoryNote(res.kept ? `${res.kept} run(s) kept because their backups still exist.` : "");
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Could not delete the history");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onFullReset() {
+    setBusy(true);
+    setError(null);
+    try {
+      await resetBackups();
+      setDialog(null);
+      await reload();
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "The reset failed");
+      setDialog(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onClearQueue(policy: BackupPolicy) {
     setBusy(true);
     setError(null);
@@ -1479,7 +1531,10 @@ export function BackupsPage() {
                           >
                             Clear queue
                           </button>
-                          <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "history", policy: p })}>
+                          <button className="btn btn-sm" type="button" onClick={() => {
+                              setHistoryNote("");
+                              setDialog({ kind: "history", policy: p });
+                            }}>
                             History
                           </button>
                           <button className="btn btn-sm" type="button" onClick={() => openPolicyDialog(p)}>
@@ -1497,7 +1552,7 @@ export function BackupsPage() {
             )}
           </section>
   );
-  const storagePanel = (part: "all" | "info" | "actions") => (
+  const storagePanel = (part: "all" | "info" | "actions" | "targets") => (
             <BackupStoragePanel part={part}
               mutate={mutate}
               targets={targets ?? []}
@@ -1622,36 +1677,7 @@ export function BackupsPage() {
               )}
             </section>
   );
-  const restorePanel = (
-          <section className="panel bk-panel" aria-labelledby="backup-artifacts-heading">
-            <div className="bk-head">
-              <h2 id="backup-artifacts-heading">Restore points</h2>
-              <div className="bk-actions">
-                {(artifacts ?? []).length > 0 ? (
-                  <input
-                    className="field-input bk-search"
-                    type="search"
-                    placeholder="Filter by workload"
-                    aria-label="Filter restore points by workload"
-                    value={artifactQuery}
-                    onChange={(e) => setArtifactQuery(e.target.value)}
-                  />
-                ) : null}
-                {mutate && legacyUI ? (
-                  <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
-                    Export DR metadata
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            {artifacts == null ? (
-              <LoadingState label="Collecting" />
-            ) : artifacts.length === 0 ? (
-              <div className="bk-empty">
-                <p className="empty-title">No backup artifacts yet</p>
-                <p className="bk-hint">Finished backups show here, ready to restore or check.</p>
-              </div>
-            ) : (
+  const pointsTable = (list: BackupArtifact[]) => (
               <div className="bk-scroll">
                 <table className="bk-table">
                   <thead>
@@ -1666,7 +1692,7 @@ export function BackupsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {shownArtifacts.map((art) => (
+                    {list.map((art) => (
                       <tr key={art.id}>
                         <td>
                           {workloadName(art.workload_id)}
@@ -1722,7 +1748,7 @@ export function BackupsPage() {
                         </td>
                       </tr>
                     ))}
-                    {shownArtifacts.length === 0 ? (
+                    {list.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="bk-hint">
                           No restore points match.
@@ -1732,6 +1758,38 @@ export function BackupsPage() {
                   </tbody>
                 </table>
               </div>
+  );
+  const restorePanel = (
+          <section className="panel bk-panel" aria-labelledby="backup-artifacts-heading">
+            <div className="bk-head">
+              <h2 id="backup-artifacts-heading">Restore points</h2>
+              <div className="bk-actions">
+                {(artifacts ?? []).length > 0 ? (
+                  <input
+                    className="field-input bk-search"
+                    type="search"
+                    placeholder="Filter by workload"
+                    aria-label="Filter restore points by workload"
+                    value={artifactQuery}
+                    onChange={(e) => setArtifactQuery(e.target.value)}
+                  />
+                ) : null}
+                {mutate && legacyUI ? (
+                  <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
+                    Export DR metadata
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {artifacts == null ? (
+              <LoadingState label="Collecting" />
+            ) : artifacts.length === 0 ? (
+              <div className="bk-empty">
+                <p className="empty-title">No backup artifacts yet</p>
+                <p className="bk-hint">Finished backups show here, ready to restore or check.</p>
+              </div>
+            ) : (
+              pointsTable(shownArtifacts)
             )}
           </section>
   );
@@ -1838,14 +1896,11 @@ export function BackupsPage() {
       {loadState === "ready" && !legacyUI ? (
         <>
           <section className="panel bk-panel bk-manage" aria-labelledby="backup-manage-heading">
-            <div className="bk-head">
+            <div className="bk-mrow bk-manage-top">
               <h2 id="backup-manage-heading">Management</h2>
-            </div>
-            <div className="bk-manage-grid">
-              <div className="bk-manage-policies">{policiesPanel}</div>
-              <div className="bk-manage-actions" aria-label="Backup management">
+              <div className="bk-mcol" aria-label="Backup management">
                 {mutate ? (
-                  <div className="bk-actions is-stack">
+                  <div className="bk-actions is-start">
                     <button className="btn btn-primary btn-sm" type="button" onClick={() => openPolicyDialog()}>
                       Create policy
                     </button>
@@ -1862,39 +1917,46 @@ export function BackupsPage() {
                     <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "adhoc" })}>
                       Back up one workload
                     </button>
+                    <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "points", workloadId: "" })}>
+                      Restore points
+                    </button>
                     <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
                       Export DR metadata
+                    </button>
+                    <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "workspace" })}>
+                      Settings
+                    </button>
+                    <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={() => {
+                        setResetWord("");
+                        setDialog({ kind: "reset" });
+                      }}>
+                      Full Reset / Wipe all Backup related data
                     </button>
                   </div>
                 ) : null}
                 {storagePanel("actions")}
-                {mutate ? (
-                  <button className="btn btn-sm" type="button" onClick={() => setDialog({ kind: "workspace" })}>
-                    Settings
-                  </button>
-                ) : null}
               </div>
             </div>
+            {policiesPanel}
+            <div className="bk-manage-targets">
+              <h3 className="bk-subhead">Targets</h3>
+              {storagePanel("targets")}
+            </div>
           </section>
+
+          <WorkloadFiles workloads={workloads} mutate={mutate} onBackupsDeleted={() => void afterDelete()} />
 
           <BackupSizes
               artifacts={artifacts ?? []}
               workloadName={workloadName}
               targets={targets ?? []}
-              onDeleteWorkload={mutate ? (id, name) => void onDeleteWorkloadBackups(id, name) : undefined}
             status={{ leading: statsSpans, aside: runsPanel, footer: storagePanel("info") }}
           />
 
-          <div className="bk-row is-even is-tall">
-            {restorePanel}
-            <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
-          </div>
+          <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
           {workloads.some((w) => w.kind === "system-container") ? (
-            <>
-              <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
-            </>
+            <KeepImages workloads={workloads.map((w) => ({ id: w.id, name: w.name, kind: w.kind }))} mutate={mutate} />
           ) : null}
-            <WorkloadFiles workloads={workloads} mutate={mutate} onBackupsDeleted={() => void afterDelete()} />
           <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
           <RecoveryWorkloads owner={isAdmin(roles)} />
         </>
@@ -2472,6 +2534,66 @@ export function BackupsPage() {
       </ConfirmDialog>
 
       <ConfirmDialog
+        open={dialog?.kind === "points"}
+        title={dialog?.kind === "points" && dialog.workloadId ? `${workloadName(dialog.workloadId)} restore points` : "Restore points"}
+        hideFooter
+        wide
+        onClose={() => setDialog(null)}
+        onConfirm={() => setDialog(null)}
+      >
+        {dialog?.kind === "points" ? (
+          <div className="bk-history">
+            <div className="bk-actions is-start">
+              <select
+                className="field-input bk-select"
+                aria-label="Workload"
+                value={dialog.workloadId}
+                onChange={(e) => setDialog({ kind: "points", workloadId: e.target.value })}
+              >
+                <option value="">All workloads ({(artifacts ?? []).length})</option>
+                {[...new Set((artifacts ?? []).map((a) => a.workload_id))].map((id) => (
+                  <option key={id} value={id}>
+                    {workloadName(id)}
+                  </option>
+                ))}
+              </select>
+              {mutate && dialog.workloadId ? (
+                <button
+                  className="btn btn-sm btn-ghost btn-danger-text"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onDeleteWorkloadBackups(dialog.workloadId, workloadName(dialog.workloadId))}
+                >
+                  Delete all backups of {workloadName(dialog.workloadId)}
+                </button>
+              ) : null}
+            </div>
+            {pointsTable((artifacts ?? []).filter((a) => !dialog.workloadId || a.workload_id === dialog.workloadId))}
+          </div>
+        ) : null}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={dialog?.kind === "reset"}
+        title="Full reset of backups"
+        confirmLabel="Wipe all backup data"
+        danger
+        confirmDisabled={busy || resetWord.trim() !== "RESET"}
+        onClose={() => setDialog(null)}
+        onConfirm={() => void onFullReset()}
+      >
+        <p>
+          Every running backup stops. Every backup on this host is deleted, with every run, restore point, upload and
+          size record. No-dal forgets what it uploaded to your cloud targets, so the next backup uploads in full.
+        </p>
+        <p>
+          Kept: your policies, your targets and their credentials, and the backup key. Files already in a cloud bucket
+          are not deleted; use Wipe on the target for that. This cannot be undone.
+        </p>
+        <Field id="backup-reset-word" label="Type RESET to confirm" value={resetWord} onChange={(e) => setResetWord(e.target.value)} autoComplete="off" />
+      </ConfirmDialog>
+
+      <ConfirmDialog
         open={dialog?.kind === "history"}
         title={dialog?.kind === "history" ? `${dialog.policy.name} history` : "History"}
         hideFooter
@@ -2480,35 +2602,55 @@ export function BackupsPage() {
         onConfirm={() => setDialog(null)}
       >
         {dialog?.kind === "history" ? (
-          <div className="bk-scroll is-tall">
-            <table className="bk-table">
-              <thead>
-                <tr>
-                  <th>Workload</th>
-                  <th>Status</th>
-                  <th>Uploaded</th>
-                  <th>Started</th>
-                  <th>Finished</th>
-                  <th>Error</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(runs ?? [])
-                  .filter((r) => r.policy_id === dialog.policy.id)
-                  .map((r) => (
-                    <tr key={r.id}>
-                      <td>{workloadName(r.workload_id)}</td>
-                      <td>{runStatusLabel(r.status)}</td>
-                      <td>{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : "None"}</td>
-                      <td>{formatWhen(r.started_at)}</td>
-                      <td>{formatWhen(r.finished_at)}</td>
-                      <td className="bk-clip" title={r.error || undefined}>
-                        {r.error}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+          <div className="bk-history">
+            {mutate ? (
+              <div className="bk-actions is-start">
+                <button
+                  className="btn btn-sm btn-danger"
+                  type="button"
+                  disabled={busy || (runs ?? []).every((r) => r.policy_id !== dialog.policy.id)}
+                  onClick={() => void onDeleteHistory(dialog.policy)}
+                >
+                  Delete all history
+                </button>
+                {historyNote ? <span className="bk-hint">{historyNote}</span> : null}
+              </div>
+            ) : null}
+            <div className="bk-scroll is-tall">
+              <table className="bk-table is-fit">
+                <thead>
+                  <tr>
+                    <th>Workload</th>
+                    <th>Status</th>
+                    <th className="bk-num">Uploaded</th>
+                    <th>Started</th>
+                    <th>Took</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(runs ?? [])
+                    .filter((r) => r.policy_id === dialog.policy.id)
+                    .map((r) => (
+                      <tr key={r.id}>
+                        <td>{workloadName(r.workload_id)}</td>
+                        <td>
+                          <span className={"bk-pill " + runTone(r.status)} title={r.error || undefined}>
+                            {runStatusLabel(r.status)}
+                          </span>
+                          {r.error ? <div className="bk-hint bk-clip" title={r.error}>{r.error}</div> : null}
+                        </td>
+                        <td className="bk-num">{r.transferred_bytes != null ? formatBytes(r.transferred_bytes) : ""}</td>
+                        <td className="bk-nowrap" title={formatWhen(r.started_at)}>
+                          {formatRelative(r.started_at)}
+                        </td>
+                        <td className="bk-nowrap" title={formatWhen(r.finished_at)}>
+                          {r.finished_at ? tookLabel(r.started_at, r.finished_at) : "Running"}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
             {(runs ?? []).every((r) => r.policy_id !== dialog.policy.id) ? <p className="muted">No runs for this policy yet.</p> : null}
           </div>
         ) : null}

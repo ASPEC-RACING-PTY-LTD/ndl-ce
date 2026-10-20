@@ -1501,7 +1501,8 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: /^run backup$/i })).not.toBeInTheDocument();
     expect(await screen.findByText(/^Running$/)).toBeVisible();
     expect(screen.getByText(/no backup policies yet/i)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^restore or verify$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^restore points$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^restore or verify$/i }));
     expect(
       await screen.findByText(/restore as new creates a new workload uuid\. restore replace overwrites the existing workload/i),
     ).toBeVisible();

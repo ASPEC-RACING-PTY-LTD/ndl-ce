@@ -797,31 +797,76 @@
 
 /* New layout: Management and Backup Status ------------------------------ */
 
-.bk-manage-grid {
+/*
+ * Management uses one layout: what a row is on the left, every button for
+ * it in one right-hand column that starts where Run now does. Buttons
+ * flow in rows inside that column.
+ */
+.bk-manage {
+  --bk-mcol: minmax(22rem, 44%);
+}
+
+.bk-manage .bk-mrow,
+.bk-manage .bk-item,
+.bk-manage .bk-target {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(11rem, 14rem);
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) var(--bk-mcol);
+  gap: var(--space-2) var(--space-4);
   align-items: start;
 }
 
-.bk-manage-actions {
-  display: grid;
-  gap: var(--space-2);
-  align-content: start;
-  padding-left: var(--space-4);
-  border-left: 1px solid var(--line-soft);
+.bk-manage .bk-mrow h2 {
+  margin: 0;
 }
 
-.bk-actions.is-stack {
+.bk-manage .bk-item > .bk-actions,
+.bk-manage .bk-mcol .bk-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.bk-manage .bk-target > :not(.bk-actions) {
+  grid-column: 1;
+}
+
+.bk-manage .bk-target > .bk-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.bk-mcol {
   display: grid;
-  justify-content: stretch;
   gap: var(--space-2);
 }
 
-.bk-manage-actions .btn,
-.bk-actions.is-stack .btn {
+.bk-subhead {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.bk-manage-targets {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.bk-history {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.bk-history .bk-scroll {
+  overflow-x: auto;
+}
+
+.bk-table.is-fit {
   width: 100%;
-  justify-content: center;
+}
+
+.bk-table.is-fit .bk-clip {
+  max-width: 22rem;
 }
 
 /* Boxes inside a box drop their own frame. */
@@ -866,13 +911,15 @@
 }
 
 @media (max-width: 1100px) {
-  .bk-manage-grid,
-  .bk-status-grid {
+  .bk-status-grid,
+  .bk-manage .bk-mrow,
+  .bk-manage .bk-item,
+  .bk-manage .bk-target {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .bk-manage-actions {
-    padding-left: 0;
-    border-left: 0;
+  .bk-manage .bk-target > .bk-actions {
+    grid-column: 1;
+    grid-row: auto;
   }
 }

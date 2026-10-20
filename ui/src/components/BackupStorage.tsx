@@ -184,9 +184,10 @@ export function BackupStoragePanel({
   refreshKey?: number;
   /**
    * part splits the panel for the new Backups layout: "actions" is only
-   * its management buttons (with their notices), "info" everything else.
+   * its management buttons, "targets" the targets with their buttons
+   * (both with their notices), "info" everything else.
    */
-  part?: "all" | "info" | "actions";
+  part?: "all" | "info" | "actions" | "targets";
 }) {
   const [report, setReport] = useState<BackupStorageReport | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -336,16 +337,18 @@ export function BackupStoragePanel({
   const objectTargets = targets.filter((t) => ["r2", "s3", "aws", "b2", "minio"].includes(t.kind));
   const failedEvents = (report?.events ?? []).filter((e) => !e.ok);
 
-  const showInfo = part !== "actions";
-  const showActions = part !== "info";
+  const showInfo = part === "all" || part === "info";
+  const showActions = part === "all" || part === "actions";
+  const showTargets = part === "all" || part === "targets";
   const Wrap = part === "all" ? "article" : "div";
   return (
     <Wrap
       className={part === "all" ? "panel bk-panel" : "bk-storage-part"}
-      id={part === "actions" ? undefined : "backup-storage"}
-      aria-labelledby={part === "actions" ? undefined : "backup-storage-heading"}
+      id={showInfo ? "backup-storage" : undefined}
+      aria-labelledby={showInfo ? "backup-storage-heading" : undefined}
+      aria-label={part === "targets" ? "Backup targets" : undefined}
     >
-      {part !== "actions" ? (
+      {showInfo ? (
         <div className="bk-head">
           {part === "all" ? <h2 id="backup-storage-heading">Where backups are stored</h2> : <h3 id="backup-storage-heading">Where backups are stored</h3>}
         </div>
@@ -364,10 +367,12 @@ export function BackupStoragePanel({
             Save the backup key. It decrypts every backup here and in cloud storage. If this host is lost without it,
             no backup can be restored.
           </p>
-          {mutate ? (
+          {mutate && part === "all" ? (
             <button className="btn btn-sm" type="button" disabled={busy} onClick={onExportKey}>
               Download backup key
             </button>
+          ) : mutate ? (
+            <p className="bk-hint">Use Download backup key in Management.</p>
           ) : null}
         </div>
       ) : null}
@@ -391,62 +396,6 @@ export function BackupStoragePanel({
               ? `The repository was not moved: ${report.repository_move.error}`
               : `The backup repository moved to ${report.repository_move.to}.`}
         </p>
-      ) : null}
-
-      {targets.length > 0 ? (
-        <ul className="bk-targets" aria-label="Backup targets">
-          {targets.map((t) => {
-            const u = remote[t.id];
-            const object = objectTargets.includes(t);
-            return (
-              <li className="bk-target" key={t.id}>
-                <div className="bk-item-title">
-                  <span className="bk-strong">{t.name}</span>
-                  <span className="bk-hint">
-                    {t.kind.toUpperCase()}
-                    {object && t.bucket ? ` · ${t.bucket}` : ""}
-                  </span>
-                  {targetStatus ? <span className="bk-pill">{targetStatus(t)}</span> : null}
-                </div>
-                <div className="bk-hint">
-                  {!object ? (
-                    <code>{t.locator}</code>
-                  ) : u == null ? (
-                    "Size in the bucket not measured yet."
-                  ) : typeof u === "string" ? (
-                    u
-                  ) : (
-                    <>
-                      Holds {formatBytes(u.total_bytes ?? 0)} in {u.objects ?? 0} objects: {u.restore_points ?? 0} restore point(s),
-                      backup data {formatBytes(u.pack_bytes ?? 0)}
-                      {u.other_bytes ? `, older whole-disk and archive backups ${formatBytes(u.other_bytes)}` : ""}.
-                      {u.unreferenced_pack_bytes ? (
-                        <>
-                          {" "}
-                          {formatBytes(u.unreferenced_pack_bytes)} of data no readable restore point needs
-                          {u.foreign_points ? `; ${u.foreign_points} restore point(s) use another repository key, so some of it may be theirs` : ""}.
-                        </>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-                <div className="bk-actions is-start">
-                  {object && (u == null || typeof u !== "string") ? (
-                    <button className="btn btn-sm" type="button" onClick={() => measureTarget(t.id)}>
-                      Measure
-                    </button>
-                  ) : null}
-                  {targetActions?.(t)}
-                  {mutate && object ? (
-                    <button className="btn btn-sm btn-ghost btn-danger-text" type="button" disabled={busy} aria-label={`Wipe ${t.name}`} onClick={() => setWiping(t)}>
-                      Wipe
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
       ) : null}
 
       {ws ? (
@@ -545,8 +494,64 @@ export function BackupStoragePanel({
 
       </>
       ) : null}
+      {showTargets && targets.length > 0 ? (
+        <ul className="bk-targets" aria-label="Backup targets">
+          {targets.map((t) => {
+            const u = remote[t.id];
+            const object = objectTargets.includes(t);
+            return (
+              <li className="bk-target" key={t.id}>
+                <div className="bk-item-title">
+                  <span className="bk-strong">{t.name}</span>
+                  <span className="bk-hint">
+                    {t.kind.toUpperCase()}
+                    {object && t.bucket ? ` · ${t.bucket}` : ""}
+                  </span>
+                  {targetStatus ? <span className="bk-pill">{targetStatus(t)}</span> : null}
+                </div>
+                <div className="bk-hint">
+                  {!object ? (
+                    <code>{t.locator}</code>
+                  ) : u == null ? (
+                    "Size in the bucket not measured yet."
+                  ) : typeof u === "string" ? (
+                    u
+                  ) : (
+                    <>
+                      Holds {formatBytes(u.total_bytes ?? 0)} in {u.objects ?? 0} objects: {u.restore_points ?? 0} restore point(s),
+                      backup data {formatBytes(u.pack_bytes ?? 0)}
+                      {u.other_bytes ? `, older whole-disk and archive backups ${formatBytes(u.other_bytes)}` : ""}.
+                      {u.unreferenced_pack_bytes ? (
+                        <>
+                          {" "}
+                          {formatBytes(u.unreferenced_pack_bytes)} of data no readable restore point needs
+                          {u.foreign_points ? `; ${u.foreign_points} restore point(s) use another repository key, so some of it may be theirs` : ""}.
+                        </>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+                <div className="bk-actions is-start">
+                  {object && (u == null || typeof u !== "string") ? (
+                    <button className="btn btn-sm" type="button" onClick={() => measureTarget(t.id)}>
+                      Measure
+                    </button>
+                  ) : null}
+                  {targetActions?.(t)}
+                  {mutate && object ? (
+                    <button className="btn btn-sm btn-ghost btn-danger-text" type="button" disabled={busy} aria-label={`Wipe ${t.name}`} onClick={() => setWiping(t)}>
+                      Wipe
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+
       {mutate && showActions ? (
-        <div className={part === "actions" ? "bk-actions is-stack" : "bk-actions is-footer"}>
+        <div className={part === "actions" ? "bk-actions is-start" : "bk-actions is-footer"}>
           <button className="btn btn-sm" type="button" disabled={busy} onClick={onMaintenance}>
             {busy ? "Working" : "Clean up now"}
           </button>
@@ -556,7 +561,7 @@ export function BackupStoragePanel({
           <button className="btn btn-sm" type="button" disabled={busy} onClick={() => setRelocating(true)}>
             Move repository
           </button>
-          {ws?.key_exported ? (
+          {ws?.key_exported || part === "actions" ? (
             <button className="btn btn-sm" type="button" disabled={busy} onClick={onExportKey}>
               Download backup key
             </button>

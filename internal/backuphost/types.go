@@ -21,6 +21,9 @@ const (
 	// ActionDequeue drops a restore point's pending uploads but keeps its
 	// upload state, so a paused policy stops uploading until enqueued again.
 	ActionDequeue = "v2-dequeue"
+	// ActionReset empties the local repository for a clean start, keeping
+	// its key and remembered targets.
+	ActionReset = "v2-reset"
 	// ActionGC collects garbage, compacts packs and sweeps remote packs.
 	ActionGC = "v2-gc"
 	// ActionRemoteUsage measures a remote target without changing it.
@@ -274,7 +277,7 @@ type WorkspaceStatus struct {
 
 func IsAction(action string) bool {
 	switch action {
-	case ActionCapture, ActionRestore, ActionStatus, ActionPreview, ActionExpire, ActionWorkspace, ActionEnqueue, ActionDequeue,
+	case ActionCapture, ActionRestore, ActionStatus, ActionPreview, ActionExpire, ActionWorkspace, ActionEnqueue, ActionDequeue, ActionReset,
 		ActionGC, ActionRemoteUsage, ActionRelocate, ActionVerify, ActionKey, ActionWipeRemote, ActionGitSave, ActionPlatformObject, ActionRemoteCheck, ActionKeyImport, ActionExportImages, ActionRehydrate,
 		ActionBrowse, ActionRulesGet, ActionRulesSet:
 		return true

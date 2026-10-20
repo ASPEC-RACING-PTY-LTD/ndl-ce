@@ -163,7 +163,8 @@ describe("Backups page", () => {
     expect(await screen.findByRole("heading", { name: /^policies$/i })).toBeVisible();
     expect(screen.getByText(/no backup policies yet/i)).toBeVisible();
     expect(screen.getByText(/no backup runs yet/i)).toBeVisible();
-    expect(screen.getByText(/no backup artifacts yet/i)).toBeVisible();
+    // Restore points live behind Management's Restore points button, not in a box of their own.
+    expect(screen.queryByRole("heading", { name: /^restore points$/i })).not.toBeInTheDocument();
     expect(screen.getByText(/^safe in the cloud/i)).toBeVisible();
     expect(screen.getByText(/^stored on this host/i)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /^create policy$/i }));
@@ -543,6 +544,8 @@ describe("Backups page", () => {
     for (const label of [/^safe in the cloud/i, /^only on this host/i, /^waiting to upload/i, /^uploading/i, /^failed/i, /^old format/i, /^stored on this host/i, /^left to upload/i]) {
       expect(within(summary).getByText(label)).toBeVisible();
     }
+    fireEvent.click(screen.getByRole("button", { name: /^restore points$/i }));
+    await screen.findByRole("dialog", { name: /^restore points$/i });
     expect(screen.getAllByText(/^queued$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^uploading$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^failed$/i).length).toBeGreaterThan(0);
@@ -664,5 +667,47 @@ describe("Backups page", () => {
     routes["/api/v1/backups/artifacts"] = { status: 200, body: { items: [] } };
     fireEvent.click(screen.getByRole("button", { name: /^delete backup from/i }));
     expect(await screen.findByText(/no backup artifacts yet/i)).toBeVisible();
+  });
+
+  it("clears history without asking, resets everything after confirming, and keeps target buttons in Management", async () => {
+    const policy = {
+      id: "pol-1", name: "nightly", scope: "all", workload_ids: [], excluded_workload_ids: [],
+      capture_mode: "smart", target_id: "tgt-1", schedule: "nightly", keep_daily: 1, keep_weekly: 1, keep_monthly: 1,
+    };
+    const run = { id: "run-1", policy_id: "pol-1", target_id: "tgt-1", workload_id: "wl-a", status: "succeeded", started_at: "2026-10-20T03:28:08Z", finished_at: "2026-10-20T03:31:28Z", transferred_bytes: 3.2e9 };
+    const fetchMock = mockApi({
+      ...baseRoutes,
+      "/api/v1/backups/policies": { status: 200, body: { items: [policy] } },
+      "/api/v1/backups/runs": { status: 200, body: { items: [run] } },
+      "DELETE /api/v1/backups/policies/pol-1/runs": { status: 200, body: { removed: 1, kept: 0 } },
+      "POST /api/v1/backups/reset": { status: 200, body: { stopped: 0, legacy_removed: 0 } },
+    });
+    const confirm = vi.spyOn(window, "confirm");
+    window.history.replaceState({}, "", "/backups");
+    render(<App />);
+    const manage = await screen.findByRole("region", { name: /^management$/i });
+    // The target's own buttons sit in Management, not in a storage box.
+    expect(within(manage).getByRole("button", { name: /^remove local-disk with its backups$/i })).toBeVisible();
+
+    fireEvent.click(within(manage).getByRole("button", { name: /^history$/i }));
+    const history = await screen.findByRole("dialog", { name: /nightly history/i });
+    expect(within(history).getByText("3 min")).toBeVisible();
+    fireEvent.click(within(history).getByRole("button", { name: /^delete all history$/i }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u, i]) => String(u).includes("/backups/policies/pol-1/runs") && i?.method === "DELETE")).toBe(true),
+    );
+    expect(confirm).not.toHaveBeenCalled();
+    fireEvent.click(within(history).getAllByRole("button", { name: /^cancel$|^close$/i })[0]);
+
+    fireEvent.click(within(manage).getByRole("button", { name: /full reset/i }));
+    const reset = await screen.findByRole("dialog", { name: /full reset of backups/i });
+    expect(fetchMock.mock.calls.filter(([u]) => String(u).includes("/backups/reset")).map(([u, i]) => `${i?.method} ${String(u)}`)).toEqual([]);
+    expect(within(reset).getByRole("button", { name: /^wipe all backup data$/i })).toBeDisabled();
+    fireEvent.change(within(reset).getByLabelText(/type reset to confirm/i), { target: { value: "RESET" } });
+    fireEvent.click(within(reset).getByRole("button", { name: /^wipe all backup data$/i }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/backups/reset"));
+      expect(new Headers(call?.[1]?.headers).get("X-Nodal-Confirm")).toBe("backup-reset");
+    });
   });
 });

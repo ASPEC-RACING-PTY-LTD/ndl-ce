@@ -165,6 +165,8 @@ func (h *Host) Handle(ctx context.Context, action, src, dest string) (storage.Co
 		out, err = h.enqueue(ctx, req)
 	case ActionDequeue:
 		out, err = h.dequeue(req)
+	case ActionReset:
+		out, err = h.resetRepository(req)
 	case ActionGitSave:
 		out, err = h.gitSave(ctx, src, req)
 	case ActionPlatformObject:
@@ -559,6 +561,29 @@ func (h *Host) enqueue(ctx context.Context, req Request) (Result, error) {
 	if err := q.EnqueueBackup(state); err != nil {
 		return Result{}, err
 	}
+	return h.status(req)
+}
+
+// resetRepository empties the repository: upload queues stop and their
+// jobs go, then every pack, restore point and bookkeeping file is removed.
+// The key and remembered targets stay. It refuses while a capture runs.
+func (h *Host) resetRepository(req Request) (Result, error) {
+	h.mu.Lock()
+	if len(h.busy) > 0 {
+		h.mu.Unlock()
+		return Result{}, fmt.Errorf("a backup is running; reset when it finishes")
+	}
+	queues := h.queues
+	h.queues = map[string]*backup.UploadQueue{}
+	h.mu.Unlock()
+	for _, q := range queues {
+		q.Stop()
+	}
+	freed, err := h.repo.Reset()
+	if err != nil {
+		return Result{}, err
+	}
+	log.Printf("backup: repository reset, %d bytes removed", freed)
 	return h.status(req)
 }
 

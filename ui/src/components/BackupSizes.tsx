@@ -165,11 +165,9 @@ export function BackupSizes({
         <div className={"bk-meter" + (share >= 0.9 ? " is-danger" : share >= 0.75 ? " is-warn" : "")} aria-label="Cloud free tier use">
           <span style={{ width: `${Math.min(100, share * 100)}%` }} />
         </div>
-        <span className="bk-hint">{small(cloudTotal, unit)} of the 10 GB free tier</span>
-        <button className="btn btn-sm" type="button" disabled={measuring} onClick={measure}>
-          {measuring ? "Measuring" : "Measure exactly"}
-        </button>
-        {measureError ? <span className="bk-hint is-danger">{measureError}</span> : null}
+        <span className="bk-hint">
+          {small(cloudTotal, unit)} of the 10 GB free tier (estimated; Measure on the target in Management gives the exact size)
+        </span>
       </div>
     ) : null;
     return (

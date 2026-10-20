@@ -687,6 +687,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/backups/policies/{id}", s.deleteBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/run", s.runBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/queue/clear", s.clearPolicyQueue)
+	mux.HandleFunc("DELETE /api/v1/backups/policies/{id}/runs", s.deleteBackupPolicyHistory)
+	mux.HandleFunc("POST /api/v1/backups/reset", s.resetBackups)
 	mux.HandleFunc("GET /api/v1/backups/runs", s.listBackupRuns)
 	mux.HandleFunc("GET /api/v1/backups/artifacts", s.listBackupArtifacts)
 	mux.HandleFunc("GET /api/v1/backups/dr-export", s.exportBackupDR)

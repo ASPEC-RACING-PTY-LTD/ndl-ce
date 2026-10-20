@@ -207,6 +207,12 @@ type Store interface {
 	UpdateBackupPolicy(ctx context.Context, p BackupPolicy) error
 	DeleteBackupPolicy(ctx context.Context, clusterID, id string) error
 	UpdateBackupPolicyLastRun(ctx context.Context, clusterID, id string, at time.Time) error
+	// DeleteBackupRunsWithoutArtifacts clears a policy's run history, keeping
+	// runs a restore point still refers to. It returns removed and kept.
+	DeleteBackupRunsWithoutArtifacts(ctx context.Context, clusterID, policyID string) (int, int, error)
+	// ResetBackupRecords deletes every backup run, restore point and upload
+	// record; policies, targets and settings stay.
+	ResetBackupRecords(ctx context.Context, clusterID string) error
 	// SetBackupPolicyRunQueued records or drops a Run now queued while paused.
 	SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error
 
