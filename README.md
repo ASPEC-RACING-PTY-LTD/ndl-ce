@@ -1,11 +1,17 @@
-# No-dal Community Edition
+# No-DAL Community Edition
 
-Open-source infrastructure platform. Control plane, node agent, API,
-CLI, and web UI.
+No-DAL, also written NoDAL, No DAL or Nodal, is an open-source,
+self-hosted Linux hypervisor and infrastructure platform built on stock
+Debian 13 primitives. Community Edition (No-DAL CE) manages KVM/QEMU
+virtual machines, LXC system containers, native OCI application
+containers (via containerd), game servers, storage, networking and
+encrypted, deduplicated backups. A lean node agent does the work,
+managed by an unprivileged control plane with its state in PostgreSQL,
+through one API, CLI (`nodalctl`) and web UI.
 
-CE 1.0 is the target milestone and is not reached until Debian 13
-Homelab and cluster hardware gates pass. Debian 13 amd64 is the only
-Tier 1 host. No Cloud or EE key is required. See `docs/ce-1.0.md`.
+The Debian metapackage is `nodal` and the CLI is `nodalctl`. No-DAL CE
+is in production, past 1.0, and runs a homelab of more than 40 projects
+every day. No Cloud or EE key is required. Website: https://no-dal.com
 
 On a clean Debian 13 amd64 host the bootstrap installs the `nodal`
 metapackage, starts services, and the operator claims `/setup`.
@@ -25,7 +31,7 @@ packages use the documented HTTPS repo and keyring path. The release
 workflow signs the APT repository with a persistent key held in the
 repository secrets; no signing key is stored in this tree.
 
-## Alpha builds
+## Releases
 
 GitHub evaluates the release workflow on pushes to `main`, but its build and
 release job is skipped unless the commit subject starts with `DEPLOY:`. It
@@ -46,8 +52,8 @@ the latest released version; the release calculates the next version from it.
 
 ## Host support
 
-Debian 13 amd64 is the only Tier 1 host. Other distributions fail
-closed and install nothing. Ubuntu is not claimed as Tier 1.
+No-DAL runs on Debian 13 amd64. Other distributions fail closed and
+install nothing.
 
 ## Docs
 
