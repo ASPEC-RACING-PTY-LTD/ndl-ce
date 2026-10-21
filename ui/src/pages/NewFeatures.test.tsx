@@ -151,12 +151,14 @@ describe("Cloudflare page", () => {
     fireEvent.change(screen.getByLabelText(/account filter/i), { target: { value: "" } });
 
     // Columns: hide Account with the pencil, and sort by hostname.
+    // The column panel floats on document.body so the table never clips it.
     fireEvent.click(within(table).getByRole("button", { name: /edit hostname columns/i }));
-    fireEvent.click(within(table).getByRole("checkbox", { name: /^account$/i }));
+    const columns = screen.getByRole("dialog", { name: /edit hostname columns/i });
+    fireEvent.click(within(columns).getByRole("checkbox", { name: /^account$/i }));
     expect(within(table).queryByRole("columnheader", { name: /^account/i })).toBeNull();
     expect(JSON.parse(localStorage.getItem("ndl-ui-prefs:user-1") ?? "{}")["table.cf.hostnames"].hidden).toContain("account");
-    fireEvent.click(within(table).getByRole("checkbox", { name: /^account$/i }));
-    fireEvent.click(within(table).getByRole("checkbox", { name: /group by tunnel/i }));
+    fireEvent.click(within(columns).getByRole("checkbox", { name: /^account$/i }));
+    fireEvent.click(within(columns).getByRole("checkbox", { name: /group by tunnel/i }));
     const flat = await screen.findByRole("table", { name: /public hostnames/i });
     expect(within(flat).getAllByRole("row")).toHaveLength(3);
     const sortBtn = within(flat).getByRole("button", { name: /^hostname/i });
@@ -164,7 +166,7 @@ describe("Cloudflare page", () => {
     expect(within(flat).getAllByRole("row")[1]).toHaveTextContent("shop.racing.example");
     expect(sortBtn.closest("th")).toHaveAttribute("aria-sort", "descending");
     // The picker stays open until clicked outside.
-    fireEvent.click(within(flat).getByRole("checkbox", { name: /group by tunnel/i }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: /edit hostname columns/i })).getByRole("checkbox", { name: /group by tunnel/i }));
     fireEvent.mouseDown(document.body);
 
     // Right-clicking the page leaves the browser's menu alone.

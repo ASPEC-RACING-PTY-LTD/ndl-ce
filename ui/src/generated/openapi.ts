@@ -930,6 +930,21 @@ export interface RevokeTokenRequest {
   id: string;
 }
 
+export interface ServicePrincipalReference {
+  kind: "token" | "group" | "role";
+  id: string;
+  label: string;
+  blocking: boolean;
+}
+
+export interface ServicePrincipalReferences {
+  id?: string;
+  name?: string;
+  error?: string;
+  references: ServicePrincipalReference[];
+  can_force: boolean;
+}
+
 export interface ErrorResponse {
   error: string;
 }
@@ -4915,6 +4930,10 @@ export type AddGroupMemberPath = "/api/v1/groups/{id}/members";
 export type BindGroupRolePath = "/api/v1/groups/{id}/roles";
 
 export type ListServicePrincipalsPath = "/api/v1/service-principals";
+
+export type DeleteServicePrincipalPath = "/api/v1/service-principals/{id}";
+
+export type GetServicePrincipalReferencesPath = "/api/v1/service-principals/{id}/references";
 
 export type RevealSecretPath = "/api/v1/secrets/reveal";
 

@@ -20,6 +20,8 @@ export function AccessControlArea({ view }: { view: "roles" | "api" }) {
   const canAPI = hasGrant(user, "api_access.manage") || hasGrant(user, "identity.token.create");
   return (
     <>
+      {/* The area bar names the page visually; this names it for screen readers. */}
+      <h1 className="visually-hidden">{view === "roles" ? "Access control" : "Access control: API access"}</h1>
       {canRoles && canAPI ? (
         <nav className="subnav iam-subnav" aria-label="Access control">
           <Link href={ACCESS_ROLES_PATH} aria-current={view === "roles" ? "page" : undefined}>

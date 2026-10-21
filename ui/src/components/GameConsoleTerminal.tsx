@@ -107,8 +107,12 @@ export function GameConsoleTerminal({ id, name }: { id: string; name: string }) 
     };
     refit();
     term.write(PROMPT);
-    const observer = new ResizeObserver(refit);
-    observer.observe(el);
+    // Follow the pane's size; fall back to the window where ResizeObserver is missing.
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(refit);
+    observer?.observe(el);
+    if (!observer) {
+      window.addEventListener("resize", refit);
+    }
     const unsubscribe = subscribePrefs(() => {
       term.options.fontSize = clampTerminalFont(getPref(TERMINAL_FONT_KEY, null));
       term.options.theme = terminalColors();
@@ -172,7 +176,8 @@ export function GameConsoleTerminal({ id, name }: { id: string; name: string }) 
     return () => {
       window.clearInterval(timer);
       input.dispose();
-      observer.disconnect();
+      observer?.disconnect();
+      window.removeEventListener("resize", refit);
       unsubscribe();
       term.dispose();
       termRef.current = null;

@@ -1662,8 +1662,9 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /^access control$/i })).toBeVisible();
     expect(await screen.findByText(/no groups yet/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /^new group$/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^role hierarchy$/i })).toBeVisible();
+    // One + creates a role or a group; the hierarchy is the list order itself.
+    expect(screen.getByRole("button", { name: /^create a role or group$/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^role hierarchy$/i })).toBeNull();
   });
 
   it("renders audit events and keeps license activation off this page", async () => {

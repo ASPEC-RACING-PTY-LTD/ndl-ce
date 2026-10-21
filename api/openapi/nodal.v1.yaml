@@ -9646,6 +9646,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ServicePrincipalCreated"
+  /service-principals/{id}:
+    delete:
+      operationId: deleteServicePrincipal
+      summary: Delete a service account. While it has live tokens or group memberships the delete answers 409 with its references; force (SuperAdmin or root) deletes anyway.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: force
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Force delete needs a SuperAdmin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Service account not found
+        "409":
+          description: Still in use; the body lists the references and whether force is allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePrincipalReferences"
+  /service-principals/{id}/references:
+    get:
+      operationId: getServicePrincipalReferences
+      summary: Where a service account is still used. Tokens and groups block a normal delete; roles go with the account.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: References
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServicePrincipalReferences"
+        "404":
+          description: Service account not found
   /secrets/reveal:
     post:
       operationId: revealSecret
@@ -14999,6 +15050,44 @@ components:
       properties:
         id:
           type: string
+    ServicePrincipalReference:
+      type: object
+      required:
+        - kind
+        - id
+        - label
+        - blocking
+      properties:
+        kind:
+          type: string
+          enum:
+            - token
+            - group
+            - role
+        id:
+          type: string
+        label:
+          type: string
+        blocking:
+          type: boolean
+    ServicePrincipalReferences:
+      type: object
+      required:
+        - references
+        - can_force
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        error:
+          type: string
+        references:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServicePrincipalReference"
+        can_force:
+          type: boolean
     ErrorResponse:
       type: object
       additionalProperties: false

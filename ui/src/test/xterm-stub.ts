@@ -2,6 +2,7 @@ export class Terminal {
   element: HTMLDivElement;
   cols = 80;
   rows = 24;
+  options: Record<string, unknown> = {};
   private textarea: HTMLTextAreaElement;
   private resizeHandler: ((size: { cols: number; rows: number }) => void) | null = null;
 
@@ -45,9 +46,15 @@ export class Terminal {
 
   write() {}
 
+  reset() {}
+
+  clear() {}
+
   dispose() {}
 
-  onData() {}
+  onData() {
+    return { dispose() {} };
+  }
 
   attachCustomKeyEventHandler() {
     return true;
