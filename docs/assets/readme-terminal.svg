@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="316" viewBox="0 0 860 316" role="img" aria-label="No-DAL install and nodalctl commands typed in a terminal">
+<title>No-DAL in a terminal</title>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:13.5px;white-space:pre}
+.p{fill:#b6f05a;font-weight:700}.c{fill:#e6e9ef}.o{fill:#8b93a3}.t{fill:#8b93a3;font-size:12px}
+@keyframes l0{0%,3.75%{clip-path:inset(0 100% 0 0)}11.57%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l0{animation:l0 16s steps(36,end) infinite}
+@keyframes l1{0%,13.76%{clip-path:inset(0 100% 0 0)}15.32%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l1{animation:l1 16s steps(1,end) infinite}
+@keyframes l2{0%,20.95%{clip-path:inset(0 100% 0 0)}28.25%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l2{animation:l2 16s steps(32,end) infinite}
+@keyframes l3{0%,30.44%{clip-path:inset(0 100% 0 0)}32.00%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l3{animation:l3 16s steps(1,end) infinite}
+@keyframes l4{0%,37.63%{clip-path:inset(0 100% 0 0)}46.20%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l4{animation:l4 16s steps(41,end) infinite}
+@keyframes l5{0%,48.39%{clip-path:inset(0 100% 0 0)}49.95%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l5{animation:l5 16s steps(1,end) infinite}
+@keyframes l6{0%,55.57%{clip-path:inset(0 100% 0 0)}61.90%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l6{animation:l6 16s steps(26,end) infinite}
+@keyframes l7{0%,64.09%{clip-path:inset(0 100% 0 0)}65.65%,92.50%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 100% 0 0)}}
+.l7{animation:l7 16s steps(1,end) infinite}
+@media (prefers-reduced-motion:reduce){text{animation:none!important;clip-path:none!important}}
+</style>
+<rect width="860" height="316" rx="12" fill="#151821"/>
+<rect width="860" height="40" rx="12" fill="#1d212c"/>
+<rect y="28" width="860" height="12" fill="#1d212c"/>
+<circle cx="24" cy="20" r="6" fill="#ff5f57"/><circle cx="44" cy="20" r="6" fill="#febc2e"/><circle cx="64" cy="20" r="6" fill="#28c840"/>
+<text x="430" y="25" text-anchor="middle" class="t">nodalctl · No-DAL Community Edition</text>
+  <text x="28" y="74" class="l0"><tspan class="p">$</tspan><tspan class="c"> curl -fsSL https://raw.githubusercontent.com/…/get-nodal.sh | sudo sh</tspan></text>
+  <text x="28" y="100" class="l1"><tspan class="o">  ✓ nodal installed on Debian 13 · open http://&lt;host&gt;:8080/setup</tspan></text>
+  <text x="28" y="126" class="l2"><tspan class="p">$</tspan><tspan class="c"> nodalctl workload create --kind vm --name guest-vm-01 --cpus 2</tspan></text>
+  <text x="28" y="152" class="l3"><tspan class="o">  ✓ guest-vm-01 running · KVM/QEMU</tspan></text>
+  <text x="28" y="178" class="l4"><tspan class="p">$</tspan><tspan class="c"> nodalctl workload create --kind oci --name redis-cache --image-pin redis:alpine</tspan></text>
+  <text x="28" y="204" class="l5"><tspan class="o">  ✓ redis-cache running · containerd</tspan></text>
+  <text x="28" y="230" class="l6"><tspan class="p">$</tspan><tspan class="c"> nodalctl backup run --workload web-01 --target r2</tspan></text>
+  <text x="28" y="256" class="l7"><tspan class="o">  ✓ restore point sealed · deduplicated, encrypted, uploading to Cloudflare R2</tspan></text>
+</svg>
