@@ -22,6 +22,10 @@ nodal (1.2.5) UNRELEASED; urgency=medium
   * Cluster: Join settings keep the join URL and a Cloudflare Access
     service token (secret stored sealed). Add node puts them in the join
     command, so a node can join a control node behind Access.
+  * Cluster: the host terminal and host files open on worker nodes,
+    through the worker agent over mutual TLS. Terminals and files of a
+    workload on a worker go to that worker. They used to fail with node
+    not found.
 
  -- No-dal <packaging@no-dal.com>  Thu, 22 Oct 2026 00:00:00 +0000
 

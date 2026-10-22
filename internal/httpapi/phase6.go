@@ -72,7 +72,7 @@ func (s *Server) createNodeTerminal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "host terminal requires admin")
 		return
 	}
-	node, err := s.localNode(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	node, _, err := s.ioNode(r.Context(), p.User.ClusterID, r.PathValue("id"))
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
@@ -248,6 +248,12 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "io agent is unavailable")
 		return
 	}
+	rpc, err := s.ioForSession(r.Context(), p.User.ClusterID, *row)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	r = r.WithContext(withIO(r.Context(), rpc))
 	jail, err := s.sessionJail(r.Context(), p.User.ClusterID, *row)
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
@@ -261,7 +267,7 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		s.serveTerminalSession(w, r, *row, jail, cwd, live)
 		return
 	}
-	conn, err := s.IO.OpenTerminal(r.Context(), agentrpc.TermOpen{
+	conn, err := s.ioFor(r.Context()).OpenTerminal(r.Context(), agentrpc.TermOpen{
 		TargetKind: row.TargetKind, TargetID: row.TargetID, JailRoot: jail, CWD: cwd,
 	})
 	if err != nil {
@@ -324,7 +330,7 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 // (see term_live.go), starting the shell on first connect.
 func (s *Server) serveTerminalSession(w http.ResponseWriter, r *http.Request, row appdb.IOSession, jail, cwd string, live *liveTerm) {
 	if live == nil {
-		conn, err := s.IO.OpenTerminal(context.WithoutCancel(r.Context()), agentrpc.TermOpen{
+		conn, err := s.ioFor(context.WithoutCancel(r.Context())).OpenTerminal(context.WithoutCancel(r.Context()), agentrpc.TermOpen{
 			TargetKind: row.TargetKind, TargetID: row.TargetID, JailRoot: jail, CWD: cwd,
 		})
 		if err != nil {
@@ -489,11 +495,12 @@ func (s *Server) nodeFiles(w http.ResponseWriter, r *http.Request, perm, action 
 		writeErr(w, http.StatusForbidden, "host files require admin")
 		return
 	}
-	node, err := s.localNode(r.Context(), p.User.ClusterID, r.PathValue("id"))
+	node, rpc, err := s.ioNode(r.Context(), p.User.ClusterID, r.PathValue("id"))
 	if err != nil {
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	r = r.WithContext(withIO(r.Context(), rpc))
 	s.handleFiles(w, r, p, iojail.TargetHost, node.ID, "/", action)
 }
 
@@ -507,11 +514,17 @@ func (s *Server) workloadFiles(w http.ResponseWriter, r *http.Request, perm, act
 		writeErr(w, statusFor(err), err.Error())
 		return
 	}
+	rpc, err := s.ioForWorkload(r.Context(), wl)
+	if err != nil {
+		writeErr(w, statusFor(err), err.Error())
+		return
+	}
+	r = r.WithContext(withIO(r.Context(), rpc))
 	s.handleFiles(w, r, p, wl.Kind, wl.ID, jail, action)
 }
 
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principal, kind, id, jail, action string) {
-	if s.IO == nil {
+	if s.ioFor(r.Context()) == nil {
 		writeErr(w, http.StatusBadGateway, "io agent is unavailable")
 		return
 	}
@@ -522,7 +535,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 	}
 	switch action {
 	case "download":
-		rc, err := s.IO.FilesGet(r.Context(), agentrpc.FilesGetCall{
+		rc, err := s.ioFor(r.Context()).FilesGet(r.Context(), agentrpc.FilesGetCall{
 			TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
 		})
 		if err != nil {
@@ -555,7 +568,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 			writeErr(w, filesHTTPStatus(err), err.Error())
 			return
 		}
-		raw, err := s.IO.FilesPut(r.Context(), agentrpc.FilesPutCall{
+		raw, err := s.ioFor(r.Context()).FilesPut(r.Context(), agentrpc.FilesPutCall{
 			TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
 		}, body, contentSHA)
 		if err != nil {
@@ -616,7 +629,7 @@ func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request, p *principa
 		if mut.Mode != nil {
 			mode = *mut.Mode
 		}
-		raw, err := s.IO.FilesOp(r.Context(), agentrpc.FilesCall{
+		raw, err := s.ioFor(r.Context()).FilesOp(r.Context(), agentrpc.FilesCall{
 			TargetKind: kind, TargetID: id, JailRoot: jail,
 			Action: action, Path: mut.Path, DestPath: dest, Mode: mode,
 		})
@@ -721,7 +734,7 @@ func (s *Server) sessionJail(ctx context.Context, clusterID string, row appdb.IO
 }
 
 func (s *Server) serveFileContent(w http.ResponseWriter, r *http.Request, p *principal, kind, id, jail, rel string) {
-	raw, err := s.IO.FilesOp(r.Context(), agentrpc.FilesCall{
+	raw, err := s.ioFor(r.Context()).FilesOp(r.Context(), agentrpc.FilesCall{
 		TargetKind: kind, TargetID: id, JailRoot: jail, Action: "stat", Path: rel,
 	})
 	if err != nil {
@@ -763,7 +776,7 @@ func (s *Server) serveFileContent(w http.ResponseWriter, r *http.Request, p *pri
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	rc, err := s.IO.FilesGet(r.Context(), agentrpc.FilesGetCall{
+	rc, err := s.ioFor(r.Context()).FilesGet(r.Context(), agentrpc.FilesGetCall{
 		TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
 	})
 	if err != nil {
@@ -803,7 +816,7 @@ func (s *Server) enforceExpected(ctx context.Context, kind, id, jail, rel, expec
 	if expectedMtime == "" && expectedSHA == "" {
 		return nil
 	}
-	raw, err := s.IO.FilesOp(ctx, agentrpc.FilesCall{
+	raw, err := s.ioFor(ctx).FilesOp(ctx, agentrpc.FilesCall{
 		TargetKind: kind, TargetID: id, JailRoot: jail, Action: "stat", Path: rel,
 	})
 	if err != nil {
@@ -822,7 +835,7 @@ func (s *Server) enforceExpected(ctx context.Context, kind, id, jail, rel, expec
 	if expectedSHA == "" || st.Type == "dir" {
 		return nil
 	}
-	rc, err := s.IO.FilesGet(ctx, agentrpc.FilesGetCall{
+	rc, err := s.ioFor(ctx).FilesGet(ctx, agentrpc.FilesGetCall{
 		TargetKind: kind, TargetID: id, JailRoot: jail, Path: rel,
 	})
 	if err != nil {

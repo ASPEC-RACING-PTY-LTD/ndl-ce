@@ -14,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 	agentv1 "github.com/no-dal/ndl-ce/gen/nodal/agent/v1"
 	"github.com/no-dal/ndl-ce/gen/nodal/agent/v1/agentv1connect"
+	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"golang.org/x/net/http2"
@@ -248,5 +249,36 @@ func TestJoinSettingsRefuseHalfAToken(t *testing.T) {
 	}
 	if code, _ := apiJSON(t, ts, cookie, "PUT", "/api/v1/cluster/join-settings", `{"join_url":"ftp://x"}`); code != http.StatusBadRequest {
 		t.Fatalf("a non-http join URL must be refused: %d", code)
+	}
+}
+
+func TestHostTerminalAndFilesRouteToWorkerAgent(t *testing.T) {
+	s, mem, token := testServer(t)
+	clusterRow, _ := mem.GetCluster(t.Context())
+	seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	joined := joinWorker(t, ts, cookie, "203.0.113.9")
+	id := joined["id"].(string)
+
+	code, got := apiJSON(t, ts, cookie, "POST", "/api/v1/nodes/"+id+"/terminal/sessions", `{}`)
+	if code != http.StatusCreated || got["target_id"] != id {
+		t.Fatalf("a worker's host terminal must open: %d %v", code, got)
+	}
+	node, _ := mem.GetNodeByID(t.Context(), clusterRow.ID, id)
+	_, rpc, err := s.ioNode(t.Context(), clusterRow.ID, id)
+	c, ok := rpc.(agentrpc.Client)
+	if err != nil || !ok || c.TCPAddr != "203.0.113.9:9444" || c.TLS == nil || c.Peer != node.ID {
+		t.Fatalf("worker IO must dial its agent over mutual TLS: %+v %v", rpc, err)
+	}
+
+	// A worker with no agent address says how to fix it.
+	remote, _ := mem.GetRemoteNode(t.Context(), clusterRow.ID, id)
+	remote.ListenAddr = ""
+	_ = mem.UpdateRemoteNodeSession(t.Context(), *remote)
+	code, got = apiJSON(t, ts, cookie, "POST", "/api/v1/nodes/"+id+"/terminal/sessions", `{}`)
+	if code != http.StatusBadGateway || !strings.Contains(got["error"].(string), "Address") {
+		t.Fatalf("missing agent address must be explained: %d %v", code, got)
 	}
 }
