@@ -1640,6 +1640,8 @@ export interface JoinTokenCreateResponse {
   join_url?: string;
   control_fingerprint?: string;
   agent_port?: string;
+  access_client_id?: string;
+  access_client_secret?: string;
   warning?: string;
 }
 
@@ -1662,6 +1664,19 @@ export interface ClusterJoinResponse {
   node_key?: string;
   listen_addr?: string;
   warning?: string;
+}
+
+export interface ClusterJoinSettings {
+  join_url: string;
+  access_client_id: string;
+  access_secret_set: boolean;
+}
+
+export interface ClusterJoinSettingsUpdate {
+  join_url?: string;
+  access_client_id?: string;
+  access_client_secret?: string;
+  clear_access?: boolean;
 }
 
 export interface WorkerLinkCheck {
@@ -4675,6 +4690,8 @@ export type ImportMigrationBundlePath = "/api/v1/migration/import/bundle";
 export type ExportMigrationPath = "/api/v1/migration/export";
 
 export type CreateJoinTokenPath = "/api/v1/cluster/join-tokens";
+
+export type GetJoinSettingsPath = "/api/v1/cluster/join-settings";
 
 export type JoinClusterPath = "/api/v1/cluster/join";
 

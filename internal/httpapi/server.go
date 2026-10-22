@@ -569,6 +569,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/migration/export", s.exportMigration)
 	mux.HandleFunc("POST /api/v1/cluster/join-tokens", s.createJoinToken)
 	mux.HandleFunc("POST /api/v1/cluster/join", s.joinCluster)
+	mux.HandleFunc("GET /api/v1/cluster/join-settings", s.getJoinSettings)
+	mux.HandleFunc("PUT /api/v1/cluster/join-settings", s.putJoinSettings)
 	mux.HandleFunc("POST /api/v1/cluster/nodes/{id}/revoke", s.revokeClusterNode)
 	mux.HandleFunc("GET /api/v1/workloads", s.listWorkloads)
 	mux.HandleFunc("POST /api/v1/workloads", s.createWorkload)

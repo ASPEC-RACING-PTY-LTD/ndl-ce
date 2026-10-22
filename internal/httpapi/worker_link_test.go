@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -187,5 +188,65 @@ func TestPlainTCPAgentIsRefused(t *testing.T) {
 	_, got := apiJSON(t, ts, cookie, "POST", "/api/v1/nodes/"+joined["id"].(string)+"/check", `{}`)
 	if got["reachable"] != false {
 		t.Fatalf("control must not talk to a worker agent without mutual TLS: %v", got)
+	}
+}
+
+func TestJoinSettingsHandServiceTokenToJoinCommand(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.CFKeyPath = filepath.Join(t.TempDir(), "secrets.key")
+	clusterRow, _ := mem.GetCluster(t.Context())
+	seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+
+	code, got := apiJSON(t, ts, cookie, "PUT", "/api/v1/cluster/join-settings",
+		`{"join_url":"https://ndl.example.com/","access_client_id":"abc.access","access_client_secret":"s3cret"}`)
+	if code != http.StatusOK || got["join_url"] != "https://ndl.example.com" || got["access_secret_set"] != true {
+		t.Fatalf("save join settings %d %v", code, got)
+	}
+	if _, leaked := got["access_client_secret"]; leaked {
+		t.Fatal("the saved secret must not be read back")
+	}
+	st, _ := mem.GetClusterJoinSettings(t.Context(), clusterRow.ID)
+	if st == nil || st.AccessSecretSealed == "" || strings.Contains(st.AccessSecretSealed, "s3cret") {
+		t.Fatalf("the secret must be stored sealed: %+v", st)
+	}
+
+	// Saving again without a secret keeps the saved one.
+	code, got = apiJSON(t, ts, cookie, "PUT", "/api/v1/cluster/join-settings", `{"join_url":"https://ndl.example.com","access_client_id":"abc.access"}`)
+	if code != http.StatusOK || got["access_secret_set"] != true {
+		t.Fatalf("an empty secret must keep the saved one: %d %v", code, got)
+	}
+
+	code, tok := apiJSON(t, ts, cookie, "POST", "/api/v1/cluster/join-tokens", `{}`)
+	if code != http.StatusCreated || tok["join_url"] != "https://ndl.example.com" ||
+		tok["access_client_id"] != "abc.access" || tok["access_client_secret"] != "s3cret" {
+		t.Fatalf("the join token must carry the saved URL and service token: %d %v", code, tok)
+	}
+
+	code, got = apiJSON(t, ts, cookie, "PUT", "/api/v1/cluster/join-settings", `{"join_url":"https://ndl.example.com","clear_access":true}`)
+	if code != http.StatusOK || got["access_secret_set"] != false || got["access_client_id"] != "" {
+		t.Fatalf("clear must remove the service token: %d %v", code, got)
+	}
+	_, tok = apiJSON(t, ts, cookie, "POST", "/api/v1/cluster/join-tokens", `{}`)
+	if _, ok := tok["access_client_secret"]; ok {
+		t.Fatalf("no service token once cleared: %v", tok)
+	}
+}
+
+func TestJoinSettingsRefuseHalfAToken(t *testing.T) {
+	s, mem, token := testServer(t)
+	s.CFKeyPath = filepath.Join(t.TempDir(), "secrets.key")
+	clusterRow, _ := mem.GetCluster(t.Context())
+	seedNode(t, mem, clusterRow.ID, debianInv(), false)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	cookie := claimAdmin(t, ts, token)
+	if code, _ := apiJSON(t, ts, cookie, "PUT", "/api/v1/cluster/join-settings", `{"access_client_id":"abc.access"}`); code != http.StatusBadRequest {
+		t.Fatalf("an id without a secret must be refused: %d", code)
+	}
+	if code, _ := apiJSON(t, ts, cookie, "PUT", "/api/v1/cluster/join-settings", `{"join_url":"ftp://x"}`); code != http.StatusBadRequest {
+		t.Fatalf("a non-http join URL must be refused: %d", code)
 	}
 }

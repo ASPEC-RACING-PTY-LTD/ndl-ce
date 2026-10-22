@@ -7,12 +7,15 @@ import {
   createJoinToken,
   fenceClusterHA,
   getClusterHA,
+  getJoinSettings,
   getClusterUpdate,
   listNodes,
   promoteClusterHA,
+  putJoinSettings,
   revokeClusterNode,
   runClusterUpdate,
   setNodeAgentAddress,
+  type ClusterJoinSettings,
   type JoinTokenCreateResult,
   type WorkerLinkCheck,
 } from "../api/client";
@@ -51,7 +54,13 @@ function shellQuote(v: string): string {
 }
 
 /** joinCommand is the one line an admin runs on the new machine. */
-export function joinCommand(url: string, token: string, fingerprint?: string, advertise?: string): string {
+export function joinCommand(
+  url: string,
+  token: string,
+  fingerprint?: string,
+  advertise?: string,
+  access?: { id?: string; secret?: string },
+): string {
   const parts = ["sudo nodalctl cluster join", `--url ${shellQuote(url.trim())}`, `--token ${token}`];
   if (fingerprint) {
     parts.push(`--fingerprint ${fingerprint}`);
@@ -59,7 +68,117 @@ export function joinCommand(url: string, token: string, fingerprint?: string, ad
   if (advertise?.trim()) {
     parts.push(`--advertise ${shellQuote(advertise.trim())}`);
   }
+  if (access?.id && access.secret) {
+    parts.push(`--access-client-id ${shellQuote(access.id)}`, `--access-client-secret ${shellQuote(access.secret)}`);
+  }
   return parts.join(" ");
+}
+
+/**
+ * JoinSettingsSection keeps how new nodes reach this control node: the
+ * join URL, and a Cloudflare Access service token when the control node is
+ * behind Access. Add node puts both into the join command.
+ */
+function JoinSettingsSection() {
+  const [settings, setSettings] = useState<ClusterJoinSettings | null>(null);
+  const [url, setUrl] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [secret, setSecret] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  function apply(next: ClusterJoinSettings) {
+    setSettings(next);
+    setUrl(next.join_url);
+    setClientId(next.access_client_id);
+    setSecret("");
+  }
+
+  useEffect(() => {
+    void getJoinSettings()
+      .then(apply)
+      .catch((err) => setError(message(err, "Unavailable")));
+  }, []);
+
+  async function save(clear = false) {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const next = await putJoinSettings(
+        clear
+          ? { join_url: url.trim(), clear_access: true }
+          : { join_url: url.trim(), access_client_id: clientId.trim(), access_client_secret: secret.trim() },
+      );
+      apply(next);
+      setSaved(true);
+    } catch (err) {
+      setError(message(err, "Could not save"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="section-block" aria-labelledby="cluster-join-heading">
+      <h2 id="cluster-join-heading">Join settings</h2>
+      <p className="lede">
+        How new nodes reach this control node. Behind Cloudflare Access, create a service token in Zero Trust (Access,
+        Service Auth), add a Service Auth policy for it to this application, and save it here. Add node then puts it in
+        the join command.
+      </p>
+      {error ? <ErrorNotice error={error} /> : null}
+      {settings === null && !error ? (
+        <p className="muted">Loading</p>
+      ) : (
+        <>
+          <Field
+            id="join-settings-url"
+            label="Join URL"
+            hint="The address new nodes post their join to, such as https://nodal.example.com. Leave blank to use the address you open this page on."
+            placeholder={window.location.origin}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          <div className="field-row">
+            <Field
+              id="join-settings-client-id"
+              label="Cloudflare Access client ID"
+              placeholder="xxxxxxxx.access"
+              autoComplete="off"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+            />
+            <Field
+              id="join-settings-client-secret"
+              label="Cloudflare Access client secret"
+              type="password"
+              autoComplete="new-password"
+              hint={settings?.access_secret_set ? "Saved. Leave blank to keep it." : undefined}
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+            />
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void save()}>
+              Save join settings
+            </button>
+            {settings?.access_secret_set ? (
+              <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => void save(true)}>
+                Remove service token
+              </button>
+            ) : null}
+            {saved ? (
+              <span className="muted" role="status">
+                Saved
+              </span>
+            ) : null}
+          </div>
+        </>
+      )}
+    </section>
+  );
 }
 
 function isWorker(n: NodeSummary): boolean {
@@ -148,6 +267,9 @@ function AddNodeDialog({
       setJoined(null);
       setError(null);
       setAdvertise("");
+      void getJoinSettings()
+        .then((st) => setUrl(st.join_url))
+        .catch(() => undefined);
     }
     // Only reset when the dialog opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,10 +386,14 @@ function AddNodeDialog({
           <h3>Join it to this cluster</h3>
           {token ? (
             <>
-              <CopyLine label="On the new machine" text={joinCommand(joinUrl, token.token, token.control_fingerprint, advertise)} />
+              <CopyLine label="On the new machine" text={joinCommand(joinUrl, token.token, token.control_fingerprint, advertise, {
+                  id: token.access_client_id,
+                  secret: token.access_client_secret,
+                })} />
               <p className="muted">
                 Single use, shown once. Expires <RelativeTime value={token.expires_at} />.
                 {token.control_fingerprint ? " The fingerprint pins this control node's certificate." : ""}
+                {token.access_client_id ? " It includes your Cloudflare Access service token, so keep it private." : ""}
               </p>
             </>
           ) : (
@@ -681,6 +807,8 @@ export function ClusterPage() {
           </button>
         ) : null}
       </section>
+
+      {mutate ? <JoinSettingsSection /> : null}
 
       <NodeGroupsPanel />
 

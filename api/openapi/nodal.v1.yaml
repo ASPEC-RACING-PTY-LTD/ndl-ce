@@ -6595,6 +6595,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JoinTokenCreateResponse"
+  /cluster/join-settings:
+    get:
+      operationId: getJoinSettings
+      summary: How new nodes reach this control node to join. The service token secret is never returned.
+      responses:
+        "200":
+          description: Join settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterJoinSettings"
+    put:
+      operationId: putJoinSettings
+      summary: Save the join URL and an optional Cloudflare Access service token. An empty secret keeps the saved one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClusterJoinSettingsUpdate"
+      responses:
+        "200":
+          description: Saved join settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterJoinSettings"
   /cluster/join:
     post:
       operationId: joinCluster
@@ -16774,6 +16801,12 @@ components:
         agent_port:
           type: string
           description: TCP port the control plane dials on the worker agent (mutual TLS).
+        access_client_id:
+          type: string
+          description: Saved Cloudflare Access service token client ID, for nodalctl --access-client-id.
+        access_client_secret:
+          type: string
+          description: Saved Cloudflare Access service token secret. Only in this response.
         warning:
           type: string
     ClusterJoinRequest:
@@ -16824,6 +16857,32 @@ components:
           description: Where the control plane will dial this worker's agent. Empty when it must be set by an admin.
         warning:
           type: string
+    ClusterJoinSettings:
+      type: object
+      additionalProperties: false
+      required:
+        - join_url
+        - access_client_id
+        - access_secret_set
+      properties:
+        join_url:
+          type: string
+        access_client_id:
+          type: string
+        access_secret_set:
+          type: boolean
+    ClusterJoinSettingsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        join_url:
+          type: string
+        access_client_id:
+          type: string
+        access_client_secret:
+          type: string
+        clear_access:
+          type: boolean
     WorkerLinkCheck:
       type: object
       additionalProperties: false

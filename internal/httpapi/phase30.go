@@ -139,7 +139,7 @@ func (s *Server) createJoinToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "cluster.join_token.create", "ok", row.ID)
-	writeJSON(w, http.StatusCreated, map[string]any{
+	out := map[string]any{
 		"id":         row.ID,
 		"token":      raw,
 		"expires_at": row.ExpiresAt.UTC().Format(time.RFC3339),
@@ -149,7 +149,19 @@ func (s *Server) createJoinToken(w http.ResponseWriter, r *http.Request) {
 		"control_fingerprint": s.controlFingerprint(),
 		"agent_port":          defaultWorkerAgentPort,
 		"warning":             "token is shown once. Pairing tokens are not join tokens.",
-	})
+	}
+	// A control node behind Cloudflare Access hands the new node its saved
+	// service token so the join gets past Access.
+	if st, secret := s.joinAccess(r.Context(), p.User.ClusterID); st != nil {
+		if st.JoinURL != "" {
+			out["join_url"] = st.JoinURL
+		}
+		if secret != "" {
+			out["access_client_id"] = st.AccessClientID
+			out["access_client_secret"] = secret
+		}
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 func (s *Server) joinCluster(w http.ResponseWriter, r *http.Request) {

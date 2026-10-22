@@ -230,8 +230,23 @@ export type JoinTokenCreateResult = {
   control_fingerprint?: string;
   /** Port this control node dials on the worker agent. */
   agent_port?: string;
+  /** Saved Cloudflare Access service token, for a control node behind Access. */
+  access_client_id?: string;
+  access_client_secret?: string;
   warning?: string;
 };
+
+export type ClusterJoinSettings = import("../generated/openapi").ClusterJoinSettings;
+
+export async function getJoinSettings(): Promise<ClusterJoinSettings> {
+  return readJson(await request("/cluster/join-settings"));
+}
+
+export async function putJoinSettings(
+  body: import("../generated/openapi").ClusterJoinSettingsUpdate,
+): Promise<ClusterJoinSettings> {
+  return readJson(await request("/cluster/join-settings", { method: "PUT", body: JSON.stringify(body) }));
+}
 
 export type WorkerLinkCheck = import("../generated/openapi").WorkerLinkCheck;
 

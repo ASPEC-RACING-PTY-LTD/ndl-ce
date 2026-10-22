@@ -848,6 +848,10 @@ describe("App", () => {
           ],
         },
       },
+      "/api/v1/cluster/join-settings": {
+        status: 200,
+        body: { join_url: "https://nodal.example.com", access_client_id: "abc.access", access_secret_set: true },
+      },
       "POST /api/v1/cluster/join-tokens": {
         status: 201,
         body: {
@@ -857,6 +861,8 @@ describe("App", () => {
           join_url: "https://nodal.example.com",
           control_fingerprint: "ff00",
           agent_port: "9444",
+          access_client_id: "abc.access",
+          access_client_secret: "s3cret",
         },
       },
     });
@@ -874,6 +880,10 @@ describe("App", () => {
     expect(screen.getByText(/1 of 2 workers connected/i)).toBeVisible();
     expect(await screen.findByRole("heading", { name: /^high availability$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /fence old writer/i })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^join settings$/i })).toBeVisible();
+    expect(await screen.findByDisplayValue("abc.access")).toBeVisible();
+    expect(screen.getByText(/saved. leave blank to keep it/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /remove service token/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /run rolling update/i })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: /^add node$/i }));
@@ -884,7 +894,7 @@ describe("App", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: /create join command/i }));
     expect(
       await within(dialog).findByText(
-        "sudo nodalctl cluster join --url https://nodal.example.com --token abc123 --fingerprint ff00 --advertise 203.0.113.20",
+        "sudo nodalctl cluster join --url https://nodal.example.com --token abc123 --fingerprint ff00 --advertise 203.0.113.20 --access-client-id abc.access --access-client-secret s3cret",
       ),
     ).toBeVisible();
     expect(within(dialog).getByText(/waiting for the node to join/i)).toBeVisible();

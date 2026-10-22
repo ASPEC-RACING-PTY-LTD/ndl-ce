@@ -422,6 +422,8 @@ type Store interface {
 	PutDockerPruneSettings(ctx context.Context, st DockerPruneSettings) error
 	GetCodeholdCLISettings(ctx context.Context, clusterID string) (*CodeholdCLISettings, error)
 	PutCodeholdCLISettings(ctx context.Context, st CodeholdCLISettings) error
+	GetClusterJoinSettings(ctx context.Context, clusterID string) (*ClusterJoinSettings, error)
+	PutClusterJoinSettings(ctx context.Context, st ClusterJoinSettings) error
 	GetCodeholdController(ctx context.Context, clusterID string) (*CodeholdController, error)
 	PutCodeholdController(ctx context.Context, c CodeholdController) error
 	DeleteCodeholdController(ctx context.Context, clusterID string) error

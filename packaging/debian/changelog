@@ -19,6 +19,9 @@ nodal (1.2.5) UNRELEASED; urgency=medium
   * nodalctl: cluster join sends a Cloudflare Access service token with
     --access-client-id and --access-client-secret, and names a redirect
     (such as an Access login) instead of failing on it.
+  * Cluster: Join settings keep the join URL and a Cloudflare Access
+    service token (secret stored sealed). Add node puts them in the join
+    command, so a node can join a control node behind Access.
 
  -- No-dal <packaging@no-dal.com>  Thu, 22 Oct 2026 00:00:00 +0000
 
