@@ -19,17 +19,20 @@ func destTCPListenAddr() string {
 	case "off", "0", "false":
 		return ""
 	case "":
-		dir := strings.TrimSpace(os.Getenv("NODAL_DATA_DIR"))
-		if dir == "" {
-			dir = "/var/lib/ndl"
-		}
-		if _, err := os.Stat(filepath.Join(dir, "node.crt")); err != nil {
+		if _, err := os.Stat(filepath.Join(destDataDir(), "node.crt")); err != nil {
 			return ""
 		}
 		return defaultDestTCPListen
 	default:
 		return raw
 	}
+}
+
+func destDataDir() string {
+	if dir := strings.TrimSpace(os.Getenv("NODAL_DATA_DIR")); dir != "" {
+		return dir
+	}
+	return "/var/lib/ndl"
 }
 
 func withDestTCP(ctx context.Context) context.Context {

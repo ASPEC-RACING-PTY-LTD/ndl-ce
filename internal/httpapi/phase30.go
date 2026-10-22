@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/no-dal/ndl-ce/internal/appdb"
 	"github.com/no-dal/ndl-ce/internal/cluster"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 	"github.com/no-dal/ndl-ce/internal/secutil"
 )
@@ -142,7 +143,12 @@ func (s *Server) createJoinToken(w http.ResponseWriter, r *http.Request) {
 		"id":         row.ID,
 		"token":      raw,
 		"expires_at": row.ExpiresAt.UTC().Format(time.RFC3339),
-		"warning":    "token is shown once. Pairing tokens are not join tokens.",
+		"join_url":   s.joinURL(r),
+		// The worker pins this certificate so a self-signed control can be
+		// joined over the internet without trusting the network.
+		"control_fingerprint": s.controlFingerprint(),
+		"agent_port":          defaultWorkerAgentPort,
+		"warning":             "token is shown once. Pairing tokens are not join tokens.",
 	})
 }
 
@@ -151,6 +157,9 @@ func (s *Server) joinCluster(w http.ResponseWriter, r *http.Request) {
 		Token        string          `json:"token"`
 		Hostname     string          `json:"hostname"`
 		HostPlatform json.RawMessage `json:"host_platform"`
+		// ListenAddr is where the control plane dials the worker agent. It
+		// defaults to the address the join came from, on the agent port.
+		ListenAddr string `json:"listen_addr"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request")
@@ -225,18 +234,28 @@ func (s *Server) joinCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	caPEM, _ := s.ClusterCA.CertPEM()
+	listen := workerAgentAddr(r, req.ListenAddr)
+	if listen != "" && ndnet.ValidListenAddr(listen) == nil {
+		_ = s.Store.CreateRemoteNode(r.Context(), appdb.RemoteNode{
+			ID: nodeID, ClusterID: cl.ID, Name: name, ListenAddr: listen,
+			Status: ndnet.NodeNotReady, Reason: "waiting for the node's agent to start its TLS listener",
+		})
+	} else {
+		listen = ""
+	}
 	s.audit(r, cl.ID, "", "cluster.join", "ok", nodeID)
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":         node.ID,
-		"cluster_id": cl.ID,
-		"name":       node.Name,
-		"hostname":   node.Hostname,
-		"role":       node.Role,
-		"token_id":   consumed.ID,
-		"ca_cert":    string(caPEM),
-		"node_cert":  string(certPEM),
-		"node_key":   string(keyPEM),
-		"warning":    "node_key is shown once. Hostname is a locator; identity is the node UUID.",
+		"id":          node.ID,
+		"cluster_id":  cl.ID,
+		"name":        node.Name,
+		"hostname":    node.Hostname,
+		"role":        node.Role,
+		"token_id":    consumed.ID,
+		"ca_cert":     string(caPEM),
+		"node_cert":   string(certPEM),
+		"node_key":    string(keyPEM),
+		"listen_addr": listen,
+		"warning":     "node_key is shown once. Hostname is a locator; identity is the node UUID.",
 	})
 }
 

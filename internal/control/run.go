@@ -222,7 +222,7 @@ func Run(cfg Config) error {
 	go srv.RunSearchIndexer(runCtx)
 	go observer{
 		Store: st, Agent: agent, Hub: hub, Nightly: srv.TickNightlyBackups,
-		Alerts: srv.TickAlerts, UpdateCheck: srv.TickUpdateCheck,
+		Alerts: srv.TickAlerts, Workers: srv.ObserveWorkers, UpdateCheck: srv.TickUpdateCheck,
 		lastHealth: map[string]time.Time{}, dockerFP: map[string]string{},
 	}.run(runCtx)
 	handler := srv.Handler()

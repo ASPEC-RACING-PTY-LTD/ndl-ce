@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/cluster"
 	"github.com/no-dal/ndl-ce/internal/inventory"
 	"github.com/no-dal/ndl-ce/internal/metrics"
 	"github.com/no-dal/ndl-ce/internal/rbac"
@@ -40,6 +41,15 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 		// local is the host No-dal runs on. It is the only host that can
 		// never be deleted.
 		item["local"] = n.ID == localID
+		if n.Role == cluster.RoleWorker {
+			remote, _ := s.Store.GetRemoteNode(r.Context(), p.User.ClusterID, n.ID)
+			item["agent"] = workerAgentJSON(remote, s.now())
+			if remote != nil {
+				// Joined workers are matched by ID; keep the name for the
+				// legacy WireGuard rows below.
+				seenNames[remote.Name] = struct{}{}
+			}
+		}
 		items = append(items, item)
 		seenNames[n.Name] = struct{}{}
 	}

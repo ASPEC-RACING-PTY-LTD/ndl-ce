@@ -28,6 +28,8 @@ export type NodeSummary = {
   nic_count?: number;
   gpu_count?: number;
   gpu_present?: boolean;
+  /** A worker's agent link, as this control node sees it. */
+  agent?: { listen_addr?: string; status?: string; reason?: string; last_seen_at?: string };
 };
 
 export type Capability = {

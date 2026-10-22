@@ -1,4 +1,25 @@
-nodal (1.2.4) UNRELEASED; urgency=medium
+nodal (1.2.5) UNRELEASED; urgency=medium
+
+  * Cluster: add any Debian 13 machine as a worker node, on the LAN or a
+    VPS over the internet, from Add node on the Cluster page. It shows the
+    install line and one join command, and watches the node connect.
+  * Security (cluster): the control plane now reaches worker agents over
+    mutual TLS. The worker serves its node certificate and accepts only
+    the control certificate from this cluster; the control plane accepts
+    only that node's certificate. Plain TCP to a worker agent is gone, so
+    a VPS joins without WireGuard. Update workers along with the control
+    node.
+  * Cluster: the nodes table shows each worker's link, agent address, host,
+    CPU and memory, and last contact, checked every 15 seconds, with Check,
+    Address, Revoke and Delete.
+  * nodalctl: cluster join always talks to --url, even on a host that runs
+    No-DAL, pins the control certificate with --fingerprint, takes the
+    agent address with --advertise, restarts the agent, and refuses to
+    send a join token over plain http to a public address.
+
+ -- No-dal <packaging@no-dal.com>  Thu, 22 Oct 2026 00:00:00 +0000
+
+nodal (1.2.5) trixie; urgency=medium
 
   * Game Servers: one bar per server (name, state, tabs, Start, Restart,
     Stop and Force stop) in place of the Instance bar. Tabs are Overview,

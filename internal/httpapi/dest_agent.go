@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -67,7 +68,19 @@ func (s *Server) destAgentClient(ctx context.Context, dest *appdb.Node) (agentrp
 	// dest-listen advertised TCP is dest-agent connectivity for a joined
 	// worker. WireGuard handshake freshness is pre-join overlay status; it
 	// must not hide a registered LAN dest agent.
-	return agentrpc.Client{TCPAddr: listen}, true
+	return s.workerAgent(dest.ID, listen), true
+}
+
+// workerAgent dials a worker's agent over mutual TLS: the control plane
+// presents its cluster certificate and accepts only that node's
+// certificate, so the link is safe over the internet without a tunnel.
+func (s *Server) workerAgent(nodeID, listen string) agentrpc.Client {
+	ca := s.ClusterCA
+	return agentrpc.Client{
+		TCPAddr: listen,
+		Peer:    nodeID,
+		TLS:     func() (*tls.Config, error) { return ca.AgentClientTLS(nodeID, time.Now().UTC()) },
+	}
 }
 
 func destGuestIP() lxc.IPConfig {

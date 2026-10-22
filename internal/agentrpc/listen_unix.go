@@ -66,7 +66,11 @@ func Serve(h *Handler) error {
 	}
 	if addr := destTCPListenAddr(); addr != "" {
 		h.AllowDestTCP = true
-		go func() { _ = serveDestTCP(h, addr) }()
+		go func() {
+			if err := serveDestTCP(h, addr); err != nil {
+				log.Printf("worker agent listener %s: %v", addr, err)
+			}
+		}()
 	}
 	return srv.Serve(ln)
 }

@@ -1369,6 +1369,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GameServerEnvelope"
+  /nodes/{id}/check:
+    post:
+      operationId: checkNode
+      summary: Dial a worker node's agent over mutual TLS now and record the result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Link check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerLinkCheck"
   /nodes/{id}/hardware:
     get:
       operationId: getNodeHardware
@@ -16748,6 +16765,15 @@ components:
           type: string
         expires_at:
           type: string
+        join_url:
+          type: string
+          description: Address the worker posts its join to.
+        control_fingerprint:
+          type: string
+          description: SHA-256 of the control HTTPS certificate, for nodalctl --fingerprint. Empty over plain HTTP.
+        agent_port:
+          type: string
+          description: TCP port the control plane dials on the worker agent (mutual TLS).
         warning:
           type: string
     ClusterJoinRequest:
@@ -16764,6 +16790,9 @@ components:
         host_platform:
           type: object
           additionalProperties: true
+        listen_addr:
+          type: string
+          description: Worker agent address (host or host:port). Defaults to the join source address on port 9444.
     ClusterJoinResponse:
       type: object
       additionalProperties: true
@@ -16790,7 +16819,28 @@ components:
           type: string
         node_key:
           type: string
+        listen_addr:
+          type: string
+          description: Where the control plane will dial this worker's agent. Empty when it must be set by an admin.
         warning:
+          type: string
+    WorkerLinkCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - reachable
+        - listen_addr
+        - checked_at
+      properties:
+        reachable:
+          type: boolean
+        listen_addr:
+          type: string
+        agent_version:
+          type: string
+        error:
+          type: string
+        checked_at:
           type: string
     ClusterNodeRevokeResponse:
       type: object

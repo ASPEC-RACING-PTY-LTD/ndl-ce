@@ -820,39 +820,74 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /download.*key/i })).not.toBeInTheDocument();
   });
 
-  it("renders the cluster page with join token and inventory", async () => {
+  it("renders the cluster page with worker links and the add node flow", async () => {
     window.history.replaceState({}, "", "/settings/cluster");
     mockApi({
       ...defaultRoutes,
       "/api/v1/me": { status: 200, body: admin },
-      "/api/v1/cluster": {
+      "/api/v1/nodes": {
         status: 200,
         body: {
-          id: "cluster-1",
-          name: "local",
-          nodes: [
-            { id: "node-a", name: "local", role: "control", status: "available", hostname: "box-a" },
-            { id: "node-b", name: "box-b", role: "worker", status: "unknown", hostname: "box-b" },
+          items: [
+            { id: "node-a", name: "local", role: "control", status: "available", local: true, host_os: "Debian GNU/Linux 13" },
+            {
+              id: "node-b",
+              name: "vps-1",
+              role: "worker",
+              status: "available",
+              cpu_threads: 4,
+              agent: { listen_addr: "203.0.113.10:9444", status: "Ready", last_seen_at: "2026-10-22T10:00:00Z" },
+            },
+            {
+              id: "node-c",
+              name: "vps-2",
+              role: "worker",
+              status: "unknown",
+              agent: { listen_addr: "198.51.100.7:9444", status: "NotReady", reason: "timed out: a firewall or NAT is blocking TCP 9444 to the node" },
+            },
           ],
+        },
+      },
+      "POST /api/v1/cluster/join-tokens": {
+        status: 201,
+        body: {
+          id: "t1",
+          token: "abc123",
+          expires_at: "2026-10-23T10:00:00Z",
+          join_url: "https://nodal.example.com",
+          control_fingerprint: "ff00",
+          agent_port: "9444",
         },
       },
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^cluster$/i })).toBeVisible();
     expect(screen.getByRole("link", { name: /^cluster$/i })).toBeVisible();
-    expect(screen.getByText(/one control plane writer/i)).toBeVisible();
-    expect(screen.getByText(/join tokens are not pairing tokens/i)).toBeVisible();
-    expect(await screen.findByText(/locator box-b/i)).toBeVisible();
-    expect(screen.getByRole("button", { name: /create join token/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^revoke$/i })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: /^ha$/i })).toBeVisible();
-    expect(screen.getByText(/not multi-master/i)).toBeVisible();
-    expect(await screen.findByText(/multi-master no/i)).toBeVisible();
-    expect(screen.getAllByText(/stonith is not implemented/i).length).toBeGreaterThan(0);
+    const table = await screen.findByRole("table", { name: /cluster nodes/i });
+    expect(within(table).getByText("vps-1")).toBeVisible();
+    expect(within(table).getByText("Connected")).toBeVisible();
+    expect(within(table).getByText("203.0.113.10:9444")).toBeVisible();
+    expect(within(table).getByText("Not reachable")).toBeVisible();
+    expect(within(table).getByText(/firewall or nat is blocking/i)).toBeVisible();
+    expect(within(table).getAllByRole("button", { name: /^revoke$/i })).toHaveLength(2);
+    expect(within(table).getAllByRole("button", { name: /^check$/i })).toHaveLength(2);
+    expect(screen.getByText(/1 of 2 workers connected/i)).toBeVisible();
+    expect(await screen.findByRole("heading", { name: /^high availability$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /fence old writer/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /promote this writer/i })).toBeVisible();
-    expect(await screen.findByRole("heading", { name: /^rolling update$/i })).toBeVisible();
     expect(screen.getByRole("button", { name: /run rolling update/i })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /^add node$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /add a node/i });
+    expect(within(dialog).getByText(/no vpn or tunnel is needed/i)).toBeVisible();
+    expect(within(dialog).getByText(/get-nodal\.sh \| sudo sh/)).toBeVisible();
+    fireEvent.change(within(dialog).getByLabelText(/public ip or hostname/i), { target: { value: "203.0.113.20" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /create join command/i }));
+    expect(
+      await within(dialog).findByText(
+        "sudo nodalctl cluster join --url https://nodal.example.com --token abc123 --fingerprint ff00 --advertise 203.0.113.20",
+      ),
+    ).toBeVisible();
+    expect(within(dialog).getByText(/waiting for the node to join/i)).toBeVisible();
   });
 
   it("renders the features page with optional GPU and Kubernetes install", async () => {

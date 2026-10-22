@@ -102,7 +102,7 @@ func run(args []string) error {
   app verify --id ID
   app policy [--set community-allowed|verified-only]
   cluster join-token create
-  cluster join --token TOKEN [--url URL] [--hostname HOST]
+  cluster join --url URL --token TOKEN [--fingerprint SHA256] [--advertise HOST[:PORT]]
   cluster node revoke --id ID
   cluster wg show
   cluster wg peer add --name NAME [--endpoint HOST:PORT]
@@ -1258,63 +1258,6 @@ func cmdApp(args []string) error {
 	default:
 		return fmt.Errorf("usage: nodalctl app list|import FILE|install --id ID|verify --id ID|policy")
 	}
-}
-
-func cmdClusterJoin(args []string) error {
-	f := parseFlags(args)
-	if f["token"] == "" {
-		return fmt.Errorf("usage: nodalctl cluster join --token TOKEN [--url URL] [--hostname HOST]")
-	}
-	hostname := f["hostname"]
-	if hostname == "" {
-		hostname, _ = os.Hostname()
-	}
-	if hostname == "" {
-		return fmt.Errorf("hostname is required")
-	}
-	url := strings.TrimRight(f["url"], "/")
-	if url == "" {
-		url = strings.TrimRight(baseURL(), "/")
-	}
-	body, err := json.Marshal(map[string]any{"token": f["token"], "hostname": hostname})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest("POST", url+"/api/v1/cluster/join", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := nodalHTTPClient(nil)
-	res, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	out, _ := io.ReadAll(res.Body)
-	if res.StatusCode >= 300 {
-		return fmt.Errorf("%s: %s", res.Status, strings.TrimSpace(string(out)))
-	}
-	var joined struct {
-		ID        string `json:"id"`
-		ClusterID string `json:"cluster_id"`
-		CACert    string `json:"ca_cert"`
-		NodeCert  string `json:"node_cert"`
-		NodeKey   string `json:"node_key"`
-	}
-	if err := json.Unmarshal(out, &joined); err != nil {
-		return err
-	}
-	dir := os.Getenv("NODAL_DATA_DIR")
-	if dir == "" {
-		dir = "/var/lib/ndl"
-	}
-	ident := identity.Files{Dir: dir}
-	if err := ident.SaveJoinMaterial(joined.ClusterID, joined.ID, []byte(joined.CACert), []byte(joined.NodeCert), []byte(joined.NodeKey)); err != nil {
-		return err
-	}
-	fmt.Println(string(out))
-	return nil
 }
 
 func postJSONHeaders(path string, body any, saveSession bool, headers map[string]string) error {

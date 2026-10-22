@@ -224,8 +224,28 @@ export type JoinTokenCreateResult = {
   id: string;
   token: string;
   expires_at: string;
+  /** Address the new node posts its join to. */
+  join_url?: string;
+  /** SHA-256 of this control node's HTTPS certificate, pinned by the join. */
+  control_fingerprint?: string;
+  /** Port this control node dials on the worker agent. */
+  agent_port?: string;
   warning?: string;
 };
+
+export type WorkerLinkCheck = import("../generated/openapi").WorkerLinkCheck;
+
+/** checkNode dials a worker node's agent now, over mutual TLS. */
+export async function checkNode(id: string): Promise<WorkerLinkCheck> {
+  return readJson(await request(`/nodes/${encodeURIComponent(id)}/check`, { method: "POST", body: JSON.stringify({}) }));
+}
+
+/** setNodeAgentAddress records where this control node dials a worker's agent. */
+export async function setNodeAgentAddress(id: string, listenAddr: string): Promise<unknown> {
+  return readJson(
+    await request(`/nodes/${encodeURIComponent(id)}/dest-listen`, { method: "POST", body: JSON.stringify({ listen_addr: listenAddr }) }),
+  );
+}
 
 export async function getCluster(): Promise<ClusterInventory> {
   return readJson(await request("/cluster"));

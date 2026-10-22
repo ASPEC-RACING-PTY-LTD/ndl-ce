@@ -284,6 +284,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/nodes/{id}/maintain", s.maintainNode)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/maintain/exit", s.exitMaintenance)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/dest-listen", s.setDestListen)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/check", s.checkNode)
 	mux.HandleFunc("GET /api/v1/nodes/{id}", s.getNode)
 	mux.HandleFunc("DELETE /api/v1/nodes/{id}", s.deleteNode)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/hardware", s.nodeHardware)

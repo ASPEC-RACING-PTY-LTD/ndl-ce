@@ -20,6 +20,7 @@ type observer struct {
 	Period                  time.Duration
 	Nightly                 func(context.Context)
 	Alerts                  func(context.Context)
+	Workers                 func(context.Context)
 	UpdateCheck             func(context.Context) bool
 	UpdateCheckPeriod       time.Duration
 	UpdateCheckRetry        time.Duration
@@ -99,6 +100,9 @@ func (o observer) run(ctx context.Context) {
 		}
 		if o.Alerts != nil {
 			go o.Alerts(context.Background())
+		}
+		if o.Workers != nil {
+			go o.Workers(context.Background())
 		}
 		changed := prev == nil || inventoryFingerprint(prev.Payload) != inventoryFingerprint(payload)
 		if !changed {

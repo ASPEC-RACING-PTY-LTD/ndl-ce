@@ -36,6 +36,12 @@ var rpcClients sync.Map
 type Client struct {
 	Socket  string
 	TCPAddr string
+	// TLS secures a TCPAddr worker link with the cluster's mutual TLS. It
+	// runs at dial time, so a missing certificate fails the call, not setup.
+	TLS func() (*tls.Config, error)
+	// Peer names the node TLS expects, so connections to one address are
+	// not reused for a different node.
+	Peer string
 }
 
 // Hello is the idle Observe-first ping.
@@ -757,16 +763,24 @@ func (c Client) cachedRPC(prefix string, readIdle, ping time.Duration) agentv1co
 	if v, ok := rpcClients.Load(key); ok {
 		return v.(*rpcCacheEntry).cli
 	}
-	httpClient := &http.Client{Transport: newAgentH2(network, addr, readIdle, ping)}
+	httpClient := &http.Client{Transport: newAgentH2(network, addr, c.TLS, readIdle, ping)}
 	cli := agentv1connect.NewAgentServiceClient(httpClient, base)
 	actual, _ := rpcClients.LoadOrStore(key, &rpcCacheEntry{cli: cli})
 	return actual.(*rpcCacheEntry).cli
 }
 
-func newAgentH2(network, addr string, readIdle, ping time.Duration) *http2.Transport {
+func newAgentH2(network, addr string, secure func() (*tls.Config, error), readIdle, ping time.Duration) *http2.Transport {
 	tr := &http2.Transport{
 		AllowHTTP: true,
 		DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
+			if secure != nil {
+				cfg, err := secure()
+				if err != nil {
+					return nil, err
+				}
+				d := tls.Dialer{Config: cfg}
+				return d.DialContext(ctx, network, addr)
+			}
 			var d net.Dialer
 			return d.DialContext(ctx, network, addr)
 		},
@@ -780,6 +794,9 @@ func newAgentH2(network, addr string, readIdle, ping time.Duration) *http2.Trans
 
 func (c Client) rpcDial() (key, network, addr, base string) {
 	if c.TCPAddr != "" {
+		if c.TLS != nil {
+			return "tls:" + c.Peer + "@" + c.TCPAddr, "tcp", c.TCPAddr, "https://remote"
+		}
 		return "tcp:" + c.TCPAddr, "tcp", c.TCPAddr, "http://remote"
 	}
 	path := c.Socket

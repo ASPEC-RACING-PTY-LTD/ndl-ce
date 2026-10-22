@@ -1637,6 +1637,9 @@ export interface JoinTokenCreateResponse {
   id: string;
   token: string;
   expires_at: string;
+  join_url?: string;
+  control_fingerprint?: string;
+  agent_port?: string;
   warning?: string;
 }
 
@@ -1644,6 +1647,7 @@ export interface ClusterJoinRequest {
   token: string;
   hostname: string;
   host_platform?: Record<string, unknown>;
+  listen_addr?: string;
 }
 
 export interface ClusterJoinResponse {
@@ -1656,7 +1660,16 @@ export interface ClusterJoinResponse {
   ca_cert?: string;
   node_cert?: string;
   node_key?: string;
+  listen_addr?: string;
   warning?: string;
+}
+
+export interface WorkerLinkCheck {
+  reachable: boolean;
+  listen_addr: string;
+  agent_version?: string;
+  error?: string;
+  checked_at: string;
 }
 
 export interface ClusterNodeRevokeResponse {
@@ -4284,6 +4297,8 @@ export type ListNodesPath = "/api/v1/nodes";
 export type GetNodePath = "/api/v1/nodes/{id}";
 
 export type SetDestListenPath = "/api/v1/nodes/{id}/dest-listen";
+
+export type CheckNodePath = "/api/v1/nodes/{id}/check";
 
 export type GetNodeHardwarePath = "/api/v1/nodes/{id}/hardware";
 

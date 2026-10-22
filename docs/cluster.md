@@ -1,33 +1,75 @@
 # Cluster
 
-A cluster starts as one writer. Additional nodes join with a single-use
-join token. Hostname is not node identity. Pairing tokens are not join
-tokens.
+A cluster starts as one writer, the control node. Any other Debian 13
+amd64 machine, on your network or a VPS anywhere, joins as a worker with a
+single-use join token. Hostname is not node identity; the node UUID is.
+Pairing tokens are not join tokens.
 
-## Join
+## Add a node
+
+From the web UI: **Cluster > Add node**. It shows the two commands to run
+on the new machine and watches it connect.
+
+From the terminal:
 
 ```text
+# On the control node
 nodalctl cluster join-token create
-nodalctl cluster join --token TOKEN --url URL
+
+# On the new machine
+curl -fsSL https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/packaging/bootstrap/get-nodal.sh | sudo sh
+sudo nodalctl cluster join --url https://CONTROL --token TOKEN \
+  --fingerprint SHA256 [--advertise PUBLIC_IP]
 ```
 
-The control node cannot be revoked. Workloads stay on the node that
-owns them until migrate or restore selects a dest.
+- `--url` is the control node's address as the new machine sees it. Over
+  the internet use HTTPS: nodalctl refuses to send a join token over plain
+  http to a public address.
+- `--fingerprint` pins the control node's HTTPS certificate, so a
+  self-signed control node is safe to join over the internet. The join
+  token response and the Add node dialog include it.
+- `--advertise` is where the control node dials this worker's agent. It
+  defaults to the address the join came from, on port 9444.
 
-## Placement and migrate
+The join always goes to `--url`, even on a machine that already runs
+No-DAL. It saves the node certificate under `/var/lib/ndl` and restarts
+`ndl-agent`, which then opens its TLS port. Guests are their own systemd
+units and keep running.
 
-Placement (Phase 31) chooses a node. Live migrate (Phase 32) is
-`workload.migrate`. The dest agent is unwired until Execute is
-connected. A nil migrate engine returns dest-agent-not-connected and
-leaves the source running. That is not a completed two-box migrate.
-`-incoming` is `defer` only. Restore disks are copied to the dest, not
-onto the control node for a worker dest.
+Allow inbound TCP 9444 on the worker from the control node (for a VPS, in
+the provider's firewall or security group).
+
+## Agent link
+
+The control node drives a worker's agent over mutual TLS on TCP 9444:
+
+- The worker serves the node certificate issued at join and accepts only
+  the control certificate from this cluster's CA. Other workers'
+  certificates are refused.
+- The control node accepts only the certificate issued to that node, and
+  refuses one that has been revoked.
+
+No VPN or tunnel is needed. The control node checks every worker every 15
+seconds and records its status, host, CPU and memory. The Cluster page
+shows them, with **Check** to test the link now and **Address** to change
+where the agent is dialed (`nodalctl node dest-listen --id ID --addr
+HOST:PORT`).
+
+## Remove a node
+
+**Revoke** retires the node's certificate, so the control node stops
+dialing it. **Delete** removes the node record; a node that still has
+workloads is refused. The control node cannot be revoked.
+
+## Placement and moves
+
+Placement chooses a node for new workloads. Existing workloads stay on the
+node that owns them until a move or a restore selects another node.
 
 ## HA
 
-Phase 34 is single-writer HA foundations. Promotion is privileged.
-STONITH is not implemented. Multi-master is not claimed.
-
-WireGuard remote nodes are Phase 28. Overlay and VLAN/bond are Phase 27.
+Single-writer HA: one writer holds the lease. Promotion is privileged.
+Fence records that the old writer is isolated, then promote takes the
+lease.
 
 See also [recovery.md](recovery.md).
