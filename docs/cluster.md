@@ -30,6 +30,12 @@ sudo nodalctl cluster join --url https://CONTROL --token TOKEN \
   token response and the Add node dialog include it.
 - `--advertise` is where the control node dials this worker's agent. It
   defaults to the address the join came from, on port 9444.
+- Behind Cloudflare Access, pass a service token with
+  `--access-client-id` and `--access-client-secret` (or set
+  `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`). The Access
+  application needs a Service Auth policy that includes the token. A join
+  relayed by Cloudflare does not show the worker's address, so also pass
+  `--advertise`.
 
 The join always goes to `--url`, even on a machine that already runs
 No-DAL. It saves the node certificate under `/var/lib/ndl` and restarts
