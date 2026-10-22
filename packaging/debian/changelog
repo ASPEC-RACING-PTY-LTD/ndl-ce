@@ -1,4 +1,4 @@
-nodal (1.2.5) UNRELEASED; urgency=medium
+nodal (1.2.6) trixie; urgency=medium
 
   * Cluster: add any Debian 13 machine as a worker node, on the LAN or a
     VPS over the internet, from Add node on the Cluster page. It shows the
@@ -20,7 +20,7 @@ nodal (1.2.5) UNRELEASED; urgency=medium
     --access-client-id and --access-client-secret, and names a redirect
     (such as an Access login) instead of failing on it.
 
- -- No-dal <packaging@no-dal.com>  Thu, 22 Oct 2026 00:00:00 +0000
+ -- No-dal <packaging@no-dal.com>  Thu, 22 Oct 2026 13:14:51 +0000
 
 nodal (1.2.5) trixie; urgency=medium
 
