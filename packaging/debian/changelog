@@ -40,7 +40,7 @@ nodal (1.2.5) trixie; urgency=medium
   * Backups: one Management layout, delete from history, full reset, no
     restore box.
 
- -- No-dal <packaging@no-dal.com>  Wed, 21 Oct 2026 00:00:00 +0000
+ -- No-dal <packaging@no-dal.com>  Wed, 21 Oct 2026 16:36:19 +0000
 
 nodal (1.2.4) trixie; urgency=medium
 
