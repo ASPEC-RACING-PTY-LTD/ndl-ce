@@ -187,9 +187,14 @@ func (h *Handler) AttachTerminal(ctx context.Context, stream *connect.BidiStream
 	if err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	root, err := h.resolveJail(first.GetTargetKind(), first.GetTargetId(), first.GetJailRoot())
-	if err != nil {
-		return connect.NewError(connect.CodeInvalidArgument, err)
+	// A game console streams a container log; it has no folder to jail.
+	root := ""
+	if first.GetTargetKind() != TargetGameServer {
+		r, err := h.resolveJail(first.GetTargetKind(), first.GetTargetId(), first.GetJailRoot())
+		if err != nil {
+			return connect.NewError(connect.CodeInvalidArgument, err)
+		}
+		root = r
 	}
 	sess, err := startTermSession(ctx, h, termRequest{
 		TargetKind: first.GetTargetKind(),

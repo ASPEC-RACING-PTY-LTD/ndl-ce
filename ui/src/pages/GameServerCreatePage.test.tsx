@@ -235,14 +235,13 @@ describe("Create Game Server catalogue", () => {
     fireEvent.click(screen.getByRole("button", { name: /^project zomboid/i }));
     expect(await screen.findByLabelText(/admin password/i)).toBeVisible();
     expect(screen.getAllByLabelText(/server name/i).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    // The header search box is a combobox too; the wizard's is in the page.
-    expect(await within(screen.getByRole("main")).findByRole("combobox")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
+    // One page: settings, resources and the install button together.
+    expect(screen.getByLabelText(/ram \(mib\)/i)).toBeVisible();
+    expect(screen.getByText(/runs on node a/i)).toBeVisible();
+    expect(screen.getByText(/advanced settings/i)).toBeVisible();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /install server/i })).toBeVisible();
     });
-    expect(screen.getByRole("heading", { name: /^project zomboid/i })).toBeVisible();
   });
 
   it("redirects the old create bookmark", async () => {
@@ -390,13 +389,14 @@ describe("Create Game Server catalogue at scale", () => {
     expect(within(summary).getByText(/latest build/i)).toBeVisible();
     expect(within(summary).getByRole("link", { name: /minecraft eula/i })).toHaveAttribute("href", "https://www.minecraft.net/eula");
     expect(within(summary).getByText(/Game 25565\/tcp/)).toBeVisible();
+    // Optional settings such as a generated RCON password wait under Advanced.
+    fireEvent.click(screen.getByText(/advanced settings/i));
     expect(screen.getByText(/leave empty to generate one/i)).toBeVisible();
     const runtime = screen.getByLabelText(/runtime version/i) as HTMLSelectElement;
     expect(runtime.value).toBe("Java 17");
     const version = screen.getByLabelText(/minecraft version/i) as HTMLSelectElement;
     expect([...version.options].map((o) => o.value)).toEqual(["latest", "1.21.4", "1.20.6"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     const ram = await screen.findByLabelText(/ram \(mib\)/i);
     fireEvent.change(ram, { target: { value: "1024" } });
     expect(screen.getByText(/below the 2 GiB minimum/i)).toBeVisible();
@@ -405,9 +405,9 @@ describe("Create Game Server catalogue at scale", () => {
     expect(await screen.findByText(/architecture: arm64/i)).toBeVisible();
     expect(screen.getByText(/2 GiB committed of 8 GiB/i)).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
     expect(await screen.findByText(/is arm64 but this image is amd64 only/i)).toBeVisible();
     expect(screen.getByText(/2 GiB is below the recommended 4 GiB\./i)).toBeVisible();
+    fireEvent.click(screen.getByText(/what will be installed/i));
     expect(screen.getByText("SERVER_PORT = 25566")).toBeVisible();
     expect(screen.getByText("ghcr.io/example/java:17")).toBeVisible();
     expect(screen.getByRole("button", { name: /install server/i })).toBeDisabled();
@@ -423,8 +423,6 @@ describe("Create Game Server catalogue at scale", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^minecraft: java edition/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^paper/i }));
     fireEvent.change(await screen.findByLabelText(/runtime version/i), { target: { value: "Java 21" } });
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^review$/i }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /install server/i })).toBeEnabled();
     });
@@ -441,5 +439,82 @@ describe("Create Game Server catalogue at scale", () => {
       disk_bytes: 8192 * 1024 * 1024,
       env: { MC_VERSION: "latest", RCON_PASSWORD: "" },
     });
+  });
+});
+
+describe("Create Game Server from a modpack", () => {
+  const packTemplate = {
+    id: "ndl-minecraft-modrinth-pack",
+    name: "Modrinth Modpack",
+    game: "minecraft",
+    default_image: "eclipse-temurin:25-jre",
+    images: { "Java 17": "eclipse-temurin:17-jre", "Java 21": "eclipse-temurin:21-jre", "Java 25": "eclipse-temurin:25-jre" },
+    default_memory_mb: 6144,
+    variables: [
+      { name: "Modpack", env: "MODPACK_ID", default: "adrenaline", required: true },
+      { name: "Modpack version", env: "MODPACK_VERSION", default: "latest", required: true },
+    ],
+  };
+
+  it("searches packs, picks the Java for the pack's Minecraft version and installs", async () => {
+    const fetchMock = openCreate({
+      "/api/v1/game-servers/catalogue": { status: 200, body: { items: minecraftFamily } },
+      "/api/v1/game-servers/modpacks": {
+        status: 200,
+        body: {
+          items: [{ provider: "modrinth", id: "abc", slug: "better-mc", name: "Better MC", summary: "Vanilla, improved", downloads: 2_500_000, loaders: ["fabric"], game_versions: ["1.20.1"] }],
+        },
+      },
+      "/api/v1/game-servers/modpacks/modrinth/better-mc/versions": {
+        status: 200,
+        body: {
+          template_id: "ndl-minecraft-modrinth-pack",
+          items: [
+            { id: "v3", name: "v3 beta", game_version: "1.21.1", loader: "fabric", release: false, image_label: "Java 21" },
+            { id: "v2", name: "v2", game_version: "1.20.1", loader: "fabric", release: true, image_label: "Java 17" },
+          ],
+        },
+      },
+      "/api/v1/game-servers/templates": { status: 200, body: packTemplate },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /minecraft modpacks/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /install better mc/i }));
+
+    // The newest release is chosen, with the Java its Minecraft version needs.
+    const version = (await screen.findByLabelText(/modpack version/i)) as HTMLSelectElement;
+    expect(version.value).toBe("v2");
+    expect((screen.getByLabelText(/runtime version/i) as HTMLSelectElement).value).toBe("Java 17");
+    expect(screen.getByDisplayValue("Better MC")).toBeVisible();
+    // The pack fields are filled in by the pick, not typed.
+    expect(screen.queryByLabelText(/^modpack$/i)).toBeNull();
+
+    fireEvent.change(version, { target: { value: "v3" } });
+    expect((screen.getByLabelText(/runtime version/i) as HTMLSelectElement).value).toBe("Java 21");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /install server/i })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /install server/i }));
+    await waitFor(() => {
+      expect(requestsTo(fetchMock, "/api/v1/game-servers", "POST")).toHaveLength(1);
+    });
+    expect(requestsTo(fetchMock, "/api/v1/game-servers", "POST")[0]).toMatchObject({
+      name: "Better MC",
+      template_id: "ndl-minecraft-modrinth-pack",
+      image_label: "Java 21",
+      memory_bytes: 6144 * 1024 * 1024,
+      env: { MODPACK_ID: "better-mc", MODPACK_VERSION: "v3" },
+    });
+  });
+
+  it("asks for a CurseForge API key before showing CurseForge packs", async () => {
+    openCreate({
+      "/api/v1/game-servers/catalogue": { status: 200, body: { items: minecraftFamily } },
+      "/api/v1/game-servers/modpacks": { status: 200, body: { items: [], needs_key: true } },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /minecraft modpacks/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^curseforge$/i }));
+    expect(await screen.findByLabelText(/curseforge api key/i)).toBeVisible();
+    expect(screen.getByRole("link", { name: /console\.curseforge\.com/i })).toHaveAttribute("href", "https://console.curseforge.com/");
   });
 });

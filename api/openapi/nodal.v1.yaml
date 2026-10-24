@@ -2813,6 +2813,79 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/settings:
+    get:
+      operationId: getGameServerSettings
+      summary: Game server settings. The CurseForge API key is never returned.
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerSettings"
+    put:
+      operationId: putGameServerSettings
+      summary: Save or clear the CurseForge API key. A new key is checked against CurseForge first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameServerSettingsUpdate"
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameServerSettings"
+  /game-servers/modpacks:
+    get:
+      operationId: searchModpacks
+      summary: Search Minecraft modpacks on Modrinth or CurseForge. An empty query lists the most downloaded.
+      parameters:
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Modpacks
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /game-servers/modpacks/{provider}/{id}/versions:
+    get:
+      operationId: modpackVersions
+      summary: A modpack's versions, newest first, each with the Java runtime label its Minecraft version needs
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Versions
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /game-servers/prefs:
     get:
       operationId: getGameServerPrefs
@@ -3261,6 +3334,24 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/{id}/console/sessions:
+    post:
+      operationId: gameServerConsoleSession
+      summary: Open a streamed console on the terminal socket (live log, typed lines to the server)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Session with a one-time ticket
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /game-servers/{id}/console/history:
     get:
       operationId: gameServerConsoleHistory
@@ -16882,6 +16973,22 @@ components:
         access_client_secret:
           type: string
         clear_access:
+          type: boolean
+    GameServerSettings:
+      type: object
+      additionalProperties: false
+      required:
+        - curseforge_key_set
+      properties:
+        curseforge_key_set:
+          type: boolean
+    GameServerSettingsUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        curseforge_key:
+          type: string
+        clear_curseforge:
           type: boolean
     WorkerLinkCheck:
       type: object

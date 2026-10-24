@@ -45,6 +45,16 @@ export function QuickCreateDialog({ open, onClose }: { open: boolean; onClose: (
           <button className="btn btn-ghost" type="button" onClick={onClose}>
             Cancel
           </button>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={() => {
+              onClose();
+              navigate(`${GS_ROOT}/create?source=modpacks`);
+            }}
+          >
+            Install a modpack
+          </button>
           <button className="btn btn-secondary" type="button" onClick={() => go()}>
             Browse all games
           </button>

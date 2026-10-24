@@ -5811,3 +5811,136 @@ thead th[data-autosort="desc"]::after {
 .join-status p {
   margin: 0;
 }
+
+/* Game servers: modpacks, setup form and CurseForge key */
+.gs-create > .segmented {
+  margin-bottom: var(--space-3);
+}
+
+.gs-modpacks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.gs-modpacks-head .gs-toolbar {
+  flex: 1 1 18rem;
+}
+
+.gs-modpack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: var(--space-3);
+}
+
+.gs-modpack {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3);
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--gs-radius, var(--radius));
+  cursor: pointer;
+}
+
+.gs-modpack:hover:not(:disabled),
+.gs-modpack:focus-visible {
+  background: var(--bg-hover);
+}
+
+.gs-modpack:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.gs-modpack img,
+.gs-modpack-icon,
+.gs-pack-head img {
+  flex: none;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius);
+  object-fit: cover;
+  background: var(--bg-surface);
+}
+
+.gs-modpack-body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.gs-modpack-body .gs-meta {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gs-modpack-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.gs-pack-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.gs-pack-head div {
+  display: grid;
+}
+
+.gs-resources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.gs-resources legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+
+.gs-advanced,
+.gs-preflight-details {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-2);
+}
+
+.gs-advanced > summary,
+.gs-preflight-details > summary {
+  cursor: pointer;
+  color: var(--fg-secondary);
+}
+
+.gs-advanced[open] {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.gs-cf-key {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+}
+
+.gs-cf-key p {
+  margin: 0;
+}

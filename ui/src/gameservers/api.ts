@@ -160,6 +160,11 @@ export async function sendGameConsole(id: string, command: string): Promise<{ se
   return readJson(`/game-servers/${id}/console`, { method: "POST", body: JSON.stringify({ command }) });
 }
 
+/** createGameConsoleSession opens a streamed console: the live log, and typed lines to the server. */
+export async function createGameConsoleSession(id: string): Promise<import("../api/phase6").IOSession> {
+  return readJson(`/game-servers/${id}/console/sessions`, { method: "POST", body: JSON.stringify({}) });
+}
+
 export async function gameConsoleHistory(id: string, q = ""): Promise<{ items: string[] }> {
   return readJson(`/game-servers/${id}/console/history?q=${encodeURIComponent(q)}`);
 }
@@ -300,14 +305,31 @@ export async function listGameContent(id: string): Promise<{ items: GameContentI
 export async function searchGameContent(
   id: string,
   q: string,
-): Promise<{ items: GameContentItem[] | null; supported?: boolean; provider?: string; kind?: string; loader?: string }> {
-  return readJson(`/game-servers/${id}/content/search?q=${encodeURIComponent(q)}`);
+  source = "",
+): Promise<{
+  items: GameContentItem[] | null;
+  supported?: boolean;
+  provider?: string;
+  kind?: string;
+  loader?: string;
+  /** Catalogues this server can install from, such as modrinth and curseforge. */
+  sources?: string[];
+  /** CurseForge was asked for and no API key is saved. */
+  needs_key?: boolean;
+}> {
+  const from = source ? `&source=${encodeURIComponent(source)}` : "";
+  return readJson(`/game-servers/${id}/content/search?q=${encodeURIComponent(q)}${from}`);
 }
 
-export async function installGameContent(id: string, externalId: string, installDependencies = true): Promise<{ item: GameContentItem; missing_dependencies?: string[] }> {
+export async function installGameContent(
+  id: string,
+  externalId: string,
+  installDependencies = true,
+  source = "",
+): Promise<{ item: GameContentItem; missing_dependencies?: string[] }> {
   return readJson(`/game-servers/${id}/content/install`, {
     method: "POST",
-    body: JSON.stringify({ external_id: externalId, version: "latest", install_dependencies: installDependencies }),
+    body: JSON.stringify({ external_id: externalId, version: "latest", install_dependencies: installDependencies, source }),
   });
 }
 
@@ -357,4 +379,52 @@ export async function gameDiagnostics(id: string): Promise<Record<string, unknow
 
 export async function gameTuning(id: string): Promise<{ items: { id: string; title: string; detail: string; severity: string }[] }> {
   return readJson(`/game-servers/${id}/tuning`);
+}
+
+/** A Minecraft modpack on Modrinth or CurseForge. */
+export type Modpack = {
+  provider: "modrinth" | "curseforge";
+  id: string;
+  slug?: string;
+  name: string;
+  summary?: string;
+  icon_url?: string;
+  downloads: number;
+  game_versions?: string[];
+  loaders?: string[];
+  url?: string;
+};
+
+/** One release of a modpack, with the Java runtime its Minecraft version needs. */
+export type ModpackVersion = {
+  id: string;
+  name: string;
+  game_version?: string;
+  loader?: string;
+  date?: string;
+  release: boolean;
+  server_pack?: boolean;
+  image_label?: string;
+};
+
+export async function searchModpacks(
+  provider: "modrinth" | "curseforge",
+  q: string,
+): Promise<{ items: Modpack[]; template_id?: string; needs_key?: boolean }> {
+  return readJson(`/game-servers/modpacks?provider=${provider}&q=${encodeURIComponent(q)}`);
+}
+
+export async function modpackVersions(
+  provider: "modrinth" | "curseforge",
+  id: string,
+): Promise<{ items: ModpackVersion[]; template_id: string }> {
+  return readJson(`/game-servers/modpacks/${provider}/${encodeURIComponent(id)}/versions`);
+}
+
+export async function getGameSettings(): Promise<{ curseforge_key_set: boolean }> {
+  return readJson("/game-servers/settings");
+}
+
+export async function putGameSettings(body: { curseforge_key?: string; clear_curseforge?: boolean }): Promise<{ curseforge_key_set: boolean }> {
+  return readJson("/game-servers/settings", { method: "PUT", body: JSON.stringify(body) });
 }

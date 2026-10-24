@@ -88,6 +88,8 @@ func termArgv(req termRequest) ([]string, error) {
 			return []string{"/usr/bin/lxc-console", "-P", lxcPath, "-n", req.TargetID}, nil
 		}
 		return ctAttachArgv(lxcPath, req.TargetID), nil
+	case TargetGameServer:
+		return gameConsoleArgv(req.TargetID)
 	default:
 		return nil, fmt.Errorf("unsupported terminal target %q", kind)
 	}

@@ -68,6 +68,7 @@ type Memory struct {
 	chControllers      map[string]CodeholdController
 	chCLI              map[string]CodeholdCLISettings
 	joinSettings       map[string]ClusterJoinSettings
+	gsSettings         map[string]GameServerSettings
 	dockerPrune        map[string]DockerPruneSettings
 	chSecrets          map[string]string
 	chRunners          map[string]CodeholdRunner

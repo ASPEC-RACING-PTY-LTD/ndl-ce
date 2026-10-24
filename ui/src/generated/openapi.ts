@@ -1679,6 +1679,15 @@ export interface ClusterJoinSettingsUpdate {
   clear_access?: boolean;
 }
 
+export interface GameServerSettings {
+  curseforge_key_set: boolean;
+}
+
+export interface GameServerSettingsUpdate {
+  curseforge_key?: string;
+  clear_curseforge?: boolean;
+}
+
 export interface WorkerLinkCheck {
   reachable: boolean;
   listen_addr: string;
@@ -4435,6 +4444,12 @@ export type SearchGameServersPath = "/api/v1/game-servers/search";
 
 export type GameServerFleetPath = "/api/v1/game-servers/fleet";
 
+export type GetGameServerSettingsPath = "/api/v1/game-servers/settings";
+
+export type SearchModpacksPath = "/api/v1/game-servers/modpacks";
+
+export type ModpackVersionsPath = "/api/v1/game-servers/modpacks/{provider}/{id}/versions";
+
 export type GetGameServerPrefsPath = "/api/v1/game-servers/prefs";
 
 export type GetGameServerPath = "/api/v1/game-servers/{id}";
@@ -4454,6 +4469,8 @@ export type GameServerDeletePath = "/api/v1/game-servers/{id}/delete";
 export type GameServerFavoritePath = "/api/v1/game-servers/{id}/favorite";
 
 export type GameServerConsolePath = "/api/v1/game-servers/{id}/console";
+
+export type GameServerConsoleSessionPath = "/api/v1/game-servers/{id}/console/sessions";
 
 export type GameServerConsoleHistoryPath = "/api/v1/game-servers/{id}/console/history";
 

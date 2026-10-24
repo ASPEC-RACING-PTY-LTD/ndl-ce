@@ -424,6 +424,8 @@ type Store interface {
 	PutCodeholdCLISettings(ctx context.Context, st CodeholdCLISettings) error
 	GetClusterJoinSettings(ctx context.Context, clusterID string) (*ClusterJoinSettings, error)
 	PutClusterJoinSettings(ctx context.Context, st ClusterJoinSettings) error
+	GetGameServerSettings(ctx context.Context, clusterID string) (*GameServerSettings, error)
+	PutGameServerSettings(ctx context.Context, st GameServerSettings) error
 	GetCodeholdController(ctx context.Context, clusterID string) (*CodeholdController, error)
 	PutCodeholdController(ctx context.Context, c CodeholdController) error
 	DeleteCodeholdController(ctx context.Context, clusterID string) error

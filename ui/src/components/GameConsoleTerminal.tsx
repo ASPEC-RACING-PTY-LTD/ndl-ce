@@ -2,88 +2,87 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { endTerminalSession } from "../api/client";
 import { TERMINAL_FONT_KEY, clampTerminalFont } from "../appearance/state";
-import { createConsoleFav, deleteConsoleFav, gameConsole, gameConsoleHistory, sendGameConsole } from "../gameservers/api";
+import {
+  createConsoleFav,
+  createGameConsoleSession,
+  deleteConsoleFav,
+  gameConsole,
+  gameConsoleHistory,
+  sendGameConsole,
+} from "../gameservers/api";
 import { getPref, subscribePrefs } from "../prefs";
+import { decodeFrame, encodeFrame, encodeResize } from "../terminal/frames";
 import { terminalOptions } from "../terminal/workspace";
 import { terminalColors } from "../theme";
 import { registerTerminal } from "./ContextMenu";
 import { ErrorNotice } from "./ErrorNotice";
 
 type Fav = { id: string; name: string; command: string };
+type LinkState = "connecting" | "live" | "reconnecting";
 
-const PROMPT = "\x1b[38;5;150m>\x1b[0m ";
-const POLL_MS = 2000;
-
-/** toTerm turns log text into terminal text: CRLF line ends. */
-const toTerm = (s: string) => s.replace(/\r?\n/g, "\r\n");
-
-/** stripControl drops control characters (tabs, escapes) from typed or pasted input. */
-const stripControl = (s: string) => [...s].filter((ch) => ch.charCodeAt(0) >= 0x20 && ch.charCodeAt(0) !== 0x7f).join("");
+const STATUS_MS = 5000;
+/** Ctrl+U clears the line being typed (the console runs in a PTY). */
+const KILL_LINE = "\x15";
 
 /**
- * GameConsoleTerminal is the workload terminal's look (same xterm setup,
- * text size, theme and frame) driven by the game console API. The game
- * API is line based and polled, not a PTY, so the terminal edits one line
- * locally: Enter sends it, Up and Down walk the history, Ctrl+C clears it.
+ * GameConsoleTerminal is the game server's live console. It streams over
+ * the same socket as the workload terminal: the log as the server writes
+ * it (with recent history first, and across restarts), and each line typed
+ * goes to the server's stdin. Up and Down recall earlier commands; Ctrl+C
+ * clears the line and never stops the server.
  */
 export function GameConsoleTerminal({ id, name }: { id: string; name: string }) {
   const holder = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const sendRef = useRef<(data: string) => boolean>(() => false);
   const line = useRef("");
   const history = useRef<string[]>([]);
   const historyAt = useRef(-1);
-  const shown = useRef("");
+  const [link, setLink] = useState<LinkState>("connecting");
   const [running, setRunning] = useState<boolean | null>(null);
   const [favs, setFavs] = useState<Fav[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [epoch, setEpoch] = useState(0);
 
-  const redrawLine = useCallback(() => {
-    termRef.current?.write("\r\x1b[2K" + PROMPT + line.current);
+  const remember = useCallback((cmd: string) => {
+    const c = cmd.trim();
+    if (c) {
+      history.current = [...history.current.filter((h) => h !== c), c].slice(-200);
+    }
+    historyAt.current = -1;
   }, []);
 
-  const send = useCallback(
-    async (command: string) => {
-      const cmd = command.trim();
-      if (!cmd) {
-        return;
+  // Typing a whole command: clear the line, type it, press Enter.
+  const sendLine = useCallback(
+    (cmd: string) => {
+      if (!sendRef.current(KILL_LINE + cmd + "\r")) {
+        // Not connected: send it the way the API does.
+        void sendGameConsole(id, cmd).catch((err) => setError(err instanceof Error ? err.message : "The command was not sent"));
       }
-      history.current = [...history.current.filter((h) => h !== cmd), cmd].slice(-200);
-      historyAt.current = -1;
-      try {
-        await sendGameConsole(id, cmd);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "The command was not sent");
-      }
+      remember(cmd);
+      line.current = "";
     },
-    [id],
+    [id, remember],
   );
 
-  // Poll the log and append what is new above the input line.
-  const poll = useCallback(async () => {
+  const refreshStatus = useCallback(async () => {
     const con = await gameConsole(id);
     setRunning(con.running);
     setFavs(con.favorites ?? []);
-    const term = termRef.current;
-    const log = con.log ?? "";
-    if (!term || log === shown.current) {
-      return;
-    }
-    let chunk: string;
-    if (log.startsWith(shown.current)) {
-      chunk = log.slice(shown.current.length);
-    } else {
-      // The server trimmed or restarted its buffer: redraw from the top.
-      term.reset();
-      chunk = log;
-    }
-    shown.current = log;
-    if (chunk && !chunk.endsWith("\n")) {
-      chunk += "\n";
-    }
-    term.write("\r\x1b[2K" + toTerm(chunk) + PROMPT + line.current);
   }, [id]);
+
+  useEffect(() => {
+    void refreshStatus().catch(() => undefined);
+    const timer = window.setInterval(() => void refreshStatus().catch(() => undefined), STATUS_MS);
+    void gameConsoleHistory(id)
+      .then((r) => {
+        history.current = r.items ?? [];
+      })
+      .catch(() => undefined);
+    return () => window.clearInterval(timer);
+  }, [id, refreshStatus]);
 
   useEffect(() => {
     const el = holder.current;
@@ -96,18 +95,129 @@ export function GameConsoleTerminal({ id, name }: { id: string; name: string }) 
     term.open(el);
     registerTerminal(term);
     termRef.current = term;
-    shown.current = "";
     line.current = "";
+    let ws: WebSocket | null = null;
+    let sessionId = "";
+    let closed = false;
+    let retry = 0;
+    let retryTimer = 0;
+    const encoder = new TextEncoder();
+
+    const sendResize = () => {
+      if (ws?.readyState === WebSocket.OPEN && term.rows > 0 && term.cols > 0) {
+        ws.send(encodeFrame(3, encodeResize(term.rows, term.cols)));
+      }
+    };
     const refit = () => {
       try {
         fit.fit();
       } catch {
         // jsdom has no canvas
       }
+      sendResize();
     };
+    sendRef.current = (data: string) => {
+      if (ws?.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+      ws.send(encodeFrame(1, encoder.encode(data)));
+      return true;
+    };
+
+    const connect = async () => {
+      setLink(retry === 0 ? "connecting" : "reconnecting");
+      try {
+        const created = await createGameConsoleSession(id);
+        if (closed) {
+          void endTerminalSession(created.id).catch(() => undefined);
+          return;
+        }
+        if (!created.ticket) {
+          throw new Error("The console did not return a session");
+        }
+        sessionId = created.id;
+        const proto = window.location.protocol === "https:" ? "wss" : "ws";
+        const sock = new WebSocket(`${proto}://${window.location.host}/api/v1/io/sessions/${created.id}/ws`, [
+          `ndl.ticket.${created.ticket}`,
+        ]);
+        sock.binaryType = "arraybuffer";
+        ws = sock;
+        sock.onopen = () => {
+          retry = 0;
+          setLink("live");
+          setError(null);
+          // The history is replayed on every connect; start clean.
+          term.reset();
+          refit();
+        };
+        sock.onmessage = (ev) => {
+          const frame = decodeFrame(ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : new Uint8Array());
+          if (!frame) {
+            return;
+          }
+          if (frame.type === 2) {
+            term.write(frame.payload);
+          }
+          if (frame.type === 7) {
+            setError(new TextDecoder().decode(frame.payload));
+          }
+        };
+        sock.onclose = () => {
+          if (closed || ws !== sock) {
+            return;
+          }
+          scheduleRetry();
+        };
+      } catch (err) {
+        if (closed) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "The console is unavailable");
+        scheduleRetry();
+      }
+    };
+    const scheduleRetry = () => {
+      setLink("reconnecting");
+      window.clearTimeout(retryTimer);
+      const delay = Math.min(15000, 1000 * 2 ** retry);
+      retry += 1;
+      retryTimer = window.setTimeout(() => void connect(), delay);
+    };
+
+    const input = term.onData((data) => {
+      if (data === "\x1b[A" || data === "\x1b[B") {
+        const list = history.current;
+        if (list.length === 0) {
+          return;
+        }
+        let at = historyAt.current < 0 ? list.length : historyAt.current;
+        at = data === "\x1b[A" ? Math.max(0, at - 1) : at + 1;
+        historyAt.current = at >= list.length ? -1 : at;
+        line.current = historyAt.current < 0 ? "" : list[historyAt.current];
+        sendRef.current(KILL_LINE + line.current);
+        return;
+      }
+      if (data.startsWith("\x1b")) {
+        // Other escape keys have no meaning on a game console line.
+        return;
+      }
+      // Track the line for history; the PTY does the echo and editing.
+      for (const ch of data.replace(/\r\n?/g, "\r")) {
+        if (ch === "\r") {
+          remember(line.current);
+          line.current = "";
+        } else if (ch === "\x7f" || ch === "\b") {
+          line.current = line.current.slice(0, -1);
+        } else if (ch === KILL_LINE || ch === "\x03") {
+          line.current = "";
+        } else if (ch >= " ") {
+          line.current += ch;
+        }
+      }
+      sendRef.current(data);
+    });
+
     refit();
-    term.write(PROMPT);
-    // Follow the pane's size; fall back to the window where ResizeObserver is missing.
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(refit);
     observer?.observe(el);
     if (!observer) {
@@ -118,71 +228,33 @@ export function GameConsoleTerminal({ id, name }: { id: string; name: string }) 
       term.options.theme = terminalColors();
       refit();
     });
+    void connect();
 
-    const input = term.onData((data) => {
-      if (data === "\r") {
-        const cmd = line.current;
-        line.current = "";
-        term.write("\r\n" + PROMPT);
-        void send(cmd);
-        return;
-      }
-      if (data === "\x7f" || data === "\b") {
-        line.current = line.current.slice(0, -1);
-        redrawLine();
-        return;
-      }
-      if (data === "\x03") {
-        line.current = "";
-        term.write("^C\r\n" + PROMPT);
-        return;
-      }
-      if (data === "\x1b[A" || data === "\x1b[B") {
-        const list = history.current;
-        if (list.length === 0) {
-          return;
-        }
-        let at = historyAt.current < 0 ? list.length : historyAt.current;
-        at = data === "\x1b[A" ? Math.max(0, at - 1) : at + 1;
-        historyAt.current = at >= list.length ? -1 : at;
-        line.current = historyAt.current < 0 ? "" : list[historyAt.current];
-        redrawLine();
-        return;
-      }
-      if (data.startsWith("\x1b")) {
-        return;
-      }
-      // Typed text or a paste: a pasted newline sends each line in turn.
-      const parts = data.replace(/\r\n?/g, "\n").split("\n");
-      for (let i = 0; i < parts.length; i += 1) {
-        line.current += stripControl(parts[i]);
-        if (i < parts.length - 1) {
-          const cmd = line.current;
-          line.current = "";
-          term.write("\r\x1b[2K" + PROMPT + cmd + "\r\n");
-          void send(cmd);
-        }
-      }
-      redrawLine();
-    });
-
-    void gameConsoleHistory(id)
-      .then((r) => {
-        history.current = r.items ?? [];
-      })
-      .catch(() => undefined);
-    void poll().catch((err) => setError(err instanceof Error ? err.message : "Console unavailable"));
-    const timer = window.setInterval(() => void poll().catch(() => undefined), POLL_MS);
     return () => {
-      window.clearInterval(timer);
+      closed = true;
+      window.clearTimeout(retryTimer);
       input.dispose();
       observer?.disconnect();
       window.removeEventListener("resize", refit);
       unsubscribe();
+      ws?.close();
+      if (sessionId) {
+        void endTerminalSession(sessionId).catch(() => undefined);
+      }
+      sendRef.current = () => false;
       term.dispose();
       termRef.current = null;
     };
-  }, [id, poll, redrawLine, send]);
+  }, [id, epoch, remember]);
+
+  const status =
+    link !== "live"
+      ? link === "connecting"
+        ? "Connecting"
+        : "Reconnecting"
+      : running === false
+        ? "Server stopped"
+        : "Live";
 
   return (
     <div className="term-pane gs-console-term">
@@ -192,17 +264,12 @@ export function GameConsoleTerminal({ id, name }: { id: string; name: string }) 
           <span className="term-id-kind">Game console</span>
         </div>
         <div className="term-id-meta">
-          <span className={"term-conn is-" + (running ? "active" : "closed")}>{running === null ? "Connecting" : running ? "Live" : "Server stopped"}</span>
-          <button
-            className="btn btn-ghost btn-sm"
-            type="button"
-            title="Clears this view; the server log is kept"
-            onClick={() => {
-              termRef.current?.clear();
-              redrawLine();
-            }}
-          >
+          <span className={"term-conn is-" + (link === "live" && running !== false ? "active" : "closed")}>{status}</span>
+          <button className="btn btn-ghost btn-sm" type="button" title="Clears this view; the server log is kept" onClick={() => termRef.current?.clear()}>
             Clear
+          </button>
+          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEpoch((n) => n + 1)}>
+            Reconnect
           </button>
           <button
             className="btn btn-ghost btn-sm"
@@ -212,7 +279,7 @@ export function GameConsoleTerminal({ id, name }: { id: string; name: string }) 
               const command = line.current.trim() || history.current[history.current.length - 1];
               const label = command ? window.prompt("Name this command", command.split(" ")[0]) : null;
               if (command && label) {
-                void createConsoleFav(id, label, command).then(poll);
+                void createConsoleFav(id, label, command).then(refreshStatus);
               }
             }}
           >
@@ -228,10 +295,10 @@ export function GameConsoleTerminal({ id, name }: { id: string; name: string }) 
         <div className="gs-favs" aria-label="Saved commands">
           {favs.map((f) => (
             <span key={f.id} className="gs-fav">
-              <button type="button" className="gs-chip" title={f.command} onClick={() => void send(f.command)}>
+              <button type="button" className="gs-chip" title={f.command} onClick={() => sendLine(f.command)}>
                 {f.name}
               </button>
-              <button type="button" className="gs-x" aria-label={`Remove ${f.name}`} onClick={() => void deleteConsoleFav(id, f.id).then(poll)}>
+              <button type="button" className="gs-x" aria-label={`Remove ${f.name}`} onClick={() => void deleteConsoleFav(id, f.id).then(refreshStatus)}>
                 ×
               </button>
             </span>

@@ -26,6 +26,21 @@ nodal (1.2.5) UNRELEASED; urgency=medium
     through the worker agent over mutual TLS. Terminals and files of a
     workload on a worker go to that worker. They used to fail with node
     not found.
+  * Game servers: the console is a live terminal. It streams the server
+    log as it is written and sends each typed line to the server, with
+    command history and saved commands. It used to redraw from a 200 line
+    tail every two seconds.
+  * Game servers: Create server is one Set up page with the essential
+    settings, RAM and CPUs, and a preflight; the rest sits under Advanced
+    settings.
+  * Game servers: install a Minecraft modpack from Modrinth or CurseForge
+    by searching and picking it. The pack version and Java runtime are
+    chosen for you. CurseForge server packs are used when a pack has one.
+  * Game servers: the Mods tab searches CurseForge as well as Modrinth.
+    CurseForge needs an API key, saved (sealed) under game server
+    settings.
+  * Game servers: dependencies installed with a mod keep their real file
+    names and show in the content list. They used to be saved as .bin.
 
  -- No-dal <packaging@no-dal.com>  Thu, 22 Oct 2026 00:00:00 +0000
 

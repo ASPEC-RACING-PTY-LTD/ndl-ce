@@ -295,6 +295,10 @@ func (s *Server) installGame(row appdb.GameServer, tmpl gameserver.Template) {
 	host := s.gameHost()
 	env := map[string]string{}
 	_ = json.Unmarshal(row.EnvJSON, &env)
+	if tmpl.InstallBuiltin == "curseforge-modpack" {
+		// The key goes to this install only; it is not saved with the server.
+		env[gameserver.CurseForgeKeyEnv] = s.curseForgeKey(ctx, row.ClusterID)
+	}
 	srv := gameserver.Server{ID: row.ID, Env: env, Image: row.Image}
 	err := host.Install(ctx, srv, tmpl, func(phase, _ string, logTail string) {
 		row.InstallPhase = phase

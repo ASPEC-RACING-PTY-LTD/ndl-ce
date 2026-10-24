@@ -49,6 +49,8 @@ import { formatBytes, formatWhen } from "../format";
 import { useQuery } from "../query";
 import { navigate, usePath } from "../router";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { CurseForgeKey } from "../gameservers/CurseForgeKey";
+import { Segmented } from "../ui/Segmented";
 
 const errText = (err: unknown, fallback: string) => (err instanceof ApiError || err instanceof Error ? err.message : fallback);
 
@@ -764,12 +766,16 @@ function NotesPane({ id }: { id: string }) {
 
 /* ---------------- Mods / Plugins / Workshop ---------------- */
 
-const PROVIDER_LABELS: Record<string, string> = { modrinth: "Modrinth", steam: "Steam Workshop", local: "uploaded files" };
+const PROVIDER_LABELS: Record<string, string> = { modrinth: "Modrinth", curseforge: "CurseForge", steam: "Steam Workshop", local: "uploaded files" };
 
 function ContentPane({ id, kind }: { id: string; kind: string }) {
   const [installed, setInstalled] = useState<GameContentItem[]>([]);
   const [hits, setHits] = useState<GameContentItem[] | null>(null);
-  const [source, setSource] = useState<{ supported: boolean; provider?: string; loader?: string }>({ supported: true });
+  const [source, setSource] = useState<{ supported: boolean; provider?: string; loader?: string; sources?: string[]; needsKey?: boolean }>({
+    supported: true,
+  });
+  // The catalogue to browse; empty uses the template's own.
+  const [catalogue, setCatalogue] = useState("");
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [warn, setWarn] = useState("");
@@ -790,9 +796,9 @@ function ContentPane({ id, kind }: { id: string; kind: string }) {
       setSearching(true);
       setWarn("");
       try {
-        const r = await searchGameContent(id, query);
+        const r = await searchGameContent(id, query, catalogue);
         setHits(r.items ?? []);
-        setSource({ supported: r.supported !== false, provider: r.provider, loader: r.loader });
+        setSource({ supported: r.supported !== false, provider: r.provider, loader: r.loader, sources: r.sources, needsKey: r.needs_key });
       } catch (err) {
         setHits([]);
         setWarn(errText(err, "Search failed"));
@@ -800,7 +806,7 @@ function ContentPane({ id, kind }: { id: string; kind: string }) {
         setSearching(false);
       }
     },
-    [id],
+    [id, catalogue],
   );
 
   useEffect(() => {
@@ -881,6 +887,18 @@ function ContentPane({ id, kind }: { id: string; kind: string }) {
             Browse {label} {from ? <span className="meta">{from}</span> : null}
           </h2>
         </header>
+        {(source.sources?.length ?? 0) > 1 ? (
+          <Segmented<string>
+            value={source.provider ?? ""}
+            ariaLabel={`Where to find ${kind}`}
+            options={(source.sources ?? []).map((s) => ({ id: s, label: PROVIDER_LABELS[s] ?? s }))}
+            onChange={(next) => {
+              setHits(null);
+              setCatalogue(next);
+            }}
+          />
+        ) : null}
+        {source.needsKey ? <CurseForgeKey onSaved={() => void search(q)} /> : null}
         {workshop ? <p className="muted">Search by Steam Workshop numeric ID. Steam does not offer a public full-text catalogue without an API key.</p> : null}
         <form
           className="gs-toolbar"
@@ -919,7 +937,7 @@ function ContentPane({ id, kind }: { id: string; kind: string }) {
                     disabled={have || busy !== null}
                     onClick={() =>
                       void act(`i:${hit.external_id}`, async () => {
-                        const r = await installGameContent(id, hit.external_id || "");
+                        const r = await installGameContent(id, hit.external_id || "", true, source.provider ?? "");
                         if (r.missing_dependencies?.length) {
                           setWarn("Also needed: " + r.missing_dependencies.join(", "));
                         }

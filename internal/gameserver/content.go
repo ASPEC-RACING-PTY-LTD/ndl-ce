@@ -187,6 +187,9 @@ func providerFor(spec ContentSpec) ContentProvider {
 	switch spec.Provider {
 	case "modrinth":
 		return Modrinth{}
+	case "curseforge":
+		// The control plane adds the API key; see CurseForge.
+		return CurseForge{}
 	case "workshop":
 		return Workshop{}
 	default:

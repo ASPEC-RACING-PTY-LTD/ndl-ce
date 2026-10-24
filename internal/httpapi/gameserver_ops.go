@@ -1124,12 +1124,16 @@ func (s *Server) searchGameContent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "supported": false})
 		return
 	}
-	prov := gameserver.ProviderFor(tmpl.Content)
+	prov, spec := s.contentProvider(r.Context(), p.User.ClusterID, tmpl.Content, r.URL.Query().Get("source"))
 	if prov == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "supported": tmpl.Content.Provider == "local", "provider": tmpl.Content.Provider})
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "supported": spec.Provider == "local", "provider": spec.Provider})
 		return
 	}
-	items, err := prov.Search(r.Context(), tmpl.Content, r.URL.Query().Get("q"))
+	if cf, ok := prov.(gameserver.CurseForge); ok && cf.Key == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}, "supported": true, "provider": spec.Provider, "needs_key": true})
+		return
+	}
+	items, err := prov.Search(r.Context(), spec, r.URL.Query().Get("q"))
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, gameserver.HumanError(err.Error()))
 		return
@@ -1137,7 +1141,7 @@ func (s *Server) searchGameContent(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []gameserver.ContentItem{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "supported": true, "provider": tmpl.Content.Provider, "kind": tmpl.Content.Kind, "loader": tmpl.Content.Loader})
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "supported": true, "provider": spec.Provider, "kind": spec.Kind, "loader": spec.Loader, "sources": contentSources(spec)})
 }
 
 func (s *Server) installGameContent(w http.ResponseWriter, r *http.Request) {
@@ -1153,6 +1157,7 @@ func (s *Server) installGameContent(w http.ResponseWriter, r *http.Request) {
 		ExternalID   string `json:"external_id"`
 		Version      string `json:"version"`
 		Dependencies bool   `json:"install_dependencies"`
+		Source       string `json:"source"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	tmpl, err := s.resolveTemplate(r.Context(), p.User.ClusterID, row.TemplateID)
@@ -1160,13 +1165,13 @@ func (s *Server) installGameContent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "this server has no content catalogue")
 		return
 	}
-	prov := gameserver.ProviderFor(tmpl.Content)
+	prov, spec := s.contentProvider(r.Context(), p.User.ClusterID, tmpl.Content, req.Source)
 	if prov == nil {
 		writeErr(w, http.StatusUnprocessableEntity, "this content source is local upload only")
 		return
 	}
 	s.createRollback(r.Context(), *row, "pre-content")
-	item, raw, err := prov.Resolve(r.Context(), tmpl.Content, req.ExternalID, req.Version)
+	item, raw, err := prov.Resolve(r.Context(), spec, req.ExternalID, req.Version)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, gameserver.HumanError(err.Error()))
 		return
@@ -1182,11 +1187,22 @@ func (s *Server) installGameContent(w http.ResponseWriter, r *http.Request) {
 	var missing []string
 	if req.Dependencies {
 		for _, dep := range item.Dependencies {
-			if _, depRaw, derr := prov.Resolve(r.Context(), tmpl.Content, dep, "latest"); derr == nil {
-				_ = s.gameHost().Extract(r.Context(), row.ID, tmpl.Content.InstallDir, depRaw, dep+".bin")
-			} else {
+			depItem, depRaw, derr := prov.Resolve(r.Context(), spec, dep, "latest")
+			name := gameserver.SafeContentName(depItem.Filename)
+			if derr != nil || name == "" {
 				missing = append(missing, dep)
+				continue
 			}
+			// Keep the dependency's real file name: a loader only reads .jar files.
+			if err := s.gameHost().Extract(r.Context(), row.ID, tmpl.Content.InstallDir, depRaw, name); err != nil {
+				missing = append(missing, dep)
+				continue
+			}
+			depItem.Enabled = true
+			depItem.InstalledAt = s.now()
+			depItem.ID = uuid.NewString()
+			depItem.Name = firstNonEmpty(depItem.Name, name)
+			_ = s.Store.UpsertGameContent(r.Context(), appdb.GameContent{ID: depItem.ID, ServerID: row.ID, Body: mustJSON(depItem), CreatedAt: s.now()})
 		}
 	} else {
 		missing = item.Dependencies

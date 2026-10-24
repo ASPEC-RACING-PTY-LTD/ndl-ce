@@ -155,7 +155,7 @@ func (s *Server) listIOSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
-		if row.Kind != appdb.IOKindTerminal {
+		if row.Kind != appdb.IOKindTerminal || row.TargetKind == ioTargetGameServer {
 			continue
 		}
 		items = append(items, ioSessionJSON(row))
@@ -221,11 +221,7 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "invalid ticket")
 		return
 	}
-	need := rbac.TerminalOpen
-	if row.Kind == appdb.IOKindConsole && row.TargetKind == appdb.IOTargetVM {
-		need = rbac.ComputeConsole
-	}
-	if !rbac.Authorize(p.Grants, need) {
+	if !rbac.Authorize(p.Grants, ioSessionGrant(*row)) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -402,12 +398,13 @@ func (s *Server) attachIOSession(w http.ResponseWriter, r *http.Request) {
 
 // endIOSession ends a shell now, when its tab is closed.
 func (s *Server) endIOSession(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.TerminalOpen)
+	p, err := s.principal(r)
 	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 	row, err := s.Store.GetIOSession(r.Context(), p.User.ClusterID, r.PathValue("id"))
-	if err != nil || row == nil || (row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin)) {
+	if err != nil || row == nil || !rbac.Authorize(p.Grants, ioSessionGrant(*row)) || (row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin)) {
 		writeErr(w, http.StatusNotFound, "session not found")
 		return
 	}
@@ -714,6 +711,9 @@ func (s *Server) workloadJail(ctx context.Context, clusterID string, w appdb.Wor
 }
 
 func (s *Server) sessionJail(ctx context.Context, clusterID string, row appdb.IOSession) (string, error) {
+	if row.TargetKind == ioTargetGameServer {
+		return "", nil
+	}
 	if row.TargetKind == appdb.IOTargetHost {
 		return "/", nil
 	}
