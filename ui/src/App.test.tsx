@@ -587,9 +587,11 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /^workloads$/i })).toBeVisible();
     expect(await screen.findByText(/no workloads yet/i)).toBeVisible();
     expect(screen.queryByText(/21 workloads/i)).not.toBeInTheDocument();
-    // Classic layout: one "Create" menu lists every type.
+    // Classic layout: "Create" lists this page's types, the rest behind Show all types.
     fireEvent.click(screen.getByRole("button", { name: /^create$/i }));
     expect(screen.getByRole("menuitem", { name: /^system container$/i })).toBeVisible();
+    expect(screen.queryByRole("menuitem", { name: /^virtual machine$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: /^show all types$/i }));
     expect(screen.getByRole("menuitem", { name: /^virtual machine$/i })).toBeVisible();
   });
 

@@ -1165,6 +1165,14 @@ body {
   display: block;
 }
 
+.create-menu-panel .create-menu-more {
+  width: 100%;
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  color: var(--fg-secondary);
+}
+
 /* ---- Components (bulk install) ---- */
 .components-layout {
   display: grid;

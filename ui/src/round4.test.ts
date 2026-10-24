@@ -8,7 +8,7 @@ import { modernNav } from "./components/Shell";
 import { createHref, num, str, strMap } from "./instanceTemplates";
 import { daysUntil, recentCount } from "./nav/AdminDashboard";
 import { createEntries } from "./nav/AreaFrames";
-import { ADMIN_SECTIONS, INSTANCE_SECTIONS, isAdminPath, isInstancePath, visibleSections } from "./nav/sections";
+import { ADMIN_SECTIONS, createScope, INSTANCE_SECTIONS, isAdminPath, isInstancePath, visibleSections } from "./nav/sections";
 import { featureState, popularityRank } from "./pages/FeaturesPage";
 import { filterInstances, parseWidgets } from "./pages/InstanceHomePage";
 import { nodeTab, parseLayout, seriesStats } from "./pages/NodePage";
@@ -79,6 +79,19 @@ describe("navigation model", () => {
       "templates",
     ]);
     expect(createEntries([], (id) => id !== "oci").map((e) => e.section)).not.toContain("oci");
+  });
+
+  it("lists only the page's own types in Create +", () => {
+    const on = () => true;
+    const labels = (path: string) => createEntries([], on, createScope(path)).map((e) => e.label);
+    expect(labels("/workloads")).toEqual(["System container", "System container template"]);
+    expect(labels("/instance/vms")).toEqual(["Virtual machine", "Import a VM disk", "VM template"]);
+    expect(labels("/oci")).toEqual(["OCI container", "OCI app from Compose", "OCI container group", "OCI container template"]);
+    expect(labels("/game-servers")).toEqual(["Game server", "Game server template"]);
+    expect(labels("/templates")).toEqual(["System container template", "OCI container template", "Game server template", "VM template"]);
+    // A page that makes nothing of its own lists everything.
+    expect(labels("/registries")).toHaveLength(createEntries([], on).length);
+    expect(createEntries([], on, null)).toHaveLength(createEntries([], on).length);
   });
 });
 
