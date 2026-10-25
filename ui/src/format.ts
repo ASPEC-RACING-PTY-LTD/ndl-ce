@@ -89,7 +89,8 @@ export function formatPercent(ratio?: number): string {
   if (ratio == null || !Number.isFinite(ratio)) {
     return "Not reported";
   }
-  const pct = ratio <= 1.5 ? ratio * 100 : ratio;
+  // Always a ratio: a guest's CPU is in cores, so 2 busy cores is 200%.
+  const pct = ratio * 100;
   return `${pct.toFixed(pct >= 10 ? 0 : 1)}%`;
 }
 
