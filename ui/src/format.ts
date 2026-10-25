@@ -89,7 +89,7 @@ export function formatPercent(ratio?: number): string {
   if (ratio == null || !Number.isFinite(ratio)) {
     return "Not reported";
   }
-  // Always a ratio: a guest's CPU is in cores, so 2 busy cores is 200%.
+  // Always a 0-1 share: host CPU, or a guest's busy cores over its own cores.
   const pct = ratio * 100;
   return `${pct.toFixed(pct >= 10 ? 0 : 1)}%`;
 }

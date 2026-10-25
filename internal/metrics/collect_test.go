@@ -337,3 +337,60 @@ func TestGuestCgroupScrapeSkipsCounterReset(t *testing.T) {
 		t.Fatalf("counter reset produced a sample: %+v", cpu)
 	}
 }
+
+func TestGuestCgroupScrapeIsShareOfGuestCPUs(t *testing.T) {
+	root := t.TempDir()
+	writeProc(t, root, "proc/stat", "cpu  100 0 100 800 0 0 0 0\ncpu0 1 0 1 8 0 0 0 0\ncpu1 1 0 1 8 0 0 0 0\ncpu2 1 0 1 8 0 0 0 0\ncpu3 1 0 1 8 0 0 0 0\n")
+	ct := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	pinned := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	vm := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	ctUnit := "sys/fs/cgroup/system.slice/nodal-ct@" + ct + ".service"
+	ctPayload := ctUnit + "/lxc.payload." + ct
+	pinnedUnit := "sys/fs/cgroup/system.slice/nodal-vm@" + pinned + ".service"
+	vmUnit := "sys/fs/cgroup/system.slice/nodal-vm@" + vm + ".service"
+	writeProc(t, root, ctUnit+"/cpu.max", "max 100000\n")
+	writeProc(t, root, ctPayload+"/cpu.max", "600000 100000\n")
+	writeProc(t, root, ctPayload+"/cpu.stat", "usage_usec 0\n")
+	writeProc(t, root, pinnedUnit+"/cpu.max", "max 100000\n")
+	writeProc(t, root, pinnedUnit+"/cpuset.cpus.effective", "0-1\n")
+	writeProc(t, root, pinnedUnit+"/cpu.stat", "usage_usec 0\n")
+	writeProc(t, root, vmUnit+"/cpu.max", "max 100000\n")
+	writeProc(t, root, vmUnit+"/cpu.stat", "usage_usec 0\n")
+	s := openTestStore(t)
+	c := &Collector{FSRoot: root, Store: s}
+	t1 := time.Now().UTC().Truncate(time.Second)
+	if err := c.Scrape(t1); err != nil {
+		t.Fatal(err)
+	}
+	// Each guest keeps 2 cores busy for 15s.
+	writeProc(t, root, ctPayload+"/cpu.stat", "usage_usec 30000000\n")
+	writeProc(t, root, pinnedUnit+"/cpu.stat", "usage_usec 30000000\n")
+	writeProc(t, root, vmUnit+"/cpu.stat", "usage_usec 30000000\n")
+	t2 := t1.Add(15 * time.Second)
+	if err := c.Scrape(t2); err != nil {
+		t.Fatal(err)
+	}
+	// 2 of a 6-core quota, 2 of 2 pinned CPUs, 2 of 4 host CPUs.
+	for id, want := range map[string]float64{ct: 2.0 / 6, pinned: 1, vm: 0.5} {
+		names := WorkloadMetricNames(id)
+		res, err := s.Query(names, t1.Add(-time.Minute), t2.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cpu := seriesByName(res, names[0])
+		if len(cpu.Points) != 1 {
+			t.Fatalf("%s cpu: %+v", id, cpu)
+		}
+		if got := cpu.Points[0].Value; got < want-0.001 || got > want+0.001 {
+			t.Fatalf("%s busy %v want %v", id, got, want)
+		}
+	}
+}
+
+func TestCountCPUList(t *testing.T) {
+	for raw, want := range map[string]int{"": 0, "0": 1, "0-3": 4, "0-3,8,10-11\n": 7, "x,2": 1, "5-2": 0} {
+		if got := countCPUList(raw); got != want {
+			t.Fatalf("countCPUList(%q) = %d want %d", raw, got, want)
+		}
+	}
+}

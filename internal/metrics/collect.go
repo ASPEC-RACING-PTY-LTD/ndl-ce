@@ -451,9 +451,56 @@ func (c *Collector) scrapeGuestCgroups(now time.Time, record func(string, float6
 		if dt <= 0 {
 			continue
 		}
-		busy := float64(usage-prev.usage) / (dt * 1e6)
+		// Busy cores over the cores the guest may use, so 1 is all of them.
+		busy := float64(usage-prev.usage) / (dt * 1e6) / c.guestCPUs(dir)
 		record(WorkloadMetricPrefix+id+".cpu.busy_ratio", busy)
 	}
+}
+
+// guestCPUs is how many cores a guest's cgroup may use: its cpu.max quota
+// (system containers), else the CPUs it is allowed to run on, else every
+// host CPU. It is 1 when none of that can be read, leaving busy in cores.
+func (c *Collector) guestCPUs(dir string) float64 {
+	if f := strings.Fields(readFileString(filepath.Join(dir, "cpu.max"))); len(f) == 2 {
+		quota, qerr := parseUint(f[0])
+		period, perr := parseUint(f[1])
+		if qerr == nil && perr == nil && quota > 0 && period > 0 {
+			return float64(quota) / float64(period)
+		}
+	}
+	if n := countCPUList(readFileString(filepath.Join(dir, "cpuset.cpus.effective"))); n > 0 {
+		return float64(n)
+	}
+	n := 0
+	for _, line := range strings.Split(readFileString(c.procPath("proc/stat")), "\n") {
+		if len(line) > 3 && strings.HasPrefix(line, "cpu") && line[3] >= '0' && line[3] <= '9' {
+			n++
+		}
+	}
+	if n > 0 {
+		return float64(n)
+	}
+	return 1
+}
+
+// countCPUList counts the CPUs in a cpuset list such as "0-3,8,10-11".
+func countCPUList(raw string) int {
+	n := 0
+	for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
+		lo, hi, isRange := strings.Cut(strings.TrimSpace(part), "-")
+		a, err := parseUint(lo)
+		if err != nil {
+			continue
+		}
+		b := a
+		if isRange {
+			if b, err = parseUint(hi); err != nil || b < a {
+				continue
+			}
+		}
+		n += int(b-a) + 1
+	}
+	return n
 }
 
 func workloadIDFromUnitDir(name string) (string, bool) {
