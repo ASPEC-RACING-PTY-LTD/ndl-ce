@@ -1,5 +1,12 @@
 nodal (1.2.5) UNRELEASED; urgency=medium
 
+  * Backups: a workload created after an All workloads policy is not
+    backed up by it until approved. The bell asks every person who can
+    manage backups, with a green tick to approve and a red cross to deny
+    right in the list; denying adds it to the policies' Leave out lists.
+    Workloads that already existed stay approved.
+  * Metrics: a workload's CPU is a share of its own cores, so 2 busy cores
+    of 6 reads 34%, not 2.0%.
   * Cluster: add any Debian 13 machine as a worker node, on the LAN or a
     VPS over the internet, from Add node on the Cluster page. It shows the
     install line and one join command, and watches the node connect.

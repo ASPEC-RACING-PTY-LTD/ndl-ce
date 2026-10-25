@@ -9,6 +9,7 @@ import { navigate } from "../../router";
 import { Icon } from "../Icon";
 import { Link } from "../Link";
 import { StatusBadge } from "../StatusBadge";
+import { ApprovalButtons, isApprovalAsk } from "./ApprovalButtons";
 
 /** The badge text for an unread count: 1 to 99, then 99+. */
 export function badgeText(n: number): string {
@@ -149,6 +150,13 @@ export function NotificationBell() {
     }
   }
 
+  // A decided approval is read and loses its buttons.
+  function decided(id: string, state: string) {
+    setItems((cur) => (cur ?? []).map((n) => (n.id === id ? { ...n, approval: state, read: true } : n)));
+    lastCount.current = null;
+    void unread.reload();
+  }
+
   function dismiss(id: string) {
     setToasts((cur) => cur.map((t) => (t.n.id === id ? { ...t, leaving: true } : t)));
     window.setTimeout(() => setToasts((cur) => cur.filter((t) => t.n.id !== id)), 260);
@@ -203,7 +211,8 @@ export function NotificationBell() {
                           {n.body ? <span className="bell-body">{n.body}</span> : null}
                           <span className="muted bell-when">{formatWhen(n.created_at)}</span>
                         </button>
-                        {!n.read ? (
+                        <ApprovalButtons n={n} onDecided={decided} />
+                        {!n.read && !isApprovalAsk(n) ? (
                           <button className="btn btn-ghost btn-sm btn-icon" type="button" aria-label="Mark read" title="Mark read" onClick={() => void markRead([n.id])}>
                             <Icon name="check" size={14} />
                           </button>

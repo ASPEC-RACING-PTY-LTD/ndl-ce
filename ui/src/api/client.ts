@@ -3955,6 +3955,10 @@ export type AppNotification = {
   created_at: string;
   read: boolean;
   read_at: string | null;
+  /** The workload a backup.approval notification asks about. */
+  subject_id?: string;
+  /** For backup.approval: pending, approved or denied; empty once the workload is gone. */
+  approval?: string;
 };
 
 export async function listNotifications(opts: { unread?: boolean; limit?: number } = {}): Promise<{ items: AppNotification[]; unread: number }> {
@@ -3970,6 +3974,13 @@ export async function getUnreadNotifications(): Promise<{ unread: number }> {
 }
 
 /** Marks the given notifications read, or all of them when ids is empty. */
+/** decideBackupApproval approves or denies a new workload for All workloads backup policies. */
+export async function decideBackupApproval(workloadId: string, decision: "approve" | "deny"): Promise<{ workload_id: string; state: string }> {
+  return readJson(
+    await request(`/backups/approvals/${encodeURIComponent(workloadId)}`, { method: "POST", body: JSON.stringify({ decision }) }),
+  );
+}
+
 export async function markNotificationsRead(ids: string[] = []): Promise<{ unread: number }> {
   return readJson(await request("/notifications/read", { method: "POST", body: JSON.stringify({ ids }) }));
 }

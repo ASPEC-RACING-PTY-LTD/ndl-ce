@@ -88,9 +88,19 @@ func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	unread, _ := s.Store.CountUnreadNotifications(ctx, p.User.ClusterID, p.User.ID)
+	var approvals map[string]appdb.BackupApproval
 	out := make([]map[string]any, 0, len(items))
 	for _, n := range items {
-		out = append(out, notificationJSON(n))
+		item := notificationJSON(n)
+		if id := approvalSubject(n); id != "" {
+			if approvals == nil {
+				approvals, _ = s.Store.BackupApprovals(ctx, p.User.ClusterID)
+			}
+			// A decided or deleted workload shows no buttons.
+			item["subject_id"] = id
+			item["approval"] = approvals[id].State
+		}
+		out = append(out, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "unread": unread})
 }

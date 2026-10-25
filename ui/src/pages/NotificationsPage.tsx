@@ -3,6 +3,7 @@ import { ApiError, listNotifications, markNotificationsRead, type AppNotificatio
 import { LoadingState } from "../components/EmptyState";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { PageHeader } from "../components/PageHeader";
+import { ApprovalButtons, isApprovalAsk } from "../components/shell/ApprovalButtons";
 import { formatWhen } from "../format";
 import { invalidateQueries } from "../query";
 import { navigate } from "../router";
@@ -75,7 +76,15 @@ export function NotificationsPage() {
                 {n.body ? <span className="bell-body">{n.body}</span> : null}
                 <span className="muted bell-when">{formatWhen(n.created_at)}</span>
               </button>
-              {!n.read ? (
+              <ApprovalButtons
+                n={n}
+                onDecided={(id, state) => {
+                  setItems((cur) => (cur ?? []).map((x) => (x.id === id ? { ...x, approval: state, read: true } : x)));
+                  setUnread((u) => Math.max(0, u - (n.read ? 0 : 1)));
+                  invalidateQueries("notifications-unread");
+                }}
+              />
+              {!n.read && !isApprovalAsk(n) ? (
                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => void markRead([n.id])}>
                   Mark read
                 </button>

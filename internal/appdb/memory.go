@@ -160,6 +160,7 @@ type Memory struct {
 	gamePrefs          map[string]string
 	account            accountMem
 	iam                iamMem
+	approvals          approvalMem
 	ui                 uiMem
 	tmpl               tmplMem
 }

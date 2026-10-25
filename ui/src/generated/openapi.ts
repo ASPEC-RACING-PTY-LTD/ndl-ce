@@ -240,6 +240,8 @@ export interface Notification {
   created_at: string;
   read: boolean;
   read_at: string;
+  subject_id?: string;
+  approval?: string;
 }
 
 export interface NotificationList {
@@ -4855,6 +4857,8 @@ export type DeleteBackupPolicyHistoryPath = "/api/v1/backups/policies/{id}/runs"
 export type ResetBackupsPath = "/api/v1/backups/reset";
 
 export type ClearBackupPolicyQueuePath = "/api/v1/backups/policies/{id}/queue/clear";
+
+export type DecideBackupApprovalPath = "/api/v1/backups/approvals/{id}";
 
 export type ListBackupRunsPath = "/api/v1/backups/runs";
 

@@ -8397,6 +8397,55 @@ paths:
           description: Forbidden
         "404":
           description: Policy not found
+  /backups/approvals/{id}:
+    post:
+      operationId: decideBackupApproval
+      summary: Approve or deny a new workload for All workloads backup policies; denying adds it to their Leave out lists
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - decision
+              properties:
+                decision:
+                  type: string
+                  enum: [approve, deny]
+      responses:
+        "200":
+          description: Decided
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - workload_id
+                  - state
+                properties:
+                  workload_id:
+                    type: string
+                  state:
+                    type: string
+        "400":
+          description: Decision is not approve or deny
+        "401":
+          description: Unauthenticated
+        "403":
+          description: Forbidden
+        "404":
+          description: No approval for this workload
+        "409":
+          description: Already approved or denied
   /backups/runs:
     get:
       operationId: listBackupRuns
@@ -13538,6 +13587,12 @@ components:
         read_at:
           type: string
           nullable: true
+        subject_id:
+          type: string
+          description: The workload a backup.approval notification asks about.
+        approval:
+          type: string
+          description: For backup.approval, pending, approved or denied; empty once the workload is gone.
     NotificationList:
       type: object
       additionalProperties: false

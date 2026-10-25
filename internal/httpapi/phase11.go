@@ -1026,6 +1026,12 @@ func (s *Server) policyWorkloadIDs(ctx context.Context, clusterID string, pol ap
 		for _, id := range pol.ExcludedWorkloadIDs {
 			skip[id] = true
 		}
+		// A workload created after the policy waits for approval.
+		for id, a := range s.syncBackupApprovals(ctx, clusterID) {
+			if a.State == appdb.BackupApprovalPending {
+				skip[id] = true
+			}
+		}
 		ids := make([]string, 0, len(items))
 		for _, wl := range items {
 			// All workloads means every workload a backup can copy: OCI
@@ -1064,6 +1070,7 @@ func (s *Server) TickNightlyBackups(ctx context.Context) {
 	if err != nil || cluster == nil || cluster.SetupCompletedAt == nil {
 		return
 	}
+	s.syncBackupApprovals(ctx, cluster.ID)
 	if s.backupsPaused() != "" || s.updateInProgress(ctx, cluster.ID) {
 		// A platform update is preparing or running. Due policies stay due
 		// and run on the first tick after it.

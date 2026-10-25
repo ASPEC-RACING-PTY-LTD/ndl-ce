@@ -213,6 +213,13 @@ type Store interface {
 	// ResetBackupRecords deletes every backup run, restore point and upload
 	// record; policies, targets and settings stay.
 	ResetBackupRecords(ctx context.Context, clusterID string) error
+	// BackupApprovals lists every workload asked about for "All workloads"
+	// backup policies, keyed by workload ID.
+	BackupApprovals(ctx context.Context, clusterID string) (map[string]BackupApproval, error)
+	// PutBackupApproval adds or replaces one workload's approval.
+	PutBackupApproval(ctx context.Context, a BackupApproval) error
+	// DeleteBackupApproval forgets a workload's approval.
+	DeleteBackupApproval(ctx context.Context, clusterID, workloadID string) error
 	// SetBackupPolicyRunQueued records or drops a Run now queued while paused.
 	SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error
 

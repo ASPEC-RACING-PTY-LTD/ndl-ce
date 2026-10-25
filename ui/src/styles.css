@@ -5944,3 +5944,67 @@ thead th[data-autosort="desc"]::after {
 .gs-cf-key p {
   margin: 0;
 }
+
+/* Approve and deny straight from a notification. */
+.approval-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.25rem 0 0;
+}
+
+.approval-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+}
+
+.approval-btn.is-approve {
+  background: oklch(0.58 0.15 145);
+}
+
+.approval-btn.is-deny {
+  background: oklch(0.56 0.19 25);
+}
+
+.approval-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.approval-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.approval-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.approval-state {
+  padding: 0.4rem 0.45rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.approval-state.is-approved {
+  color: var(--ok);
+}
+
+.approval-state.is-denied {
+  color: var(--danger);
+}
+
+.approval-error {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: 0.75rem;
+}

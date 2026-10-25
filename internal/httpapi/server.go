@@ -131,6 +131,7 @@ type Server struct {
 	search          searchState
 	updateMu        sync.Mutex
 	hold            backupHold
+	approvalMu      sync.Mutex
 	repoMove        repoMove
 	tunnels         tunnelCache
 	opsJobs         opsJobs
@@ -692,6 +693,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/backups/policies", s.listBackupPolicies)
 	mux.HandleFunc("POST /api/v1/backups/policies", s.createBackupPolicy)
 	mux.HandleFunc("PATCH /api/v1/backups/policies/{id}", s.updateBackupPolicy)
+	mux.HandleFunc("POST /api/v1/backups/approvals/{id}", s.decideBackupApproval)
 	mux.HandleFunc("DELETE /api/v1/backups/policies/{id}", s.deleteBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/run", s.runBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/queue/clear", s.clearPolicyQueue)

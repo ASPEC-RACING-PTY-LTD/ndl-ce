@@ -1700,8 +1700,26 @@ func TestBackupPolicyAllScopeDefaultAndSelectedMulti(t *testing.T) {
 	_ = json.NewDecoder(res.Body).Decode(&runOut)
 	_ = res.Body.Close()
 	items, _ = runOut["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("a future workload waits for approval %s items=%d", c, len(items))
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/approvals/"+c, strings.NewReader(`{"decision":"approve"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("approve %d", res.StatusCode)
+	}
+	req, _ = http.NewRequest("POST", ts.URL+"/api/v1/backups/policies/"+allPol["id"].(string)+"/run", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	res, _ = ts.Client().Do(req)
+	_ = json.NewDecoder(res.Body).Decode(&runOut)
+	_ = res.Body.Close()
+	items, _ = runOut["items"].([]any)
 	if len(items) != 3 {
-		t.Fatalf("all scope must include future workload %s items=%d", c, len(items))
+		t.Fatalf("all scope must include an approved future workload %s items=%d", c, len(items))
 	}
 
 	req, _ = http.NewRequest("PATCH", ts.URL+"/api/v1/backups/policies/"+sel["id"].(string), strings.NewReader(`{"name":"subset-renamed","scope":"selected","workload_ids":["`+a+`"],"target_id":"`+targetID+`","schedule":"nightly","keep_daily":2,"keep_weekly":0,"keep_monthly":0}`))

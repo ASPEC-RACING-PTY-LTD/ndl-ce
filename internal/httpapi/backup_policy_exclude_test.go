@@ -53,12 +53,47 @@ func TestAllWorkloadsPolicyLeavesOutItsExclusions(t *testing.T) {
 	if covered, _ := s.policyWorkloadIDs(ctx, cluster.ID, *row); slices.Contains(covered, oci) {
 		t.Fatal("an OCI container must not be part of All workloads")
 	}
-	// A new workload is covered without editing the policy.
+	// A new workload waits for approval, then is covered without editing
+	// the policy.
 	newID := uuid.NewString()
 	_ = mem.CreateWorkload(ctx, appdb.Workload{ID: newID, ClusterID: cluster.ID, Name: "new", Kind: "system-container"})
 	row, _ = mem.GetBackupPolicy(ctx, cluster.ID, id)
+	if covered, _ := s.policyWorkloadIDs(ctx, cluster.ID, *row); slices.Contains(covered, newID) {
+		t.Fatal("a new workload waits for approval")
+	}
+	code, list := jsonCall(t, ts, cookie, "GET", "/api/v1/notifications", "")
+	asked := false
+	for _, it := range list["items"].([]any) {
+		n := it.(map[string]any)
+		if n["kind"] == noteBackupApproval && n["subject_id"] == newID && n["approval"] == appdb.BackupApprovalPending {
+			asked = true
+		}
+	}
+	if code != http.StatusOK || !asked {
+		t.Fatalf("the bell asks about the new workload: %d %v", code, list)
+	}
+	if code, out := jsonCall(t, ts, cookie, "POST", "/api/v1/backups/approvals/"+newID, `{"decision":"approve"}`); code != http.StatusOK || out["state"] != appdb.BackupApprovalApproved {
+		t.Fatalf("approve %d %v", code, out)
+	}
+	if code, _ := jsonCall(t, ts, cookie, "POST", "/api/v1/backups/approvals/"+newID, `{"decision":"deny"}`); code != http.StatusConflict {
+		t.Fatalf("a decided workload cannot be decided again: %d", code)
+	}
 	if covered, _ := s.policyWorkloadIDs(ctx, cluster.ID, *row); !slices.Contains(covered, newID) {
-		t.Fatal("new workloads are covered")
+		t.Fatal("an approved workload is covered")
+	}
+	// Denying one leaves it out of the policy, visibly.
+	deniedID := uuid.NewString()
+	_ = mem.CreateWorkload(ctx, appdb.Workload{ID: deniedID, ClusterID: cluster.ID, Name: "denied", Kind: "system-container"})
+	s.syncBackupApprovals(ctx, cluster.ID)
+	if code, out := jsonCall(t, ts, cookie, "POST", "/api/v1/backups/approvals/"+deniedID, `{"decision":"deny"}`); code != http.StatusOK || out["state"] != appdb.BackupApprovalDenied {
+		t.Fatalf("deny %d %v", code, out)
+	}
+	row, _ = mem.GetBackupPolicy(ctx, cluster.ID, id)
+	if !slices.Contains(row.ExcludedWorkloadIDs, deniedID) {
+		t.Fatalf("a denied workload joins the Leave out list: %v", row.ExcludedWorkloadIDs)
+	}
+	if covered, _ := s.policyWorkloadIDs(ctx, cluster.ID, *row); slices.Contains(covered, deniedID) {
+		t.Fatal("a denied workload is not covered")
 	}
 	// Switching to selected workloads drops the exclusions.
 	code, pol = jsonCall(t, ts, cookie, "PATCH", "/api/v1/backups/policies/"+id,
