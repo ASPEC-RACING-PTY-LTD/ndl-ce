@@ -442,11 +442,20 @@ func (s *Server) startGame(ctx context.Context, rt gameserver.Host, row *appdb.G
 			return fmt.Errorf("%s is required to start", key)
 		}
 	}
+	// A Workshop collection added as content is what the server downloads,
+	// unless the Workshop collection setting names one already.
+	if tmpl.Content.Provider == "workshop" && strings.TrimSpace(env["WORKSHOP_COLLECTION"]) == "" && templateHasVar(tmpl, "WORKSHOP_COLLECTION") {
+		if id := gameserver.WorkshopCollection(ctx, rt, row.ID, tmpl.Content, gameserver.Workshop{}); id != "" {
+			env["WORKSHOP_COLLECTION"] = id
+		}
+	}
 	startup := gameserver.ExpandStartup(tmpl.Startup, env, gameserver.MemoryMB(row.MemoryBytes), gameserver.PrimaryPort(ports))
 	cid, err := rt.Start(ctx, gameserver.RunSpec{
 		ID: row.ID, Image: row.Image, Startup: startup, Env: env, Ports: ports,
 		CPUs: row.CPUs, MemoryBytes: row.MemoryBytes, WorkDir: tmpl.WorkingDir,
 		Dependencies: tmpl.Dependencies, NetworkMode: s.gameRuntime().NetworkMode,
+		// srcds and hlds hold their console output while it goes to a pipe.
+		TTY: tmpl.Family == "source",
 	})
 	if err != nil {
 		return err
@@ -638,4 +647,13 @@ func (s *Server) gameStopTimeout(ctx context.Context, row *appdb.GameServer) tim
 		return 30 * time.Second
 	}
 	return time.Duration(tmpl.StopTimeout) * time.Second
+}
+
+func templateHasVar(tmpl gameserver.Template, env string) bool {
+	for _, v := range tmpl.Variables {
+		if v.Env == env {
+			return true
+		}
+	}
+	return false
 }

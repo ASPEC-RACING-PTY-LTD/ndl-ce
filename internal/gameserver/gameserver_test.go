@@ -209,3 +209,36 @@ func TestHumanErrorFiveMLicense(t *testing.T) {
 		t.Fatal(HumanError("klei cluster token is required"))
 	}
 }
+
+func TestStartRunsTTYServersOnAPseudoTerminal(t *testing.T) {
+	rt := NewRuntime(t.TempDir())
+	var start []string
+	rt.Run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "run" {
+			start = args
+		}
+		if len(args) > 0 && args[0] == "logs" {
+			return []byte("Auto detecting CPU\r\nVAC secure mode is activated.\r\n"), nil
+		}
+		return []byte("cid"), nil
+	}
+	spec := RunSpec{ID: "g1", Image: "steamcmd/steamcmd:debian", Startup: "./srcds_run -game garrysmod +map gm_flatgrass", TTY: true}
+	if _, err := rt.Start(t.Context(), spec); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(start, " ")
+	if !strings.Contains(joined, "NDL_START="+spec.Startup) || !strings.Contains(joined, "SHELL=/bin/sh") || start[len(start)-1] != ttyWrapper {
+		t.Fatalf("a TTY server starts through script: %v", start)
+	}
+	logs, _ := rt.Logs(t.Context(), "g1", 10)
+	if strings.Contains(logs, "\r") {
+		t.Fatalf("CR LF from the terminal is trimmed: %q", logs)
+	}
+	spec.TTY = false
+	if _, err := rt.Start(t.Context(), spec); err != nil {
+		t.Fatal(err)
+	}
+	if start[len(start)-1] != spec.Startup || strings.Contains(strings.Join(start, " "), "NDL_START") {
+		t.Fatalf("other servers start as before: %v", start)
+	}
+}

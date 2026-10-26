@@ -159,7 +159,15 @@ type RunSpec struct {
 	Dependencies []string
 	// NetworkMode is "bridge" or "host". Empty uses the runtime default.
 	NetworkMode string `json:",omitempty"`
+	// TTY runs Startup on a pseudo-terminal (via script, when the image has
+	// it). Servers such as srcds hold their console output in a buffer when
+	// it goes to a pipe, so without one the console stays empty.
+	TTY bool `json:",omitempty"`
 }
+
+// ttyWrapper runs $NDL_START on a pseudo-terminal when script is present,
+// else straight. Console input still reaches it: script forwards its stdin.
+const ttyWrapper = `if command -v script >/dev/null 2>&1; then exec script -qfec "$NDL_START" /dev/null; fi; exec /bin/sh -c "$NDL_START"`
 
 func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 	dir, err := r.EnsureData(spec.ID)
@@ -217,10 +225,14 @@ func (r *Runtime) Start(ctx context.Context, spec RunSpec) (string, error) {
 	for _, k := range sortedKeys(spec.Env) {
 		args = append(args, "-e", k+"="+spec.Env[k])
 	}
-	if strings.TrimSpace(spec.Startup) != "" {
+	switch {
+	case strings.TrimSpace(spec.Startup) != "" && spec.TTY:
+		args = append(args, "-e", "SHELL=/bin/sh", "-e", "NDL_START="+spec.Startup, "--entrypoint", "/bin/sh")
+		args = append(args, image, "-c", ttyWrapper)
+	case strings.TrimSpace(spec.Startup) != "":
 		args = append(args, "--entrypoint", "/bin/sh")
 		args = append(args, image, "-c", spec.Startup)
-	} else {
+	default:
 		args = append(args, image)
 	}
 	out, err := r.run(ctx, r.dockerBin(), args...)
@@ -286,7 +298,8 @@ func (r *Runtime) Logs(ctx context.Context, id string, tail int) (string, error)
 		defer r.mu.Unlock()
 		return strings.Join(r.logs[id], "\n"), nil
 	}
-	return string(out), nil
+	// A server on a pseudo-terminal ends its lines with CR LF.
+	return strings.ReplaceAll(string(out), "\r\n", "\n"), nil
 }
 
 func (r *Runtime) Send(ctx context.Context, id, line string) error {

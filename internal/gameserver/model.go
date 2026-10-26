@@ -101,21 +101,23 @@ type Backup struct {
 
 // ContentItem is an installed or catalogue content row.
 type ContentItem struct {
-	ID           string    `json:"id"`
-	ServerID     string    `json:"server_id,omitempty"`
-	Provider     string    `json:"provider"`
-	ExternalID   string    `json:"external_id,omitempty"`
-	Name         string    `json:"name"`
-	Slug         string    `json:"slug,omitempty"`
-	Version      string    `json:"version,omitempty"`
-	GameVersions []string  `json:"game_versions,omitempty"`
-	Summary      string    `json:"summary,omitempty"`
-	Enabled      bool      `json:"enabled"`
-	Filename     string    `json:"filename,omitempty"`
-	Dependencies []string  `json:"dependencies,omitempty"`
-	Incompatible bool      `json:"incompatible,omitempty"`
-	SourceURL    string    `json:"source_url,omitempty"`
-	InstalledAt  time.Time `json:"installed_at,omitempty"`
+	ID           string   `json:"id"`
+	ServerID     string   `json:"server_id,omitempty"`
+	Provider     string   `json:"provider"`
+	ExternalID   string   `json:"external_id,omitempty"`
+	Name         string   `json:"name"`
+	Slug         string   `json:"slug,omitempty"`
+	Version      string   `json:"version,omitempty"`
+	GameVersions []string `json:"game_versions,omitempty"`
+	Summary      string   `json:"summary,omitempty"`
+	Enabled      bool     `json:"enabled"`
+	Filename     string   `json:"filename,omitempty"`
+	Dependencies []string `json:"dependencies,omitempty"`
+	Incompatible bool     `json:"incompatible,omitempty"`
+	SourceURL    string   `json:"source_url,omitempty"`
+	// Kind is "collection" for a Steam Workshop collection.
+	Kind        string    `json:"kind,omitempty"`
+	InstalledAt time.Time `json:"installed_at,omitempty"`
 }
 
 // ContentProfile is a named set of content IDs.

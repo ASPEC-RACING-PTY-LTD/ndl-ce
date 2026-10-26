@@ -1,5 +1,11 @@
 nodal (1.2.5) UNRELEASED; urgency=medium
 
+  * Game servers: Source servers (srcds, hlds) run on a pseudo-terminal,
+    so their console shows every line live instead of stopping after
+    Steam starts.
+  * Game servers: a Steam Workshop collection added as content is now
+    downloaded: the server starts with it when the Workshop collection
+    setting is empty. Collections were refused or ignored before.
   * Backups: a workload created after an All workloads policy is not
     backed up by it until approved. The bell asks every person who can
     manage backups, with a green tick to approve and a red cross to deny

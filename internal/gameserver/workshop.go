@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Workshop looks up Steam Workshop items by published-file ID. Steam does not
@@ -38,11 +39,67 @@ func (w Workshop) Resolve(ctx context.Context, spec ContentSpec, externalID, ver
 	if version != "" && version != "latest" {
 		item.Version = version
 	}
-	// Workshop payloads are fetched by SteamCMD at server start via the
-	// collection / item ID. We store a small pointer file instead of a binary.
-	marker := []byte("workshop_id=" + item.ExternalID + "\n")
+	// The server downloads a collection itself when it starts (see
+	// WorkshopCollection), so only a small pointer file is stored.
+	key := workshopItemKey
+	if w.isCollection(item) {
+		key = workshopCollectionKey
+	}
+	marker := []byte(key + "=" + item.ExternalID + "\n")
 	item.Filename = "workshop-" + item.ExternalID + ".txt"
 	return item, marker, nil
+}
+
+// Steam Workshop collections are published under their own app ID.
+const workshopCollectionApp = 766
+
+const (
+	workshopItemKey       = "workshop_id"
+	workshopCollectionKey = "workshop_collection"
+)
+
+func (w Workshop) isCollection(item ContentItem) bool {
+	return item.Kind == "collection"
+}
+
+// WorkshopCollection finds the Workshop collection a server's content folder
+// points at, so the server can be started with it. Pointer files written
+// before collections were told apart only hold an ID; those are looked up
+// once and, when they are a collection, rewritten as one. It returns "" when
+// there is none or Steam cannot be reached.
+func WorkshopCollection(ctx context.Context, h Host, serverID string, spec ContentSpec, w Workshop) string {
+	dir := strings.Trim(spec.InstallDir, "/")
+	list, err := h.ListDir(ctx, serverID, dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range list.Items {
+		if e.Dir || !strings.HasPrefix(e.Name, "workshop-") || !strings.HasSuffix(e.Name, ".txt") {
+			continue
+		}
+		rel := dir + "/" + e.Name
+		raw, err := h.ReadFile(ctx, serverID, rel, 256)
+		if err != nil {
+			continue
+		}
+		key, id, _ := strings.Cut(strings.TrimSpace(string(raw)), "=")
+		if !isDigits(id) {
+			continue
+		}
+		switch key {
+		case workshopCollectionKey:
+			return id
+		case workshopItemKey:
+			lookupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			item, err := w.lookup(lookupCtx, spec, id)
+			cancel()
+			if err == nil && w.isCollection(item) {
+				_ = h.WriteFile(ctx, serverID, rel, []byte(workshopCollectionKey+"="+id+"\n"))
+				return id
+			}
+		}
+	}
+	return ""
 }
 
 func (w Workshop) lookup(ctx context.Context, spec ContentSpec, id string) (ContentItem, error) {
@@ -92,7 +149,7 @@ func (w Workshop) lookup(ctx context.Context, spec ContentSpec, id string) (Cont
 	}
 	row := parsed.Response.PublishedFileDetails[0]
 	if spec.GameID != "" {
-		if app, err := strconv.Atoi(spec.GameID); err == nil && row.CreatorAppID != 0 && row.CreatorAppID != app {
+		if app, err := strconv.Atoi(spec.GameID); err == nil && row.CreatorAppID != 0 && row.CreatorAppID != app && row.CreatorAppID != workshopCollectionApp {
 			return ContentItem{}, fmt.Errorf("Workshop item %s belongs to a different game", id)
 		}
 	}
@@ -100,10 +157,14 @@ func (w Workshop) lookup(ctx context.Context, spec ContentSpec, id string) (Cont
 	if name == "" {
 		name = "Workshop " + id
 	}
-	return ContentItem{
+	item := ContentItem{
 		Provider: "workshop", ExternalID: id, Name: name, Slug: id,
 		Summary: clip(row.Description, 240), SourceURL: "https://steamcommunity.com/sharedfiles/filedetails/?id=" + id,
-	}, nil
+	}
+	if row.CreatorAppID == workshopCollectionApp {
+		item.Kind = "collection"
+	}
+	return item, nil
 }
 
 func isDigits(s string) bool {
