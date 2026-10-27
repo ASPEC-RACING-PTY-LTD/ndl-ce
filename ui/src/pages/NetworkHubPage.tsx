@@ -5,13 +5,15 @@ import { navigate } from "../router";
 import { Segmented } from "../ui/Segmented";
 import { CloudflarePage } from "./CloudflarePage";
 import { DDoSPage } from "./DDoSPage";
+import { EdgePage } from "./EdgePage";
 import { NetworkPage } from "./NetworkPage";
 import { ProxyPage } from "./ProxyPage";
 
-export type NetworkTab = "network" | "ddos" | "cloudflare" | "caddy" | "nginx";
+export type NetworkTab = "network" | "edge" | "ddos" | "cloudflare" | "caddy" | "nginx";
 
 const TABS: { id: NetworkTab; label: string; feature?: string }[] = [
   { id: "network", label: "Network" },
+  { id: "edge", label: "Edge forwarding" },
   { id: "ddos", label: "DDoS Protection", feature: "ddos" },
   { id: "cloudflare", label: "Cloudflare", feature: "cloudflare" },
   { id: "caddy", label: "Caddy", feature: "caddy" },
@@ -22,7 +24,7 @@ export function networkTabPath(tab: NetworkTab): string {
   return tab === "network" ? "/network" : `/network/${tab}`;
 }
 
-/** NetworkHubPage holds Network and the optional DDoS Protection, Cloudflare, Caddy and Nginx pages under one sidebar entry, switched at the top. */
+/** NetworkHubPage holds Network, Edge forwarding and the optional DDoS Protection, Cloudflare, Caddy and Nginx pages under one sidebar entry, switched at the top. */
 export function NetworkHubPage({ tab }: { tab: NetworkTab }) {
   const { featureEnabled, features } = useNavDisclosure();
   const tabs = TABS.filter((t) => !t.feature || featureEnabled[t.feature]);
@@ -39,6 +41,8 @@ export function NetworkHubPage({ tab }: { tab: NetworkTab }) {
         <EmptyState title={`${current.label} is turned off`}>
           Turn it on in <Link href="/settings/features">Add Features</Link> to manage it here. Turning it off only hid this page; nothing was changed.
         </EmptyState>
+      ) : tab === "edge" ? (
+        <EdgePage />
       ) : tab === "ddos" ? (
         <DDoSPage />
       ) : tab === "cloudflare" ? (

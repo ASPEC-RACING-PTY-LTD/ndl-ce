@@ -162,6 +162,7 @@ type Memory struct {
 	iam                iamMem
 	approvals          approvalMem
 	ddos               ddosMem
+	edge               edgeMem
 	ui                 uiMem
 	tmpl               tmplMem
 }

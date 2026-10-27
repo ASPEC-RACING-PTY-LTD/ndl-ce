@@ -94,6 +94,18 @@ the source** for a while (5 minutes by default). UDP sources can be faked,
 so an attacker could fake a player's address to get them banned. To limit
 that, a ban only covers the one target and always expires.
 
+## Edge nodes
+
+A service published through another node ([Edge forwarding](edge-forwarding.md))
+is attacked at that node's address, so its target's rules are loaded on the
+edge node too, on the edge's public ports. A flood is dropped on the edge
+and never enters the tunnel; the service still sees real player addresses,
+so its per-source limits work on both nodes. The edge uses the same mode,
+trusted and blocked networks, hardening and hand-added bans, but does not
+trust its own neighbours (on a VPS they are other customers). Its counters
+are added to the target's, and the DDoS page lists each edge node with its
+status.
+
 ## Trusted, blocked and bans
 
 - **Trusted networks** are always let through and never banned. By default

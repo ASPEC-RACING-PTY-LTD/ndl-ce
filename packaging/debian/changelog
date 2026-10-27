@@ -1,5 +1,19 @@
-nodal (1.2.5) UNRELEASED; urgency=medium
+nodal (1.2.6) UNRELEASED; urgency=medium
 
+  * Edge forwarding (Network > Edge forwarding): publish a game server,
+    workload or host ports that run on a node without a public address
+    (a home server) on another node that has one (a VPS), through a
+    WireGuard tunnel the cluster sets up itself. Players' own addresses
+    reach the server; the server's outbound traffic (Steam heartbeats)
+    leaves with the edge's address, and is refused rather than leaked
+    while the tunnel is down. Game servers show where players connect
+    under Settings > Public address.
+  * DDoS Protection covers edge nodes: a forwarded service's limits are
+    loaded on the edge too, so floods are dropped there before they enter
+    the tunnel, with bans and counters shared.
+  * Cluster: Update No-dal on a worker, and the rolling update, now update
+    workers through their agent (nodalctl node update). nodalctl edge
+    shows and publishes services through an edge node.
   * DDoS Protection: a new optional module (Add Features) under Network.
     It filters floods on the node's uplink with nftables, before
     conntrack, Docker and the LAN bridge, for game servers (each one

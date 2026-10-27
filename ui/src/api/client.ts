@@ -4162,10 +4162,13 @@ export type DDoSOverview = {
     error?: string;
     sampled_at?: string;
   };
+  edges?: DDoSEdge[];
   profiles: DDoSProfile[];
   amp_ports: number[];
   under_attack: boolean;
 };
+/** DDoSEdge is protection loaded on an edge node for the services it forwards. */
+export type DDoSEdge = { node_id: string; name: string; active: boolean; mode?: string; devices?: string[] | null; targets: string[]; error?: string; checked_at?: string };
 export type DDoSTargetInput = {
   name: string;
   kind: DDoSTargetKind;
@@ -4220,4 +4223,84 @@ export async function listDDoSEvents(): Promise<{ items: DDoSEvent[] }> {
 }
 export async function applyDDoS(): Promise<DDoSOverview> {
   return readJson(await request("/ddos/apply", { method: "POST" }));
+}
+
+// Edge forwarding (Network > Edge forwarding): services on a node with no
+// public address published on a node that has one, through WireGuard.
+export type EdgeKind = "gameserver" | "workload" | "host";
+export type EdgePort = { protocol: "udp" | "tcp"; port: number; port_end?: number; to_port?: number };
+export type EdgeNode = { id: string; name: string; role: string; local: boolean; public_addr?: string; set_addr?: string; error?: string; warnings?: string[] | null; checked_at?: string };
+export type EdgeTunnel = {
+  id: string;
+  edge_node_id: string;
+  origin_node_id: string;
+  interface: string;
+  edge_addr: string;
+  origin_addr: string;
+  listen_port: number;
+  connected: boolean;
+  handshake?: string;
+  endpoint?: string;
+  rx_bytes: number;
+  tx_bytes: number;
+  egress?: string[] | null;
+  error?: string;
+};
+export type EdgeForward = {
+  id: string;
+  name: string;
+  kind: EdgeKind;
+  ref_id?: string;
+  edge_node_id: string;
+  origin_node_id?: string;
+  ports: EdgePort[];
+  keep_address: boolean;
+  egress: boolean;
+  enabled: boolean;
+  ref_name?: string;
+  edge_name?: string;
+  origin_name?: string;
+  public_addr?: string;
+  resolved_ports: EdgePort[];
+  target?: string;
+  tunnel_id?: string;
+  warnings?: string[] | null;
+  packets: number;
+  bytes: number;
+  active: boolean;
+};
+export type EdgeOverview = { nodes: EdgeNode[]; tunnels: EdgeTunnel[]; forwards: EdgeForward[] };
+export type EdgeForwardInput = {
+  name?: string;
+  kind?: EdgeKind;
+  ref_id?: string;
+  edge_node_id?: string;
+  origin_node_id?: string;
+  ports?: EdgePort[];
+  keep_address?: boolean;
+  egress?: boolean;
+  enabled?: boolean;
+};
+
+export async function getEdge(): Promise<EdgeOverview> {
+  return readJson(await request("/edge"));
+}
+export async function createEdgeForward(body: EdgeForwardInput): Promise<EdgeOverview> {
+  return readJson(await request("/edge/forwards", json(body)));
+}
+export async function updateEdgeForward(id: string, body: EdgeForwardInput): Promise<EdgeOverview> {
+  return readJson(await request(`/edge/forwards/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function deleteEdgeForward(id: string): Promise<EdgeOverview> {
+  return readJson(await request(`/edge/forwards/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+export async function putEdgeNode(id: string, publicAddr: string): Promise<EdgeOverview> {
+  return readJson(await request(`/edge/nodes/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ public_addr: publicAddr }) }));
+}
+export async function applyEdge(): Promise<EdgeOverview> {
+  return readJson(await request("/edge/apply", { method: "POST" }));
+}
+/** updateWorkerNode starts a worker's No-dal update from its own package repository. */
+export async function updateWorkerNode(id: string): Promise<{ status: string; reason?: string }> {
+  return readJson(await request(`/nodes/${encodeURIComponent(id)}/update`, { method: "POST", headers: { "X-Nodal-Confirm": "update-node" } }));
 }

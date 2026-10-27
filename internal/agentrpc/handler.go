@@ -18,6 +18,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/deploy"
 	"github.com/no-dal/ndl-ce/internal/diskguard"
 	"github.com/no-dal/ndl-ce/internal/docker"
+	"github.com/no-dal/ndl-ce/internal/edge"
 	"github.com/no-dal/ndl-ce/internal/gameserver"
 	"github.com/no-dal/ndl-ce/internal/hostos"
 	"github.com/no-dal/ndl-ce/internal/identity"
@@ -57,6 +58,9 @@ type Handler struct {
 	// Shield is DDoS protection; nil uses one under the agent data dir.
 	Shield     *shield.Engine
 	shieldOnce sync.Once
+	// Edge is edge forwarding; nil uses one under the agent data dir.
+	Edge       *edge.Engine
+	edgeOnce   sync.Once
 	BackupHost *backuphost.Host
 	// Deploy runs Docker Compose project deployments in system containers.
 	Deploy *deploy.Manager
@@ -280,6 +284,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execStorageScan(ctx, req.Msg.GetStorageScan())
 	case req.Msg.GetShield() != nil:
 		return h.execShield(ctx, req.Msg.GetShield())
+	case req.Msg.GetEdge() != nil:
+		return h.execEdge(ctx, req.Msg.GetEdge())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

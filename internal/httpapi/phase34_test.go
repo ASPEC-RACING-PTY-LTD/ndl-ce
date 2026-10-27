@@ -153,7 +153,7 @@ func TestPhase34RollingUpdateDoesNotStopGuests(t *testing.T) {
 	if plan["status"] != "unavailable" {
 		t.Fatalf("worker update must stay unavailable %+v", plan)
 	}
-	if !strings.Contains(string(raw), "worker update agent is not connected") {
+	if !strings.Contains(string(raw), "worker update could not be started: this node has no agent address") {
 		t.Fatalf("honesty %s", raw)
 	}
 	s.waitHostChange()

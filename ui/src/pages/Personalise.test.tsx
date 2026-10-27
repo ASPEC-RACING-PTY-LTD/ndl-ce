@@ -67,7 +67,7 @@ describe("Network hub", () => {
     window.history.replaceState({}, "", "/network");
     render(<App />);
     const tabs = await screen.findByRole("group", { name: /network sections/i });
-    expect(within(tabs).getByRole("button", { name: "Caddy" })).toBeVisible();
+    expect(await within(tabs).findByRole("button", { name: "Caddy" })).toBeVisible();
     expect(within(tabs).queryByRole("button", { name: "Cloudflare" })).toBeNull();
     expect(within(tabs).queryByRole("button", { name: "Nginx" })).toBeNull();
     // Cloudflare is no longer its own sidebar entry.

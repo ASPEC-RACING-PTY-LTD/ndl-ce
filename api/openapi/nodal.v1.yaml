@@ -1386,6 +1386,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkerLinkCheck"
+  /nodes/{id}/update:
+    post:
+      operationId: updateNode
+      summary: Start a worker's No-dal update from its own package repository: its agent refreshes the package lists and runs the platform update in its own unit. Guests keep running. Requires node.update and X-Nodal-Confirm: update-node.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    get:
+      operationId: getNodeUpdate
+      summary: A worker's last update run, from its agent. Requires node.read.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /nodes/{id}/hardware:
     get:
       operationId: getNodeHardware
@@ -12034,6 +12069,116 @@ paths:
     post:
       operationId: applyDDoS
       summary: Load the rules again now. Requires ddos.manage.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /edge:
+    get:
+      operationId: getEdge
+      summary: Edge forwarding: nodes with their public address and agent status, WireGuard tunnels between edge and origin nodes with handshake and traffic, and published services with where players connect. Requires network.read.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /edge/forwards:
+    post:
+      operationId: createEdgeForward
+      summary: Publish a game server, workload or host ports on an edge node (kind, ref_id or origin_node_id, edge_node_id, ports, keep_address, egress). Validated, saved and applied; a tunnel is made for a new edge and origin pair. Requires network.apply.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /edge/forwards/{id}:
+    put:
+      operationId: updateEdgeForward
+      summary: Change a published service. Only fields sent change. Requires network.apply.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    delete:
+      operationId: deleteEdgeForward
+      summary: Stop publishing a service. A tunnel nothing uses any more is removed from both nodes. Requires network.apply.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /edge/nodes/{id}:
+    put:
+      operationId: putEdgeNode
+      summary: Set the public IPv4 address origins and players reach an edge node on (public_addr; empty uses its agent address). Requires network.apply.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /edge/apply:
+    post:
+      operationId: applyEdge
+      summary: Push every node's tunnels and forwards again now. Requires network.apply.
       responses:
         "200":
           description: OK

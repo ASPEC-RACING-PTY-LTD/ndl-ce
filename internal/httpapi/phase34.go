@@ -19,7 +19,7 @@ const (
 	clusterUpdateConfirm = "cluster-update"
 	haReplicaReason      = "replica DSN is stored; streaming replication is operator-managed Postgres and is not proven in this process"
 	haFencingReason      = "STONITH is not implemented. Fence records that the operator isolated the old writer, then a standby may take the lease."
-	workerUpdateReason   = "worker update agent is not connected; Phase 12 apply stays on this control node"
+	workerUpdateReason   = "worker update could not be started"
 	rollingDrainReason   = "maintenance recorded; guests keep running; remote dest agent is not connected"
 )
 
@@ -276,8 +276,7 @@ func (s *Server) previewRollingSteps(r *http.Request, clusterID string) []map[st
 		ord++
 		action := map[string]any{"ordinal": ord, "node_id": n.ID, "name": n.Name, "action": appdb.RollingActionUpdate}
 		if !s.applyLocal(r.Context(), clusterID, n.ID) {
-			action["status"] = appdb.RollingUnavailable
-			action["reason"] = workerUpdateReason
+			action["reason"] = "updated through its agent from its own package repository"
 		}
 		out = append(out, action)
 		ord++
@@ -422,8 +421,11 @@ func (s *Server) execRollingUpdate(r *http.Request, p *principal, planID string,
 		Ordinal: ord, Action: appdb.RollingActionUpdate, CreatedAt: s.now(),
 	}
 	if !s.applyLocal(r.Context(), p.User.ClusterID, n.ID) {
-		st.Status = appdb.RollingUnavailable
-		st.Reason = workerUpdateReason
+		st.Status = appdb.RollingSucceeded
+		if _, err := s.updateWorker(r.Context(), p.User.ClusterID, n.ID); err != nil {
+			st.Status = appdb.RollingUnavailable
+			st.Reason = workerUpdateReason + ": " + linkError(err)
+		}
 		if err := s.Store.CreateRollingStep(r.Context(), st); err != nil {
 			return st, errInternal("could not record rolling step")
 		}

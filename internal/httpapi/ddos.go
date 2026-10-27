@@ -118,6 +118,8 @@ type ddosState struct {
 	prevAt    time.Time
 	samples   map[string][]ddosSample
 	events    map[string]*ddosOpen
+	// edges is protection on edge nodes, by node ID.
+	edges map[string]*ddosEdge
 }
 
 type ddosSample struct {
@@ -411,6 +413,7 @@ func (s *Server) tickDDoS(ctx context.Context) {
 	st.tick.Lock()
 	defer st.tick.Unlock()
 	if !s.ddosEnabled(ctx, cluster.ID) {
+		s.ddosEdgesOff(ctx, cluster.ID)
 		st.mu.Lock()
 		done := st.disabled
 		st.mu.Unlock()
@@ -440,6 +443,10 @@ func (s *Server) tickDDoS(ctx context.Context) {
 		return
 	}
 	spec := s.ddosSpec(cfg, targets)
+	edgeRules := s.edgeDDoSRules(ctx, cluster.ID, targets)
+	if control, _ := s.Store.GetNode(ctx, cluster.ID); control != nil {
+		ddosLocalEdge(&spec, edgeRules, control.ID)
+	}
 	status, err := s.Shield.Shield(ctx, "status", nil, "", 0)
 	st.mu.Lock()
 	st.disabled = false
@@ -467,6 +474,9 @@ func (s *Server) tickDDoS(ctx context.Context) {
 		st.applyErr, st.pushed = "", hash
 		st.mu.Unlock()
 		status = applied
+	}
+	for _, es := range s.ddosPushEdges(ctx, cluster.ID, cfg, edgeRules) {
+		status = mergeShield(status, es)
 	}
 	s.sampleDDoS(ctx, cluster.ID, cfg, targets, status)
 }
@@ -616,6 +626,9 @@ func (s *Server) ddosDisableNow(ctx context.Context) error {
 	st.mu.Lock()
 	st.disabled, st.pushed, st.status = true, "", shield.Status{}
 	st.mu.Unlock()
+	if cluster, err := s.Store.GetCluster(ctx); err == nil && cluster != nil {
+		s.ddosEdgesOff(ctx, cluster.ID)
+	}
 	return nil
 }
 
@@ -714,6 +727,7 @@ func (s *Server) ddosView(ctx context.Context, clusterID string, history bool) (
 			"host": status.Host, "blocked": status.Blocked, "banned": status.Banned, "conntrack": status.Conntrack,
 			"hardening": status.Hardening, "error": firstNonEmpty(applyErr, status.Error, statusErr), "sampled_at": status.SampledAt,
 		},
+		"edges":         s.ddosEdgeViews(ctx, clusterID, names),
 		"profiles":      shield.Profiles(),
 		"amp_ports":     shield.AmplificationPorts,
 		"under_attack":  len(attacks) > 0,
@@ -1075,6 +1089,7 @@ func (s *Server) banDDoS(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
+		s.ddosEdgesBan(r.Context(), p.User.ClusterID, "ban", addr.String(), until)
 		s.ddosApplyNow(r.Context())
 	}
 	s.writeDDoS(w, r, p.User.ClusterID)
@@ -1108,6 +1123,7 @@ func (s *Server) unbanDDoS(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
+		s.ddosEdgesBan(r.Context(), p.User.ClusterID, "unban", addr.String(), 0)
 		s.ddosApplyNow(r.Context())
 	}
 	s.writeDDoS(w, r, p.User.ClusterID)

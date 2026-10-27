@@ -4326,6 +4326,8 @@ export type SetDestListenPath = "/api/v1/nodes/{id}/dest-listen";
 
 export type CheckNodePath = "/api/v1/nodes/{id}/check";
 
+export type GetNodeUpdatePath = "/api/v1/nodes/{id}/update";
+
 export type GetNodeHardwarePath = "/api/v1/nodes/{id}/hardware";
 
 export type GetNodeCapabilitiesPath = "/api/v1/nodes/{id}/capabilities";
@@ -5177,6 +5179,16 @@ export type UnbanDDoSPath = "/api/v1/ddos/bans/{addr}";
 export type ListDDoSEventsPath = "/api/v1/ddos/events";
 
 export type ApplyDDoSPath = "/api/v1/ddos/apply";
+
+export type GetEdgePath = "/api/v1/edge";
+
+export type CreateEdgeForwardPath = "/api/v1/edge/forwards";
+
+export type UpdateEdgeForwardPath = "/api/v1/edge/forwards/{id}";
+
+export type PutEdgeNodePath = "/api/v1/edge/nodes/{id}";
+
+export type ApplyEdgePath = "/api/v1/edge/apply";
 
 export type GetProxiesPath = "/api/v1/proxies/{kind}";
 

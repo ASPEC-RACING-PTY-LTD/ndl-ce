@@ -179,6 +179,7 @@ func Run(cfg Config) error {
 		GameHost: agentrpc.GameHost{Client: agent},
 		// DDoS protection loads nftables rules on the node through the agent.
 		Shield:      agent,
+		EdgeAgent:   agent,
 		Hub:         hub,
 		UI:          ui,
 		SetupHash:   cfg.SetupHash,
@@ -221,6 +222,7 @@ func Run(cfg Config) error {
 	go srv.RunDeployments(runCtx)
 	go srv.RunAutomations(runCtx)
 	go srv.RunDDoS(runCtx)
+	go srv.RunEdge(runCtx)
 	go srv.RunUpdateHousekeeping(runCtx)
 	go srv.RunSearchIndexer(runCtx)
 	go observer{

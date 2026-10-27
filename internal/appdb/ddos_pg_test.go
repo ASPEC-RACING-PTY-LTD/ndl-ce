@@ -15,7 +15,8 @@ import (
 )
 
 // Run with NODAL_TEST_PG_EMPTY pointing at an empty database: it applies
-// every migration, then saves DDoS settings and records an attack.
+// every migration, then saves DDoS and edge forwarding settings and records
+// an attack.
 func TestDDoSOnPostgres(t *testing.T) {
 	dsn := os.Getenv("NODAL_TEST_PG_EMPTY")
 	if dsn == "" {
@@ -52,6 +53,15 @@ func TestDDoSOnPostgres(t *testing.T) {
 	}
 	if body, err := p.DDoSConfig(ctx, cluster); err != nil || string(body) != `{"mode": "enforce", "targets": [{"id": "t1"}]}` {
 		t.Fatalf("config = %s, %v", body, err)
+	}
+	if body, err := p.EdgeConfig(ctx, cluster); err != nil || body != nil {
+		t.Fatalf("unsaved edge config = %s, %v", body, err)
+	}
+	if err := p.PutEdgeConfig(ctx, cluster, []byte(`{"forwards":[{"id":"f1"}]}`), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := p.EdgeConfig(ctx, cluster); err != nil || string(body) != `{"forwards": [{"id": "f1"}]}` {
+		t.Fatalf("edge config = %s, %v", body, err)
 	}
 	started := time.Now().UTC().Truncate(time.Second)
 	ev := DDoSEvent{ID: uuid.NewString(), ClusterID: cluster, RuleID: "auto:gs:x", Target: "JvS", StartedAt: started, PeakPPS: 5000, TopReason: "query"}

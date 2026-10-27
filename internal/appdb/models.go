@@ -228,6 +228,10 @@ type Store interface {
 	PutDDoSEvent(ctx context.Context, ev DDoSEvent) error
 	// ListDDoSEvents returns the newest attacks first.
 	ListDDoSEvents(ctx context.Context, clusterID string, limit int) ([]DDoSEvent, error)
+	// EdgeConfig returns the edge forwarding document; nil when never saved.
+	EdgeConfig(ctx context.Context, clusterID string) ([]byte, error)
+	// PutEdgeConfig replaces the edge forwarding document.
+	PutEdgeConfig(ctx context.Context, clusterID string, body []byte, by string) error
 	// SetBackupPolicyRunQueued records or drops a Run now queued while paused.
 	SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error
 

@@ -135,6 +135,9 @@ type Server struct {
 	ddos            *ddosState
 	ddosOnce        sync.Once
 	ddosMu          sync.Mutex
+	edge            *edgeState
+	edgeOnce        sync.Once
+	edgeMu          sync.Mutex
 	repoMove        repoMove
 	tunnels         tunnelCache
 	opsJobs         opsJobs
@@ -184,6 +187,13 @@ type Server struct {
 	Disk HostDiskRPC
 	// Shield is DDoS protection on the agent; nil turns the loop off.
 	Shield ShieldRPC
+	// EdgeAgent is edge forwarding on the control node's agent; nil (and
+	// no NodeAgents) turns the loop off.
+	EdgeAgent EdgeRPC
+	// NodeAgents replaces every node's agent by node ID (tests).
+	NodeAgents map[string]NodeAgent
+	// WorkerUpdaters replaces workers' agents for updates by node ID (tests).
+	WorkerUpdaters map[string]HostUpdater
 	// Scan measures and cleans up storage in the agent.
 	Scan      StorageScanRPC
 	GameHost  gameserver.Host
@@ -291,6 +301,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/nodes/{id}/maintain/exit", s.exitMaintenance)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/dest-listen", s.setDestListen)
 	mux.HandleFunc("POST /api/v1/nodes/{id}/check", s.checkNode)
+	mux.HandleFunc("POST /api/v1/nodes/{id}/update", s.updateNode)
+	mux.HandleFunc("GET /api/v1/nodes/{id}/update", s.nodeUpdateStatus)
 	mux.HandleFunc("GET /api/v1/nodes/{id}", s.getNode)
 	mux.HandleFunc("DELETE /api/v1/nodes/{id}", s.deleteNode)
 	mux.HandleFunc("GET /api/v1/nodes/{id}/hardware", s.nodeHardware)
@@ -708,6 +720,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/ddos/bans/{addr}", s.unbanDDoS)
 	mux.HandleFunc("GET /api/v1/ddos/events", s.listDDoSEvents)
 	mux.HandleFunc("POST /api/v1/ddos/apply", s.applyDDoS)
+	mux.HandleFunc("GET /api/v1/edge", s.getEdge)
+	mux.HandleFunc("POST /api/v1/edge/forwards", s.createEdgeForward)
+	mux.HandleFunc("PUT /api/v1/edge/forwards/{id}", s.updateEdgeForward)
+	mux.HandleFunc("DELETE /api/v1/edge/forwards/{id}", s.deleteEdgeForward)
+	mux.HandleFunc("PUT /api/v1/edge/nodes/{id}", s.putEdgeNode)
+	mux.HandleFunc("POST /api/v1/edge/apply", s.applyEdge)
 	mux.HandleFunc("DELETE /api/v1/backups/policies/{id}", s.deleteBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/run", s.runBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/queue/clear", s.clearPolicyQueue)

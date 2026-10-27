@@ -13,6 +13,7 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/no-dal/ndl-ce/internal/identity"
@@ -222,9 +223,11 @@ func run(args []string) error {
 		return install.HostPrepare()
 	case "node":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: nodalctl node show|terminal|maintain|dest-listen")
+			return fmt.Errorf("usage: nodalctl node show|terminal|maintain|dest-listen|update")
 		}
 		switch args[1] {
+		case "update":
+			return cmdNodeUpdate(args[2:])
 		case "show":
 			return cmdGet("/api/v1/nodes")
 		case "terminal":
@@ -238,8 +241,10 @@ func run(args []string) error {
 			}
 			return postJSON("/api/v1/nodes/"+f["id"]+"/dest-listen", map[string]any{"listen_addr": f["addr"]}, true)
 		default:
-			return fmt.Errorf("usage: nodalctl node show|terminal|maintain|dest-listen")
+			return fmt.Errorf("usage: nodalctl node show|terminal|maintain|dest-listen|update")
 		}
+	case "edge":
+		return cmdEdge(args[1:])
 	case "cluster":
 		return cmdCluster(args[1:])
 	case "feature":
@@ -1593,6 +1598,57 @@ func cmdNodeTerminal(args []string) error {
 		cwd = "/"
 	}
 	return postJSON("/api/v1/nodes/"+id+"/terminal/sessions", map[string]any{"cwd": cwd}, true)
+}
+
+// cmdNodeUpdate starts a worker's No-dal update through its agent, or with
+// no --confirm shows its last update run.
+func cmdNodeUpdate(args []string) error {
+	f := parseFlags(args)
+	if f["id"] == "" {
+		return fmt.Errorf("usage: nodalctl node update --id ID [--confirm update-node]")
+	}
+	if f["confirm"] == "" {
+		return cmdGet("/api/v1/nodes/" + f["id"] + "/update")
+	}
+	return postJSONHeaders("/api/v1/nodes/"+f["id"]+"/update", map[string]any{}, true, map[string]string{"X-Nodal-Confirm": f["confirm"]})
+}
+
+// cmdEdge shows and publishes services through an edge node.
+func cmdEdge(args []string) error {
+	usage := fmt.Errorf("usage: nodalctl edge show|apply|publish --kind gameserver|workload|host --edge NODE_ID [--ref ID] [--origin NODE_ID] [--ports udp/27015,tcp/25565] [--egress true|false]")
+	if len(args) < 1 {
+		return usage
+	}
+	switch args[0] {
+	case "show":
+		return cmdGet("/api/v1/edge")
+	case "apply":
+		return postJSON("/api/v1/edge/apply", map[string]any{}, true)
+	case "publish":
+		f := parseFlags(args[1:])
+		if f["kind"] == "" || f["edge"] == "" {
+			return usage
+		}
+		body := map[string]any{"kind": f["kind"], "ref_id": f["ref"], "edge_node_id": f["edge"], "origin_node_id": f["origin"]}
+		if f["ports"] != "" {
+			var ports []map[string]any
+			for _, p := range strings.Split(f["ports"], ",") {
+				proto, num, ok := strings.Cut(strings.TrimSpace(p), "/")
+				n, err := strconv.Atoi(num)
+				if !ok || err != nil {
+					return fmt.Errorf("port %q must look like udp/27015", p)
+				}
+				ports = append(ports, map[string]any{"protocol": proto, "port": n})
+			}
+			body["ports"] = ports
+		}
+		if f["egress"] != "" {
+			body["egress"] = f["egress"] == "true"
+		}
+		return postJSON("/api/v1/edge/forwards", body, true)
+	default:
+		return usage
+	}
 }
 
 func cmdWorkloadFiles(args []string) error {

@@ -13,6 +13,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/agentrpc"
 	"github.com/no-dal/ndl-ce/internal/ctbackup"
 	"github.com/no-dal/ndl-ce/internal/diskguard"
+	"github.com/no-dal/ndl-ce/internal/edge"
 	"github.com/no-dal/ndl-ce/internal/identity"
 	"github.com/no-dal/ndl-ce/internal/lxc"
 	"github.com/no-dal/ndl-ce/internal/metrics"
@@ -45,6 +46,7 @@ func main() {
 		OCI:       &oci.Engine{DataDir: dir},
 		GameRoot:  dir,
 		Shield:    agentrpc.ShieldEngine(dir),
+		Edge:      agentrpc.EdgeEngine(dir),
 		Disk: diskguard.New(filepath.Join(dir, "reserve", "ballast"),
 			diskguard.Watch{Path: "/", Role: "root"},
 			diskguard.Watch{Path: dir, Role: "data"},
@@ -63,6 +65,7 @@ func main() {
 	go watchGuestNet(h.Workloads)
 	go watchForward(dir)
 	go watchShield(h.Shield)
+	go watchEdge(h.Edge)
 	go disableOrphanUnits(dir)
 	go scrapeMetrics(ms, dir)
 	go watchDisk(h.Disk)
@@ -158,6 +161,31 @@ func watchShield(eng *shield.Engine) {
 			failing = msg
 		}
 		time.Sleep(30 * time.Second)
+	}
+}
+
+// watchEdge brings edge tunnels back at start, before the control plane is
+// up, and puts back anything removed since: a deleted interface, a flushed
+// table, or a container that came back with a new address.
+func watchEdge(eng *edge.Engine) {
+	failing := ""
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := eng.Ensure(ctx)
+		cancel()
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		if msg != failing {
+			if msg != "" {
+				log.Printf("edge forwarding: %s", msg)
+			} else if failing != "" {
+				log.Printf("edge forwarding: tunnels restored")
+			}
+			failing = msg
+		}
+		time.Sleep(15 * time.Second)
 	}
 }
 

@@ -63,6 +63,16 @@ shows them, with **Check** to test the link now and **Address** to change
 where the agent is dialed (`nodalctl node dest-listen --id ID --addr
 HOST:PORT`).
 
+## Update a worker
+
+A worker installs No-dal from its own package repository. **Update No-dal**
+(or `POST /api/v1/nodes/{id}/update` with `X-Nodal-Confirm: update-node`)
+asks its agent to refresh the package lists and run the platform update in
+its own systemd unit; the agent restarts during it and guests keep running.
+From the terminal: `nodalctl node update --id ID --confirm update-node`, and
+`nodalctl node update --id ID` for its last run.
+The cluster's rolling update does the same for every worker.
+
 ## Remove a node
 
 **Revoke** retires the node's certificate, so the control node stops

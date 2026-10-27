@@ -80,6 +80,7 @@ func TestAgentProtoHasNoHostExec(t *testing.T) {
 		"HostDisk host_disk =",
 		"StorageScan storage_scan =",
 		"Shield shield =",
+		"Edge edge =",
 	}
 	for _, name := range allowed {
 		if !strings.Contains(oneof, name) {

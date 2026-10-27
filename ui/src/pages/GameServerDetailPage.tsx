@@ -51,6 +51,7 @@ import { navigate, usePath } from "../router";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { CurseForgeKey } from "../gameservers/CurseForgeKey";
 import { GameDDoSPane } from "../gameservers/GameDDoSPane";
+import { GameEdgePane } from "../gameservers/GameEdgePane";
 import { useNavDisclosure } from "../nav/NavDisclosure";
 import { Segmented } from "../ui/Segmented";
 
@@ -380,6 +381,7 @@ function SettingsPane({ server, anchor }: { server: GameServer; anchor: string }
     ...(hasCap(server, "startup") ? [{ id: "startup", title: "Startup", render: () => <StartupPane id={id} /> }] : []),
     ...(hasCap(server, "resources") ? [{ id: "resources", title: "Resources", render: () => <ResourcesPane id={id} /> }] : []),
     ...(hasCap(server, "network") ? [{ id: "network", title: "Networking", render: () => <NetworkPane id={id} /> }] : []),
+    { id: "public-address", title: "Public address", render: () => <GameEdgePane id={id} /> },
     ...(featureEnabled.ddos ? [{ id: "ddos", title: "DDoS protection", render: () => <GameDDoSPane id={id} /> }] : []),
     ...(hasCap(server, "databases")
       ? [

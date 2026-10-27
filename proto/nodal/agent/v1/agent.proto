@@ -190,6 +190,7 @@ message ExecuteRequest {
     HostDisk host_disk = 44;
     StorageScan storage_scan = 45;
     Shield shield = 46;
+    Edge edge = 47;
   }
 }
 
@@ -203,6 +204,16 @@ message Shield {
   bytes spec_json = 2;
   string addr = 3;
   int64 until = 4;
+}
+
+// Edge runs edge forwarding on this node: WireGuard tunnels between an edge
+// node with a public address and an origin node, a No-dal-owned nftables
+// table and, on an origin, policy routing for replies. action is apply,
+// ensure, status or disable. spec_json is the validated internal/edge Spec
+// for apply. Private keys are made and kept on the node and never leave it.
+message Edge {
+  string action = 1;
+  bytes spec_json = 2;
 }
 
 // HostDisk reads and manages host disk protection. action is status,

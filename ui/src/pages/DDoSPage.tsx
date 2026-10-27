@@ -300,6 +300,18 @@ export function DDoSPage() {
           <span className="meta">of {n(st.conntrack.max)} tracked</span>
         </div>
       </div>
+      {data.edges?.length ? (
+        <div className="ddos-edges">
+          {data.edges.map((e) => (
+            <p key={e.node_id} className={e.error ? "banner banner-warn" : "meta"}>
+              Also filtering on edge node <strong>{e.name}</strong>
+              {e.targets.length ? ` for ${e.targets.join(", ")}` : ""}:{" "}
+              {e.error ? e.error : e.active ? `${e.mode === "monitor" ? "monitoring" : "enforcing"}${e.devices?.length ? ` on ${e.devices.join(", ")}` : ""}` : "not loaded"}. Floods to
+              its public address are dropped there, before they enter the tunnel.
+            </p>
+          ))}
+        </div>
+      ) : null}
       <div className="hub-tabs">
         <Segmented<Tab>
           ariaLabel="DDoS protection sections"
@@ -413,7 +425,7 @@ export function DDoSPage() {
         />
       ) : null}
       <p className="meta ddos-footnote">
-        This filter runs on this node, so it stops attacks the uplink can carry. A flood bigger than your connection fills it before it gets here, and only your provider or a
+        This filter runs on this node and on edge nodes that forward to it (<Link href="/network/edge">Edge forwarding</Link>), so it stops attacks their uplinks can carry. A flood bigger than your connection fills it before it gets here, and only your provider or a
         scrubbing service upstream can stop that. Web services can also be put behind <Link href="/network/cloudflare">Cloudflare</Link>.
       </p>
       <TargetDialog
