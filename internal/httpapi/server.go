@@ -414,6 +414,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/files/move", s.gameServerFilesMove)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/files/download", s.gameServerFilesDownload)
 	mux.HandleFunc("POST /api/v1/game-servers/{id}/files/upload", s.gameServerFilesUpload)
+	mux.HandleFunc("POST /api/v1/game-servers/{id}/files/extract", s.gameServerFilesExtract)
+	mux.HandleFunc("POST /api/v1/game-servers/{id}/files/compress", s.gameServerFilesCompress)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/startup", s.gameServerStartup)
 	mux.HandleFunc("PUT /api/v1/game-servers/{id}/startup", s.putGameServerStartup)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/config", s.gameServerConfig)

@@ -226,6 +226,14 @@ export async function mkdirGameFile(id: string, path: string): Promise<unknown> 
   return readJson(`/game-servers/${id}/files/mkdir`, { method: "POST", body: JSON.stringify({ path }) });
 }
 
+export async function extractGameFile(id: string, path: string, dest: string): Promise<{ dest: string }> {
+  return readJson(`/game-servers/${id}/files/extract`, { method: "POST", body: JSON.stringify({ path, dest }) });
+}
+
+export async function compressGameFiles(id: string, paths: string[], dest: string): Promise<{ path: string; bytes: number; files: number }> {
+  return readJson(`/game-servers/${id}/files/compress`, { method: "POST", body: JSON.stringify({ paths, dest }) });
+}
+
 export async function deleteGameFile(id: string, path: string): Promise<unknown> {
   return readJson(`/game-servers/${id}/files/delete`, { method: "POST", body: JSON.stringify({ path }) });
 }

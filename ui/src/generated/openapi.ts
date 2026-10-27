@@ -4494,6 +4494,10 @@ export type GameServerFilesMovePath = "/api/v1/game-servers/{id}/files/move";
 
 export type GameServerFilesDownloadPath = "/api/v1/game-servers/{id}/files/download";
 
+export type ExtractGameServerFilePath = "/api/v1/game-servers/{id}/files/extract";
+
+export type CompressGameServerFilesPath = "/api/v1/game-servers/{id}/files/compress";
+
 export type GameServerFilesUploadPath = "/api/v1/game-servers/{id}/files/upload";
 
 export type GameServerStartupPath = "/api/v1/game-servers/{id}/startup";

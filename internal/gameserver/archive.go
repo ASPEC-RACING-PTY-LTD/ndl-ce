@@ -10,13 +10,75 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
-	maxArchiveFiles = 4000
+	// Addon folders (Garry's Mod, Rust plugins) hold many small files.
+	maxArchiveFiles = 20000
 	maxArchiveBytes = 512 << 20
 	maxOneFileBytes = 128 << 20
 )
+
+// Archive limits, for building one from the file manager too.
+const (
+	MaxArchiveFiles = maxArchiveFiles
+	MaxArchiveBytes = maxArchiveBytes
+	MaxOneFileBytes = maxOneFileBytes
+)
+
+// IsArchive reports whether SafeExtract unpacks a file of this name.
+func IsArchive(name string) bool {
+	lower := strings.ToLower(name)
+	for _, ext := range []string{".zip", ".tar.gz", ".tgz", ".tar"} {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// ZipFile is one entry for BuildZip. Name uses forward slashes; a folder
+// has Dir set and no Body.
+type ZipFile struct {
+	Name     string
+	Dir      bool
+	Body     []byte
+	Modified time.Time
+}
+
+// BuildZip writes files into a deflated zip archive.
+func BuildZip(files []ZipFile) ([]byte, error) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, f := range files {
+		name := strings.TrimPrefix(f.Name, "/")
+		if name == "" || strings.Contains("/"+name+"/", "/../") {
+			return nil, fmt.Errorf("archive entry %q is not valid", f.Name)
+		}
+		hdr := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: f.Modified}
+		if f.Dir {
+			hdr.Name = strings.TrimSuffix(name, "/") + "/"
+			hdr.Method = zip.Store
+			hdr.SetMode(0o750 | os.ModeDir)
+		} else {
+			hdr.SetMode(0o640)
+		}
+		w, err := zw.CreateHeader(hdr)
+		if err != nil {
+			return nil, err
+		}
+		if !f.Dir {
+			if _, err := w.Write(f.Body); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
 
 func SafeExtract(root, destRel string, raw []byte, name string) error {
 	destRel = strings.TrimSpace(destRel)
@@ -54,6 +116,18 @@ func writeJailedFile(root, rel string, raw []byte) error {
 	return os.WriteFile(abs, raw, 0o640)
 }
 
+func makeJailedDir(root, rel string) error {
+	rel, err := cleanArchiveRel(strings.TrimSuffix(rel, "/"))
+	if err != nil {
+		return err
+	}
+	abs, err := joinArchive(root, rel)
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(abs, 0o750)
+}
+
 func extractZip(root, destRel string, raw []byte) error {
 	r, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
@@ -65,6 +139,10 @@ func extractZip(root, destRel string, raw []byte) error {
 	}
 	for _, f := range r.File {
 		if strings.HasSuffix(f.Name, "/") {
+			// Empty folders are kept, as they were zipped.
+			if err := makeJailedDir(root, filepath.ToSlash(filepath.Join(destRel, f.Name))); err != nil {
+				return err
+			}
 			continue
 		}
 		if f.FileInfo().Mode()&os.ModeSymlink != 0 {
@@ -122,6 +200,9 @@ func extractTar(root, destRel string, raw []byte, gzipped bool) error {
 			return fmt.Errorf("tar is not valid")
 		}
 		if hdr.Typeflag == tar.TypeDir {
+			if err := makeJailedDir(root, filepath.ToSlash(filepath.Join(destRel, hdr.Name))); err != nil {
+				return err
+			}
 			continue
 		}
 		if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink {

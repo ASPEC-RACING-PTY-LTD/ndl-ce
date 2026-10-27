@@ -3726,6 +3726,56 @@ paths:
                 $ref: "#/components/schemas/GameServerEnvelope"
         "404":
           description: Feature is not enabled or resource is missing
+  /game-servers/{id}/files/extract:
+    post:
+      operationId: extractGameServerFile
+      summary: Unpack a .zip, .tar, .tar.gz or .tgz file (path) into a folder (dest; default the archive's folder), inside the server's data. Requires gameserver.files.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /game-servers/{id}/files/compress:
+    post:
+      operationId: compressGameServerFiles
+      summary: Zip files and folders (paths) into one archive (dest; default <name>.zip beside the first). Refuses an existing archive. Up to 20000 files and 512 MiB. Requires gameserver.files.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /game-servers/{id}/files/upload:
     post:
       operationId: gameServerFilesUpload

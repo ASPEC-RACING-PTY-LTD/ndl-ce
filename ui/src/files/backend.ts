@@ -13,8 +13,10 @@ import {
 } from "../api/client";
 import type { FileContent, FileEntry } from "../api/phase6";
 import {
+  compressGameFiles,
   deleteGameFile,
   downloadGameFile,
+  extractGameFile,
   listGameFiles,
   mkdirGameFile,
   moveGameFile,
@@ -41,7 +43,14 @@ export type FilesBackend = {
   copy?: (from: string, to: string) => Promise<void>;
   chmod?: (path: string, mode: number) => Promise<void>;
   chown?: (path: string, uid: number, gid: number) => Promise<void>;
+  /** extract unpacks a .zip, .tar, .tar.gz or .tgz into dest (a directory). */
+  extract?: (path: string, dest: string) => Promise<void>;
+  /** compress zips paths into dest and returns the archive's path. */
+  compress?: (paths: string[], dest: string) => Promise<string>;
 };
+
+/** isArchive reports whether extract can unpack a file of this name. */
+export const isArchive = (name: string) => /\.(zip|tar|tar\.gz|tgz)$/i.test(name);
 
 export function agentFilesBackend(kind: "node" | "workload", id: string): FilesBackend {
   return {
@@ -103,5 +112,9 @@ export function gameFilesBackend(id: string): FilesBackend {
     },
     upload: (path, file, opts) => uploadGameFile(id, rel(path), file, opts?.signal),
     download: (path, filename) => downloadGameFile(id, rel(path), filename),
+    extract: async (path, dest) => {
+      await extractGameFile(id, rel(path), rel(dest));
+    },
+    compress: async (paths, dest) => `/${(await compressGameFiles(id, paths.map(rel), rel(dest))).path}`,
   };
 }

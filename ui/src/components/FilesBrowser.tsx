@@ -9,7 +9,7 @@ import { Icon } from "./Icon";
 import { Link } from "./Link";
 import { PageHeader } from "./PageHeader";
 import { ResourceTable } from "./ResourceTable";
-import { agentFilesBackend, gameFilesBackend } from "../files/backend";
+import { agentFilesBackend, gameFilesBackend, isArchive } from "../files/backend";
 import { breadcrumbs, displayPath, destRel, joinPath, parentPath, relName } from "../files/paths";
 import { formatBytes } from "../format";
 import { workloadGuestIOReason } from "../guestIO";
@@ -27,7 +27,9 @@ type Dialog =
   | { kind: "copy"; entries: FileEntry[] }
   | { kind: "chmod"; entries: FileEntry[] }
   | { kind: "chown"; entries: FileEntry[] }
-  | { kind: "delete"; entries: FileEntry[] };
+  | { kind: "delete"; entries: FileEntry[] }
+  | { kind: "extract"; entry: FileEntry }
+  | { kind: "zip"; entries: FileEntry[] };
 
 function formatMode(mode?: number): string {
   if (mode == null) {
@@ -273,6 +275,21 @@ export function FilesBrowser({
         for (const entry of dialog.entries) {
           await backend.remove(joinPath(path, entry.name), entry.mtime);
         }
+      } else if (dialog.kind === "extract" && backend.extract) {
+        const dest = destRel(dialogValue.trim() || path);
+        await backend.extract(joinPath(path, dialog.entry.name), dest);
+        setUploadNote(`Extracted ${dialog.entry.name} into ${displayPath(dest)}.`);
+      } else if (dialog.kind === "zip" && backend.compress) {
+        let name = relName(dialogValue.trim() || "archive.zip");
+        if (!/\.zip$/i.test(name)) {
+          name += ".zip";
+        }
+        const made = await backend.compress(
+          dialog.entries.map((e) => joinPath(path, e.name)),
+          joinPath(path, name),
+        );
+        setSelected([]);
+        setUploadNote(`Created ${displayPath(made)}.`);
       }
       setDialog(null);
       setDialogValue("");
@@ -369,6 +386,12 @@ export function FilesBrowser({
       }
       if (backend.chown) {
         items.push({ label: "Owner", onClick: () => { setDialogValue(entry.uid != null && entry.gid != null ? `${entry.uid}:${entry.gid}` : "0:0"); setDialog({ kind: "chown", entries: [entry] }); } });
+      }
+      if (backend.extract && entry.type !== "dir" && isArchive(entry.name)) {
+        items.push({ label: "Extract", onClick: () => { setDialogValue(path); setDialog({ kind: "extract", entry }); } });
+      }
+      if (backend.compress) {
+        items.push({ label: "Zip", onClick: () => { setDialogValue(`${entry.name}.zip`); setDialog({ kind: "zip", entries: [entry] }); } });
       }
       items.push({ label: "Delete", onClick: () => setDialog({ kind: "delete", entries: [entry] }), danger: true });
     }
@@ -506,6 +529,11 @@ export function FilesBrowser({
               Copy selected
             </button>
           ) : null}
+          {backend.compress ? (
+            <button className="btn btn-sm btn-secondary" type="button" onClick={() => { setDialogValue(selectedEntries.length === 1 ? `${selectedEntries[0].name}.zip` : "archive.zip"); setDialog({ kind: "zip", entries: selectedEntries }); }}>
+              Zip selected
+            </button>
+          ) : null}
           <button className="btn btn-sm btn-danger" type="button" onClick={() => setDialog({ kind: "delete", entries: selectedEntries })}>
             Delete selected
           </button>
@@ -592,7 +620,7 @@ export function FilesBrowser({
         open={dialog != null}
         title={dialogTitle(dialog)}
         danger={dialog?.kind === "delete"}
-        confirmLabel={dialog?.kind === "delete" ? "Delete" : "Confirm"}
+        confirmLabel={dialog?.kind === "delete" ? "Delete" : dialog?.kind === "extract" ? "Extract" : dialog?.kind === "zip" ? "Zip" : "Confirm"}
         onClose={() => setDialog(null)}
         onConfirm={() => void runDialog()}
       >
@@ -633,6 +661,10 @@ function dialogTitle(dialog: Dialog | null): string {
       return "Owner";
     case "delete":
       return "Delete";
+    case "extract":
+      return `Extract ${dialog.entry.name}`;
+    case "zip":
+      return dialog.entries.length === 1 ? `Zip ${dialog.entries[0].name}` : `Zip ${dialog.entries.length} items`;
     default:
       return "Files";
   }
@@ -651,6 +683,10 @@ function dialogFieldLabel(dialog: Dialog | null): string {
       return "Mode (octal)";
     case "chown":
       return "uid:gid";
+    case "extract":
+      return "Extract into directory";
+    case "zip":
+      return "Archive name (saved in this folder)";
     default:
       return "Value";
   }
