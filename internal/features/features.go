@@ -18,6 +18,7 @@ const (
 	IDCodehold     = "codehold"
 	IDAutomation   = "automation"
 	IDDDoS         = "ddos"
+	IDClaudeAgent  = "claude_agent"
 	EnableK8s      = "enable-k8s"
 	DisableConfirm = "disable-feature"
 	// TinyK8sMemoryBytes is the RAM floor for Kubernetes without confirm.
@@ -36,8 +37,9 @@ const (
 	NginxReason                = "Nginx is optional. Turning it on finds Nginx on this node and in system containers. Turning it off only hides it; Nginx and its sites are not changed."
 	CodeholdReason             = "CodeHold runners is optional. Turning it on lets this node host CodeHold Actions runners, one system container each. Turning it off asks what happens to their containers first."
 	DDoSReason                 = "DDoS Protection is optional. Turning it on filters floods to game servers, workloads and host services on this node's uplink. Turning it off removes the filter rules and keeps your settings."
+	ClaudeAgentReason          = "Claude Agent is optional. Turning it on lets you set up one system container running Claude Code that you chat with from claude.ai; it only reaches the game server folders and actions you grant. Turning it off asks you to remove the container first."
 	CoreInstalledReason        = "Installed with the nodal metapackage."
-	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, AI, Docker Management, Game Servers, Cloudflare, Caddy, Nginx, CodeHold runners and DDoS Protection stay opt-in."
+	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, AI, Docker Management, Game Servers, Cloudflare, Caddy, Nginx, CodeHold runners, DDoS Protection and Claude Agent stay opt-in."
 )
 
 // Module is one Settings Features row.
@@ -66,6 +68,7 @@ func Catalog() []Module {
 		{ID: IDCodehold, Title: "CodeHold runners", SoftwareOnly: true, DefaultReason: CodeholdReason},
 		{ID: IDAutomation, Title: "Automation", SoftwareOnly: true, DefaultReason: AutomationReason},
 		{ID: IDDDoS, Title: "DDoS Protection", SoftwareOnly: true, DefaultReason: DDoSReason},
+		{ID: IDClaudeAgent, Title: "Claude Agent", SoftwareOnly: true, DefaultReason: ClaudeAgentReason},
 		{ID: IDGPU, Title: "GPU Services", Package: "nodal-feature-gpu", DefaultReason: GPUOptionalReason},
 		{ID: IDK8s, Title: "Kubernetes", Package: "nodal-feature-k8s", RequiresK8sAck: true, DefaultReason: K8sNotStartedReason},
 		{ID: IDDistStorage, Title: "Distributed Storage", Package: "nodal-feature-distributed-storage", DefaultReason: DistStorageReason},

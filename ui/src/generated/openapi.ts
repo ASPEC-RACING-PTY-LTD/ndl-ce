@@ -4498,6 +4498,36 @@ export type ExtractGameServerFilePath = "/api/v1/game-servers/{id}/files/extract
 
 export type CompressGameServerFilesPath = "/api/v1/game-servers/{id}/files/compress";
 
+export type ListCTLeftoversPath = "/api/v1/workloads/leftovers";
+
+export type RemoveCTLeftoversPath = "/api/v1/workloads/leftovers/remove";
+
+export type GetClaudeAgentPath = "/api/v1/claude-agent";
+
+export type SetupClaudeAgentPath = "/api/v1/claude-agent/setup";
+
+export type ClaudeAgentLoginPath = "/api/v1/claude-agent/login";
+
+export type PutClaudeAgentSettingsPath = "/api/v1/claude-agent/settings";
+
+export type PutClaudeAgentGrantsPath = "/api/v1/claude-agent/grants";
+
+export type RestartClaudeAgentPath = "/api/v1/claude-agent/restart";
+
+export type RemoveClaudeAgentPath = "/api/v1/claude-agent/remove";
+
+export type ClaudeAgentAPIServersPath = "/api/v1/claude-agent/api/servers";
+
+export type ClaudeAgentAPILogPath = "/api/v1/claude-agent/api/servers/{server}/log";
+
+export type ClaudeAgentAPIConsolePath = "/api/v1/claude-agent/api/servers/{server}/console";
+
+export type ClaudeAgentAPIRestartPath = "/api/v1/claude-agent/api/servers/{server}/restart";
+
+export type ListGameServerPlayersPath = "/api/v1/game-servers/{id}/players";
+
+export type GameServerPlayerActionPath = "/api/v1/game-servers/{id}/players/action";
+
 export type GameServerFilesUploadPath = "/api/v1/game-servers/{id}/files/upload";
 
 export type GameServerStartupPath = "/api/v1/game-servers/{id}/startup";

@@ -31,6 +31,14 @@ type Dialog =
   | { kind: "extract"; entry: FileEntry }
   | { kind: "zip"; entries: FileEntry[] };
 
+// Folders first, then A to Z by name, ignoring case and reading numbers as numbers.
+export function sortEntries(entries: FileEntry[]): FileEntry[] {
+  return [...entries].sort((a, b) => {
+    const dir = Number(b.type === "dir") - Number(a.type === "dir");
+    return dir || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  });
+}
+
 function formatMode(mode?: number): string {
   if (mode == null) {
     return "";
@@ -146,7 +154,7 @@ export function FilesBrowser({
   async function reload(next = path) {
     setListing(true);
     try {
-      setEntries(await backend.list(next));
+      setEntries(sortEntries(await backend.list(next)));
       setPath(next);
       setSelected([]);
       syncUrl(next, editor ? (editor.name ?? "") : "");

@@ -163,6 +163,7 @@ type Memory struct {
 	approvals          approvalMem
 	ddos               ddosMem
 	edge               edgeMem
+	claudeAgent        claudeAgentMem
 	ui                 uiMem
 	tmpl               tmplMem
 }

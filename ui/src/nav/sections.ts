@@ -56,7 +56,7 @@ export const ADMIN_SECTIONS: Section[] = [
     label: "Infrastructure",
     href: "/node",
     icon: "node",
-    description: "This node, storage, networking, the cluster, Docker and CodeHold.",
+    description: "This node, storage, networking, the cluster, Docker, CodeHold and the Claude Agent.",
     match: (p) =>
       p === "/node" ||
       p.startsWith("/node/") ||
@@ -65,7 +65,8 @@ export const ADMIN_SECTIONS: Section[] = [
       p === "/uptime" ||
       p === "/settings/cluster" ||
       p === "/codehold" ||
-      p === "/codehold/cli",
+      p === "/codehold/cli" ||
+      p === "/claude-agent",
     children: [
       { id: "node", label: "Node", href: "/node", match: (p) => p === "/node" || p.startsWith("/node/") },
       { id: "storage", label: "Storage", href: "/storage", match: under("/storage") },
@@ -74,6 +75,7 @@ export const ADMIN_SECTIONS: Section[] = [
       { id: "docker", label: "Docker", href: "/docker", capability: "docker", match: (p) => under("/docker")(p) || p === "/uptime" },
       { id: "codehold", label: "CodeHold runners", href: "/codehold", capability: "codehold", match: exact("/codehold") },
       { id: "codehold-cli", label: "CodeHold CLI", href: "/codehold/cli", capability: "codehold" },
+      { id: "claude-agent", label: "Claude Agent", href: "/claude-agent", capability: "claude_agent" },
     ],
   },
   {

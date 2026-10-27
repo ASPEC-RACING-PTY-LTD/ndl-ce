@@ -52,6 +52,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { CurseForgeKey } from "../gameservers/CurseForgeKey";
 import { GameDDoSPane } from "../gameservers/GameDDoSPane";
 import { GameEdgePane } from "../gameservers/GameEdgePane";
+import { GamePlayersPane } from "../gameservers/GamePlayersPane";
 import { useNavDisclosure } from "../nav/NavDisclosure";
 import { Segmented } from "../ui/Segmented";
 
@@ -97,14 +98,7 @@ export function GameServerDetailPage() {
       {tab === "console" ? <GameConsoleTerminal key={id} id={id} name={server.name} /> : null}
       {tab === "files" ? <FilesBrowser key={id} kind="game" id={id} embedded onTerminalHere={() => navigate(gameServerHref(id, "console"))} /> : null}
       {tab === "mods" || tab === "plugins" || tab === "workshop" ? <ContentPane id={id} kind={contentKind(server) || tab} /> : null}
-      {tab === "players" ? (
-        <article className="gs-widget">
-          <h2>Players</h2>
-          <p className="muted">
-            Player administration uses the console: whitelist, op and ban commands run there. No-DAL does not speak the game protocol itself.
-          </p>
-        </article>
-      ) : null}
+      {tab === "players" ? <GamePlayersPane key={id} id={id} /> : null}
       {tab === "backups" ? <BackupsAndSchedules server={server} /> : null}
       {tab === "settings" ? <SettingsPane server={server} anchor={anchor} /> : null}
     </section>

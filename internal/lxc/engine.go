@@ -20,6 +20,8 @@ type Engine struct {
 	DataDir      string
 	LXCPath      string
 	WorkloadsDir string
+	// UnitDir is where systemd keeps enabled units; empty means /etc/systemd/system.
+	UnitDir      string
 	CacheDir     string
 	ImageBase    string
 	HTTP         HTTPDoer

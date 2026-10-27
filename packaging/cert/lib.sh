@@ -216,7 +216,33 @@ for i in items:
       [ -n "$leftover" ] || continue
       nctl workload delete --id "$leftover" >/dev/null 2>&1 || true
     done
+    # Node state a deleted container can leave behind (enabled unit, LXC
+    # settings, root filesystem): it fails at every boot and holds disk.
+    local ids
+    ids="$(cert_leftover_ids)"
+    if [ -n "$ids" ]; then
+      local args=(-sS -X POST -H "Content-Type: application/json" -H "X-Nodal-Confirm: remove-leftovers")
+      [ -n "$NODAL_TOKEN" ] && args+=(-H "Authorization: Bearer ${NODAL_TOKEN}")
+      curl "${args[@]}" --data "$(printf '%s\n' "$ids" | python3 -c 'import json,sys; print(json.dumps({"ids":[l.strip() for l in sys.stdin if l.strip()],"recent":True}))')" \
+        "${NODAL_URL}/api/v1/workloads/leftovers/remove" >/dev/null 2>&1 || true
+    fi
   fi
+}
+
+# cert_leftover_ids: ids of leftover system containers (node state no
+# workload owns) whose name carries this run's prefix.
+cert_leftover_ids() {
+  api GET "/api/v1/workloads/leftovers?sizes=0&recent=1" 2>/dev/null | python3 -c 'import json,sys,os
+want=os.environ.get("CERT_PREFIX") or ""
+try:
+  items=json.load(sys.stdin).get("items") or []
+except Exception:
+  items=[]
+for i in items:
+  n=str(i.get("name") or "")
+  if want and n.startswith(want) and i.get("id"):
+    print(i["id"])
+' 2>/dev/null || true
 }
 
 cert_install_cleanup_trap() { trap cert_cleanup EXIT INT TERM; }

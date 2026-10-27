@@ -25,7 +25,7 @@ func TestCatalogDefaultSmall(t *testing.T) {
 			t.Fatalf("%s must not start a runtime from Phase 35", m.ID)
 		}
 	}
-	if optional != 13 {
+	if optional != 14 {
 		t.Fatalf("optional=%d", optional)
 	}
 	// Cloudflare, Caddy and Nginx only change what the interface shows.

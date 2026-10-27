@@ -184,6 +184,7 @@ func Run(cfg Config) error {
 		UI:          ui,
 		SetupHash:   cfg.SetupHash,
 		DSN:         cfg.DSN,
+		Listen:      cfg.Listen,
 		TLSListen:   cfg.TLSListen,
 		HTTPListen:  cfg.HTTPListen,
 		CertDir:     ndltls.Dir{Root: cfg.CertDir},

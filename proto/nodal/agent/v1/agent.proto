@@ -191,6 +191,8 @@ message ExecuteRequest {
     StorageScan storage_scan = 45;
     Shield shield = 46;
     Edge edge = 47;
+    ClaudeAgent claude_agent = 48;
+    CtLeftovers ct_leftovers = 49;
   }
 }
 
@@ -214,6 +216,25 @@ message Shield {
 message Edge {
   string action = 1;
   bytes spec_json = 2;
+}
+
+// ClaudeAgent manages the Claude Agent system container and its access on
+// this node. action is setup, status, login-start, login-code, logout,
+// restart, grant or revoke. request_json is the typed internal/claudeagent
+// request for that action; commands in the guest are fixed argv, and
+// granted folders must resolve inside a game server's data folder.
+message ClaudeAgent {
+  string action = 1;
+  bytes request_json = 2;
+}
+
+// CtLeftovers lists or removes system container state left on this node by
+// containers the control plane no longer has: enabled nodal-ct@ units, LXC
+// config, last-applied state and the root filesystem. action is list or
+// remove; ids names the containers to remove.
+message CtLeftovers {
+  string action = 1;
+  repeated string ids = 2;
 }
 
 // HostDisk reads and manages host disk protection. action is status,

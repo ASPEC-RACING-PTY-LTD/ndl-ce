@@ -286,6 +286,10 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execShield(ctx, req.Msg.GetShield())
 	case req.Msg.GetEdge() != nil:
 		return h.execEdge(ctx, req.Msg.GetEdge())
+	case req.Msg.GetClaudeAgent() != nil:
+		return h.execClaudeAgent(ctx, req.Msg.GetClaudeAgent())
+	case req.Msg.GetCtLeftovers() != nil:
+		return h.execCtLeftovers(ctx, req.Msg.GetCtLeftovers())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

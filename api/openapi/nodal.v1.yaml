@@ -3776,6 +3776,265 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /workloads/leftovers:
+    get:
+      operationId: listCTLeftovers
+      summary: System container state on a node that no workload owns (enabled unit, LXC config, root filesystem), with root filesystem sizes unless sizes=0. Requires compute.read.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /workloads/leftovers/remove:
+    post:
+      operationId: removeCTLeftovers
+      summary: Remove leftover system containers by id (ids, node_id): stop and disable the unit, delete settings and the root filesystem, or destroy its volume. Requires compute.delete and X-Nodal-Confirm remove-leftovers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent:
+    get:
+      operationId: getClaudeAgent
+      summary: Claude Agent overview: container state, setup log, settings, grants, grantable game servers and, once ready, Claude Code's sign-in and Remote Control status. Requires feature.manage.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/setup:
+    post:
+      operationId: setupClaudeAgent
+      summary: Create the Claude Agent container (if needed) and install Claude Code in the background (name, permission_mode). Requires feature.manage and the claude_agent feature.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/login:
+    post:
+      operationId: claudeAgentLogin
+      summary: Sign the agent in to Claude: action start returns login_url; action code finishes with the code from the sign-in page; action logout signs out. Requires feature.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/settings:
+    put:
+      operationId: putClaudeAgentSettings
+      summary: Set the Remote Control name and permission mode, then restart Remote Control. Requires feature.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/grants:
+    put:
+      operationId: putClaudeAgentGrants
+      summary: Replace what the agent may reach: per game server, folders (read-only or read-write) and log, console and restart. Changing folders restarts the agent's container. Requires feature.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/restart:
+    post:
+      operationId: restartClaudeAgent
+      summary: Restart Remote Control in the agent's container. Requires feature.manage.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/remove:
+    post:
+      operationId: removeClaudeAgent
+      summary: Take the agent's access away from every folder and delete its container. Requires feature.manage and X-Nodal-Confirm remove-claude-agent.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/api/servers:
+    get:
+      operationId: claudeAgentAPIServers
+      summary: For the agent's ndl command (bearer agent token): the servers shared with it and what it may do.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/api/servers/{server}/log:
+    get:
+      operationId: claudeAgentAPILog
+      summary: For ndl (bearer agent token): the last lines of a shared server's log, when granted.
+      parameters:
+        - name: server
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/api/servers/{server}/console:
+    post:
+      operationId: claudeAgentAPIConsole
+      summary: For ndl (bearer agent token): send one console line to a shared server, when granted.
+      parameters:
+        - name: server
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /claude-agent/api/servers/{server}/restart:
+    post:
+      operationId: claudeAgentAPIRestart
+      summary: For ndl (bearer agent token): restart a shared server, when granted.
+      parameters:
+        - name: server
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /game-servers/{id}/players:
+    get:
+      operationId: listGameServerPlayers
+      summary: Who is online, read from the game's own query (A2S for Steam and Source games, server list ping for Minecraft Java, players.json for FiveM), with the player actions this caller may run. Requires gameserver.read.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /game-servers/{id}/players/action:
+    post:
+      operationId: gameServerPlayerAction
+      summary: Run a known console command (kick, ban or op, where the game has one) on a player by name. Requires gameserver.console.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /game-servers/{id}/files/upload:
     post:
       operationId: gameServerFilesUpload

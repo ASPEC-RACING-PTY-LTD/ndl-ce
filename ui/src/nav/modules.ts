@@ -95,6 +95,14 @@ export const NAV_MODULES: NavModule[] = [
     match: (p) => p === "/codehold" || p === "/codehold/cli",
     capability: "codehold",
   },
+  {
+    id: "claude-agent",
+    href: "/claude-agent",
+    label: "Claude Agent",
+    group: "Infrastructure",
+    match: (p) => p === "/claude-agent",
+    capability: "claude_agent",
+  },
   { id: "templates", href: "/templates", label: "Templates", group: "Compute", match: (p) => p === "/templates" },
   { id: "registries", href: "/registries", label: "Registries", group: "Compute", match: (p) => p === "/registries" },
   {
@@ -350,6 +358,15 @@ export const CAPABILITIES: Capability[] = [
     featureId: "codehold",
     href: "/codehold",
     modules: ["codehold"],
+  },
+  {
+    id: "claude_agent",
+    title: "Claude Agent",
+    summary:
+      "One system container running Claude Code that you chat with from claude.ai or the Claude app. It only reaches the game server folders, logs, console and restarts you grant, under Infrastructure. Turning it off asks you to remove the container first.",
+    featureId: "claude_agent",
+    href: "/claude-agent",
+    modules: ["claude-agent"],
   },
   {
     id: "gpu",

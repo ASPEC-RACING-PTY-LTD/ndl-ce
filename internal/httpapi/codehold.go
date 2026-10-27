@@ -250,15 +250,21 @@ type systemPrincipalKey struct{}
 // runner containers are created, started, stopped and deleted by exactly the
 // same code as any other workload, and audited.
 func (s *Server) systemCall(ctx context.Context, clusterID, method, path string, body any) (int, []byte) {
+	return s.systemCallAs(ctx, clusterID, "codehold-controller", method, path, body)
+}
+
+// systemCallAs is systemCall under another system actor name, so audit
+// entries say which integration acted.
+func (s *Server) systemCallAs(ctx context.Context, clusterID, actor, method, path string, body any) (int, []byte) {
 	var raw []byte
 	if body != nil {
 		raw, _ = json.Marshal(body)
 	}
 	p := &principal{
-		User:   appdb.User{ID: LocalRootUserID, ClusterID: clusterID, Username: "codehold-controller", Kind: appdb.UserKindPerson},
+		User:   appdb.User{ID: LocalRootUserID, ClusterID: clusterID, Username: actor, Kind: appdb.UserKindPerson},
 		Roles:  []string{rbac.SuperAdmin},
 		Grants: rbac.New().PermissionsForRole(rbac.SuperAdmin),
-		SessID: "codehold-controller",
+		SessID: actor,
 		AAL:    2,
 	}
 	req, err := http.NewRequestWithContext(context.WithValue(ctx, systemPrincipalKey{}, p), method, path, strings.NewReader(string(raw)))

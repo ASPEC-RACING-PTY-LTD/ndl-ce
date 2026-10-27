@@ -50,6 +50,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "ddos", label: "DDoS Protection", href: "/network/ddos", feature: "ddos", keywords: ["ddos", "dos", "flood", "attack", "firewall", "ban", "block", "rate limit", "nftables", "protection"] },
   { id: "cloudflare", label: "Cloudflare", href: "/network/cloudflare", feature: "cloudflare", keywords: ["cloudflare", "tunnel", "dns", "hostname", "domain", "publish", "cloudflared"] },
   { id: "codehold", label: "CodeHold Runners", href: "/codehold", feature: "codehold", keywords: ["codehold", "runner", "actions", "ci", "build"] },
+  { id: "claude-agent", label: "Claude Agent", href: "/claude-agent", feature: "claude_agent", keywords: ["claude", "agent", "ai", "remote control", "assistant", "code"] },
   { id: "caddy", label: "Caddy", href: "/network/caddy", feature: "caddy", keywords: ["caddy", "reverse proxy", "proxy", "https", "site", "domain"] },
   { id: "nginx", label: "Nginx", href: "/network/nginx", feature: "nginx", keywords: ["nginx", "reverse proxy", "proxy", "server block", "site", "domain"] },
   { id: "uptime", label: "Uptime", href: "/docker/uptime", keywords: ["monitor", "url", "health", "recover", "restart", "status"] },

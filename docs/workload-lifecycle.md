@@ -140,3 +140,19 @@ anything with a filesystem mounted inside it, and paths reached through a
 symlinked folder. The contents of key and credential folders are never
 listed. Quick clean-ups (staging and other disposable No-dal files) are on
 the same page.
+
+## Leftover containers
+
+A container whose workload was deleted while its node kept the container's
+files (an enabled `nodal-ct@` unit, LXC config, last-applied state and the
+root filesystem) fails at every boot and keeps using disk space. No-dal
+lists these on Compute > Workloads as leftover containers: state on the
+node that no workload owns, unchanged for at least ten minutes.
+
+**Review** shows each one with its root filesystem size. **Remove** stops
+and disables its unit, deletes its settings and deletes its root
+filesystem: a pool volume through storage, a plain folder directly. A root
+filesystem another container uses, or one outside No-dal's container
+storage, is kept. The API is `GET /api/v1/workloads/leftovers` and
+`POST /api/v1/workloads/leftovers/remove` with
+`X-Nodal-Confirm: remove-leftovers`.

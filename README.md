@@ -90,12 +90,12 @@ nodalctl backup run --workload ID --target TARGET
 | Topic | Guide |
 | --- | --- |
 | Install and remove | [Install](docs/install.md) · [Uninstall](docs/uninstall.md) |
-| Workloads | [Lifecycle](docs/workload-lifecycle.md) · [Guest baseline](docs/guest-baseline.md) · [Game servers](docs/game-servers-catalogue.md) |
+| Workloads | [Lifecycle](docs/workload-lifecycle.md) · [Leftover containers](docs/workload-lifecycle.md#leftover-containers) · [Guest baseline](docs/guest-baseline.md) · [Game servers](docs/game-servers-catalogue.md) |
 | Backups | [Backups](docs/backup.md) · [Backup Engine V2](docs/backup-engine-v2.md) · [Platform backup](docs/platform-backup.md) · [Recovery](docs/recovery.md) |
 | Containers and apps | [Docker](docs/docker.md) · [Deployments](docs/deployments.md) · [Store](docs/store.md) |
 | Networking | [Edge forwarding](docs/edge-forwarding.md) · [DDoS protection](docs/ddos-protection.md) · [Cloudflare](docs/cloudflare.md) · [Caddy and Nginx](docs/reverse-proxies.md) |
 | Administration | [Management](docs/management.md) · [Live updates](docs/live-updates.md) · [Cluster](docs/cluster.md) · [Migration](docs/migration.md) |
-| Extras | [AI](docs/ai.md) · [CodeHold](docs/codehold.md) · [API compatibility](docs/api-compatibility.md) |
+| Extras | [AI](docs/ai.md) · [Claude Agent](docs/claude-agent.md) · [CodeHold](docs/codehold.md) · [API compatibility](docs/api-compatibility.md) |
 
 The public guide lives at **[no-dal.com/docs](https://no-dal.com/docs)**.
 

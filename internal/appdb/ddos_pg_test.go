@@ -63,6 +63,12 @@ func TestDDoSOnPostgres(t *testing.T) {
 	if body, err := p.EdgeConfig(ctx, cluster); err != nil || string(body) != `{"forwards": [{"id": "f1"}]}` {
 		t.Fatalf("edge config = %s, %v", body, err)
 	}
+	if err := p.PutClaudeAgentConfig(ctx, cluster, []byte(`{"workload_id":"w1"}`), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := p.ClaudeAgentConfig(ctx, cluster); err != nil || string(body) != `{"workload_id": "w1"}` {
+		t.Fatalf("claude agent config = %s, %v", body, err)
+	}
 	started := time.Now().UTC().Truncate(time.Second)
 	ev := DDoSEvent{ID: uuid.NewString(), ClusterID: cluster, RuleID: "auto:gs:x", Target: "JvS", StartedAt: started, PeakPPS: 5000, TopReason: "query"}
 	if err := p.PutDDoSEvent(ctx, ev); err != nil {

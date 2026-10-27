@@ -4304,3 +4304,87 @@ export async function applyEdge(): Promise<EdgeOverview> {
 export async function updateWorkerNode(id: string): Promise<{ status: string; reason?: string }> {
   return readJson(await request(`/nodes/${encodeURIComponent(id)}/update`, { method: "POST", headers: { "X-Nodal-Confirm": "update-node" } }));
 }
+
+// ---- Claude Agent -------------------------------------------------------
+
+export type ClaudeAgentFolder = { path: string; write: boolean };
+export type ClaudeAgentGrant = {
+  kind: "gameserver";
+  id: string;
+  name?: string;
+  slug?: string;
+  folders: ClaudeAgentFolder[];
+  log?: boolean;
+  console?: boolean;
+  restart?: boolean;
+};
+export type ClaudeAgentStatus = {
+  installed: boolean;
+  version?: string;
+  logged_in: boolean;
+  account?: string;
+  plan?: string;
+  service?: string;
+  login_url?: string;
+  message?: string;
+};
+export type ClaudeAgentServer = { id: string; name: string; game: string; family: string; slug: string; default_folders: ClaudeAgentFolder[] | null };
+export type ClaudeAgentOverview = {
+  enabled: boolean;
+  workload_id: string;
+  state: "" | "creating" | "installing" | "ready" | "failed";
+  error?: string;
+  log?: string[] | null;
+  name: string;
+  permission_mode: string;
+  permission_modes: string[];
+  grants: ClaudeAgentGrant[];
+  servers: ClaudeAgentServer[];
+  status?: ClaudeAgentStatus;
+  status_error?: string;
+};
+
+export async function getClaudeAgent(): Promise<ClaudeAgentOverview> {
+  return readJson(await request("/claude-agent"));
+}
+export async function setupClaudeAgent(body: { name: string; permission_mode: string }): Promise<{ state: string }> {
+  return readJson(await request("/claude-agent/setup", { method: "POST", body: JSON.stringify(body) }));
+}
+export async function claudeAgentLogin(body: { action: "start" | "code" | "logout"; code?: string }): Promise<ClaudeAgentStatus> {
+  return readJson(await request("/claude-agent/login", { method: "POST", body: JSON.stringify(body) }));
+}
+export async function putClaudeAgentSettings(body: { name: string; permission_mode: string }): Promise<unknown> {
+  return readJson(await request("/claude-agent/settings", { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function putClaudeAgentGrants(grants: ClaudeAgentGrant[]): Promise<{ grants: ClaudeAgentGrant[]; applied: boolean; restarted?: boolean }> {
+  return readJson(await request("/claude-agent/grants", { method: "PUT", body: JSON.stringify({ grants }) }));
+}
+export async function restartClaudeAgent(): Promise<ClaudeAgentStatus> {
+  return readJson(await request("/claude-agent/restart", { method: "POST" }));
+}
+export async function removeClaudeAgent(): Promise<unknown> {
+  return readJson(await request("/claude-agent/remove", { method: "POST", headers: { "X-Nodal-Confirm": "remove-claude-agent" } }));
+}
+
+// ---- Leftover system containers -----------------------------------------
+
+export type CTLeftover = {
+  id: string;
+  name?: string;
+  unit_enabled: boolean;
+  unit_active: boolean;
+  has_config: boolean;
+  has_state: boolean;
+  rootfs?: string;
+  rootfs_bytes?: number;
+  rootfs_mount?: boolean;
+  bridge?: string;
+  modified: string;
+};
+
+export async function listCTLeftovers(sizes = true): Promise<{ items: CTLeftover[] }> {
+  return readJson(await request(`/workloads/leftovers${sizes ? "" : "?sizes=0"}`));
+}
+export async function removeCTLeftovers(ids: string[]): Promise<{ results: { id: string; removed_data: boolean; kept?: string; kept_reason?: string }[] }> {
+  return readJson(await request("/workloads/leftovers/remove", { method: "POST", headers: { "X-Nodal-Confirm": "remove-leftovers" }, body: JSON.stringify({ ids }) }));
+}

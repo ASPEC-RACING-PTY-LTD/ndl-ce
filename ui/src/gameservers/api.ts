@@ -160,6 +160,24 @@ export async function sendGameConsole(id: string, command: string): Promise<{ se
   return readJson(`/game-servers/${id}/console`, { method: "POST", body: JSON.stringify({ command }) });
 }
 
+export type GamePlayer = { name: string; score?: number; seconds?: number; id?: string };
+export type GamePlayers = {
+  supported: boolean;
+  running: boolean;
+  actions: string[];
+  error?: string;
+  list?: { protocol: string; name?: string; map?: string; online: number; max: number; bots?: number; players: GamePlayer[]; partial?: boolean };
+};
+
+/** gamePlayers reads who is online from the game's own query protocol. */
+export async function gamePlayers(id: string): Promise<GamePlayers> {
+  return readJson(`/game-servers/${id}/players`);
+}
+
+export async function gamePlayerAction(id: string, action: string, name: string): Promise<{ sent: boolean; command: string }> {
+  return readJson(`/game-servers/${id}/players/action`, { method: "POST", body: JSON.stringify({ action, name }) });
+}
+
 /** createGameConsoleSession opens a streamed console: the live log, and typed lines to the server. */
 export async function createGameConsoleSession(id: string): Promise<import("../api/phase6").IOSession> {
   return readJson(`/game-servers/${id}/console/sessions`, { method: "POST", body: JSON.stringify({}) });

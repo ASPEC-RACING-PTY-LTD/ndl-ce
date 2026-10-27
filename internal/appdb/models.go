@@ -232,6 +232,10 @@ type Store interface {
 	EdgeConfig(ctx context.Context, clusterID string) ([]byte, error)
 	// PutEdgeConfig replaces the edge forwarding document.
 	PutEdgeConfig(ctx context.Context, clusterID string, body []byte, by string) error
+	// ClaudeAgentConfig returns the Claude Agent document; nil when never saved.
+	ClaudeAgentConfig(ctx context.Context, clusterID string) ([]byte, error)
+	// PutClaudeAgentConfig replaces the Claude Agent document.
+	PutClaudeAgentConfig(ctx context.Context, clusterID string, body []byte, by string) error
 	// SetBackupPolicyRunQueued records or drops a Run now queued while paused.
 	SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error
 

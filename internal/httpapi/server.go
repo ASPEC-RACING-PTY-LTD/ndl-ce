@@ -101,10 +101,12 @@ type Server struct {
 	// LiveUpdates locates live update state, inbox and trusted keys.
 	LiveUpdates LiveUpdatePaths
 	// Deployer runs project deployments; nil uses the local agent.
-	Deployer        DeployRPC
-	Now             func() time.Time
-	SetupHash       string
-	AllowedUID      uint32
+	Deployer   DeployRPC
+	Now        func() time.Time
+	SetupHash  string
+	AllowedUID uint32
+	// Listen is the plain HTTP listen address (NODAL_LISTEN).
+	Listen          string
 	TLSRequired     bool
 	TLSServing      bool // true when this process is listening with TLS
 	CertDirty       bool // true when on-disk material changed since TLSServing
@@ -156,9 +158,10 @@ type Server struct {
 	CFKeyPath     string
 	CFPublicCheck func(ctx context.Context, url string) uptimeResult
 	// CFDocsURL overrides Cloudflare's documentation root (tests).
-	CFDocsURL string
-	cf        cfState
-	ch        chState
+	CFDocsURL   string
+	cf          cfState
+	ch          chState
+	claudeAgent caState
 	// CHKeyPath overrides the key that seals the CodeHold credential, and
 	// CodeholdHTTP the client used to reach CodeHold (tests).
 	CHKeyPath    string
@@ -449,6 +452,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/game-servers/{id}/users/{uid}", s.deleteGameUser)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/activity", s.gameServerActivity)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/timeline", s.gameServerActivity)
+	mux.HandleFunc("GET /api/v1/game-servers/{id}/players", s.gameServerPlayers)
+	mux.HandleFunc("POST /api/v1/game-servers/{id}/players/action", s.gameServerPlayerAction)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/notes", s.getGameNotes)
 	mux.HandleFunc("PUT /api/v1/game-servers/{id}/notes", s.putGameNotes)
 	mux.HandleFunc("GET /api/v1/game-servers/{id}/diagnostics", s.gameServerDiagnostics)
@@ -658,6 +663,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workloads/{id}/restart", s.lifecycleWorkload("restart"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/force-stop", s.lifecycleWorkload("force-stop"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/delete", s.lifecycleWorkload("delete"))
+	mux.HandleFunc("GET /api/v1/workloads/leftovers", s.listCTLeftovers)
+	mux.HandleFunc("GET /api/v1/claude-agent", s.getClaudeAgent)
+	mux.HandleFunc("POST /api/v1/claude-agent/setup", s.setupClaudeAgent)
+	mux.HandleFunc("POST /api/v1/claude-agent/login", s.claudeAgentLogin)
+	mux.HandleFunc("PUT /api/v1/claude-agent/settings", s.putClaudeAgentSettings)
+	mux.HandleFunc("PUT /api/v1/claude-agent/grants", s.putClaudeAgentGrants)
+	mux.HandleFunc("POST /api/v1/claude-agent/restart", s.restartClaudeAgent)
+	mux.HandleFunc("POST /api/v1/claude-agent/remove", s.removeClaudeAgent)
+	mux.HandleFunc("GET /api/v1/claude-agent/api/servers", s.caAgentServers)
+	mux.HandleFunc("GET /api/v1/claude-agent/api/servers/{server}/log", s.caAgentLog)
+	mux.HandleFunc("POST /api/v1/claude-agent/api/servers/{server}/console", s.caAgentConsole)
+	mux.HandleFunc("POST /api/v1/claude-agent/api/servers/{server}/restart", s.caAgentRestart)
+	mux.HandleFunc("POST /api/v1/workloads/leftovers/remove", s.removeCTLeftovers)
 	mux.HandleFunc("POST /api/v1/workloads/{id}/clone", s.lifecycleWorkload("clone"))
 	mux.HandleFunc("POST /api/v1/workloads/{id}/migrate", s.migrateWorkload)
 	mux.HandleFunc("GET /api/v1/workloads/{id}/migrate", s.getWorkloadMigrate)

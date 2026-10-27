@@ -1161,6 +1161,8 @@ gate28() {
   fi
   if nodal_installed && nctl workload list 2>/dev/null | grep -q "$CERT_PREFIX"; then
     gate_fail "$id" "$t" "disposable resources still present after cleanup"
+  elif nodal_installed && [ -n "$(cert_leftover_ids)" ]; then
+    gate_fail "$id" "$t" "container units, settings or root filesystems of deleted disposable containers are still on the node"
   else
     gate_pass "$id" "$t" "all disposable certification resources removed"
   fi

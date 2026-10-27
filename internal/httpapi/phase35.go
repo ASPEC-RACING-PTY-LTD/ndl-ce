@@ -115,6 +115,13 @@ func (s *Server) disableFeature(w http.ResponseWriter, r *http.Request) {
 		}
 		s.chStop()
 	}
+	if mod.ID == features.IDClaudeAgent && s.caHasContainer(r.Context(), p.User.ClusterID) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "remove the Claude Agent's container first (Claude Agent > Remove agent)",
+			"code":  "claude_agent_container",
+		})
+		return
+	}
 	row := s.featureRow(r, p.User.ClusterID, mod)
 	count := s.featureWorkloadCount(r, p.User.ClusterID, mod.ID)
 	if featureDisableRequiresConfirm(mod, row.Enabled, count) && strings.TrimSpace(r.Header.Get(confirmHeader)) != disableFeatureConfirm {

@@ -7,6 +7,7 @@ import { DeleteButton } from "../components/DeleteButton";
 import { EmptyState, ErrorState, LoadingState } from "../components/EmptyState";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
+import { LeftoverContainers } from "../components/LeftoverContainers";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes } from "../format";
@@ -203,6 +204,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
       {saveError ? <ErrorState>{saveError}</ErrorState> : null}
+      {kind !== "vm" && mutate ? <LeftoverContainers canRemove={mutate} /> : null}
       {results ? (
         <div className="banner" role="status">
           <p>

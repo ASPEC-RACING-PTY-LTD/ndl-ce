@@ -3,6 +3,19 @@ nodal (1.2.7) UNRELEASED; urgency=medium
   * Game servers: the Files tab can extract .zip, .tar, .tar.gz and .tgz
     files (Extract on the file) and zip files and folders (Zip, or Zip
     selected), with empty folders kept both ways.
+  * Game servers: the Players tab lists who is online, read from the game
+    itself (Steam and Source games such as Garry's Mod, Minecraft Java and
+    FiveM), with Kick, Ban and Make operator where the game has those
+    commands.
+  * Files: listings are sorted folders first, then A to Z by name.
+  * Claude Agent (Add Features): one system container running Claude Code
+    with Remote Control, so chats start on claude.ai or in the Claude app.
+    It only reaches what is granted: game server folders (read-only or
+    read-write, via ACLs, ownership unchanged) and per server the log,
+    console and restart through the scoped ndl command.
+  * Workloads: leftover system containers (deleted workloads whose unit,
+    settings and root filesystem stayed on the node and fail at every boot)
+    are listed with their size and can be removed.
 
  -- No-dal <packaging@no-dal.com>  Tue, 27 Oct 2026 18:36:41 +0000
 

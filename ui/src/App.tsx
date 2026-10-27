@@ -55,6 +55,7 @@ import { RegistriesPage } from "./pages/RegistriesPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GpuPage } from "./pages/GpuPage";
 import { OciPage } from "./pages/OciPage";
+import { ClaudeAgentPage } from "./pages/ClaudeAgentPage";
 import { CodeholdPage } from "./pages/CodeholdPage";
 import { DockerHubPage } from "./pages/DockerHubPage";
 import { WorkloadExtensionsPage } from "./pages/WorkloadExtensionsPage";
@@ -288,6 +289,9 @@ function matchPage(path: string) {
   }
   if (path === "/codehold") {
     return <CodeholdPage />;
+  }
+  if (path === "/claude-agent") {
+    return <ClaudeAgentPage />;
   }
   if (path === "/oci") {
     return <OciPage />;
