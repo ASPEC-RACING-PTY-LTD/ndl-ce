@@ -50,6 +50,8 @@ import { useQuery } from "../query";
 import { navigate, usePath } from "../router";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { CurseForgeKey } from "../gameservers/CurseForgeKey";
+import { GameDDoSPane } from "../gameservers/GameDDoSPane";
+import { useNavDisclosure } from "../nav/NavDisclosure";
 import { Segmented } from "../ui/Segmented";
 
 const errText = (err: unknown, fallback: string) => (err instanceof ApiError || err instanceof Error ? err.message : fallback);
@@ -372,11 +374,13 @@ type SettingsSection = { id: string; title: string; render: () => ReactNode };
 
 function SettingsPane({ server, anchor }: { server: GameServer; anchor: string }) {
   const id = server.id;
+  const { featureEnabled } = useNavDisclosure();
   const sections: SettingsSection[] = [
     ...(hasCap(server, "config") ? [{ id: "config", title: "Configuration", render: () => <ConfigPane id={id} /> }] : []),
     ...(hasCap(server, "startup") ? [{ id: "startup", title: "Startup", render: () => <StartupPane id={id} /> }] : []),
     ...(hasCap(server, "resources") ? [{ id: "resources", title: "Resources", render: () => <ResourcesPane id={id} /> }] : []),
     ...(hasCap(server, "network") ? [{ id: "network", title: "Networking", render: () => <NetworkPane id={id} /> }] : []),
+    ...(featureEnabled.ddos ? [{ id: "ddos", title: "DDoS protection", render: () => <GameDDoSPane id={id} /> }] : []),
     ...(hasCap(server, "databases")
       ? [
           {

@@ -180,7 +180,7 @@ function matchPage(path: string) {
   if (path === "/storage" || path === "/storage/manage") {
     return <StorageHubPage tab={path === "/storage/manage" ? "manage" : "storage"} />;
   }
-  if (path === "/network" || path === "/network/cloudflare" || path === "/network/caddy" || path === "/network/nginx") {
+  if (path === "/network" || path === "/network/ddos" || path === "/network/cloudflare" || path === "/network/caddy" || path === "/network/nginx") {
     return <NetworkHubPage tab={(path.split("/")[2] as NetworkTab | undefined) ?? "network"} />;
   }
   if (path === "/workloads/new/system-container") {

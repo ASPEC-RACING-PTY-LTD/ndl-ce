@@ -318,6 +318,15 @@ export const CAPABILITIES: Capability[] = [
     modules: [],
   },
   {
+    id: "ddos",
+    title: "DDoS Protection",
+    summary:
+      "Filters floods to game servers, workloads and host services on this node's uplink, with per-source limits, bans and attack alerts, under Network. Turning it off removes the filter rules and keeps the settings.",
+    featureId: "ddos",
+    href: "/network/ddos",
+    modules: [],
+  },
+  {
     id: "caddy",
     title: "Caddy",
     summary: "Find Caddy on this node and in system containers, see its sites and add reverse proxy sites, under Network. Turning it off only hides it.",

@@ -4082,3 +4082,142 @@ export async function deleteInstanceTemplate(id: string): Promise<void> {
 export async function undoUpdateRollback(): Promise<import("../generated/openapi").UpdateOperation> {
   return readJson(await request("/updates/rollback/undo", { method: "POST", headers: { "X-Nodal-Confirm": "undo-rollback" } }));
 }
+
+// DDoS protection (Network > DDoS Protection).
+export type DDoSLimits = {
+  per_source_pps?: number;
+  per_source_burst?: number;
+  total_pps?: number;
+  syn_per_source?: number;
+  conns_per_source?: number;
+  query_per_source?: number;
+  min_udp_payload?: number;
+  max_packet?: number;
+  block_amplification?: boolean;
+  drop_fragments?: boolean;
+};
+export type DDoSProtocol = "udp" | "tcp" | "both" | "any";
+export type DDoSTargetKind = "gameserver" | "workload" | "host" | "custom";
+export type DDoSProfile = { id: string; title: string; summary: string; protocol: DDoSProtocol; limits: DDoSLimits; action: "ban" | "drop" };
+export type DDoSCounters = { packets: number; bytes: number };
+export type DDoSSample = { at: string; in_pps: number; drop_pps: number };
+export type DDoSTarget = {
+  id: string;
+  name: string;
+  kind: DDoSTargetKind;
+  ref_id?: string;
+  ref_name?: string;
+  enabled: boolean;
+  profile: string;
+  protocol: DDoSProtocol;
+  ports: string[] | null;
+  dest: string[] | null;
+  limits: DDoSLimits;
+  action: "ban" | "drop";
+  ban_seconds?: number;
+  allow: string[] | null;
+  block: string[] | null;
+  auto: boolean;
+  warnings?: string[];
+  rule?: { ports?: string[]; dest?: string[]; host?: boolean; protocol: DDoSProtocol } | null;
+  traffic: {
+    in_packets: number;
+    dropped_packets: number;
+    dropped_bytes: number;
+    reasons?: Record<string, DDoSCounters>;
+    bans: number;
+    in_pps: number;
+    drop_pps: number;
+    under_attack: boolean;
+  };
+  history?: DDoSSample[];
+};
+export type DDoSSettings = {
+  mode: "enforce" | "monitor";
+  interfaces: string[] | null;
+  trusted: string[] | null;
+  trust_local: boolean;
+  blocked: string[] | null;
+  drop_invalid_tcp: boolean;
+  hardening: boolean;
+  auto_game_servers: boolean;
+  attack_pps: number;
+  notify: boolean;
+};
+export type DDoSBan = { addr: string; target_id?: string; target?: string; seconds: number; manual: boolean; reason?: string; by?: string };
+export type DDoSOverview = {
+  settings: DDoSSettings;
+  targets: DDoSTarget[];
+  bans: DDoSBan[];
+  status: {
+    active: boolean;
+    mode?: string;
+    applied_at?: string;
+    devices?: string[] | null;
+    host?: string[] | null;
+    blocked: DDoSCounters;
+    banned: DDoSCounters;
+    conntrack: { count: number; max: number };
+    hardening?: { key: string; value: number; want: number; applied: boolean; reason: string }[] | null;
+    error?: string;
+    sampled_at?: string;
+  };
+  profiles: DDoSProfile[];
+  amp_ports: number[];
+  under_attack: boolean;
+};
+export type DDoSTargetInput = {
+  name: string;
+  kind: DDoSTargetKind;
+  ref_id?: string;
+  enabled?: boolean;
+  profile: string;
+  protocol?: DDoSProtocol;
+  ports?: string[];
+  dest?: string[];
+  limits?: DDoSLimits;
+  action?: "ban" | "drop";
+  ban_seconds?: number;
+  allow?: string[];
+  block?: string[];
+};
+export type DDoSEvent = {
+  id: string;
+  rule_id: string;
+  target: string;
+  started_at: string;
+  ended_at?: string;
+  peak_pps: number;
+  dropped_packets: number;
+  dropped_bytes: number;
+  top_reason: string;
+  sources: number;
+};
+
+export async function getDDoS(): Promise<DDoSOverview> {
+  return readJson(await request("/ddos"));
+}
+export async function putDDoSSettings(body: Partial<DDoSSettings>): Promise<DDoSOverview> {
+  return readJson(await request("/ddos/settings", { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function createDDoSTarget(body: DDoSTargetInput): Promise<DDoSOverview> {
+  return readJson(await request("/ddos/targets", json(body)));
+}
+export async function updateDDoSTarget(id: string, body: DDoSTargetInput): Promise<DDoSOverview> {
+  return readJson(await request(`/ddos/targets/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }));
+}
+export async function deleteDDoSTarget(id: string): Promise<DDoSOverview> {
+  return readJson(await request(`/ddos/targets/${encodeURIComponent(id)}`, { method: "DELETE" }));
+}
+export async function banDDoS(addr: string, minutes: number, reason: string): Promise<DDoSOverview> {
+  return readJson(await request("/ddos/bans", json({ addr, minutes, reason })));
+}
+export async function unbanDDoS(addr: string): Promise<DDoSOverview> {
+  return readJson(await request(`/ddos/bans/${encodeURIComponent(addr)}`, { method: "DELETE" }));
+}
+export async function listDDoSEvents(): Promise<{ items: DDoSEvent[] }> {
+  return readJson(await request("/ddos/events"));
+}
+export async function applyDDoS(): Promise<DDoSOverview> {
+  return readJson(await request("/ddos/apply", { method: "POST" }));
+}

@@ -11883,6 +11883,165 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /ddos:
+    get:
+      operationId: getDDoS
+      summary: DDoS protection on this node: settings, protected targets with traffic and the last hour of samples (history=0 leaves samples out), bans, filter status and profiles. Requires ddos.read; the feature must be on.
+      parameters:
+        - name: history
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /ddos/settings:
+    put:
+      operationId: putDDoSSettings
+      summary: Change mode (enforce or monitor), trusted and blocked networks, interfaces, automatic game server protection, kernel hardening, the attack threshold and alerts. Only fields sent change. Applied at once. Requires ddos.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /ddos/targets:
+    post:
+      operationId: createDDoSTarget
+      summary: Protect a game server, workload, host service or custom destination. Limits, protocol and action default to the profile. Validated, saved and applied. Requires ddos.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /ddos/targets/{id}:
+    put:
+      operationId: updateDDoSTarget
+      summary: Change a protected target. An auto:gs:<id> target (a game server protected by default) is stored with the change. Requires ddos.manage.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    delete:
+      operationId: deleteDDoSTarget
+      summary: Stop protecting a target. A game server target goes back to the default protection. Requires ddos.manage.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /ddos/bans:
+    post:
+      operationId: banDDoS
+      summary: Ban an address from every target for up to 7 days (addr, minutes, reason). Requires ddos.manage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /ddos/bans/{addr}:
+    delete:
+      operationId: unbanDDoS
+      summary: Lift every ban of an address: the hand-added one and automatic ones on each target. Requires ddos.manage.
+      parameters:
+        - name: addr
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /ddos/events:
+    get:
+      operationId: listDDoSEvents
+      summary: Detected attacks, newest first: target, start and end, peak dropped packets per second, packets dropped, main reason and banned sources. Requires ddos.read.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /ddos/apply:
+    post:
+      operationId: applyDDoS
+      summary: Load the rules again now. Requires ddos.manage.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /proxies/{kind}:
     get:
       operationId: getProxies
@@ -16184,6 +16343,7 @@ components:
             - distributed_storage
             - ai
             - automation
+            - ddos
         title:
           type: string
         enabled:

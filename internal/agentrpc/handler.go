@@ -29,6 +29,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/peercred"
 	"github.com/no-dal/ndl-ce/internal/qemu"
+	"github.com/no-dal/ndl-ce/internal/shield"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
@@ -52,7 +53,10 @@ type Handler struct {
 	Games    *gameserver.LocalHost
 	GameRoot string
 	// Disk protects the host filesystems; nil disables the guard.
-	Disk       *diskguard.Guard
+	Disk *diskguard.Guard
+	// Shield is DDoS protection; nil uses one under the agent data dir.
+	Shield     *shield.Engine
+	shieldOnce sync.Once
 	BackupHost *backuphost.Host
 	// Deploy runs Docker Compose project deployments in system containers.
 	Deploy *deploy.Manager
@@ -274,6 +278,8 @@ func (h *Handler) Execute(ctx context.Context, req *connect.Request[agentv1.Exec
 		return h.execHostDisk(ctx, req.Msg.GetHostDisk())
 	case req.Msg.GetStorageScan() != nil:
 		return h.execStorageScan(ctx, req.Msg.GetStorageScan())
+	case req.Msg.GetShield() != nil:
+		return h.execShield(ctx, req.Msg.GetShield())
 	default:
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unknown execute method"))
 	}

@@ -80,6 +80,9 @@ func (s *Server) enableFeature(w http.ResponseWriter, r *http.Request) {
 	if mod.ID == features.IDCodehold {
 		s.chWake()
 	}
+	if mod.ID == features.IDDDoS {
+		s.ddosApplyNow(r.Context())
+	}
 	writeJSON(w, http.StatusOK, s.featureJSON(r, p.User.ClusterID, mod))
 }
 
@@ -149,6 +152,13 @@ func (s *Server) disableFeature(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, p.User.ClusterID, p.User.ID, "feature.disable", "ok", mod.ID)
 	if mod.ID == features.IDDocker {
 		s.dockerIdle(r.Context())
+	}
+	if mod.ID == features.IDDDoS {
+		// Turning it off removes the filter rules now; settings are kept.
+		if err := s.ddosDisableNow(r.Context()); err != nil {
+			row.Reason = "turned off, but removing the filter rules failed: " + err.Error()
+			_ = s.Store.UpsertFeature(r.Context(), row)
+		}
 	}
 	s.invalidateProxies()
 	writeJSON(w, http.StatusOK, s.featureJSON(r, p.User.ClusterID, mod))

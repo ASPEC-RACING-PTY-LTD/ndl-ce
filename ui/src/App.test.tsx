@@ -1174,7 +1174,8 @@ describe("App", () => {
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: /^license$/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /^license$/i })).toBeVisible();
+    // The sidebar link waits on the session's grants, which can land after the heading.
+    expect(await screen.findByRole("link", { name: /^license$/i })).toBeVisible();
     expect(screen.getByText(/does not require a key/i)).toBeVisible();
     expect(screen.getByText(/does not download ee blobs/i)).toBeVisible();
     expect(screen.getByText(/hardware gates are not proven on this host/i)).toBeVisible();

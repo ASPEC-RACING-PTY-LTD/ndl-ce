@@ -161,6 +161,7 @@ type Memory struct {
 	account            accountMem
 	iam                iamMem
 	approvals          approvalMem
+	ddos               ddosMem
 	ui                 uiMem
 	tmpl               tmplMem
 }

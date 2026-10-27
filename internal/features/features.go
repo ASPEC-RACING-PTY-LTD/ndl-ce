@@ -17,6 +17,7 @@ const (
 	IDNginx        = "nginx"
 	IDCodehold     = "codehold"
 	IDAutomation   = "automation"
+	IDDDoS         = "ddos"
 	EnableK8s      = "enable-k8s"
 	DisableConfirm = "disable-feature"
 	// TinyK8sMemoryBytes is the RAM floor for Kubernetes without confirm.
@@ -34,8 +35,9 @@ const (
 	CaddyReason                = "Caddy is optional. Turning it on finds Caddy on this node and in system containers. Turning it off only hides it; Caddy and its sites are not changed."
 	NginxReason                = "Nginx is optional. Turning it on finds Nginx on this node and in system containers. Turning it off only hides it; Nginx and its sites are not changed."
 	CodeholdReason             = "CodeHold runners is optional. Turning it on lets this node host CodeHold Actions runners, one system container each. Turning it off asks what happens to their containers first."
+	DDoSReason                 = "DDoS Protection is optional. Turning it on filters floods to game servers, workloads and host services on this node's uplink. Turning it off removes the filter rules and keeps your settings."
 	CoreInstalledReason        = "Installed with the nodal metapackage."
-	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, AI, Docker Management, Game Servers, Cloudflare, Caddy, Nginx and CodeHold runners stay opt-in."
+	LightBaseReason            = "Fresh install is the nodal metapackage only. GPU, Kubernetes, distributed storage, AI, Docker Management, Game Servers, Cloudflare, Caddy, Nginx, CodeHold runners and DDoS Protection stay opt-in."
 )
 
 // Module is one Settings Features row.
@@ -63,6 +65,7 @@ func Catalog() []Module {
 		{ID: IDNginx, Title: "Nginx", SoftwareOnly: true, DefaultReason: NginxReason},
 		{ID: IDCodehold, Title: "CodeHold runners", SoftwareOnly: true, DefaultReason: CodeholdReason},
 		{ID: IDAutomation, Title: "Automation", SoftwareOnly: true, DefaultReason: AutomationReason},
+		{ID: IDDDoS, Title: "DDoS Protection", SoftwareOnly: true, DefaultReason: DDoSReason},
 		{ID: IDGPU, Title: "GPU Services", Package: "nodal-feature-gpu", DefaultReason: GPUOptionalReason},
 		{ID: IDK8s, Title: "Kubernetes", Package: "nodal-feature-k8s", RequiresK8sAck: true, DefaultReason: K8sNotStartedReason},
 		{ID: IDDistStorage, Title: "Distributed Storage", Package: "nodal-feature-distributed-storage", DefaultReason: DistStorageReason},

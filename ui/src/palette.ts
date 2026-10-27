@@ -46,6 +46,7 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "files", label: "Jump to Files", href: "/files", keywords: ["browse", "upload", "download", "editor"] },
   { id: "oci", label: "OCI Containers", href: "/oci", keywords: ["compose", "multi-container", "oci", "containerd", "group", "stack"] },
   { id: "docker", label: "Docker", href: "/docker", keywords: ["docker", "compose", "container", "engine", "tunnel", "cloudflared"] },
+  { id: "ddos", label: "DDoS Protection", href: "/network/ddos", feature: "ddos", keywords: ["ddos", "dos", "flood", "attack", "firewall", "ban", "block", "rate limit", "nftables", "protection"] },
   { id: "cloudflare", label: "Cloudflare", href: "/network/cloudflare", feature: "cloudflare", keywords: ["cloudflare", "tunnel", "dns", "hostname", "domain", "publish", "cloudflared"] },
   { id: "codehold", label: "CodeHold Runners", href: "/codehold", feature: "codehold", keywords: ["codehold", "runner", "actions", "ci", "build"] },
   { id: "caddy", label: "Caddy", href: "/network/caddy", feature: "caddy", keywords: ["caddy", "reverse proxy", "proxy", "https", "site", "domain"] },

@@ -19,6 +19,7 @@ import (
 	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/oci"
 	"github.com/no-dal/ndl-ce/internal/qemu"
+	"github.com/no-dal/ndl-ce/internal/shield"
 	"github.com/no-dal/ndl-ce/internal/storage"
 )
 
@@ -43,6 +44,7 @@ func main() {
 		QEMU:      &qemu.Engine{DataDir: dir},
 		OCI:       &oci.Engine{DataDir: dir},
 		GameRoot:  dir,
+		Shield:    agentrpc.ShieldEngine(dir),
 		Disk: diskguard.New(filepath.Join(dir, "reserve", "ballast"),
 			diskguard.Watch{Path: "/", Role: "root"},
 			diskguard.Watch{Path: dir, Role: "data"},
@@ -60,6 +62,7 @@ func main() {
 	go reconcileRuntimeLXC(h.Workloads)
 	go watchGuestNet(h.Workloads)
 	go watchForward(dir)
+	go watchShield(h.Shield)
 	go disableOrphanUnits(dir)
 	go scrapeMetrics(ms, dir)
 	go watchDisk(h.Disk)
@@ -129,6 +132,31 @@ func watchForward(dataDir string) {
 			log.Printf("bridge forwarding: %s; containers on %s have no network", st.Note, strings.Join(st.Bridges, ", "))
 		}
 		blocked = st.Blocked
+		time.Sleep(30 * time.Second)
+	}
+}
+
+// watchShield restores DDoS protection at start, before the control plane
+// is up, and re-applies it when the node's addresses or uplink change or
+// the tables were flushed.
+func watchShield(eng *shield.Engine) {
+	failing := ""
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := eng.Ensure(ctx)
+		cancel()
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		if msg != failing {
+			if msg != "" {
+				log.Printf("ddos protection: %s", msg)
+			} else if failing != "" {
+				log.Printf("ddos protection: rules loaded again")
+			}
+			failing = msg
+		}
 		time.Sleep(30 * time.Second)
 	}
 }

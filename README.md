@@ -93,7 +93,7 @@ nodalctl backup run --workload ID --target TARGET
 | Workloads | [Lifecycle](docs/workload-lifecycle.md) · [Guest baseline](docs/guest-baseline.md) · [Game servers](docs/game-servers-catalogue.md) |
 | Backups | [Backups](docs/backup.md) · [Backup Engine V2](docs/backup-engine-v2.md) · [Platform backup](docs/platform-backup.md) · [Recovery](docs/recovery.md) |
 | Containers and apps | [Docker](docs/docker.md) · [Deployments](docs/deployments.md) · [Store](docs/store.md) |
-| Networking | [Cloudflare](docs/cloudflare.md) · [Caddy and Nginx](docs/reverse-proxies.md) |
+| Networking | [DDoS protection](docs/ddos-protection.md) · [Cloudflare](docs/cloudflare.md) · [Caddy and Nginx](docs/reverse-proxies.md) |
 | Administration | [Management](docs/management.md) · [Live updates](docs/live-updates.md) · [Cluster](docs/cluster.md) · [Migration](docs/migration.md) |
 | Extras | [AI](docs/ai.md) · [CodeHold](docs/codehold.md) · [API compatibility](docs/api-compatibility.md) |
 

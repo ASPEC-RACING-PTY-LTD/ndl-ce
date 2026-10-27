@@ -113,6 +113,10 @@ const (
 	CloudflareRead        = "cloudflare.read"
 	CloudflareManage      = "cloudflare.manage"
 	CloudflareCredentials = "cloudflare.credentials"
+	// DDoS protection: see protected targets, traffic and attacks; change
+	// targets, limits, trusted and blocked networks, and ban or unban.
+	DDoSRead   = "ddos.read"
+	DDoSManage = "ddos.manage"
 	// Approvals: see and decide automation flow versions that hold
 	// protected steps. SuperAdmins have both; they give them to other roles
 	// on the Approvals page only, never in the role editor.
@@ -158,9 +162,10 @@ func (Catalog) PermissionsForRole(role string) []string {
 			GameServerContent, GameServerBackup, GameServerSchedule, GameServerNetwork, GameServerUsers,
 			GameServerReinstall, GameServerDelete, GameServerAdmin,
 			CloudflareRead, CloudflareManage, SearchManage,
+			DDoSRead, DDoSManage,
 		}
 	case User:
-		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead, GameServerRead, CloudflareRead}
+		return []string{IdentityRead, IdentityMFA, ClusterRead, NodeRead, EventsRead, MetricsRead, AlertRead, StorageRead, NetworkRead, ComputeRead, FilesRead, SettingsTLSRead, BackupRead, FeatureRead, StoreRead, PolicyRead, AIAsk, SettingsLicenseRead, MigrationRead, GameServerRead, CloudflareRead, DDoSRead}
 	case Automation:
 		// Flows run as the system: a flow does exactly what it was built to
 		// do. Protected steps are held for approval instead (see httpapi).

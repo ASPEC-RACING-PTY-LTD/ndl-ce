@@ -102,6 +102,8 @@ func AllPermissions() []string {
 		CloudflareRead,
 		CloudflareManage,
 		CloudflareCredentials,
+		DDoSRead,
+		DDoSManage,
 		SearchManage,
 		AppearanceManage,
 	}

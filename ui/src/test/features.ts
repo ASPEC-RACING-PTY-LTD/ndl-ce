@@ -16,6 +16,7 @@ const IDS: Feature["id"][] = [
   "distributed_storage",
   "ai",
   "automation",
+  "ddos",
 ];
 
 export function featureItems(on: Feature["id"][] = IDS): Feature[] {

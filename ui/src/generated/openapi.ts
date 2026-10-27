@@ -1331,7 +1331,7 @@ export interface RollingUpdatePreview {
 }
 
 export interface Feature {
-  id: "vm" | "ct" | "oci" | "docker" | "gameservers" | "cloudflare" | "caddy" | "nginx" | "codehold" | "gpu" | "k8s" | "distributed_storage" | "ai" | "automation";
+  id: "vm" | "ct" | "oci" | "docker" | "gameservers" | "cloudflare" | "caddy" | "nginx" | "codehold" | "gpu" | "k8s" | "distributed_storage" | "ai" | "automation" | "ddos";
   title: string;
   enabled: boolean;
   installed?: boolean;
@@ -5161,6 +5161,22 @@ export type GetStorageScanPath = "/api/v1/storage/scan/{id}";
 export type CancelStorageScanPath = "/api/v1/storage/scan/{id}/cancel";
 
 export type DeleteStorageScanItemsPath = "/api/v1/storage/scan/{id}/delete";
+
+export type GetDDoSPath = "/api/v1/ddos";
+
+export type PutDDoSSettingsPath = "/api/v1/ddos/settings";
+
+export type CreateDDoSTargetPath = "/api/v1/ddos/targets";
+
+export type UpdateDDoSTargetPath = "/api/v1/ddos/targets/{id}";
+
+export type BanDDoSPath = "/api/v1/ddos/bans";
+
+export type UnbanDDoSPath = "/api/v1/ddos/bans/{addr}";
+
+export type ListDDoSEventsPath = "/api/v1/ddos/events";
+
+export type ApplyDDoSPath = "/api/v1/ddos/apply";
 
 export type GetProxiesPath = "/api/v1/proxies/{kind}";
 

@@ -1,5 +1,15 @@
 nodal (1.2.5) UNRELEASED; urgency=medium
 
+  * DDoS Protection: a new optional module (Add Features) under Network.
+    It filters floods on the node's uplink with nftables, before
+    conntrack, Docker and the LAN bridge, for game servers (each one
+    protected by default with the profile for its game: Source engine for
+    Garry's Mod), workloads, host services and custom destinations. Limits
+    per source address for packets, Steam server queries, new and open
+    connections, plus reflection, fragment and malformed packet drops,
+    bans that expire and cover one target, trusted and blocked networks, a
+    Monitor only mode, kernel hardening that is put back when off, a live
+    traffic view and attack alerts in the bell.
   * Game servers: Source servers (srcds, hlds) run on a pseudo-terminal,
     so their console shows every line live instead of stopping after
     Steam starts.

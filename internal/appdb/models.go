@@ -220,6 +220,14 @@ type Store interface {
 	PutBackupApproval(ctx context.Context, a BackupApproval) error
 	// DeleteBackupApproval forgets a workload's approval.
 	DeleteBackupApproval(ctx context.Context, clusterID, workloadID string) error
+	// DDoSConfig returns the DDoS protection document; nil when never saved.
+	DDoSConfig(ctx context.Context, clusterID string) ([]byte, error)
+	// PutDDoSConfig replaces the DDoS protection document.
+	PutDDoSConfig(ctx context.Context, clusterID string, body []byte, by string) error
+	// PutDDoSEvent adds or updates one detected attack.
+	PutDDoSEvent(ctx context.Context, ev DDoSEvent) error
+	// ListDDoSEvents returns the newest attacks first.
+	ListDDoSEvents(ctx context.Context, clusterID string, limit int) ([]DDoSEvent, error)
 	// SetBackupPolicyRunQueued records or drops a Run now queued while paused.
 	SetBackupPolicyRunQueued(ctx context.Context, clusterID, id string, queued bool) error
 

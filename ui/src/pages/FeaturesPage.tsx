@@ -60,6 +60,7 @@ const CATEGORY: Record<string, string> = {
   kubernetes: "Compute",
   gpu: "Compute",
   cloudflare: "Network",
+  ddos: "Network",
   caddy: "Network",
   nginx: "Network",
   "advanced-network": "Network",

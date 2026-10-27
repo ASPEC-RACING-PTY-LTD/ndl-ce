@@ -132,6 +132,9 @@ type Server struct {
 	updateMu        sync.Mutex
 	hold            backupHold
 	approvalMu      sync.Mutex
+	ddos            *ddosState
+	ddosOnce        sync.Once
+	ddosMu          sync.Mutex
 	repoMove        repoMove
 	tunnels         tunnelCache
 	opsJobs         opsJobs
@@ -179,6 +182,8 @@ type Server struct {
 	// used (tests and development).
 	// Disk is host disk protection on the agent.
 	Disk HostDiskRPC
+	// Shield is DDoS protection on the agent; nil turns the loop off.
+	Shield ShieldRPC
 	// Scan measures and cleans up storage in the agent.
 	Scan      StorageScanRPC
 	GameHost  gameserver.Host
@@ -694,6 +699,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/backups/policies", s.createBackupPolicy)
 	mux.HandleFunc("PATCH /api/v1/backups/policies/{id}", s.updateBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/approvals/{id}", s.decideBackupApproval)
+	mux.HandleFunc("GET /api/v1/ddos", s.getDDoS)
+	mux.HandleFunc("PUT /api/v1/ddos/settings", s.putDDoSSettings)
+	mux.HandleFunc("POST /api/v1/ddos/targets", s.createDDoSTarget)
+	mux.HandleFunc("PUT /api/v1/ddos/targets/{id}", s.updateDDoSTarget)
+	mux.HandleFunc("DELETE /api/v1/ddos/targets/{id}", s.deleteDDoSTarget)
+	mux.HandleFunc("POST /api/v1/ddos/bans", s.banDDoS)
+	mux.HandleFunc("DELETE /api/v1/ddos/bans/{addr}", s.unbanDDoS)
+	mux.HandleFunc("GET /api/v1/ddos/events", s.listDDoSEvents)
+	mux.HandleFunc("POST /api/v1/ddos/apply", s.applyDDoS)
 	mux.HandleFunc("DELETE /api/v1/backups/policies/{id}", s.deleteBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/run", s.runBackupPolicy)
 	mux.HandleFunc("POST /api/v1/backups/policies/{id}/queue/clear", s.clearPolicyQueue)

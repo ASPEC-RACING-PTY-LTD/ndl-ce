@@ -176,7 +176,9 @@ func Run(cfg Config) error {
 		Disk: agent,
 		Scan: agent,
 		// Game servers run as root in the agent; the control plane only asks.
-		GameHost:    agentrpc.GameHost{Client: agent},
+		GameHost: agentrpc.GameHost{Client: agent},
+		// DDoS protection loads nftables rules on the node through the agent.
+		Shield:      agent,
 		Hub:         hub,
 		UI:          ui,
 		SetupHash:   cfg.SetupHash,
@@ -218,6 +220,7 @@ func Run(cfg Config) error {
 	go srv.RunDockerPrune(runCtx)
 	go srv.RunDeployments(runCtx)
 	go srv.RunAutomations(runCtx)
+	go srv.RunDDoS(runCtx)
 	go srv.RunUpdateHousekeeping(runCtx)
 	go srv.RunSearchIndexer(runCtx)
 	go observer{
