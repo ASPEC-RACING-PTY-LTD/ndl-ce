@@ -1,4 +1,4 @@
-import { setAutoConfirm } from "../confirm";
+import { autoConfirms, setAutoConfirm } from "../confirm";
 import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
@@ -579,6 +579,9 @@ describe("Terminal workspace", () => {
     installIO();
     await openWorkspace();
     // These check the prompt non-SuperAdmins see; SuperAdmins skip it (confirm.test.tsx).
+    // The session turns skipping on once it loads, which can be after the
+    // heading shows; wait for that so it does not undo the override.
+    await waitFor(() => expect(autoConfirms()).toBe(true));
     setAutoConfirm(false);
     fireEvent.click(screen.getByRole("button", { name: /^new terminal$/i }));
     const dialog = await screen.findByRole("dialog", { name: /new terminal/i });
