@@ -7,6 +7,7 @@ import {
   removeClaudeAgent,
   restartClaudeAgent,
   setupClaudeAgent,
+  startClaudeAgent,
   type ClaudeAgentFolder,
   type ClaudeAgentGrant,
   type ClaudeAgentOverview,
@@ -79,6 +80,7 @@ export function ClaudeAgentPage() {
   }
   const st = data.status;
   const ready = data.state === "ready";
+  const stopped = ready && Boolean(data.workload_id) && data.container_running === false;
   return (
     <section className="page page-wide" aria-labelledby="ca-heading">
       <PageHeader
@@ -107,7 +109,10 @@ export function ClaudeAgentPage() {
             <div className="status-tile">
               <span className="label">Container</span>
               <span className="value">
-                <StatusBadge status={ready ? "healthy" : data.state === "failed" ? "critical" : data.state ? "warning" : "unknown"} label={data.state || "not set up"} />
+                <StatusBadge
+                  status={stopped ? "critical" : ready ? "healthy" : data.state === "failed" ? "critical" : data.state ? "warning" : "unknown"}
+                  label={stopped ? "stopped" : ready ? "running" : data.state || "not set up"}
+                />
               </span>
               <span className="meta">{data.workload_id ? <Link href={`/workloads/${data.workload_id}`}>claude-agent</Link> : "2 vCPU, 2 GB, 16 GB"}</span>
             </div>
@@ -132,10 +137,26 @@ export function ClaudeAgentPage() {
               <span className="meta">{data.grants.reduce((n, g) => n + g.folders.length, 0)} folder(s)</span>
             </div>
           </div>
+          {stopped ? (
+            <div className="banner banner-warn" role="alert">
+              <p>
+                <strong>The agent's container is stopped.</strong> Claude cannot be reached until it runs again.
+                {data.log && data.log.length > 0 ? ` Last note: ${data.log[data.log.length - 1]}` : ""}
+              </p>
+              <button
+                className="btn btn-sm btn-primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void run("Starting the container", () => startClaudeAgent(), "The agent's container is running.")}
+              >
+                Start container
+              </button>
+            </div>
+          ) : null}
           {data.status_error ? <ErrorNotice error={`The agent's container did not answer: ${data.status_error}`} /> : null}
 
           {!ready ? <SetupPanel data={data} busy={busy} onSetup={(body) => run("Setup", () => setupClaudeAgent(body))} /> : null}
-          {ready ? <SignInPanel data={data} busy={busy} run={run} /> : null}
+          {ready && !stopped ? <SignInPanel data={data} busy={busy} run={run} /> : null}
           <GrantsPanel data={data} busy={busy} run={run} />
           {ready ? <SettingsPanel data={data} busy={busy} run={run} /> : null}
           {data.workload_id ? (

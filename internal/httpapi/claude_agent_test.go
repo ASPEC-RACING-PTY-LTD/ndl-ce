@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,12 +26,33 @@ type agentWorkloads struct {
 	mounts    []lxc.Mount
 	leftovers []lxc.Leftover
 	removed   []string
+	// down is set when the agent's container was restarted with a folder
+	// it cannot mount.
+	down bool
+}
+
+func (a *agentWorkloads) GetWorkloads(context.Context, []lxc.Hint) (lxc.Observation, error) {
+	st := lxc.StatusRunning
+	if a.down {
+		st = lxc.StatusStopped
+	}
+	return lxc.Observation{Workloads: []lxc.Observed{{WorkloadID: "wl-agent", Kind: lxc.KindSystemContainer, Status: st, UnitActive: !a.down}}}, nil
 }
 
 func (a *agentWorkloads) LifecycleCT(ctx context.Context, req lxc.LifecycleRequest) (lxc.Result, error) {
 	if req.Action == lxc.ActionMountsSet {
+		changed := len(a.mounts) != len(req.Mounts)
 		a.mounts = req.Mounts
-		return lxc.Result{WorkloadID: req.WorkloadID, Mounts: req.Mounts}, nil
+		return lxc.Result{WorkloadID: req.WorkloadID, Mounts: req.Mounts, RestartRequired: changed}, nil
+	}
+	if req.Action == "restart" {
+		a.down = false
+		for _, m := range a.mounts {
+			if strings.Contains(m.Source, "broken") {
+				a.down = true
+			}
+		}
+		return lxc.Result{WorkloadID: req.WorkloadID}, nil
 	}
 	return a.fakeWorkloads.LifecycleCT(ctx, req)
 }
@@ -145,6 +167,9 @@ func TestClaudeAgent(t *testing.T) {
 	if code, out := jsonCall(t, ts, cookie, "PUT", "/api/v1/claude-agent/grants", grants); code != 200 || out["applied"] != false {
 		t.Fatalf("early grants %d %v", code, out)
 	}
+	caPollEvery, caRestartWait = 10*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { caPollEvery, caRestartWait = 5*time.Second, 60*time.Second })
+	_ = mem.CreateWorkload(ctx, appdb.Workload{ID: "wl-agent", ClusterID: cluster.ID, Name: caWorkloadName, Kind: lxc.KindSystemContainer, Status: lxc.StatusRunning, DesiredPower: "running"})
 	_, _ = s.caUpdate(ctx, cluster.ID, "test", func(c *caConfig) error {
 		c.WorkloadID, c.State = "wl-agent", caStateReady
 		return nil
@@ -211,6 +236,43 @@ func TestClaudeAgent(t *testing.T) {
 	}
 	if code, _ := bearerCall(t, ts, agentToken, "POST", "/api/v1/claude-agent/api/servers/jvs/console", `{"command":"say hi\nquit"}`); code != http.StatusBadRequest {
 		t.Fatalf("two lines = %d", code)
+	}
+
+	// A folder the container cannot mount puts the previous folders back.
+	_ = mem.CreateGameServer(ctx, appdb.GameServer{
+		ID: "gs-broken", ClusterID: cluster.ID, Name: "Broken", Game: "gmod", Family: "source", TemplateID: "ndl-gmod", Status: "ready",
+		EnvJSON: []byte(`{}`), PortsJSON: []byte(`[]`), Capabilities: []byte(`["files"]`), CreatedAt: time.Now().UTC(),
+	})
+	before := len(wl.mounts)
+	bad := `{"grants":[{"kind":"gameserver","id":"gs-jvs","folders":[{"path":"garrysmod/gamemodes","write":true},{"path":"garrysmod/addons","write":true}],"log":true,"console":true},{"kind":"gameserver","id":"gs-broken","folders":[{"path":"x"}]}]}`
+	if code, out := jsonCall(t, ts, cookie, "PUT", "/api/v1/claude-agent/grants", bad); code != http.StatusUnprocessableEntity || !strings.Contains(out["error"].(string), "previous folders are being put back") {
+		t.Fatalf("broken folder %d %v", code, out)
+	}
+	// The rollback runs in the background; its last step is the log line.
+	for i := 0; i < 300; i++ {
+		_, ov := jsonCall(t, ts, cookie, "GET", "/api/v1/claude-agent", "")
+		if strings.Contains(fmt.Sprint(ov["log"]), "previous folders were put back") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(wl.mounts) != before || wl.down {
+		t.Fatalf("not rolled back: %d mounts, down=%v", len(wl.mounts), wl.down)
+	}
+	if code, out := jsonCall(t, ts, cookie, "GET", "/api/v1/claude-agent", ""); code != 200 || len(out["grants"].([]any)) != 1 || out["container_running"] != true {
+		t.Fatalf("after rollback %d %v", code, out)
+	}
+
+	// A stopped container is said plainly, and Start brings it back.
+	wl.down = true
+	if code, out := jsonCall(t, ts, cookie, "POST", "/api/v1/claude-agent/login", `{"action":"start"}`); code != http.StatusConflict || !strings.Contains(out["error"].(string), "not running") {
+		t.Fatalf("login while stopped %d %v", code, out)
+	}
+	if code, out := jsonCall(t, ts, cookie, "GET", "/api/v1/claude-agent", ""); code != 200 || out["container_running"] != false || out["status"] != nil {
+		t.Fatalf("overview while stopped %d %v", code, out)
+	}
+	if code, out := jsonCall(t, ts, cookie, "POST", "/api/v1/claude-agent/start", ``); code != 200 || wl.down {
+		t.Fatalf("start %d %v", code, out)
 	}
 
 	// Sign-in.

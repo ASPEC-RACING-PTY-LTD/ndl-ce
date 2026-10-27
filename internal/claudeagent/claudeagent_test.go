@@ -65,34 +65,49 @@ func TestHostGrantStaysInsideTheServer(t *testing.T) {
 		DataDir: func(id string) string { return filepath.Join(root, "gameservers", id) },
 		SetFACL: func(_ context.Context, args ...string) ([]byte, error) { calls = append(calls, args); return nil, nil },
 	}
-	mounts, err := h.Grant(context.Background(), 101000, []HostACL{{ServerID: "s1", Path: "garrysmod/addons", Write: true}})
+	mounts, err := h.Grant(context.Background(), 101000, 100000, []HostACL{{ServerID: "s1", Path: "garrysmod/addons", Write: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	real, _ := filepath.EvalSymlinks(filepath.Join(data, "garrysmod", "addons"))
+	realRoot, _ := filepath.EvalSymlinks(data)
 	if len(mounts) != 1 || mounts[0].Source != real {
 		t.Fatalf("mounts %+v", mounts)
 	}
-	if strings.Join(calls[0], " ") != "-R -P -m u:101000:rwX,d:u:101000:rwX "+real {
-		t.Fatalf("setfacl %v", calls[0])
+	// LXC mounts as the container's root: it may pass through the folders
+	// on the way (search only), and the container's user gets the folder.
+	want := []string{
+		"-m u:100000:--x " + filepath.Dir(realRoot),
+		"-m u:100000:--x " + realRoot,
+		"-m u:100000:--x " + filepath.Join(realRoot, "garrysmod"),
+		"-R -P -m u:101000:rwX,d:u:101000:rwX " + real,
 	}
+	if len(calls) != len(want) {
+		t.Fatalf("setfacl calls %v", calls)
+	}
+	for i, w := range want {
+		if strings.Join(calls[i], " ") != w {
+			t.Errorf("call %d = %v, want %s", i, calls[i], w)
+		}
+	}
+	calls = nil
 	for _, a := range []HostACL{
 		{ServerID: "s1", Path: "garrysmod/escape"},
 		{ServerID: "s1", Path: "garrysmod/missing"},
 		{ServerID: "../s1", Path: "garrysmod/addons"},
 	} {
-		if _, err := h.Grant(context.Background(), 101000, []HostACL{a}); err == nil {
+		if _, err := h.Grant(context.Background(), 101000, 100000, []HostACL{a}); err == nil {
 			t.Errorf("%+v was granted", a)
 		}
 	}
-	if len(calls) != 1 {
+	if len(calls) != 0 {
 		t.Fatalf("refused grants ran setfacl: %v", calls)
 	}
-	if err := h.Revoke(context.Background(), 101000, []HostACL{{ServerID: "s1", Path: "garrysmod/addons"}}); err != nil {
+	if err := h.Revoke(context.Background(), 101000, 100000, []HostACL{{ServerID: "s1", Path: "garrysmod/addons"}}); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(calls[1], " ") != "-R -P -x u:101000,d:u:101000 "+real {
-		t.Fatalf("revoke %v", calls[1])
+	if len(calls) != 4 || strings.Join(calls[1], " ") != "-x u:100000 "+realRoot || strings.Join(calls[3], " ") != "-R -P -x u:101000,d:u:101000 "+real {
+		t.Fatalf("revoke %v", calls)
 	}
 }
 

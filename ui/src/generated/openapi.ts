@@ -4514,6 +4514,8 @@ export type PutClaudeAgentGrantsPath = "/api/v1/claude-agent/grants";
 
 export type RestartClaudeAgentPath = "/api/v1/claude-agent/restart";
 
+export type StartClaudeAgentPath = "/api/v1/claude-agent/start";
+
 export type RemoveClaudeAgentPath = "/api/v1/claude-agent/remove";
 
 export type ClaudeAgentAPIServersPath = "/api/v1/claude-agent/api/servers";

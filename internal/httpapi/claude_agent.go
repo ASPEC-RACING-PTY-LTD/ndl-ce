@@ -41,8 +41,12 @@ const (
 	caRemoveConfirm = "remove-claude-agent"
 )
 
-// caPollEvery is how often setup checks whether the container is up.
-var caPollEvery = 5 * time.Second
+// caPollEvery is how often setup checks whether the container is up, and
+// caRestartWait how long a restart may take before it counts as failed.
+var (
+	caPollEvery   = 5 * time.Second
+	caRestartWait = 60 * time.Second
+)
 
 // Agent setup states.
 const (
@@ -181,7 +185,9 @@ func (s *Server) getClaudeAgent(w http.ResponseWriter, r *http.Request) {
 		"log": c.Log, "name": c.Name, "permission_mode": c.PermissionMode, "permission_modes": claudeagent.PermissionModes,
 		"grants": c.Grants, "servers": s.caServers(ctx, p.User.ClusterID),
 	}
-	if c.WorkloadID != "" && c.State == caStateReady {
+	running := c.WorkloadID != "" && s.caRunning(ctx, p.User.ClusterID, c.WorkloadID)
+	out["container_running"] = running
+	if running && c.State == caStateReady {
 		if rpc, ok := s.caRPC(); ok {
 			var st claudeagent.Status
 			sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -320,7 +326,7 @@ func (s *Server) caProvision(ctx context.Context, clusterID string) error {
 		c.WorkloadID = wl.ID
 	}
 	s.caLog(ctx, clusterID, "waiting for the container to start")
-	if err := s.caWaitRunning(ctx, clusterID, c.WorkloadID); err != nil {
+	if err := s.caWaitRunning(ctx, clusterID, c.WorkloadID, 10*time.Minute); err != nil {
 		return err
 	}
 	_, _ = s.caUpdate(ctx, clusterID, caActor, func(cc *caConfig) error {
@@ -366,8 +372,8 @@ func (s *Server) caProvision(ctx context.Context, clusterID string) error {
 	return nil
 }
 
-func (s *Server) caWaitRunning(ctx context.Context, clusterID, id string) error {
-	deadline := time.Now().Add(10 * time.Minute)
+func (s *Server) caWaitRunning(ctx context.Context, clusterID, id string, limit time.Duration) error {
+	deadline := time.Now().Add(limit)
 	rpc, _ := s.caRPC()
 	for {
 		s.refreshWorkloads(ctx, clusterID)
@@ -379,7 +385,7 @@ func (s *Server) caWaitRunning(ctx context.Context, clusterID, id string) error 
 			}
 		}
 		if time.Now().After(deadline) {
-			return errors.New("the container did not start in 10 minutes; check it under Compute")
+			return fmt.Errorf("the agent's container did not start within %s; check it under Compute", limit)
 		}
 		select {
 		case <-ctx.Done():
@@ -387,6 +393,22 @@ func (s *Server) caWaitRunning(ctx context.Context, clusterID, id string) error 
 		case <-time.After(caPollEvery):
 		}
 	}
+}
+
+// caRunning reports whether the agent's container is running now.
+func (s *Server) caRunning(ctx context.Context, clusterID, id string) bool {
+	s.refreshWorkloadsNow(ctx, clusterID)
+	wl, _ := s.Store.GetWorkload(ctx, clusterID, id)
+	return wl != nil && strings.EqualFold(wl.Status, lxc.StatusRunning)
+}
+
+// caRestartContainer restarts (or starts) the agent's container and waits
+// briefly for it to answer.
+func (s *Server) caRestartContainer(ctx context.Context, clusterID, id string) error {
+	if _, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: id, Action: "restart"}); err != nil {
+		return err
+	}
+	return s.caWaitRunning(ctx, clusterID, id, caRestartWait)
 }
 
 // caRequest is the setup and configure request: settings, a fresh API
@@ -473,7 +495,30 @@ func (s *Server) caReady(w http.ResponseWriter, r *http.Request, clusterID strin
 		writeErr(w, http.StatusBadGateway, "this node's agent cannot run the Claude Agent; update No-dal")
 		return c, nil, false
 	}
+	if !s.caRunning(r.Context(), clusterID, c.WorkloadID) {
+		writeErr(w, http.StatusConflict, "the agent's container is not running; start it on this page, then try again")
+		return c, nil, false
+	}
 	return c, rpc, true
+}
+
+// startClaudeAgent starts (or restarts) the agent's container.
+func (s *Server) startClaudeAgent(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.caRequire(w, r)
+	if !ok {
+		return
+	}
+	c, err := s.caLoad(r.Context(), p.User.ClusterID)
+	if err != nil || c.WorkloadID == "" {
+		writeErr(w, http.StatusConflict, "set up the agent first")
+		return
+	}
+	if err := s.caRestartContainer(r.Context(), p.User.ClusterID, c.WorkloadID); err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "the agent's container did not start: "+err.Error())
+		return
+	}
+	s.audit(r, p.User.ClusterID, p.User.ID, "claude_agent.start", "ok", c.WorkloadID)
+	writeJSON(w, http.StatusOK, map[string]any{"running": true})
 }
 
 func (s *Server) claudeAgentLogin(w http.ResponseWriter, r *http.Request) {
@@ -705,13 +750,28 @@ func (s *Server) caApplyGrants(ctx context.Context, clusterID, by string, grants
 		return false, err
 	}
 	restarted := false
-	if res.RestartRequired {
-		if _, err := s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: c.WorkloadID, Action: "restart"}); err != nil {
-			return false, errUnprocessable("the folders changed but restarting the agent's container failed: " + err.Error())
-		}
+	if res.RestartRequired || !s.caRunning(ctx, clusterID, c.WorkloadID) {
 		restarted = true
-		if err := s.caWaitRunning(ctx, clusterID, c.WorkloadID); err != nil {
-			return true, err
+		if err := s.caRestartContainer(ctx, clusterID, c.WorkloadID); err != nil {
+			// Put the folders that worked back so the agent is not left
+			// stopped. It runs in the background: a restart can outlast a
+			// proxy's request timeout.
+			var undo []claudeagent.HostACL
+			had := map[string]bool{}
+			for _, a := range c.Applied {
+				had[key(a.ServerID, a.Path)] = true
+			}
+			for _, a := range applied {
+				if !had[key(a.ServerID, a.Path)] {
+					undo = append(undo, claudeagent.HostACL{ServerID: a.ServerID, Path: a.Path, Write: a.Write})
+				}
+			}
+			_, _ = s.caUpdate(ctx, clusterID, by, func(cc *caConfig) error {
+				cc.Grants, cc.Applied = c.Grants, c.Applied
+				return nil
+			})
+			go s.caRollback(clusterID, c.WorkloadID, c.Applied, undo)
+			return true, errUnprocessable("the agent's container did not start with the new folders, so the previous folders are being put back: " + err.Error())
 		}
 	}
 	req, err := s.caRequest(ctx, clusterID, c.WorkloadID)
@@ -722,6 +782,26 @@ func (s *Server) caApplyGrants(ctx context.Context, clusterID, by string, grants
 		return restarted, errUnprocessable(err.Error())
 	}
 	return restarted, nil
+}
+
+// caRollback puts the previous mounts back, takes access to the new
+// folders away again and restarts the container.
+func (s *Server) caRollback(clusterID, workloadID string, prev []caApplied, undo []claudeagent.HostACL) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	mounts := make([]lxc.Mount, 0, len(prev))
+	for _, a := range prev {
+		mounts = append(mounts, lxc.Mount{Source: a.Source, Target: a.Target, ReadOnly: !a.Write, Label: "Claude Agent"})
+	}
+	_, _ = s.Workloads.LifecycleCT(ctx, lxc.LifecycleRequest{WorkloadID: workloadID, Action: lxc.ActionMountsSet, Mounts: mounts})
+	if rpc, ok := s.caRPC(); ok && len(undo) > 0 {
+		_ = rpc.ClaudeAgent(ctx, "revoke", claudeagent.Request{WorkloadID: workloadID, ACLs: undo}, nil)
+	}
+	if err := s.caRestartContainer(ctx, clusterID, workloadID); err != nil {
+		s.caLog(ctx, clusterID, "the agent's container did not start with the previous folders either: %v", err)
+		return
+	}
+	s.caLog(ctx, clusterID, "the previous folders were put back and the container restarted")
 }
 
 // ---- remove -------------------------------------------------------------

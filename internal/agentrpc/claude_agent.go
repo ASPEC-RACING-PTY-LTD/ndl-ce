@@ -27,16 +27,18 @@ func (h *Handler) claudeHost() claudeagent.Host {
 	return claudeagent.Host{DataDir: func(id string) string { return h.gameHost().RT.DataDir(id) }}
 }
 
-// claudeUID is the host uid of the container's claude user.
-func (h *Handler) claudeUID(id string) (int, error) {
+// claudeUIDs are the host uids of the container's claude user and of its
+// root, which LXC mounts folders as.
+func (h *Handler) claudeUIDs(id string) (int, int, error) {
 	applied, err := h.Workloads.LastApplied(id)
 	if err != nil {
-		return 0, fmt.Errorf("the agent container is not on this node")
+		return 0, 0, fmt.Errorf("the agent container is not on this node")
 	}
 	if applied.Spec.Privileged {
-		return 0, errors.New("the agent container must be unprivileged")
+		return 0, 0, errors.New("the agent container must be unprivileged")
 	}
-	return lxc.MappedRootUID(applied.Spec) + claudeagent.GuestUID, nil
+	root := lxc.MappedRootUID(applied.Spec)
+	return root + claudeagent.GuestUID, root, nil
 }
 
 func (h *Handler) execClaudeAgent(ctx context.Context, m *agentv1.ClaudeAgent) (*connect.Response[agentv1.ExecuteResponse], error) {
@@ -88,16 +90,16 @@ func (h *Handler) execClaudeAgent(ctx context.Context, m *agentv1.ClaudeAgent) (
 			result = g.Status(ctx)
 		}
 	case "grant":
-		var uid int
-		if uid, err = h.claudeUID(req.WorkloadID); err == nil {
+		var uid, root int
+		if uid, root, err = h.claudeUIDs(req.WorkloadID); err == nil {
 			var mounts []claudeagent.MountSource
-			mounts, err = h.claudeHost().Grant(ctx, uid, req.ACLs)
+			mounts, err = h.claudeHost().Grant(ctx, uid, root, req.ACLs)
 			result = claudeagent.GrantResult{Mounts: mounts}
 		}
 	case "revoke":
-		var uid int
-		if uid, err = h.claudeUID(req.WorkloadID); err == nil {
-			err = h.claudeHost().Revoke(ctx, uid, req.ACLs)
+		var uid, root int
+		if uid, root, err = h.claudeUIDs(req.WorkloadID); err == nil {
+			err = h.claudeHost().Revoke(ctx, uid, root, req.ACLs)
 			result = claudeagent.GrantResult{}
 		}
 	default:

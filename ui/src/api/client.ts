@@ -4340,6 +4340,7 @@ export type ClaudeAgentOverview = {
   permission_modes: string[];
   grants: ClaudeAgentGrant[];
   servers: ClaudeAgentServer[];
+  container_running?: boolean;
   status?: ClaudeAgentStatus;
   status_error?: string;
 };
@@ -4358,6 +4359,9 @@ export async function putClaudeAgentSettings(body: { name: string; permission_mo
 }
 export async function putClaudeAgentGrants(grants: ClaudeAgentGrant[]): Promise<{ grants: ClaudeAgentGrant[]; applied: boolean; restarted?: boolean }> {
   return readJson(await request("/claude-agent/grants", { method: "PUT", body: JSON.stringify({ grants }) }));
+}
+export async function startClaudeAgent(): Promise<{ running: boolean }> {
+  return readJson(await request("/claude-agent/start", { method: "POST" }));
 }
 export async function restartClaudeAgent(): Promise<ClaudeAgentStatus> {
   return readJson(await request("/claude-agent/restart", { method: "POST" }));

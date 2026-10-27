@@ -36,6 +36,12 @@ name you chose (No-dal by default).
   adds a POSIX ACL for the container's user to the shared folder (and a
   default ACL, so new files inherit it); taking access away removes it
   again. A folder that is a symlink leading outside the server is refused.
+  LXC mounts the folder as the container's mapped root user, so that user
+  gets search-only access (`--x`, it can pass through but not list) to the
+  folders on the way, such as `/var/lib/ndl/gameservers/<id>`.
+- **If the container will not start** with new folders, the previous
+  folders are put back and it is restarted; the page shows a stopped
+  container with a Start button.
 - **The `ndl` command.** Inside the container, `ndl servers`,
   `ndl log SERVER [LINES]`, `ndl console SERVER COMMAND` and
   `ndl restart SERVER` call No-dal with a token that only allows what you

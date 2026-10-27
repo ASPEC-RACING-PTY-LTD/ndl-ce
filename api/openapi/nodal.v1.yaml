@@ -3907,6 +3907,18 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /claude-agent/start:
+    post:
+      operationId: startClaudeAgent
+      summary: Start (or restart) the Claude Agent's container and wait for it to answer. Requires feature.manage.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /claude-agent/remove:
     post:
       operationId: removeClaudeAgent

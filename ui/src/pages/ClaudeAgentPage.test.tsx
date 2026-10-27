@@ -11,6 +11,7 @@ function mock(state: Record<string, unknown>) {
     enabled: true,
     workload_id: "wl1",
     state: "ready",
+    container_running: true,
     name: "No-dal",
     permission_mode: "default",
     permission_modes: ["default", "acceptEdits", "plan"],
@@ -140,6 +141,15 @@ describe("Claude Agent", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Remove agent" }));
     await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/claude-agent/remove")).toBe(true));
     setAutoConfirm(false);
+  });
+
+  it("says when the container is stopped and starts it", async () => {
+    const calls = mock({ container_running: false, status: undefined, log: ["07:48:45 the agent's container did not start"] });
+    render(<ClaudeAgentPage />);
+    expect(await screen.findByText("The agent's container is stopped.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Get sign-in link" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start container" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/claude-agent/start")).toBe(true));
   });
 
   it("points to Add Features while off", async () => {

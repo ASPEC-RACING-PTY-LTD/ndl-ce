@@ -34,44 +34,76 @@ func (h Host) setfacl(ctx context.Context, args ...string) ([]byte, error) {
 // folder whose real path is inside the server's data folder, so a symlink
 // cannot point a mount or an ACL somewhere else.
 func (h Host) Resolve(a HostACL) (string, error) {
+	_, real, err := h.resolve(a)
+	return real, err
+}
+
+// resolve returns the server's real data folder and the granted folder.
+func (h Host) resolve(a HostACL) (string, string, error) {
 	rel, err := CleanFolder(a.Path)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if strings.TrimSpace(a.ServerID) == "" || strings.ContainsAny(a.ServerID, "/\\") || a.ServerID == "." || a.ServerID == ".." {
-		return "", fmt.Errorf("server id is not valid")
+		return "", "", fmt.Errorf("server id is not valid")
 	}
 	root, err := filepath.EvalSymlinks(h.DataDir(a.ServerID))
 	if err != nil {
-		return "", fmt.Errorf("the server's files are not on this node")
+		return "", "", fmt.Errorf("the server's files are not on this node")
 	}
 	real, err := filepath.EvalSymlinks(filepath.Join(root, filepath.FromSlash(rel)))
 	if err != nil {
-		return "", fmt.Errorf("folder %s does not exist on the server", rel)
+		return "", "", fmt.Errorf("folder %s does not exist on the server", rel)
 	}
 	if !strings.HasPrefix(real, root+string(os.PathSeparator)) {
-		return "", fmt.Errorf("folder %s leads outside the server", rel)
+		return "", "", fmt.Errorf("folder %s leads outside the server", rel)
 	}
 	st, err := os.Stat(real)
 	if err != nil || !st.IsDir() {
-		return "", fmt.Errorf("%s is not a folder", rel)
+		return "", "", fmt.Errorf("%s is not a folder", rel)
 	}
 	if strings.ContainsAny(real, " \t\n\r\x00\\,=#:") {
-		return "", fmt.Errorf("folder %s has a character a mount cannot use", rel)
+		return "", "", fmt.Errorf("folder %s has a character a mount cannot use", rel)
 	}
-	return real, nil
+	return root, real, nil
 }
 
-// Grant resolves each folder and gives uid access to it and everything in it.
-func (h Host) Grant(ctx context.Context, uid int, acls []HostACL) ([]MountSource, error) {
-	if uid <= 0 {
+// traversal lists the folders LXC must pass through to bind mount real:
+// the folder holding every server's data, the server's data folder and
+// any folder between it and real.
+func traversal(root, real string) []string {
+	out := []string{filepath.Dir(root), root}
+	rel, err := filepath.Rel(root, filepath.Dir(real))
+	if err != nil || rel == "." {
+		return out
+	}
+	cur := root
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		cur = filepath.Join(cur, part)
+		out = append(out, cur)
+	}
+	return out
+}
+
+// Grant resolves each folder and gives uid access to it and everything in
+// it. LXC mounts as the container's mapped root (rootUID), so that user
+// also gets search-only (--x) access to the folders on the way: it can
+// pass through them but not list them, and once the container runs it
+// cannot reach host paths at all.
+func (h Host) Grant(ctx context.Context, uid, rootUID int, acls []HostACL) ([]MountSource, error) {
+	if uid <= 0 || rootUID <= 0 {
 		return nil, fmt.Errorf("the agent container's user id is unknown")
 	}
 	out := make([]MountSource, 0, len(acls))
 	for _, a := range acls {
-		real, err := h.Resolve(a)
+		root, real, err := h.resolve(a)
 		if err != nil {
 			return nil, err
+		}
+		for _, dir := range traversal(root, real) {
+			if b, err := h.setfacl(ctx, "-m", fmt.Sprintf("u:%d:--x", rootUID), dir); err != nil {
+				return nil, fmt.Errorf("letting the agent's container reach %s failed: %v: %s", a.Path, err, strings.TrimSpace(string(b)))
+			}
 		}
 		perm := "rX"
 		if a.Write {
@@ -86,16 +118,23 @@ func (h Host) Grant(ctx context.Context, uid int, acls []HostACL) ([]MountSource
 	return out, nil
 }
 
-// Revoke takes uid's access away again. Folders that are gone are skipped.
-func (h Host) Revoke(ctx context.Context, uid int, acls []HostACL) error {
+// Revoke takes uid's access away again, and rootUID's search access to the
+// folders on the way. Folders that are gone are skipped. Callers grant the
+// folders that stay afterwards, which puts back search access they share.
+func (h Host) Revoke(ctx context.Context, uid, rootUID int, acls []HostACL) error {
 	if uid <= 0 {
 		return nil
 	}
 	var errs []string
 	for _, a := range acls {
-		real, err := h.Resolve(a)
+		root, real, err := h.resolve(a)
 		if err != nil {
 			continue
+		}
+		if rootUID > 0 {
+			for _, dir := range traversal(root, real) {
+				_, _ = h.setfacl(ctx, "-x", fmt.Sprintf("u:%d", rootUID), dir)
+			}
 		}
 		spec := fmt.Sprintf("u:%d,d:u:%d", uid, uid)
 		if b, err := h.setfacl(ctx, "-R", "-P", "-x", spec, real); err != nil {

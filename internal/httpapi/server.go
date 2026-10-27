@@ -670,6 +670,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/claude-agent/settings", s.putClaudeAgentSettings)
 	mux.HandleFunc("PUT /api/v1/claude-agent/grants", s.putClaudeAgentGrants)
 	mux.HandleFunc("POST /api/v1/claude-agent/restart", s.restartClaudeAgent)
+	mux.HandleFunc("POST /api/v1/claude-agent/start", s.startClaudeAgent)
 	mux.HandleFunc("POST /api/v1/claude-agent/remove", s.removeClaudeAgent)
 	mux.HandleFunc("GET /api/v1/claude-agent/api/servers", s.caAgentServers)
 	mux.HandleFunc("GET /api/v1/claude-agent/api/servers/{server}/log", s.caAgentLog)
