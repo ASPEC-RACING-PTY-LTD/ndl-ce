@@ -1,4 +1,4 @@
-nodal (1.2.6) UNRELEASED; urgency=medium
+nodal (1.2.7) trixie; urgency=medium
 
   * Edge forwarding (Network > Edge forwarding): publish a game server,
     workload or host ports that run on a node without a public address
@@ -79,7 +79,7 @@ nodal (1.2.6) UNRELEASED; urgency=medium
   * Game servers: dependencies installed with a mod keep their real file
     names and show in the content list. They used to be saved as .bin.
 
- -- No-dal <packaging@no-dal.com>  Thu, 22 Oct 2026 00:00:00 +0000
+ -- No-dal <packaging@no-dal.com>  Tue, 27 Oct 2026 18:05:05 +0000
 
 nodal (1.2.5) trixie; urgency=medium
 
