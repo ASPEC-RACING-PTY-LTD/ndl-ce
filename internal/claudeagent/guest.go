@@ -59,7 +59,9 @@ claude auth status --json 2>/dev/null | grep -q '"loggedIn": *true'
 EOF
 cat > /usr/local/lib/ndl-claude/run <<'EOF'
 #!/bin/sh
-exec claude remote-control --name "$NDL_RC_NAME" --permission-mode "$NDL_RC_MODE" </dev/null
+# Remote Control asks once whether to enable it; there is no terminal to
+# answer on, so the answer comes on stdin.
+printf 'y\n' | exec claude remote-control --name "$NDL_RC_NAME" --permission-mode "$NDL_RC_MODE"
 EOF
 chmod 0755 /usr/local/lib/ndl-claude/logged-in /usr/local/lib/ndl-claude/run
 cat > /etc/systemd/system/ndl-claude.service <<'EOF'
@@ -77,6 +79,9 @@ Environment=PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/etc/ndl-claude/env
 ExecCondition=/usr/local/lib/ndl-claude/logged-in
 ExecStart=/usr/local/lib/ndl-claude/run
+# Its screen redraws several times a second; errors go to stderr.
+StandardOutput=null
+StandardError=journal
 Restart=on-failure
 RestartSec=15
 
