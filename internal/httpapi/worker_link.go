@@ -52,8 +52,9 @@ func (s *Server) checkWorkerLink(ctx context.Context, node appdb.Node) workerLin
 		}
 		remote.Status = ndnet.NodeNotReady
 		remote.Reason = out.Error
-		_ = s.Store.UpdateRemoteNodeSession(ctx, *remote)
-		_ = s.Store.MarkInventoryStale(ctx, node.ID)
+		if s.recordLinkCheck(ctx, *remote) {
+			_ = s.Store.MarkInventoryStale(ctx, node.ID)
+		}
 		return out
 	}
 	out.Reachable = true
@@ -62,7 +63,9 @@ func (s *Server) checkWorkerLink(ctx context.Context, node appdb.Node) workerLin
 	remote.Reason = ""
 	remote.LastSeenAt = &now
 	remote.LastHandshakeUnix = now.Unix()
-	_ = s.Store.UpdateRemoteNodeSession(ctx, *remote)
+	if !s.recordLinkCheck(ctx, *remote) {
+		return out
+	}
 	if inv, oerr := agent.Observe(cctx); oerr == nil {
 		if payload, merr := json.Marshal(inv); merr == nil {
 			observed := inv.ObservedAt
@@ -75,6 +78,20 @@ func (s *Server) checkWorkerLink(ctx context.Context, node appdb.Node) workerLin
 		}
 	}
 	return out
+}
+
+// recordLinkCheck stores a check's outcome unless the node's address
+// changed while the check ran (a check of an unreachable address waits up
+// to 8 seconds): writing the row back would restore the old address over
+// the one just saved.
+func (s *Server) recordLinkCheck(ctx context.Context, checked appdb.RemoteNode) bool {
+	cur, err := s.Store.GetRemoteNode(ctx, checked.ClusterID, checked.ID)
+	if err != nil || cur == nil || strings.TrimSpace(cur.ListenAddr) != strings.TrimSpace(checked.ListenAddr) {
+		return false
+	}
+	cur.Status, cur.Reason = checked.Status, checked.Reason
+	cur.LastSeenAt, cur.LastHandshakeUnix = checked.LastSeenAt, checked.LastHandshakeUnix
+	return s.Store.UpdateRemoteNodeSession(ctx, *cur) == nil
 }
 
 // linkError turns a dial or handshake failure into words an admin can act on.

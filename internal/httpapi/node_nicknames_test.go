@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/no-dal/ndl-ce/internal/appdb"
+	"github.com/no-dal/ndl-ce/internal/ndnet"
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
@@ -57,5 +60,31 @@ func TestAgentTunnelInstallLinkIsOneTime(t *testing.T) {
 	}
 	if agentTunnelName("agent.example.com") != "ndl-agent-agent-example-com" {
 		t.Fatal(agentTunnelName("agent.example.com"))
+	}
+}
+
+// A link check of the old address must not write it back over an address
+// saved while the check was waiting on its dial.
+func TestLinkCheckKeepsAddressSavedMeanwhile(t *testing.T) {
+	a := newAutoTest(t)
+	ctx := context.Background()
+	id := "8f6a2d4e-0000-4000-8000-000000000001"
+	if err := a.mem.CreateRemoteNode(ctx, appdb.RemoteNode{ID: id, ClusterID: a.cluster, Name: "w", ListenAddr: "cloudflare:agent.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	stale := appdb.RemoteNode{ID: id, ClusterID: a.cluster, Name: "w", ListenAddr: "203.0.113.10:9444", Status: ndnet.NodeNotReady, Reason: "timed out"}
+	if a.s.recordLinkCheck(ctx, stale) {
+		t.Fatal("a check of the old address was recorded")
+	}
+	got, _ := a.mem.GetRemoteNode(ctx, a.cluster, id)
+	if got.ListenAddr != "cloudflare:agent.example.com" {
+		t.Fatalf("address reverted to %q", got.ListenAddr)
+	}
+	fresh := appdb.RemoteNode{ID: id, ClusterID: a.cluster, ListenAddr: "cloudflare:agent.example.com", Status: ndnet.NodeReady}
+	if !a.s.recordLinkCheck(ctx, fresh) {
+		t.Fatal("a check of the current address was not recorded")
+	}
+	if got, _ = a.mem.GetRemoteNode(ctx, a.cluster, id); got.Status != ndnet.NodeReady {
+		t.Fatalf("status %q", got.Status)
 	}
 }
