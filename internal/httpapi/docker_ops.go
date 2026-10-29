@@ -83,7 +83,7 @@ func (s *Server) dockerTunnelAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	if !rbac.Authorize(p.Grants, rbac.CloudflareHostTunnel) {
 		writeErr(w, http.StatusForbidden, "only admin may restart tunnel services")
 		return
 	}
@@ -873,7 +873,7 @@ func (s *Server) dockerBulk(w http.ResponseWriter, r *http.Request) {
 	sc := dockerScript{Name: names[req.Action], ContinueOnError: true, Steps: []dockerStep{{
 		Action: req.Action, Machine: req.MachineID, Project: req.Project, IncludeIgnored: req.IncludeIgnored,
 	}}}
-	j := s.startScriptJob(p.User.ClusterID, p.User.Username, hasRole(p, rbac.SuperAdmin), "bulk", sc, func(outcome string) {
+	j := s.startScriptJob(p.User.ClusterID, p.User.Username, rbac.Authorize(p.Grants, rbac.DockerScriptsAdmin), "bulk", sc, func(outcome string) {
 		s.auditInternal(p.User.ClusterID, p.User.ID, "docker.bulk."+req.Action, outcome, req.MachineID+" "+req.Project)
 	})
 	writeJSON(w, http.StatusAccepted, j.json())
@@ -903,7 +903,7 @@ func (s *Server) runDockerScript(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"valid": false, "error": err.Error()})
 		return
 	}
-	admin := hasRole(p, rbac.SuperAdmin)
+	admin := rbac.Authorize(p.Grants, rbac.DockerScriptsAdmin)
 	if req.DryRun {
 		j := s.newOpsJob("test", firstNonEmpty(sc.Name, "test"), p.User.Username)
 		x := &scriptRun{s: s, clusterID: p.User.ClusterID, admin: admin, dry: true, job: j}

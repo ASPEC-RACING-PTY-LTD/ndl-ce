@@ -4,12 +4,10 @@ import { PageHeader } from "../components/PageHeader";
 import { ApiError, approveAIPlan, createAIPlan, listAIPlans } from "../api/client";
 import type { AIPlan, AIPlanStep } from "../generated/openapi";
 import { Field } from "../components/Field";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 
-function canOperate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
 
 function stepIsQueued(step: AIPlanStep): boolean {
   const status = (step.status ?? "").toLowerCase();
@@ -30,8 +28,7 @@ function stepIsQueued(step: AIPlanStep): boolean {
 
 export function PlansPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const operate = canOperate(roles);
+  const operate = hasGrant(session.status === "ready" ? session.user : null, "ai.manage");
   const [prompt, setPrompt] = useState("install a database on node-02");
   const [plans, setPlans] = useState<AIPlan[] | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -232,7 +232,7 @@ func (s *Server) importVM(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	if !rbac.Authorize(p.Grants, rbac.MigrationPrivileged) {
 		writeErr(w, http.StatusForbidden, "import is privileged")
 		return
 	}
@@ -396,7 +396,7 @@ func (s *Server) exportVM(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if !rbac.Authorize(p.Grants, rbac.StorageImageUpload) && !hasRole(p, rbac.SuperAdmin) {
+	if !rbac.Authorize(p.Grants, rbac.StorageImageUpload) && !rbac.Authorize(p.Grants, rbac.MigrationPrivileged) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}

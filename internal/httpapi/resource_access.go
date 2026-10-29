@@ -15,13 +15,17 @@ import (
 	"github.com/no-dal/ndl-ce/internal/rbac"
 )
 
-// Resource access gives a user or group permissions on one item (a
-// workload, game server, Docker container or node) without a role. require
-// checks it when a role does not grant the permission: the route says which
-// item a request is about, and the item's grants decide. Only a fixed set
-// of permissions can be granted per kind, never creating, deleting,
-// migrating or changing what an item is attached to, so a grant cannot
-// reach anything beyond its item.
+// Resource access gives a user, group or role permissions directly, on top
+// of what roles give: either everywhere ("cluster" scope, merged into the
+// principal's grants when it signs in) or on one item (a workload, game
+// server, Docker container or node). require checks item grants when the
+// merged grants do not cover a request: the route says which item it is
+// about, and that item's grants decide.
+//
+// Handing out permissions needs permissions.assign: you give only what you
+// hold, only to users, groups and roles ranked below you, and only from
+// Admin rank up. permissions.assign.override lifts those limits, and only a
+// SuperAdmin can give it or "*".
 
 const (
 	accessWorkload   = "workload"
@@ -29,12 +33,18 @@ const (
 	accessDocker     = "docker"
 	accessNode       = "node"
 
+	// accessCluster is the scope of a grant that applies everywhere.
+	accessCluster = "cluster"
+
 	accessSubjectUser  = "user"
 	accessSubjectGroup = "group"
+	accessSubjectRole  = "role"
 )
 
-// grantablePerms are what each kind of item can grant, in display order.
-var grantablePerms = map[string][]string{
+// suggestedPerms are the permissions that act on each kind of item, in
+// display order. Any permission can be granted; these are the ones the
+// item's own pages check.
+var suggestedPerms = map[string][]string{
 	accessWorkload: {
 		rbac.ComputeRead, rbac.ComputeLifecycle, rbac.ComputeStart, rbac.ComputeStop, rbac.ComputeConsole, rbac.ComputeSnapshot,
 		rbac.TerminalOpen, rbac.FilesRead, rbac.FilesDownload, rbac.FilesUpload, rbac.FilesCreate, rbac.FilesModify, rbac.FilesDelete,
@@ -148,11 +158,44 @@ func (s *Server) subjectGrants(ctx context.Context, p *principal) []resourceGran
 	}
 	var out []resourceGrant
 	for _, g := range doc.Grants {
-		if (g.SubjectKind == accessSubjectUser && g.SubjectID == p.User.ID) || (g.SubjectKind == accessSubjectGroup && groups[g.SubjectID]) {
+		if (g.SubjectKind == accessSubjectUser && g.SubjectID == p.User.ID) ||
+			(g.SubjectKind == accessSubjectGroup && groups[g.SubjectID]) ||
+			(g.SubjectKind == accessSubjectRole && containsString(p.Roles, g.SubjectID)) {
 			out = append(out, g)
 		}
 	}
 	return out
+}
+
+// clusterGrants are the permissions granted to the user everywhere,
+// directly or through a group or role. They merge with role grants.
+func (s *Server) clusterGrants(ctx context.Context, p *principal) []string {
+	var out []string
+	for _, g := range s.subjectGrants(ctx, p) {
+		if g.ResourceKind == accessCluster {
+			out = append(out, g.Permissions...)
+		}
+	}
+	return out
+}
+
+// mergeGrants adds extra permissions to grants without repeats.
+func mergeGrants(grants []string, extra ...string) []string {
+	for _, g := range extra {
+		if !rbac.Authorize(grants, g) || (g == rbac.All && !containsString(grants, rbac.All)) {
+			grants = append(grants, g)
+		}
+	}
+	return grants
+}
+
+// knownPerm reports whether perm can be granted at all.
+func knownPerm(perm string) bool {
+	switch perm {
+	case rbac.All, rbac.ApprovalsView, rbac.ApprovalsDecide:
+		return true
+	}
+	return containsString(rbac.AllPermissions(), perm)
 }
 
 // itemPerms are the permissions the user holds on one item through grants.
@@ -233,7 +276,7 @@ func dockerAccessID(c docker.Container) string {
 // checks see them; nothing else is added.
 func (s *Server) scopedAllow(r *http.Request, p *principal, perm string) bool {
 	kind, id, list := s.routeItem(r, p.User.ClusterID)
-	if kind == "" || !grantable(kind, perm) {
+	if kind == "" {
 		return false
 	}
 	ctx := r.Context()
@@ -260,10 +303,6 @@ func (s *Server) scopedAllow(r *http.Request, p *principal, perm string) bool {
 	p.Grants = uniqueStrings(append(append(append([]string(nil), p.base...), perms...), baseGrants...))
 	p.Scoped = true
 	return true
-}
-
-func grantable(kind, perm string) bool {
-	return containsString(grantablePerms[kind], perm)
 }
 
 // roleGrants are the grants from roles, before any item grant was added.
@@ -331,27 +370,34 @@ func scopedDockerInventory(inv docker.Inventory, ids map[string]bool) docker.Inv
 
 // --- API ---
 
+// assignablePerms is every permission that can be handed out, in catalog order.
+func assignablePerms() []string {
+	return append([]string{rbac.All}, append(rbac.AllPermissions(), rbac.ApprovalsView, rbac.ApprovalsDecide)...)
+}
+
+func (s *Server) accessListJSON(ctx context.Context, clusterID string, grants []resourceGrant) map[string]any {
+	return map[string]any{"grants": s.accessJSON(ctx, clusterID, grants), "suggested": suggestedPerms, "permissions": assignablePerms()}
+}
+
 func (s *Server) accessJSON(ctx context.Context, clusterID string, grants []resourceGrant) []map[string]any {
-	users := map[string]string{}
+	names := map[string]string{}
 	if list, err := s.Store.ListUsers(ctx, clusterID); err == nil {
 		for _, u := range list {
-			users[u.ID] = u.Username
+			names[accessSubjectUser+":"+u.ID] = u.Username
 		}
 	}
-	groups := map[string]string{}
 	if list, err := s.Store.ListGroups(ctx, clusterID); err == nil {
 		for _, g := range list {
-			groups[g.ID] = g.Name
+			names[accessSubjectGroup+":"+g.ID] = g.Name
 		}
+	}
+	for _, d := range s.roleDefs(ctx, clusterID) {
+		names[accessSubjectRole+":"+d.Name] = firstNonEmpty(d.Title, d.Name)
 	}
 	out := make([]map[string]any, 0, len(grants))
 	for _, g := range grants {
-		name := users[g.SubjectID]
-		if g.SubjectKind == accessSubjectGroup {
-			name = groups[g.SubjectID]
-		}
 		out = append(out, map[string]any{
-			"id": g.ID, "subject_kind": g.SubjectKind, "subject_id": g.SubjectID, "subject_name": name,
+			"id": g.ID, "subject_kind": g.SubjectKind, "subject_id": g.SubjectID, "subject_name": names[g.SubjectKind+":"+g.SubjectID],
 			"resource_kind": g.ResourceKind, "resource_id": g.ResourceID, "permissions": g.Permissions,
 			"created_by": g.CreatedBy, "created_at": g.CreatedAt,
 		})
@@ -359,17 +405,18 @@ func (s *Server) accessJSON(ctx context.Context, clusterID string, grants []reso
 	return out
 }
 
-// listResourceAccess is GET /iam/resource-access: every grant, and what each kind can grant.
+// listResourceAccess is GET /iam/resource-access: every direct grant, the
+// permissions that act on each kind of item, and every permission.
 func (s *Server) listResourceAccess(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.UsersRolesManage)
+	p, err := s.require(w, r, rbac.PermissionsAssign)
 	if err != nil {
 		return
 	}
 	doc := s.resourceAccess(r.Context(), p.User.ClusterID)
-	writeJSON(w, http.StatusOK, map[string]any{"grants": s.accessJSON(r.Context(), p.User.ClusterID, doc.Grants), "grantable": grantablePerms})
+	writeJSON(w, http.StatusOK, s.accessListJSON(r.Context(), p.User.ClusterID, doc.Grants))
 }
 
-// myResourceAccess is GET /me/resource-access: the caller's own item grants.
+// myResourceAccess is GET /me/resource-access: the caller's own direct grants.
 func (s *Server) myResourceAccess(w http.ResponseWriter, r *http.Request) {
 	p, err := s.require(w, r, rbac.IdentityRead)
 	if err != nil {
@@ -378,10 +425,55 @@ func (s *Server) myResourceAccess(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"grants": s.accessJSON(r.Context(), p.User.ClusterID, s.subjectGrants(r.Context(), p))})
 }
 
+// mayAssign applies the rules for giving or taking back permissions: a
+// SuperAdmin (or the host console) may do anything; holders of
+// permissions.assign.override skip the rank and holding limits; everyone
+// else needs Admin rank or above, may give only what they hold, and may
+// target only users, groups and roles ranked below them. Only a SuperAdmin
+// gives "*" or the override.
+func (s *Server) mayAssign(ctx context.Context, p *principal, subjectKind, subjectID string, perms []string) (int, string) {
+	owner := isOwner(p) || p.User.ID == LocalRootUserID
+	for _, perm := range perms {
+		if (perm == rbac.All || perm == rbac.PermissionsAssignOverride) && !owner {
+			return http.StatusForbidden, "only a SuperAdmin can give " + perm
+		}
+	}
+	if owner || rbac.Authorize(p.Grants, rbac.PermissionsAssignOverride) {
+		return 0, ""
+	}
+	if !s.isAdminOrAbove(ctx, p) {
+		return http.StatusForbidden, "assigning permissions needs Admin rank or above"
+	}
+	for _, perm := range perms {
+		if !rbac.Authorize(p.Grants, perm) {
+			return http.StatusForbidden, "you cannot give " + perm + " because you do not have it"
+		}
+	}
+	below := "you can only assign to users, groups and roles ranked below you"
+	switch subjectKind {
+	case accessSubjectUser:
+		if subjectID == p.User.ID || !s.mayActOnUser(ctx, p, subjectID) {
+			return http.StatusForbidden, below
+		}
+	case accessSubjectRole:
+		if containsString(p.Roles, subjectID) || !s.mayActOnRole(ctx, p, subjectID) {
+			return http.StatusForbidden, below
+		}
+	case accessSubjectGroup:
+		members, _ := s.Store.ListGroupMembers(ctx, p.User.ClusterID, subjectID)
+		for _, m := range members {
+			if m == p.User.ID || !s.mayActOnUser(ctx, p, m) {
+				return http.StatusForbidden, below + ": the group has a member at or above your rank"
+			}
+		}
+	}
+	return 0, ""
+}
+
 // putResourceAccess is PUT /iam/resource-access: create a grant, or
 // replace one when id is set. Empty permissions remove it.
 func (s *Server) putResourceAccess(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.UsersRolesManage)
+	p, err := s.require(w, r, rbac.PermissionsAssign)
 	if err != nil {
 		return
 	}
@@ -394,15 +486,21 @@ func (s *Server) putResourceAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.SubjectID, in.ResourceID = strings.TrimSpace(in.SubjectID), strings.TrimSpace(in.ResourceID)
-	if in.SubjectKind != accessSubjectUser && in.SubjectKind != accessSubjectGroup {
-		writeErr(w, http.StatusBadRequest, "subject_kind must be user or group")
+	if in.ResourceKind == "" {
+		in.ResourceKind = accessCluster
+	}
+	if in.SubjectKind != accessSubjectUser && in.SubjectKind != accessSubjectGroup && in.SubjectKind != accessSubjectRole {
+		writeErr(w, http.StatusBadRequest, "subject_kind must be user, group or role")
 		return
 	}
-	if _, ok := grantablePerms[in.ResourceKind]; !ok {
-		writeErr(w, http.StatusBadRequest, "resource_kind must be workload, gameserver, docker or node")
+	if _, ok := suggestedPerms[in.ResourceKind]; !ok && in.ResourceKind != accessCluster {
+		writeErr(w, http.StatusBadRequest, "resource_kind must be cluster, workload, gameserver, docker or node")
 		return
 	}
-	if in.SubjectID == "" || in.ResourceID == "" {
+	if in.ResourceKind == accessCluster {
+		in.ResourceID = ""
+	}
+	if in.SubjectID == "" || (in.ResourceKind != accessCluster && in.ResourceID == "") {
 		writeErr(w, http.StatusBadRequest, "choose who and which item")
 		return
 	}
@@ -411,25 +509,26 @@ func (s *Server) putResourceAccess(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, in.SubjectKind+" not found")
 		return
 	}
-	perms := []string{}
-	for _, perm := range in.Permissions {
-		if !grantable(in.ResourceKind, perm) {
-			writeErr(w, http.StatusBadRequest, perm+" cannot be granted on a single "+in.ResourceKind)
+	var perms []string
+	for _, perm := range uniqueStrings(in.Permissions) {
+		if !knownPerm(perm) {
+			writeErr(w, http.StatusBadRequest, "unknown permission "+perm)
 			return
 		}
 		perms = append(perms, perm)
 	}
-	perms = uniqueStrings(perms)
 	if perms == nil {
 		perms = []string{}
 	}
 	// Anything granted on an item includes seeing it.
-	if len(perms) > 0 && !containsString(perms, readPerm[in.ResourceKind]) {
-		perms = append([]string{readPerm[in.ResourceKind]}, perms...)
+	if rp := readPerm[in.ResourceKind]; len(perms) > 0 && rp != "" && !rbac.Authorize(perms, rp) {
+		perms = append([]string{rp}, perms...)
 	}
 	order := map[string]int{}
-	for i, perm := range grantablePerms[in.ResourceKind] {
-		order[perm] = i
+	for i, perm := range append(append([]string(nil), suggestedPerms[in.ResourceKind]...), assignablePerms()...) {
+		if _, ok := order[perm]; !ok {
+			order[perm] = i
+		}
 	}
 	sort.SliceStable(perms, func(i, j int) bool { return order[perms[i]] < order[perms[j]] })
 
@@ -450,6 +549,20 @@ func (s *Server) putResourceAccess(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "grant not found")
 		return
 	}
+	if kept != nil && (kept.SubjectKind != in.SubjectKind || kept.SubjectID != in.SubjectID) {
+		writeErr(w, http.StatusBadRequest, "a grant's subject cannot change; remove it and give a new one")
+		return
+	}
+	// The rules cover what is given and, when editing, what is taken away.
+	check := perms
+	if kept != nil {
+		check = uniqueStrings(append(append([]string(nil), perms...), kept.Permissions...))
+	}
+	if status, msg := s.mayAssign(ctx, p, in.SubjectKind, in.SubjectID, check); status != 0 {
+		s.audit(r, p.User.ClusterID, p.User.ID, "access.grant.set", "denied", msg)
+		writeErr(w, status, msg)
+		return
+	}
 	action := "access.grant.remove"
 	if len(perms) > 0 {
 		g := resourceGrant{
@@ -468,12 +581,12 @@ func (s *Server) putResourceAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, action, "ok", in.SubjectKind+":"+in.SubjectID+" "+in.ResourceKind+":"+in.ResourceID+" "+strings.Join(perms, ","))
-	writeJSON(w, http.StatusOK, map[string]any{"grants": s.accessJSON(ctx, p.User.ClusterID, next.Grants), "grantable": grantablePerms})
+	writeJSON(w, http.StatusOK, s.accessListJSON(ctx, p.User.ClusterID, next.Grants))
 }
 
 // deleteResourceAccess is DELETE /iam/resource-access/{id}.
 func (s *Server) deleteResourceAccess(w http.ResponseWriter, r *http.Request) {
-	p, err := s.require(w, r, rbac.UsersRolesManage)
+	p, err := s.require(w, r, rbac.PermissionsAssign)
 	if err != nil {
 		return
 	}
@@ -483,16 +596,22 @@ func (s *Server) deleteResourceAccess(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	doc := s.resourceAccess(ctx, p.User.ClusterID)
 	next := resourceAccessDoc{}
-	found := false
+	var found *resourceGrant
 	for _, g := range doc.Grants {
 		if g.ID == r.PathValue("id") {
-			found = true
+			cp := g
+			found = &cp
 			continue
 		}
 		next.Grants = append(next.Grants, g)
 	}
-	if !found {
+	if found == nil {
 		writeErr(w, http.StatusNotFound, "grant not found")
+		return
+	}
+	if status, msg := s.mayAssign(ctx, p, found.SubjectKind, found.SubjectID, found.Permissions); status != 0 {
+		s.audit(r, p.User.ClusterID, p.User.ID, "access.grant.remove", "denied", msg)
+		writeErr(w, status, msg)
 		return
 	}
 	if err := s.saveResourceAccess(ctx, p.User.ClusterID, p.User.Username, next); err != nil {
@@ -500,14 +619,22 @@ func (s *Server) deleteResourceAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "access.grant.remove", "ok", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]any{"grants": s.accessJSON(ctx, p.User.ClusterID, next.Grants), "grantable": grantablePerms})
+	writeJSON(w, http.StatusOK, s.accessListJSON(ctx, p.User.ClusterID, next.Grants))
 }
 
 func (s *Server) accessSubjectExists(ctx context.Context, clusterID, kind, id string) bool {
-	if kind == accessSubjectGroup {
+	switch kind {
+	case accessSubjectGroup:
 		list, _ := s.Store.ListGroups(ctx, clusterID)
 		for _, g := range list {
 			if g.ID == id {
+				return true
+			}
+		}
+		return false
+	case accessSubjectRole:
+		for _, d := range s.roleDefs(ctx, clusterID) {
+			if d.Name == id && d.Name != rbac.Automation {
 				return true
 			}
 		}

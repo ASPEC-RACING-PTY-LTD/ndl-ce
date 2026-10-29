@@ -1407,11 +1407,9 @@ func (s *Server) asPrincipal(ctx context.Context, u appdb.User, sessID string, a
 		return nil, err
 	}
 	grants := s.grantsForUser(ctx, u, roles)
-	for _, g := range baseGrants {
-		if !rbac.Authorize(grants, g) {
-			grants = append(grants, g)
-		}
-	}
+	// Direct grants made everywhere add to the role grants (resource_access.go).
+	grants = mergeGrants(grants, s.clusterGrants(ctx, &principal{User: u, Roles: roles})...)
+	grants = mergeGrants(grants, baseGrants...)
 	if len(tokenPerms) > 0 {
 		filtered := make([]string, 0, len(tokenPerms))
 		for _, perm := range tokenPerms {
@@ -1473,16 +1471,16 @@ func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user appdb.User
 	prefs, _ := s.Store.GetUserPrefs(r.Context(), user.ID)
 	level, ack, ackAt := prefsJSON(prefs)
 	grants := s.grantsForUser(r.Context(), user, roles)
-	for _, g := range baseGrants {
-		if !rbac.Authorize(grants, g) {
-			grants = append(grants, g)
-		}
-	}
+	grants = mergeGrants(grants, s.clusterGrants(r.Context(), &principal{User: user, Roles: roles})...)
+	grants = mergeGrants(grants, baseGrants...)
 	// item_access lists the permissions held on single items, by kind, so
 	// the UI can show those pages to people without a role that grants them.
 	itemAccess := map[string][]string{}
 	itemGrants := []map[string]any{}
-	for _, g := range s.subjectGrants(r.Context(), &principal{User: user}) {
+	for _, g := range s.subjectGrants(r.Context(), &principal{User: user, Roles: roles}) {
+		if g.ResourceKind == accessCluster {
+			continue
+		}
 		itemAccess[g.ResourceKind] = uniqueStrings(append(itemAccess[g.ResourceKind], g.Permissions...))
 		itemGrants = append(itemGrants, map[string]any{"kind": g.ResourceKind, "id": g.ResourceID, "permissions": g.Permissions})
 	}

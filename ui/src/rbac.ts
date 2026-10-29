@@ -15,11 +15,57 @@ export type GrantUser = {
   grants?: string[];
 };
 
+/**
+ * Built-in role permissions (internal/rbac PermissionsForRole). The server
+ * always sends the resolved grants on /me; these only stand in when a user
+ * object carries roles without grants.
+ */
+const ADMIN_PERMS = [
+  "identity.read", "identity.token.create", "identity.token.revoke", "identity.mfa", "identity.group.manage", "cluster.read",
+  "node.read", "events.read", "metrics.read", "alert.read", "alert.manage",
+  "storage.read", "storage.pool.create", "storage.volume.create", "storage.image.upload",
+  "network.read", "network.create", "network.apply",
+  "compute.read", "compute.create", "compute.lifecycle",
+  "compute.modify", "compute.start", "compute.stop", "compute.delete", "compute.console", "compute.snapshot", "storage.snapshot", "compute.gpu.assign", "compute.migrate",
+  "backup.read", "backup.create", "backup.restore", "node.update", "cluster.join", "node.revoke",
+  "terminal.open", "files.read", "files.download", "files.upload", "files.create", "files.modify", "files.delete",
+  "files.permissions", "files.ownership",
+  "settings.tls.read", "feature.read", "feature.manage", "store.read", "store.install", "store.verify", "policy.read", "policy.apply", "policy.run", "ai.ask", "ai.manage",
+  "settings.license.read",
+  "migration.read", "migration.import", "migration.export", "migration.manage",
+  "api_access.manage", "updates.manage",
+  "gameserver.read", "gameserver.create", "gameserver.power", "gameserver.console", "gameserver.files", "gameserver.config",
+  "gameserver.content", "gameserver.backup", "gameserver.schedule", "gameserver.network", "gameserver.users",
+  "gameserver.reinstall", "gameserver.delete", "gameserver.admin",
+  "cloudflare.read", "cloudflare.manage", "search.manage",
+  "ddos.read", "ddos.manage",
+];
+
+const USER_PERMS = [
+  "identity.read", "identity.mfa", "cluster.read", "node.read", "events.read", "metrics.read", "alert.read", "storage.read", "network.read",
+  "compute.read", "files.read", "settings.tls.read", "backup.read", "feature.read", "store.read", "policy.read", "ai.ask",
+  "settings.license.read", "migration.read", "gameserver.read", "cloudflare.read", "ddos.read",
+];
+
+function rolePerms(roles: string[] | undefined): string[] {
+  const out: string[] = [];
+  for (const role of roles ?? []) {
+    if (role === "superadmin") {
+      out.push("*");
+    } else if (role === "admin") {
+      out.push(...ADMIN_PERMS);
+    } else if (role === "user") {
+      out.push(...USER_PERMS);
+    }
+  }
+  return out;
+}
+
 export function hasGrant(user: GrantUser | null | undefined, perm: string): boolean {
   if (!user) {
     return false;
   }
-  const grants = user.grants ?? [];
+  const grants = user.grants ?? rolePerms(user.roles);
   if (grants.includes("*") || grants.includes(perm)) {
     return true;
   }
@@ -28,22 +74,7 @@ export function hasGrant(user: GrantUser | null | undefined, perm: string): bool
       return true;
     }
   }
-  if (user.roles?.includes("superadmin")) {
-    return true;
-  }
-  if (user.roles?.includes("admin")) {
-    return (
-      perm === "api_access.manage" ||
-      perm === "updates.manage" ||
-      perm === "search.manage" ||
-      perm === "feature.manage" ||
-      perm === "identity.token.create" ||
-      perm === "identity.group.manage" ||
-      perm === "node.update" ||
-      perm === "settings.license.read"
-    );
-  }
-  return false;
+  return Boolean(user.roles?.includes("superadmin"));
 }
 
 export function canSeeManagement(user: GrantUser | null | undefined): boolean {

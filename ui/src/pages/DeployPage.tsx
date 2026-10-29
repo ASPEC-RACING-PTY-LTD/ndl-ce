@@ -493,7 +493,13 @@ function FoundInContainers({
   onAdd: (f: DeployDiscovered) => void;
 }) {
   const [saved, setSaved] = usePref<boolean | null>("deploy.foundOpen", null);
-  const open = saved ?? defaultOpen;
+  // Local state re-renders on the click even before the prefs store has subscribed.
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? saved ?? defaultOpen;
+  const toggle = () => {
+    setToggled(!open);
+    setSaved(!open);
+  };
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const rows = found
@@ -507,7 +513,7 @@ function FoundInContainers({
     <section className="dk-section" aria-labelledby="dp-found-heading">
       <div className="dk-section-head">
         <h2 id="dp-found-heading">
-          <button className="dp-found-toggle" type="button" aria-expanded={open} onClick={() => setSaved(!open)}>
+          <button className="dp-found-toggle" type="button" aria-expanded={open} onClick={toggle}>
             {open ? "▾" : "▸"} Found in containers <span className="meta">{found.length}</span>
           </button>
         </h2>

@@ -890,7 +890,7 @@ paths:
   /iam/resource-access:
     get:
       operationId: listResourceAccess
-      summary: Every grant of permissions on a single item, and what each kind of item can grant (users.roles.manage).
+      summary: Every direct grant (everywhere or on one item), suggested permissions per kind and every permission (permissions.assign).
       responses:
         "200":
           description: OK
@@ -900,7 +900,7 @@ paths:
                 $ref: "#/components/schemas/ResourceAccess"
     put:
       operationId: putResourceAccess
-      summary: Create or replace a grant on one item for a user or group; empty permissions remove it (users.roles.manage).
+      summary: Create or replace a direct grant for a user, group or role; empty permissions remove it. Below SuperAdmin you give only what you hold, to subjects ranked below you, from Admin rank up, unless you hold permissions.assign.override (permissions.assign).
       requestBody:
         required: true
         content:
@@ -917,7 +917,7 @@ paths:
   /iam/resource-access/{id}:
     delete:
       operationId: deleteResourceAccess
-      summary: Remove one item grant (users.roles.manage).
+      summary: Remove one direct grant, under the same rank rules (permissions.assign).
       parameters:
         - name: id
           in: path
@@ -15935,16 +15935,20 @@ components:
           type: string
         subject_kind:
           type: string
+          description: A role's subject_id is the role name.
           enum:
             - user
             - group
+            - role
         subject_id:
           type: string
         subject_name:
           type: string
         resource_kind:
           type: string
+          description: cluster means everywhere (resource_id empty); the grant merges with role permissions.
           enum:
+            - cluster
             - workload
             - gameserver
             - docker
@@ -15965,19 +15969,25 @@ components:
       type: object
       required:
         - grants
-        - grantable
+        - suggested
+        - permissions
       properties:
         grants:
           type: array
           items:
             $ref: "#/components/schemas/ResourceGrant"
-        grantable:
+        suggested:
           type: object
-          description: The permissions each kind of item can grant.
+          description: The permissions each kind of item's own pages check, in display order.
           additionalProperties:
             type: array
             items:
               type: string
+        permissions:
+          type: array
+          description: Every permission that can be given, including "*".
+          items:
+            type: string
     ResourceGrantBody:
       type: object
       required:
@@ -15992,14 +16002,18 @@ components:
           description: Set to replace that grant; otherwise the grant for the same subject and item is replaced or created.
         subject_kind:
           type: string
+          description: A role's subject_id is the role name.
           enum:
             - user
             - group
+            - role
         subject_id:
           type: string
         resource_kind:
           type: string
+          description: cluster means everywhere (resource_id empty); the grant merges with role permissions.
           enum:
+            - cluster
             - workload
             - gameserver
             - docker

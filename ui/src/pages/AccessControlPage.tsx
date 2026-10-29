@@ -18,6 +18,7 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { Icon } from "../components/Icon";
 import { AutomationCreatorsPanel } from "../iam/AutomationCreatorsPanel";
 import { Dialog } from "../ui/Dialog";
+import { permissionGroup, permissionLabel } from "../labels";
 
 // Access control: roles, groups and the permissions they carry, edited in
 // one place. Edits are kept per item while you move between items, then
@@ -44,7 +45,7 @@ function sameList(a: string[], b: string[]): boolean {
 }
 
 function categoryOf(perm: string): string {
-  return perm.split(".")[0];
+  return permissionGroup(perm);
 }
 
 export function AccessControlPage() {
@@ -393,10 +394,10 @@ function RoleEditor({
   const categories = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const p of all) {
-      if (f && !p.includes(f)) {
+      const c = categoryOf(p);
+      if (f && !p.includes(f) && !permissionLabel(p).toLowerCase().includes(f) && !c.toLowerCase().includes(f)) {
         continue;
       }
-      const c = categoryOf(p);
       map.set(c, [...(map.get(c) ?? []), p]);
     }
     return [...map.entries()];
@@ -500,7 +501,7 @@ function RoleEditor({
                   {items.map((p) => (
                     <label key={p} className="check-row iam-perm">
                       <input type="checkbox" disabled={!editable} checked={perms.has(p)} onChange={(e) => toggle(p, e.target.checked)} />
-                      <span>{p.slice(cat.length + 1) || p}</span>
+                      <span title={p}>{permissionLabel(p)}</span>
                     </label>
                   ))}
                 </fieldset>

@@ -68,7 +68,7 @@ func (s *Server) createNodeTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A grant on this node (resource_access.go) also opens its host terminal.
-	if !hasRole(p, rbac.SuperAdmin) && !(p.Scoped && rbac.Authorize(p.Grants, rbac.TerminalOpen)) {
+	if !rbac.Authorize(p.Grants, rbac.NodeHostAccess) && !(p.Scoped && rbac.Authorize(p.Grants, rbac.TerminalOpen)) {
 		s.audit(r, p.User.ClusterID, p.User.ID, "terminal.open", "denied", "host terminal is admin-only")
 		writeErr(w, http.StatusForbidden, "host terminal requires admin")
 		return
@@ -183,7 +183,7 @@ func (s *Server) getIOSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin) {
+	if row.UserID != p.User.ID && !rbac.Authorize(p.Grants, rbac.TerminalSessionsManage) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -226,7 +226,7 @@ func (s *Server) ioSessionWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin) {
+	if row.UserID != p.User.ID && !rbac.Authorize(p.Grants, rbac.TerminalSessionsManage) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -405,7 +405,7 @@ func (s *Server) endIOSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row, err := s.Store.GetIOSession(r.Context(), p.User.ClusterID, r.PathValue("id"))
-	if err != nil || row == nil || !rbac.Authorize(p.Grants, ioSessionGrant(*row)) || (row.UserID != p.User.ID && !hasRole(p, rbac.SuperAdmin)) {
+	if err != nil || row == nil || !rbac.Authorize(p.Grants, ioSessionGrant(*row)) || (row.UserID != p.User.ID && !rbac.Authorize(p.Grants, rbac.TerminalSessionsManage)) {
 		writeErr(w, http.StatusNotFound, "session not found")
 		return
 	}
@@ -488,7 +488,8 @@ func (s *Server) nodeFiles(w http.ResponseWriter, r *http.Request, perm, action 
 	if err != nil {
 		return
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	// A grant on this node (resource_access.go) also opens its host files.
+	if !rbac.Authorize(p.Grants, rbac.NodeHostAccess) && !(p.Scoped && rbac.Authorize(p.Grants, perm)) {
 		s.audit(r, p.User.ClusterID, p.User.ID, "files."+action, "denied", "host files are admin-only")
 		writeErr(w, http.StatusForbidden, "host files require admin")
 		return

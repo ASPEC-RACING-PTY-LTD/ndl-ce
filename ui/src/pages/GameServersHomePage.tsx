@@ -19,7 +19,7 @@ import {
   searchGameServers,
 } from "../gameservers/api";
 import type { GameServer, GameView } from "../gameservers/types";
-import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
+import { canOnItem, hasGrant, hasRoleAccess } from "../rbac";
 import { useSession } from "../session";
 import { useNavDisclosure } from "../nav/NavDisclosure";
 import { gameServerHref, gameServersHomeFilter, gameServersHomeHref } from "../nav/gameServers";
@@ -44,10 +44,12 @@ export function GameServersHomePage() {
   const [layout] = useInstanceLayout();
   const { featureEnabled } = useNavDisclosure();
   const user = session.status === "ready" ? session.user : null;
-  const mutate = canMutate(user?.roles);
+  const canCreate = hasGrant(user, "gameserver.create");
+  const canFleet = hasGrant(user, "gameserver.power");
   const roleAccess = hasRoleAccess(user);
-  // Per-server actions come from a role or from a grant on that one server.
-  const canPower = (id: string) => mutate || canOnItem(user, "gameserver", id, "gameserver.power");
+  // Per-server actions come from a permission or from a grant on that one server.
+  const canPower = (id: string) => canOnItem(user, "gameserver", id, "gameserver.power");
+  const canDelete = (id: string) => canOnItem(user, "gameserver", id, "gameserver.delete");
   const canOpen = (id: string, perm: string) => roleAccess || canOnItem(user, "gameserver", id, perm);
   const [items, setItems] = useState<GameServer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -251,7 +253,7 @@ export function GameServersHomePage() {
               {label}
             </button>
           ))}
-          {mutate ? (
+          {canCreate ? (
             <div className="btn-row is-flush gs-bar-actions">
               <button className="btn btn-primary btn-sm" type="button" onClick={() => setQuickOpen(true)}>
                 Create server
@@ -316,7 +318,7 @@ export function GameServersHomePage() {
         <EmptyState
           title="No game servers yet"
           action={
-            mutate && layout === "classic" ? (
+            canCreate && layout === "classic" ? (
               <button className="btn btn-primary" type="button" onClick={() => setQuickOpen(true)}>
                 Create your first server
               </button>
@@ -352,7 +354,7 @@ export function GameServersHomePage() {
             </section>
           ) : null}
 
-          {mutate && selected.length > 0 ? (
+          {canFleet && selected.length > 0 ? (
             <div className="gs-fleet">
               <span>{selected.length} selected</span>
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onFleet("start")}>
@@ -423,7 +425,7 @@ export function GameServersHomePage() {
                       Backups
                     </Link>
                   ) : null}
-                  {mutate ? (
+                  {canDelete(server.id) ? (
                     <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void onDelete(server.id, server.name)}>
                       Delete
                     </button>

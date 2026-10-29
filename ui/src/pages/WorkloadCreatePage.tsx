@@ -31,7 +31,7 @@ import { OsImagePicker } from "../components/form/OsImagePicker";
 import { StoragePicker } from "../components/form/StoragePicker";
 import { PageHeader } from "../components/PageHeader";
 import { FALLBACK_IMAGE_PINS, kindLabel, osLabel } from "../labels";
-import { canMutate, isAdmin, mutateHint } from "../rbac";
+import { hasGrant } from "../rbac";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { uxLevel } from "../ux";
@@ -61,9 +61,10 @@ const PRESETS = [
 
 export function WorkloadCreatePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const admin = isAdmin(roles);
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  // Privileged containers need compute.privileged on top of compute.create.
+  const admin = hasGrant(user, "compute.privileged");
+  const mutate = hasGrant(user, "compute.create");
   // The level comes from Theme → Other; it is no longer switched per page.
   const mode: UxLevel = uxLevel(session.status === "ready" ? session.user : null);
   const [step, setStep] = useState<Step>("basics");
@@ -332,7 +333,7 @@ export function WorkloadCreatePage() {
 
   const pool = pools.find((p) => p.id === poolID);
   const net = nets.find((n) => n.id === networkID);
-  const hint = mutateHint(roles);
+  const hint = mutate ? null : "Requires permission to create workloads.";
   const grouped = useMemo(() => groupExtras(catalog), [catalog]);
 
   async function onCreate() {
@@ -598,12 +599,12 @@ export function WorkloadCreatePage() {
                   admin ? (
                     <Checkbox
                       id="ct-priv"
-                      label="Privileged (admin only, audited)"
+                      label="Privileged (audited)"
                       checked={privileged}
                       onChange={(e) => setPrivileged(e.target.checked)}
                     />
                   ) : (
-                    <p className="field-hint">Privileged containers are admin-only.</p>
+                    <p className="field-hint">Privileged containers need the privileged containers permission.</p>
                   )
                 ) : null}
                 <Checkbox id="ct-auto" label="Start automatically with the host" checked={autostart} onChange={(e) => setAutostart(e.target.checked)} />

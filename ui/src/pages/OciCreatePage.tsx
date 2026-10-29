@@ -1,14 +1,14 @@
 import { OciContainerForm } from "../components/OciContainerForm";
 import { PageHeader } from "../components/PageHeader";
 import { navigate } from "../router";
-import { canMutate } from "../ux";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { num, str, useTemplateFromURL } from "../instanceTemplates";
 
 /** OciCreatePage creates one OCI container; groups and Compose live on the OCI Containers page. */
 export function OciCreatePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
+  const canCreate = hasGrant(session.status === "ready" ? session.user : null, "compute.create");
   const group = new URLSearchParams(window.location.search).get("group") || "";
   const wantsTemplate = new URLSearchParams(window.location.search).has("template");
   const { template, error } = useTemplateFromURL("oci");
@@ -32,7 +32,7 @@ export function OciCreatePage() {
         </p>
       ) : null}
       {wantsTemplate && !template && !error ? <p className="muted">Reading the template</p> : null}
-      {canMutate(roles) && (!wantsTemplate || template || error) ? (
+      {canCreate && (!wantsTemplate || template || error) ? (
         <article className="panel">
           <OciContainerForm
             key={template?.id ?? "blank"}
@@ -42,9 +42,9 @@ export function OciCreatePage() {
             onDone={(w) => navigate(`/workloads/${w.id}`)}
           />
         </article>
-      ) : canMutate(roles) ? null : (
+      ) : canCreate ? null : (
         <p className="banner banner-error" role="alert">
-          Creating containers requires operator or admin.
+          Creating containers requires permission to create workloads.
         </p>
       )}
     </section>

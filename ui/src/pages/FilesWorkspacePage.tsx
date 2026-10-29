@@ -9,7 +9,7 @@ import { displayPath } from "../files/paths";
 import { defaultFilesPath } from "../files/workspace";
 import { kindLabel } from "../labels";
 import { navigate } from "../router";
-import { canOnItem, grantedItemIds, isAdmin } from "../rbac";
+import { canOnItem, grantedItemIds, hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
 
@@ -77,13 +77,14 @@ function TargetPicker({ open, onClose, onPick }: { open: boolean; onClose: () =>
     setError(null);
     let cancelled = false;
     // Hosts are for SuperAdmins, or the hosts a person holds a files grant on.
+    const hostAll = hasGrant(user, "node.host");
     const nodeGrants = grantedItemIds(user, "node", "files.read");
-    void Promise.all([isAdmin(roles) || nodeGrants.length > 0 ? listNodes().catch(() => []) : Promise.resolve([]), listWorkloads()])
+    void Promise.all([hostAll || nodeGrants.length > 0 ? listNodes().catch(() => []) : Promise.resolve([]), listWorkloads()])
       .then(([nodes, workloads]) => {
         if (cancelled) {
           return;
         }
-        const out: FilesTarget[] = nodes.filter((n) => isAdmin(roles) || nodeGrants.includes(n.id)).map((n) => ({
+        const out: FilesTarget[] = nodes.filter((n) => hostAll || nodeGrants.includes(n.id)).map((n) => ({
           kind: "node" as const,
           id: n.id,
           name: n.name || n.id,

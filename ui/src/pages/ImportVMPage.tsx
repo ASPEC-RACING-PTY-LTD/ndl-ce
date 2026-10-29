@@ -7,14 +7,15 @@ import { Field } from "../components/Field";
 import { preferredGuestNetwork } from "../components/form/NetworkPicker";
 import { navigate } from "../router";
 import { useSession } from "../session";
-import { canMutate } from "../ux";
+import { hasGrant } from "../rbac";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 export function ImportVMPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
-  const admin = Boolean(roles?.includes("superadmin"));
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = hasGrant(user, "compute.create");
+  // Importing a disk also needs migration.privileged.
+  const admin = mutate && hasGrant(user, "migration.privileged");
   const [images, setImages] = useState<LibraryItem[]>([]);
   const [pools, setPools] = useState<StoragePool[]>([]);
   const [nets, setNets] = useState<Network[]>([]);
@@ -52,7 +53,7 @@ export function ImportVMPage() {
     return (
       <section className="page">
         <h1>Import VM</h1>
-        <p>Importing a disk image requires operator or admin.</p>
+        <p>Importing a disk image requires permission to create workloads.</p>
       </section>
     );
   }
@@ -66,7 +67,7 @@ export function ImportVMPage() {
       />
       {!admin ? (
         <p className="banner banner-warn" role="status">
-          Import is an admin action. Operator cannot import.
+          Import needs the privileged migration permission, which you do not have.
         </p>
       ) : null}
       {error ? (

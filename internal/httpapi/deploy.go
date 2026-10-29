@@ -91,7 +91,7 @@ func (s *Server) requireDeployOwner(w http.ResponseWriter, r *http.Request) (*pr
 	if !ok {
 		return nil, false
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	if !rbac.Authorize(p.Grants, rbac.DeployConfigure) {
 		writeErr(w, http.StatusForbidden, "only a SuperAdmin can change deployment commands, credentials and automation")
 		return nil, false
 	}
@@ -617,7 +617,7 @@ func (s *Server) listDeployProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"projects": out, "discovered": discovered, "settings": s.deploySettings(ctx, cid),
 		"running": running, "queued": len(active) - running,
-		"can_configure": hasRole(p, rbac.SuperAdmin), "can_deploy": rbac.Authorize(p.Grants, rbac.ComputeModify),
+		"can_configure": rbac.Authorize(p.Grants, rbac.DeployConfigure), "can_deploy": rbac.Authorize(p.Grants, rbac.ComputeModify),
 	})
 }
 

@@ -31,7 +31,7 @@ import type { DockerContainer, DockerInventory, DockerMachine } from "../generat
 import { filesWorkspaceHref } from "../files/workspace";
 import { formatBytes, formatWhen } from "../format";
 import { navigate } from "../router";
-import { canMutate, canOnItem, dockerItemId, hasRoleAccess, isAdmin, itemAllows } from "../rbac";
+import { canOnItem, dockerItemId, hasGrant, hasRoleAccess } from "../rbac";
 import { DockerPrunePanel } from "../components/DockerPrune";
 import { useSession } from "../session";
 import { usePoll } from "../query";
@@ -195,16 +195,20 @@ type Props = {
 export function DockerPage({ focus }: Props = {}) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
-  const roles = user?.roles;
-  const mutate = canMutate(roles);
-  const admin = isAdmin(roles);
+  // compute.lifecycle runs actions, bulk work and checks; compute.modify keeps prefs and monitors; compute.delete removes.
+  const lifecycle = hasGrant(user, "compute.lifecycle");
+  const modify = hasGrant(user, "compute.modify");
+  const remove = hasGrant(user, "compute.delete");
+  const terminal = hasGrant(user, "terminal.open");
+  // The host's own terminal and files need node.host.
+  const hostAccess = hasGrant(user, "node.host");
   // Start, stop, restart and the shell can also come from a grant on one container.
-  const canPower = (c: DockerContainer) => mutate || canOnItem(user, "docker", dockerItemId(c.machine_id, c.name), "compute.lifecycle");
-  const canShell = (c: DockerContainer) => mutate || itemAllows(user, "docker", dockerItemId(c.machine_id, c.name), "terminal.open");
-  // A terminal on a system container needs a role or a terminal grant on that workload; the host's needs a SuperAdmin.
+  const canPower = (c: DockerContainer) => canOnItem(user, "docker", dockerItemId(c.machine_id, c.name), "compute.lifecycle");
+  const canShell = (c: DockerContainer) => canOnItem(user, "docker", dockerItemId(c.machine_id, c.name), "terminal.open");
+  // A terminal on a system container needs terminal.open or a terminal grant on that workload; the host's needs node.host too.
   // The machine's page needs a role or a grant on that system container.
   const canSeeMachine = (m: DockerMachine) => m.kind !== "host" && (hasRoleAccess(user) || canOnItem(user, "workload", m.id, "compute.read"));
-  const canMachineTerm = (m: DockerMachine) => (m.kind === "host" ? mutate && admin : mutate || itemAllows(user, "workload", m.id, "terminal.open"));
+  const canMachineTerm = (m: DockerMachine) => (m.kind === "host" ? terminal && hostAccess : canOnItem(user, "workload", m.id, "terminal.open"));
   const { openOrFocus } = useTerminalWorkspace();
   const [inv, setInv] = useState<DockerInventory | null>(null);
   const [prefs, setPrefs] = useState<Map<string, DockerPref>>(new Map());
@@ -460,7 +464,7 @@ export function DockerPage({ focus }: Props = {}) {
     if (m) {
       items.push(
         { label: dir ? "Open terminal in compose folder" : "Open terminal on machine", onClick: () => void openTerminalAt(m, dir), disabled: !termOK },
-        { label: dir ? "Open compose folder in Files" : "Open machine files", onClick: () => void openFilesAt(m, dir), disabled: m.kind === "host" && !admin },
+        { label: dir ? "Open compose folder in Files" : "Open machine files", onClick: () => void openFilesAt(m, dir), disabled: m.kind === "host" && !hostAccess },
       );
     }
     if (canPower(c)) {
@@ -471,7 +475,7 @@ export function DockerPage({ focus }: Props = {}) {
         { label: "Restart", onClick: () => void runAction(c, "restart") },
       );
     }
-    if (mutate) {
+    if (lifecycle) {
       items.push(
         { label: "Pull image", onClick: () => void runAction(c, "pull") },
         { label: "Recreate", onClick: () => void runAction(c, "recreate") },
@@ -487,10 +491,10 @@ export function DockerPage({ focus }: Props = {}) {
         );
       }
     }
-    if (r.sites.length && mutate) {
+    if (r.sites.length && lifecycle) {
       items.push("sep", { label: r.sites.length === 1 ? "Check its site now" : "Check its sites now", onClick: () => void checkSites(r.sites) });
     }
-    if (mutate) {
+    if (modify) {
       items.push(
         "sep",
         ignoredSelf(c)
@@ -515,7 +519,7 @@ export function DockerPage({ focus }: Props = {}) {
     if (m && canSeeMachine(m)) {
       items.push({ label: "Go to machine", onClick: () => navigate(`/workloads/${encodeURIComponent(m.id)}`) });
     }
-    if (mutate) {
+    if (remove) {
       items.push("sep", { label: "Remove container", onClick: () => void runAction(c, "remove"), danger: true });
     }
     return items;
@@ -533,9 +537,9 @@ export function DockerPage({ focus }: Props = {}) {
         },
       },
       { label: "Open terminal on machine", onClick: () => void openTerminalAt(m), disabled: !termOK },
-      { label: "Open machine files", onClick: () => void openFilesAt(m), disabled: m.kind === "host" && !admin },
+      { label: "Open machine files", onClick: () => void openFilesAt(m), disabled: m.kind === "host" && !hostAccess },
     ];
-    if (mutate && m.daemon_ok) {
+    if (lifecycle && m.daemon_ok) {
       items.push(
         "sep",
         { label: "Fix unhealthy here", onClick: () => void bulk("fix", { machine_id: m.id }) },
@@ -634,7 +638,7 @@ export function DockerPage({ focus }: Props = {}) {
   }
 
   const sites = (
-    <UptimeSites monitors={monitors} machines={machines} containers={containers} mutate={mutate} reload={reloadSites} focus={focus === "sites"} />
+    <UptimeSites monitors={monitors} machines={machines} containers={containers} mutate={modify} check={lifecycle} reload={reloadSites} focus={focus === "sites"} />
   );
 
   if (disabled) {
@@ -658,7 +662,7 @@ export function DockerPage({ focus }: Props = {}) {
   }
 
   const more: ActionItem[] = [
-    ...(mutate
+    ...(lifecycle
       ? [
           { label: "Restart all", onClick: () => void bulk("restart-all", scopeNow()) },
           { label: "Start all", onClick: () => void bulk("start-all", scopeNow()) },
@@ -679,7 +683,7 @@ export function DockerPage({ focus }: Props = {}) {
         kicker="Containers on the host and system containers, and the sites they serve. Right-click a row for its tools."
         actions={
           <div className="btn-row is-flush">
-            {mutate ? (
+            {lifecycle ? (
               <button className="btn btn-primary" type="button" disabled={counts.unhealthy === 0} onClick={() => void bulk("fix", scopeNow())}>
                 Fix unhealthy
               </button>
@@ -807,7 +811,7 @@ export function DockerPage({ focus }: Props = {}) {
       </Dialog>
 
       <Dialog open={cleanupOpen} title="Image cleanup" wide onClose={() => setCleanupOpen(false)}>
-        <DockerPrunePanel mutate={mutate} />
+        <DockerPrunePanel mutate={lifecycle} />
       </Dialog>
 
       <Dialog open={selectedRow != null} title={selectedRow?.c.name ?? "Container"} wide onClose={() => setSelected(null)}>

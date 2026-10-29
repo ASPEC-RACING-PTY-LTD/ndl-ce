@@ -21,7 +21,7 @@ import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes } from "../format";
-import { canMutate } from "../rbac";
+import { canOnItem, hasGrant } from "../rbac";
 import { currentPath } from "../router";
 import { useSession } from "../session";
 import { metricReading, seriesBySuffix, useWorkloadMetrics } from "../workloadMetrics";
@@ -90,9 +90,10 @@ function verified(d: GPUDiagnosis | undefined): boolean {
 
 export function WorkloadDiagnosticsPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
   const id = workloadIDFromPath();
+  const mutate = hasGrant(user, "compute.gpu.assign");
+  const canRestart = canOnItem(user, "workload", id, "compute.lifecycle");
 
   const [item, setItem] = useState<Workload | null>(null);
   const [gpu, setGPU] = useState<WorkloadGPUDiagnostics | null>(null);
@@ -430,7 +431,7 @@ export function WorkloadDiagnosticsPage() {
                   <button className="btn btn-primary" type="button" disabled={busy} onClick={onReapply}>
                     Reapply GPU configuration
                   </button>
-                  {reapply?.status === "restart_required" ? (
+                  {reapply?.status === "restart_required" && canRestart ? (
                     <button className="btn" type="button" disabled={busy} onClick={() => setConfirmRestart(true)}>
                       Restart to apply
                     </button>

@@ -18,7 +18,7 @@ func (s *Server) hostTunnelGate(w http.ResponseWriter, r *http.Request, p *princ
 	if !docker.IsHostMachine(machineID) {
 		return false, true
 	}
-	owner := hasRole(p, rbac.SuperAdmin)
+	owner := rbac.Authorize(p.Grants, rbac.CloudflareHostTunnel)
 	body := map[string]any{
 		"code":        hostTunnelCode,
 		"advice":      docker.HostTunnelAdvice(unit),

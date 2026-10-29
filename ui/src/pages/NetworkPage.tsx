@@ -7,14 +7,12 @@ import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { useSession } from "../session";
+import { hasGrant } from "../rbac";
 import { Dialog } from "../ui/Dialog";
 import { SelectionCard } from "../ui/SelectionCard";
 import { kindLabel } from "../labels";
 import { ErrorNotice } from "../components/ErrorNotice";
 
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
 
 function isConfirm(value: unknown): value is ConfirmRequired {
   return Boolean(value && typeof value === "object" && "code" in value && (value as ConfirmRequired).code === "confirmation_required");
@@ -37,8 +35,7 @@ export function hostNICs(nics: NetworkNIC[]): NetworkNIC[] {
 
 export function NetworkPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const mutate = hasGrant(session.status === "ready" ? session.user : null, "network.create");
   const [items, setItems] = useState<Network[]>([]);
   const [nics, setNics] = useState<NetworkNIC[]>([]);
   const shownNICs = hostNICs(nics);

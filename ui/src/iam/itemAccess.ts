@@ -1,7 +1,10 @@
-import type { ItemKind } from "../api/client";
+import type { GrantScope, ItemKind } from "../api/client";
+import { permissionGroup, permissionLabel } from "../labels";
 
-// Labels and presets for access grants on single items (IAM > Users > Item access).
-// The server decides what each kind can grant; these only name and group them.
+// Labels, groups and presets for direct permissions (IAM > Users > Direct
+// permissions): grants to a user, group or role, everywhere or on one item.
+// The server lists the permissions and checks every grant; these only name,
+// group and preset them.
 
 export const KIND_ORDER: ItemKind[] = ["workload", "gameserver", "docker", "node"];
 
@@ -93,25 +96,49 @@ const SHORT: Record<string, string> = {
   "gameserver.reinstall": "Reinstall",
 };
 
-export function permissionLabel(kind: ItemKind, perm: string): string {
-  return KIND_LABEL_OVERRIDE[kind]?.[perm] ?? LABEL[perm] ?? perm;
+/** itemPermissionLabel names a permission as it acts on one item of a kind, for the dialog's "This item" group. */
+export function itemPermissionLabel(kind: ItemKind, perm: string): string {
+  return KIND_LABEL_OVERRIDE[kind]?.[perm] ?? LABEL[perm] ?? permissionLabel(perm);
 }
 
-/** permissionGroup sorts a permission into a heading in the grant dialog. */
-export function permissionGroup(perm: string): "Control" | "Files" | "Backups" | "Monitoring" {
-  if (perm.startsWith("files.") || perm === "gameserver.files" || perm === "gameserver.content") {
-    return "Files";
-  }
-  if (perm.startsWith("backup.") || perm === "gameserver.backup") {
-    return "Backups";
-  }
-  if (perm === "metrics.read" || perm === "events.read") {
-    return "Monitoring";
-  }
-  return "Control";
+/**
+ * scopePermissionLabel names a permission where a grant applies: the
+ * item's own wording for the permissions its pages check, the general
+ * wording otherwise.
+ */
+export function scopePermissionLabel(scope: GrantScope, perm: string, suggested: string[]): string {
+  return scope !== "cluster" && suggested.includes(perm) ? itemPermissionLabel(scope, perm) : permissionLabel(perm);
 }
 
-export const GROUP_ORDER = ["Control", "Files", "Backups", "Monitoring"] as const;
+/** SUPERADMIN_ONLY are the permissions only a SuperAdmin can give. */
+export const SUPERADMIN_ONLY = ["*", "permissions.assign.override"];
+
+export const THIS_ITEM_GROUP = "This item";
+
+/**
+ * permissionSections groups every permission for the grant dialog: on an
+ * item, the permissions its own pages check come first under "This item";
+ * the rest follow by area, in catalog order.
+ */
+export function permissionSections(scope: GrantScope, all: string[], suggested: string[]): { group: string; perms: string[] }[] {
+  const sections: { group: string; perms: string[] }[] = [];
+  const first = scope === "cluster" ? [] : suggested;
+  if (first.length) {
+    sections.push({ group: THIS_ITEM_GROUP, perms: [...first] });
+  }
+  const byGroup = new Map<string, string[]>();
+  for (const p of all) {
+    if (first.includes(p)) {
+      continue;
+    }
+    const g = permissionGroup(p);
+    byGroup.set(g, [...(byGroup.get(g) ?? []), p]);
+  }
+  for (const [group, perms] of byGroup) {
+    sections.push({ group, perms });
+  }
+  return sections;
+}
 
 export type PresetId = "view" | "operate" | "full";
 
@@ -168,15 +195,20 @@ export function matchingPreset(kind: ItemKind, perms: string[], grantable: strin
 }
 
 /** accessSummary is a short line for the grant table, for example "View, Power, Terminal +2". */
-export function accessSummary(kind: ItemKind, perms: string[], grantable: string[]): string {
-  const preset = grantable.length ? matchingPreset(kind, perms, grantable) : null;
-  if (preset) {
-    return PRESET_LABEL[preset];
+export function accessSummary(scope: GrantScope, perms: string[], suggested: string[]): string {
+  if (perms.includes("*")) {
+    return "Everything";
   }
-  const ordered = grantable.length ? [...grantable.filter((p) => perms.includes(p)), ...perms.filter((p) => !grantable.includes(p))] : perms;
+  if (scope !== "cluster" && suggested.length) {
+    const preset = matchingPreset(scope, perms, suggested);
+    if (preset) {
+      return PRESET_LABEL[preset];
+    }
+  }
+  const ordered = [...suggested.filter((p) => perms.includes(p)), ...perms.filter((p) => !suggested.includes(p))];
   const names: string[] = [];
   for (const p of ordered) {
-    const name = SHORT[p] ?? p;
+    const name = (scope !== "cluster" ? SHORT[p] : undefined) ?? permissionLabel(p);
     if (!names.includes(name)) {
       names.push(name);
     }
@@ -185,6 +217,11 @@ export function accessSummary(kind: ItemKind, perms: string[], grantable: string
     return names.join(", ") || "None";
   }
   return `${names.slice(0, 3).join(", ")} +${names.length - 3}`;
+}
+
+/** scopeLabel names where a grant applies, without the item's name. */
+export function scopeLabel(scope: GrantScope): string {
+  return scope === "cluster" ? "Everywhere" : KIND_LABEL[scope];
 }
 
 /** dockerItemID is how the server names a container for a grant: machine and name, so it outlives recreation. */

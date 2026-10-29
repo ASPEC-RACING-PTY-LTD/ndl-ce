@@ -11,14 +11,14 @@ import {
 import { useQuery } from "../query";
 import { useSession } from "../session";
 import { Dialog } from "../ui/Dialog";
-import { canMutate } from "../ux";
+import { hasGrant } from "../rbac";
 import { DeleteButton } from "./DeleteButton";
 import { EmptyState, ErrorState, LoadingState } from "./EmptyState";
 import { Field } from "./Field";
 
-function useMutate(): boolean {
+function useMutate(perm: string): boolean {
   const session = useSession();
-  return canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  return hasGrant(session.status === "ready" ? session.user : null, perm);
 }
 
 function errorText(err: unknown, fallback: string): string {
@@ -27,7 +27,7 @@ function errorText(err: unknown, fallback: string): string {
 
 /** Container registries used by OCI workloads. */
 export function RegistriesPanel() {
-  const mutate = useMutate();
+  const mutate = useMutate("compute.create");
   const q = useQuery("registries", () => listRegistries());
   const items = q.data?.items ?? [];
   const [open, setOpen] = useState(false);
@@ -164,7 +164,7 @@ const PROVIDER_KINDS = ["openai", "anthropic", "gemini", "ollama", "local", "ope
 
 /** Bring-your-own AI providers used by Ask and Plans. */
 export function AIProvidersPanel() {
-  const mutate = useMutate();
+  const mutate = useMutate("ai.manage");
   const q = useQuery("ai-providers", () => listAIProviders());
   const items = q.data?.items ?? [];
   const [open, setOpen] = useState(false);
@@ -302,7 +302,7 @@ export function AIProvidersPanel() {
 
 /** Node groups used for placement. */
 export function NodeGroupsPanel() {
-  const mutate = useMutate();
+  const mutate = useMutate("node.update");
   const q = useQuery("node-groups", () => listNodeGroups());
   const nodesQ = useQuery("nodes", () => listNodes(), 15000);
   const items = q.data?.items ?? [];

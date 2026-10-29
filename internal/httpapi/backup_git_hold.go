@@ -134,7 +134,7 @@ func (s *Server) resolveBackupGitHold(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	if !rbac.Authorize(p.Grants, rbac.BackupGitManage) {
 		writeErr(w, http.StatusForbidden, "only a SuperAdmin can release a held backup")
 		return
 	}

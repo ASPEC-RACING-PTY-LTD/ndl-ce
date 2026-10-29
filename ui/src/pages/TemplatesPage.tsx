@@ -15,7 +15,7 @@ import { Link } from "../components/Link";
 import { PageHeader } from "../components/PageHeader";
 import { navigate, useSearchParam } from "../router";
 import { useSession } from "../session";
-import { canMutate } from "../ux";
+import { hasGrant } from "../rbac";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 type SettingsKind = "system-container" | "oci" | "game-server";
@@ -194,8 +194,7 @@ function SettingsTemplates({
 
 export function TemplatesPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const mutate = hasGrant(session.status === "ready" ? session.user : null, "compute.create");
   const [items, setItems] = useState<VMTemplate[]>([]);
   const [workloads, setWorkloads] = useState<Workload[]>([]);
   const [sourceID, setSourceID] = useState("");

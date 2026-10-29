@@ -390,7 +390,7 @@ func (s *Server) wipeRollback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if !isOwner(p) && p.User.ID != LocalRootUserID {
+	if !rbac.Authorize(p.Grants, rbac.UpdatesWipe) && p.User.ID != LocalRootUserID {
 		writeErr(w, http.StatusForbidden, "only a SuperAdmin can wipe the previous version")
 		return
 	}

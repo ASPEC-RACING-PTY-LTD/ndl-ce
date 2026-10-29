@@ -14,17 +14,13 @@ import { Field } from "../components/Field";
 import { formatWhen, honestStatus } from "../format";
 import { currentPath } from "../router";
 import { useSession } from "../session";
-import { canOnItem } from "../rbac";
+import { canOnItem, hasGrant } from "../rbac";
 import { DeleteButton } from "../components/DeleteButton";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 function workloadIDFromPath(): string {
   const parts = currentPath().split("/").filter(Boolean);
   return parts[0] === "workloads" ? (parts[1] ?? "") : "";
-}
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
 }
 
 function capabilityBanner(capability: SnapshotCapability | null): string | null {
@@ -44,9 +40,10 @@ function capabilityBanner(capability: SnapshotCapability | null): string | null 
 export function SnapshotsPage() {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
-  const mutate = canMutate(user?.roles);
   const id = workloadIDFromPath();
-  // Creating snapshots can come from a grant on this workload; rollback and delete stay with roles.
+  // Rollback and delete need compute.snapshot or storage.snapshot everywhere;
+  // creating one can also come from a grant on this workload.
+  const mutate = hasGrant(user, "compute.snapshot") || hasGrant(user, "storage.snapshot");
   const canSnapshot = mutate || canOnItem(user, "workload", id, "compute.snapshot");
 
   const [items, setItems] = useState<Snapshot[] | null>(null);

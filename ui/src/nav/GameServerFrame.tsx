@@ -8,7 +8,7 @@ import type { GameServer } from "../gameservers/types";
 import { Icon } from "../components/Icon";
 import { Link } from "../components/Link";
 import { useQuery } from "../query";
-import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
+import { canOnItem, hasRoleAccess } from "../rbac";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { GS_ROOT, gameServerIdFromPath, gameServerSectionFromPath } from "./gameServers";
@@ -67,7 +67,7 @@ function PowerActions({ server, onDone, onError }: { server: GameServer; onDone:
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   // Power comes from a role or from a grant on this one server.
-  const mutate = canMutate(user?.roles) || canOnItem(user, "gameserver", server.id, "gameserver.power");
+  const mutate = canOnItem(user, "gameserver", server.id, "gameserver.power");
   const [busy, setBusy] = useState(false);
   if (!mutate) {
     return null;

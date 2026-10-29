@@ -175,7 +175,7 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request, action str
 		writeErr(w, http.StatusUnauthorized, "not authenticated")
 		return nil, err
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	if !rbac.Authorize(p.Grants, rbac.LabManage) {
 		s.audit(r, p.User.ClusterID, p.User.ID, action, "denied", "lab qemu-proto is admin only")
 		writeErr(w, http.StatusForbidden, "forbidden")
 		return nil, errors.New("forbidden")

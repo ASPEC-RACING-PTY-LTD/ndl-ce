@@ -405,7 +405,7 @@ func (s *Server) publishAutomationFlow(w http.ResponseWriter, r *http.Request) {
 	}
 	if destructive := st.reg.HasDestructive(d); len(destructive) > 0 && f.DryRunHash != engine.DefinitionHash(f.Draft) {
 		reason := strings.TrimSpace(req.SkipDryRunReason)
-		if reason == "" || !hasRole(p, rbac.SuperAdmin) {
+		if reason == "" || !rbac.Authorize(p.Grants, rbac.AutomationSkipTest) {
 			msg := "steps " + strings.Join(destructive, ", ") + " change things: run a test of this draft before publishing"
 			if reason != "" {
 				msg += "; only a SuperAdmin can publish without a test"

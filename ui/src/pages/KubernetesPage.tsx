@@ -2,17 +2,14 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { ApiError, getKubernetes, startKubernetes, stopKubernetes } from "../api/client";
 import type { KubernetesStatus } from "../generated/openapi";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 
-function canManage(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
 
 export function KubernetesPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canManage(roles);
+  const mutate = hasGrant(session.status === "ready" ? session.user : null, "feature.manage");
   const [status, setStatus] = useState<KubernetesStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

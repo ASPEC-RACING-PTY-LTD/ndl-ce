@@ -626,7 +626,7 @@ func searchJobJSON(j *appdb.SearchJob, now time.Time) map[string]any {
 }
 
 func (s *Server) searchAllowed(p *principal) func(string) bool {
-	owner := isOwner(p) || p.User.ID == LocalRootUserID
+	owner := rbac.Authorize(p.Grants, rbac.SearchHostFiles) || p.User.ID == LocalRootUserID
 	return func(perm string) bool {
 		if perm == permSuperAdmin {
 			return owner
@@ -701,7 +701,7 @@ func (s *Server) getSearchSettings(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{
 		"settings": s.searchSettings(ctx, p.User.ClusterID), "kinds": kinds,
 		"primary_count": counts[appdb.SearchScopePrimary], "deep_count": counts[appdb.SearchScopeDeep],
-		"job": searchJobJSON(job, s.now()), "can_index_host": isOwner(p) || p.User.ID == LocalRootUserID,
+		"job": searchJobJSON(job, s.now()), "can_index_host": rbac.Authorize(p.Grants, rbac.SearchHostFiles) || p.User.ID == LocalRootUserID,
 	}
 	if !last.IsZero() {
 		body["primary_refreshed_at"] = last.UTC().Format(time.RFC3339)
@@ -727,7 +727,7 @@ func (s *Server) putSearchSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	cur := s.searchSettings(ctx, p.User.ClusterID)
 	// Host files are only readable by SuperAdmins, so only they may index them.
-	if set.Deep.HostFiles != cur.Deep.HostFiles && !isOwner(p) && p.User.ID != LocalRootUserID {
+	if set.Deep.HostFiles != cur.Deep.HostFiles && !rbac.Authorize(p.Grants, rbac.SearchHostFiles) && p.User.ID != LocalRootUserID {
 		writeErr(w, http.StatusForbidden, "only a SuperAdmin can change host file indexing")
 		return
 	}

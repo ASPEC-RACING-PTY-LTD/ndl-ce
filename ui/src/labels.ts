@@ -165,91 +165,140 @@ export function eventTypeLabel(type?: string): string {
   return taskKindLabel(type);
 }
 
+const PERMISSION_LABELS: Record<string, string> = {
+  "*": "Everything",
+  "identity.read": "View identity",
+  "identity.token.create": "Create API tokens",
+  "identity.token.revoke": "Revoke API tokens",
+  "identity.recover": "Recover accounts",
+  "identity.mfa": "Manage personal MFA",
+  "identity.group.manage": "Manage groups",
+  "identity.service": "Manage service accounts",
+  "identity.service.force": "Force-delete service accounts in use",
+  "secret.reveal": "Reveal secrets",
+  "secret.use": "Use secrets",
+  "users.read": "View users",
+  "users.create": "Create users",
+  "users.update": "Edit users",
+  "users.delete": "Delete users",
+  "users.roles.manage": "Assign roles",
+  "users.sessions.revoke": "Revoke sessions",
+  "roles.manage": "Manage roles",
+  "permissions.assign": "Give permissions",
+  "permissions.assign.override": "Give permissions without rank limits",
+  "approvals.view": "View approval requests",
+  "approvals.decide": "Approve or deny requests",
+  "cluster.read": "View the cluster",
+  "cluster.destroy": "Destroy the cluster",
+  "cluster.join": "Join nodes",
+  "cluster.promote": "Promote nodes",
+  "node.read": "View nodes",
+  "node.update": "Update nodes",
+  "node.revoke": "Remove nodes",
+  "node.host": "Root terminal and files on node hosts",
+  "metrics.read": "View metrics",
+  "events.read": "View events and logs",
+  "audit.read": "Read the audit log",
+  "alert.read": "View alerts",
+  "alert.manage": "Manage alerts",
+  "compute.read": "View workloads",
+  "compute.create": "Create workloads",
+  "compute.lifecycle": "Start and stop workloads",
+  "compute.start": "Start workloads",
+  "compute.stop": "Stop workloads",
+  "compute.modify": "Edit workloads",
+  "compute.gpu.assign": "Assign GPUs",
+  "compute.delete": "Delete workloads",
+  "compute.console": "Open consoles",
+  "compute.snapshot": "Snapshot workloads",
+  "compute.migrate": "Migrate workloads",
+  "compute.privileged": "Run privileged containers",
+  "storage.read": "View storage",
+  "storage.pool.create": "Create storage pools",
+  "storage.volume.create": "Create volumes",
+  "storage.image.upload": "Upload images",
+  "storage.snapshot": "Snapshot volumes",
+  "storage.protected.delete": "Delete protected storage",
+  "network.read": "View networks",
+  "network.create": "Create networks",
+  "network.apply": "Apply network changes",
+  "backup.read": "View backups",
+  "backup.create": "Create backups",
+  "backup.restore": "Restore backups",
+  "backup.git.manage": "Manage Git backup targets",
+  "platform_backup.manage": "Manage platform backups",
+  "terminal.open": "Open terminals",
+  "terminal.sessions.manage": "Manage other people's terminal sessions",
+  "files.read": "Browse files",
+  "files.download": "Download files",
+  "files.upload": "Upload files",
+  "files.create": "Create files and folders",
+  "files.modify": "Edit and rename files",
+  "files.delete": "Delete files",
+  "files.permissions": "Change file permissions",
+  "files.ownership": "Change file ownership",
+  "settings.tls.read": "View TLS settings",
+  "settings.tls.manage": "Manage TLS certificates",
+  "settings.license.read": "View the license",
+  "settings.license.manage": "Manage the license",
+  "settings.security.manage": "Change security policy",
+  "settings.appearance.manage": "Manage appearance",
+  "settings.appearance.limit": "Set appearance limits for profiles",
+  "feature.read": "View features",
+  "feature.manage": "Install features",
+  "store.read": "View the store",
+  "store.install": "Install from the store",
+  "store.verify": "Verify store packages",
+  "policy.read": "View policies",
+  "policy.apply": "Apply policies",
+  "policy.run": "Run policies",
+  "ai.ask": "Ask the assistant",
+  "ai.manage": "Manage the assistant",
+  "migration.read": "View migrations",
+  "migration.import": "Import workloads",
+  "migration.export": "Export workloads",
+  "migration.manage": "Manage migrations",
+  "migration.privileged": "Privileged migrations",
+  "api_access.manage": "Manage API access",
+  "updates.manage": "Install platform updates",
+  "updates.wipe": "Wipe the previous version after an update",
+  "gameserver.read": "View game servers",
+  "gameserver.create": "Create game servers",
+  "gameserver.power": "Start and stop game servers",
+  "gameserver.console": "Game server consoles",
+  "gameserver.files": "Game server files",
+  "gameserver.config": "Game server settings",
+  "gameserver.content": "Game server mods and content",
+  "gameserver.backup": "Game server backups",
+  "gameserver.schedule": "Game server schedules",
+  "gameserver.network": "Game server networking",
+  "gameserver.users": "Game server players and admins",
+  "gameserver.reinstall": "Reinstall game servers",
+  "gameserver.delete": "Delete game servers",
+  "gameserver.admin": "Administer game servers",
+  "cloudflare.read": "View Cloudflare",
+  "cloudflare.manage": "Manage Cloudflare",
+  "cloudflare.credentials": "Manage Cloudflare credentials",
+  "cloudflare.host_tunnel": "Manage the host's Cloudflare tunnel",
+  "ddos.read": "View DDoS protection",
+  "ddos.manage": "Manage DDoS protection",
+  "search.manage": "Manage search",
+  "search.host_files": "Index host files in search",
+  "lab.manage": "Manage the lab",
+  "docker.scripts.admin": "Run Docker scripts with admin rights",
+  "deploy.configure": "Configure deployments",
+  "automation.skip_test": "Skip automation test runs",
+};
+
 export function permissionLabel(id: string): string {
-  switch (id) {
-    case "identity.read":
-      return "View identity";
-    case "identity.token.create":
-      return "Create API tokens";
-    case "identity.token.revoke":
-      return "Revoke API tokens";
-    case "identity.mfa":
-      return "Manage personal MFA";
-    case "identity.group.manage":
-      return "Manage groups";
-    case "identity.service":
-      return "Manage service accounts";
-    case "users.read":
-      return "View users";
-    case "users.create":
-      return "Create users";
-    case "users.update":
-      return "Edit users";
-    case "users.delete":
-      return "Delete users";
-    case "users.roles.manage":
-      return "Assign roles";
-    case "users.sessions.revoke":
-      return "Revoke sessions";
-    case "roles.manage":
-      return "Manage roles";
-    case "compute.read":
-      return "View workloads";
-    case "compute.create":
-      return "Create workloads";
-    case "compute.lifecycle":
-    case "compute.start":
-    case "compute.stop":
-      return "Start and stop workloads";
-    case "compute.modify":
-      return "Edit workloads";
-    case "compute.delete":
-      return "Delete workloads";
-    case "compute.console":
-      return "Open consoles";
-    case "compute.snapshot":
-      return "Snapshot workloads";
-    case "compute.migrate":
-      return "Migrate workloads";
-    case "storage.read":
-      return "View storage";
-    case "storage.pool.create":
-      return "Create storage pools";
-    case "storage.volume.create":
-      return "Create volumes";
-    case "storage.image.upload":
-      return "Upload images";
-    case "network.read":
-      return "View networks";
-    case "network.create":
-      return "Create networks";
-    case "network.apply":
-      return "Apply network changes";
-    case "backup.read":
-      return "View backups";
-    case "backup.create":
-      return "Create backups";
-    case "backup.restore":
-      return "Restore backups";
-    case "feature.read":
-      return "View features";
-    case "feature.manage":
-      return "Install features";
-    case "audit.read":
-      return "Read the audit log";
-    case "api_access.manage":
-      return "Manage API access";
-    case "settings.security.manage":
-      return "Change security policy";
-    case "*":
-      return "Full access";
-    default:
-      return id
-        .split(".")
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(" ");
-  }
+  return (
+    PERMISSION_LABELS[id] ??
+    id
+      .split(/[._]/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ")
+  );
 }
 
 export function permissionGroup(id: string): string {
@@ -258,14 +307,27 @@ export function permissionGroup(id: string): string {
     case "identity":
     case "users":
     case "roles":
+    case "permissions":
+    case "approvals":
       return "Identity";
     case "compute":
       return "Workloads";
+    case "gameserver":
+      return "Game servers";
+    case "docker":
+      return "Docker";
+    case "deploy":
+      return "Deploy";
     case "storage":
       return "Storage";
     case "network":
       return "Network";
+    case "cloudflare":
+      return "Cloudflare";
+    case "ddos":
+      return "DDoS protection";
     case "backup":
+    case "platform_backup":
       return "Backups";
     case "feature":
     case "store":
@@ -278,7 +340,6 @@ export function permissionGroup(id: string): string {
     case "alert":
       return "Audit";
     case "api_access":
-    case "identity.token":
       return "API";
     case "cluster":
     case "node":
@@ -289,8 +350,25 @@ export function permissionGroup(id: string): string {
     case "files":
     case "terminal":
       return "Access";
+    case "policy":
+    case "automation":
+      return "Automation";
+    case "ai":
+      return "Assistant";
+    case "updates":
+      return "Updates";
+    case "search":
+      return "Search";
+    case "lab":
+      return "Lab";
+    case "*":
+      return "All";
     default:
-      return prefix === "*" ? "All" : prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      return prefix
+        .split("_")
+        .filter(Boolean)
+        .map((part, i) => (i === 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+        .join(" ");
   }
 }
 

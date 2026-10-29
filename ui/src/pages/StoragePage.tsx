@@ -30,15 +30,12 @@ import { Field } from "../components/Field";
 import { LoadingState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes } from "../format";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { CapacityBar } from "../ui/CapacityBar";
 import { Dialog } from "../ui/Dialog";
 import { SelectionCard } from "../ui/SelectionCard";
 import { ErrorNotice } from "../components/ErrorNotice";
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
 
 function capacityLabel(value: number | null | undefined, status: string): string {
   if (status === "unavailable") {
@@ -72,8 +69,10 @@ function overcommitNote(p: StoragePool): string | null {
 
 export function StoragePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = hasGrant(user, "storage.pool.create");
+  const volumeCreate = hasGrant(user, "storage.volume.create");
+  const imageUpload = hasGrant(user, "storage.image.upload");
   const [pools, setPools] = useState<StoragePool[]>([]);
   const [defaultPath, setDefaultPath] = useState("/var/lib/ndl/storage/local");
   const [selected, setSelected] = useState<string>("");
@@ -364,7 +363,7 @@ export function StoragePage() {
         <ErrorNotice error={error} />
       ) : null}
       {!firstRun ? <HostDiskPanel mutate={mutate} /> : null}
-      {!firstRun ? <R2BucketsPanel mutate={mutate} /> : null}
+      {!firstRun ? <R2BucketsPanel mutate={hasGrant(user, "cloudflare.manage")} /> : null}
       {firstRun || addKind ? (
       <Dialog
         open={firstRun || Boolean(addKind)}
@@ -891,8 +890,9 @@ export function StoragePage() {
           ) : null}
         </article>
       ) : null}
-      {pool && mutate ? (
+      {pool && (volumeCreate || imageUpload) ? (
         <div className="card-grid">
+          {volumeCreate ? (
           <article className="panel">
             <h2>Create volume</h2>
             <form
@@ -924,6 +924,8 @@ export function StoragePage() {
               </button>
             </form>
           </article>
+          ) : null}
+          {imageUpload ? (
           <article className="panel">
             <h2>Upload image</h2>
             <form
@@ -954,6 +956,7 @@ export function StoragePage() {
               </button>
             </form>
           </article>
+          ) : null}
         </div>
       ) : null}
       <article className="panel">
@@ -970,7 +973,7 @@ export function StoragePage() {
                   <th>Status</th>
                   <th>Logical size</th>
                   <th>Physical allocated</th>
-                  {mutate ? <th className="col-tools"><span className="visually-hidden">Actions</span></th> : null}
+                  {volumeCreate ? <th className="col-tools"><span className="visually-hidden">Actions</span></th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -985,7 +988,7 @@ export function StoragePage() {
                     </td>
                     <td>{capacityLabel(v.size_bytes, v.status)}</td>
                     <td>{capacityLabel(v.allocated_bytes, v.status)}</td>
-                    {mutate ? (
+                    {volumeCreate ? (
                       <td className="col-tools">
                         <DeleteButton
                           path={`/storage/volumes/${v.id}`}
@@ -1023,7 +1026,7 @@ export function StoragePage() {
                   <th>Size</th>
                   <th>Checksum</th>
                   <th>Status</th>
-                  {mutate ? (
+                  {volumeCreate ? (
                     <th className="col-tools">
                       <span className="visually-hidden">Actions</span>
                     </th>
@@ -1043,7 +1046,7 @@ export function StoragePage() {
                       <code>{item.checksum_sha256.slice(0, 12)}</code>
                     </td>
                     <td>{item.status}</td>
-                    {mutate ? (
+                    {volumeCreate ? (
                       <td className="col-tools">
                         <DeleteButton
                           path={`/storage/images/${item.id}`}

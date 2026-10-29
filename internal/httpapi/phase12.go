@@ -180,7 +180,7 @@ func (s *Server) getUpdates(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	body["can_wipe_previous"] = isOwner(p) || p.User.ID == LocalRootUserID
+	body["can_wipe_previous"] = rbac.Authorize(p.Grants, rbac.UpdatesWipe) || p.User.ID == LocalRootUserID
 	if version, notices := s.impact.get(); len(notices) > 0 {
 		body["impact_notices"] = notices
 		body["impact_version"] = version

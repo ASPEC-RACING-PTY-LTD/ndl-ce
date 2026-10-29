@@ -15,12 +15,9 @@ import {
 import type { NodeSummary } from "../api/phase2";
 import type { GPU, StoreApp, StoreInstallation, StoreScanCheck, StorePolicy } from "../generated/openapi";
 import { Field } from "../components/Field";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
 
 function classLabel(app: StoreApp): string {
   if (app.trust_class === "official" || app.class === "official") {
@@ -34,8 +31,9 @@ function classLabel(app: StoreApp): string {
 
 export function StorePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = hasGrant(user, "store.install");
+  const canVerify = hasGrant(user, "store.verify");
   const [apps, setApps] = useState<StoreApp[]>([]);
   const [selected, setSelected] = useState<StoreApp | null>(null);
   const [result, setResult] = useState<StoreInstallation | null>(null);
@@ -160,7 +158,7 @@ export function StorePage() {
       {policy ? (
         <p>
           Install policy {policy.install_policy}.
-          {mutate ? (
+          {canVerify ? (
             <>
               {" "}
               <button
@@ -250,7 +248,7 @@ export function StorePage() {
               </option>
             ))}
           </datalist>
-          {mutate ? (
+          {canVerify ? (
             <button className="btn" type="button" disabled={busy} onClick={() => void onVerify()}>
               Verify
             </button>

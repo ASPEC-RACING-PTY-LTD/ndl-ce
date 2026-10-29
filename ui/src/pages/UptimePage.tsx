@@ -478,13 +478,17 @@ export function UptimeSites({
   machines,
   containers,
   mutate,
+  check = mutate,
   reload,
   focus,
 }: {
   monitors: UptimeMonitor[] | null;
   machines: DockerMachine[];
   containers: DockerContainer[];
+  /** mutate adds, edits and deletes monitors (compute.modify). */
   mutate: boolean;
+  /** check runs checks now and restarts on failure (compute.lifecycle). */
+  check?: boolean;
   reload: () => Promise<void> | void;
   focus?: boolean;
 }) {
@@ -540,7 +544,7 @@ export function UptimeSites({
 
   function monitorItems(m: UptimeMonitor): ContextItem[] {
     const out: ContextItem[] = [];
-    if (mutate) {
+    if (check) {
       out.push(
         { label: "Check now", onClick: () => void act(`Checking ${m.name}`, () => checkUptimeMonitor(m.id)) },
         {
@@ -548,7 +552,11 @@ export function UptimeSites({
           onClick: () => void act(`Recovering ${m.name}`, () => checkUptimeMonitor(m.id, true)),
           disabled: !m.auto_restart || m.containers.length === 0,
         },
-        "sep",
+      );
+    }
+    if (mutate) {
+      out.push(
+        ...(check ? ["sep" as const] : []),
         { label: "Edit", onClick: () => setDraft({ id: m.id, ...toInput(m) }) },
         { label: m.enabled ? "Pause" : "Resume", onClick: () => void act(m.enabled ? "Pausing" : "Resuming", () => saveUptimeMonitor(toInput(m, !m.enabled), m.id)) },
       );
@@ -657,19 +665,21 @@ export function UptimeSites({
     }
   }
 
-  const tools: ActionItem[] = mutate
-    ? [
-        { label: "Find sites", onClick: () => setScanOpen(true) },
-        {
-          label: "Check all now",
-          onClick: () =>
-            void checkAllUptime()
-              .then(setJob)
-              .catch((err) => setError(err instanceof Error ? err.message : "Could not start")),
-        },
-        { label: "Edit as JSON", onClick: () => setJsonOpen(true) },
-      ]
-    : [{ label: "View as JSON", onClick: () => setJsonOpen(true) }];
+  const tools: ActionItem[] = [
+    ...(mutate ? [{ label: "Find sites", onClick: () => setScanOpen(true) }] : []),
+    ...(check
+      ? [
+          {
+            label: "Check all now",
+            onClick: () =>
+              void checkAllUptime()
+                .then(setJob)
+                .catch((err) => setError(err instanceof Error ? err.message : "Could not start")),
+          },
+        ]
+      : []),
+    mutate ? { label: "Edit as JSON", onClick: () => setJsonOpen(true) } : { label: "View as JSON", onClick: () => setJsonOpen(true) },
+  ];
 
   return (
     <section ref={ref} className="dk-section" aria-labelledby="dk-sites-heading">

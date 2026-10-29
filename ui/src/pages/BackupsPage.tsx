@@ -54,6 +54,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Field } from "../components/Field";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatRelative, formatWhen, honestStatus } from "../format";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { BackupGitHolds } from "../components/BackupGitHolds";
@@ -76,14 +77,6 @@ import { WorkloadFiles } from "../components/WorkloadFiles";
 
 function errText(err: unknown, fallback: string): string {
   return err instanceof ApiError || err instanceof Error ? err.message : fallback;
-}
-
-function canMutate(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
-
-function isAdmin(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin"));
 }
 
 const OBJECT_KINDS = ["s3", "r2", "aws", "b2", "minio"] as const;
@@ -529,8 +522,13 @@ type Manager =
 
 export function BackupsPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const mutate = hasGrant(user, "backup.create");
+  const canRestore = hasGrant(user, "backup.restore");
+  // The uncommitted-Git setting and releasing held backups need backup.git.manage.
+  const gitManage = mutate && hasGrant(user, "backup.git.manage");
+  // The platform backup and restoring from it need platform_backup.manage.
+  const platformManage = mutate && hasGrant(user, "platform_backup.manage");
 
   const [targets, setTargets] = useState<BackupTarget[] | null>(null);
   const [policies, setPolicies] = useState<BackupPolicy[] | null>(null);
@@ -1054,8 +1052,8 @@ export function BackupsPage() {
         bandwidth_limit_bps: Math.round(bandwidth * 1024 * 1024),
         cache_retention_hours: Math.max(0, Math.round(cacheHours)),
         compression_level: Number(compressionLevel),
-        // Only a SuperAdmin may change it; others never send it.
-        ...(isAdmin(roles) && ignoreUncommittedGit !== (workspace?.ignore_uncommitted_git !== false)
+        // Only people with backup.git.manage may change it; others never send it.
+        ...(gitManage && ignoreUncommittedGit !== (workspace?.ignore_uncommitted_git !== false)
           ? { ignore_uncommitted_git: ignoreUncommittedGit }
           : {}),
       });
@@ -1803,8 +1801,9 @@ export function BackupsPage() {
                         <td className="bk-num">{formatBytes(art.logical_bytes || art.size_bytes)}</td>
                         <td className="bk-nowrap" title={formatWhen(art.created_at)}>{formatRelative(art.created_at)}</td>
                         <td className="bk-actions-col">
-                          {mutate ? (
+                          {mutate || canRestore ? (
                             <div className="bk-actions">
+                              {canRestore ? (
                               <button
                                 className="btn btn-sm"
                                 type="button"
@@ -1814,6 +1813,9 @@ export function BackupsPage() {
                               >
                                 Restore
                               </button>
+                              ) : null}
+                              {mutate ? (
+                              <>
                               <button
                                 className="btn btn-sm"
                                 type="button"
@@ -1834,6 +1836,8 @@ export function BackupsPage() {
                               >
                                 Delete
                               </button>
+                              </>
+                              ) : null}
                             </div>
                           ) : null}
                         </td>
@@ -1949,8 +1953,8 @@ export function BackupsPage() {
       {loadState === "ready" ? (
         <>
           <BackupStoragePanel part="alerts" mutate={mutate} targets={targets ?? []} refreshKey={refreshKey} />
-          <BackupGitHolds owner={isAdmin(roles)} onChanged={() => void reload()} />
-          <RecoveryWorkloads owner={isAdmin(roles)} />
+          <BackupGitHolds owner={gitManage} onChanged={() => void reload()} />
+          <RecoveryWorkloads owner={platformManage} />
           {summaryBox}
           <BackupWorkloadTable
             rows={rows}
@@ -2006,7 +2010,7 @@ export function BackupsPage() {
 
       <Modal open={manager?.kind === "dr"} title="Disaster recovery" wide onClose={() => setManager(null)}>
         {platform == null ? <p className="bk-hint">The platform backup status could not be read.</p> : null}
-        <PlatformBackupPanel owner={isAdmin(roles)} targets={targets ?? []} />
+        <PlatformBackupPanel owner={platformManage} targets={targets ?? []} />
         {mutate ? (
           <div className="bk-actions is-start">
             <button className="btn btn-sm" type="button" disabled={busy} onClick={() => void onDRExport()}>
@@ -3006,7 +3010,7 @@ export function BackupsPage() {
             id="backup-workspace-ignore-git"
             type="checkbox"
             checked={ignoreUncommittedGit}
-            disabled={!isAdmin(roles)}
+            disabled={!gitManage}
             onChange={(e) => setIgnoreUncommittedGit(e.target.checked)}
           />
           Ignore uncommitted Git repositories
@@ -3014,7 +3018,7 @@ export function BackupsPage() {
         <p className="field-hint">
             Smart backups leave Git repositories to Git and record the exact commit to re-clone. When this is off, a
             workload whose repositories have uncommitted or unpushed work is not backed up until a SuperAdmin saves it,
-            lets NDL-CE commit and push it, or turns this back on. Only a SuperAdmin can change it.
+            lets NDL-CE commit and push it, or turns this back on. Only someone allowed to manage Git backups can change it.
         </p>
       </ConfirmDialog>
     </section>

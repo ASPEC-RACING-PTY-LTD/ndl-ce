@@ -10,7 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatWhen } from "../format";
 import { usePoll } from "../query";
-import { canMutate } from "../rbac";
+import { canOnItem } from "../rbac";
 import { usePath } from "../router";
 import { useSession } from "../session";
 
@@ -28,7 +28,7 @@ export function WorkloadExtensionsPage() {
   const path = usePath();
   const id = decodeURIComponent(path.split("/")[2] ?? "");
   const session = useSession();
-  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const mutate = canOnItem(session.status === "ready" ? session.user : null, "workload", id, "compute.modify");
   const [name, setName] = useState("");
   const [items, setItems] = useState<WorkloadExtension[] | null>(null);
   const [busy, setBusy] = useState(false);

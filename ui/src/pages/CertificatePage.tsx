@@ -4,14 +4,12 @@ import { acmeCert, ApiError, generateCert, getCerts, importCert } from "../api/c
 import type { CertificateStatus } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { formatWhen } from "../format";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 const CONFIRM_ENABLE = "enable-tls";
 
-function canManage(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin"));
-}
 
 function modeLabel(mode: CertificateStatus["mode"]): string {
   switch (mode) {
@@ -59,8 +57,7 @@ function parseSans(raw: string): string[] {
 
 export function CertificatePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const manage = canManage(roles);
+  const manage = hasGrant(session.status === "ready" ? session.user : null, "settings.tls.manage");
 
   const [certs, setCerts] = useState<CertificateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -427,7 +424,7 @@ export function CertificatePage() {
             </>
           ) : (
             <p className="banner" role="status">
-              Certificate settings are read-only for your role. An administrator can generate,
+              Certificate settings are read-only for you. Someone with certificate management can generate,
               import, or configure ACME.
             </p>
           )}

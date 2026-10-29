@@ -21,7 +21,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes } from "../format";
 import { navigate } from "../router";
-import { canMutate } from "../rbac";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { Dialog } from "../ui/Dialog";
 import { Segmented } from "../ui/Segmented";
@@ -46,7 +46,7 @@ function when(unix: number): string {
 /** StorageManagePage finds what uses space, explains it, and deletes chosen items. */
 export function StorageManagePage() {
   const session = useSession();
-  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const user = session.status === "ready" ? session.user : null;
   const ctx = useContextMenu();
   const [targets, setTargets] = useState<ScanTarget[] | null>(null);
   const [canDelete, setCanDelete] = useState(false);
@@ -198,8 +198,8 @@ export function StorageManagePage() {
         kicker="Measure what uses space on the host or a storage pool, see what each item is for, and delete what you no longer need. Workload disks, backups and system files are protected."
       />
       {error ? <ErrorNotice error={error} /> : null}
-      <HostDiskCleanups mutate={mutate} />
-      <DockerPrunePanel mutate={mutate} />
+      <HostDiskCleanups mutate={hasGrant(user, "storage.pool.create")} />
+      <DockerPrunePanel mutate={hasGrant(user, "compute.lifecycle")} />
       <article className="panel" aria-labelledby="scan-heading">
         <h2 id="scan-heading">Find what is using space</h2>
         {!targets ? (

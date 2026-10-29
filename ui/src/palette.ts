@@ -1,5 +1,5 @@
 import { itemOnlyPathOpen } from "./nav/sections";
-import { hasRoleAccess, type ItemUser } from "./rbac";
+import { hasGrant, hasRoleAccess, type GrantUser, type ItemUser } from "./rbac";
 
 export type PaletteRequire = "mutate" | "audit" | "update" | "groups";
 
@@ -131,22 +131,20 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   },
 ];
 
-export function paletteAllowed(roles: string[] | undefined, require?: PaletteRequire): boolean {
+/** requirePerm is the permission each palette requirement stands for. */
+const requirePerm: Record<PaletteRequire, string> = {
+  mutate: "compute.create",
+  update: "updates.manage",
+  groups: "identity.group.manage",
+  audit: "audit.read",
+};
+
+export function paletteAllowed(roles: string[] | undefined, require?: PaletteRequire, user?: GrantUser | null): boolean {
   if (!require) {
     return true;
   }
-  const superAdmin = Boolean(roles?.includes("superadmin"));
-  const admin = Boolean(roles?.includes("admin"));
-  switch (require) {
-    case "mutate":
-    case "update":
-    case "groups":
-      return superAdmin || admin;
-    case "audit":
-      return superAdmin;
-    default:
-      return false;
-  }
+  const perm = requirePerm[require];
+  return Boolean(perm) && hasGrant(user ?? { roles }, perm);
 }
 
 /**
@@ -157,7 +155,7 @@ export function visiblePaletteActions(roles: string[] | undefined, user?: ItemUs
   if (user && !hasRoleAccess(user)) {
     return PALETTE_ACTIONS.filter((action) => !action.require && itemOnlyPathOpen(action.href, user) && action.href !== "/");
   }
-  return PALETTE_ACTIONS.filter((action) => paletteAllowed(roles, action.require));
+  return PALETTE_ACTIONS.filter((action) => paletteAllowed(roles, action.require, user));
 }
 
 export function filterPaletteActions(actions: PaletteAction[], query: string): PaletteAction[] {

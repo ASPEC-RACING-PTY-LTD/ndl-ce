@@ -17,7 +17,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorState, LoadingState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes } from "../format";
-import { canMutate } from "../rbac";
+import { canOnItem } from "../rbac";
 import { currentPath } from "../router";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
@@ -65,9 +65,8 @@ function poolLabel(p: StoragePool): string {
 
 export function WorkloadStoragePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
   const id = workloadIDFromPath();
+  const mutate = canOnItem(session.status === "ready" ? session.user : null, "workload", id, "compute.modify");
 
   const [item, setItem] = useState<Workload | null>(null);
   const [data, setData] = useState<WorkloadStorage | null>(null);

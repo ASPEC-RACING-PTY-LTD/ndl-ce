@@ -45,7 +45,7 @@ import { formatBytes, honestStatus } from "../format";
 import { isOperationsLeaf } from "../nav/workloadNav";
 import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
 import { kindLabel } from "../labels";
-import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
+import { canOnItem, hasGrant, hasRoleAccess } from "../rbac";
 import { currentPath, navigate, usePath } from "../router";
 import { useSession } from "../session";
 import { nodeLabel } from "../nodeNames";
@@ -85,12 +85,16 @@ export function WorkloadDetailPage() {
   const session = useSession();
   const cloudflareOn = useFeatureOn("cloudflare");
   const user = session.status === "ready" ? session.user : null;
-  const mutate = canMutate(user?.roles);
   const path = usePath();
   const id = workloadIDFromPath();
-  // Power can come from a role or from a grant on this one workload. Edit,
-  // delete, clone and migrate stay with roles: no item grant offers them.
-  const power = mutate || canOnItem(user, "workload", id, "compute.lifecycle");
+  // Each control needs the permission its request checks, held everywhere or
+  // (for power and settings) through a grant on this one workload.
+  const mutate = canOnItem(user, "workload", id, "compute.modify");
+  const canDelete = canOnItem(user, "workload", id, "compute.delete");
+  const canClone = hasGrant(user, "compute.create");
+  const canExport = hasGrant(user, "storage.image.upload") || hasGrant(user, "migration.privileged");
+  const canMigrate = hasGrant(user, "compute.migrate");
+  const power = canOnItem(user, "workload", id, "compute.lifecycle");
   const canStart = power || canOnItem(user, "workload", id, "compute.start");
   const canStop = power || canOnItem(user, "workload", id, "compute.stop");
   const leaf = leafFromPath(path);
@@ -368,7 +372,7 @@ export function WorkloadDetailPage() {
           </>
         }
         actions={
-          mutate || canStart || canStop ? (
+          mutate || canDelete || canStart || canStop ? (
             <div className="btn-row is-flush">
               {diagnosticsLink}
               {mutate ? (
@@ -395,7 +399,7 @@ export function WorkloadDetailPage() {
                   Restart
                 </button>
               ) : null}
-              {mutate ? (
+              {canDelete ? (
                 <button className="btn btn-sm btn-danger" type="button" disabled={busy} onClick={() => setConfirm("delete")}>
                   <Icon name="delete" size={14} />
                   Delete
@@ -656,16 +660,21 @@ export function WorkloadDetailPage() {
         </>
       ) : null}
 
-      {view === "operations" && mutate ? (
+      {view === "operations" && (power || canClone || canExport || canMigrate) ? (
         <>
+          {power || canClone || (item.kind === "vm" && canExport) ? (
           <article className="panel">
             <h2>Clone</h2>
             <div className="btn-row">
               {item.kind === "vm" ? (
                 <>
+                  {power ? (
                   <button className="btn" type="button" disabled={busy} onClick={() => void onAction("force-stop")}>
                     Force Stop
                   </button>
+                  ) : null}
+                  {canClone ? (
+                  <>
                   <button className="btn" type="button" disabled={busy} onClick={() => void onAction("clone")}>
                     Clone
                   </button>
@@ -684,6 +693,9 @@ export function WorkloadDetailPage() {
                   >
                     Save template
                   </button>
+                  </>
+                  ) : null}
+                  {canExport ? (
                   <button
                     className="btn"
                     type="button"
@@ -698,14 +710,17 @@ export function WorkloadDetailPage() {
                   >
                     Export disk
                   </button>
+                  ) : null}
                 </>
-              ) : (
+              ) : canClone ? (
                 <button className="btn" type="button" disabled={busy} onClick={() => void onAction("clone")}>
                   Clone
                 </button>
-              )}
+              ) : null}
             </div>
           </article>
+          ) : null}
+          {canMigrate ? (
           <article className="panel">
             <h2>Migrate</h2>
             <p className="page-kicker">
@@ -737,6 +752,7 @@ export function WorkloadDetailPage() {
               Migrate
             </button>
           </article>
+          ) : null}
         </>
       ) : null}
 

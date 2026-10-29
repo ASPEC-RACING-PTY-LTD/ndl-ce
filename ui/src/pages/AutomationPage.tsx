@@ -14,6 +14,7 @@ import {
 import type { AutomationPolicy, AutomationPolicyRun } from "../generated/openapi";
 import { Field } from "../components/Field";
 import { Link } from "../components/Link";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 
@@ -40,14 +41,10 @@ function describe(item: AutomationPolicy): string {
   }
 }
 
-function canApply(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
 
 export function AutomationPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canApply(roles);
+  const mutate = hasGrant(session.status === "ready" ? session.user : null, "policy.apply");
   const [policies, setPolicies] = useState<AutomationPolicy[] | null>(null);
   const [runs, setRuns] = useState<AutomationPolicyRun[]>([]);
   const [error, setError] = useState<string | null>(null);

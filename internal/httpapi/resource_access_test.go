@@ -62,9 +62,9 @@ func TestRoleLessUserSeesOnlyGrantedWorkload(t *testing.T) {
 		t.Fatalf("me %d %v", code, out["_raw"])
 	}
 
-	// Ungrantable permissions are refused.
-	if code, _ := a.call("PUT", "/api/v1/iam/resource-access", `{"subject_kind":"user","subject_id":"`+uid+`","resource_kind":"workload","resource_id":"`+mine+`","permissions":["compute.delete"]}`, nil); code != http.StatusBadRequest {
-		t.Fatalf("compute.delete granted on one workload: %d", code)
+	// Unknown permissions are refused.
+	if code, _ := a.call("PUT", "/api/v1/iam/resource-access", `{"subject_kind":"user","subject_id":"`+uid+`","resource_kind":"workload","resource_id":"`+mine+`","permissions":["compute.nope"]}`, nil); code != http.StatusBadRequest {
+		t.Fatalf("unknown permission granted: %d", code)
 	}
 	if code, out := a.call("PUT", "/api/v1/iam/resource-access", `{"subject_kind":"user","subject_id":"`+uid+`","resource_kind":"workload","resource_id":"`+mine+`","permissions":["files.read"]}`, nil); code != http.StatusOK {
 		t.Fatalf("grant %d %v", code, out["_raw"])
@@ -145,8 +145,8 @@ func TestScopedPrincipalKeepsRoleGrantsSeparate(t *testing.T) {
 	if rbac.Authorize(p.roleGrants(), rbac.TerminalOpen) {
 		t.Fatal("an item grant leaked into role grants")
 	}
-	if grantable(accessWorkload, rbac.ComputeDelete) || grantable(accessNode, rbac.NodeRevoke) || grantable(accessGameServer, rbac.GameServerUsers) {
-		t.Fatal("a dangerous permission is grantable on one item")
+	if !knownPerm(rbac.ComputeDelete) || !knownPerm(rbac.All) || knownPerm("compute.nope") {
+		t.Fatal("knownPerm")
 	}
 }
 
@@ -192,4 +192,143 @@ func TestRoleLessGameServerAndNodeGrants(t *testing.T) {
 	if code, _ := a.as(friend, "POST", "/api/v1/nodes/"+local.ID+"/terminal/sessions", ""); code != http.StatusForbidden {
 		t.Fatalf("host terminal with node.read: %d", code)
 	}
+}
+
+func TestAnyPermissionOnOneItemOrEverywhere(t *testing.T) {
+	a := newAutoTest(t)
+	ctx := context.Background()
+	mine, other := "3b1d0a9e-0000-4000-8000-0000000000e1", "3b1d0a9e-0000-4000-8000-0000000000e2"
+	_ = a.mem.CreateWorkload(ctx, appdb.Workload{ID: mine, ClusterID: a.cluster, Name: "mine", Kind: "system-container"})
+	_ = a.mem.CreateWorkload(ctx, appdb.Workload{ID: other, ClusterID: a.cluster, Name: "other", Kind: "system-container"})
+	uid, friend := a.loginNoRole("deleter")
+
+	// Delete on one workload: allowed there, refused on the other.
+	if code, out := a.call("PUT", "/api/v1/iam/resource-access", `{"subject_kind":"user","subject_id":"`+uid+`","resource_kind":"workload","resource_id":"`+mine+`","permissions":["compute.delete"]}`, nil); code != http.StatusOK {
+		t.Fatalf("grant delete %d %v", code, out["_raw"])
+	}
+	if code, _ := a.as(friend, "POST", "/api/v1/workloads/"+other+"/delete", ""); code != http.StatusForbidden {
+		t.Fatalf("delete on another workload: %d", code)
+	}
+	if code, out := a.as(friend, "POST", "/api/v1/workloads/"+mine+"/delete", ""); code == http.StatusForbidden {
+		t.Fatalf("delete on the granted workload was refused: %v", out["_raw"])
+	}
+
+	// A cluster-wide grant merges into their permissions.
+	if code, _ := a.as(friend, "GET", "/api/v1/storage/pools", ""); code != http.StatusForbidden {
+		t.Fatalf("storage before the grant: %d", code)
+	}
+	if code, out := a.call("PUT", "/api/v1/iam/resource-access", `{"subject_kind":"user","subject_id":"`+uid+`","resource_kind":"cluster","permissions":["storage.read"]}`, nil); code != http.StatusOK {
+		t.Fatalf("cluster grant %d %v", code, out["_raw"])
+	}
+	if code, out := a.as(friend, "GET", "/api/v1/storage/pools", ""); code != http.StatusOK {
+		t.Fatalf("storage after the grant %d %v", code, out["_raw"])
+	}
+
+	// A grant to a role reaches everyone with it, on top of the role.
+	viewer := loginRole(t, a.ts, a.mem, "viewer2", rbac.User)
+	if code, _ := a.as(viewer, "POST", "/api/v1/workloads/"+mine+"/delete", ""); code != http.StatusForbidden {
+		t.Fatalf("user role deleting before the grant: %d", code)
+	}
+	if code, out := a.call("PUT", "/api/v1/iam/resource-access", `{"subject_kind":"role","subject_id":"user","resource_kind":"workload","resource_id":"`+mine+`","permissions":["compute.delete"]}`, nil); code != http.StatusOK {
+		t.Fatalf("role grant %d %v", code, out["_raw"])
+	}
+	if code, out := a.as(viewer, "POST", "/api/v1/workloads/"+mine+"/delete", ""); code == http.StatusForbidden {
+		t.Fatalf("user role with the grant was refused: %v", out["_raw"])
+	}
+	if code, out := a.as(viewer, "GET", "/api/v1/workloads", ""); code != http.StatusOK || len(listIDs(out)) != 2 {
+		t.Fatalf("user role keeps its base list %d %v", code, out["_raw"])
+	}
+}
+
+func TestAssignPermissionRules(t *testing.T) {
+	a := newAutoTest(t)
+	adminID := ""
+	admin := loginRole(t, a.ts, a.mem, "assigner", rbac.Admin)
+	peer := loginRole(t, a.ts, a.mem, "peer", rbac.Admin)
+	_ = peer
+	lowID, _ := a.loginNoRole("low")
+	users, _ := a.mem.ListUsers(context.Background(), a.cluster)
+	peerID := ""
+	for _, u := range users {
+		switch u.Username {
+		case "assigner":
+			adminID = u.ID
+		case "peer":
+			peerID = u.ID
+		}
+	}
+	put := func(cookie, body string) int {
+		code, _ := a.as(cookie, "PUT", "/api/v1/iam/resource-access", body)
+		return code
+	}
+	grant := func(subject, perms string) string {
+		return `{"subject_kind":"user","subject_id":"` + subject + `","resource_kind":"cluster","permissions":[` + perms + `]}`
+	}
+
+	// Without permissions.assign an Admin cannot assign.
+	if code := put(admin, grant(lowID, `"storage.read"`)); code != http.StatusForbidden {
+		t.Fatalf("admin without permissions.assign: %d", code)
+	}
+	// A SuperAdmin gives it; then the Admin assigns what they hold to someone below.
+	if code := put(a.cookie, grant(adminID, `"permissions.assign"`)); code != 200 {
+		t.Fatalf("give permissions.assign: %d", code)
+	}
+	admin = relogin(t, a, "assigner")
+	if code := put(admin, grant(lowID, `"storage.read"`)); code != 200 {
+		t.Fatalf("admin assigning a held permission below: %d", code)
+	}
+	for name, body := range map[string]string{
+		"a permission they lack": grant(lowID, `"cluster.destroy"`),
+		"a peer":                 grant(peerID, `"storage.read"`),
+		"themselves":             grant(adminID, `"storage.read"`),
+		"everything":             grant(lowID, `"*"`),
+		"the override":           grant(lowID, `"permissions.assign.override"`),
+		"their own role":         `{"subject_kind":"role","subject_id":"admin","resource_kind":"cluster","permissions":["storage.read"]}`,
+	} {
+		if code := put(admin, body); code != http.StatusForbidden {
+			t.Fatalf("admin assigning %s: %d", name, code)
+		}
+	}
+	// The override lifts the rank and holding limits, but not * or the override itself.
+	if code := put(a.cookie, grant(adminID, `"permissions.assign","permissions.assign.override"`)); code != 200 {
+		t.Fatalf("give override: %d", code)
+	}
+	admin = relogin(t, a, "assigner")
+	if code := put(admin, grant(peerID, `"cluster.destroy"`)); code != 200 {
+		t.Fatalf("override assigning to a peer: %d", code)
+	}
+	if code := put(admin, grant(lowID, `"*"`)); code != http.StatusForbidden {
+		t.Fatalf("override giving *: %d", code)
+	}
+
+	// Below Admin rank, permissions.assign is not enough.
+	if code := put(a.cookie, grant(lowID, `"permissions.assign","storage.read"`)); code != 200 {
+		t.Fatalf("give low assign: %d", code)
+	}
+	low := relogin(t, a, "low")
+	other, _ := a.loginNoRole("lower")
+	if code := put(low, grant(other, `"storage.read"`)); code != http.StatusForbidden {
+		t.Fatalf("role-less user assigning: %d", code)
+	}
+}
+
+// relogin signs a user in again so a new session picks up changed grants.
+func relogin(t *testing.T, a *autoTest, username string) string {
+	t.Helper()
+	pass := "Correct-horse-9"
+	if username == "assigner" {
+		pass = "password1"
+	}
+	res, err := a.ts.Client().Post(a.ts.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"`+username+`","password":"`+pass+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	for _, c := range res.Cookies() {
+		if c.Name == sessionCookie {
+			return c.Value
+		}
+	}
+	t.Fatalf("relogin %s: %d", username, res.StatusCode)
+	return ""
 }

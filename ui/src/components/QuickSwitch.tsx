@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listNodes, listStacks, listWorkloads, workloadAction } from "../api/client";
-import { canMutate, itemAllows } from "../rbac";
+import { canOnItem } from "../rbac";
 import { useSession } from "../session";
 import {
   buildTermCatalog,
@@ -82,7 +82,7 @@ export function QuickSwitch({
   const roles = user?.roles;
   // Starting a stopped workload needs power on it, from a role or a grant on that workload.
   const mayStart = (t: TermTarget) =>
-    t.kind === "workload" && (canMutate(roles) || itemAllows(user, "workload", t.id, "compute.lifecycle") || itemAllows(user, "workload", t.id, "compute.start"));
+    t.kind === "workload" && (canOnItem(user ?? { roles }, "workload", t.id, "compute.lifecycle") || canOnItem(user ?? { roles }, "workload", t.id, "compute.start"));
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [catalog, setCatalog] = useState<TermTarget[]>([]);

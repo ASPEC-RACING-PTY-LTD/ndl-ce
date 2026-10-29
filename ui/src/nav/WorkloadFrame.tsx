@@ -5,7 +5,7 @@ import { Link } from "../components/Link";
 import { StatusBadge } from "../components/StatusBadge";
 import { kindLabel } from "../labels";
 import { useQuery } from "../query";
-import { canMutate, canOnItem, hasRoleAccess } from "../rbac";
+import { canOnItem, hasGrant, hasRoleAccess } from "../rbac";
 import { usePath } from "../router";
 import { useSession } from "../session";
 import { useNavDisclosure } from "./NavDisclosure";
@@ -20,7 +20,15 @@ export function WorkloadFrame({ id, children }: { id: string; children: ReactNod
   const path = usePath();
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
-  const mutate = canMutate(user?.roles);
+  const mutate = canOnItem(user, "workload", id, "compute.modify");
+  const gpu = hasGrant(user, "compute.gpu.assign");
+  // The Operations page: force stop, clone, save template, export and migrate.
+  const operate =
+    canOnItem(user, "workload", id, "compute.lifecycle") ||
+    hasGrant(user, "compute.create") ||
+    hasGrant(user, "compute.migrate") ||
+    hasGrant(user, "storage.image.upload") ||
+    hasGrant(user, "migration.privileged");
   const { featureEnabled } = useNavDisclosure();
   const wl = useQuery(`workload:${id}`, () => getWorkload(id), 10000);
   const item = wl.data?.id === id ? wl.data : undefined;
@@ -38,6 +46,8 @@ export function WorkloadFrame({ id, children }: { id: string; children: ReactNod
     leaf,
     guestOk,
     mutate,
+    gpu,
+    operate,
     dockerOn: Boolean(featureEnabled.docker),
     // Without a role, only the pages this workload's grant opens.
     allow: hasRoleAccess(user)

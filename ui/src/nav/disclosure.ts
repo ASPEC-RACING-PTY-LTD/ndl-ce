@@ -55,7 +55,7 @@ export function allowedByRbac(mod: NavModule, roles: string[] | undefined, grant
   if (!mod.require) {
     return true;
   }
-  return paletteAllowed(roles, mod.require as PaletteRequire);
+  return paletteAllowed(roles, mod.require as PaletteRequire, { roles, grants });
 }
 
 function capabilityOn(mod: NavModule, prefs: DisclosurePrefs, featureEnabled: Record<string, boolean>): boolean {

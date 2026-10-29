@@ -9,7 +9,8 @@ import { formatBytes } from "../format";
 import { preferredGuestNetwork } from "../components/form/NetworkPicker";
 import { navigate } from "../router";
 import { useSession } from "../session";
-import { canMutate, uxLevel } from "../ux";
+import { hasGrant } from "../rbac";
+import { uxLevel } from "../ux";
 import { buildVmCreateBody } from "../vmCreate";
 import { ErrorNotice } from "../components/ErrorNotice";
 
@@ -25,8 +26,7 @@ function physicalDiskOption(d: PhysicalDisk): string {
 
 export function VmCreatePage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const mutate = hasGrant(session.status === "ready" ? session.user : null, "compute.create");
   const level = uxLevel(session.status === "ready" ? session.user : null);
   const guided = level === "guided";
   const [step, setStep] = useState(0);
@@ -119,7 +119,7 @@ export function VmCreatePage() {
     return (
       <section className="page">
         <h1>Create VM</h1>
-        <p className="banner banner-error">Creating a VM requires operator or admin.</p>
+        <p className="banner banner-error">Creating a VM requires permission to create workloads.</p>
       </section>
     );
   }

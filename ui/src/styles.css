@@ -6066,7 +6066,7 @@ thead th[data-autosort="desc"]::after {
   padding-top: var(--space-3, 1rem);
 }
 
-/* IAM > Users > Item access: grants on single items, one compact table. */
+/* IAM > Users > Direct permissions: grants everywhere or on one item, one compact table. */
 .item-access .toolbar {
   margin: 0;
 }
@@ -6095,6 +6095,12 @@ thead th[data-autosort="desc"]::after {
   padding: 0 0.4rem 0 0;
   font-size: 0.8rem;
   color: var(--fg-secondary);
+}
+.item-access-perm-list {
+  max-height: 22rem;
+  overflow-y: auto;
+  margin-top: var(--space-2, 0.5rem);
+  padding-right: 0.25rem;
 }
 
 /* System sub-bar sits above each System page's own header. */

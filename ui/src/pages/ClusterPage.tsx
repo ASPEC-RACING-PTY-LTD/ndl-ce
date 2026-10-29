@@ -21,6 +21,7 @@ import {
 } from "../api/client";
 import type { NodeSummary } from "../api/phase2";
 import type { HAStatus, RollingUpdatePreview } from "../generated/openapi";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { DeleteButton } from "../components/DeleteButton";
 import { ErrorNotice } from "../components/ErrorNotice";
@@ -41,14 +42,6 @@ import {
 
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/ASPEC-RACING-PTY-LTD/ndl-ce/main/packaging/bootstrap/get-nodal.sh | sudo sh";
-
-function canJoin(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin"));
-}
-
-function canPromote(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin"));
-}
 
 function message(err: unknown, fallback: string): string {
   return err instanceof ApiError
@@ -650,9 +643,11 @@ function AddressDialog({
 
 export function ClusterPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canJoin(roles);
-  const promote = canPromote(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const canAdd = hasGrant(user, "cluster.join");
+  const canRevoke = hasGrant(user, "node.revoke");
+  const canRoll = hasGrant(user, "node.update");
+  const promote = hasGrant(user, "cluster.promote");
   const [nodes, setNodes] = useState<NodeSummary[] | null>(null);
   const [ha, setHa] = useState<HAStatus | null>(null);
   const [rolling, setRolling] = useState<RollingUpdatePreview | null>(null);
@@ -814,7 +809,7 @@ export function ClusterPage() {
             : `${list.length} nodes. ${connected} of ${workers.length} workers connected.`
         }
         actions={
-          mutate ? (
+          canAdd ? (
             <div className="btn-row is-flush">
               <button
                 className="btn btn-primary"
@@ -917,15 +912,17 @@ export function ClusterPage() {
                             >
                               {check === "checking" ? "Checking" : "Check"}
                             </button>
-                            {mutate ? (
+                            {canAdd ? (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                type="button"
+                                onClick={() => setEditing(n)}
+                              >
+                                Address
+                              </button>
+                            ) : null}
+                            {canRevoke ? (
                               <>
-                                <button
-                                  className="btn btn-ghost btn-sm"
-                                  type="button"
-                                  onClick={() => setEditing(n)}
-                                >
-                                  Address
-                                </button>
                                 <button
                                   className="btn btn-ghost btn-sm"
                                   type="button"
@@ -1014,7 +1011,7 @@ export function ClusterPage() {
         ) : (
           <p className="muted">No nodes in the rolling preview yet.</p>
         )}
-        {mutate ? (
+        {canRoll ? (
           <button
             className="btn"
             type="button"
@@ -1026,7 +1023,7 @@ export function ClusterPage() {
         ) : null}
       </section>
 
-      {mutate ? <JoinSettingsSection /> : null}
+      {canAdd ? <JoinSettingsSection /> : null}
 
       <NodeGroupsPanel />
 

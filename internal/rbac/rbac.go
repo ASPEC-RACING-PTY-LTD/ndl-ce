@@ -130,7 +130,31 @@ const (
 	// the global theme and themes per role or group (SuperAdmin by default).
 	SearchManage     = "search.manage"
 	AppearanceManage = "settings.appearance.manage"
-	All              = "*"
+	// Assigning permissions directly (resource access): hand out
+	// permissions you hold to users, groups and roles ranked below you, on
+	// one item or everywhere. The override lifts those limits; only a
+	// SuperAdmin can give it.
+	PermissionsAssign         = "permissions.assign"
+	PermissionsAssignOverride = "permissions.assign.override"
+	// Capabilities that used to be SuperAdmin only. The SuperAdmin role
+	// holds them through All; anyone else can be given them.
+	ComputePrivileged      = "compute.privileged"
+	NodeHostAccess         = "node.host"
+	TerminalSessionsManage = "terminal.sessions.manage"
+	LabManage              = "lab.manage"
+	MigrationPrivileged    = "migration.privileged"
+	BackupGitManage        = "backup.git.manage"
+	PlatformBackupManage   = "platform_backup.manage"
+	CloudflareHostTunnel   = "cloudflare.host_tunnel"
+	DockerScriptsAdmin     = "docker.scripts.admin"
+	DeployConfigure        = "deploy.configure"
+	StorageProtectedDelete = "storage.protected.delete"
+	AutomationSkipTest     = "automation.skip_test"
+	UpdatesWipe            = "updates.wipe"
+	SearchHostFiles        = "search.host_files"
+	IdentityServiceForce   = "identity.service.force"
+	AppearanceLimit        = "settings.appearance.limit"
+	All                    = "*"
 
 	TokenPresetReadonlyDebug = "readonly-debug"
 	TokenPresetFullAudit     = "full-audit"

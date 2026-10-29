@@ -5,7 +5,7 @@ import { Icon } from "../components/Icon";
 import { QuickSwitch } from "../components/QuickSwitch";
 import { TerminalPane } from "../components/TerminalPane";
 import { TERM_GRIDS, TerminalGrid, type TermGridId } from "../components/TerminalGrid";
-import { canMutate, hasItemAccess } from "../rbac";
+import { hasGrant, hasItemAccess } from "../rbac";
 import { useSession } from "../session";
 import { statusLabel } from "../terminal/types";
 import { useTerminalWorkspace } from "../terminal/workspace";
@@ -15,7 +15,7 @@ export function TerminalWorkspacePage() {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   // A terminal grant on a single workload or host opens the workspace for that item.
-  const allowed = canMutate(user?.roles) || hasItemAccess(user, "workload", "terminal.open") || hasItemAccess(user, "node", "terminal.open");
+  const allowed = hasGrant(user, "terminal.open") || hasGrant(user, "node.host") || hasItemAccess(user, "workload", "terminal.open") || hasItemAccess(user, "node", "terminal.open");
   const {
     tabs,
     activeId,

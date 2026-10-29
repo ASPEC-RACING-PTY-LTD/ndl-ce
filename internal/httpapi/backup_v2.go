@@ -82,7 +82,7 @@ func (s *Server) patchBackupWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	clearHolds := false
 	if req.IgnoreUncommittedGit != nil {
-		if !hasRole(p, rbac.SuperAdmin) {
+		if !rbac.Authorize(p.Grants, rbac.BackupGitManage) {
 			writeErr(w, http.StatusForbidden, "only a SuperAdmin can change how uncommitted Git work is handled")
 			return
 		}

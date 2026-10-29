@@ -4,17 +4,14 @@ import { PageHeader } from "../components/PageHeader";
 import { ApiError, askAI } from "../api/client";
 import type { AIAskResponse } from "../generated/openapi";
 import { Field } from "../components/Field";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "../components/ErrorNotice";
 
-function canAsk(roles: string[] | undefined): boolean {
-  return Boolean(roles?.includes("superadmin") || roles?.includes("admin") || roles?.includes("user"));
-}
 
 export function AskPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const allowed = canAsk(roles);
+  const allowed = hasGrant(session.status === "ready" ? session.user : null, "ai.ask");
   const [prompt, setPrompt] = useState("Why did this workload restart?");
   const [result, setResult] = useState<AIAskResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -13,7 +13,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { formatBytes } from "../format";
 import { kindLabel, osLabel } from "../labels";
 import { useQuery } from "../query";
-import { canMutate } from "../rbac";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { Segmented } from "../ui/Segmented";
 import { CreateMenu } from "../nav/AreaFrames";
@@ -55,7 +55,10 @@ const TITLES: Record<KindFilter, { title: string; lede: string; noun: string }> 
 export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
   const session = useSession();
   const me = session.status === "ready" ? session.user : null;
-  const mutate = canMutate(me?.roles);
+  const canCreate = hasGrant(me, "compute.create");
+  const canModify = hasGrant(me, "compute.modify");
+  const canDelete = hasGrant(me, "compute.delete");
+  const canRemoveHost = hasGrant(me, "node.revoke");
   const workloadsQ = useQuery("workloads", () => listWorkloads(), 10000);
   const nodesQ = useQuery("nodes", () => listNodes(), 15000);
   const kind: KindFilter = fixedKind ?? "all";
@@ -177,7 +180,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
 
   const t = TITLES[kind];
   const [layout] = useInstanceLayout();
-  const showSelect = mutate && !editing;
+  const showSelect = (canModify || canDelete) && !editing;
   const leadCol = showSelect || editing;
   const nameSort = sort === "name" ? "name-desc" : "name";
 
@@ -189,9 +192,9 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
         title={t.title}
         kicker={items.length ? `${counts.total} ${t.noun} · ${counts.running} running · ${counts.stopped} not running` : t.lede}
         actions={
-          mutate ? (
+          canCreate || canModify ? (
             <div className="btn-row is-flush">
-              {kind !== "vm" ? (
+              {kind !== "vm" && canModify ? (
                 <Link className="btn btn-ghost" href="/instance/components">
                   Components
                 </Link>
@@ -204,7 +207,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
       />
       {error ? <ErrorState>{error}</ErrorState> : null}
       {saveError ? <ErrorState>{saveError}</ErrorState> : null}
-      {kind !== "vm" && mutate ? <LeftoverContainers canRemove={mutate} /> : null}
+      {kind !== "vm" && canDelete ? <LeftoverContainers canRemove={canDelete} /> : null}
       {results ? (
         <div className="banner" role="status">
           <p>
@@ -236,7 +239,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
             </label>
           </div>
           <div className="toolbar-group">
-            {mutate && selectedItems.length > 0 && !editing ? (
+            {canModify && selectedItems.length > 0 && !editing ? (
               <button
                 className="btn btn-secondary"
                 type="button"
@@ -245,7 +248,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
                 Install components ({selectedItems.length})
               </button>
             ) : null}
-            {mutate && selectedItems.length > 0 && !editing ? (
+            {canDelete && selectedItems.length > 0 && !editing ? (
               <button className="btn btn-danger" type="button" disabled={busy} onClick={() => setConfirmOpen(true)}>
                 <Icon name="delete" size={14} />
                 Delete selected ({selectedItems.length})
@@ -274,7 +277,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
           <EmptyState icon="workloads" title={q ? `No matching ${t.noun}` : `No ${t.noun} yet`}>
             {q
               ? "Nothing matches that search."
-              : mutate
+              : canCreate
                 ? "Create a VM or system container when a usable storage pool and guest network are available."
                 : "No workloads are visible yet. Creating them requires operator or admin."}
           </EmptyState>
@@ -354,7 +357,7 @@ export function WorkloadsPage({ fixedKind }: { fixedKind?: FixedKind } = {}) {
                     <td className="num">{node.cpu_cores ? `${node.cpu_cores}` : ""}</td>
                     <td className="num">{node.memory_bytes ? formatBytes(node.memory_bytes) : ""}</td>
                     <td className="col-tools">
-                      {mutate && !node.local ? (
+                      {canRemoveHost && !node.local ? (
                         <DeleteButton
                           path={`/nodes/${encodeURIComponent(node.id)}`}
                           name={node.name || node.id}

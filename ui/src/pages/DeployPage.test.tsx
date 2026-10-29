@@ -89,7 +89,7 @@ describe("DeployPage", () => {
     // Found projects fold away while there are projects; they open on demand.
     expect(screen.queryByText("wiki")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /found in containers/i }));
-    expect(screen.getByText("wiki")).toBeTruthy();
+    expect(await screen.findByText("wiki")).toBeTruthy();
   });
 
   it("deploys one project", async () => {

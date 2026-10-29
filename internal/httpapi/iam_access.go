@@ -280,6 +280,10 @@ func (s *Server) iamSaveRole(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "you cannot grant "+perm+" because you do not have it")
 			return
 		}
+		if perm == rbac.PermissionsAssignOverride && !isOwner(p) {
+			writeErr(w, http.StatusForbidden, "only a SuperAdmin can give "+perm)
+			return
+		}
 		perms = append(perms, perm)
 	}
 	d := appdb.RoleDef{ClusterID: p.User.ClusterID, Name: name, Title: strings.TrimSpace(req.Title), Summary: strings.TrimSpace(req.Summary), Permissions: perms, Login: true, Rank: maxRank + 1}

@@ -25,7 +25,7 @@ import { CodeholdCLIDialog } from "../components/CodeholdCLIDialog";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatRelative, formatWhen } from "../format";
 import { usePoll } from "../query";
-import { canMutate, hasGrant } from "../rbac";
+import { hasGrant } from "../rbac";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { storageGet, storageSet } from "../storage";
@@ -374,7 +374,7 @@ export function CodeholdPage() {
           void reload();
         }}
       />
-      <CodeholdCLIDialog open asPage canChange={canMutate(user?.roles)} onClose={() => undefined} />
+      <CodeholdCLIDialog open asPage canChange={hasGrant(user, "compute.modify")} onClose={() => undefined} />
     </section>
   );
 }

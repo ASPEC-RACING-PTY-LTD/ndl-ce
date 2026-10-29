@@ -1,7 +1,7 @@
 import type { NodeSummary } from "../api/phase2";
 import type { Workload } from "../api/phase5";
 import type { Stack } from "../api/client";
-import { isAdmin, canMutate, dockerItemId, itemAllows, type ItemUser } from "../rbac";
+import { canOnItem, dockerItemId, hasGrant, itemAllows, type ItemUser } from "../rbac";
 import { kindLabel } from "../labels";
 import type { TermGroup, TermKind, TermTarget } from "./types";
 
@@ -10,15 +10,16 @@ import type { TermGroup, TermKind, TermTarget } from "./types";
  * or workload: through their role, or a terminal.open grant on that item.
  */
 export function mayOpenTerminal(kind: TermKind, id: string, roles: string[] | undefined, user?: ItemUser | null, name?: string): boolean {
+  const who = user ?? { roles };
   if (kind === "node") {
-    return isAdmin(roles) || itemAllows(user, "node", id, "terminal.open");
+    return hasGrant(who, "node.host") || itemAllows(who, "node", id, "terminal.open");
   }
   if (kind === "docker") {
     // A Docker target is "machine/container id"; its grant is on "machine/container name".
     const machine = id.split("/")[0] ?? "";
-    return canMutate(roles) || (Boolean(name) && itemAllows(user, "docker", dockerItemId(machine, name ?? ""), "terminal.open"));
+    return hasGrant(who, "terminal.open") || (Boolean(name) && itemAllows(who, "docker", dockerItemId(machine, name ?? ""), "terminal.open"));
   }
-  return canMutate(roles) || itemAllows(user, "workload", id, "terminal.open");
+  return canOnItem(who, "workload", id, "terminal.open");
 }
 
 export function canOpenTermTarget(target: TermTarget, roles: string[] | undefined, user?: ItemUser | null): boolean {

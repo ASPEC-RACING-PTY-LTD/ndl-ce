@@ -27,7 +27,6 @@ import { SummaryCard } from "../ui/SummaryCard";
 import { FeatureCards } from "../components/FeatureCards";
 import { CodeholdPendingBanner } from "../components/CodeholdPendingBanner";
 import { useSession } from "../session";
-import { canMutate } from "../ux";
 import { useQuery } from "../query";
 import { getPlatformBackup, listApprovals, listAutomationFlows } from "../api/client";
 import { flowsOffByUpdate } from "../automation/updateDisabled";
@@ -36,7 +35,7 @@ import { hasGrant } from "../rbac";
 
 export function DashboardPage() {
   const session = useSession();
-  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const mutate = hasGrant(session.status === "ready" ? session.user : null, "compute.create");
   const seesApprovals = hasGrant(session.status === "ready" ? session.user : null, "approvals.view");
   const approvalsQ = useQuery("approvals-pending", () => (seesApprovals ? listApprovals("pending") : Promise.resolve(null)), 60000);
   const pendingApprovals = approvalsQ.data?.pending ?? 0;

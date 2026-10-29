@@ -18,7 +18,7 @@ import type { StoragePool, StorageVolume } from "../api/phase3";
 import type { Workload } from "../api/phase5";
 import { formatBytes } from "../format";
 import { bytesFromGB, gbFromBytes, parseMemoryGB } from "../memory";
-import { isAdmin } from "../rbac";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { ErrorNotice } from "./ErrorNotice";
 import { preferredGuestNetwork } from "./form/NetworkPicker";
@@ -78,8 +78,7 @@ export function OciContainerForm({
   onCancel?: () => void;
 }) {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const admin = isAdmin(roles);
+  const admin = hasGrant(session.status === "ready" ? session.user : null, "compute.privileged");
   const editing = Boolean(workload);
   const spec = (workload?.spec ?? {}) as SpecShape;
   const nic = workload?.nics?.[0];

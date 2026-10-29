@@ -38,7 +38,12 @@ export function buildWorkloadNav(opts: {
   kind: string;
   leaf: string;
   guestOk: boolean;
+  /** mutate changes the workload's settings (compute.modify): the USB page. */
   mutate: boolean;
+  /** gpu assigns GPUs (compute.gpu.assign); left out, it follows mutate. */
+  gpu?: boolean;
+  /** operate clones, migrates or exports it; left out, it follows mutate. */
+  operate?: boolean;
   dockerOn: boolean;
   /**
    * allow narrows the pages to those the person may open (by the page's
@@ -47,7 +52,7 @@ export function buildWorkloadNav(opts: {
   allow?: (leaf: string) => boolean;
 }): WorkloadNavGroup[] {
   const { id, kind, leaf, guestOk, mutate, dockerOn, allow } = opts;
-  const groups = buildAll(id, kind, leaf, guestOk, mutate, dockerOn);
+  const groups = buildAll(id, kind, leaf, guestOk, { mutate, gpu: opts.gpu ?? mutate, operate: opts.operate ?? mutate }, dockerOn);
   if (!allow) {
     return groups;
   }
@@ -56,7 +61,14 @@ export function buildWorkloadNav(opts: {
     .filter((g) => g.items.length > 0);
 }
 
-function buildAll(id: string, kind: string, leaf: string, guestOk: boolean, mutate: boolean, dockerOn: boolean): WorkloadNavGroup[] {
+function buildAll(
+  id: string,
+  kind: string,
+  leaf: string,
+  guestOk: boolean,
+  can: { mutate: boolean; gpu: boolean; operate: boolean },
+  dockerOn: boolean,
+): WorkloadNavGroup[] {
   const groups: WorkloadNavGroup[] = [];
   const summaryCurrent = leaf === "summary";
 
@@ -123,7 +135,7 @@ function buildAll(id: string, kind: string, leaf: string, guestOk: boolean, muta
   }
 
   const machine: WorkloadNavLink[] = [];
-  if (kind === "vm" && mutate) {
+  if (kind === "vm" && can.mutate) {
     machine.push({
       href: `/workloads/${id}/machine`,
       label: "USB",
@@ -131,7 +143,7 @@ function buildAll(id: string, kind: string, leaf: string, guestOk: boolean, muta
       current: leaf === "machine",
     });
   }
-  if (mutate && kind) {
+  if (can.gpu && kind) {
     machine.push({
       href: `/workloads/${id}/gpus`,
       label: "GPUs",
@@ -182,7 +194,7 @@ function buildAll(id: string, kind: string, leaf: string, guestOk: boolean, muta
     });
   }
 
-  if (mutate) {
+  if (can.operate) {
     groups.push({
       label: "Operations",
       items: [

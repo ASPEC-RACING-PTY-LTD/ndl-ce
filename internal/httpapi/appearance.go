@@ -188,7 +188,7 @@ func (s *Server) getAppearance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := appearanceJSON(s.appearance(r.Context(), p.User.ClusterID))
-	out["can_set_profile_limit"] = isOwner(p) || p.User.ID == LocalRootUserID
+	out["can_set_profile_limit"] = rbac.Authorize(p.Grants, rbac.AppearanceLimit) || p.User.ID == LocalRootUserID
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -280,7 +280,7 @@ func (s *Server) putAppearance(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProfileLimit != nil && *req.ProfileLimit != a.limit() {
 		// Fixed rule, not a permission: only SuperAdmins lower the limit.
-		if !isOwner(p) && p.User.ID != LocalRootUserID {
+		if !rbac.Authorize(p.Grants, rbac.AppearanceLimit) && p.User.ID != LocalRootUserID {
 			writeErr(w, http.StatusForbidden, "only a SuperAdmin can change the design profile limit")
 			return
 		}
@@ -296,7 +296,7 @@ func (s *Server) putAppearance(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, p.User.ClusterID, p.User.ID, "settings.appearance.update", "ok", "")
 	out := appearanceJSON(a)
-	out["can_set_profile_limit"] = isOwner(p) || p.User.ID == LocalRootUserID
+	out["can_set_profile_limit"] = rbac.Authorize(p.Grants, rbac.AppearanceLimit) || p.User.ID == LocalRootUserID
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -97,7 +97,7 @@ export function UserDetailDialog({
   const canRoles = hasGrant(me, "users.roles.manage") && !locked && !self;
   const canRevoke = hasGrant(me, "users.sessions.revoke") && !locked;
   const canDelete = hasGrant(me, "users.delete") && !locked && !self && !user?.protected;
-  const canItemAccess = hasGrant(me, "users.roles.manage");
+  const canItemAccess = hasGrant(me, "permissions.assign");
 
   useEffect(() => {
     if (!user || tab !== "access" || !canItemAccess || itemCount !== null) {
@@ -285,7 +285,7 @@ export function UserDetailDialog({
           </p>
           {itemCount !== null ? (
             <p className="field-hint">
-              {itemCount === 0 ? "No access to single items." : `Has access to ${itemCount} item${itemCount === 1 ? "" : "s"}.`}{" "}
+              {itemCount === 0 ? "No direct permissions." : `Has ${itemCount} direct permission grant${itemCount === 1 ? "" : "s"}.`}{" "}
               {document.getElementById("item-access") ? (
                 <button
                   type="button"
@@ -295,7 +295,7 @@ export function UserDetailDialog({
                     setTimeout(() => document.getElementById("item-access")?.scrollIntoView({ block: "start" }), 50);
                   }}
                 >
-                  Manage item access
+                  Manage direct permissions
                 </button>
               ) : null}
             </p>

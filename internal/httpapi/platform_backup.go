@@ -845,7 +845,7 @@ func (s *Server) requireOwner(w http.ResponseWriter, r *http.Request) (*principa
 	if err != nil {
 		return nil, false
 	}
-	if !hasRole(p, rbac.SuperAdmin) {
+	if !rbac.Authorize(p.Grants, rbac.PlatformBackupManage) {
 		writeErr(w, http.StatusForbidden, "only a SuperAdmin can manage the platform backup")
 		return nil, false
 	}

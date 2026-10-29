@@ -908,10 +908,10 @@ export interface ItemGrant {
 
 export interface ResourceGrant {
   id: string;
-  subject_kind: "user" | "group";
+  subject_kind: "user" | "group" | "role";
   subject_id: string;
   subject_name?: string;
-  resource_kind: "workload" | "gameserver" | "docker" | "node";
+  resource_kind: "cluster" | "workload" | "gameserver" | "docker" | "node";
   resource_id: string;
   permissions: string[];
   created_by?: string;
@@ -920,14 +920,15 @@ export interface ResourceGrant {
 
 export interface ResourceAccess {
   grants: ResourceGrant[];
-  grantable: Record<string, unknown>;
+  suggested: Record<string, unknown>;
+  permissions: string[];
 }
 
 export interface ResourceGrantBody {
   id?: string;
-  subject_kind: "user" | "group";
+  subject_kind: "user" | "group" | "role";
   subject_id: string;
-  resource_kind: "workload" | "gameserver" | "docker" | "node";
+  resource_kind: "cluster" | "workload" | "gameserver" | "docker" | "node";
   resource_id: string;
   permissions: string[];
 }

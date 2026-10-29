@@ -33,7 +33,7 @@ import {
 } from "../migration/jobView";
 import { PVE_TOKEN_EXAMPLE, PVE_TOKEN_FORMAT, pveTokenError } from "../migration/pveToken";
 import { useSession } from "../session";
-import { canMutate } from "../ux";
+import { hasGrant } from "../rbac";
 import { ErrorNotice } from "../components/ErrorNotice";
 
 type Adapter = {
@@ -168,8 +168,11 @@ function findingNeedsAction(f: Finding): boolean {
 
 export function ImportExportPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  const canConnect = hasGrant(user, "migration.manage");
+  const canImportJob = hasGrant(user, "migration.import");
+  const canExportJob = hasGrant(user, "migration.export");
+  const mutate = canImportJob || canExportJob;
   const [tab, setTab] = useState<"import" | "export">("import");
   const [phase, setPhase] = useState<Phase>("source");
   const [error, setError] = useState<string | null>(null);
@@ -545,7 +548,7 @@ export function ImportExportPage() {
       <p className="banner" role="status">
         SOURCE SAFETY PROTECTED. No-dal does not delete or clean up the source workload.
       </p>
-      {!mutate ? <p>Connecting sources and starting transfers requires operator or admin.</p> : null}
+      {!mutate ? <p>Starting transfers requires the migration import or export permission.</p> : null}
 
       {tab === "export" ? (
         <article className="panel">
@@ -565,7 +568,7 @@ export function ImportExportPage() {
           <button
             type="button"
             className="btn"
-            disabled={!mutate}
+            disabled={!canExportJob}
             onClick={() => {
               void startMigrationJob({ direction: "export", workload_id: exportID, export_kind: exportKind, adapter: "nodal", mode: "disk" })
                 .then((row) => {
@@ -640,7 +643,7 @@ export function ImportExportPage() {
                     <input type="checkbox" checked={insecure} onChange={(e) => setInsecure(e.target.checked)} /> Allow HTTP
                     (disclosed insecure)
                   </label>
-                  <button type="button" className="btn" disabled={!mutate || busy} onClick={() => void connectSource()}>
+                  <button type="button" className="btn" disabled={!canConnect || busy} onClick={() => void connectSource()}>
                     Connect
                   </button>
                 </>
@@ -695,7 +698,7 @@ export function ImportExportPage() {
                     destination after successful migration
                   </label>
                   <p>A disk image does not contain missing hardware. Supply CPU, RAM, firmware, and network.</p>
-                  <button type="button" className="btn" disabled={!mutate} onClick={() => void importFile()}>
+                  <button type="button" className="btn" disabled={!canImportJob} onClick={() => void importFile()}>
                     Import file
                   </button>
                 </>
@@ -1021,7 +1024,7 @@ export function ImportExportPage() {
                 </div>
               ) : null}
 
-              <button type="button" className="btn" disabled={!mutate || !canImport} onClick={() => void start()}>
+              <button type="button" className="btn" disabled={!canImportJob || !canImport} onClick={() => void start()}>
                 Submit
               </button>
             </article>

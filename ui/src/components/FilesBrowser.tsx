@@ -16,7 +16,7 @@ import { workloadGuestIOReason } from "../guestIO";
 import { fileTypeLabel } from "../labels";
 import { navigate } from "../router";
 import { useSession } from "../session";
-import { itemAllows } from "../rbac";
+import { canOnItem, hasGrant, itemAllows } from "../rbac";
 import { mayOpenTerminal } from "../terminal/catalog";
 import { ErrorNotice } from "./ErrorNotice";
 import { UploadDialog } from "./UploadDialog";
@@ -89,21 +89,18 @@ export function FilesBrowser({
   const roles = user?.roles;
   const host = kind === "node";
   const game = kind === "game";
-  // A files grant on this one workload or host opens the matching actions.
-  const grantOn = (perm: string) => !game && itemAllows(user, host ? "node" : "workload", id, perm);
-  const backend = useMemo(() => (kind === "game" ? gameFilesBackend(id) : agentFilesBackend(kind, id)), [kind, id]);
   // Game servers check per-server grants on the server, so the browser offers every action.
-  const roleWrite = game || (host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin")));
-  const canUpload = roleWrite || grantOn("files.upload");
-  const canCreate = roleWrite || grantOn("files.create");
-  const canWrite = roleWrite || grantOn("files.modify");
-  const canDelete = roleWrite || grantOn("files.delete");
-  const canDownload = roleWrite || grantOn("files.download");
+  // Host files need node.host or a grant on that host; workload files the permission itself.
+  const allowed = (perm: string) =>
+    game || (host ? hasGrant(user, "node.host") || itemAllows(user, "node", id, perm) : canOnItem(user, "workload", id, perm));
+  const backend = useMemo(() => (kind === "game" ? gameFilesBackend(id) : agentFilesBackend(kind, id)), [kind, id]);
+  const canUpload = allowed("files.upload");
+  const canCreate = allowed("files.create");
+  const canWrite = allowed("files.modify");
+  const canDelete = allowed("files.delete");
+  const canDownload = allowed("files.download");
   const canTerminal = game || mayOpenTerminal(host ? "node" : "workload", id, roles, user);
-  const canRead =
-    game ||
-    grantOn("files.read") ||
-    (host ? Boolean(roles?.includes("superadmin")) : Boolean(roles?.includes("superadmin") || roles?.includes("admin") || roles?.includes("user")));
+  const canRead = allowed("files.read");
   const [path, setPath] = useState(initialPath || "/");
   const [pathInput, setPathInput] = useState(displayPath(initialPath || "/"));
   useEffect(() => {
@@ -400,10 +397,10 @@ export function FilesBrowser({
       if (backend.copy) {
         items.push({ label: "Copy", onClick: () => { setDialogValue(path); setDialog({ kind: "copy", entries: [entry] }); } });
       }
-      if (backend.chmod && roleWrite) {
+      if (backend.chmod && allowed("files.permissions")) {
         items.push({ label: "Permissions", onClick: () => { setDialogValue(formatMode(entry.mode) || "644"); setDialog({ kind: "chmod", entries: [entry] }); } });
       }
-      if (backend.chown && roleWrite) {
+      if (backend.chown && allowed("files.ownership")) {
         items.push({ label: "Owner", onClick: () => { setDialogValue(entry.uid != null && entry.gid != null ? `${entry.uid}:${entry.gid}` : "0:0"); setDialog({ kind: "chown", entries: [entry] }); } });
       }
       if (backend.extract && entry.type !== "dir" && isArchive(entry.name)) {

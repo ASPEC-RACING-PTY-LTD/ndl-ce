@@ -5,13 +5,14 @@ import { UsersPage } from "../pages/UsersPage";
 import { ApprovalsPage } from "./ApprovalsPage";
 import { ItemAccessPanel } from "./ItemAccessPanel";
 
-/** UsersArea is IAM > Users: the user list, then access to single items, then approval requests. */
+/** UsersArea is IAM > Users: the user list, then direct permissions, then approval requests. */
 export function UsersArea({ focus }: { focus?: "approvals" }) {
   const session = useSession();
   const user = session.status === "ready" ? session.user : null;
   const canUsers = hasGrant(user, "users.read");
   const canApprovals = hasGrant(user, "approvals.view");
-  const canItemAccess = hasGrant(user, "users.roles.manage");
+  const canItemAccess = hasGrant(user, "permissions.assign");
+  const superAdmin = Boolean(user?.roles?.includes("superadmin"));
 
   useEffect(() => {
     if (focus !== "approvals") {
@@ -26,7 +27,7 @@ export function UsersArea({ focus }: { focus?: "approvals" }) {
       {canUsers ? <UsersPage /> : null}
       {canItemAccess ? (
         <div className="users-area-section">
-          <ItemAccessPanel />
+          <ItemAccessPanel superAdmin={superAdmin} />
         </div>
       ) : null}
       {canApprovals ? (

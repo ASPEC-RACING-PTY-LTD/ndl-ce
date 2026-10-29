@@ -34,7 +34,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { Dialog } from "../ui/Dialog";
 import { usePoll } from "../query";
 import { navigate, useSearchParam } from "../router";
-import { canMutate } from "../rbac";
+import { canOnItem, hasGrant } from "../rbac";
 import { useSession } from "../session";
 
 const SAMPLE_COMPOSE = `services:
@@ -91,8 +91,13 @@ function tone(status?: string): string {
 /** OciPage manages OCI containers and the groups they run in. */
 export function OciPage() {
   const session = useSession();
-  const roles = session.status === "ready" ? session.user?.roles : undefined;
-  const mutate = canMutate(roles);
+  const user = session.status === "ready" ? session.user : null;
+  // Groups and new containers need these everywhere; one container's own actions can also come from a grant on it.
+  const create = hasGrant(user, "compute.create");
+  const modify = hasGrant(user, "compute.modify");
+  const lifecycle = hasGrant(user, "compute.lifecycle");
+  const remove = hasGrant(user, "compute.delete");
+  const mutate = create || modify || lifecycle || remove;
   // In the Instance layout creating lives in "Create +" in the page bar.
   const [layout] = useInstanceLayout();
   const [workloads, setWorkloads] = useState<Workload[] | null>(null);
@@ -206,25 +211,30 @@ export function OciPage() {
     const mem = membership.get(w.id);
     const running = (w.status || "").toLowerCase() === "running";
     const items: ContextItem[] = [{ label: "Open", onClick: () => navigate(`/workloads/${encodeURIComponent(w.id)}`) }];
-    if (mutate) {
+    if (canOnItem(user, "workload", w.id, "compute.modify")) {
+      items.push({ label: "Edit settings", onClick: () => void openEditor(w) });
+    }
+    if (canOnItem(user, "workload", w.id, "compute.lifecycle")) {
       items.push(
-        { label: "Edit settings", onClick: () => void openEditor(w) },
         "sep",
         { label: "Start", onClick: () => void act(`Starting ${w.name}`, () => workloadAction(w.id, "start")), disabled: running },
         { label: "Stop", onClick: () => void act(`Stopping ${w.name}`, () => workloadAction(w.id, "stop")), disabled: !running },
         { label: "Restart", onClick: () => void act(`Restarting ${w.name}`, () => workloadAction(w.id, "restart")) },
-        "sep",
-        {
-          label: "Move to group…",
-          onClick: () => {
-            setMoveTo(mem?.groupId ?? "");
-            setMoving(w);
-          },
-        },
       );
+    }
+    if (modify) {
+      items.push("sep", {
+        label: "Move to group…",
+        onClick: () => {
+          setMoveTo(mem?.groupId ?? "");
+          setMoving(w);
+        },
+      });
       if (mem) {
         items.push({ label: "Remove from group", onClick: () => moveContainer(w, "") });
       }
+    }
+    if (canOnItem(user, "workload", w.id, "compute.delete")) {
       items.push("sep", {
         label: "Delete container",
         danger: true,
@@ -241,18 +251,21 @@ export function OciPage() {
   function groupItems(g: Stack): ContextItem[] {
     const pending = (g.members ?? []).some((m) => !m.workload_id);
     const items: ContextItem[] = [];
-    if (mutate) {
+    if (lifecycle) {
       items.push(
         { label: "Start all", onClick: () => void power(g, "start") },
         { label: "Stop all", onClick: () => void power(g, "stop") },
         { label: "Restart all", onClick: () => void power(g, "restart") },
       );
-      if (pending) {
-        items.push({ label: "Deploy containers", onClick: () => void act(`Deploying ${g.name}`, () => applyStack(g.id), `${g.name} deployed.`) });
-      }
+    }
+    if (create && pending) {
+      items.push({ label: "Deploy containers", onClick: () => void act(`Deploying ${g.name}`, () => applyStack(g.id), `${g.name} deployed.`) });
+    }
+    if (create) {
+      items.push("sep", { label: "New container in group", onClick: () => setCreating({ groupId: g.id }) });
+    }
+    if (modify) {
       items.push(
-        "sep",
-        { label: "New container in group", onClick: () => setCreating({ groupId: g.id }) },
         {
           label: "Add existing container…",
           onClick: () => {
@@ -268,15 +281,17 @@ export function OciPage() {
             setRenaming(g);
           },
         },
-        {
-          label: "Delete group",
-          danger: true,
-          onClick: () => {
-            setDeleteContainers(false);
-            setDeleting(g);
-          },
-        },
       );
+    }
+    if (remove) {
+      items.push({
+        label: "Delete group",
+        danger: true,
+        onClick: () => {
+          setDeleteContainers(false);
+          setDeleting(g);
+        },
+      });
     }
     return items;
   }
@@ -306,7 +321,7 @@ export function OciPage() {
   }
 
   function dropProps(groupId: string) {
-    if (!mutate) {
+    if (!modify) {
       return {};
     }
     return {
@@ -334,7 +349,7 @@ export function OciPage() {
       <li
         key={w.id}
         className="docker-row oci-row-item"
-        draggable={mutate}
+        draggable={modify}
         onDragStart={(e) => {
           e.dataTransfer.setData("application/x-ndl-oci", w.id);
           e.dataTransfer.effectAllowed = "move";
@@ -364,12 +379,12 @@ export function OciPage() {
           <StatusBadge status={m.status === "failed" ? "critical" : "unknown"} label={m.status === "failed" ? "Failed" : "Not deployed"} />
         </span>
         <span className="meta docker-row-meta">{m.reason || (typeof m.desired?.image_pin === "string" ? m.desired.image_pin : "")}</span>
-        {mutate ? (
+        {create || modify ? (
           <ActionMenu
             label={`${m.service_name} actions`}
             items={[
-              { label: "Deploy group", onClick: () => void act(`Deploying ${g.name}`, () => applyStack(g.id), `${g.name} deployed.`) },
-              { label: "Drop from group", onClick: () => void act(`Dropping ${m.service_name}`, () => removeFromOCIGroup(g.id, m.id)), danger: true },
+              ...(create ? [{ label: "Deploy group", onClick: () => void act(`Deploying ${g.name}`, () => applyStack(g.id), `${g.name} deployed.`) }] : []),
+              ...(modify ? [{ label: "Drop from group", onClick: () => void act(`Dropping ${m.service_name}`, () => removeFromOCIGroup(g.id, m.id)), danger: true }] : []),
             ]}
           />
         ) : null}
@@ -397,7 +412,7 @@ export function OciPage() {
         title="OCI Containers"
         kicker="Run Docker-compatible images directly, no Docker Engine needed. Group containers to manage an app together; drag a container onto a group to move it."
         actions={
-          mutate && layout === "classic" ? (
+          create && layout === "classic" ? (
             <div className="btn-row is-flush">
               <button className="btn btn-primary" type="button" onClick={() => setCreating({ groupId: "" })}>
                 New container

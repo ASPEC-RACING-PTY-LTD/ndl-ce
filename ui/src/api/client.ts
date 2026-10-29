@@ -291,14 +291,23 @@ export async function checkNode(id: string): Promise<WorkerLinkCheck> {
 }
 
 export type ItemKind = "workload" | "gameserver" | "docker" | "node";
+/** GrantScope is where a direct grant applies: everywhere, or one item. */
+export type GrantScope = "cluster" | ItemKind;
 export type ResourceGrant = import("../generated/openapi").ResourceGrant;
-export type ResourceAccess = { grants: ResourceGrant[]; grantable: Record<ItemKind, string[]> };
+export type ResourceAccess = {
+  grants: ResourceGrant[];
+  /** The permissions each kind of item's own pages check, in display order. */
+  suggested: Record<ItemKind, string[]>;
+  /** Every permission that can be given, including "*". */
+  permissions: string[];
+};
 export type ResourceGrantBody = {
   id?: string;
-  subject_kind: "user" | "group";
+  subject_kind: "user" | "group" | "role";
+  /** A user or group ID, or a role name. */
   subject_id: string;
-  resource_kind: ItemKind;
-  /** Workload, game server or node ID; for Docker, machine_id/container_name. */
+  resource_kind: GrantScope;
+  /** Workload, game server or node ID; for Docker, machine_id/container_name; empty for cluster. */
   resource_id: string;
   /** Empty removes the grant. */
   permissions: string[];

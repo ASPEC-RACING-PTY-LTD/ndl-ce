@@ -8,7 +8,7 @@ import { PageHeader } from "../components/PageHeader";
 import { SelectionCard } from "../ui/SelectionCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { useQuery } from "../query";
-import { canMutate } from "../rbac";
+import { hasGrant } from "../rbac";
 import { useSession } from "../session";
 import { groupExtras, toggleExtra } from "../workloadExtras";
 
@@ -24,7 +24,7 @@ function idsFromQuery(): string[] {
  */
 export function ComponentsPage() {
   const session = useSession();
-  const mutate = canMutate(session.status === "ready" ? session.user?.roles : undefined);
+  const mutate = hasGrant(session.status === "ready" ? session.user : null, "compute.modify");
   const workloadsQ = useQuery("workloads", () => listWorkloads(), 15000);
   const containers = useMemo(() => (workloadsQ.data?.items ?? []).filter((w) => w.kind === "system-container"), [workloadsQ.data]);
   const [catalog, setCatalog] = useState<WorkloadExtra[] | null>(null);

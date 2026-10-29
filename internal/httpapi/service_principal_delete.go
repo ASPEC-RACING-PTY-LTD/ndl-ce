@@ -102,7 +102,7 @@ func (s *Server) servicePrincipalRefsAPI(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": sp.ID, "name": sp.Name, "references": refs, "can_force": isOwner(p) || s.isRoot(r.Context(), p)})
+	writeJSON(w, http.StatusOK, map[string]any{"id": sp.ID, "name": sp.Name, "references": refs, "can_force": (rbac.Authorize(p.Grants, rbac.IdentityServiceForce)) || s.isRoot(r.Context(), p)})
 }
 
 // deleteServicePrincipal removes a service account and its user row, which
@@ -128,7 +128,7 @@ func (s *Server) deleteServicePrincipal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	force := r.URL.Query().Get("force") == "true"
-	if force && !isOwner(p) && !s.isRoot(ctx, p) {
+	if force && !rbac.Authorize(p.Grants, rbac.IdentityServiceForce) && !s.isRoot(ctx, p) {
 		writeErr(w, http.StatusForbidden, "only a SuperAdmin can force delete")
 		return
 	}
@@ -141,7 +141,7 @@ func (s *Server) deleteServicePrincipal(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error":      "this service account is still in use; force delete removes it and every reference",
 			"references": refs,
-			"can_force":  isOwner(p) || s.isRoot(ctx, p),
+			"can_force":  (rbac.Authorize(p.Grants, rbac.IdentityServiceForce)) || s.isRoot(ctx, p),
 		})
 		return
 	}
